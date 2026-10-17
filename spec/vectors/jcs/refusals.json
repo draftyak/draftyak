@@ -1,0 +1,221 @@
+{
+  "format": "draftyak.vectors.jcs.v1",
+  "description": "What the strict parser refuses. A case with \"canonical\" parses \"input\" strictly and canonicalizes it to exactly \"canonicalHex\" (UTF-8), whose SHA-256 is \"sha256\"; one with \"ieee754\" canonicalizes that double; one with \"error\" is refused with that code (\"inputHex\" holds input that isn't text).",
+  "cases": [
+    {
+      "id": "duplicate-name",
+      "input": "{\"a\":1,\"a\":2}",
+      "error": "JCS_DUPLICATE_KEY"
+    },
+    {
+      "id": "duplicate-name-escaped",
+      "input": "{\"a\":1,\"\\u0061\":2}",
+      "error": "JCS_DUPLICATE_KEY"
+    },
+    {
+      "id": "duplicate-name-nested",
+      "input": "{\"x\":{\"b\":1,\"b\":1}}",
+      "error": "JCS_DUPLICATE_KEY"
+    },
+    {
+      "id": "duplicate-name-astral",
+      "input": "{\"😀\":1,\"\\ud83d\\ude00\":2}",
+      "error": "JCS_DUPLICATE_KEY"
+    },
+    {
+      "id": "lone-high-surrogate",
+      "input": "[\"\\ud800\"]",
+      "error": "JCS_LONE_SURROGATE"
+    },
+    {
+      "id": "lone-low-surrogate",
+      "input": "[\"\\udc00\"]",
+      "error": "JCS_LONE_SURROGATE"
+    },
+    {
+      "id": "reversed-surrogates",
+      "input": "[\"\\udc00\\ud800\"]",
+      "error": "JCS_LONE_SURROGATE"
+    },
+    {
+      "id": "high-surrogate-then-ascii",
+      "input": "[\"\\ud800a\"]",
+      "error": "JCS_LONE_SURROGATE"
+    },
+    {
+      "id": "lone-surrogate-in-name",
+      "input": "{\"\\ud800\":1}",
+      "error": "JCS_LONE_SURROGATE"
+    },
+    {
+      "id": "utf8-stray-continuation",
+      "inputHex": "228022",
+      "error": "JCS_INVALID_UTF8"
+    },
+    {
+      "id": "utf8-overlong",
+      "inputHex": "22c0af22",
+      "error": "JCS_INVALID_UTF8"
+    },
+    {
+      "id": "utf8-encoded-surrogate",
+      "inputHex": "22eda08022",
+      "error": "JCS_INVALID_UTF8"
+    },
+    {
+      "id": "utf8-truncated",
+      "inputHex": "22e28222",
+      "error": "JCS_INVALID_UTF8"
+    },
+    {
+      "id": "utf8-beyond-10ffff",
+      "inputHex": "22f490808022",
+      "error": "JCS_INVALID_UTF8"
+    },
+    {
+      "id": "utf8-invalid-byte",
+      "inputHex": "22ff22",
+      "error": "JCS_INVALID_UTF8"
+    },
+    {
+      "id": "byte-order-mark",
+      "inputHex": "efbbbf7b7d",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "empty-document",
+      "input": "",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "trailing-comma-array",
+      "input": "[1,]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "trailing-comma-object",
+      "input": "{\"a\":1,}",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "leading-zero",
+      "input": "[01]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "plus-sign",
+      "input": "[+1]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "bare-fraction",
+      "input": "[.5]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "fraction-without-digits",
+      "input": "[1.]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "lone-minus",
+      "input": "[-]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "exponent-without-digits",
+      "input": "[1e]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "hex-number",
+      "input": "[0x10]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "nan-literal",
+      "input": "[NaN]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "comment",
+      "input": "{\"a\":1/* note */}",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "single-quotes",
+      "input": "{'a':1}",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "raw-control-character",
+      "input": "[\"a\tb\"]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "invalid-escape",
+      "input": "[\"\\x41\"]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "short-unicode-escape",
+      "input": "[\"\\u00e\"]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "unterminated-string",
+      "input": "[\"abc",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "text-after-value",
+      "input": "{} {}",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "number-overflow",
+      "input": "[1e400]",
+      "error": "JCS_NUMBER_RANGE"
+    },
+    {
+      "id": "number-overflow-negative",
+      "input": "[-1e400]",
+      "error": "JCS_NUMBER_RANGE"
+    },
+    {
+      "id": "number-overflow-by-rounding",
+      "input": "[1.7976931348623159e308]",
+      "error": "JCS_NUMBER_RANGE"
+    },
+    {
+      "id": "vertical-tab-between-values",
+      "input": "[1,\u000b2]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "form-feed-between-values",
+      "input": "[1,\f2]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "no-break-space-between-values",
+      "input": "[1, 2]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "byte-order-mark-between-values",
+      "input": "[1,﻿2]",
+      "error": "JCS_SYNTAX"
+    },
+    {
+      "id": "nesting-65-arrays",
+      "input": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      "error": "JCS_TOO_DEEP"
+    },
+    {
+      "id": "nesting-65-objects",
+      "input": "{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}",
+      "error": "JCS_TOO_DEEP"
+    }
+  ]
+}

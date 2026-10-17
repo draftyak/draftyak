@@ -1,0 +1,414 @@
+{
+  "format": "draftyak.vectors.sign.v1",
+  "description": "ES256 statement signatures. \"signingInputHex\" is the case's signing input: the UTF-8 of \"draftyak/v1/<typ>\\n\" followed by \"jcs\", the statement's canonical JSON, which verifies as received bytes exactly as the statement does. \"signature\" is base64url of the 64-byte r||s and \"publicKeySpki\" base64url SPKI DER with the uncompressed point, both canonical: the same bytes with an unused low bit set, or the point compressed, never verify. Each case verifies as \"valid\" says. A case with \"error\" holds a correct signature over its signing input but breaks a rule: a typ is dotted segments of lower-case letters, digits and hyphens, each starting with a letter, ending in .v and the major version without a leading zero; a statement is a JSON object, and every number in it a safe integer. Building its signing input fails with that code, and it never verifies. A case with \"receivedHex\" gives a statement as received, in bytes that aren't canonical JCS, and a correct signature over \"draftyak/v1/<typ>\\n\" followed by exactly those bytes: a verifier checks the bytes first, so it never verifies. \"keys\" are test-only keys made for these vectors and never used anywhere else; \"signer\" made every signature.",
+  "keys": {
+    "signer": {
+      "testOnly": true,
+      "privateKeyPkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg5jXhiqtJkwRNpZsSFfFCxKixGphBUIwI1DCNb5f1LpuhRANCAARqFW_FJse0VfUaGGOar0zJ1KX1NnKaI8gbWLBTPTeFoHMbDiujgVPqWSkNrRjW31DlygC-GntZewVS3CzODih6",
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg"
+    },
+    "other": {
+      "testOnly": true,
+      "privateKeyPkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg4v2zPFE76XbFtvMjmsj42Y0UFfq3zMWfD37NunahM8ihRANCAARXwy0ybJXNsMLvIC2k_uT1IBDPS4PCJZyPc0vXiwVkJRxMRSHC6UnIyzZL7EITAZuctA-iHD27JzmLWcJ_si6I",
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEV8MtMmyVzbDC7yAtpP7k9SAQz0uDwiWcj3NL14sFZCUcTEUhwulJyMs2S-xCEwGbnLQPohw9uyc5i1nCf7IuiA"
+    }
+  },
+  "cases": [
+    {
+      "id": "valid",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "CQU-g8PVBafYICYUnMxQ1qXS20i9UJVxGTYHZ2SEq5mGF4UfS1tuUR5ubTktVYxCNvfkSNq-cskj4jg2Jj-cCg",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": true
+    },
+    {
+      "id": "statement-byte-changed",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000001,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "CQU-g8PVBafYICYUnMxQ1qXS20i9UJVxGTYHZ2SEq5mGF4UfS1tuUR5ubTktVYxCNvfkSNq-cskj4jg2Jj-cCg",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000001,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030312c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "signature-bit-flipped",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "CQU-g8PVBafYICYUnMxQ1qXS20i9UJVxGTYHZ2SEq5mGF4UfS1tuUR5ubTktVYxCNvfkSNq-cskj4jg2Jj-cCw",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "key-bit-flipped",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oew",
+      "signature": "CQU-g8PVBafYICYUnMxQ1qXS20i9UJVxGTYHZ2SEq5mGF4UfS1tuUR5ubTktVYxCNvfkSNq-cskj4jg2Jj-cCg",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "other-key",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEV8MtMmyVzbDC7yAtpP7k9SAQz0uDwiWcj3NL14sFZCUcTEUhwulJyMs2S-xCEwGbnLQPohw9uyc5i1nCf7IuiA",
+      "signature": "CQU-g8PVBafYICYUnMxQ1qXS20i9UJVxGTYHZ2SEq5mGF4UfS1tuUR5ubTktVYxCNvfkSNq-cskj4jg2Jj-cCg",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "typ-byte-changed",
+      "typ": "test-statement.v2",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "CQU-g8PVBafYICYUnMxQ1qXS20i9UJVxGTYHZ2SEq5mGF4UfS1tuUR5ubTktVYxCNvfkSNq-cskj4jg2Jj-cCg",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76320a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "der-encoded-signature",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "MEUCIAkFPoPD1QWn2CAmFJzMUNal0ttIvVCVcRk2B2dkhKuZAiEAhheFH0tbblEebm05LVWMQjb35EjavnLJI-I4NiY_nAo",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "zero-signature",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "out-of-range-signature",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "_____________________________________________________________________________________w",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "signature-not-canonical-base64url",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "CQU-g8PVBafYICYUnMxQ1qXS20i9UJVxGTYHZ2SEq5mGF4UfS1tuUR5ubTktVYxCNvfkSNq-cskj4jg2Jj-cCh",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "key-not-canonical-base64url",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeh",
+      "signature": "CQU-g8PVBafYICYUnMxQ1qXS20i9UJVxGTYHZ2SEq5mGF4UfS1tuUR5ubTktVYxCNvfkSNq-cskj4jg2Jj-cCg",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "key-compressed-point",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MDkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDIgACahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haA",
+      "signature": "CQU-g8PVBafYICYUnMxQ1qXS20i9UJVxGTYHZ2SEq5mGF4UfS1tuUR5ubTktVYxCNvfkSNq-cskj4jg2Jj-cCg",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "fraction-in-statement",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000.5,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "nRAmkuuip1-YaAAfHbaFy_32HK4nlnAKk_AcGsYIa-bUOkYjL79g5SmH-rczXhVMCNTg6O0Vhf7T1R0SZ9k33w",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000.5,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302e352c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "error": "SIGN_UNSAFE_NUMBER",
+      "valid": false
+    },
+    {
+      "id": "unsafe-integer-in-statement",
+      "typ": "test-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 9007199254740992,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "brr-CpqvQdHv90QOLRZGFtBENBxQPgSOYyHHZO6iR0zZSGdln0bIugTwOcv6rUjjvs20jv4qKgTf4-68oAdsag",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":9007199254740992,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a393030373139393235343734303939322c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "error": "SIGN_UNSAFE_NUMBER",
+      "valid": false
+    },
+    {
+      "id": "statement-is-string",
+      "typ": "test-statement.v1",
+      "statement": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "zB7nhSj1IcTNTgus8VAdAASr2wn2qY-_rkmxqd4xd2HTr2_7aXVNu1JnQ3la6pqVvXvZzuZDqRareqdlzvbKZw",
+      "jcs": "\"{\\\"exp\\\":1792000120000,\\\"hub\\\":\\\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\\\",\\\"iat\\\":1792000000000,\\\"nonce\\\":\\\"AAECAwQFBgcICQoLDA0ODw\\\",\\\"note\\\":\\\"Grüße ✓ 😀\\\",\\\"v\\\":1}\"",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a227b5c226578705c223a313739323030303132303030302c5c226875625c223a5c2230314a415a335733423651384d325630473554394b34583752435c222c5c226961745c223a313739323030303030303030302c5c226e6f6e63655c223a5c2241414543417751464267634943516f4c4441304f44775c222c5c226e6f74655c223a5c224772c3bcc39f6520e29c9320f09f98805c222c5c22765c223a317d22",
+      "error": "SIGN_NOT_OBJECT",
+      "valid": false
+    },
+    {
+      "id": "statement-is-array",
+      "typ": "test-statement.v1",
+      "statement": [
+        {
+          "v": 1,
+          "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "nonce": "AAECAwQFBgcICQoLDA0ODw",
+          "iat": 1792000000000,
+          "exp": 1792000120000,
+          "note": "Grüße ✓ 😀"
+        }
+      ],
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "2gITNrCRRI80nsGSMQ3icqwb_NujboOpJokl7LJcNhwzXdfdrY8xmND4x0LibXdwMZt7cZt8x1G3UkqCBuaE-A",
+      "jcs": "[{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}]",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a5b7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d5d",
+      "error": "SIGN_NOT_OBJECT",
+      "valid": false
+    },
+    {
+      "id": "typ-digits-and-hyphens",
+      "typ": "test-2.statement-x.v10",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "gJm-wvufhjBBhmmjp2tNLCzAhWGmMO8-_Yj75dKLOHJhWB69aOD7kOnHKS7Ky3b8oP9-HWoGU8u7aU8sw2asaQ",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d322e73746174656d656e742d782e7631300a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": true
+    },
+    {
+      "id": "typ-upper-case-version",
+      "typ": "test-statement.V1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "B32p94u5y1DsxO5bzGPAVuJAtqRoXyXij_kY0MzA6uOvHwvl6NJ0jJc2brK3zfosV85iDKtKyj9Bq6wzv3Nknw",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e56310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "error": "SIGN_INVALID_TYP",
+      "valid": false
+    },
+    {
+      "id": "typ-version-zero",
+      "typ": "test-statement.v0",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "DBmnQbSFPsWBfOZ3Uh5Xtcjxj_OFRS0SX_tceUOAiChy4DetKjnJSTcBaneuvrtJJtq_dnckwvzPcQOtYgj1iw",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76300a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "error": "SIGN_INVALID_TYP",
+      "valid": false
+    },
+    {
+      "id": "typ-version-leading-zero",
+      "typ": "test-statement.v01",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "vRo9u8bsbUqVBgY0SkU-WV8IXRyyQW_-LAsfJHPKK0RQs4AsHQSXWshXWlvjMUxe2zbW8ceoOH_To5MRxyBORg",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e7630310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "error": "SIGN_INVALID_TYP",
+      "valid": false
+    },
+    {
+      "id": "typ-segment-starting-with-digit",
+      "typ": "test.2-statement.v1",
+      "statement": {
+        "v": 1,
+        "hub": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "nonce": "AAECAwQFBgcICQoLDA0ODw",
+        "iat": 1792000000000,
+        "exp": 1792000120000,
+        "note": "Grüße ✓ 😀"
+      },
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "UdszgI3luH69mBXetVOifFfaoN8varPOJO_X-M7MgKeTrgW6uvW-1RhneFU_u5x9yhWtsVWJV6RchQkv0oFrhA",
+      "jcs": "{\"exp\":1792000120000,\"hub\":\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\",\"iat\":1792000000000,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"note\":\"Grüße ✓ 😀\",\"v\":1}",
+      "signingInputHex": "647261667479616b2f76312f746573742e322d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "error": "SIGN_INVALID_TYP",
+      "valid": false
+    },
+    {
+      "id": "received-inner-space",
+      "typ": "test-statement.v1",
+      "receivedHex": "7b22657870223a313739323030303132303030302c2022687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "FuAoJdnwz_pC1bXqhFmgaBFZdIVNpoLZwRunmEFqH8N612uQ3PEEA8N7yiZFQ-X1g0lVDOZxbM-MGPRpH1Ia4g",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c2022687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    },
+    {
+      "id": "received-trailing-line-feed",
+      "typ": "test-statement.v1",
+      "receivedHex": "7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d0a",
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "b5gpOk2EPRG1r-kMkprmTm8PghMmXlJy7mydV2gCv3AlVdzKzXpnccVyYWv2ovkd3Y-I7xJ_Ro6T1XV2oXWYQA",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d0a",
+      "valid": false
+    },
+    {
+      "id": "received-members-in-other-order",
+      "typ": "test-statement.v1",
+      "receivedHex": "7b2276223a312c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c22696174223a313739323030303030303030302c22657870223a313739323030303132303030302c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880227d",
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "j6F-B8jEawgylu4dn0n-QJOpEcS8i__1uiJxK-5KQas46OvUcPiTNCrx-MJ-q7A_xaS_HS2rn5JWneXoG-Zwfw",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b2276223a312c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c22696174223a313739323030303030303030302c22657870223a313739323030303132303030302c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880227d",
+      "valid": false
+    },
+    {
+      "id": "received-duplicate-member",
+      "typ": "test-statement.v1",
+      "receivedHex": "7b2276223a322c22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEahVvxSbHtFX1Ghhjmq9MydSl9TZymiPIG1iwUz03haBzGw4ro4FT6lkpDa0Y1t9Q5coAvhp7WXsFUtwszg4oeg",
+      "signature": "rErRefYV3oUU0wnfs6Pib3fNwOQv9lnbECAGtb5VvVqULL_K07AuGxJNqr1BYsTr55xSRzMMD_4rBu6f38wO4g",
+      "signingInputHex": "647261667479616b2f76312f746573742d73746174656d656e742e76310a7b2276223a322c22657870223a313739323030303132303030302c22687562223a2230314a415a335733423651384d325630473554394b3458375243222c22696174223a313739323030303030303030302c226e6f6e6365223a2241414543417751464267634943516f4c4441304f4477222c226e6f7465223a224772c3bcc39f6520e29c9320f09f9880222c2276223a317d",
+      "valid": false
+    }
+  ]
+}

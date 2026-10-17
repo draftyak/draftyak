@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/schemas/plugin-error-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "enum": [
+        "AUTH_EXPIRED",
+        "AUTH_REVOKED",
+        "RATE_LIMITED",
+        "QUOTA_EXCEEDED",
+        "CURSOR_EXPIRED",
+        "NOT_FOUND",
+        "PERMISSION_DENIED",
+        "TRANSIENT",
+        "INVALID_INPUT",
+        "UNSUPPORTED",
+        "SEND_REJECTED",
+        "SEND_UNCERTAIN"
+      ]
+    },
+    "retryAfterMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "detail": {
+      "type": "string",
+      "maxLength": 1000
+    }
+  },
+  "required": [
+    "code"
+  ],
+  "additionalProperties": false,
+  "title": "PluginErrorResult",
+  "description": "A plugin tool's error result."
+}
