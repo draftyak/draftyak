@@ -696,7 +696,8 @@ describe("runOnGitHub, the local CLI", () => {
 	let head = "";
 	beforeAll(() => {
 		const git = gitAt(template);
-		writeFileSync(path.join(template, "gitconfig"), "");
+		// No background maintenance: it writes into .git while the template is copied or removed.
+		writeFileSync(path.join(template, "gitconfig"), "[maintenance]\n\tauto = false\n");
 		mkdirSync(path.join(template, "repo"));
 		must(git, "init", "-q", "-b", "m0-08-spikes-run");
 		must(git, "init", "-q", "--bare", path.join(template, "origin.git"));

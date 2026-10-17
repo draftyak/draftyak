@@ -23,6 +23,8 @@ const worktree = path.join(base, "wt");
 const decoy = path.join(base, "decoy");
 function repo(dir: string): void {
 	git(base, "init", "-q", dir);
+	// Background maintenance would write into .git while contents() hashes it.
+	git(dir, "config", "maintenance.auto", "false");
 	writeFileSync(path.join(dir, ".gitignore"), ".env.live\n");
 	git(dir, "add", ".gitignore");
 	const message = path.basename(dir);

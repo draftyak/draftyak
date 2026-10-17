@@ -7,10 +7,11 @@ import { gitEnv } from "../src/scan.ts";
 
 const base = mkdtempSync(path.join(tmpdir(), "draftyak-vendor-guard-"));
 const config = path.join(base, "gitconfig");
-writeFileSync(config, "");
+writeFileSync(config, "[maintenance]\n\tauto = false\n");
 
 // git, here and in the scanner, without the user's or the system's config (excludes, hooks,
-// signing), without repo variables from hooks or `rebase -x`, and never above the temp dir.
+// signing), without repo variables from hooks or `rebase -x`, never above the temp dir, and
+// without background maintenance, which writes into .git while a test reads or removes it.
 export const env: NodeJS.ProcessEnv = {
 	...gitEnv(),
 	GIT_CONFIG_GLOBAL: config,

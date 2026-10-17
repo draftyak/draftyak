@@ -7,7 +7,12 @@ describe("test tiers", () => {
 	it("runs only unit tests by default and never loads .env files", () => {
 		const { envDir, test } = config("test");
 		expect(envDir).toBe(false);
-		expect(test).toMatchObject({ include: [tierFiles.unit], passWithNoTests: false });
+		expect(test).toMatchObject({
+			include: [tierFiles.unit],
+			passWithNoTests: false,
+			testTimeout: 30_000,
+			hookTimeout: 30_000,
+		});
 		expect(test?.exclude).toEqual(
 			expect.arrayContaining([tierFiles.heavy, tierFiles.live, tierFiles.device]),
 		);
@@ -17,7 +22,11 @@ describe("test tiers", () => {
 		"--mode %s runs only that tier, passing with none",
 		(tier) => {
 			const { test } = config(tier);
-			expect(test).toMatchObject({ include: [tierFiles[tier]], passWithNoTests: true });
+			expect(test).toMatchObject({
+				include: [tierFiles[tier]],
+				passWithNoTests: true,
+				testTimeout: 30_000,
+			});
 			expect(test?.exclude).not.toContain(tierFiles[tier]);
 		},
 	);

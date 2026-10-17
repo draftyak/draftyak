@@ -11,13 +11,14 @@ export interface TempRepo {
 	remove(): void;
 }
 
-// A throwaway repository for tests, isolated from the user's git config (signing, hooks, eol).
+// A throwaway repository for tests, isolated from the user's git config (signing, hooks, eol) and
+// without background maintenance, which writes into .git while a test reads or removes it.
 export function tempRepo(): TempRepo {
 	const root = mkdtempSync(path.join(tmpdir(), "draftyak-ci-checks-"));
 	const dir = path.join(root, "repo");
 	const config = path.join(root, "gitconfig");
 	mkdirSync(dir);
-	writeFileSync(config, "");
+	writeFileSync(config, "[maintenance]\n\tauto = false\n");
 	const run = (args: string[], env: Record<string, string> = {}): string => {
 		const result = spawnSync("git", args, {
 			cwd: dir,

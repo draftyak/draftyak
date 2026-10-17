@@ -26,7 +26,7 @@ describe("spikeVitestConfig", () => {
 		expect(heavy?.tags?.map((tag) => tag.name)).toEqual(names);
 		expect(heavy?.tags?.find((tag) => tag.name === "requires:nowhere")?.skip).toBe(true);
 		expect(heavy?.tags?.find((tag) => tag.name === "requires:here")).not.toHaveProperty("skip");
-		expect([config("test").test?.testTimeout, heavy?.testTimeout]).toEqual([undefined, 300_000]);
+		expect([config("test").test?.testTimeout, heavy?.testTimeout]).toEqual([30_000, 300_000]);
 		expect(() => config("production")).toThrow('unknown test tier "production"');
 	});
 
