@@ -1,0 +1,184 @@
+{
+  "recordedAt": "2026-10-17T17:25:38.306Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "78b9f543fa6a36881927889a788e2dc9d5a30646",
+    "dirty": true,
+    "load": {
+      "cpuPercent": 15.7,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 70.2,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "package": "better-sqlite3-multiple-ciphers@13.0.3",
+    "napiExpected": 10,
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "prebuilds": {
+      "darwin-arm64": "e220712cd3af9dd575fe4ac7973d5dbfbad3d22760b772a48f1eee977517ef5b",
+      "darwin-x64": "4434dfa929e9b83fdc1ea34ee8739e764fcf09af8559ab039082b7b673b18805",
+      "linux-arm64": "e5c2b6bd85726bc53a4b8767d4bbb8be82feaad46b45b9c82c885cb02d54e7d0",
+      "linux-x64": "3607ea18911c931085eaa896eb831260d549e9bcef2dd6e8896b5bb7a41ec6a8",
+      "linuxmusl-arm64": "670af6edb9a5225bd1e934124c23494ba6a9f6f03bf7987d0729ab05a3b21734",
+      "linuxmusl-x64": "98bd72b54e55a39bacb4c1eb65ecb2c91e1e69557b9d9f4a0a5a8444c6b742c3",
+      "win32-arm64": "95ff36ee761a846fc4d0fae7eed209b47b21c8d41f5528f40d7beb5f30e62666",
+      "win32-x64": "d4f29082cde7efd5c1e85e794ba532efeef4f2f968c58cc54fe97c2095270262"
+    },
+    "hosts": [
+      "win32-x64"
+    ],
+    "complete": false,
+    "targets": {
+      "darwin-arm64": {
+        "26.5.1": {
+          "status": "not run",
+          "napiVersions": [],
+          "ranOn": [],
+          "problems": []
+        },
+        "26.12.0": {
+          "status": "not run",
+          "napiVersions": [],
+          "ranOn": [],
+          "problems": []
+        }
+      },
+      "darwin-x64": {
+        "26.5.1": {
+          "status": "not run",
+          "napiVersions": [],
+          "ranOn": [],
+          "problems": []
+        },
+        "26.12.0": {
+          "status": "not run",
+          "napiVersions": [],
+          "ranOn": [],
+          "problems": []
+        }
+      },
+      "linux-arm64": {
+        "26.5.1": {
+          "status": "not run",
+          "napiVersions": [],
+          "ranOn": [],
+          "problems": []
+        },
+        "26.12.0": {
+          "status": "not run",
+          "napiVersions": [],
+          "ranOn": [],
+          "problems": []
+        }
+      },
+      "linux-x64": {
+        "26.5.1": {
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "win32-x64 docker"
+          ],
+          "problems": []
+        },
+        "26.12.0": {
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "win32-x64 docker"
+          ],
+          "problems": []
+        }
+      },
+      "linuxmusl-arm64": {
+        "26.5.1": {
+          "status": "not run",
+          "napiVersions": [],
+          "ranOn": [],
+          "problems": []
+        },
+        "26.12.0": {
+          "status": "not run",
+          "napiVersions": [],
+          "ranOn": [],
+          "problems": []
+        }
+      },
+      "linuxmusl-x64": {
+        "26.5.1": {
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "win32-x64 docker"
+          ],
+          "problems": []
+        },
+        "26.12.0": {
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "win32-x64 docker"
+          ],
+          "problems": []
+        }
+      },
+      "win32-arm64": {
+        "26.5.1": {
+          "status": "not run",
+          "napiVersions": [],
+          "ranOn": [],
+          "problems": []
+        },
+        "26.12.0": {
+          "status": "not run",
+          "napiVersions": [],
+          "ranOn": [],
+          "problems": []
+        }
+      },
+      "win32-x64": {
+        "26.5.1": {
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "win32-x64 native"
+          ],
+          "problems": []
+        },
+        "26.12.0": {
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "win32-x64 native"
+          ],
+          "problems": []
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@draftyak/spike-s01-sqlite3mc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "node ../kit/run.ts",
+    "test:heavy": "node ../kit/run.ts --heavy",
+    "record": "node src/record.ts",
+    "evidence": "node src/matrix.ts"
+  },
+  "dependencies": {
+    "better-sqlite3-multiple-ciphers": "13.0.3"
+  },
+  "devDependencies": {
+    "@draftyak/spike-kit": "workspace:*"
+  }
+}
