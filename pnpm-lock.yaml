@@ -80,6 +80,22 @@ importers:
         specifier: 4.10.2
         version: 4.10.2
 
+  spikes/s03b-bridge-elicitation:
+    dependencies:
+      '@modelcontextprotocol/server':
+        specifier: 2.3.1
+        version: 2.3.1
+    devDependencies:
+      '@draftyak/spike-kit':
+        specifier: workspace:*
+        version: link:../kit
+      '@draftyak/spike-s03-mcp-sdk':
+        specifier: workspace:*
+        version: link:../s03-mcp-sdk
+      '@modelcontextprotocol/client':
+        specifier: 2.3.1
+        version: 2.3.1
+
   spikes/s04-oauth-as:
     dependencies:
       '@hono/node-server':
@@ -291,6 +307,10 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@modelcontextprotocol/client@2.3.1':
+    resolution: {integrity: sha512-mIGZXpHsjnZ6lD+gD/WCMpR5k8yVQQ8nNFH1N0Srf7AvnwTUMYD6pvTY8ng2+He5FfV7YMZLmrjL7cLa/cc3dQ==}
+    engines: {node: '>=20'}
 
   '@modelcontextprotocol/conformance@0.2.0-alpha.12':
     resolution: {integrity: sha512-eXtZFgmtZiU5SsvXty+RGXGnyIqEVm3GLU/HZmg1wMjtKOocPZZgD9HQKd30oJhio5UB0wFJmsc6r8u48Q+EYA==}
@@ -1631,6 +1651,16 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  '@modelcontextprotocol/client@2.3.1':
+    dependencies:
+      '@modelcontextprotocol/core': 2.3.1
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.1
+      jose: 6.2.12
+      pkce-challenge: 5.0.1
+      zod: 4.6.7
 
   '@modelcontextprotocol/conformance@0.2.0-alpha.12':
     dependencies:

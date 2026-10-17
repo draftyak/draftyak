@@ -1,0 +1,418 @@
+{
+  "recordedAt": "2026-10-18T00:49:42.129Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "1de23720f074be78482283574d76cc6c68dc4f20",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 28.3,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 58.7,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "sdk": {
+      "serverVersion": "2.3.1",
+      "clientVersion": "2.3.1"
+    },
+    "bridge": {
+      "upstream": "2026-07-28 requests: per-request envelope, MCP-Protocol-Version, Mcp-Method, Mcp-Name",
+      "downstream": [
+        "2025-11-25",
+        "2025-06-18",
+        "2025-03-26"
+      ],
+      "translator": "the server SDK's legacy input-required shim (inputRequired.legacyShim)",
+      "maxRounds": 1,
+      "answerTimeoutMs": 595000,
+      "stateTtlMs": 600000,
+      "discoverTimeoutMs": 10000,
+      "maxNameLength": 8192,
+      "passedThrough": "the client's initialize-declared elicitation object cut to its revision, plus the UI extension"
+    },
+    "clientTimeouts": {
+      "sdkDefaultMs": 60000,
+      "longMs": 1200000
+    },
+    "accountForm": [
+      {
+        "dialogs": 1,
+        "hubRequests": 2,
+        "rendered": "the chosen account",
+        "retryDigestEqual": true,
+        "stateSeenByClient": false
+      }
+    ],
+    "answerRechecked": [
+      {
+        "answer": "alias outside the allowlist",
+        "dialogs": 1,
+        "rendered": "every account"
+      },
+      {
+        "answer": "alias in another case",
+        "dialogs": 1,
+        "rendered": "every account"
+      },
+      {
+        "answer": "decline",
+        "dialogs": 1,
+        "rendered": "every account"
+      },
+      {
+        "answer": "cancel",
+        "dialogs": 1,
+        "rendered": "every account"
+      }
+    ],
+    "approvalDelay": [
+      {
+        "flow": "account form",
+        "clientTimeoutMs": 60000,
+        "clientTimeout": "SDK default",
+        "delaySeconds": 30,
+        "outcome": "served",
+        "hubRequests": 2
+      },
+      {
+        "flow": "account form",
+        "clientTimeoutMs": 60000,
+        "clientTimeout": "SDK default",
+        "delaySeconds": 59,
+        "outcome": "served",
+        "hubRequests": 2
+      },
+      {
+        "flow": "account form",
+        "clientTimeoutMs": 60000,
+        "clientTimeout": "SDK default",
+        "delaySeconds": 61,
+        "outcome": "client timeout",
+        "dialogClosedAfterMs": 60000,
+        "hubRequests": 1
+      },
+      {
+        "flow": "account form",
+        "clientTimeoutMs": 1200000,
+        "clientTimeout": "set per request",
+        "delaySeconds": 300,
+        "outcome": "served",
+        "hubRequests": 2
+      },
+      {
+        "flow": "account form",
+        "clientTimeoutMs": 1200000,
+        "clientTimeout": "set per request",
+        "delaySeconds": 594,
+        "outcome": "served",
+        "hubRequests": 2
+      },
+      {
+        "flow": "account form",
+        "clientTimeoutMs": 1200000,
+        "clientTimeout": "set per request",
+        "delaySeconds": 596,
+        "outcome": "bridge timeout",
+        "dialogClosedAfterMs": 595000,
+        "hubRequests": 1
+      },
+      {
+        "flow": "account form",
+        "clientTimeoutMs": 1200000,
+        "clientTimeout": "set per request",
+        "delaySeconds": 700,
+        "progressEverySeconds": 100,
+        "outcome": "readable expiry error",
+        "hubRequests": 2
+      },
+      {
+        "flow": "account form",
+        "clientTimeoutMs": 60000,
+        "clientTimeout": "SDK default",
+        "delaySeconds": 30,
+        "event": "hub restart",
+        "outcome": "readable expiry error",
+        "hubRequests": 2
+      },
+      {
+        "flow": "account form",
+        "clientTimeoutMs": 60000,
+        "clientTimeout": "SDK default",
+        "delaySeconds": 601,
+        "event": "clock jump",
+        "outcome": "readable expiry error",
+        "hubRequests": 2
+      },
+      {
+        "flow": "session-pending read",
+        "clientTimeoutMs": 60000,
+        "clientTimeout": "SDK default",
+        "delaySeconds": 30,
+        "outcome": "served",
+        "hubRequests": 2
+      },
+      {
+        "flow": "session-pending read",
+        "clientTimeoutMs": 60000,
+        "clientTimeout": "SDK default",
+        "delaySeconds": 61,
+        "outcome": "client timeout",
+        "dialogClosedAfterMs": 60000,
+        "hubRequests": 1
+      },
+      {
+        "flow": "session-pending read",
+        "clientTimeoutMs": 1200000,
+        "clientTimeout": "set per request",
+        "delaySeconds": 594,
+        "outcome": "served",
+        "hubRequests": 2
+      },
+      {
+        "flow": "session-pending read",
+        "clientTimeoutMs": 1200000,
+        "clientTimeout": "set per request",
+        "delaySeconds": 596,
+        "outcome": "bridge timeout",
+        "dialogClosedAfterMs": 595000,
+        "hubRequests": 1
+      },
+      {
+        "flow": "session-pending read accepted before the approval",
+        "delaySeconds": 0,
+        "outcome": "readable 1001 after one round",
+        "hubRequests": 2
+      }
+    ],
+    "dialogTimeout": [
+      {
+        "closedBy": "the bridge",
+        "clientTimeoutMs": 1200000,
+        "cancelledAfterMs": 595000,
+        "errorCode": -32603,
+        "hubRetries": 0
+      },
+      {
+        "closedBy": "the client's cancel",
+        "dialogClosed": true,
+        "hubRetries": 0
+      }
+    ],
+    "abandonedDialogs": [
+      {
+        "abandoned": 5,
+        "openStatesPerPrincipal": 5,
+        "nextRequest": "every account, no dialog",
+        "afterStatesLapse": "the form again"
+      }
+    ],
+    "maxRounds": [
+      {
+        "maxRounds": 1,
+        "dialogsPerRequest": 1,
+        "promptsError": -32603,
+        "toolsResult": "isError"
+      },
+      {
+        "maxRounds": 2,
+        "dialogsPerRequest": 2,
+        "promptsError": -32603,
+        "toolsResult": "isError"
+      },
+      {
+        "hub": "s03 (one round)",
+        "dialogsPerRequest": 1
+      }
+    ],
+    "retries": [
+      {
+        "hubState": "none",
+        "answersForwarded": true,
+        "dialogs": 1
+      },
+      {
+        "method": "tools/call",
+        "hubRefusedState": true,
+        "result": "isError, readable"
+      }
+    ],
+    "capabilityPassThrough": [
+      {
+        "revision": "2025-11-25",
+        "declared": "{}",
+        "hubSaw": "{\"extensions\":{\"io.modelcontextprotocol/ui\":{\"mimeTypes\":[\"text/html;profile=mcp-app\"]}}}",
+        "formDialog": false,
+        "urlDialog": false
+      },
+      {
+        "revision": "2025-11-25",
+        "declared": "{\"elicitation\":{}}",
+        "hubSaw": "{\"elicitation\":{\"form\":{}},\"extensions\":{\"io.modelcontextprotocol/ui\":{\"mimeTypes\":[\"text/html;profile=mcp-app\"]}}}",
+        "formDialog": true,
+        "urlDialog": false
+      },
+      {
+        "revision": "2025-11-25",
+        "declared": "{\"elicitation\":{\"form\":{}}}",
+        "hubSaw": "{\"elicitation\":{\"form\":{}},\"extensions\":{\"io.modelcontextprotocol/ui\":{\"mimeTypes\":[\"text/html;profile=mcp-app\"]}}}",
+        "formDialog": true,
+        "urlDialog": false
+      },
+      {
+        "revision": "2025-11-25",
+        "declared": "{\"elicitation\":{\"url\":{}}}",
+        "hubSaw": "{\"elicitation\":{\"url\":{}},\"extensions\":{\"io.modelcontextprotocol/ui\":{\"mimeTypes\":[\"text/html;profile=mcp-app\"]}}}",
+        "formDialog": false,
+        "urlDialog": true
+      },
+      {
+        "revision": "2025-11-25",
+        "declared": "{\"elicitation\":{\"form\":{\"applyDefaults\":true},\"url\":{}},\"sampling\":{},\"roots\":{}}",
+        "hubSaw": "{\"elicitation\":{\"form\":{\"applyDefaults\":true},\"url\":{}},\"extensions\":{\"io.modelcontextprotocol/ui\":{\"mimeTypes\":[\"text/html;profile=mcp-app\"]}}}",
+        "formDialog": true,
+        "urlDialog": true
+      },
+      {
+        "revision": "2025-06-18",
+        "declared": "{\"elicitation\":{}}",
+        "hubSaw": "{\"elicitation\":{\"form\":{}},\"extensions\":{\"io.modelcontextprotocol/ui\":{\"mimeTypes\":[\"text/html;profile=mcp-app\"]}}}",
+        "formDialog": true,
+        "urlDialog": false
+      },
+      {
+        "revision": "2025-06-18",
+        "declared": "{\"elicitation\":{\"form\":{},\"url\":{}}}",
+        "hubSaw": "{\"elicitation\":{\"form\":{}},\"extensions\":{\"io.modelcontextprotocol/ui\":{\"mimeTypes\":[\"text/html;profile=mcp-app\"]}}}",
+        "formDialog": true,
+        "urlDialog": false
+      },
+      {
+        "revision": "2025-06-18",
+        "declared": "{\"elicitation\":{\"url\":{}}}",
+        "hubSaw": "{\"extensions\":{\"io.modelcontextprotocol/ui\":{\"mimeTypes\":[\"text/html;profile=mcp-app\"]}}}",
+        "formDialog": false,
+        "urlDialog": false
+      },
+      {
+        "revision": "2025-03-26",
+        "declared": "{\"elicitation\":{\"form\":{},\"url\":{}}}",
+        "hubSaw": "{\"extensions\":{\"io.modelcontextprotocol/ui\":{\"mimeTypes\":[\"text/html;profile=mcp-app\"]}}}",
+        "formDialog": false,
+        "urlDialog": false
+      },
+      {
+        "revision": "2025-06-18",
+        "dialogFieldsOutsideTheRevision": [
+          "mode",
+          "requestedSchema.$schema"
+        ]
+      }
+    ],
+    "eras": [
+      {
+        "client": "2026-era SDK client, auto negotiation",
+        "discoverProbe": -32601,
+        "negotiated": "2025-11-25"
+      }
+    ],
+    "parity": [
+      {
+        "requests": 33,
+        "wellFormed": 19,
+        "malformed": 14,
+        "malformedCodes": {
+          "-32603": 1,
+          "-32602": 13
+        },
+        "equal": 33,
+        "comparison": "the same JSON value, key order aside"
+      }
+    ],
+    "injectedState": [
+      {
+        "method": "prompts/get",
+        "errorCode": -32602,
+        "reachedHub": false
+      },
+      {
+        "method": "resources/read",
+        "errorCode": -32602,
+        "reachedHub": false
+      },
+      {
+        "method": "tools/call",
+        "errorCode": -32602,
+        "reachedHub": false
+      },
+      {
+        "method": "tools/list",
+        "served": true,
+        "reachedHub": false
+      },
+      {
+        "method": "prompts/list",
+        "served": true,
+        "reachedHub": false
+      },
+      {
+        "method": "resources/list",
+        "served": true,
+        "reachedHub": false
+      },
+      {
+        "method": "resources/templates/list",
+        "served": true,
+        "reachedHub": false
+      },
+      {
+        "method": "completion/complete",
+        "served": true,
+        "reachedHub": false
+      },
+      {
+        "method": "prompts/get",
+        "served": true,
+        "reachedHub": false
+      },
+      {
+        "method": "resources/read",
+        "served": true,
+        "reachedHub": false
+      },
+      {
+        "method": "tools/call",
+        "served": true,
+        "reachedHub": false
+      }
+    ],
+    "headers": [
+      {
+        "mcpName": "plain or Base64 sentinel",
+        "hubAnswer": -32602
+      },
+      {
+        "mcpNameOver": 8192,
+        "answer": -32602,
+        "reachedHub": false
+      }
+    ],
+    "hubErrors": [
+      {
+        "refusedToken": "readable",
+        "hubDown": "readable",
+        "silentHub": "readable, after the discover timeout"
+      }
+    ]
+  }
+}
