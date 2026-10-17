@@ -1,0 +1,17 @@
+{
+  "name": "@draftyak/spike-s03b-bridge-elicitation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "node ../kit/run.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1"
+  },
+  "devDependencies": {
+    "@draftyak/spike-kit": "workspace:*",
+    "@draftyak/spike-s03-mcp-sdk": "workspace:*",
+    "@modelcontextprotocol/client": "2.3.1"
+  }
+}
