@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+  - plugins/*
+  - spikes/*
+  - tools/*
+
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude: []
+allowBuilds: {}
+engineStrict: true
+savePrefix: ''
+verifyDepsBeforeRun: error

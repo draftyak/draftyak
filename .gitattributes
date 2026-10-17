@@ -1,0 +1,39 @@
+* text=auto eol=lf
+
+*.eml -text
+**/vectors/** -text
+security/** -text
+spikes/**/fixtures/** -text
+
+*.bat eol=crlf
+*.cmd eol=crlf
+
+*.7z binary
+*.bin binary
+*.dll binary
+*.dylib binary
+*.exe binary
+*.gif binary
+*.gpg binary
+*.gz binary
+*.icns binary
+*.ico binary
+*.jar binary
+*.jpeg binary
+*.jpg binary
+*.kbx binary
+*.node binary
+*.pdf binary
+*.png binary
+*.sig binary
+*.so binary
+*.sqlite binary
+*.tgz binary
+*.ttf binary
+*.wasm binary
+*.webp binary
+*.whl binary
+*.woff binary
+*.woff2 binary
+*.xz binary
+*.zip binary

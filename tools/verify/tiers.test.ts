@@ -1,0 +1,28 @@
+import { describe, expect, it } from "vitest";
+import { type Tier, tierFiles, vitestConfig } from "../../vitest.shared.ts";
+
+const config = (mode: string) => vitestConfig({ command: "serve", mode });
+
+describe("test tiers", () => {
+	it("runs only unit tests by default and never loads .env files", () => {
+		const { envDir, test } = config("test");
+		expect(envDir).toBe(false);
+		expect(test).toMatchObject({ include: [tierFiles.unit], passWithNoTests: false });
+		expect(test?.exclude).toEqual(
+			expect.arrayContaining([tierFiles.heavy, tierFiles.live, tierFiles.device]),
+		);
+	});
+
+	it.each<Tier>(["heavy", "live", "device"])(
+		"--mode %s runs only that tier, passing with none",
+		(tier) => {
+			const { test } = config(tier);
+			expect(test).toMatchObject({ include: [tierFiles[tier]], passWithNoTests: true });
+			expect(test?.exclude).not.toContain(tierFiles[tier]);
+		},
+	);
+
+	it("refuses an unknown mode", () => {
+		expect(() => config("production")).toThrow('unknown test tier "production"');
+	});
+});

@@ -1,0 +1,11 @@
+{
+  "name": "@draftyak/verify",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:heavy": "vitest run --mode heavy",
+    "m0:prefetch": "node prefetch.ts"
+  }
+}

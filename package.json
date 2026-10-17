@@ -1,0 +1,33 @@
+{
+  "name": "@draftyak/workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.28.6",
+  "engines": {
+    "node": ">=26.5.1"
+  },
+  "scripts": {
+    "lint": "biome ci .",
+    "format": "biome check --write .",
+    "typecheck": "node tools/verify/turbo.ts run typecheck",
+    "test": "node tools/verify/turbo.ts run test",
+    "build": "node tools/verify/turbo.ts run build",
+    "verify": "node tools/verify/verify.ts",
+    "verify:m0": "node tools/verify/verify.ts --profile m0",
+    "fetch-node": "node tools/fetch-node/fetch-node.mjs",
+    "guard": "pnpm --filter @draftyak/vendor-guard --fail-if-no-match run guard",
+    "adr": "pnpm --filter @draftyak/adr-check --fail-if-no-match run adr",
+    "pr-size": "pnpm --filter @draftyak/ci-checks --fail-if-no-match run pr-size",
+    "ci:minutes": "pnpm --filter @draftyak/ci-checks --fail-if-no-match run ci:minutes",
+    "spikes:run": "pnpm --filter @draftyak/ci-checks --fail-if-no-match run spikes:run",
+    "m0:prefetch": "pnpm --filter @draftyak/verify --fail-if-no-match run m0:prefetch"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "26.6.5",
+    "turbo": "2.11.8",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
+  }
+}
