@@ -22,18 +22,18 @@ Constraints: the dev box has the JDK, the SDK and only `android-sdk-license`, bu
 - **Android SDK licences in CI:** route (a), CI answers yes to `sdkmanager --licenses`, accepting every licence the runner's sdkmanager presents, then installs the packages it needs; or route (b), only preinstalled components.
 
 ## Decision
-Not run
+Go
 
 Plan changes: M1b links keyring-core 1.0.1 and the store crates instead of the keyring 4.2.0 crate (§2, §8); M1b's statement verifier refuses duplicate JSON keys while parsing, before JCS, as the skeleton's `statement_message` does (§7, §9.3); tokio-tungstenite runs over the transport's tokio-rustls stream (§2); M10 commits `gen/android` and `gen/apple` (§11 `mobile.yml`); `ring` stays the provider, because aws-lc-rs everywhere is no for now (§2).
 
-### Pending: the Android and iOS runs
-The decision stays `Not run` until `pnpm spikes:run --spikes s10 --os ubuntu-24.04` and run B2 (`--os macos-15`) report. Both builds ok with `ring` makes it `Go`; a build that needs a Fallback below makes it `Go with fallback`; their run ids go into Evidence. The local runs answer only the Windows x64 host row, and CI's `full` job on this item's PR adds the Linux x64 host row.
+### The Android and iOS runs
+Both reported ok with `ring` on 2026-10-17, so the decision is `Go` (a build that had needed a Fallback below would have made it `Go with fallback`). `pnpm spikes:run --spikes s10 --os ubuntu-24.04` (run 39079912326, 11 billed minutes) built the APK, and its merged manifest passed the denylist and the permission allowlist; run B2, `--os macos-15` (run 39080579071, 71 billed minutes), built the iPhone and iPad simulator app with `--no-sign`. In both, the transport skeleton linked as a cdylib for the mobile target with `ring` and with aws-lc-rs. The local runs answer the Windows x64 host row, and CI's `full` job on this item's PR (#25) the Linux x64 host row.
 
 ### Licence route (a)
 The owner chose route (a) on 2026-10-17. In the ubuntu job, `android-actions/setup-android` (v4.0.4, `accept-android-sdk-licenses: true`) answers yes to `sdkmanager --licenses`, which accepts every SDK licence the runner's sdkmanager presents, and to each package install; it then installs ci.json's `platforms;android-37.0`, `build-tools;37.0.0` and `ndk;29.0.13846066`, the NDK tauri-cli 2.12.3 installs by default. The dev box keeps only `android-sdk-license`, which the owner accepted.
 
 ### aws-lc-rs everywhere: no
-It builds and passes the transport tests on the Windows x64 host, with aws-lc-sys's CC builder and its prebuilt NASM objects, but the Linux, Android, iOS, M0.21 Windows and M0.23b macOS rows are still pending (Evidence), so M1b keeps `ring`, §2's default. M0.41 turns this into yes only if every row shows aws-lc-rs building with no extra tools: aws-lc-sys's builder is CC, never CMake (it falls back to CMake when the CC builder can't build a target, which passes unnoticed wherever cmake is installed, as on GitHub's runners), and Windows x64 uses the prebuilt NASM objects. Each crate table's aws-lc-rs line and the host evidence's `awsLcSys` record both. The iOS device target (`aarch64-apple-ios`) and every Android ABI M10 ships must be green too, so yes can come no earlier than M10's first `mobile.yml` run.
+It builds and passes the transport tests on the Windows x64 host, with aws-lc-sys's CC builder and its prebuilt NASM objects, and it links on Linux x64 and for the Android and iOS simulator targets, but M0.41 still has to read each builder from the job summaries, and the M0.21 Windows and M0.23b macOS rows are pending (Evidence), so M1b keeps `ring`, §2's default. M0.41 turns this into yes only if every row shows aws-lc-rs building with no extra tools: aws-lc-sys's builder is CC, never CMake (it falls back to CMake when the CC builder can't build a target, which passes unnoticed wherever cmake is installed, as on GitHub's runners), and Windows x64 uses the prebuilt NASM objects. Each crate table's aws-lc-rs line and the host evidence's `awsLcSys` record both. The iOS device target (`aarch64-apple-ios`) and every Android ABI M10 ships must be green too, so yes can come no earlier than M10's first `mobile.yml` run.
 
 ### The changes in detail
 - **Keyring (M1b `crates/draftyak-transport`):** link keyring-core 1.0.1 and the store crates (android-native 1.0.0 on Android, apple-native 1.0.2 with `protected` on iOS and `keychain` on macOS, windows-native 1.1.0, zbus-secret-service 1.0.1), not the keyring 4.2.0 crate. Desktop targets use the S5 stores, never the mock: the skeleton links no desktop store, and keyring-core's in-memory mock comes only with its `mock-store` feature, which only its tests turn on (§7: a mock store is e2e-only, and `release-guard` checks it's absent). The Android store needs `ndk-context` initialized with the application context (the crate exports a JNI `initializeNdkContext` for that); M10 wires it or confirms that Tauri's activity already does.
@@ -53,15 +53,15 @@ It builds and passes the transport tests on the Windows x64 host, with aws-lc-sy
 
 ## Evidence
 - `spikes/s10-mobile/evidence/host-win32-x64.json`: the Windows x64 host (dev box, Rust 1.95.0). Both providers link the skeleton as a cdylib with every crate of the set compiled and the other provider's crates absent. `cargo test` (11 tests: the full check; TLS 1.3 only, without session tickets, on the compiled provider; wrong-hub and wrong-device pins; the pairing claim bound to its connection and certificate; proof and SAS vectors; JCS and repeated keys; the bundled tz database; hub ids) and `cargo clippy -D warnings` (all targets, and the library without the tests' mock store) pass for both; rustfmt and the app crate's clippy pass. `awsLcRs: builds`, with aws-lc-sys's CC builder and the prebuilt NASM objects (`awsLcSys`).
-- Pending, in job summaries only (the backlog asks for no artifact): `pnpm spikes:run --spikes s10 --os ubuntu-24.04` (the APK's SHA-256 and size; merged-manifest permissions with no SMS or notification-listener entries and none outside the allowlist; the packaged library holding the transport code; the `aarch64-linux-android` crate table), then run B2 with `--os macos-15` (`iOS simulator build: ok`, UIDeviceFamily 1,2, the Xcode and XcodeGen versions, the `aarch64-apple-ios-sim` crate table), and CI's `full` job on this item's PR (the Linux x64 host crate table, `cargo test` and clippy).
+- In the job summaries (the backlog asks for no artifact; GitHub keeps them about 90 days, so M0.41 copies what it cites): run 39079912326, `pnpm spikes:run --spikes s10 --os ubuntu-24.04` on 2026-10-17 (the APK's SHA-256 and size; merged-manifest permissions with no SMS or notification-listener entries and none outside the allowlist; the packaged library holding the transport code; the `aarch64-linux-android` crate table); run 39080579071, run B2 with `--os macos-15` on 2026-10-17 (`iOS simulator build: ok`, UIDeviceFamily 1,2, the Xcode and XcodeGen versions, the `aarch64-apple-ios-sim` crate table); and CI's `full` job on PR #25, run 39079588168 (the Linux x64 host crate table, `cargo test` and clippy). Both spikes runs passed `test/build.heavy.test.ts` (3 passed, 7 skipped for the other OS).
 - aws-lc-rs per row:
 
   | Where | From | aws-lc-rs |
   |---|---|---|
   | Windows x64 host, transport set | this spike, `host-win32-x64.json` | builds (CC builder, prebuilt NASM); tests and clippy pass |
-  | Linux x64 host, transport set | CI `full` on this item's PR | pending |
-  | Android `aarch64-linux-android` | `spikes-run` on ubuntu-24.04 | pending |
-  | iOS simulator `aarch64-apple-ios-sim` | run B2 | pending |
+  | Linux x64 host, transport set | CI `full` on PR #25, run 39079588168 | links as a cdylib; cargo test and clippy pass; builder in the job summary |
+  | Android `aarch64-linux-android` | run 39079912326 | links as a cdylib; builder in the job summary |
+  | iOS simulator `aarch64-apple-ios-sim` | run B2, 39080579071 | links as a cdylib; builder in the job summary |
   | iOS device `aarch64-apple-ios` | M10 `mobile.yml` | not built in M0 |
   | Android ABIs other than arm64 that M10 ships | M10 `mobile.yml` | not built in M0 |
   | Windows, S5 desktop set | M0.21 | pending, for M0.41 |
