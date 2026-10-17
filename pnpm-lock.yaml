@@ -35,6 +35,8 @@ importers:
 
   tools/fetch-node: {}
 
+  tools/vendor-guard: {}
+
   tools/verify: {}
 
 packages:
