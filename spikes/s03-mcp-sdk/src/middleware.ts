@@ -153,7 +153,8 @@ export const versionAllowlist: MiddlewareHandler<Env> = async (c, next) => {
 
 const digest = (value: string): Buffer => createHash("sha256").update(value).digest();
 
-// 5. A stub principal: one fixed agent identity, optionally behind a bearer token.
+// 5. A stub principal: one fixed agent token, optionally behind a bearer token. extra names the
+// principal as the hub's token check would: grantId for an MCP grant, agentTokenId for a token.
 export function principal(token?: string): MiddlewareHandler<Env> {
 	return async (c, next) => {
 		const given = c.req.header("authorization") ?? "";
@@ -167,6 +168,7 @@ export function principal(token?: string): MiddlewareHandler<Env> {
 			clientId: "stub-agent",
 			scopes: ["inbox:read"],
 			resource,
+			extra: { agentTokenId: "stub-agent" },
 		});
 		await next();
 	};
