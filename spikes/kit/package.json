@@ -1,0 +1,14 @@
+{
+  "name": "@draftyak/spike-kit",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./vitest": "./vitest.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "node run.ts",
+    "test:heavy": "node run.ts --heavy"
+  }
+}
