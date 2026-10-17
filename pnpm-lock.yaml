@@ -210,6 +210,18 @@ importers:
         specifier: workspace:*
         version: link:../kit
 
+  spikes/sched-clock:
+    devDependencies:
+      '@biomejs/biome':
+        specifier: 2.5.15
+        version: 2.5.15
+      '@draftyak/spike-kit':
+        specifier: workspace:*
+        version: link:../kit
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
+
   tools/adr-check: {}
 
   tools/ci-checks: {}
