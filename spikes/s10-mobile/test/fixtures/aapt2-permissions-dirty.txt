@@ -1,0 +1,4 @@
+package: com.example.dirty
+uses-permission: name='android.permission.INTERNET'
+uses-permission: name='android.permission.RECEIVE_SMS'
+uses-permission-sdk-23: name='android.permission.READ_SMS'
