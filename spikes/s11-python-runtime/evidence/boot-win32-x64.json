@@ -1,0 +1,662 @@
+{
+  "recordedAt": "2026-10-17T21:34:38.449Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "a9bfbbf86020991154b4b6db1a1c30dd057199f7",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 4.7,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 66.2,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "win32-x64",
+    "runtime": {
+      "pyodide": "314.0.7",
+      "abi": "pyemscripten_2026_0",
+      "python": "3.14.2",
+      "shimSha256": "5312fa65ed371c9e70048482f2b207b39d4f3f540897b702ec80896da000b62e",
+      "wheels": [
+        {
+          "name": "certifi",
+          "version": "2026.4.22",
+          "sha256": "c2c0091986db798df5fd84582d289496f31244a898ec032b7015278c2d82c80c"
+        },
+        {
+          "name": "charset-normalizer",
+          "version": "3.4.7",
+          "sha256": "9e437ef92fa51f06eedeb1ef092c0a887bd24fe0d40b1e900191117ce1653121"
+        },
+        {
+          "name": "idna",
+          "version": "3.11",
+          "sha256": "1619419bc899f07c7a608a12e8238e5e0bc15bb25fec90cfe20a86bb849ba0d8"
+        },
+        {
+          "name": "requests",
+          "version": "2.33.1",
+          "sha256": "6d62c51c4e7707386bfc2ef54845c16cdaeb99606c064357cccfe4d621285175"
+        },
+        {
+          "name": "typing-extensions",
+          "version": "4.15.0",
+          "sha256": "4fec68770a05408e668a4fa53d6bf4f0f684b9dacf820c7c5d6e97d3ad225e29"
+        },
+        {
+          "name": "urllib3",
+          "version": "2.6.3",
+          "sha256": "86b7c1af060597b115bcde5e36798039ca50b221afe14aa03d3437ac09b02a75"
+        }
+      ],
+      "kernelVersion": "10.0.26200"
+    },
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "variants": [
+      "base",
+      "freeze"
+    ],
+    "argv": [
+      "--permission",
+      "--allow-fs-read=<pluginDir>",
+      "--allow-fs-read=<runtimeDir>",
+      "--no-experimental-sqlite",
+      "--disable-sigusr1",
+      "--disallow-code-generation-from-strings",
+      "--max-old-space-size=256",
+      "--wasm-max-mem-pages=8192",
+      "<runtimeDir>\\shim.mjs",
+      "<pluginDir>"
+    ],
+    "cases": [
+      {
+        "node": "26.5.1",
+        "variant": "base",
+        "passed": true,
+        "controls": [
+          {
+            "mode": "none",
+            "outcome": "failed",
+            "code": "ERR_ACCESS_DENIED",
+            "binding": true
+          },
+          {
+            "mode": "stub",
+            "outcome": "booted",
+            "code": null,
+            "binding": false
+          }
+        ],
+        "ready": {
+          "pyodide": "314.0.7",
+          "python": "3.14.2",
+          "jspi": "function",
+          "packages": [
+            "certifi",
+            "charset-normalizer",
+            "idna",
+            "py-hello",
+            "requests",
+            "typing-extensions",
+            "urllib3"
+          ],
+          "grantsDropped": 2,
+          "readAfterDrop": false,
+          "bootMs": 1836
+        },
+        "bootFailure": null,
+        "discoverMs": 2099,
+        "firstToolsListMs": 2101,
+        "supportedVersions": [
+          "2026-07-28"
+        ],
+        "wireProblems": [],
+        "tools": [
+          "hello",
+          "fetch_status",
+          "http_clients",
+          "runtime_info"
+        ],
+        "runSyncFetch": {
+          "status": 200,
+          "bodyLength": 9,
+          "canRunSync": true
+        },
+        "httpClients": {
+          "pyfetch": {
+            "status": 200,
+            "body": "broker ok"
+          },
+          "pyfetchBinary": {
+            "status": 200,
+            "same": true
+          },
+          "pyfetchEmpty": {
+            "status": 204,
+            "bodyLength": 0
+          },
+          "pyfetchEcho": {
+            "status": 200,
+            "same": true
+          },
+          "urllib3": {
+            "status": 200,
+            "body": "broker ok"
+          },
+          "requests": {
+            "status": 200,
+            "body": "broker ok"
+          }
+        },
+        "brokerRequests": [
+          "GET /status",
+          "GET /status",
+          "GET /binary",
+          "GET /empty",
+          "POST /echo",
+          "GET /status",
+          "GET /status"
+        ],
+        "python": {
+          "python": "3.14.2",
+          "platform": "emscripten",
+          "canRunSync": true,
+          "inputRaises": "OSError",
+          "hostApi": 1,
+          "jsGlobals": [
+            "AbortController",
+            "AbortSignal",
+            "Headers",
+            "Object",
+            "Request",
+            "Response",
+            "TextDecoder",
+            "TextEncoder",
+            "URL",
+            "clearInterval",
+            "clearTimeout",
+            "console",
+            "fetch",
+            "setInterval",
+            "setTimeout"
+          ],
+          "environKeys": [
+            "HOME",
+            "LANG",
+            "LD_LIBRARY_PATH",
+            "LOGNAME",
+            "PATH",
+            "PWD",
+            "PYTHONINSPECT",
+            "USER",
+            "_"
+          ],
+          "readAtImport": "denied",
+          "readAtCall": "denied",
+          "hostPathsInPython": false
+        },
+        "legacyCode": -32022,
+        "printLogged": true,
+        "stdoutLines": 7,
+        "stdoutFramesOnly": true,
+        "exitCode": 0
+      },
+      {
+        "node": "26.5.1",
+        "variant": "freeze",
+        "passed": true,
+        "controls": [
+          {
+            "mode": "none",
+            "outcome": "failed",
+            "code": "ERR_ACCESS_DENIED",
+            "binding": true
+          },
+          {
+            "mode": "stub",
+            "outcome": "booted",
+            "code": null,
+            "binding": false
+          }
+        ],
+        "ready": {
+          "pyodide": "314.0.7",
+          "python": "3.14.2",
+          "jspi": "function",
+          "packages": [
+            "certifi",
+            "charset-normalizer",
+            "idna",
+            "py-hello",
+            "requests",
+            "typing-extensions",
+            "urllib3"
+          ],
+          "grantsDropped": 2,
+          "readAfterDrop": false,
+          "bootMs": 1874
+        },
+        "bootFailure": null,
+        "discoverMs": 2166,
+        "firstToolsListMs": 2167,
+        "supportedVersions": [
+          "2026-07-28"
+        ],
+        "wireProblems": [],
+        "tools": [
+          "hello",
+          "fetch_status",
+          "http_clients",
+          "runtime_info"
+        ],
+        "runSyncFetch": {
+          "status": 200,
+          "bodyLength": 9,
+          "canRunSync": true
+        },
+        "httpClients": {
+          "pyfetch": {
+            "status": 200,
+            "body": "broker ok"
+          },
+          "pyfetchBinary": {
+            "status": 200,
+            "same": true
+          },
+          "pyfetchEmpty": {
+            "status": 204,
+            "bodyLength": 0
+          },
+          "pyfetchEcho": {
+            "status": 200,
+            "same": true
+          },
+          "urllib3": {
+            "status": 200,
+            "body": "broker ok"
+          },
+          "requests": {
+            "status": 200,
+            "body": "broker ok"
+          }
+        },
+        "brokerRequests": [
+          "GET /status",
+          "GET /status",
+          "GET /binary",
+          "GET /empty",
+          "POST /echo",
+          "GET /status",
+          "GET /status"
+        ],
+        "python": {
+          "python": "3.14.2",
+          "platform": "emscripten",
+          "canRunSync": true,
+          "inputRaises": "OSError",
+          "hostApi": 1,
+          "jsGlobals": [
+            "AbortController",
+            "AbortSignal",
+            "Headers",
+            "Object",
+            "Request",
+            "Response",
+            "TextDecoder",
+            "TextEncoder",
+            "URL",
+            "clearInterval",
+            "clearTimeout",
+            "console",
+            "fetch",
+            "setInterval",
+            "setTimeout"
+          ],
+          "environKeys": [
+            "HOME",
+            "LANG",
+            "LD_LIBRARY_PATH",
+            "LOGNAME",
+            "PATH",
+            "PWD",
+            "PYTHONINSPECT",
+            "USER",
+            "_"
+          ],
+          "readAtImport": "denied",
+          "readAtCall": "denied",
+          "hostPathsInPython": false
+        },
+        "legacyCode": -32022,
+        "printLogged": true,
+        "stdoutLines": 7,
+        "stdoutFramesOnly": true,
+        "exitCode": 0
+      },
+      {
+        "node": "26.12.0",
+        "variant": "base",
+        "passed": true,
+        "controls": [
+          {
+            "mode": "none",
+            "outcome": "failed",
+            "code": "ERR_ACCESS_DENIED",
+            "binding": true
+          },
+          {
+            "mode": "stub",
+            "outcome": "booted",
+            "code": null,
+            "binding": false
+          }
+        ],
+        "ready": {
+          "pyodide": "314.0.7",
+          "python": "3.14.2",
+          "jspi": "function",
+          "packages": [
+            "certifi",
+            "charset-normalizer",
+            "idna",
+            "py-hello",
+            "requests",
+            "typing-extensions",
+            "urllib3"
+          ],
+          "grantsDropped": 2,
+          "readAfterDrop": false,
+          "bootMs": 2023
+        },
+        "bootFailure": null,
+        "discoverMs": 2352,
+        "firstToolsListMs": 2354,
+        "supportedVersions": [
+          "2026-07-28"
+        ],
+        "wireProblems": [],
+        "tools": [
+          "hello",
+          "fetch_status",
+          "http_clients",
+          "runtime_info"
+        ],
+        "runSyncFetch": {
+          "status": 200,
+          "bodyLength": 9,
+          "canRunSync": true
+        },
+        "httpClients": {
+          "pyfetch": {
+            "status": 200,
+            "body": "broker ok"
+          },
+          "pyfetchBinary": {
+            "status": 200,
+            "same": true
+          },
+          "pyfetchEmpty": {
+            "status": 204,
+            "bodyLength": 0
+          },
+          "pyfetchEcho": {
+            "status": 200,
+            "same": true
+          },
+          "urllib3": {
+            "status": 200,
+            "body": "broker ok"
+          },
+          "requests": {
+            "status": 200,
+            "body": "broker ok"
+          }
+        },
+        "brokerRequests": [
+          "GET /status",
+          "GET /status",
+          "GET /binary",
+          "GET /empty",
+          "POST /echo",
+          "GET /status",
+          "GET /status"
+        ],
+        "python": {
+          "python": "3.14.2",
+          "platform": "emscripten",
+          "canRunSync": true,
+          "inputRaises": "OSError",
+          "hostApi": 1,
+          "jsGlobals": [
+            "AbortController",
+            "AbortSignal",
+            "Headers",
+            "Object",
+            "Request",
+            "Response",
+            "TextDecoder",
+            "TextEncoder",
+            "URL",
+            "clearInterval",
+            "clearTimeout",
+            "console",
+            "fetch",
+            "setInterval",
+            "setTimeout"
+          ],
+          "environKeys": [
+            "HOME",
+            "LANG",
+            "LD_LIBRARY_PATH",
+            "LOGNAME",
+            "PATH",
+            "PWD",
+            "PYTHONINSPECT",
+            "USER",
+            "_"
+          ],
+          "readAtImport": "denied",
+          "readAtCall": "denied",
+          "hostPathsInPython": false
+        },
+        "legacyCode": -32022,
+        "printLogged": true,
+        "stdoutLines": 7,
+        "stdoutFramesOnly": true,
+        "exitCode": 0
+      },
+      {
+        "node": "26.12.0",
+        "variant": "freeze",
+        "passed": true,
+        "controls": [
+          {
+            "mode": "none",
+            "outcome": "failed",
+            "code": "ERR_ACCESS_DENIED",
+            "binding": true
+          },
+          {
+            "mode": "stub",
+            "outcome": "booted",
+            "code": null,
+            "binding": false
+          }
+        ],
+        "ready": {
+          "pyodide": "314.0.7",
+          "python": "3.14.2",
+          "jspi": "function",
+          "packages": [
+            "certifi",
+            "charset-normalizer",
+            "idna",
+            "py-hello",
+            "requests",
+            "typing-extensions",
+            "urllib3"
+          ],
+          "grantsDropped": 2,
+          "readAfterDrop": false,
+          "bootMs": 1991
+        },
+        "bootFailure": null,
+        "discoverMs": 2301,
+        "firstToolsListMs": 2303,
+        "supportedVersions": [
+          "2026-07-28"
+        ],
+        "wireProblems": [],
+        "tools": [
+          "hello",
+          "fetch_status",
+          "http_clients",
+          "runtime_info"
+        ],
+        "runSyncFetch": {
+          "status": 200,
+          "bodyLength": 9,
+          "canRunSync": true
+        },
+        "httpClients": {
+          "pyfetch": {
+            "status": 200,
+            "body": "broker ok"
+          },
+          "pyfetchBinary": {
+            "status": 200,
+            "same": true
+          },
+          "pyfetchEmpty": {
+            "status": 204,
+            "bodyLength": 0
+          },
+          "pyfetchEcho": {
+            "status": 200,
+            "same": true
+          },
+          "urllib3": {
+            "status": 200,
+            "body": "broker ok"
+          },
+          "requests": {
+            "status": 200,
+            "body": "broker ok"
+          }
+        },
+        "brokerRequests": [
+          "GET /status",
+          "GET /status",
+          "GET /binary",
+          "GET /empty",
+          "POST /echo",
+          "GET /status",
+          "GET /status"
+        ],
+        "python": {
+          "python": "3.14.2",
+          "platform": "emscripten",
+          "canRunSync": true,
+          "inputRaises": "OSError",
+          "hostApi": 1,
+          "jsGlobals": [
+            "AbortController",
+            "AbortSignal",
+            "Headers",
+            "Object",
+            "Request",
+            "Response",
+            "TextDecoder",
+            "TextEncoder",
+            "URL",
+            "clearInterval",
+            "clearTimeout",
+            "console",
+            "fetch",
+            "setInterval",
+            "setTimeout"
+          ],
+          "environKeys": [
+            "HOME",
+            "LANG",
+            "LD_LIBRARY_PATH",
+            "LOGNAME",
+            "PATH",
+            "PWD",
+            "PYTHONINSPECT",
+            "USER",
+            "_"
+          ],
+          "readAtImport": "denied",
+          "readAtCall": "denied",
+          "hostPathsInPython": false
+        },
+        "legacyCode": -32022,
+        "printLogged": true,
+        "stdoutLines": 7,
+        "stdoutFramesOnly": true,
+        "exitCode": 0
+      }
+    ],
+    "refusals": [
+      {
+        "node": "26.5.1",
+        "damage": "missing",
+        "exitCode": 1,
+        "bootFailure": {
+          "step": "packages",
+          "code": "ERR_LOADER"
+        },
+        "answered": false,
+        "passed": true
+      },
+      {
+        "node": "26.5.1",
+        "damage": "corrupt",
+        "exitCode": 1,
+        "bootFailure": {
+          "step": "packages",
+          "code": "ERR_LOADER"
+        },
+        "answered": false,
+        "passed": true
+      },
+      {
+        "node": "26.12.0",
+        "damage": "missing",
+        "exitCode": 1,
+        "bootFailure": {
+          "step": "packages",
+          "code": "ERR_LOADER"
+        },
+        "answered": false,
+        "passed": true
+      },
+      {
+        "node": "26.12.0",
+        "damage": "corrupt",
+        "exitCode": 1,
+        "bootFailure": {
+          "step": "packages",
+          "code": "ERR_LOADER"
+        },
+        "answered": false,
+        "passed": true
+      }
+    ]
+  }
+}
