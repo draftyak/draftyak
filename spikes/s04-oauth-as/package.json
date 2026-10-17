@@ -1,0 +1,19 @@
+{
+  "name": "@draftyak/spike-s04-oauth-as",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "node ../kit/run.ts",
+    "test:heavy": "node ../kit/run.ts --heavy",
+    "test:live": "node ../kit/run.ts --live"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.5",
+    "hono": "4.13.13",
+    "oidc-provider": "9.12.2"
+  },
+  "devDependencies": {
+    "@draftyak/spike-kit": "workspace:*"
+  }
+}
