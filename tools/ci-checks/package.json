@@ -1,0 +1,12 @@
+{
+  "name": "@draftyak/ci-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "pr-size": "node src/pr-size.ts",
+    "ci:minutes": "node src/ci-minutes.ts",
+    "spikes:run": "node src/spikes-run.ts"
+  }
+}
