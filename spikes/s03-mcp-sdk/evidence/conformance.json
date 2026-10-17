@@ -1,0 +1,805 @@
+{
+  "recordedAt": "2026-10-17T17:50:03.906Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "1419a4be0f576d04a2c771e637c2175d034c88c9",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 8.7,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 64.6,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "conformanceVersion": "0.2.0-alpha.12",
+    "serverSdkVersion": "2.3.1",
+    "honoVersion": "4.13.13",
+    "nodeServerVersion": "2.1.5",
+    "invocation": "server --suite all --spec-version <era> --expected-failures <baseline for era>",
+    "eras": {
+      "2025-11-25": {
+        "specVersion": "2025-11-25",
+        "scenariosRun": 33,
+        "scenariosClean": 22,
+        "scenariosWithFailures": [
+          "elicitation-sep1034-defaults",
+          "elicitation-sep1330-enums",
+          "logging-set-level",
+          "resources-subscribe",
+          "resources-unsubscribe",
+          "server-sse-multiple-streams",
+          "server-sse-polling",
+          "tools-call-elicitation",
+          "tools-call-sampling",
+          "tools-call-with-logging",
+          "tools-call-with-progress"
+        ],
+        "checkCounts": {
+          "SUCCESS": 58,
+          "FAILURE": 9,
+          "WARNING": 2,
+          "SKIPPED": 0,
+          "INFO": 5
+        },
+        "durationMs": 1087,
+        "baseline": {
+          "logging-set-level:logging-set-level": "FAILURE",
+          "tools-call-with-logging:tools-call-with-logging": "FAILURE",
+          "tools-call-with-progress:tools-call-with-progress": "FAILURE",
+          "tools-call-sampling:tools-call-sampling": "FAILURE",
+          "tools-call-elicitation:tools-call-elicitation": "FAILURE",
+          "elicitation-sep1034-defaults:elicitation-sep1034-general": "FAILURE",
+          "elicitation-sep1330-enums:elicitation-sep1330-general": "FAILURE",
+          "resources-subscribe:resources-subscribe": "FAILURE",
+          "resources-unsubscribe:resources-unsubscribe": "FAILURE",
+          "server-sse-polling:server-sse-polling-session": "WARNING",
+          "server-sse-multiple-streams:server-sse-multiple-streams-session": "WARNING"
+        },
+        "mustRun": {},
+        "protectedChecks": {},
+        "scenarios": {
+          "completion-complete": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "dns-rebinding-protection": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "elicitation-sep1034-defaults": {
+            "requirement": "required",
+            "SUCCESS": 1,
+            "FAILURE": 1,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "elicitation-sep1330-enums": {
+            "requirement": "required",
+            "SUCCESS": 1,
+            "FAILURE": 1,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "json-schema-2020-12": {
+            "requirement": "pending",
+            "SUCCESS": 8,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "logging-set-level": {
+            "requirement": "required",
+            "SUCCESS": 1,
+            "FAILURE": 1,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "ping": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "prompts-get-embedded-resource": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "prompts-get-simple": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "prompts-get-with-args": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "prompts-get-with-image": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "prompts-list": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "resources-list": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "resources-read-binary": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "resources-read-text": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "resources-subscribe": {
+            "requirement": "required",
+            "SUCCESS": 1,
+            "FAILURE": 1,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "resources-templates-read": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "resources-unsubscribe": {
+            "requirement": "required",
+            "SUCCESS": 1,
+            "FAILURE": 1,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "server-initialize": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 1
+          },
+          "server-session-lifecycle": {
+            "requirement": "added-after-release",
+            "SUCCESS": 0,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 1
+          },
+          "server-sse-multiple-streams": {
+            "requirement": "required",
+            "SUCCESS": 0,
+            "FAILURE": 0,
+            "WARNING": 1,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "server-sse-polling": {
+            "requirement": "pending",
+            "SUCCESS": 0,
+            "FAILURE": 0,
+            "WARNING": 1,
+            "SKIPPED": 0,
+            "INFO": 3
+          },
+          "tools-call-audio": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-elicitation": {
+            "requirement": "required",
+            "SUCCESS": 1,
+            "FAILURE": 1,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-embedded-resource": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-error": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-image": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-mixed-content": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-sampling": {
+            "requirement": "required",
+            "SUCCESS": 1,
+            "FAILURE": 1,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-simple-text": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-with-logging": {
+            "requirement": "required",
+            "SUCCESS": 1,
+            "FAILURE": 1,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-with-progress": {
+            "requirement": "required",
+            "SUCCESS": 1,
+            "FAILURE": 1,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-list": {
+            "requirement": "required",
+            "SUCCESS": 3,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          }
+        },
+        "withoutFixtures": {
+          "scenariosRun": 33,
+          "scenariosWithFailures": [
+            "completion-complete",
+            "elicitation-sep1034-defaults",
+            "elicitation-sep1330-enums",
+            "json-schema-2020-12",
+            "logging-set-level",
+            "prompts-get-embedded-resource",
+            "prompts-get-simple",
+            "prompts-get-with-args",
+            "prompts-get-with-image",
+            "resources-read-binary",
+            "resources-read-text",
+            "resources-subscribe",
+            "resources-templates-read",
+            "resources-unsubscribe",
+            "server-sse-multiple-streams",
+            "server-sse-polling",
+            "tools-call-audio",
+            "tools-call-elicitation",
+            "tools-call-embedded-resource",
+            "tools-call-error",
+            "tools-call-image",
+            "tools-call-mixed-content",
+            "tools-call-sampling",
+            "tools-call-simple-text",
+            "tools-call-with-logging",
+            "tools-call-with-progress"
+          ]
+        }
+      },
+      "2026-07-28": {
+        "specVersion": "2026-07-28",
+        "scenariosRun": 40,
+        "scenariosClean": 39,
+        "scenariosWithFailures": [
+          "tools-call-with-progress"
+        ],
+        "checkCounts": {
+          "SUCCESS": 146,
+          "FAILURE": 1,
+          "WARNING": 0,
+          "SKIPPED": 5,
+          "INFO": 1
+        },
+        "durationMs": 1039,
+        "baseline": {
+          "tools-call-with-progress:tools-call-with-progress": "FAILURE"
+        },
+        "mustRun": {
+          "caching": "required",
+          "http-header-validation": "pending",
+          "http-custom-header-server-validation": "pending",
+          "sep-2164-resource-not-found": "required"
+        },
+        "protectedChecks": {
+          "server-stateless:sep-2575-http-server-header-mismatch-400": "SUCCESS"
+        },
+        "scenarios": {
+          "caching": {
+            "requirement": "required",
+            "SUCCESS": 8,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "completion-complete": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "dns-rebinding-protection": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "http-custom-header-server-validation": {
+            "requirement": "pending",
+            "SUCCESS": 10,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "http-header-validation": {
+            "requirement": "pending",
+            "SUCCESS": 14,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-basic-elicitation": {
+            "requirement": "required",
+            "SUCCESS": 3,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-basic-list-roots": {
+            "requirement": "required",
+            "SUCCESS": 3,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-basic-sampling": {
+            "requirement": "required",
+            "SUCCESS": 3,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-capability-check": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-ignore-extra-params": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-missing-input-response": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-multi-round": {
+            "requirement": "required",
+            "SUCCESS": 4,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-multiple-input-requests": {
+            "requirement": "required",
+            "SUCCESS": 3,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-non-tool-request": {
+            "requirement": "required",
+            "SUCCESS": 3,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-request-state": {
+            "requirement": "required",
+            "SUCCESS": 3,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-result-type": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-tampered-state": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-unsupported-methods": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "input-required-result-validate-input": {
+            "requirement": "required",
+            "SUCCESS": 3,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "json-schema-2020-12": {
+            "requirement": "pending",
+            "SUCCESS": 8,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "prompts-get-embedded-resource": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "prompts-get-simple": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "prompts-get-with-args": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "prompts-get-with-image": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "prompts-list": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "resources-list": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "resources-read-binary": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "resources-read-text": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "resources-templates-read": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "sep-2164-resource-not-found": {
+            "requirement": "required",
+            "SUCCESS": 4,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "server-sse-multiple-streams": {
+            "requirement": "required",
+            "SUCCESS": 1,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 1
+          },
+          "server-stateless": {
+            "requirement": "required",
+            "SUCCESS": 25,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 5,
+            "INFO": 0
+          },
+          "tools-call-audio": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-embedded-resource": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-error": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-image": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-mixed-content": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-simple-text": {
+            "requirement": "required",
+            "SUCCESS": 2,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-call-with-progress": {
+            "requirement": "required",
+            "SUCCESS": 1,
+            "FAILURE": 1,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          },
+          "tools-list": {
+            "requirement": "required",
+            "SUCCESS": 4,
+            "FAILURE": 0,
+            "WARNING": 0,
+            "SKIPPED": 0,
+            "INFO": 0
+          }
+        },
+        "withoutFixtures": {
+          "scenariosRun": 40,
+          "scenariosWithFailures": [
+            "completion-complete",
+            "http-custom-header-server-validation",
+            "input-required-result-basic-elicitation",
+            "input-required-result-basic-list-roots",
+            "input-required-result-basic-sampling",
+            "input-required-result-capability-check",
+            "input-required-result-ignore-extra-params",
+            "input-required-result-missing-input-response",
+            "input-required-result-multi-round",
+            "input-required-result-multiple-input-requests",
+            "input-required-result-non-tool-request",
+            "input-required-result-request-state",
+            "input-required-result-result-type",
+            "input-required-result-tampered-state",
+            "json-schema-2020-12",
+            "prompts-get-embedded-resource",
+            "prompts-get-simple",
+            "prompts-get-with-args",
+            "prompts-get-with-image",
+            "resources-read-binary",
+            "resources-read-text",
+            "resources-templates-read",
+            "server-stateless",
+            "tools-call-audio",
+            "tools-call-embedded-resource",
+            "tools-call-error",
+            "tools-call-image",
+            "tools-call-mixed-content",
+            "tools-call-simple-text",
+            "tools-call-with-progress"
+          ]
+        }
+      }
+    },
+    "fixtureNames": {
+      "tools": [
+        "test_simple_text",
+        "test_image_content",
+        "test_audio_content",
+        "test_embedded_resource",
+        "test_multiple_content_types",
+        "test_error_handling",
+        "test_logging_tool",
+        "test_tool_with_progress",
+        "json_schema_2020_12_tool",
+        "test_custom_header",
+        "test_input_required_result_elicitation",
+        "test_input_required_result_sampling",
+        "test_input_required_result_list_roots",
+        "test_input_required_result_request_state",
+        "test_input_required_result_multiple_inputs",
+        "test_input_required_result_multi_round",
+        "test_input_required_result_tampered_state",
+        "test_input_required_result_capabilities",
+        "test_missing_capability",
+        "test_streaming_elicitation"
+      ],
+      "prompts": [
+        "test_simple_prompt",
+        "test_prompt_with_arguments",
+        "test_prompt_with_embedded_resource",
+        "test_prompt_with_image",
+        "test_input_required_result_prompt"
+      ],
+      "resources": [
+        "test://static-text",
+        "test://static-binary"
+      ],
+      "templates": [
+        "test://template/{id}/data"
+      ]
+    },
+    "fixtureNamesNotServed": [
+      "test_tool_with_logging",
+      "test_sampling",
+      "test_elicitation",
+      "test_elicitation_sep1034_defaults",
+      "test_elicitation_sep1330_enums",
+      "test://watched-resource",
+      "test_reconnection",
+      "test_trigger_tool_change",
+      "test_trigger_prompt_change"
+    ]
+  }
+}
