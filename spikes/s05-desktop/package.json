@@ -1,0 +1,14 @@
+{
+  "name": "@draftyak/spike-s05-desktop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "node ../kit/run.ts",
+    "test:heavy": "node ../kit/run.ts --heavy"
+  },
+  "devDependencies": {
+    "@draftyak/spike-kit": "workspace:*",
+    "@peculiar/x509": "2.2.0"
+  }
+}

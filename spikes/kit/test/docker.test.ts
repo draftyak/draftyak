@@ -3,11 +3,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+	checkDockerfile,
 	DockerUnavailableError,
+	dockerBuildArgs,
 	dockerRunArgs,
 	type EngineState,
 	ensure,
 	linuxContainers,
+	namedVolume,
 	stageForDocker,
 } from "../docker.ts";
 import { repoRoot } from "../repo.ts";
@@ -57,6 +60,63 @@ describe("dockerRunArgs", () => {
 		fs.mkdirSync(path.join(dir, "real", "inner"), { recursive: true });
 		fs.symlinkSync(path.join(dir, "real"), path.join(dir, "via-junction"), "junction");
 		expect(bind(path.join(dir, "via-junction", "inner"))).toThrow("runs through a link");
+	});
+});
+
+describe("dockerBuildArgs", () => {
+	const dockerfile = `FROM ${image}\nRUN apt-get update \\\n && apt-get install -y dbus\n`;
+	const build = "0123456789ab";
+
+	it("builds an untagged image with the kit's label and its own, on the given network", () => {
+		const spec = { dockerfile, network: "bridge" } as const;
+		expect(dockerBuildArgs(spec, "ctx", "meta.json", build)).toEqual([
+			...["build", "--metadata-file", "meta.json", "--label", "org.draftyak.spike-kit=1"],
+			...["--label", "org.draftyak.spike-kit.build=0123456789ab", "--network", "default"],
+			...["--provenance=false", "--progress=plain", "ctx"],
+		]);
+		const offline = { dockerfile, network: "none", platform: "linux/arm64" } as const;
+		expect(dockerBuildArgs(offline, "ctx", "m", build).join(" ")).toContain(
+			"--network none --provenance=false --progress=plain --platform linux/arm64 ctx",
+		);
+		expect(dockerBuildArgs(spec, "ctx", "m", build)).not.toContain("--tag");
+		expect(() => dockerBuildArgs(spec, "ctx", "m", "x --tag y")).toThrow("12 hex digits");
+	});
+
+	it("takes only digest-pinned bases (or earlier stages), and no context", () => {
+		const args =
+			(text: string, network = "none") =>
+			() =>
+				dockerBuildArgs({ dockerfile: text, network: network as "none" }, "ctx", "m", build);
+		const pinned = `# syntax=docker/dockerfile:1@sha256:${"b".repeat(64)}\n`;
+		expect(args(`${pinned}FROM --platform=linux/amd64 ${image} AS base\nfrom base`)).not.toThrow();
+		expect(args("FROM debian:bookworm-slim")).toThrow("pin the image by digest");
+		expect(args(`ARG BASE=${image}\nFROM \${BASE}`)).toThrow("pin the image by digest");
+		expect(args(`FROM ${image} AS base\nFROM other`)).toThrow("FROM other");
+		expect(args(`# syntax=docker/dockerfile:1\nFROM ${image}`)).toThrow("syntax directive");
+		expect(args(`FROM ${image}\nCOPY a /a`)).toThrow("COPY needs a build context");
+		expect(args(`FROM ${image}\nadd https://example.com/x /x`)).toThrow("ADD needs");
+		expect(args("RUN true")).toThrow("no FROM");
+		expect(args(dockerfile, "host")).toThrow("none or bridge");
+		expect(() => checkDockerfile(`FROM ${image}`)).not.toThrow();
+	});
+
+	it("refuses an escape directive and RUN --mount, which could hide an unpinned image", () => {
+		const args = (text: string) => () =>
+			dockerBuildArgs({ dockerfile: text, network: "none" }, "ctx", "m", build);
+		// With escape=`, Docker reads the FROM below as a new stage, not as part of the RUN line.
+		const escaped = `# escape=\`\nFROM ${image}\nRUN echo ok \\\nFROM debian:bookworm\n`;
+		expect(args(escaped)).toThrow("no escape directive");
+		expect(args(`#ESCAPE = \\\nFROM ${image}`)).toThrow("no escape directive");
+		const mount = "--mount=type=bind,from=alpine:latest,target=/a";
+		expect(args(`FROM ${image}\nRUN ${mount} true`)).toThrow("RUN --mount");
+		expect(args(`FROM ${image}\nrun --network=none ${mount} true`)).toThrow("RUN --mount");
+		expect(args(`FROM ${image}\nRUN --mount=type=cache,target=/c true`)).toThrow("RUN --mount");
+		expect(args(`FROM ${image}\nRUN mount --mount=x || true`)).not.toThrow();
+	});
+
+	it("names volumes in kebab-case only", async () => {
+		await expect(namedVolume("S05 Cargo")).rejects.toThrow("kebab-case");
+		await expect(namedVolume("../x")).rejects.toThrow("kebab-case");
 	});
 });
 

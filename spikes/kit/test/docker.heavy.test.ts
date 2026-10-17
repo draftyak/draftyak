@@ -1,8 +1,18 @@
+import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { findDocker, needDocker, runInDocker, stageForDocker } from "../docker.ts";
+import {
+	buildImage,
+	type DockerVolume,
+	findDocker,
+	LABEL,
+	namedVolume,
+	needDocker,
+	runInDocker,
+	stageForDocker,
+} from "../docker.ts";
 import { exec, sleep } from "../exec.ts";
 
 // Pinned at first use (2026-10-17): the multi-arch OCI index of debian:bookworm-slim. It has no
@@ -51,5 +61,62 @@ it(
 
 		const slow = await runInDocker({ ...run, cmd: ["sleep", "60"], timeoutMs: 3_000 });
 		expect([slow.timedOut, await gone(slow.containerId)]).toEqual([true, true]);
+	},
+);
+
+it(
+	"gives each build of a Dockerfile its own image, keeps a named volume between runs, removes all",
+	options,
+	async (ctx) => {
+		await needDocker(ctx);
+		const docker = findDocker() ?? "docker";
+		const inspect = (kind: "image" | "volume", name: string, format: string) =>
+			exec(docker, [kind, "inspect", "--format", format, name]);
+		const dockerfile = `FROM ${DEBIAN}\nRUN echo built > /built \\\n && chmod 0444 /built\n`;
+		const build = () => buildImage({ dockerfile, network: "none", signal: ctx.signal });
+		const suffix = `kit-heavy-${randomBytes(4).toString("hex")}`;
+		const [name, bare] = [`draftyak-${suffix}`, `draftyak-${suffix}-bare`];
+		const ids: string[] = [];
+		let volume: DockerVolume | undefined;
+		try {
+			await using first = await build();
+			await using second = await build();
+			ids.push(first.id, second.id);
+			expect(first.id).toMatch(/^sha256:[0-9a-f]{64}$/);
+			expect(second.id).not.toBe(first.id);
+			const label = `{{index .Config.Labels "${LABEL.split("=")[0]}"}}`;
+			expect((await inspect("image", second.id, label)).stdout.trim()).toBe("1");
+			volume = await namedVolume(suffix);
+			expect(volume.name).toBe(name);
+			const volumeLabel = await inspect("volume", name, "{{json .Labels}}");
+			expect(JSON.parse(volumeLabel.stdout)).toEqual({ "org.draftyak.spike-kit": "1" });
+			expect((await exec(docker, ["volume", "create", bare])).code).toBe(0);
+			await expect(namedVolume(`${suffix}-bare`)).rejects.toThrow("without the kit's label");
+
+			const run = { network: "none", signal: ctx.signal, user: "0:0" } as const;
+			const mounts = [{ volume: name, target: "/shared" }];
+			const cmd = ["sh", "-c", "cp /built /shared/x"];
+			const write = await runInDocker({ ...run, image: first.id, mounts, cmd });
+			await first.remove();
+			// A later run finds the same volume, with what the first run left in it.
+			expect((await namedVolume(suffix)).name).toBe(name);
+			const read = await runInDocker({
+				...run,
+				image: second.id,
+				mounts,
+				cmd: ["cat", "/shared/x"],
+			});
+			expect([write.code, read.code, read.stdout]).toEqual([0, 0, "built\n"]);
+			expect(await gone(read.containerId)).toBe(true);
+		} finally {
+			await exec(docker, ["volume", "rm", bare]);
+			await volume?.remove();
+			await volume?.remove();
+		}
+		const left = [
+			...[name, bare].map((volume) => inspect("volume", volume, "{{.Name}}")),
+			...ids.map((id) => inspect("image", id, "{{.Id}}")),
+		];
+		expect((await Promise.all(left)).map((result) => result.code)).not.toContain(0);
 	},
 );

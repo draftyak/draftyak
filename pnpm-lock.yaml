@@ -95,6 +95,15 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
 
+  spikes/s05-desktop:
+    devDependencies:
+      '@draftyak/spike-kit':
+        specifier: workspace:*
+        version: link:../kit
+      '@peculiar/x509':
+        specifier: 2.2.0
+        version: 2.2.0
+
   spikes/s08-gmail:
     dependencies:
       nodemailer:
