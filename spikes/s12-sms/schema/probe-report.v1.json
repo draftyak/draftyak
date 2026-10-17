@@ -1,0 +1,503 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:draftyak:s12:probe-report:v1",
+  "title": "S12 probe report v1",
+  "description": "All the S12 probe may report from the owner's phone: counts, durations, column names, booleans, the listed enum and version fields, and DYTEST- bodies the phone matched to the owner-entered second number. No thread ids, no hashes, no other text. receive-report refuses anything else before writing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "encodingCheck", "probeVersion", "createdAt", "device"],
+  "properties": {
+    "schema": { "type": "string", "const": "draftyak.s12.probe-report.v1" },
+    "encodingCheck": {
+      "description": "Always e-acute, euro sign, thumbs up: a lossy re-encoding of the report breaks it.",
+      "type": "string",
+      "const": "\u00e9\u20ac\ud83d\udc4d"
+    },
+    "probeVersion": { "$ref": "#/$defs/semver" },
+    "createdAt": { "$ref": "#/$defs/utcTime" },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manufacturer", "androidVersion", "sdkLevel"],
+      "properties": {
+        "manufacturer": { "$ref": "#/$defs/manufacturer" },
+        "androidVersion": { "$ref": "#/$defs/shortVersion" },
+        "oemVersion": { "$ref": "#/$defs/shortVersion" },
+        "sdkLevel": { "$ref": "#/$defs/count" },
+        "securityPatchVersion": { "$ref": "#/$defs/dateVersion" },
+        "buildVersion": { "$ref": "#/$defs/buildVersion" },
+        "messagesVersion": { "$ref": "#/$defs/messagesVersion" },
+        "messagesIsDefault": { "type": "boolean" },
+        "smsFormat": { "type": "string", "enum": ["3gpp", "3gpp2", "unknown"] },
+        "simSlots": { "$ref": "#/$defs/count" },
+        "activeSubscriptions": { "$ref": "#/$defs/count" }
+      }
+    },
+    "inventory": {
+      "description": "What READ_SMS sees, counted on the phone.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providers"],
+      "properties": {
+        "providers": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["table", "readable"],
+            "properties": {
+              "table": { "$ref": "#/$defs/providerTable" },
+              "readable": { "type": "boolean" },
+              "failure": { "type": "string", "enum": ["security", "not-found", "other"] },
+              "rows": { "$ref": "#/$defs/count" },
+              "columns": {
+                "type": "array",
+                "maxItems": 256,
+                "uniqueItems": true,
+                "items": { "$ref": "#/$defs/columnName" }
+              }
+            }
+          }
+        },
+        "messages": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sms": { "$ref": "#/$defs/directions" },
+            "mms": { "$ref": "#/$defs/directions" },
+            "mmsGroup": { "$ref": "#/$defs/directions" },
+            "rcs": { "$ref": "#/$defs/directions" },
+            "rcsGroup": { "$ref": "#/$defs/directions" },
+            "unknown": { "$ref": "#/$defs/directions" }
+          }
+        },
+        "rcs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "idMethod": {
+              "type": "string",
+              "enum": ["mms-transaction-id", "mms-content-type", "column", "none", "unknown"]
+            },
+            "idColumns": {
+              "type": "array",
+              "maxItems": 8,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/columnName" }
+            },
+            "outgoingWritten": { "$ref": "#/$defs/tri" },
+            "e2eeReadable": { "$ref": "#/$defs/tri" },
+            "e2eeRows": { "$ref": "#/$defs/count" },
+            "nonE2eeRows": { "$ref": "#/$defs/count" }
+          }
+        }
+      }
+    },
+    "threadMix": {
+      "description": "Threads in the window by the transports seen in them, computed on the phone.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["windowDays", "threads"],
+      "properties": {
+        "windowDays": { "$ref": "#/$defs/count" },
+        "threads": { "$ref": "#/$defs/count" },
+        "groups": { "$ref": "#/$defs/count" },
+        "smsOnly": { "$ref": "#/$defs/count" },
+        "mmsOnly": { "$ref": "#/$defs/count" },
+        "rcsOnly": { "$ref": "#/$defs/count" },
+        "smsAndMms": { "$ref": "#/$defs/count" },
+        "smsAndRcs": { "$ref": "#/$defs/count" },
+        "mmsAndRcs": { "$ref": "#/$defs/count" },
+        "allThree": { "$ref": "#/$defs/count" },
+        "unknown": { "$ref": "#/$defs/count" }
+      }
+    },
+    "vectors": {
+      "description": "calculateLength and divideMessage over vectors/segments.v1.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "results"],
+      "properties": {
+        "format": { "type": "string", "const": "draftyak.s12.sms-segments.v1" },
+        "results": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "match"],
+            "properties": {
+              "id": { "$ref": "#/$defs/vectorId" },
+              "match": {
+                "type": "string",
+                "enum": ["expected", "tr", "es", "force7bit", "3gpp2", "none"]
+              },
+              "calculateLength": {
+                "type": "array",
+                "minItems": 4,
+                "maxItems": 4,
+                "items": { "$ref": "#/$defs/count" }
+              },
+              "partUnits": {
+                "type": "array",
+                "maxItems": 16,
+                "items": { "$ref": "#/$defs/count" }
+              },
+              "joinsBack": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "sends": {
+      "description": "The send probe: DYTEST- vectors to the owner-entered second number only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempted", "results"],
+      "properties": {
+        "attempted": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "refusedDestination": { "$ref": "#/$defs/count" },
+        "results": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "partsSent"],
+            "properties": {
+              "id": { "$ref": "#/$defs/vectorId" },
+              "encoding": { "type": "string", "enum": ["gsm7", "ucs2"] },
+              "partsSent": { "$ref": "#/$defs/count" },
+              "partsDelivered": { "$ref": "#/$defs/count" },
+              "sentResults": {
+                "type": "array",
+                "maxItems": 16,
+                "items": { "type": "integer", "minimum": -1, "maximum": 9999 }
+              },
+              "deliveryResults": {
+                "type": "array",
+                "maxItems": 16,
+                "items": { "type": "string", "enum": ["delivered", "failed", "pending", "none"] }
+              },
+              "sentRows": { "$ref": "#/$defs/count" },
+              "sentRowBodyEqual": { "type": "boolean" },
+              "lastSentMs": { "$ref": "#/$defs/durationMs" },
+              "lastDeliveredMs": { "$ref": "#/$defs/durationMs" }
+            }
+          }
+        }
+      }
+    },
+    "background": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runs"],
+      "properties": {
+        "runs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["scenario", "samples"],
+            "properties": {
+              "scenario": {
+                "type": "string",
+                "enum": [
+                  "doze-forced",
+                  "doze-natural",
+                  "app-standby",
+                  "after-boot",
+                  "after-kill",
+                  "after-force-stop"
+                ]
+              },
+              "batteryExempt": { "type": "boolean" },
+              "samples": { "$ref": "#/$defs/count" },
+              "p50Ms": { "$ref": "#/$defs/durationMs" },
+              "p95Ms": { "$ref": "#/$defs/durationMs" },
+              "maxMs": { "$ref": "#/$defs/durationMs" },
+              "restarted": { "$ref": "#/$defs/tri" }
+            }
+          }
+        }
+      }
+    },
+    "tls": {
+      "description": "Conscrypt mTLS against hub-standin, which checks the EKM and tells the probe. result ok: a Keystore key (strongbox or tee); fallback: the Keystore-wrapped software key. attempts: each key tried, in order, so the digests a key must allow show.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result"],
+      "properties": {
+        "result": { "type": "string", "enum": ["ok", "fallback", "failed"] },
+        "fallbackReason": { "$ref": "#/$defs/tlsFailure" },
+        "keyClass": { "$ref": "#/$defs/keyClass" },
+        "keyDigests": { "$ref": "#/$defs/keyDigests" },
+        "attempts": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["keyClass", "result"],
+            "properties": {
+              "keyClass": { "$ref": "#/$defs/keyClass" },
+              "keyDigests": { "$ref": "#/$defs/keyDigests" },
+              "result": { "type": "string", "enum": ["ok", "failed"] },
+              "failure": { "$ref": "#/$defs/tlsFailure" }
+            }
+          }
+        },
+        "protocol": { "type": "string", "enum": ["TLSv1.3", "TLSv1.2", "other"] },
+        "cipherSuite": {
+          "type": "string",
+          "enum": [
+            "TLS_AES_128_GCM_SHA256",
+            "TLS_AES_256_GCM_SHA384",
+            "TLS_CHACHA20_POLY1305_SHA256",
+            "other"
+          ]
+        },
+        "serverPinMatched": { "type": "boolean" },
+        "clientCertAccepted": { "type": "boolean" },
+        "ekmEqual": { "type": "boolean" },
+        "handshakeMs": { "$ref": "#/$defs/durationMs" }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "localNetworkPermission": {
+          "type": "string",
+          "enum": ["granted", "denied", "not-requested"]
+        },
+        "lanStandin": { "$ref": "#/$defs/reach" },
+        "tailnetStandin": { "$ref": "#/$defs/reach" }
+      }
+    },
+    "otp": {
+      "description": "Delays only: an OTP-shaped text's body never enters a report.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["samples"],
+      "properties": {
+        "samples": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["delivered"],
+            "properties": {
+              "delivered": { "type": "boolean" },
+              "delayMs": { "$ref": "#/$defs/durationMs" },
+              "delayed": { "type": "boolean" },
+              "webOtp": { "type": "string", "enum": ["offered", "not-offered", "not-tested"] }
+            }
+          }
+        }
+      }
+    },
+    "install": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "installed"],
+        "properties": {
+          "path": { "type": "string", "enum": ["adb", "browser", "file-manager", "f-droid"] },
+          "androidVersion": { "$ref": "#/$defs/shortVersion" },
+          "installed": { "type": "boolean" },
+          "restrictedSettings": {
+            "type": "string",
+            "enum": ["not-needed", "needed", "blocked", "not-testable"]
+          },
+          "playProtect": {
+            "type": "string",
+            "enum": ["no-prompt", "warned", "blocked", "not-testable"]
+          },
+          "advancedProtection": { "type": "string", "enum": ["on", "off", "not-available"] }
+        }
+      }
+    },
+    "testMessages": {
+      "description": "Only rows whose address the phone matched to the owner-entered second number and whose body starts with DYTEST-.",
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["transport", "direction", "addressIsSecondNumber", "body"],
+        "properties": {
+          "transport": { "type": "string", "enum": ["sms", "mms", "rcs", "unknown"] },
+          "direction": { "type": "string", "enum": ["inbound", "outbound"] },
+          "table": { "$ref": "#/$defs/providerTable" },
+          "addressIsSecondNumber": { "type": "boolean", "const": true },
+          "body": { "$ref": "#/$defs/dytestBody" },
+          "rcsMarkerColumns": {
+            "type": "array",
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/columnName" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0, "maximum": 999999 },
+    "durationMs": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+    "tri": { "type": "string", "enum": ["yes", "no", "unknown"] },
+    "reach": { "type": "string", "enum": ["ok", "refused", "timeout", "blocked", "not-tested"] },
+    "directions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inbound": { "$ref": "#/$defs/count" },
+        "outbound": { "$ref": "#/$defs/count" },
+        "other": { "$ref": "#/$defs/count" }
+      }
+    },
+    "semver": { "type": "string", "maxLength": 7, "pattern": "^\\d\\.\\d{1,2}\\.\\d{1,2}$" },
+    "utcTime": {
+      "type": "string",
+      "maxLength": 24,
+      "pattern": "^20[2-9]\\d-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{3})?Z$"
+    },
+    "shortVersion": {
+      "type": "string",
+      "maxLength": 8,
+      "pattern": "^\\d{1,2}(?:\\.\\d{1,2}){0,2}$"
+    },
+    "dateVersion": {
+      "type": "string",
+      "maxLength": 10,
+      "pattern": "^20[2-9]\\d-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$"
+    },
+    "buildVersion": {
+      "type": "string",
+      "description": "Build.ID: a codename, a YYMMDD build date, a build number and an optional variant.",
+      "maxLength": 18,
+      "pattern": "^[A-Z]{2}[A-Z0-9]{2}\\.2\\d(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\\d|3[01])\\.\\d{3}(?:\\.[A-Z]\\d)?$"
+    },
+    "messagesVersion": {
+      "type": "string",
+      "description": "Google Messages' versionName without its build-variant suffix.",
+      "maxLength": 33,
+      "pattern": "^messages\\.android_20[2-9]\\d(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\\d|3[01])_\\d{2}_RC\\d{2}$"
+    },
+    "manufacturer": {
+      "type": "string",
+      "enum": [
+        "Google",
+        "samsung",
+        "OnePlus",
+        "Xiaomi",
+        "motorola",
+        "Nothing",
+        "Fairphone",
+        "Sony",
+        "OPPO",
+        "vivo",
+        "HMD Global",
+        "asus",
+        "realme",
+        "HONOR",
+        "other"
+      ]
+    },
+    "providerTable": {
+      "type": "string",
+      "enum": [
+        "sms",
+        "mms",
+        "mms-part",
+        "mms-addr",
+        "threads",
+        "conversations",
+        "complete-conversations",
+        "canonical-addresses",
+        "other"
+      ]
+    },
+    "columnName": {
+      "description": "A provider column name: a lowercase identifier with at most 2 digits and no run of 8 hex characters.",
+      "type": "string",
+      "maxLength": 48,
+      "pattern": "^(?!(?:\\D*\\d){3})(?!.*[0-9a-f]{8})_?[a-z][a-z0-9_]{0,46}$"
+    },
+    "dytestBody": {
+      "description": "The owner's own test text: DYTEST-, at most 3 numerals of any script, no @ or its look-alikes, URLs, controls or format characters other than LF and ZWJ.",
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^DYTEST-(?!(?:\\P{N}*\\p{N}){4})(?![\\s\\S]*[@\\uFE6B\\uFF20])(?![\\s\\S]*://)(?![\\s\\S]*[wW]{3}\\.)(?:[^\\p{C}\\p{Zl}\\p{Zp}]|\\n|\\u200D){0,113}$"
+    },
+    "keyClass": {
+      "type": "string",
+      "enum": ["strongbox", "tee", "keystore-wrapped-software", "software"]
+    },
+    "keyDigests": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["NONE", "MD5", "SHA-1", "SHA-224", "SHA-256", "SHA-384", "SHA-512"]
+      }
+    },
+    "tlsFailure": {
+      "type": "string",
+      "enum": [
+        "keystore-signing",
+        "keystore-digest",
+        "strongbox-missing",
+        "handshake",
+        "server-pin",
+        "standin-refused",
+        "other"
+      ]
+    },
+    "vectorId": {
+      "type": "string",
+      "enum": [
+        "gsm7-single-160",
+        "gsm7-multi-161",
+        "gsm7-multi-306",
+        "gsm7-newline",
+        "gsm7-ext-single-160",
+        "gsm7-ext-overflow-161",
+        "gsm7-ext-straddle",
+        "gsm7-ext-fills-part",
+        "gsm7-ext-extra-part",
+        "gsm7-ext-only-single",
+        "gsm7-ext-only-multi",
+        "gsm7-ten-parts",
+        "gsm7-eleven-parts",
+        "ucs2-single-70",
+        "ucs2-multi-71",
+        "ucs2-surrogate-straddle",
+        "ucs2-flag-straddle",
+        "ucs2-flag-run",
+        "ucs2-skin-tone-straddle",
+        "ucs2-keycap-straddle",
+        "ucs2-zwj-straddle",
+        "ucs2-nfd-mark-straddle",
+        "ucs2-long-cluster",
+        "ucs2-long-zwj-surrogate",
+        "ucs2-emoji-run",
+        "nfc-cafe",
+        "nfd-cafe",
+        "national-tr",
+        "national-es",
+        "national-tr-multi",
+        "force7bit-quotes",
+        "force7bit-emoji",
+        "force7bit-accents",
+        "ascii-backtick"
+      ]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@draftyak/spike-s12-sms",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "node ../kit/run.ts",
+    "test:heavy": "node ../kit/run.ts --heavy",
+    "test:device": "node ../kit/run.ts --device",
+    "receive-report": "node src/receive-report.ts",
+    "hub-standin": "node src/hub-standin.ts"
+  },
+  "dependencies": {
+    "@peculiar/x509": "2.2.0"
+  },
+  "devDependencies": {
+    "@draftyak/spike-kit": "workspace:*"
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "schema": "draftyak.s12.probe-report.v1",
+  "encodingCheck": "é€👍",
+  "probeVersion": "0.1.0",
+  "createdAt": "2026-10-24T15:04:05.000Z",
+  "device": {
+    "manufacturer": "Google",
+    "androidVersion": "16",
+    "oemVersion": "16",
+    "sdkLevel": 36,
+    "securityPatchVersion": "2026-10-05",
+    "buildVersion": "BP3A.251005.004",
+    "messagesVersion": "messages.android_20261001_00_RC02",
+    "messagesIsDefault": true,
+    "smsFormat": "3gpp2",
+    "simSlots": 2,
+    "activeSubscriptions": 1
+  },
+  "inventory": {
+    "providers": [
+      {
+        "table": "sms",
+        "readable": true,
+        "rows": 1234,
+        "columns": ["_id", "thread_id", "address", "date", "date_sent", "type", "body", "sub_id", "seen"]
+      },
+      {
+        "table": "mms",
+        "readable": true,
+        "rows": 56,
+        "columns": ["_id", "thread_id", "date", "msg_box", "m_type", "ct_t", "tr_id", "sub_id"]
+      },
+      { "table": "canonical-addresses", "readable": false, "failure": "security" }
+    ],
+    "messages": {
+      "sms": { "inbound": 700, "outbound": 500, "other": 34 },
+      "mms": { "inbound": 30, "outbound": 20, "other": 1 },
+      "mmsGroup": { "inbound": 4, "outbound": 1, "other": 0 },
+      "rcs": { "inbound": 6, "outbound": 4, "other": 0 },
+      "rcsGroup": { "inbound": 2, "outbound": 0, "other": 0 },
+      "unknown": { "inbound": 0, "outbound": 0, "other": 0 }
+    },
+    "rcs": {
+      "idMethod": "mms-transaction-id",
+      "idColumns": ["tr_id"],
+      "outgoingWritten": "unknown",
+      "e2eeReadable": "no",
+      "e2eeRows": 0,
+      "nonE2eeRows": 12
+    }
+  },
+  "threadMix": {
+    "windowDays": 90,
+    "threads": 40,
+    "groups": 3,
+    "smsOnly": 20,
+    "mmsOnly": 2,
+    "rcsOnly": 10,
+    "smsAndMms": 3,
+    "smsAndRcs": 4,
+    "mmsAndRcs": 0,
+    "allThree": 1,
+    "unknown": 0
+  },
+  "vectors": {
+    "format": "draftyak.s12.sms-segments.v1",
+    "results": [
+      {
+        "id": "gsm7-ext-straddle",
+        "match": "expected",
+        "calculateLength": [2, 164, 142, 1],
+        "partUnits": [152, 12],
+        "joinsBack": true
+      },
+      {
+        "id": "nfc-cafe",
+        "match": "3gpp2",
+        "calculateLength": [1, 11, 59, 3],
+        "partUnits": [11],
+        "joinsBack": true
+      },
+      {
+        "id": "ucs2-flag-straddle",
+        "match": "force7bit",
+        "calculateLength": [1, 79, 81, 1],
+        "partUnits": [79],
+        "joinsBack": false
+      }
+    ]
+  },
+  "sends": {
+    "attempted": 2,
+    "refusedDestination": 1,
+    "results": [
+      {
+        "id": "gsm7-ext-straddle",
+        "encoding": "gsm7",
+        "partsSent": 2,
+        "partsDelivered": 2,
+        "sentResults": [-1, -1],
+        "deliveryResults": ["delivered", "delivered"],
+        "sentRows": 1,
+        "sentRowBodyEqual": true,
+        "lastSentMs": 2400,
+        "lastDeliveredMs": 5100
+      }
+    ]
+  },
+  "background": {
+    "runs": [
+      {
+        "scenario": "doze-forced",
+        "batteryExempt": true,
+        "samples": 10,
+        "p50Ms": 900,
+        "p95Ms": 2100,
+        "maxMs": 2500,
+        "restarted": "yes"
+      }
+    ]
+  },
+  "tls": {
+    "result": "fallback",
+    "fallbackReason": "keystore-signing",
+    "keyClass": "keystore-wrapped-software",
+    "keyDigests": ["SHA-256"],
+    "attempts": [
+      { "keyClass": "strongbox", "keyDigests": ["SHA-256"], "result": "failed", "failure": "strongbox-missing" },
+      { "keyClass": "tee", "keyDigests": ["SHA-256"], "result": "failed", "failure": "keystore-signing" },
+      { "keyClass": "tee", "keyDigests": ["NONE", "SHA-256"], "result": "failed", "failure": "keystore-signing" },
+      { "keyClass": "keystore-wrapped-software", "keyDigests": ["SHA-256"], "result": "ok" }
+    ],
+    "protocol": "TLSv1.3",
+    "cipherSuite": "TLS_AES_128_GCM_SHA256",
+    "serverPinMatched": true,
+    "clientCertAccepted": true,
+    "ekmEqual": true,
+    "handshakeMs": 180
+  },
+  "network": {
+    "localNetworkPermission": "granted",
+    "lanStandin": "ok",
+    "tailnetStandin": "not-tested"
+  },
+  "otp": {
+    "samples": [{ "delivered": true, "delayMs": 10800000, "delayed": true, "webOtp": "not-tested" }]
+  },
+  "install": [
+    {
+      "path": "adb",
+      "androidVersion": "16",
+      "installed": true,
+      "restrictedSettings": "not-needed",
+      "playProtect": "no-prompt",
+      "advancedProtection": "off"
+    }
+  ],
+  "testMessages": [
+    {
+      "transport": "sms",
+      "direction": "inbound",
+      "table": "sms",
+      "addressIsSecondNumber": true,
+      "body": "DYTEST-1 hello café 👍🏽 🇺🇸\nsecond line",
+      "rcsMarkerColumns": []
+    },
+    {
+      "transport": "rcs",
+      "direction": "outbound",
+      "table": "mms",
+      "addressIsSecondNumber": true,
+      "body": "DYTEST-2 rcs check",
+      "rcsMarkerColumns": ["tr_id"]
+    }
+  ]
+}
