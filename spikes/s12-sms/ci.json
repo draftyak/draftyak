@@ -1,0 +1,9 @@
+{
+  "os": {
+    "ubuntu-24.04": {
+      "timeout": 20,
+      "java": true,
+      "android": { "packages": ["platforms;android-37.0", "build-tools;37.0.0", "platform-tools"] }
+    }
+  }
+}
