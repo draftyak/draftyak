@@ -19,6 +19,7 @@ describe("argv allowlist (snapshot)", () => {
 			  "--no-experimental-sqlite",
 			  "--disable-sigusr1",
 			  "--disallow-code-generation-from-strings",
+			  "--freeze-flags-after-init",
 			  "--max-old-space-size=256",
 			]
 		`);
@@ -34,6 +35,7 @@ describe("argv allowlist (snapshot)", () => {
 			  "--no-experimental-sqlite",
 			  "--disable-sigusr1",
 			  "--disallow-code-generation-from-strings",
+			  "--freeze-flags-after-init",
 			  "--max-old-space-size=256",
 			]
 		`);
@@ -50,6 +52,7 @@ describe("argv allowlist (snapshot)", () => {
 			  "--no-experimental-sqlite",
 			  "--disable-sigusr1",
 			  "--disallow-code-generation-from-strings",
+			  "--freeze-flags-after-init",
 			  "--max-old-space-size=256",
 			  "--wasm-max-mem-pages=8192",
 			]
@@ -90,6 +93,18 @@ describe("never-list", () => {
 	it("keeps the allowlist and never-list disjoint", () => {
 		const allowed = new Set(ALLOWED_FLAGS);
 		expect(NEVER_FLAGS.filter((flag) => allowed.has(flag))).toEqual([]);
+	});
+
+	it("allows --freeze-flags-after-init (S2b) and puts it in every built argv", () => {
+		expect(ALLOWED_FLAGS).toContain("--freeze-flags-after-init");
+		expect(NEVER_FLAGS).not.toContain("--freeze-flags-after-init");
+		for (const argv of [
+			buildExecArgv({ pluginDir: "/p" }),
+			buildExecArgv({ pluginDir: "/p", dataDir: "/d" }),
+			buildExecArgv({ runtime: "python", pluginDir: "/p", runtimeDir: "/r" }),
+		]) {
+			expect(argv).toContain("--freeze-flags-after-init");
+		}
 	});
 
 	it("passes the three built argvs and rejects never-list, inspector and unknown flags", () => {
