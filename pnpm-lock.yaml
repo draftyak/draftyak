@@ -29,6 +29,12 @@ importers:
 
   spikes/kit: {}
 
+  spikes/s02-plugin-sandbox:
+    devDependencies:
+      '@draftyak/spike-kit':
+        specifier: workspace:*
+        version: link:../kit
+
   spikes/s12-sms:
     dependencies:
       '@peculiar/x509':

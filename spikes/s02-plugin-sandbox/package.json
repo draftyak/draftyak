@@ -1,0 +1,13 @@
+{
+  "name": "@draftyak/spike-s02-plugin-sandbox",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "node ../kit/run.ts",
+    "test:heavy": "node ../kit/run.ts --heavy"
+  },
+  "devDependencies": {
+    "@draftyak/spike-kit": "workspace:*"
+  }
+}
