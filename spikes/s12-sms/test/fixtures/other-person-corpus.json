@@ -1,0 +1,78 @@
+{
+  "about": "Synthetic stand-ins for other people's content the probe must never report: invented names, numbers from ranges reserved for fiction (NANP 555-01xx, Ofcom 07700 900xxx and 020 7946 0xxx, ACMA 0491 570 xxx), reserved domains, and the same numbers, codes, thread ids and hash fragments shaped as lowercase identifiers. No real data.",
+  "names": [
+    "Maria Garcia",
+    "Bob",
+    "Chen Wei",
+    "Priya Patel",
+    "Zoë O'Brien",
+    "Mom",
+    "Dr. Ahmed Khan",
+    "李伟",
+    "Анна Иванова",
+    "José Álvarez",
+    "Kwame Mensah",
+    "Ollie ❤️",
+    "Grandma Rose",
+    "Coach Taylor"
+  ],
+  "numbers": [
+    "+15555550123",
+    "+1 555-555-0142",
+    "(555) 555-0187",
+    "555-0199",
+    "+447700900123",
+    "07700 900456",
+    "+44 20 7946 0958",
+    "5555550111",
+    "+61 491 570 156",
+    "72345"
+  ],
+  "senders": ["VERIFY", "SHOP-INFO", "BANK ALERT"],
+  "messages": [
+    "Running late, see you at 7?",
+    "Can you pick up milk on the way home",
+    "Happy birthday!! 🎂",
+    "Call me when you land",
+    "Where are you?",
+    "Love you ❤️",
+    "I'll send the address later",
+    "lol same",
+    "Meeting moved to 3pm",
+    "Estás en casa?"
+  ],
+  "threadIds": [
+    "thread_id=42",
+    "thread 1532",
+    "#1532",
+    "1532",
+    "threads/87",
+    "content://mms-sms/conversations/42",
+    "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "e3b0c44298fc1c14"
+  ],
+  "otp": [
+    "Your code is 482913",
+    "G-583019 is your verification code.",
+    "123456",
+    "Use 7741 to sign in",
+    "Your verification code: 902-118",
+    "482913"
+  ],
+  "identifiers": [
+    "n555_555_012_3",
+    "p44_770_090_012_3",
+    "c555_555_0187",
+    "otp_482_913",
+    "k482_913",
+    "g_583_019",
+    "thread_153",
+    "t1_5_3_2",
+    "a555b0123",
+    "x_deadbeef",
+    "id_e3b0c442"
+  ],
+  "emails": ["maria.garcia@example.com", "bob@example.org", "a.person@example.net"],
+  "addresses": ["221B Baker Street", "1600 Example Ave, Springfield", "Flat 2, 10 Sample Road"],
+  "numbersAsIntegers": [15555550123, 447700900123, 5555550111, 61491570156]
+}

@@ -1,0 +1,830 @@
+{
+  "format": "draftyak.s12.sms-segments.v1",
+  "status": "draft",
+  "reference": "spikes/s12-sms/src/segments.ts",
+  "notes": [
+    "expected is Android's calculateLength(body, false) and divideMessage(body) with no national tables and no forced 7-bit translation; parts are [start, end, code units] in UTF-16 offsets, code units being septets (GSM-7) or UTF-16 units (UCS-2).",
+    "alternatives come from the reference for other device configs: tr enables the Turkish single and locking shift tables, es the Spanish single shift table, force7bit config_sms_force_7bit_encoding with candidate translations (any other non-GSM unit becomes a space). Offsets then refer to text when present.",
+    "3gpp2 is the path calculateLength and divideMessage take when the subscription sends in the 3GPP2 format (useCdmaFormatForMoSms, e.g. an IMS SMS format of 3GPP2): one part of printable ASCII, CR and LF is 7-bit ASCII at one septet a character, any other one-part GSM-7 text goes UCS-2, and multipart GSM-7 is unchanged. The report's device.smsFormat says which path the phone took.",
+    "The hub renders NFC with LF and caps a text at 10 parts; vectors marked send are multipart DYTEST- texts for the send probe."
+  ],
+  "configs": {
+    "tr": {
+      "singleShift": [1],
+      "lockingShift": [1]
+    },
+    "es": {
+      "singleShift": [2]
+    },
+    "force7bit": {
+      "force7bit": true
+    },
+    "3gpp2": {
+      "format": "3gpp2"
+    }
+  },
+  "vectors": [
+    {
+      "id": "gsm7-single-160",
+      "category": "gsm7",
+      "note": "160 septets fit one part",
+      "nfc": true,
+      "body": "DYTEST-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [1, 160, 0, 1],
+        "parts": [
+          [0, 160, 160]
+        ]
+      }
+    },
+    {
+      "id": "gsm7-multi-161",
+      "category": "gsm7",
+      "note": "161 septets need two parts of at most 153",
+      "nfc": true,
+      "body": "DYTEST-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [2, 161, 145, 1],
+        "parts": [
+          [0, 153, 153],
+          [153, 161, 8]
+        ]
+      }
+    },
+    {
+      "id": "gsm7-multi-306",
+      "category": "gsm7",
+      "note": "exactly two full parts",
+      "nfc": true,
+      "body": "DYTEST-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [2, 306, 0, 1],
+        "parts": [
+          [0, 153, 153],
+          [153, 306, 153]
+        ]
+      }
+    },
+    {
+      "id": "gsm7-newline",
+      "category": "gsm7",
+      "note": "LF is one septet of the default alphabet",
+      "nfc": true,
+      "body": "DYTEST-line one\nline two",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [1, 24, 136, 1],
+        "parts": [
+          [0, 24, 24]
+        ]
+      }
+    },
+    {
+      "id": "gsm7-ext-single-160",
+      "category": "gsm7-extension",
+      "note": "an escape pair ends exactly at septet 160",
+      "nfc": true,
+      "body": "DYTEST-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\u20ac",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [1, 160, 0, 1],
+        "parts": [
+          [0, 159, 160]
+        ]
+      },
+      "alternatives": {
+        "3gpp2": {
+          "encoding": "ucs2",
+          "calculateLength": [3, 159, 42, 3],
+          "parts": [
+            [0, 67, 67],
+            [67, 134, 67],
+            [134, 159, 25]
+          ]
+        }
+      }
+    },
+    {
+      "id": "gsm7-ext-overflow-161",
+      "category": "gsm7-extension",
+      "note": "the escape pair pushes the text to 161 septets",
+      "nfc": true,
+      "body": "DYTEST-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\u20ac",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [2, 161, 145, 1],
+        "parts": [
+          [0, 153, 153],
+          [153, 160, 8]
+        ]
+      }
+    },
+    {
+      "id": "gsm7-ext-straddle",
+      "category": "gsm7-extension",
+      "note": "an escape pair at septets 153-154 moves whole to part 2, which leaves part 1 at 152",
+      "send": true,
+      "nfc": true,
+      "body": "DYTEST-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA{AAAAAAAAAA",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [2, 164, 142, 1],
+        "parts": [
+          [0, 152, 152],
+          [152, 163, 12]
+        ]
+      }
+    },
+    {
+      "id": "gsm7-ext-fills-part",
+      "category": "gsm7-extension",
+      "note": "an escape pair at septets 152-153 stays in part 1",
+      "nfc": true,
+      "body": "DYTEST-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA{AAAAAAAAAA",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [2, 163, 143, 1],
+        "parts": [
+          [0, 152, 153],
+          [152, 162, 10]
+        ]
+      }
+    },
+    {
+      "id": "gsm7-ext-extra-part",
+      "category": "gsm7-extension",
+      "note": "306 septets count as 2 parts, but the moved escape pair makes divideMessage return 3",
+      "send": true,
+      "nfc": true,
+      "body": "DYTEST-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\u20acAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [2, 306, 0, 1],
+        "parts": [
+          [0, 152, 152],
+          [152, 304, 153],
+          [304, 305, 1]
+        ]
+      }
+    },
+    {
+      "id": "gsm7-ext-only-single",
+      "category": "gsm7-extension",
+      "note": "76 escape pairs after the prefix fit one part",
+      "nfc": true,
+      "body": "DYTEST-{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [1, 159, 1, 1],
+        "parts": [
+          [0, 83, 159]
+        ]
+      },
+      "alternatives": {
+        "3gpp2": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 83, 77, 1],
+          "parts": [
+            [0, 83, 83]
+          ]
+        }
+      }
+    },
+    {
+      "id": "gsm7-ext-only-multi",
+      "category": "gsm7-extension",
+      "note": "escape pairs only: part 1 takes 73 of them",
+      "nfc": true,
+      "body": "DYTEST-\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac\u20ac",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [2, 207, 99, 1],
+        "parts": [
+          [0, 80, 153],
+          [80, 107, 54]
+        ]
+      },
+      "alternatives": {
+        "tr": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 107, 48, 1],
+          "parts": [
+            [0, 107, 107]
+          ],
+          "languageTable": 1,
+          "languageShiftTable": 0
+        }
+      }
+    },
+    {
+      "id": "gsm7-ten-parts",
+      "category": "hub-cap",
+      "note": "10 parts, the hub's sms-text-v1 maximum",
+      "nfc": true,
+      "body": "DYTEST-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [10, 1530, 0, 1],
+        "parts": [
+          [0, 153, 153],
+          [153, 306, 153],
+          [306, 459, 153],
+          [459, 612, 153],
+          [612, 765, 153],
+          [765, 918, 153],
+          [918, 1071, 153],
+          [1071, 1224, 153],
+          [1224, 1377, 153],
+          [1377, 1530, 153]
+        ]
+      }
+    },
+    {
+      "id": "gsm7-eleven-parts",
+      "category": "hub-cap",
+      "note": "11 parts: Android splits it, the hub refuses it",
+      "nfc": true,
+      "body": "DYTEST-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [11, 1531, 152, 1],
+        "parts": [
+          [0, 153, 153],
+          [153, 306, 153],
+          [306, 459, 153],
+          [459, 612, 153],
+          [612, 765, 153],
+          [765, 918, 153],
+          [918, 1071, 153],
+          [1071, 1224, 153],
+          [1224, 1377, 153],
+          [1377, 1530, 153],
+          [1530, 1531, 1]
+        ]
+      }
+    },
+    {
+      "id": "ucs2-single-70",
+      "category": "ucs2",
+      "note": "70 UTF-16 units fit one part",
+      "nfc": true,
+      "body": "DYTEST-\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [1, 70, 0, 3],
+        "parts": [
+          [0, 70, 70]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 70, 90, 1],
+          "parts": [
+            [0, 70, 70]
+          ],
+          "text": "DYTEST-                                                               "
+        }
+      }
+    },
+    {
+      "id": "ucs2-multi-71",
+      "category": "ucs2",
+      "note": "71 units need two parts of at most 67",
+      "nfc": true,
+      "body": "DYTEST-\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [2, 71, 63, 3],
+        "parts": [
+          [0, 67, 67],
+          [67, 71, 4]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 71, 89, 1],
+          "parts": [
+            [0, 71, 71]
+          ],
+          "text": "DYTEST-                                                                "
+        }
+      }
+    },
+    {
+      "id": "ucs2-surrogate-straddle",
+      "category": "ucs2-cluster",
+      "note": "an emoji at units 66-67 moves to part 2",
+      "nfc": true,
+      "body": "DYTEST-\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\ud83d\ude00\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [2, 78, 55, 3],
+        "parts": [
+          [0, 66, 66],
+          [66, 78, 12]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 78, 82, 1],
+          "parts": [
+            [0, 78, 78]
+          ],
+          "text": "DYTEST-                                                                       "
+        }
+      }
+    },
+    {
+      "id": "ucs2-flag-straddle",
+      "category": "ucs2-cluster",
+      "note": "a flag (two regional indicators) at units 65-68 moves whole to part 2",
+      "send": true,
+      "nfc": true,
+      "body": "DYTEST-\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\ud83c\uddfa\ud83c\uddf8\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [2, 79, 53, 3],
+        "parts": [
+          [0, 65, 65],
+          [65, 79, 14]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 79, 81, 1],
+          "parts": [
+            [0, 79, 79]
+          ],
+          "text": "DYTEST-                                                                        "
+        }
+      }
+    },
+    {
+      "id": "ucs2-flag-run",
+      "category": "ucs2-cluster",
+      "note": "a run of 20 flags: part 1 ends at the flag pair that unit 67 falls in",
+      "nfc": true,
+      "body": "DYTEST-\u0436\ud83c\uddfa\ud83c\uddf8\ud83c\uddeb\ud83c\uddf7\ud83c\udde9\ud83c\uddea\ud83c\uddef\ud83c\uddf5\ud83c\uddfa\ud83c\uddf8\ud83c\uddeb\ud83c\uddf7\ud83c\udde9\ud83c\uddea\ud83c\uddef\ud83c\uddf5\ud83c\uddfa\ud83c\uddf8\ud83c\uddeb\ud83c\uddf7\ud83c\udde9\ud83c\uddea\ud83c\uddef\ud83c\uddf5\ud83c\uddfa\ud83c\uddf8\ud83c\uddeb\ud83c\uddf7\ud83c\udde9\ud83c\uddea\ud83c\uddef\ud83c\uddf5\ud83c\uddfa\ud83c\uddf8\ud83c\uddeb\ud83c\uddf7\ud83c\udde9\ud83c\uddea\ud83c\uddef\ud83c\uddf5",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [2, 88, 43, 3],
+        "parts": [
+          [0, 64, 64],
+          [64, 88, 24]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 88, 72, 1],
+          "parts": [
+            [0, 88, 88]
+          ],
+          "text": "DYTEST-                                                                                 "
+        }
+      }
+    },
+    {
+      "id": "ucs2-skin-tone-straddle",
+      "category": "ucs2-cluster",
+      "note": "thumbs up with a skin tone at units 64-67 stays one cluster",
+      "send": true,
+      "nfc": true,
+      "body": "DYTEST-\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\ud83d\udc4d\ud83c\udffd\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [2, 78, 53, 3],
+        "parts": [
+          [0, 64, 64],
+          [64, 78, 14]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 78, 82, 1],
+          "parts": [
+            [0, 78, 78]
+          ],
+          "text": "DYTEST-                                                                       "
+        }
+      }
+    },
+    {
+      "id": "ucs2-keycap-straddle",
+      "category": "ucs2-cluster",
+      "note": "the keycap 1 + U+FE0F + U+20E3 at units 65-67 stays one cluster",
+      "send": true,
+      "nfc": true,
+      "body": "DYTEST-\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u04361\ufe0f\u20e3\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [2, 78, 54, 3],
+        "parts": [
+          [0, 65, 65],
+          [65, 78, 13]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 78, 82, 1],
+          "parts": [
+            [0, 78, 78]
+          ],
+          "text": "DYTEST-                                                          1            "
+        }
+      }
+    },
+    {
+      "id": "ucs2-zwj-straddle",
+      "category": "ucs2-cluster",
+      "note": "a ZWJ family at units 63-70 stays one cluster",
+      "send": true,
+      "nfc": true,
+      "body": "DYTEST-\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [2, 81, 49, 3],
+        "parts": [
+          [0, 63, 63],
+          [63, 81, 18]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 81, 79, 1],
+          "parts": [
+            [0, 81, 81]
+          ],
+          "text": "DYTEST-                                                                          "
+        }
+      }
+    },
+    {
+      "id": "ucs2-nfd-mark-straddle",
+      "category": "nfd",
+      "note": "e + U+0301 at units 66-67 stays one cluster",
+      "nfc": false,
+      "body": "DYTEST-\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436e\u0301\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436\u0436",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [2, 78, 55, 3],
+        "parts": [
+          [0, 66, 66],
+          [66, 78, 12]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 78, 82, 1],
+          "parts": [
+            [0, 78, 78]
+          ],
+          "text": "DYTEST-                                                           e           "
+        }
+      }
+    },
+    {
+      "id": "ucs2-long-cluster",
+      "category": "ucs2-cluster",
+      "note": "a cluster longer than a part: the prefix becomes part 1 and the cluster splits at 67",
+      "nfc": false,
+      "body": "DYTEST-e\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301\u0301",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [3, 88, 53, 3],
+        "parts": [
+          [0, 7, 7],
+          [7, 74, 67],
+          [74, 88, 14]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 88, 72, 1],
+          "parts": [
+            [0, 88, 88]
+          ],
+          "text": "DYTEST-e                                                                                "
+        }
+      }
+    },
+    {
+      "id": "ucs2-long-zwj-surrogate",
+      "category": "ucs2-cluster",
+      "note": "inside a long ZWJ chain the split moves back one unit to keep a surrogate pair",
+      "nfc": true,
+      "body": "DYTEST-\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc69",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [3, 84, 56, 3],
+        "parts": [
+          [0, 7, 7],
+          [7, 73, 66],
+          [73, 84, 11]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 84, 76, 1],
+          "parts": [
+            [0, 84, 84]
+          ],
+          "text": "DYTEST-                                                                             "
+        }
+      }
+    },
+    {
+      "id": "ucs2-emoji-run",
+      "category": "ucs2-cluster",
+      "note": "an emoji run whose pair at units 66-67 moves to part 2",
+      "send": true,
+      "nfc": true,
+      "body": "DYTEST-\u0436\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [2, 88, 45, 3],
+        "parts": [
+          [0, 66, 66],
+          [66, 88, 22]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 88, 72, 1],
+          "parts": [
+            [0, 88, 88]
+          ],
+          "text": "DYTEST-                                                                                 "
+        }
+      }
+    },
+    {
+      "id": "nfc-cafe",
+      "category": "nfd",
+      "note": "NFC e-acute is in the default alphabet",
+      "nfc": true,
+      "body": "DYTEST-caf\u00e9",
+      "expected": {
+        "encoding": "gsm7",
+        "calculateLength": [1, 11, 149, 1],
+        "parts": [
+          [0, 11, 11]
+        ]
+      },
+      "alternatives": {
+        "3gpp2": {
+          "encoding": "ucs2",
+          "calculateLength": [1, 11, 59, 3],
+          "parts": [
+            [0, 11, 11]
+          ]
+        }
+      }
+    },
+    {
+      "id": "nfd-cafe",
+      "category": "nfd",
+      "note": "NFD e + U+0301 is not GSM-7, so the text goes UCS-2; the hub renders NFC first",
+      "nfc": false,
+      "body": "DYTEST-cafe\u0301",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [1, 12, 58, 3],
+        "parts": [
+          [0, 12, 12]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 12, 148, 1],
+          "parts": [
+            [0, 12, 12]
+          ],
+          "text": "DYTEST-cafe "
+        }
+      }
+    },
+    {
+      "id": "national-tr",
+      "category": "national",
+      "note": "Turkish letters: UCS-2 by default, GSM-7 with the Turkish locking shift table",
+      "nfc": true,
+      "body": "DYTEST-I\u011fd\u0131r'da \u0131l\u0131k s\u00fct i\u00e7ti\u011fimiz g\u00fcn\u00fc hat\u0131rla",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [1, 47, 23, 3],
+        "parts": [
+          [0, 47, 47]
+        ]
+      },
+      "alternatives": {
+        "tr": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 47, 108, 1],
+          "parts": [
+            [0, 47, 47]
+          ],
+          "languageTable": 1,
+          "languageShiftTable": 0
+        },
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 47, 113, 1],
+          "parts": [
+            [0, 47, 47]
+          ],
+          "text": "DYTEST-I d r'da  l k s\u00fct i\u00c7ti imiz g\u00fcn\u00fc hat rla"
+        }
+      }
+    },
+    {
+      "id": "national-es",
+      "category": "national",
+      "note": "o-acute: UCS-2 by default, GSM-7 with the Spanish single shift table",
+      "nfc": true,
+      "body": "DYTEST-\u00bfQu\u00e9 tal? Ma\u00f1ana ir\u00e9 a la canci\u00f3n",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [1, 40, 30, 3],
+        "parts": [
+          [0, 40, 40]
+        ]
+      },
+      "alternatives": {
+        "es": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 41, 114, 1],
+          "parts": [
+            [0, 40, 41]
+          ],
+          "languageTable": 0,
+          "languageShiftTable": 2
+        },
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 40, 120, 1],
+          "parts": [
+            [0, 40, 40]
+          ],
+          "text": "DYTEST-\u00bfQu\u00e9 tal? Ma\u00f1ana ir\u00e9 a la canci n"
+        }
+      }
+    },
+    {
+      "id": "national-tr-multi",
+      "category": "national",
+      "note": "multipart Turkish: 67-unit parts by default, 149-septet parts with one national table",
+      "nfc": true,
+      "body": "DYTEST-\u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k \u0131l\u0131k ",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [4, 207, 61, 3],
+        "parts": [
+          [0, 67, 67],
+          [67, 134, 67],
+          [134, 201, 67],
+          [201, 207, 6]
+        ]
+      },
+      "alternatives": {
+        "tr": {
+          "encoding": "gsm7",
+          "calculateLength": [2, 207, 91, 1],
+          "parts": [
+            [0, 149, 149],
+            [149, 207, 58]
+          ],
+          "languageTable": 1,
+          "languageShiftTable": 0
+        },
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [2, 207, 99, 1],
+          "parts": [
+            [0, 153, 153],
+            [153, 207, 54]
+          ],
+          "text": "DYTEST- l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k  l k "
+        }
+      }
+    },
+    {
+      "id": "force7bit-quotes",
+      "category": "force7bit",
+      "note": "curly quotes and an en dash: UCS-2, unless the device forces 7-bit translation",
+      "nfc": true,
+      "body": "DYTEST-It\u2019s \u201cfine\u201d \u2013 ok",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [1, 23, 47, 3],
+        "parts": [
+          [0, 23, 23]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 23, 137, 1],
+          "parts": [
+            [0, 23, 23]
+          ],
+          "text": "DYTEST-It's \"fine\" - ok"
+        }
+      }
+    },
+    {
+      "id": "force7bit-emoji",
+      "category": "force7bit",
+      "note": "forced translation turns each emoji unit into a space",
+      "nfc": true,
+      "body": "DYTEST-ok \ud83d\udc4d",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [1, 12, 58, 3],
+        "parts": [
+          [0, 12, 12]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 12, 148, 1],
+          "parts": [
+            [0, 12, 12]
+          ],
+          "text": "DYTEST-ok   "
+        }
+      }
+    },
+    {
+      "id": "force7bit-accents",
+      "category": "force7bit",
+      "note": "c-cedilla and a-tilde: UCS-2, unless the device forces 7-bit translation",
+      "nfc": true,
+      "body": "DYTEST-a\u00e7\u00e3o",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [1, 11, 59, 3],
+        "parts": [
+          [0, 11, 11]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 11, 149, 1],
+          "parts": [
+            [0, 11, 11]
+          ],
+          "text": "DYTEST-a\u00c7ao"
+        }
+      }
+    },
+    {
+      "id": "ascii-backtick",
+      "category": "3gpp2",
+      "note": "a backtick is ASCII but not GSM-7: UCS-2 on 3GPP, one 7-bit ASCII part on 3GPP2",
+      "nfc": true,
+      "body": "DYTEST-`ok`",
+      "expected": {
+        "encoding": "ucs2",
+        "calculateLength": [1, 11, 59, 3],
+        "parts": [
+          [0, 11, 11]
+        ]
+      },
+      "alternatives": {
+        "force7bit": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 11, 149, 1],
+          "parts": [
+            [0, 11, 11]
+          ],
+          "text": "DYTEST- ok "
+        },
+        "3gpp2": {
+          "encoding": "gsm7",
+          "calculateLength": [1, 11, 149, 1],
+          "parts": [
+            [0, 11, 11]
+          ]
+        }
+      }
+    }
+  ]
+}
