@@ -10,7 +10,8 @@
     "evidence": "node src/matrix.ts"
   },
   "dependencies": {
-    "better-sqlite3-multiple-ciphers": "13.0.3"
+    "better-sqlite3-multiple-ciphers": "13.0.3",
+    "kysely": "0.29.6"
   },
   "devDependencies": {
     "@draftyak/spike-kit": "workspace:*"

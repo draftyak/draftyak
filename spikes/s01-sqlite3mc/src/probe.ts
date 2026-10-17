@@ -1,10 +1,12 @@
-// node src/probe.ts <prebuild.node>: one load as a JSON line, for Node binaries other than the test's.
+// node src/probe.ts <prebuild.node>: one load and keyed round trip as a JSON line, for Node binaries
+// other than the test's.
+import { type KeyedResult, keyedCheck } from "./keyed.ts";
 import { type LoadReport, loadReport } from "./open.ts";
 import { hostTarget } from "./prebuilds.ts";
 
 // A run that never reached the probe has no N-API version.
 export type ProbeResult =
-	| ({ readonly loaded: true } & LoadReport)
+	| ({ readonly loaded: true; readonly keyed: KeyedResult } & LoadReport)
 	| {
 			readonly loaded: false;
 			readonly error: string;
@@ -15,7 +17,8 @@ export type ProbeResult =
 
 function probe(nativeBinding: string): ProbeResult {
 	try {
-		return { loaded: true, ...loadReport(nativeBinding) };
+		const report = loadReport(nativeBinding);
+		return { loaded: true, ...report, keyed: keyedCheck(nativeBinding) };
 	} catch (error) {
 		const { code, name, message } = error as { code?: unknown; name?: unknown; message?: unknown };
 		const id = String(typeof code === "string" ? code : name);

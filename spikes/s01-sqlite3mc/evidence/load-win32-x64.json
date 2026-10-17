@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-17T17:28:29.139Z",
+  "recordedAt": "2026-10-17T21:38:43.280Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,14 +11,14 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "82d1ba5bf5dd70c8567a0b0561adb49afd627358",
+    "commit": "5e8f49b0f7e67814468b6c0aca3057c31581cda3",
     "dirty": false,
     "load": {
-      "cpuPercent": 13.7,
+      "cpuPercent": 16.2,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 68.5,
-      "concurrentBuilds": 0
+      "memoryUsedPercent": 61.7,
+      "concurrentBuilds": 2
     }
   },
   "data": {
@@ -36,7 +36,10 @@
         "sqlite3mcVersion": "SQLite3 Multiple Ciphers 2.4.0",
         "fromBundle": true,
         "sha256": "d4f29082cde7efd5c1e85e794ba532efeef4f2f968c58cc54fe97c2095270262",
-        "openMs": 1.4,
+        "openMs": 1.5,
+        "keyed": {
+          "ok": true
+        },
         "via": "native",
         "nodeFrom": "fetch-node"
       },
@@ -50,7 +53,10 @@
         "sqlite3mcVersion": "SQLite3 Multiple Ciphers 2.4.0",
         "fromBundle": true,
         "sha256": "d4f29082cde7efd5c1e85e794ba532efeef4f2f968c58cc54fe97c2095270262",
-        "openMs": 1.8,
+        "openMs": 1.5,
+        "keyed": {
+          "ok": true
+        },
         "via": "native",
         "nodeFrom": "fetch-node"
       },
@@ -64,7 +70,10 @@
         "sqlite3mcVersion": "SQLite3 Multiple Ciphers 2.4.0",
         "fromBundle": true,
         "sha256": "3607ea18911c931085eaa896eb831260d549e9bcef2dd6e8896b5bb7a41ec6a8",
-        "openMs": 23.5,
+        "openMs": 41.2,
+        "keyed": {
+          "ok": true
+        },
         "via": "docker",
         "nodeFrom": "fetch-node",
         "image": "node:26.12.0-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913"
@@ -79,7 +88,10 @@
         "sqlite3mcVersion": "SQLite3 Multiple Ciphers 2.4.0",
         "fromBundle": true,
         "sha256": "98bd72b54e55a39bacb4c1eb65ecb2c91e1e69557b9d9f4a0a5a8444c6b742c3",
-        "openMs": 33.6,
+        "openMs": 27.4,
+        "keyed": {
+          "ok": true
+        },
         "via": "docker",
         "nodeFrom": "image",
         "image": "node:26.5.1-alpine@sha256:233761595746769ebfdb6090f44fc7cdf818ae0ce62d2b37e0367723b9823e36"
@@ -94,7 +106,10 @@
         "sqlite3mcVersion": "SQLite3 Multiple Ciphers 2.4.0",
         "fromBundle": true,
         "sha256": "3607ea18911c931085eaa896eb831260d549e9bcef2dd6e8896b5bb7a41ec6a8",
-        "openMs": 13.3,
+        "openMs": 46.4,
+        "keyed": {
+          "ok": true
+        },
         "via": "docker",
         "nodeFrom": "fetch-node",
         "image": "node:26.12.0-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913"
@@ -109,7 +124,10 @@
         "sqlite3mcVersion": "SQLite3 Multiple Ciphers 2.4.0",
         "fromBundle": true,
         "sha256": "98bd72b54e55a39bacb4c1eb65ecb2c91e1e69557b9d9f4a0a5a8444c6b742c3",
-        "openMs": 16.5,
+        "openMs": 13.2,
+        "keyed": {
+          "ok": true
+        },
         "via": "docker",
         "nodeFrom": "image",
         "image": "node:26.12.0-alpine@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5"

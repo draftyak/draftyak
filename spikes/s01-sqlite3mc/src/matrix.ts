@@ -55,16 +55,19 @@ export type LoadMatrix = Basis & {
 	readonly targets: Readonly<Record<string, Readonly<Record<string, MatrixCell>>>>;
 };
 
-// Why a run doesn't show the package's own prebuild loading from the bundle, if it doesn't.
+// Why a run doesn't show the package's own prebuild loading from the bundle and passing the keyed
+// round trip, if it doesn't.
 function problem(run: LoadRun, basis: Basis): string | null {
 	if (!run.loaded) return run.error;
 	if (!run.fromBundle) return "not from the bundle";
 	if (run.sha256 !== basis.prebuilds[run.target]) return "other bytes";
-	return run.napiVersion < basis.napiExpected ? `N-API ${run.napiVersion}` : null;
+	if (run.napiVersion < basis.napiExpected) return `N-API ${run.napiVersion}`;
+	return run.keyed.ok ? null : `keyed: ${run.keyed.failure}`;
 }
 
 // Target × Node over the host files for the basis's package: loaded when every run of the pair
-// loaded the package's prebuild from the bundle on a Node with at least its N-API version.
+// loaded the package's prebuild from the bundle on a Node with at least its N-API version and
+// passed the keyed round trip.
 export function loadMatrix(hosts: readonly HostLoads[], basis: Basis): LoadMatrix {
 	const counted = hosts.filter((host) => host.package === basis.package);
 	const cell = (target: string, node: string): MatrixCell => {
@@ -100,7 +103,13 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const runShape = { target: "string", nodeVersion: "string", via: "string" } as const;
 const shapes = {
 	host: { host: "string", package: "string", napiExpected: "number" },
-	loaded: { ...runShape, fromBundle: "boolean", napiVersion: "number", sha256: "string" },
+	loaded: {
+		...runShape,
+		fromBundle: "boolean",
+		napiVersion: "number",
+		sha256: "string",
+		keyed: "object",
+	},
 	failed: { ...runShape, error: "string" },
 	matrix: { package: "string", napiExpected: "number" },
 } as const;

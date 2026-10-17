@@ -157,7 +157,13 @@ describe(`the host's prebuild (${hostTarget()})`, () => {
 			return nodeProbe(node, file, ctx.signal);
 		});
 		const { target, nodeVersion } = c;
-		expect(run).toMatchObject({ loaded: true, target, nodeVersion, fromBundle: true });
+		expect(run).toMatchObject({
+			loaded: true,
+			target,
+			nodeVersion,
+			fromBundle: true,
+			keyed: { ok: true },
+		});
 	});
 });
 
@@ -179,7 +185,8 @@ describe("Linux prebuilds in Docker, from a stageForDocker() copy", () => {
 				const files = targets.map((name) => path.relative(spikeDir, bundle(name).file));
 				const spec = { name: "s01-load", from: spikeDir, packages: [PACKAGE] };
 				const staged =
-					stage ?? stageForDocker({ ...spec, files: ["package.json", "src", ...files] });
+					stage ??
+					stageForDocker({ ...spec, files: ["package.json", "src", "migrations", ...files] });
 				stage = staged;
 				at.step = "docker";
 				const result = await runInDocker({
@@ -200,7 +207,13 @@ describe("Linux prebuilds in Docker, from a stageForDocker() copy", () => {
 				return { ...result, ended: result.timedOut ? "timeout" : ended(result.code) };
 			});
 			const { target, nodeVersion } = c;
-			expect(run).toMatchObject({ loaded: true, target, nodeVersion, fromBundle: true });
+			expect(run).toMatchObject({
+				loaded: true,
+				target,
+				nodeVersion,
+				fromBundle: true,
+				keyed: { ok: true },
+			});
 			expect(run.loaded && run.libc).toMatch(
 				target.startsWith("linux-") ? /^glibc \d+\.\d+$/ : /^musl$/,
 			);
