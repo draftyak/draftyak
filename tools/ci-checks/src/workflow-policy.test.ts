@@ -56,6 +56,16 @@ describe("workflow policy", () => {
 			["dco"],
 			["pr-title"],
 		]);
+		expect(jobs("pr-title.yml")).toMatchObject({
+			"pr-title": {
+				steps: [
+					{ with: { "fetch-depth": 0 } },
+					{},
+					{ run: "node tools/ci-checks/src/pr-meta.ts" },
+					{ run: 'node tools/vendor-guard/src/cli.ts --commits "$BASE_SHA..$HEAD_SHA"' },
+				],
+			},
+		});
 		expect(jobs("zizmor.yml")).toMatchObject({
 			zizmor: {
 				steps: [
