@@ -1,0 +1,8 @@
+{
+  "source": "test/make-fixtures.ts (throwaway keys: A listed, signs with a subkey; B unlisted; D listed, expired 2021-01-01)",
+  "sha256": "54d5f9886b2b9c5d7f3c386c665af80501243c3373337ad5273db9183d08805b",
+  "fingerprints": [
+    "08430FBC20115362C5F7E1982C5E78BF914E54D5",
+    "904467097DC76B9D68242462FAF6057A515D7ECA"
+  ]
+}
