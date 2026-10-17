@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["spike-ekm", "spike-keyring"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.95"
+license = "Apache-2.0"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# Real handshake and key-derivation timings in test builds.
+[profile.dev.package.ring]
+opt-level = 3

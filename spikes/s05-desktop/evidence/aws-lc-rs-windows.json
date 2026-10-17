@@ -1,0 +1,82 @@
+{
+  "recordedAt": "2026-10-17T21:27:28.889Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "d3eb853bf64bebb0ec0137361d0a4a96b77e704b",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 18.4,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 66,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "toolchain": {
+      "rustcVersion": "1.95.0",
+      "host": "x86_64-pc-windows-msvc"
+    },
+    "package": "spike-ekm",
+    "crates": {
+      "aws-lc-rs": "1.18.2",
+      "aws-lc-sys": "0.46.0",
+      "rustls": "0.23.46",
+      "tokio-rustls": "0.26.6",
+      "tokio": "1.53.3"
+    },
+    "build": "ok",
+    "buildSeconds": 18.5,
+    "buildCrates": 28,
+    "jobs": 6,
+    "ringInGraph": false,
+    "cmakeOnPath": false,
+    "nasmOnPath": false,
+    "assembly": {
+      "source": "prebuilt-nasm",
+      "nasmObjects": 26,
+      "prebuiltCopies": 26
+    },
+    "opensslVersion": "3.5.9",
+    "ekm": [
+      {
+        "rust": "client",
+        "provider": "aws-lc-rs",
+        "protocol": "TLSv1_3",
+        "nodeProtocol": "TLSv1.3",
+        "cipherSuite": "TLS13_AES_256_GCM_SHA384",
+        "nodeCipher": "TLS_AES_256_GCM_SHA384",
+        "group": "X25519MLKEM768",
+        "equal": true,
+        "noContextEqual": true,
+        "contextChangesOutput": true,
+        "serverPinned": true,
+        "clientSpkiMatched": true,
+        "wrongPinRefused": true
+      },
+      {
+        "rust": "server",
+        "provider": "aws-lc-rs",
+        "protocol": "TLSv1_3",
+        "nodeProtocol": "TLSv1.3",
+        "cipherSuite": "TLS13_AES_256_GCM_SHA384",
+        "nodeCipher": "TLS_AES_256_GCM_SHA384",
+        "group": "X25519MLKEM768",
+        "equal": true,
+        "noContextEqual": true,
+        "contextChangesOutput": true,
+        "serverPinned": true,
+        "ticketsFromRust": 0
+      }
+    ]
+  }
+}
