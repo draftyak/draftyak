@@ -1,0 +1,7 @@
+c9c9c54916258cef3fcf23743e108dea1aa88af248086c28891137f2844baaa7  node-v0.0.0-darwin-arm64.tar.gz
+2d96cc38915a7413de9fcc7e6279e267bedc26552f5c40add9b435354714d829  node-v0.0.0-darwin-x64.tar.gz
+4191368edd7bd57cdbe7812f0ac9c1c5dcb37ef5bc2b1d60f7f32b2a02debc87  node-v0.0.0-linux-arm64.tar.gz
+efb84979d4f8b89845daabc86341eecdc778fb9985bb115aaabe609be7c4b922  node-v0.0.0-linux-x64.tar.gz
+b5fc7b42b13a8b76e41e1a742cdf2b88a3ae94799b079040de0a32a666f80d17  node-v0.0.0-linux-x64.tar.xz
+cbcf55d87b5dda3cc4be8a2e09d98123e079b47f02ec61bf7eec912ea0b0876a  node-v0.0.0-win-x64.zip
+b5fc7b42b13a8b76e41e1a742cdf2b88a3ae94799b079040de0a32a666f80d17  win-arm64/node.exe

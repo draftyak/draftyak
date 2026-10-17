@@ -29,6 +29,8 @@ importers:
 
   tools/ci-checks: {}
 
+  tools/fetch-node: {}
+
   tools/verify: {}
 
 packages:

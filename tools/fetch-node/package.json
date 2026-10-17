@@ -1,0 +1,14 @@
+{
+  "name": "@draftyak/fetch-node",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./versions.json": "./versions.json",
+    "./images.json": "./images.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:heavy": "vitest run --mode heavy"
+  }
+}
