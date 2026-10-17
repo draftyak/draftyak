@@ -1,0 +1,38 @@
+# The S6 spike's Slack app (M0.24; installed in M0.25). The owner creates it from this manifest
+# in their own test workspace (Create New App, From a manifest) and installs it there with
+# Install to Workspace: an internal app that is never distributed (guardrail 6). Don't activate
+# public distribution. Then, under Basic Information, App-Level Tokens, generate one token with
+# only the connections:write scope, for Socket Mode. The two tokens go into the main checkout's
+# .env.live only through the kit's saveEnvLive(), as DY_LIVE_SLACK_USER_TOKEN and
+# DY_LIVE_SLACK_APP_TOKEN.
+_metadata:
+  major_version: 1
+display_information:
+  name: DraftYak S6 spike
+  description: Test app for DraftYak's Slack spike. Uninstall it when the spike is done.
+oauth_config:
+  scopes:
+    # Read-only user scopes for the plan's sync: history and conversation metadata of the
+    # owner's DMs, MPIMs, public and private channels. auth.test needs none. No bot user, no
+    # admin, write or user-profile scopes.
+    user:
+      - channels:history
+      - channels:read
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - mpim:history
+      - mpim:read
+settings:
+  event_subscriptions:
+    # Delivered over Socket Mode on behalf of the installing user.
+    user_events:
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
+  is_mcp_enabled: false
