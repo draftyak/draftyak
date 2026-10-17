@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Tier, tierFiles, vitestConfig } from "../../vitest.shared.ts";
 
@@ -15,6 +16,12 @@ describe("test tiers", () => {
 		});
 		expect(test?.exclude).toEqual(
 			expect.arrayContaining([tierFiles.heavy, tierFiles.live, tierFiles.device]),
+		);
+	});
+
+	it("keeps Vitest's module cache inside the package, never at the workspace root", () => {
+		expect(config("test").test?.fsModuleCachePath).toBe(
+			path.join(process.cwd(), "node_modules", ".vitest-cache"),
 		);
 	});
 
