@@ -14,6 +14,7 @@
     "build": "node tools/verify/turbo.ts run build",
     "verify": "node tools/verify/verify.ts",
     "verify:m0": "node tools/verify/verify.ts --profile m0",
+    "verify:m1": "node tools/verify/verify.ts --profile m1",
     "fetch-node": "node tools/fetch-node/fetch-node.mjs",
     "guard": "pnpm --filter @draftyak/vendor-guard --fail-if-no-match run guard",
     "adr": "pnpm --filter @draftyak/adr-check --fail-if-no-match run adr",

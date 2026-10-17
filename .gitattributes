@@ -1,7 +1,8 @@
 * text=auto eol=lf
 
 *.eml -text
-**/vectors/** -text
+spec/vectors/** -text
+spikes/*/vectors/** -text
 security/** -text
 spikes/**/fixtures/** -text
 
