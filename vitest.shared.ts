@@ -29,6 +29,9 @@ export function vitestConfig(env: ConfigEnv): ViteUserConfig {
 			include: [tierFiles[tier]],
 			exclude: tier === "unit" ? [...defaultExclude, ...otherTiers] : defaultExclude,
 			passWithNoTests: tier !== "unit",
+			// Many tests spawn git or a CLI, which can outlast Vitest's 5 s default on 2-core CI runners.
+			testTimeout: 30_000,
+			hookTimeout: 30_000,
 		},
 	};
 }
