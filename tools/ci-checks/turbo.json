@@ -2,7 +2,13 @@
   "extends": ["//"],
   "tasks": {
     "test": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.github/workflows/**"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.github/workflows/**",
+        "$TURBO_ROOT$/spikes/*/ci.json",
+        "$TURBO_ROOT$/spikes/*/package.json",
+        "$TURBO_ROOT$/spikes/*/**/Cargo.toml"
+      ]
     }
   }
 }

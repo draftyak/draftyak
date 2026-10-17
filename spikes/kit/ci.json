@@ -1,0 +1,10 @@
+{
+  "os": {
+    "ubuntu-24.04": { "timeout": 10, "docker": true },
+    "ubuntu-24.04-arm": { "timeout": 10, "docker": true },
+    "windows-2025": { "timeout": 15 },
+    "windows-11-arm": { "timeout": 15 },
+    "macos-15": { "timeout": 10 },
+    "macos-15-intel": { "timeout": 10 }
+  }
+}

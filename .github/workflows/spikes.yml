@@ -1,0 +1,200 @@
+name: spikes
+
+# pnpm spikes:run pushes HEAD plus spikes/run.json to spikes-run/<branch>-<UTC stamp> and deletes
+# the branch after the run. workflow_dispatch takes the same fields once this file is on the
+# default branch (after the M0 gate). Every spikes-run branch is new and a run can only restore
+# caches from its own branch or the default branch, so caches are saved only on the default branch.
+on:
+  push:
+    branches: ['spikes-run/**']
+  workflow_dispatch:
+    inputs:
+      spikes:
+        description: Spike folders or ids, comma-separated (kit, s01, s02-plugin-sandbox)
+        required: true
+        type: string
+      os:
+        description: Runners, comma-separated (macos-15, macos-15-intel, ubuntu-24.04-arm, windows-11-arm, ubuntu-24.04, windows-2025)
+        required: true
+        type: string
+      node:
+        description: The Nodes to fetch and test
+        required: true
+        default: both
+        type: choice
+        options: [both, minimum, bundled]
+
+permissions:
+  contents: read
+
+env:
+  DO_NOT_TRACK: '1'
+  TURBO_TELEMETRY_DISABLED: '1'
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      node: ${{ steps.plan.outputs.node }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Validate spikes/run.json and each spike's ci.json
+        id: plan
+        env:
+          RUN_SPIKES: ${{ inputs.spikes }}
+          RUN_OS: ${{ inputs.os }}
+          RUN_NODE: ${{ inputs.node }}
+        run: node tools/ci-checks/src/spikes-run.ts --plan
+
+  run:
+    needs: plan
+    name: ${{ matrix.spike }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      DRAFTYAK_STRICT_SKIPS: '1'
+      DRAFTYAK_NODES: ${{ needs.plan.outputs.node }}
+      DRAFTYAK_CACHE_DIR: ${{ github.workspace }}/.cache/draftyak
+    steps:
+      - id: start
+        run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Test the item's commit, below the one that adds spikes/run.json
+        if: github.event_name == 'push'
+        run: |
+          if [ "$(git diff --name-only HEAD^ HEAD)" != spikes/run.json ]; then
+            echo "::error::a spikes-run branch holds HEAD plus spikes/run.json: start runs with pnpm spikes:run"
+            exit 1
+          fi
+          git checkout --quiet --detach HEAD^
+      - name: Clear the committed evidence, so the artifact holds only this job's
+        run: |
+          git ls-files -z -- 'spikes/*/evidence/*' | git update-index -z --skip-worktree --stdin
+          rm -rf spikes/*/evidence
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: ${{ github.ref == 'refs/heads/main' }}
+      - name: Restore Node binaries
+        id: nodes
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/draftyak/node
+          key: fetch-node-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/fetch-node/versions.json') }}
+      - name: Restore Pyodide wheels
+        id: pyodide
+        if: hashFiles(format('spikes/{0}/**/runtime.lock.json', matrix.spike)) != ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/draftyak/pyodide
+          key: pyodide-${{ runner.os }}-${{ hashFiles(format('spikes/{0}/**/runtime.lock.json', matrix.spike)) }}
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master on 2026-10-16
+        if: matrix.rust
+        with:
+          toolchain: 1.95.0
+          targets: ${{ matrix.rustTargets }}
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: matrix.rust
+        with:
+          key: ${{ matrix.rustKey }}
+          workspaces: ${{ matrix.rustWorkspaces }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        if: matrix.java
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Android SDK through sdkmanager, which accepts its licences
+        if: matrix.androidPackages != ''
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          accept-android-sdk-licenses: true
+          packages: ${{ matrix.androidPackages }}
+      - name: Linux packages
+        if: matrix.tauriLinux || matrix.apt != ''
+        env:
+          TAURI: ${{ matrix.tauriLinux }}
+          PACKAGES: ${{ matrix.apt }}
+        run: |
+          if [ "$TAURI" = true ]; then
+            PACKAGES="libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth $PACKAGES"
+          fi
+          sudo apt-get update
+          # shellcheck disable=SC2086
+          sudo apt-get install --yes --no-install-recommends $PACKAGES
+      - name: Docker engine
+        if: matrix.docker
+        run: |
+          docker info --format 'Docker {{.ServerVersion}}, {{.OSType}}/{{.Architecture}}'
+      - run: pnpm install --frozen-lockfile
+      - name: fetch-node
+        run: |
+          versions=$DRAFTYAK_NODES
+          if [ "$versions" = both ]; then versions='minimum bundled'; fi
+          for version in $versions; do
+            node tools/fetch-node/fetch-node.mjs --version "$version" --print-path
+          done
+      - name: Save Node binaries
+        if: github.ref == 'refs/heads/main' && steps.nodes.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/draftyak/node
+          key: ${{ steps.nodes.outputs.cache-primary-key }}
+      - name: test:heavy
+        id: heavy
+        env:
+          SPIKE: ${{ matrix.spike }}
+          XVFB: ${{ matrix.tauriLinux }}
+        run: |
+          heavy=(pnpm --filter "./spikes/$SPIKE" --fail-if-no-match run test:heavy)
+          if [ "$XVFB" = true ]; then heavy=(xvfb-run --auto-servernum "${heavy[@]}"); fi
+          "${heavy[@]}"
+      - name: Save Pyodide wheels
+        if: github.ref == 'refs/heads/main' && steps.pyodide.outcome == 'success' && steps.pyodide.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/draftyak/pyodide
+          key: ${{ steps.pyodide.outputs.cache-primary-key }}
+      - name: Check the evidence
+        id: evidence
+        if: always() && (steps.heavy.outcome == 'success' || steps.heavy.outcome == 'failure')
+        run: node tools/ci-checks/src/spikes-run.ts --check-evidence
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.evidence.outcome == 'success'
+        with:
+          name: evidence_${{ matrix.spike }}_${{ matrix.os }}
+          path: spikes/*/evidence/
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 7
+      - name: Estimated billed minutes
+        if: always()
+        env:
+          STARTED: ${{ steps.start.outputs.at }}
+          RUNNER: ${{ matrix.os }}
+          RATE: ${{ matrix.rate }}
+        run: |
+          minutes=$(( ($(date +%s) - STARTED + 59) / 60 ))
+          line="about $minutes min on $RUNNER x $RATE = $(( minutes * RATE )) billed minutes, counted from the first step"
+          echo "$line"
+          printf '### Estimated billed minutes\n\n%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"
