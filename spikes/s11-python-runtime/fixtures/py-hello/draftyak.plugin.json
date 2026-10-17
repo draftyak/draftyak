@@ -1,0 +1,11 @@
+{
+  "id": "py-hello",
+  "version": "0.1.0",
+  "kind": "tool",
+  "runtime": "python",
+  "python": {
+    "abi": "pyemscripten_2026_0",
+    "entry": "py_hello:plugin"
+  },
+  "isolation": "standard"
+}
