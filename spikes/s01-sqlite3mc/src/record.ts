@@ -1,8 +1,9 @@
 // node src/record.ts [vitest args]: the heavy suite with strict skips, recording this machine's
-// evidence/load-<host>.json and the matrix. Other local heavy runs (verify:m0) leave evidence alone.
-import { spawn } from "node:child_process";
+// evidence/load-<host>.json, the matrix and bench-<host>.json. Other local heavy runs (verify:m0)
+// leave evidence alone.
+import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
-import { fingerprint, writeEvidence } from "@draftyak/spike-kit";
+import { type Fingerprint, fingerprint, writeEvidence } from "@draftyak/spike-kit";
 import {
 	evidenceDir,
 	type HostLoads,
@@ -32,6 +33,23 @@ export function selectedNodes(
 	throw new Error(`DRAFTYAK_NODES is both, minimum or bundled, not "${value}"`);
 }
 
+// Tracked changes anywhere in the repository but <dir>/evidence; null when git can't tell. GIT_*
+// variables from a hook or `rebase -x` would point git at another repository.
+export function codeChanged(dir: string = spikeDir): boolean | null {
+	const env = Object.fromEntries(
+		Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)),
+	);
+	const args = ["status", "--porcelain", "--untracked-files=no", "--", ":/", ":(exclude)evidence"];
+	const status = spawnSync("git", args, { cwd: dir, encoding: "utf8", env, windowsHide: true });
+	return status.status === 0 ? status.stdout.trim() !== "" : null;
+}
+
+// One record run writes several evidence files, and those written first aren't code changes.
+export async function codeFingerprint(): Promise<Fingerprint> {
+	const print = await fingerprint({ cwd: spikeDir });
+	return { ...print, dirty: codeChanged() ?? print.dirty };
+}
+
 export type Planned = Pick<LoadRun, "target" | "nodeVersion" | "via">;
 
 // The planned cases that produced no run: filtered out or skipped. Their host file isn't written.
@@ -47,7 +65,7 @@ export async function writeLoadEvidence(
 	runs: readonly LoadRun[],
 	env: NodeJS.ProcessEnv = process.env,
 ): Promise<string[]> {
-	const print = await fingerprint({ cwd: spikeDir });
+	const print = await codeFingerprint();
 	const { package: pkg, napiExpected } = await installedBasis();
 	const host = hostTarget();
 	const data: HostLoads = { host, package: pkg, napiExpected, runs };

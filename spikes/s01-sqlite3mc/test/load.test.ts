@@ -170,7 +170,7 @@ describe("the host's prebuild", () => {
 		const ok = run(file);
 		expect([ok.status, JSON.parse(ok.stdout)]).toMatchObject([
 			0,
-			{ loaded: true, target, fromBundle: true, sha256: sha256(source) },
+			{ loaded: true, target, fromBundle: true, sha256: sha256(source), keyed: { ok: true } },
 		]);
 		const refused = run(file.slice(0, -".node".length));
 		expect([refused.status, JSON.parse(refused.stdout)]).toMatchObject([
@@ -212,6 +212,7 @@ const ran = (target: string, nodeVersion: string, extra: Partial<LoadRun> = {}):
 		fromBundle: true,
 		sha256: fake(target),
 		openMs: 1,
+		keyed: { ok: true },
 		via: "native",
 		nodeFrom: "fetch-node",
 		...extra,
@@ -248,6 +249,7 @@ describe("the load matrix", () => {
 					ran("linux-x64", "26.5.1", { via: "docker" }),
 					ran("linuxmusl-x64", "26.5.1", { via: "docker", napiVersion: 9 }),
 					ran("linux-arm64", "26.5.1", { sha256: fake("other bytes") }),
+					ran("linuxmusl-arm64", "26.5.1", { keyed: { ok: false, failure: "wrong key: opened" } }),
 					failed("linux-arm64", "26.12.0", "ERR_DLOPEN_FAILED"),
 				]),
 				host("darwin-arm64", [ran("darwin-arm64", "26.5.1")], `${PACKAGE}@13.0.2`),
@@ -284,6 +286,10 @@ describe("the load matrix", () => {
 		});
 		expect(cell("linux-arm64", "26.5.1")?.problems).toEqual(["other bytes"]);
 		expect(cell("linux-arm64", "26.12.0")?.problems).toEqual(["ERR_DLOPEN_FAILED"]);
+		expect(cell("linuxmusl-arm64", "26.5.1")).toMatchObject({
+			status: "failed",
+			problems: ["keyed: wrong key: opened"],
+		});
 		expect(cell("darwin-arm64", "26.5.1")?.status).toBe("not run");
 	});
 
@@ -315,6 +321,9 @@ describe("the load matrix", () => {
 			expect(() => readHostFiles(dir)).toThrow("(runs[1].nodeVersion is missing or malformed)");
 			write("load-linux-arm64.json", host("linux-arm64", [{ target: "x" } as unknown as LoadRun]));
 			expect(() => readHostFiles(dir)).toThrow("(runs[0].loaded is missing or malformed)");
+			const unkeyed = { ...ran("linux-arm64", "26.5.1"), keyed: undefined } as unknown as LoadRun;
+			write("load-linux-arm64.json", host("linux-arm64", [unkeyed]));
+			expect(() => readHostFiles(dir)).toThrow("(runs[0].keyed is missing or malformed)");
 			write("load-linux-arm64.json", host("linux-arm64", [failed("linux-arm64", "26.5.1", "e")]));
 			write("load-matrix.json", "{");
 			expect(readHostFiles(dir)).toHaveLength(1);
