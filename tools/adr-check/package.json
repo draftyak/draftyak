@@ -1,0 +1,10 @@
+{
+  "name": "@draftyak/adr-check",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "adr": "node src/cli.ts",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  }
+}

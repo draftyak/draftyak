@@ -29,6 +29,8 @@ importers:
 
   spikes/kit: {}
 
+  tools/adr-check: {}
+
   tools/ci-checks: {}
 
   tools/fetch-node: {}
