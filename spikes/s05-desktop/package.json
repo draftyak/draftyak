@@ -5,10 +5,17 @@
   "scripts": {
     "typecheck": "tsc -b",
     "test": "node ../kit/run.ts",
-    "test:heavy": "node ../kit/run.ts --heavy"
+    "test:heavy": "node ../kit/run.ts --heavy",
+    "stage-sidecar": "node tauri-app/scripts/stage-sidecar.ts"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4",
+    "better-sqlite3-multiple-ciphers": "13.0.3"
   },
   "devDependencies": {
     "@draftyak/spike-kit": "workspace:*",
-    "@peculiar/x509": "2.2.0"
+    "@draftyak/spike-s02-plugin-sandbox": "workspace:*",
+    "@peculiar/x509": "2.2.0",
+    "@tauri-apps/cli": "2.12.3"
   }
 }
