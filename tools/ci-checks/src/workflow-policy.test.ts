@@ -66,6 +66,28 @@ describe("workflow policy", () => {
 		});
 	});
 
+	it("runs spikes.yml on spikes-run/** pushes and dispatch only, and nothing else on those pushes", () => {
+		const triggers = Object.fromEntries(
+			files.map((file) => [
+				path.basename(file),
+				(parseYaml(read(file)).value as { on: unknown }).on,
+			]),
+		);
+		for (const [file, on] of Object.entries(triggers)) {
+			const branches = (on as { push?: { branches?: string[] } }).push?.branches ?? [];
+			expect(branches.includes("spikes-run/**"), file).toBe(file === "spikes.yml");
+		}
+		const spikes = triggers["spikes.yml"] as Record<string, unknown>;
+		expect(Object.keys(spikes)).toEqual(["push", "workflow_dispatch"]);
+		expect(spikes.push).toEqual({ branches: ["spikes-run/**"] });
+		expect(Object.keys(spikes.workflow_dispatch as object)).toEqual(["inputs"]);
+		expect(Object.keys((spikes.workflow_dispatch as { inputs: object }).inputs)).toEqual([
+			"spikes",
+			"os",
+			"node",
+		]);
+	});
+
 	it("allows push to spikes-run/**, evidence uploads, read-only jobs and github.sha in run", () => {
 		const steps = [
 			`- uses: ${pin("actions/upload-artifact")}`,
@@ -100,6 +122,21 @@ describe("workflow policy", () => {
 			"push may only run",
 		],
 		["push to every branch", workflow(["push:"]), "push may only run"],
+		[
+			"push to a spikes-run lookalike",
+			workflow(["push:", "  branches: ['spikes-run/*', 'spikes-run-**']"]),
+			"push may only run",
+		],
+		[
+			"push with branches-ignore",
+			workflow(["push:", "  branches-ignore: [main]"]),
+			"push may only run",
+		],
+		[
+			"push to spikes-run/** on tags",
+			workflow(["push:", "  branches: ['spikes-run/**']", "  tags: ['*']"]),
+			"push may only run",
+		],
 		[
 			"push on tags",
 			workflow(["push:", "  branches: [main]", "  tags: ['v*']"]),
