@@ -1,0 +1,17 @@
+{
+  "name": "@draftyak/spike-s09-messages-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "node ../kit/run.ts",
+    "test:live": "node ../kit/run.ts --live"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.135.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@draftyak/spike-kit": "workspace:*"
+  }
+}
