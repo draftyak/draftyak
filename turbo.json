@@ -1,0 +1,56 @@
+{
+  "$schema": "./node_modules/turbo/schema.json",
+  "cacheDir": ".turbo/cache",
+  "noUpdateNotifier": true,
+  "globalDependencies": [
+    ".node-version",
+    "rust-toolchain.toml",
+    "tsconfig.base.json",
+    "vitest.shared.ts"
+  ],
+  "globalPassThroughEnv": [
+    "DO_NOT_TRACK",
+    "CI",
+    "GITHUB_STEP_SUMMARY",
+    "GNUPGHOME",
+    "DRAFTYAK_GPG",
+    "DRAFTYAK_UV",
+    "DRAFTYAK_CACHE_DIR",
+    "DRAFTYAK_ENV_LIVE",
+    "CARGO_HOME",
+    "CARGO_TARGET_DIR",
+    "RUSTUP_HOME",
+    "JAVA_HOME",
+    "ANDROID_HOME",
+    "ANDROID_SDK_ROOT",
+    "PLAYWRIGHT_BROWSERS_PATH"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "env": ["DRAFTYAK_*"]
+    },
+    "test:heavy": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "env": ["DRAFTYAK_*"]
+    },
+    "test:live": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "env": ["DRAFTYAK_*"]
+    },
+    "test:device": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "env": ["DRAFTYAK_*"]
+    }
+  }
+}
