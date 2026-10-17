@@ -1,0 +1,23 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/verify/steps/vendor-guard.ts",
+        "$TURBO_ROOT$/tools/verify/lib/*.ts",
+        "$TURBO_ROOT$/tools/ci-checks/src/pr-meta.ts",
+        "$TURBO_ROOT$/tools/ci-checks/src/lib.ts"
+      ]
+    },
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/verify/steps/vendor-guard.ts",
+        "$TURBO_ROOT$/tools/verify/lib/*.ts",
+        "$TURBO_ROOT$/tools/ci-checks/src/pr-meta.ts",
+        "$TURBO_ROOT$/tools/ci-checks/src/lib.ts"
+      ]
+    }
+  }
+}

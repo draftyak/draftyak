@@ -1,0 +1,10 @@
+{
+  "name": "@draftyak/vendor-guard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "guard": "node src/cli.ts",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  }
+}
