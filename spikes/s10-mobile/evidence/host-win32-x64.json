@@ -1,0 +1,237 @@
+{
+  "recordedAt": "2026-10-17T21:36:28.325Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "ef83884cad4bfa15e482d049edcbb8402fb46f8d",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 30,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 66.7,
+      "concurrentBuilds": 2
+    }
+  },
+  "data": {
+    "target": "x86_64-pc-windows-msvc",
+    "rustcVersion": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "awsLcRs": "builds",
+    "builds": [
+      {
+        "provider": "ring",
+        "ok": true,
+        "crates": [
+          {
+            "name": "ring",
+            "version": "0.17.14",
+            "status": "ok"
+          },
+          {
+            "name": "tokio",
+            "version": "1.53.3",
+            "status": "ok"
+          },
+          {
+            "name": "tokio-rustls",
+            "version": "0.26.6",
+            "status": "ok"
+          },
+          {
+            "name": "rustls",
+            "version": "0.23.46",
+            "status": "ok"
+          },
+          {
+            "name": "hyper",
+            "version": "1.12.0",
+            "status": "ok"
+          },
+          {
+            "name": "hyper-util",
+            "version": "0.1.21",
+            "status": "ok"
+          },
+          {
+            "name": "tokio-tungstenite",
+            "version": "0.30.0",
+            "status": "ok"
+          },
+          {
+            "name": "keyring-core",
+            "version": "1.0.1",
+            "status": "ok"
+          },
+          {
+            "name": "p256",
+            "version": "0.14.0",
+            "status": "ok"
+          },
+          {
+            "name": "ecdsa",
+            "version": "0.17.0",
+            "status": "ok"
+          },
+          {
+            "name": "hmac",
+            "version": "0.13.0",
+            "status": "ok"
+          },
+          {
+            "name": "sha2",
+            "version": "0.11.1",
+            "status": "ok"
+          },
+          {
+            "name": "rcgen",
+            "version": "0.14.10",
+            "status": "ok"
+          },
+          {
+            "name": "serde_json_canonicalizer",
+            "version": "0.4.1",
+            "status": "ok"
+          },
+          {
+            "name": "jiff",
+            "version": "0.2.38",
+            "status": "ok"
+          },
+          {
+            "name": "jiff-tzdb",
+            "version": "0.1.9",
+            "status": "ok"
+          },
+          {
+            "name": "transport-skeleton",
+            "version": "0.0.0",
+            "status": "ok"
+          }
+        ],
+        "strays": [],
+        "awsLcSys": [],
+        "tests": 11
+      },
+      {
+        "provider": "aws-lc-rs",
+        "ok": true,
+        "crates": [
+          {
+            "name": "aws-lc-sys",
+            "version": "0.46.0",
+            "status": "ok"
+          },
+          {
+            "name": "aws-lc-rs",
+            "version": "1.18.2",
+            "status": "ok"
+          },
+          {
+            "name": "tokio",
+            "version": "1.53.3",
+            "status": "ok"
+          },
+          {
+            "name": "tokio-rustls",
+            "version": "0.26.6",
+            "status": "ok"
+          },
+          {
+            "name": "rustls",
+            "version": "0.23.46",
+            "status": "ok"
+          },
+          {
+            "name": "hyper",
+            "version": "1.12.0",
+            "status": "ok"
+          },
+          {
+            "name": "hyper-util",
+            "version": "0.1.21",
+            "status": "ok"
+          },
+          {
+            "name": "tokio-tungstenite",
+            "version": "0.30.0",
+            "status": "ok"
+          },
+          {
+            "name": "keyring-core",
+            "version": "1.0.1",
+            "status": "ok"
+          },
+          {
+            "name": "p256",
+            "version": "0.14.0",
+            "status": "ok"
+          },
+          {
+            "name": "ecdsa",
+            "version": "0.17.0",
+            "status": "ok"
+          },
+          {
+            "name": "hmac",
+            "version": "0.13.0",
+            "status": "ok"
+          },
+          {
+            "name": "sha2",
+            "version": "0.11.1",
+            "status": "ok"
+          },
+          {
+            "name": "rcgen",
+            "version": "0.14.10",
+            "status": "ok"
+          },
+          {
+            "name": "serde_json_canonicalizer",
+            "version": "0.4.1",
+            "status": "ok"
+          },
+          {
+            "name": "jiff",
+            "version": "0.2.38",
+            "status": "ok"
+          },
+          {
+            "name": "jiff-tzdb",
+            "version": "0.1.9",
+            "status": "ok"
+          },
+          {
+            "name": "transport-skeleton",
+            "version": "0.0.0",
+            "status": "ok"
+          }
+        ],
+        "strays": [],
+        "awsLcSys": [
+          "Building with: CC",
+          "NASM command not found or failed to execute."
+        ],
+        "tests": 11
+      }
+    ],
+    "passed": [
+      "app clippy",
+      "aws-lc-rs clippy",
+      "aws-lc-rs clippy --lib",
+      "aws-lc-rs test",
+      "ring clippy",
+      "ring clippy --lib",
+      "ring test",
+      "rustfmt"
+    ]
+  }
+}

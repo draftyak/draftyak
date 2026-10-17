@@ -1,0 +1,16 @@
+{
+  "os": {
+    "ubuntu-24.04": {
+      "timeout": 40,
+      "java": true,
+      "android": {
+        "packages": ["platforms;android-37.0", "build-tools;37.0.0", "ndk;29.0.13846066"]
+      },
+      "rust": { "targets": ["aarch64-linux-android"] }
+    },
+    "macos-15": {
+      "timeout": 25,
+      "rust": { "targets": ["aarch64-apple-ios-sim"] }
+    }
+  }
+}
