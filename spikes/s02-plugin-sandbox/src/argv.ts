@@ -16,6 +16,10 @@ export interface ArgvSpec {
 }
 
 // Allowed flags, by name (the part before "="). Value flags appear as "<name>=<value>" in argv.
+// --freeze-flags-after-init is added by S2b (M0.12): v8.setFlagsFromString('--allow-natives-syntax')
+// weakens V8 at runtime on both Nodes, and natives then compile through node:vm, which
+// --disallow-code-generation-from-strings does not block. With the freeze flag set, any runtime
+// setFlagsFromString aborts the plugin instead of weakening V8 (evidence/v8flags-*.json).
 export const ALLOWED_FLAGS: readonly string[] = Object.freeze([
 	"--permission",
 	"--allow-fs-read",
@@ -23,6 +27,7 @@ export const ALLOWED_FLAGS: readonly string[] = Object.freeze([
 	"--no-experimental-sqlite",
 	"--disable-sigusr1",
 	"--disallow-code-generation-from-strings",
+	"--freeze-flags-after-init",
 	"--max-old-space-size",
 	"--wasm-max-mem-pages",
 ]);
@@ -121,6 +126,7 @@ export function buildExecArgv(spec: ArgvSpec): string[] {
 		"--no-experimental-sqlite",
 		"--disable-sigusr1",
 		"--disallow-code-generation-from-strings",
+		"--freeze-flags-after-init",
 		`--max-old-space-size=${HEAP_MB}`,
 	);
 	if (runtime === "python") argv.push(`--wasm-max-mem-pages=${WASM_MAX_PAGES}`);

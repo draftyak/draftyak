@@ -3,9 +3,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { type ArgvSpec, assertExecArgvAllowed, buildArgv, buildExecArgv } from "./argv.ts";
 
-// MCP on stdin/stdout, redacted logs on stderr, and the host channel as Node's IPC channel on fd 3
-// (plan §4 Transport). S2a spawns with this exact shape; the fd-3 protocol itself is S2b.
-export const PLUGIN_STDIO = ["pipe", "pipe", "pipe", "ipc"] as const;
+// MCP on stdin/stdout, redacted logs on stderr, and the host channel on fd 3 (plan §4 Transport).
+// The plugin's Node opens fd 3 as its IPC channel (PLUGIN_CHANNEL_ENV), so process.send works there;
+// the hub reads it as a plain pipe through host-channel.ts, never with stdio 'ipc', whose parent-side
+// parser a plugin can crash. Windows needs 'overlapped' for the child's IPC end (libuv asserts on a
+// synchronous pipe). JSON mode carries handles too, so it is not a handle barrier: the decoder is.
+export const PLUGIN_STDIO = ["pipe", "pipe", "pipe", "overlapped"] as const;
+export const PLUGIN_CHANNEL_ENV: Readonly<Record<string, string>> = Object.freeze({
+	NODE_CHANNEL_FD: "3",
+	NODE_CHANNEL_SERIALIZATION_MODE: "json",
+});
 
 const SHIM = /\.(?:bat|cmd|ps1)[\s.]*$/i;
 
@@ -91,8 +98,8 @@ export interface ScrubEnvSpec {
 }
 
 // §4 Environment: scrubbed to plugin and instance ids, LANG, TZ, SystemRoot and Node's NODE_CHANNEL_*
-// IPC variables (which Node sets on the child itself for the fd-3 channel); home and temp point at the
-// data dir. The result is built from an empty object, never the parent's, so NODE_OPTIONS and every
+// IPC variables (which spawnPlugin adds for the fd-3 channel); home and temp point at the data dir.
+// The result is built from an empty object, never the parent's, so NODE_OPTIONS and every
 // other variable are dropped. On Windows, libuv injects a required variable only when it is absent, so
 // PATH, USERNAME, USERDOMAIN, LOGONSERVER, SYSTEMDRIVE and WINDIR are all set empty here to keep the
 // real values out of the child. os.userInfo() and os.hostname() still return the real user, home and
@@ -158,8 +165,8 @@ export function execArgvFor(spec: SpawnPluginSpec): ArgvSpec {
 
 // Spawns a plugin the way the hub does: the §4 argv (re-verified against the allowlist, --permission
 // first, before use), the scrubbed env, an explicit cwd at the plugin dir so the hub's cwd never
-// leaks, stdio with the fd-3 IPC channel, and never a shell. Refuses first if the bundle holds any
-// link or cannot be scanned (RefusedSpawnError).
+// leaks, the fd-3 channel, and never a shell. Refuses first if the bundle holds any link or cannot
+// be scanned (RefusedSpawnError). The hub reads fd 3 only through attachHostChannel.
 export function spawnPlugin(spec: SpawnPluginSpec): ChildProcess {
 	if (SHIM.test(spec.nodeBin)) throw new Error(`refusing to spawn a shell shim: ${spec.nodeBin}`);
 	const argvSpec = execArgvFor(spec);
@@ -178,7 +185,7 @@ export function spawnPlugin(spec: SpawnPluginSpec): ChildProcess {
 	if (argv.slice(0, execArgv.length).join("\u0000") !== execArgv.join("\u0000")) {
 		throw new Error("built argv does not start with the verified exec argv");
 	}
-	const env = scrubEnv(spec);
+	const env = { ...scrubEnv(spec), ...PLUGIN_CHANNEL_ENV };
 	return spawn(spec.nodeBin, argv, {
 		env,
 		cwd: spec.pluginDir,
