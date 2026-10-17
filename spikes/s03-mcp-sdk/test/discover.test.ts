@@ -7,11 +7,12 @@ const DECLARED = {
 	tools: { listChanged: false },
 	resources: { listChanged: false },
 	prompts: { listChanged: false },
+	completions: {},
 	extensions: { "io.modelcontextprotocol/ui": {} },
 };
 
 describe("server/discover", () => {
-	it("declares tools, resources, prompts and the Apps extension, never listChanged or subscribe", async () => {
+	it("declares tools, resources, prompts, completions and the Apps extension, never listChanged or subscribe", async () => {
 		const response = await serve(app, modern("server/discover"));
 		expect(response.status).toBe(200);
 		const { result } = response.body;

@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@draftyak/spike-kit": "workspace:*",
-    "@modelcontextprotocol/conformance": "0.2.0-alpha.12"
+    "@modelcontextprotocol/conformance": "0.2.0-alpha.12",
+    "fast-check": "4.10.2"
   }
 }
