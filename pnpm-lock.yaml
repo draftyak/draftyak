@@ -97,13 +97,26 @@ importers:
         version: link:../kit
 
   spikes/s05-desktop:
+    dependencies:
+      '@tauri-apps/api':
+        specifier: 2.12.4
+        version: 2.12.4
+      better-sqlite3-multiple-ciphers:
+        specifier: 13.0.3
+        version: 13.0.3
     devDependencies:
       '@draftyak/spike-kit':
         specifier: workspace:*
         version: link:../kit
+      '@draftyak/spike-s02-plugin-sandbox':
+        specifier: workspace:*
+        version: link:../s02-plugin-sandbox
       '@peculiar/x509':
         specifier: 2.2.0
         version: 2.2.0
+      '@tauri-apps/cli':
+        specifier: 2.12.3
+        version: 2.12.3
 
   spikes/s06-slack:
     devDependencies:
@@ -522,6 +535,9 @@ packages:
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
+
+  '@tauri-apps/api@2.12.4':
+    resolution: {integrity: sha512-pVmfis+4zT8H0Qhp3xPZx9Ju7kpzvA6rr/PSJPyuwfvucTQ8sVt61NYU9KMkK703UFlYadFmjKA4HhybOtN0gg==}
 
   '@tauri-apps/cli-darwin-arm64@2.12.3':
     resolution: {integrity: sha512-xmVNoJOOKzKLj7GLHXmXLimRby9M42aBIJa0sB80N7o24eKV5JiVmToKTRLVH9yhL05GZ/B6rSSOmbzNFJwBAA==}
@@ -1895,6 +1911,8 @@ snapshots:
   '@rolldown/pluginutils@1.0.1': {}
 
   '@stablelib/base64@1.0.1': {}
+
+  '@tauri-apps/api@2.12.4': {}
 
   '@tauri-apps/cli-darwin-arm64@2.12.3':
     optional: true

@@ -1,0 +1,4 @@
+# Staged by scripts/stage-sidecar.ts before any cargo command (target/, binaries/ and gen/ are
+# ignored at the repository root).
+/src-tauri/resources/prebuilds/
+/src-tauri/resources/sqlite3mc/
