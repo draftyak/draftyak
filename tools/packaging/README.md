@@ -4,8 +4,8 @@ This private source package preserves the portable npm assembler, release
 manifest producer, protected launcher, content-free loopback healthcheck and
 service templates from the completed local packaging handoff. It is one part
 of M10.3, with the build-inventory and release-guard packages as explicit
-workspace dependencies. Those sibling packages must be composed before install
-or validation; this branch alone is not a submission candidate.
+workspace dependencies. Those sibling packages are included in the combined tooling candidate. The
+[M10 backlog](../../docs/roadmap/m10.md) defines its scope and acceptance gates.
 
 `pnpm --filter @draftyak/packaging package:npm --bundle <stage> --out <directory>`
 requires an existing inventoried candidate. It checks required payloads, copies
@@ -35,4 +35,6 @@ Render launchd placeholders with XML escaping. No secret value belongs in a
 service file. Native installers, mobile builds, distribution orchestration,
 global policy/doc-link checks and full release acceptance remain separate.
 
-See the [scope and pending validation note](../../docs/roadmap/m10-portable-packaging.md).
+The [portable component appendix](../../docs/roadmap/m10-portable-packaging.md)
+retains the original source boundary; the [combined candidate appendix](../../docs/roadmap/m10-portable-build-tools.md)
+and M10 backlog describe the actual composed scope.
