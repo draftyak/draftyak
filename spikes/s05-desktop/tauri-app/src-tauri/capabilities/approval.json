@@ -1,0 +1,6 @@
+{
+  "identifier": "approval",
+  "description": "The approval window: the approval_* commands and nothing else (plan section 8).",
+  "windows": ["approval"],
+  "permissions": ["allow-approval-ready"]
+}

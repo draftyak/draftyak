@@ -65,7 +65,7 @@ export async function readBack(gmail: Gmail, id: string): Promise<ReadBack> {
 	};
 }
 
-function dateKept(back: ReadBack | null, stamp: Date): SendResult["dateKept"] {
+export function dateKept(back: ReadBack | null, stamp: Date): SendResult["dateKept"] {
 	if (back?.date == null) return null;
 	if (Date.parse(back.date) !== stamp.getTime()) return false;
 	const apart = back.internalDate === null ? 0 : Math.abs(back.internalDate - stamp.getTime());

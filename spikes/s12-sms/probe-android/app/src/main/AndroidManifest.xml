@@ -33,5 +33,25 @@
 				<category android:name="android.intent.category.LAUNCHER" />
 			</intent-filter>
 		</activity>
+		<!-- The background test: remoteMessaging, never dataSync (plan section 7). -->
+		<service
+			android:name=".ProbeService"
+			android:exported="false"
+			android:foregroundServiceType="remoteMessaging" />
+		<receiver
+			android:name=".ProbeReceiver"
+			android:exported="false">
+			<intent-filter>
+				<action android:name="android.intent.action.BOOT_COMPLETED" />
+			</intent-filter>
+		</receiver>
+		<receiver
+			android:name=".SmsReceiver"
+			android:exported="true"
+			android:permission="android.permission.BROADCAST_SMS">
+			<intent-filter>
+				<action android:name="android.provider.Telephony.SMS_RECEIVED" />
+			</intent-filter>
+		</receiver>
 	</application>
 </manifest>

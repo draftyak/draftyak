@@ -1,0 +1,277 @@
+{
+  "recordedAt": "2026-10-18T16:23:23.173Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "888d1a9d15f3c3dcab7e64d3af9535c5a08cbd2a",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 20.9,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 74.8,
+      "concurrentBuilds": 1
+    }
+  },
+  "data": {
+    "target": "docker-linux-x64",
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "image": "node:26.12.0-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913",
+    "native": false,
+    "rssLimitMiB": 512,
+    "intervals": {
+      "fastMs": 150,
+      "planMs": 5000
+    },
+    "killSampler": "proc-status",
+    "kills": [
+      {
+        "mode": "arraybuffer",
+        "node": "26.5.1",
+        "method": "proc-status",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 554,
+        "overshootMiB": 42,
+        "timeToKillMs": 912,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "wasm",
+        "node": "26.5.1",
+        "method": "proc-status",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 552,
+        "overshootMiB": 40,
+        "timeToKillMs": 604,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "arraybuffer-fast",
+        "node": "26.5.1",
+        "method": "proc-status",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1579,
+        "overshootMiB": 1067,
+        "timeToKillMs": 5004,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 605
+      },
+      {
+        "mode": "wasm-fast",
+        "node": "26.5.1",
+        "method": "proc-status",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1578,
+        "overshootMiB": 1066,
+        "timeToKillMs": 5008,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 419
+      },
+      {
+        "mode": "arraybuffer",
+        "node": "26.12.0",
+        "method": "proc-status",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 528,
+        "overshootMiB": 16,
+        "timeToKillMs": 604,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "wasm",
+        "node": "26.12.0",
+        "method": "proc-status",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 530,
+        "overshootMiB": 18,
+        "timeToKillMs": 607,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "arraybuffer-fast",
+        "node": "26.12.0",
+        "method": "proc-status",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1579,
+        "overshootMiB": 1067,
+        "timeToKillMs": 5008,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 601
+      },
+      {
+        "mode": "wasm-fast",
+        "node": "26.12.0",
+        "method": "proc-status",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1579,
+        "overshootMiB": 1067,
+        "timeToKillMs": 5007,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 568
+      }
+    ],
+    "observations": {
+      "planIntervalMaxOvershootMiB": 1067,
+      "fastestGrowthMiBPerSecond": 3666,
+      "projectedMiBPerPlanInterval": 18329
+    },
+    "untouched": [
+      {
+        "node": "26.5.1",
+        "allocatedMiB": 768,
+        "readings": [
+          {
+            "method": "proc-statm",
+            "metric": "resident",
+            "mib": 42
+          },
+          {
+            "method": "proc-status",
+            "metric": "resident",
+            "mib": 42
+          },
+          {
+            "method": "ps-rss",
+            "metric": "resident",
+            "mib": null
+          }
+        ]
+      },
+      {
+        "node": "26.12.0",
+        "allocatedMiB": 768,
+        "readings": [
+          {
+            "method": "proc-statm",
+            "metric": "resident",
+            "mib": 43
+          },
+          {
+            "method": "proc-status",
+            "metric": "resident",
+            "mib": 43
+          },
+          {
+            "method": "ps-rss",
+            "metric": "resident",
+            "mib": null
+          }
+        ]
+      }
+    ],
+    "samplerCost": {
+      "lock": {
+        "waitedMs": 29489,
+        "idle": {
+          "samples": [
+            15,
+            12.1,
+            13.9,
+            10.9,
+            15.9
+          ],
+          "maxCpuPercent": 15.9,
+          "thresholdPercent": 20,
+          "waitedMs": 5049,
+          "concurrentBuilds": 0
+        }
+      },
+      "samplingCost": [
+        {
+          "method": "proc-statm",
+          "metric": "resident",
+          "available": true,
+          "firstMs": 2.368,
+          "reads": 25,
+          "medianMs": 0.035,
+          "minMs": 0.017,
+          "maxMs": 0.098,
+          "lastMiB": 43
+        },
+        {
+          "method": "proc-status",
+          "metric": "resident",
+          "available": true,
+          "firstMs": 0.563,
+          "reads": 25,
+          "medianMs": 0.019,
+          "minMs": 0.013,
+          "maxMs": 0.113,
+          "lastMiB": 43
+        },
+        {
+          "method": "ps-rss",
+          "metric": "resident",
+          "available": false,
+          "firstMs": 3.668,
+          "reads": 25,
+          "medianMs": 0.857,
+          "minMs": 0.701,
+          "maxMs": 1.717,
+          "lastMiB": null
+        }
+      ],
+      "spawnCost": {
+        "runs": 9,
+        "node": "26.12.0",
+        "socketpair": {
+          "readyMs": {
+            "medianMs": 28.12,
+            "minMs": 24.11,
+            "maxMs": 36.25
+          }
+        },
+        "fifo": {
+          "setupMs": {
+            "medianMs": 1.5,
+            "minMs": 1.43,
+            "maxMs": 4.1
+          },
+          "readyMs": {
+            "medianMs": 32,
+            "minMs": 26.38,
+            "maxMs": 34.5
+          }
+        }
+      }
+    },
+    "findings": {
+      "watchdogSigkillsAboveTheLimit": true,
+      "arrayBufferAndWasmEscapeTheHeapCap": true,
+      "planIntervalLetsGrowthPassTheLimit": true,
+      "untouchedIsNotResident": true,
+      "killSamplerCostMeasured": true
+    }
+  }
+}

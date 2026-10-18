@@ -1,0 +1,92 @@
+{
+  "recordedAt": "2026-10-18T02:41:41.524Z",
+  "fingerprint": {
+    "os": {
+      "platform": "linux",
+      "arch": "x64",
+      "osName": "#22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026",
+      "osVersion": "6.17.0-1022-azure"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "a3b349adce9e6d44de4870603ceccd598ae19197",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 0,
+      "cpuCount": 2,
+      "cpuModel": "AMD EPYC 7763 64-Core Processor",
+      "memoryUsedPercent": 20.2,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "linux-x64",
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "platform": "linux",
+    "production": [
+      {
+        "node": "26.5.1",
+        "attempts": {
+          "debugProcess": {
+            "called": true
+          },
+          "sigusr1": {
+            "called": true
+          }
+        },
+        "answers": 8,
+        "hubInspectorOpened": false
+      },
+      {
+        "node": "26.12.0",
+        "attempts": {
+          "debugProcess": {
+            "called": true
+          },
+          "sigusr1": {
+            "called": true
+          }
+        },
+        "answers": 8,
+        "hubInspectorOpened": false
+      }
+    ],
+    "control": [
+      {
+        "node": "26.5.1",
+        "attempts": {
+          "debugProcess": {
+            "called": true
+          },
+          "sigusr1": {
+            "called": true
+          }
+        },
+        "answers": 8,
+        "hubInspectorOpened": true
+      },
+      {
+        "node": "26.12.0",
+        "attempts": {
+          "debugProcess": {
+            "called": true
+          },
+          "sigusr1": {
+            "called": true
+          }
+        },
+        "answers": 8,
+        "hubInspectorOpened": true
+      }
+    ],
+    "findings": {
+      "noInspectorUnderDisableSigusr1": true,
+      "controlOpensInspectorWithoutTheFlag": true
+    }
+  }
+}

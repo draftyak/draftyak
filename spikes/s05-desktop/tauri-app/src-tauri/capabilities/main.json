@@ -1,0 +1,6 @@
+{
+  "identifier": "main",
+  "description": "The main window: reads the autostart state; it can't change it or call approval_*.",
+  "windows": ["main"],
+  "permissions": ["autostart:allow-is-enabled"]
+}

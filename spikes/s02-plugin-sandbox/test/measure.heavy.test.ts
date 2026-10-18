@@ -1,18 +1,22 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import {
 	acquireBenchLock,
+	type BenchLock,
 	benchTimeout,
 	hostTarget,
+	MachineBusyError,
 	needDocker,
 	nodeBinary,
 	nodeVersions,
 	runInDocker,
+	sampleCpu,
 	stageForDocker,
 } from "@draftyak/spike-kit";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
+import { type SpawnCostOutcome, spawnCostOrError } from "./fifo.ts";
 import {
+	busyReport,
 	FAST_INTERVAL_MS,
 	type KillOutcome,
 	killSamplerFor,
@@ -31,7 +35,7 @@ import {
 	type UntouchedOutcome,
 } from "./memory.ts";
 import { evidenceFile, missing, recordEvidence, unmet } from "./record.ts";
-import { bundleTemplatePlugin, selectedNodes, spikeDir } from "./s2b.ts";
+import { bundleTemplatePlugin, selectedNodes, spikeDir, tempRoot } from "./s2b.ts";
 
 const NODES = selectedNodes(nodeVersions());
 const arch = hostTarget().arch;
@@ -40,6 +44,24 @@ const MIB = 1_048_576;
 const FAST_MODES = ["arraybuffer", "wasm"];
 const PLAN_MODES = ["arraybuffer-fast", "wasm-fast"];
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+// The kit's bench lock and idle check, unchanged, keeping every CPU sample the check takes: a
+// machine-busy failure lists them with what else the machine showed (memory.ts busyReport).
+async function benchLock(label: string, signal: AbortSignal): Promise<BenchLock> {
+	const samples: number[] = [];
+	const sample = async (ms: number): Promise<number> => {
+		const cpu = await sampleCpu(ms);
+		samples.push(cpu);
+		return cpu;
+	};
+	try {
+		return await acquireBenchLock({ label, signal, idle: { sample } });
+	} catch (error) {
+		if (!(error instanceof MachineBusyError) || samples.length === 0) throw error;
+		// Keep the kit's waitForIdle <- acquireBenchLock stack as the cause, under the busy report.
+		throw new MachineBusyError(`${error.message}\n${await busyReport(samples)}`, { cause: error });
+	}
+}
 
 function killFindings(kills: readonly KillOutcome[]) {
 	const all = (modes: readonly string[], test: (kill: KillOutcome) => boolean): boolean =>
@@ -102,6 +124,9 @@ interface Benchmarks {
 	readonly lock: { readonly waitedMs: number; readonly idle: unknown };
 	readonly samplingCost: readonly SamplingCost[];
 	readonly rehash: readonly RehashCost[];
+	// FIFO stdio (remedy (f)) against libuv's socketpairs, or the code it failed with (best-effort:
+	// it never fails the benchmark); null on Windows, which has no FIFOs.
+	readonly spawnCost: SpawnCostOutcome | null;
 }
 
 function hostSuite(
@@ -121,7 +146,7 @@ function hostSuite(
 		beforeAll(async () => {
 			if (process.platform !== platform) return;
 			for (const v of NODES) bins[v] = await nodeBinary(v, hostTarget());
-			root = fs.mkdtempSync(path.join(os.tmpdir(), `dy-s02-measure-${label}-`));
+			root = tempRoot(`dy-s02-measure-${label}-`);
 			pluginDir = path.join(root, "plugin");
 			fs.cpSync(path.join(spikeDir, "fixtures", "s2b"), pluginDir, { recursive: true });
 		}, 180_000);
@@ -163,6 +188,46 @@ function hostSuite(
 			fs.mkdirSync(dataDir, { recursive: true });
 			return { nodeBin: bins[v] as string, pluginDir, dataDir };
 		};
+
+		// First in this file, and the spike's vitest.config.ts runs this file before the others, so the
+		// idle check never follows this file's growers (up to 1.5 GiB each) or escape's and ipc's churn.
+		it("benchmarks the sampler cost and the per-spawn re-hash under the bench lock", {
+			...t(),
+			timeout: benchTimeout(120_000),
+		}, async (ctx: TestContext) => {
+			using lock = await benchLock("s2b-measure", ctx.signal);
+			const samplers = samplersFor(platform);
+			const idle = spawnGrower(at(NODES.at(-1) as string), "idle");
+			idle.stdout?.resume();
+			idle.stderr?.resume();
+			try {
+				await sleep(500);
+				const samplingCost: SamplingCost[] = [];
+				for (const sampler of samplers) {
+					samplingCost.push(await measureSamplingCost(sampler, idle.pid ?? -1));
+				}
+				const bundle = bundleTemplatePlugin(path.join(root, "rehash-bundle")).dir;
+				const rehash = [
+					measureRehash("synthetic-2MiB", makeTree(path.join(root, "tree-2"), 2 * MIB)),
+					measureRehash("synthetic-16MiB", makeTree(path.join(root, "tree-16"), 16 * MIB)),
+					measureRehash("template-bundle", bundle),
+				];
+				const bundled = NODES.at(-1) as string;
+				const spawnCost =
+					platform === "win32" ? null : await spawnCostOrError(at(bundled), bundled);
+				benchmarks = {
+					lock: { waitedMs: lock.waitedMs, idle: lock.idle },
+					samplingCost,
+					rehash,
+					spawnCost,
+				};
+				const killCost = samplingCost.find((c) => c.method === killSamplerFor(platform).method);
+				expect(killCost?.available, "the kill sampler read the plugin").toBe(true);
+			} finally {
+				idle.kill("SIGKILL");
+				for (const sampler of samplers) sampler.close();
+			}
+		});
 
 		it("SIGKILLs ArrayBuffer and WebAssembly.Memory growth above 512 MiB", t(), async () => {
 			const sampler = killSamplerFor(platform);
@@ -212,36 +277,6 @@ function hostSuite(
 				for (const sampler of samplers) sampler.close();
 			}
 		});
-
-		it("benchmarks the sampler cost and the per-spawn re-hash under the bench lock", {
-			...t(),
-			timeout: benchTimeout(120_000),
-		}, async (ctx: TestContext) => {
-			using lock = await acquireBenchLock({ label: "s2b-measure", signal: ctx.signal });
-			const samplers = samplersFor(platform);
-			const idle = spawnGrower(at(NODES.at(-1) as string), "idle");
-			idle.stdout?.resume();
-			idle.stderr?.resume();
-			try {
-				await sleep(500);
-				const samplingCost: SamplingCost[] = [];
-				for (const sampler of samplers) {
-					samplingCost.push(await measureSamplingCost(sampler, idle.pid ?? -1));
-				}
-				const bundle = bundleTemplatePlugin(path.join(root, "rehash-bundle")).dir;
-				const rehash = [
-					measureRehash("synthetic-2MiB", makeTree(path.join(root, "tree-2"), 2 * MIB)),
-					measureRehash("synthetic-16MiB", makeTree(path.join(root, "tree-16"), 16 * MIB)),
-					measureRehash("template-bundle", bundle),
-				];
-				benchmarks = { lock: { waitedMs: lock.waitedMs, idle: lock.idle }, samplingCost, rehash };
-				const killCost = samplingCost.find((c) => c.method === killSamplerFor(platform).method);
-				expect(killCost?.available, "the kill sampler read the plugin").toBe(true);
-			} finally {
-				idle.kill("SIGKILL");
-				for (const sampler of samplers) sampler.close();
-			}
-		});
 	});
 }
 
@@ -254,7 +289,9 @@ describe("Linux Docker RSS watchdog and sampler cost", () => {
 	const images = path.resolve(spikeDir, "..", "..", "tools", "fetch-node", "images.json");
 	let image = "";
 	let memoryRun: { kills: KillOutcome[]; untouched: UntouchedOutcome[] } | undefined;
-	let cost: { lock: Benchmarks["lock"]; samplingCost: SamplingCost[] } | undefined;
+	let cost:
+		| { lock: Benchmarks["lock"]; samplingCost: SamplingCost[]; spawnCost: SpawnCostOutcome | null }
+		| undefined;
 
 	afterAll(async () => {
 		if (memoryRun === undefined && cost === undefined) return;
@@ -297,7 +334,14 @@ describe("Linux Docker RSS watchdog and sampler cost", () => {
 		using stage = stageForDocker({
 			name: "s02-s2b-measure",
 			from: spikeDir,
-			files: ["src", "fixtures/s2b", "test/s2b.ts", "test/memory.ts", "test/docker-runner-s2b.ts"],
+			files: [
+				"src",
+				"fixtures/s2b",
+				"test/s2b.ts",
+				"test/memory.ts",
+				"test/fifo.ts",
+				"test/docker-runner-s2b.ts",
+			],
 		});
 		const nodes = labels.map((label, i) => ({ bin: `/opt/n${i}`, label }));
 		const result = await runInDocker({
@@ -322,6 +366,26 @@ describe("Linux Docker RSS watchdog and sampler cost", () => {
 		return (JSON.parse((line as string).slice("##DYS2BMATRIX##".length)) as { nodes: T[] }).nodes;
 	}
 
+	it("benchmarks the Linux samplers under the bench lock", {
+		tags: ["requires:docker"],
+		timeout: benchTimeout(60_000),
+	}, async (ctx: TestContext) => {
+		await needDocker(ctx);
+		using lock = await benchLock("s2b-measure-docker", ctx.signal);
+		const [node] = await runner<{ costs: SamplingCost[]; spawnCost: SpawnCostOutcome }>(
+			ctx,
+			"sampler-cost",
+			[NODES.at(-1) as string],
+		);
+		cost = {
+			lock: { waitedMs: lock.waitedMs, idle: lock.idle },
+			samplingCost: node?.costs ?? [],
+			spawnCost: node?.spawnCost ?? null,
+		};
+		const killCost = cost.samplingCost.find((c) => c.method === killSamplerFor("linux").method);
+		expect(killCost?.available, "VmRSS read the plugin").toBe(true);
+	});
+
 	it("SIGKILLs growth at both intervals and reads an untouched allocation in Linux", {
 		tags: ["requires:docker"],
 		timeout: 280_000,
@@ -342,19 +406,5 @@ describe("Linux Docker RSS watchdog and sampler cost", () => {
 		for (const outcome of memoryRun.untouched) {
 			expect(untouchedProblem("linux", outcome), outcome.node).toBeNull();
 		}
-	});
-
-	it("benchmarks the Linux samplers under the bench lock", {
-		tags: ["requires:docker"],
-		timeout: benchTimeout(60_000),
-	}, async (ctx: TestContext) => {
-		await needDocker(ctx);
-		using lock = await acquireBenchLock({ label: "s2b-measure-docker", signal: ctx.signal });
-		const [node] = await runner<{ costs: SamplingCost[] }>(ctx, "sampler-cost", [
-			NODES.at(-1) as string,
-		]);
-		cost = { lock: { waitedMs: lock.waitedMs, idle: lock.idle }, samplingCost: node?.costs ?? [] };
-		const killCost = cost.samplingCost.find((c) => c.method === killSamplerFor("linux").method);
-		expect(killCost?.available, "VmRSS read the plugin").toBe(true);
 	});
 });

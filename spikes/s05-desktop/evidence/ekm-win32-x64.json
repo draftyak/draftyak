@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-17T21:27:28.884Z",
+  "recordedAt": "2026-10-18T15:14:26.091Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,13 +11,13 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "d3eb853bf64bebb0ec0137361d0a4a96b77e704b",
+    "commit": "c51abce7daa47300768dcf609dbf52db5e0c8697",
     "dirty": false,
     "load": {
-      "cpuPercent": 18.4,
+      "cpuPercent": 30.5,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 66,
+      "memoryUsedPercent": 74,
       "concurrentBuilds": 0
     }
   },
@@ -39,8 +39,8 @@
     },
     "cargo": {
       "build": {
-        "seconds": 9.6,
-        "crates": 33,
+        "seconds": 0.1,
+        "crates": 0,
         "jobs": 6
       },
       "tests": {
@@ -50,8 +50,8 @@
       "fmt": "clean",
       "clippy": {
         "result": "clean",
-        "seconds": 3.3,
-        "crates": 30
+        "seconds": 0.3,
+        "crates": 0
       }
     },
     "ekm": {
@@ -97,7 +97,7 @@
         "readBack": true,
         "persistence": "Local",
         "removed": true,
-        "ms": 12
+        "ms": 36
       },
       "fallback": {
         "kdf": "pbkdf2-hmac-sha256",
@@ -108,7 +108,7 @@
         "readBack": true,
         "wrongPassphraseRefused": true,
         "tamperRefused": true,
-        "unwrapMs": 81
+        "unwrapMs": 85
       },
       "docker": {
         "image": "rust:1.95.0-bookworm@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1",
@@ -136,7 +136,7 @@
               "readBack": true,
               "wrongPassphraseRefused": true,
               "tamperRefused": true,
-              "unwrapMs": 86
+              "unwrapMs": 85
             }
           },
           "noSecretService": {
@@ -172,7 +172,7 @@
               "readBack": true,
               "wrongPassphraseRefused": true,
               "tamperRefused": true,
-              "unwrapMs": 82
+              "unwrapMs": 83
             }
           },
           "unlocked": {
@@ -208,11 +208,11 @@
           }
         },
         "seconds": {
-          "build": 1.3,
-          "fetch": 3.1,
-          "test": 18.2
+          "build": 1.7,
+          "fetch": 1.2,
+          "test": 4.6
         },
-        "crates": 119
+        "crates": 2
       }
     }
   }

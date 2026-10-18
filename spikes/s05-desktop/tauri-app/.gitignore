@@ -2,3 +2,4 @@
 # ignored at the repository root).
 /src-tauri/resources/prebuilds/
 /src-tauri/resources/sqlite3mc/
+/ui/vendor/

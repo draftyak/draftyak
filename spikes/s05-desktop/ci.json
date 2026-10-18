@@ -1,0 +1,11 @@
+{
+  "os": {
+    "macos-15": { "timeout": 30, "rust": {} },
+    "ubuntu-24.04": {
+      "timeout": 45,
+      "tauriLinux": true,
+      "docker": true,
+      "rust": { "targets": ["aarch64-apple-darwin"] }
+    }
+  }
+}

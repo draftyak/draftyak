@@ -1,0 +1,258 @@
+{
+  "recordedAt": "2026-10-18T15:31:18.907Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "888d1a9d15f3c3dcab7e64d3af9535c5a08cbd2a",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 19.6,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 67.8,
+      "concurrentBuilds": 1
+    }
+  },
+  "data": {
+    "target": "win32-x64",
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "rssLimitMiB": 512,
+    "intervals": {
+      "fastMs": 150,
+      "planMs": 5000
+    },
+    "killSampler": "tasklist-csv",
+    "kills": [
+      {
+        "mode": "arraybuffer",
+        "node": "26.5.1",
+        "method": "tasklist-csv",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 548,
+        "overshootMiB": 36,
+        "timeToKillMs": 750,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "wasm",
+        "node": "26.5.1",
+        "method": "tasklist-csv",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 610,
+        "overshootMiB": 98,
+        "timeToKillMs": 822,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "arraybuffer",
+        "node": "26.12.0",
+        "method": "tasklist-csv",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 611,
+        "overshootMiB": 99,
+        "timeToKillMs": 826,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "wasm",
+        "node": "26.12.0",
+        "method": "tasklist-csv",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 546,
+        "overshootMiB": 34,
+        "timeToKillMs": 743,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "arraybuffer-fast",
+        "node": "26.5.1",
+        "method": "tasklist-csv",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1572,
+        "overshootMiB": 1060,
+        "timeToKillMs": 5216,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 279
+      },
+      {
+        "mode": "wasm-fast",
+        "node": "26.5.1",
+        "method": "tasklist-csv",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1570,
+        "overshootMiB": 1058,
+        "timeToKillMs": 5213,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 330
+      },
+      {
+        "mode": "arraybuffer-fast",
+        "node": "26.12.0",
+        "method": "tasklist-csv",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1571,
+        "overshootMiB": 1059,
+        "timeToKillMs": 5226,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 283
+      },
+      {
+        "mode": "wasm-fast",
+        "node": "26.12.0",
+        "method": "tasklist-csv",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1570,
+        "overshootMiB": 1058,
+        "timeToKillMs": 5240,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 345
+      }
+    ],
+    "observations": {
+      "planIntervalMaxOvershootMiB": 1060,
+      "fastestGrowthMiBPerSecond": 5505,
+      "projectedMiBPerPlanInterval": 27527
+    },
+    "untouched": [
+      {
+        "node": "26.5.1",
+        "allocatedMiB": 768,
+        "readings": [
+          {
+            "method": "tasklist-csv",
+            "metric": "working-set",
+            "mib": 35
+          },
+          {
+            "method": "powershell-private-bytes",
+            "metric": "private-bytes",
+            "mib": 788
+          }
+        ]
+      },
+      {
+        "node": "26.12.0",
+        "allocatedMiB": 768,
+        "readings": [
+          {
+            "method": "tasklist-csv",
+            "metric": "working-set",
+            "mib": 35
+          },
+          {
+            "method": "powershell-private-bytes",
+            "metric": "private-bytes",
+            "mib": 788
+          }
+        ]
+      }
+    ],
+    "benchmarks": {
+      "lock": {
+        "waitedMs": 20842,
+        "idle": {
+          "samples": [
+            14.9,
+            12.4,
+            13,
+            12,
+            14.8
+          ],
+          "maxCpuPercent": 14.9,
+          "thresholdPercent": 20,
+          "waitedMs": 8153,
+          "concurrentBuilds": 0
+        }
+      },
+      "samplingCost": [
+        {
+          "method": "tasklist-csv",
+          "metric": "working-set",
+          "available": true,
+          "firstMs": 247.307,
+          "reads": 25,
+          "medianMs": 206.24,
+          "minMs": 172.653,
+          "maxMs": 235.035,
+          "lastMiB": 34
+        },
+        {
+          "method": "powershell-private-bytes",
+          "metric": "private-bytes",
+          "available": true,
+          "firstMs": 60.712,
+          "reads": 25,
+          "medianMs": 6.01,
+          "minMs": 5.564,
+          "maxMs": 9.187,
+          "lastMiB": 18
+        }
+      ],
+      "rehash": [
+        {
+          "label": "synthetic-2MiB",
+          "files": 16,
+          "bytes": 2097152,
+          "runs": 7,
+          "medianMs": 30.88,
+          "minMs": 25.05
+        },
+        {
+          "label": "synthetic-16MiB",
+          "files": 16,
+          "bytes": 16777216,
+          "runs": 7,
+          "medianMs": 27.18,
+          "minMs": 22.7
+        },
+        {
+          "label": "template-bundle",
+          "files": 948,
+          "bytes": 13956673,
+          "runs": 7,
+          "medianMs": 649.71,
+          "minMs": 567.78
+        }
+      ],
+      "spawnCost": null
+    },
+    "findings": {
+      "watchdogSigkillsAboveTheLimit": true,
+      "arrayBufferAndWasmEscapeTheHeapCap": true,
+      "planIntervalLetsGrowthPassTheLimit": true,
+      "untouchedAllocationJudged": true,
+      "killSamplerCostMeasured": true
+    }
+  }
+}

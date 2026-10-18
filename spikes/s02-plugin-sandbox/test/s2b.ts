@@ -6,9 +6,12 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import type { Readable, Writable } from "node:stream";
 import { buildArgv } from "../src/argv.ts";
+import { openFifoStdio } from "../src/fifo-stdio.ts";
 import type { ViolationKind } from "../src/host-channel.ts";
 import {
 	execArgvFor,
@@ -45,6 +48,12 @@ export function selectedNodes(
 	if (value === "both") return [...new Set([versions.minimum, versions.bundled])];
 	if (value === "minimum" || value === "bundled") return [versions[value]];
 	throw new Error(`DRAFTYAK_NODES is both, minimum or bundled, not "${value}"`);
+}
+
+// A new temp folder by its real path. macOS's temp folder sits behind the /var link: the pre-spawn
+// scan refuses a plugin dir there, and Node can't resolve an entry through a link outside its grant.
+export function tempRoot(prefix: string): string {
+	return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 }
 
 // A plugin's ctx.fetch targets: the inspector and hub ports on loopback, three other spellings that
@@ -167,8 +176,9 @@ export interface FixtureSpawnSpec extends Pick<SpawnPluginSpec, "runtime" | "run
 	readonly grantData?: boolean;
 	readonly entry: string;
 	readonly entryArgs?: readonly string[];
-	// Default: the production layout (PLUGIN_STDIO with the child's IPC channel on fd 3).
-	readonly stdio?: readonly Fd[];
+	// Default: the production layout (PLUGIN_STDIO with the child's IPC channel on fd 3). A number
+	// is a descriptor the child inherits there, such as the plugin's end of a FIFO.
+	readonly stdio?: readonly (Fd | number)[];
 	// false: no NODE_CHANNEL_* for the child, as for a plain pipe or Node's own stdio 'ipc'.
 	readonly channel?: boolean;
 	readonly dropFreezeFlag?: boolean;
@@ -295,31 +305,53 @@ type McpReply = {
 
 // The template plugin over MCP stdio under the production argv: server/discover, tools/list, and
 // tools/call with valid and invalid input on the zod tool (echo) and the cf-worker tool (count).
+// "pipe" is the layout S2 tested (spawnPlugin, with the fd-3 channel); "fallback1" is Fallback 1's
+// (spawn's three pipes, no fd 3, no NODE_CHANNEL_*), and "fifo" the same on FIFOs (remedy (f)).
 export async function runTemplatePlugin(
 	nodeBin: string,
 	bundleDir: string,
 	dataDir: string,
+	stdio: "pipe" | "fallback1" | "fifo" = "pipe",
 ): Promise<TemplateResult> {
-	const child = spawnPlugin({
-		nodeBin,
-		pluginDir: bundleDir,
-		dataDir,
-		pluginId: "s02-template",
-		instanceId: "template",
-		entry: path.join(bundleDir, "plugin.mjs"),
-	});
+	const entry = path.join(bundleDir, "plugin.mjs");
+	const fifo = stdio === "fifo" ? await openFifoStdio(2) : null;
+	let child: ChildProcess;
+	try {
+		child =
+			stdio === "pipe"
+				? spawnPlugin({
+						nodeBin,
+						pluginDir: bundleDir,
+						dataDir,
+						pluginId: "s02-template",
+						instanceId: "template",
+						entry,
+					})
+				: spawnFixture({
+						nodeBin,
+						pluginDir: bundleDir,
+						dataDir,
+						entry,
+						stdio: fifo?.pluginFds ?? ["pipe", "pipe", "pipe"],
+						channel: false,
+					});
+	} catch (error) {
+		fifo?.destroy();
+		throw error;
+	}
+	fifo?.releasePluginEnds();
+	const input = (fifo?.input ?? child.stdin) as Writable;
+	const output = (fifo?.outputs[0] ?? child.stdout) as Readable;
+	(fifo?.outputs[1] ?? child.stderr)?.resume();
 	const meta = {
 		"io.modelcontextprotocol/protocolVersion": "2026-07-28",
 		"io.modelcontextprotocol/clientCapabilities": {},
 	};
-	child.stderr?.resume();
-	const lines = createInterface({ input: child.stdout as NodeJS.ReadableStream })[
-		Symbol.asyncIterator
-	]();
+	const lines = createInterface({ input: output })[Symbol.asyncIterator]();
 	let nextId = 0;
 	const ask = async (method: string, params: object = {}): Promise<McpReply> => {
 		const id = ++nextId;
-		child.stdin?.write(
+		input.write(
 			`${JSON.stringify({ jsonrpc: "2.0", id, method, params: { ...params, _meta: meta } })}\n`,
 		);
 		const deadline = setTimeout(() => child.kill("SIGKILL"), 20_000);
@@ -361,6 +393,7 @@ export async function runTemplatePlugin(
 		};
 	} finally {
 		child.kill("SIGKILL");
+		fifo?.destroy();
 	}
 }
 
@@ -555,6 +588,8 @@ export interface PluginEnd {
 export interface Fds {
 	readonly before: number;
 	readonly after: number | null;
+	// Only when the count changed: what each new descriptor is (hub-probes.ts).
+	readonly added?: readonly string[];
 }
 
 export interface ChannelResult {
@@ -588,6 +623,17 @@ export interface LateReplyResult {
 	readonly end: PluginEnd;
 }
 
+// Fallback 1 (no fd 3, no NODE_CHANNEL_*): a plugin that reinstates process.send over stdout with
+// child_process._forkChild and tries to pass a handle. reinstated says whether process.send came
+// back; fds is the hub's descriptor count across the attempt.
+export interface Fallback1Result {
+	readonly reinstated: boolean;
+	readonly pluginReport: Record<string, unknown> | null;
+	readonly pluginEnded: PluginEnd;
+	readonly exitMs: number;
+	readonly fds: Fds | null;
+}
+
 export interface SendAfterExitResult {
 	readonly notified: boolean;
 	readonly request: string;
@@ -603,7 +649,7 @@ export interface ControlResult {
 	readonly plugin: readonly Record<string, unknown>[];
 }
 
-const died = (run: HubRun<unknown>): string =>
+export const died = (run: HubRun<unknown>): string =>
 	`the hub died (${run.crash ?? "unknown"}, exit ${run.exitCode ?? run.signal ?? "?"}${run.timedOut ? ", timed out" : ""})`;
 
 export function channelProblem(run: HubRun<ChannelResult>): string | null {
@@ -630,7 +676,14 @@ export function fuzzProblem(
 	const expected = expectedViolation(mode, platform);
 	const first = r.violations[0]?.kind ?? null;
 	if (r.fds !== null && r.fds.after !== r.fds.before) {
-		return `the hub's open fds went from ${r.fds.before} to ${r.fds.after}`;
+		const added = r.fds.added?.length ? `; new: ${r.fds.added.join("; ")}` : "";
+		const end = [
+			`violation ${first ?? "none"}`,
+			`ended by ${r.pluginEnded.signal ?? `exit ${r.pluginEnded.code}`}`,
+			`'close' ${r.pluginEnded.closed ? "fired" : "never fired"}`,
+			`${r.exitMs} ms`,
+		].join(", ");
+		return `the hub's open fds went from ${r.fds.before} to ${r.fds.after} (${end})${added}`;
 	}
 	if (expected === null) {
 		if (first !== null) return `unexpected violation ${first}`;
@@ -643,6 +696,26 @@ export function fuzzProblem(
 	if (r.pluginEnded.signal !== "SIGKILL") return `the plugin ended by ${r.pluginEnded.signal}`;
 	if (r.auditCount !== 0) return `${r.auditCount} requests dispatched after the violation`;
 	if (!r.pluginEnded.closed) return "'close' never fired";
+	return null;
+}
+
+// Fallback 1 holds on a target when the hub survives and its descriptor count does not grow, even
+// though the plugin reinstated process.send over stdout. The descriptor barrier is the hub reading
+// stdout as a plain stream, the same read fd 3 relied on: Linux drops the passed descriptor and
+// Windows crashes the plugin before it is sent (fds is null there); macOS is the open question, and
+// a growth there fails this just as the fd-3 handle-send does.
+export function fallback1Problem(run: HubRun<Fallback1Result>): string | null {
+	const r = run.result;
+	if (!run.survived || r === null) return died(run);
+	if (r.fds !== null && r.fds.after !== r.fds.before) {
+		const added = r.fds.added?.length ? `; new: ${r.fds.added.join("; ")}` : "";
+		const end = [
+			`reinstated ${r.reinstated}`,
+			`ended by ${r.pluginEnded.signal ?? `exit ${r.pluginEnded.code}`}`,
+			`${r.exitMs} ms`,
+		].join(", ");
+		return `the hub's open fds went from ${r.fds.before} to ${r.fds.after} without an IPC channel (${end})${added}`;
+	}
 	return null;
 }
 

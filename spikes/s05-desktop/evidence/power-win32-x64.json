@@ -1,0 +1,113 @@
+{
+  "recordedAt": "2026-10-18T15:14:37.825Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "c51abce7daa47300768dcf609dbf52db5e0c8697",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 31.5,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 73.9,
+      "concurrentBuilds": 5
+    }
+  },
+  "data": {
+    "target": "win32-x64",
+    "method": "PowerSetRequest(PowerRequestSystemRequired)",
+    "versions": {
+      "windows_sysVersion": "0.61.2",
+      "zbusVersion": "5.19.0",
+      "objc2_app_kitVersion": "0.3.2",
+      "objc2_foundationVersion": "0.3.2",
+      "block2Version": "0.6.2"
+    },
+    "listener": {
+      "registered": true,
+      "resumesOn": "PBT_APMRESUMEAUTOMATIC",
+      "via": "PowerRegisterSuspendResumeNotification(DEVICE_NOTIFY_CALLBACK)",
+      "reportedAtStart": true
+    },
+    "keepAwake": {
+      "frame": "keepAwake",
+      "held": true,
+      "shownBy": "CallNtPowerInformation(SystemExecutionState), ES_SYSTEM_REQUIRED",
+      "shownBefore": false,
+      "shownWhileHeld": true,
+      "shownAfterRelease": false,
+      "executionState": {
+        "before": 0,
+        "whileHeld": 1,
+        "after": 0
+      },
+      "systemRequiredAdded": true,
+      "waitedForOtherHoldersMs": 50,
+      "releasedBy": "null frame"
+    },
+    "deadline": {
+      "untilMsFromNow": 3000,
+      "releasedAfterMs": 3034,
+      "releasedBy": "deadline",
+      "shownBy": "CallNtPowerInformation(SystemExecutionState), ES_SYSTEM_REQUIRED",
+      "shownBefore": false,
+      "shownWhileHeld": true,
+      "shownAfterRelease": false,
+      "executionState": {
+        "before": 0,
+        "whileHeld": 1,
+        "after": 0
+      },
+      "systemRequiredAdded": true,
+      "waitedForOtherHoldersMs": 63
+    },
+    "hubExit": {
+      "releasedBy": "hub exited",
+      "shownBy": "CallNtPowerInformation(SystemExecutionState), ES_SYSTEM_REQUIRED",
+      "shownBefore": false,
+      "shownWhileHeld": true,
+      "shownAfterRelease": false,
+      "executionState": {
+        "before": 0,
+        "whileHeld": 1,
+        "after": 0
+      },
+      "systemRequiredAdded": true,
+      "waitedForOtherHoldersMs": 64,
+      "hubBackMs": 1279,
+      "sameHubId": true
+    },
+    "wake": {
+      "delivered": [
+        "PBT_APMSUSPEND",
+        "PBT_APMRESUMEAUTOMATIC",
+        "PBT_APMRESUMESUSPEND"
+      ],
+      "via": "PBT_APMRESUMEAUTOMATIC",
+      "how": "the registered callback, called in-process by the spike's control with each broadcast code",
+      "appSentResumedFrame": true,
+      "hubHeardIt": true
+    },
+    "quit": {
+      "appExitCode": 0,
+      "releasedBy": "hub exited"
+    },
+    "refused": {
+      "layer": "mocked, refusing every hold as logind does",
+      "refusals": 2,
+      "error": "org.freedesktop.DBus.Error.AccessDenied",
+      "loggedOnStderr": true,
+      "hubKeptRunning": true,
+      "resumeStillForwarded": true,
+      "appExitCode": 0
+    }
+  }
+}

@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { acquireBenchLock, hostTarget, nodeBinary, nodeVersions } from "@draftyak/spike-kit";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
@@ -10,6 +9,7 @@ import {
 	runInspector,
 	selectedNodes,
 	spikeDir,
+	tempRoot,
 } from "./s2b.ts";
 
 const NODES = selectedNodes(nodeVersions());
@@ -31,7 +31,7 @@ function hostSuite(
 		beforeAll(async () => {
 			if (process.platform !== platform) return;
 			for (const v of NODES) bins[v] = await nodeBinary(v, hostTarget());
-			root = fs.mkdtempSync(path.join(os.tmpdir(), `dy-s02-insp-${label}-`));
+			root = tempRoot(`dy-s02-insp-${label}-`);
 			pluginDir = path.join(root, "plugin");
 			fs.cpSync(path.join(spikeDir, "fixtures", "s2b"), pluginDir, { recursive: true });
 		}, 180_000);

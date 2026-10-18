@@ -20,8 +20,8 @@
 //!   protocol or fails [`Policy::unhealthy_after`] probes in a row is ended and restarted after a
 //!   backoff ([`Restarts`]).
 //!
-//! M0.23a quits through [`Supervisor::shutdown`]; M0.23b sends [`ToHub::Resumed`] after a wake and
-//! holds keep-awake on [`Event::KeepAwake`].
+//! The app quits through [`Supervisor::shutdown`], holds keep-awake on [`Event::KeepAwake`] and
+//! sends [`ToHub::Resumed`] after a wake through [`Frames`] ([`crate::power`]).
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -430,7 +430,12 @@ impl Supervisor {
 
     /// Queues a frame for the running hub; a frame sent while no hub runs is dropped.
     pub fn send(&self, frame: ToHub) {
-        let _ = self.tx.send(Msg::Send(frame));
+        self.frames().send(frame);
+    }
+
+    /// Sends frames as [`Supervisor::send`] does, from other threads.
+    pub fn frames(&self) -> Frames {
+        Frames(self.tx.clone())
     }
 
     /// Sends [`ToHub::Shutdown`], closes the hub's stdin and waits up to `grace` for it to exit,
@@ -454,6 +459,16 @@ impl Supervisor {
 impl Drop for Supervisor {
     fn drop(&mut self) {
         self.stop(STOP_GRACE);
+    }
+}
+
+/// See [`Supervisor::frames`].
+#[derive(Clone)]
+pub struct Frames(Sender<Msg>);
+
+impl Frames {
+    pub fn send(&self, frame: ToHub) {
+        let _ = self.0.send(Msg::Send(frame));
     }
 }
 

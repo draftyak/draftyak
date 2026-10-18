@@ -20,6 +20,9 @@ const pins: Readonly<Record<string, string>> = {
 	"windows-native-keyring-store": "1.1.0",
 	"zbus-secret-service-keyring-store": "1.0.1",
 	"apple-native-keyring-store": "1.0.2",
+	// Not a census pin: the keychain store's own version, which spike-keyring calls on macOS to
+	// keep keychain prompts off (M0.23b).
+	"security-framework": "3.7.0",
 };
 
 // name -> version requirement for every entry of every [*dependencies] table.

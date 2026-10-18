@@ -46,6 +46,40 @@ pub fn error_kind(error: &Error) -> &'static str {
     }
 }
 
+/// The OS's own code under a store error, where the store keeps one: on macOS the OSStatus, such
+/// as -25293 (errSecAuthFailed) for a check securityd would pass only through a prompt, or -25308
+/// (errSecInteractionNotAllowed) for a step that needs UI that can't be shown.
+pub fn os_code(error: &Error) -> Option<i32> {
+    match error {
+        Error::PlatformFailure(inner) | Error::NoStorageAccess(inner) => {
+            #[cfg(target_os = "macos")]
+            if let Some(status) = inner.downcast_ref::<security_framework::base::Error>() {
+                return Some(status.code());
+            }
+            let _ = inner;
+            None
+        }
+        _ => None,
+    }
+}
+
+/// macOS: keychain prompts stay off while this lives, so no step waits for a click that never
+/// comes. The client then sends securityd no prompt credential: a check only a prompt could pass
+/// (the item's ACL or partition list, for a binary the item doesn't trust) fails with
+/// errSecAuthFailed, and a step that needs UI that can't be shown (such as finding no default
+/// keychain) fails with errSecInteractionNotAllowed.
+#[cfg(target_os = "macos")]
+pub fn no_prompts() -> Option<security_framework::os::macos::keychain::KeychainUserInteractionLock>
+{
+    security_framework::os::macos::keychain::SecKeychain::disable_user_interaction().ok()
+}
+
+/// No prompts to turn off elsewhere.
+#[cfg(not(target_os = "macos"))]
+pub fn no_prompts() -> Option<()> {
+    None
+}
+
 /// The store keyring's `v1` feature initializes once per process: Windows Credential Manager,
 /// the macOS login keychain or the Secret Service. Err is why it isn't available.
 pub fn native_store() -> Result<Arc<CredentialStore>, &'static str> {
@@ -57,7 +91,7 @@ pub fn native_store() -> Result<Arc<CredentialStore>, &'static str> {
 
 /// Windows keeps the key on this machine (`Local`); the store's default, `Enterprise`, roams
 /// with the user's profile.
-fn modifiers() -> HashMap<&'static str, &'static str> {
+pub fn modifiers() -> HashMap<&'static str, &'static str> {
     if cfg!(target_os = "windows") {
         HashMap::from([("persistence", "Local")])
     } else {

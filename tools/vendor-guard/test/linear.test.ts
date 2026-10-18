@@ -5,7 +5,9 @@ import { find, glue, identifiers, lines, type PatternRule } from "../src/rules.t
 // Every long line grows by fours up to 128 KiB and stops at the first size over the limit, so a
 // pattern that backtracks fails within seconds instead of stalling the run. At 128 KiB the slowest
 // linear case takes about 20 ms on the dev box, and each pattern that used to backtrack took 0.5 s
-// or more.
+// or more. The limit is on this process's CPU time, not wall time: a backtracking pattern burns
+// CPU, while a runner busy with other suites only makes the wall clock slower (one CI run took
+// 282 ms of wall time for a case that needs 6 ms).
 const LIMIT_MS = 250;
 const SIZES = [16, 64, 256, 1024, 4096, 16_384, 65_536, 131_072];
 const fill = (unit: string, size: number): string => unit.repeat(Math.ceil(size / unit.length));
@@ -17,9 +19,10 @@ function tooSlow(run: (input: string) => unknown, family: Iterable<Line>): strin
 			const input = line(size);
 			let ms = Number.POSITIVE_INFINITY;
 			for (let attempt = 0; attempt < 2 && ms > LIMIT_MS; attempt++) {
-				const started = performance.now();
+				const started = process.cpuUsage();
 				run(input);
-				ms = Math.min(ms, performance.now() - started);
+				const used = process.cpuUsage(started);
+				ms = Math.min(ms, (used.user + used.system) / 1000);
 			}
 			if (ms > LIMIT_MS) {
 				return `${JSON.stringify(input.slice(0, 40))}… (${input.length} chars): ${ms.toFixed(0)} ms`;

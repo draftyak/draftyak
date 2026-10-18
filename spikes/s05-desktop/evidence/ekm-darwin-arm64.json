@@ -1,0 +1,115 @@
+{
+  "recordedAt": "2026-10-18T08:59:18.109Z",
+  "fingerprint": {
+    "os": {
+      "platform": "darwin",
+      "arch": "arm64",
+      "osName": "Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:34 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_VMAPPLE",
+      "osVersion": "24.6.0"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "e961e3a6bd7d269e1322b06fc678ac6b136bf897",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 3,
+      "cpuCount": 3,
+      "cpuModel": "Apple M1 (Virtual)",
+      "memoryUsedPercent": 90.2,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "toolchain": {
+      "rustcVersion": "1.95.0",
+      "host": "aarch64-apple-darwin"
+    },
+    "crates": {
+      "tokio": "1.53.3",
+      "tokio-rustls": "0.26.6",
+      "rustls": "0.23.46",
+      "ring": "0.17.14",
+      "keyring": "4.2.0",
+      "keyring-core": "1.0.1",
+      "windows-native-keyring-store": "1.1.0",
+      "zbus-secret-service-keyring-store": "1.0.1",
+      "apple-native-keyring-store": "1.0.2"
+    },
+    "cargo": {
+      "build": {
+        "seconds": 10.7,
+        "crates": 31,
+        "jobs": 3
+      },
+      "tests": {
+        "passed": 6,
+        "failed": 0
+      },
+      "fmt": "clean",
+      "clippy": {
+        "result": "clean",
+        "seconds": 2.9,
+        "crates": 28
+      }
+    },
+    "ekm": {
+      "label": "EXPERIMENTAL-draftyak-pair-v1",
+      "contextBytes": 16,
+      "length": 32,
+      "opensslVersion": "3.5.9",
+      "runs": [
+        {
+          "rust": "client",
+          "provider": "ring",
+          "protocol": "TLSv1_3",
+          "nodeProtocol": "TLSv1.3",
+          "cipherSuite": "TLS13_AES_256_GCM_SHA384",
+          "nodeCipher": "TLS_AES_256_GCM_SHA384",
+          "group": "X25519",
+          "equal": true,
+          "noContextEqual": true,
+          "contextChangesOutput": true,
+          "serverPinned": true,
+          "clientSpkiMatched": true,
+          "wrongPinRefused": true
+        },
+        {
+          "rust": "server",
+          "provider": "ring",
+          "protocol": "TLSv1_3",
+          "nodeProtocol": "TLSv1.3",
+          "cipherSuite": "TLS13_AES_256_GCM_SHA384",
+          "nodeCipher": "TLS_AES_256_GCM_SHA384",
+          "group": "X25519",
+          "equal": true,
+          "noContextEqual": true,
+          "contextChangesOutput": true,
+          "serverPinned": true,
+          "ticketsFromRust": 0
+        }
+      ]
+    },
+    "keyring": {
+      "native": {
+        "store": "keychain",
+        "readBack": true,
+        "persistence": null,
+        "removed": true,
+        "ms": 20
+      },
+      "fallback": {
+        "kdf": "pbkdf2-hmac-sha256",
+        "iterations": 600000,
+        "aead": "aes-256-gcm",
+        "fileBytes": 86,
+        "fileMode": "600",
+        "readBack": true,
+        "wrongPassphraseRefused": true,
+        "tamperRefused": true,
+        "unwrapMs": 86
+      }
+    }
+  }
+}

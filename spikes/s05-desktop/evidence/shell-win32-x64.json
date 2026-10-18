@@ -1,0 +1,183 @@
+{
+  "recordedAt": "2026-10-18T15:13:55.453Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "c51abce7daa47300768dcf609dbf52db5e0c8697",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 19.7,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 73.9,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "win32-x64",
+    "versions": {
+      "tauriVersion": "2.12.4",
+      "tauriPluginAutostartVersion": "2.7.0",
+      "autoLaunchVersion": "0.6.0",
+      "trayIconVersion": "0.25.1",
+      "npmPluginAutostartVersion": "2.7.0",
+      "npmApiVersion": "2.12.4"
+    },
+    "tray": {
+      "startedWithWindows": 0,
+      "items": [
+        "Open",
+        "Quit"
+      ],
+      "nativeMenuItems": [
+        "Open",
+        "Quit"
+      ],
+      "shellHoldsIcon": true,
+      "rectReported": true
+    },
+    "mainWindow": {
+      "openedVia": "tray menu WM_COMMAND",
+      "origin": "http://tauri.localhost",
+      "webviewDataInLaunchStore": true,
+      "webviewVersion": "155.0.4283.62"
+    },
+    "closeKeepsHub": {
+      "appRunning": true,
+      "hubGenerationUnchanged": true,
+      "reopened": true
+    },
+    "autostart": {
+      "elevated": false,
+      "guard": {
+        "refusedWhileElevated": true,
+        "registryUnchanged": true,
+        "elevationPretended": true
+      },
+      "leftoversOfEarlierRunsRemoved": 0,
+      "enabled": {
+        "runValue": "HKCU Run",
+        "valueName": "com.draftyak.spike.desktop",
+        "valueType": "REG_SZ",
+        "pointsToThisBuild": true,
+        "argument": "--minimized",
+        "pathQuoted": false,
+        "startupApprovedWritten": true,
+        "machineRunValue": false,
+        "readThroughNpmPackage": true
+      },
+      "disabled": {
+        "runValueRemoved": true,
+        "startupApprovedLeftByPlugin": true,
+        "startupApprovedRemoved": true,
+        "readThroughNpmPackage": false
+      }
+    },
+    "approval": {
+      "checks": {
+        "cspEnforced": true,
+        "navigationPinned": true,
+        "noServiceWorker": true,
+        "noStorage": true,
+        "onlyItsCapability": true,
+        "originsDiffer": true,
+        "servedOnlyToItself": true
+      },
+      "origins": {
+        "approval": "http://approval.localhost",
+        "main": "http://tauri.localhost"
+      },
+      "secureContext": true,
+      "serviceWorker": {
+        "api": true,
+        "registerRefusedBy": "trusted-types",
+        "registrations": 0,
+        "controlled": false
+      },
+      "storage": {
+        "firstWindowEmpty": true,
+        "writtenInFirstWindow": {
+          "caches": 1,
+          "cookie": true,
+          "indexedDB": 1,
+          "localStorage": 1,
+          "sessionStorage": 1
+        },
+        "secondWindowEmpty": true,
+        "rustCookies": [
+          0,
+          0
+        ],
+        "incognito": true,
+        "ownDataFolder": true
+      },
+      "capability": {
+        "approvalReadyFromApproval": "allowed",
+        "approvalReadyFromMain": "capability",
+        "autostartReadFromApproval": "capability",
+        "autostartDisableFromMain": "capability",
+        "autostartReadFromMainViaNpm": "allowed"
+      },
+      "csp": {
+        "innerHtmlRefusedBy": "trusted-types",
+        "evalRefusedBy": "csp",
+        "mainFetchOfApprovalPage": "fetch-blocked",
+        "mainFetchReachedProtocol": false
+      },
+      "protocol": {
+        "status200OnlyTo": "approval",
+        "otherLabel": {
+          "label": "foreign",
+          "navigationPinned": false,
+          "ownCsp": false,
+          "status": 403
+        }
+      },
+      "navigation": {
+        "toMainOrigin": "refused by on_navigation",
+        "refusedOrigin": "http://tauri.localhost",
+        "stayedOnApprovalOrigin": true
+      },
+      "mainCookiesSet": 1,
+      "served": 5
+    },
+    "quit": {
+      "pickedVia": "tray menu WM_COMMAND",
+      "appExitCode": 0,
+      "hubExitCode": 0,
+      "hubStoppedOnShutdownFrame": true,
+      "draftyakNodeLeft": 0,
+      "webviewProcessesLeft": 0,
+      "approvalOriginOnDisk": {
+        "pathsNamingIt": 0,
+        "filesHoldingIt": 0,
+        "searched": "paths, and file bytes as UTF-8, UTF-16LE and UTF-16BE"
+      },
+      "mainOriginOnDisk": {
+        "pathsNamingIt": 0,
+        "filesHoldingIt": 6
+      },
+      "appDataFolderCreated": false
+    },
+    "quitRemovesStore": {
+      "store": "new folder under the OS temp folder",
+      "windowsOpen": [
+        "approval",
+        "main"
+      ],
+      "pickedVia": "tray menu WM_COMMAND",
+      "appExitCode": 0,
+      "exitMs": 309,
+      "storeLeft": false,
+      "webviewProcessesLeft": 0
+    }
+  }
+}

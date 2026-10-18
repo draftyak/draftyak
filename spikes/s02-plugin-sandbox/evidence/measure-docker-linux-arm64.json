@@ -1,0 +1,254 @@
+{
+  "recordedAt": "2026-10-18T02:41:27.270Z",
+  "fingerprint": {
+    "os": {
+      "platform": "linux",
+      "arch": "arm64",
+      "osName": "#22-Ubuntu SMP Mon Jul 27 17:12:01 UTC 2026",
+      "osVersion": "6.17.0-1022-azure"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "a3b349adce9e6d44de4870603ceccd598ae19197",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 0.5,
+      "cpuCount": 2,
+      "cpuModel": "unknown",
+      "memoryUsedPercent": 20.5,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "docker-linux-arm64",
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "image": "node:26.12.0-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913",
+    "native": false,
+    "rssLimitMiB": 512,
+    "intervals": {
+      "fastMs": 150,
+      "planMs": 5000
+    },
+    "killSampler": "proc-status",
+    "kills": [
+      {
+        "mode": "arraybuffer",
+        "node": "26.5.1",
+        "method": "proc-status",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 557,
+        "overshootMiB": 45,
+        "timeToKillMs": 608,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "wasm",
+        "node": "26.5.1",
+        "method": "proc-status",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 558,
+        "overshootMiB": 46,
+        "timeToKillMs": 605,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "arraybuffer-fast",
+        "node": "26.5.1",
+        "method": "proc-status",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1581,
+        "overshootMiB": 1069,
+        "timeToKillMs": 5008,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 363
+      },
+      {
+        "mode": "wasm-fast",
+        "node": "26.5.1",
+        "method": "proc-status",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1582,
+        "overshootMiB": 1070,
+        "timeToKillMs": 5008,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 370
+      },
+      {
+        "mode": "arraybuffer",
+        "node": "26.12.0",
+        "method": "proc-status",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 558,
+        "overshootMiB": 46,
+        "timeToKillMs": 604,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "wasm",
+        "node": "26.12.0",
+        "method": "proc-status",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 558,
+        "overshootMiB": 46,
+        "timeToKillMs": 604,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "arraybuffer-fast",
+        "node": "26.12.0",
+        "method": "proc-status",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1582,
+        "overshootMiB": 1070,
+        "timeToKillMs": 5007,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 361
+      },
+      {
+        "mode": "wasm-fast",
+        "node": "26.12.0",
+        "method": "proc-status",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1582,
+        "overshootMiB": 1070,
+        "timeToKillMs": 5007,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 366
+      }
+    ],
+    "observations": {
+      "planIntervalMaxOvershootMiB": 1070,
+      "fastestGrowthMiBPerSecond": 4255,
+      "projectedMiBPerPlanInterval": 21274
+    },
+    "untouched": [
+      {
+        "node": "26.5.1",
+        "allocatedMiB": 768,
+        "readings": [
+          {
+            "method": "proc-statm",
+            "metric": "resident",
+            "mib": 44
+          },
+          {
+            "method": "proc-status",
+            "metric": "resident",
+            "mib": 44
+          },
+          {
+            "method": "ps-rss",
+            "metric": "resident",
+            "mib": null
+          }
+        ]
+      },
+      {
+        "node": "26.12.0",
+        "allocatedMiB": 768,
+        "readings": [
+          {
+            "method": "proc-statm",
+            "metric": "resident",
+            "mib": 45
+          },
+          {
+            "method": "proc-status",
+            "metric": "resident",
+            "mib": 45
+          },
+          {
+            "method": "ps-rss",
+            "metric": "resident",
+            "mib": null
+          }
+        ]
+      }
+    ],
+    "samplerCost": {
+      "lock": {
+        "waitedMs": 1,
+        "idle": {
+          "samples": [
+            1,
+            0,
+            1,
+            0,
+            0
+          ],
+          "maxCpuPercent": 1,
+          "thresholdPercent": 20,
+          "waitedMs": 5006,
+          "concurrentBuilds": 0
+        }
+      },
+      "samplingCost": [
+        {
+          "method": "proc-statm",
+          "metric": "resident",
+          "available": true,
+          "firstMs": 0.395,
+          "reads": 25,
+          "medianMs": 0.013,
+          "minMs": 0.012,
+          "maxMs": 0.025,
+          "lastMiB": 45
+        },
+        {
+          "method": "proc-status",
+          "metric": "resident",
+          "available": true,
+          "firstMs": 0.174,
+          "reads": 25,
+          "medianMs": 0.015,
+          "minMs": 0.014,
+          "maxMs": 0.037,
+          "lastMiB": 45
+        },
+        {
+          "method": "ps-rss",
+          "metric": "resident",
+          "available": false,
+          "firstMs": 3.408,
+          "reads": 25,
+          "medianMs": 1.728,
+          "minMs": 1.503,
+          "maxMs": 2.056,
+          "lastMiB": null
+        }
+      ]
+    },
+    "findings": {
+      "watchdogSigkillsAboveTheLimit": true,
+      "arrayBufferAndWasmEscapeTheHeapCap": true,
+      "planIntervalLetsGrowthPassTheLimit": true,
+      "untouchedIsNotResident": true,
+      "killSamplerCostMeasured": true
+    }
+  }
+}

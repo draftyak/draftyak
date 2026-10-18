@@ -12,7 +12,9 @@ const work = fs.mkdtempSync("/tmp/s11-");
 const spike = path.join(work, "s11");
 fs.cpSync("/stage/src", path.join(spike, "src"), { recursive: true });
 fs.mkdirSync(path.join(spike, "test"));
-fs.copyFileSync("/stage/test/session.ts", path.join(spike, "test", "session.ts"));
+for (const name of ["session.ts", "channel.ts"]) {
+	fs.copyFileSync(`/stage/test/${name}`, path.join(spike, "test", name));
+}
 fs.mkdirSync(path.join(spike, "node_modules", "@draftyak"), { recursive: true });
 fs.symlinkSync("/s02", path.join(spike, "node_modules", "@draftyak", "spike-s02-plugin-sandbox"));
 

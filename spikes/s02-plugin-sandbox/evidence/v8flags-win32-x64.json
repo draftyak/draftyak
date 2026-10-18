@@ -1,0 +1,104 @@
+{
+  "recordedAt": "2026-10-18T16:28:40.137Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "888d1a9d15f3c3dcab7e64d3af9535c5a08cbd2a",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 29.3,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 72.1,
+      "concurrentBuilds": 4
+    }
+  },
+  "data": {
+    "target": "win32-x64",
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "attack": "v8.setFlagsFromString('--allow-natives-syntax') then node:vm %StringParseInt",
+    "production": [
+      {
+        "node": "26.5.1",
+        "outcome": {
+          "beforePrinted": true,
+          "before": {
+            "worked": false,
+            "error": "SyntaxError"
+          },
+          "after": null,
+          "aborted": true,
+          "freezeCheckFailed": true,
+          "exitCode": 2147483651,
+          "signal": null
+        }
+      },
+      {
+        "node": "26.12.0",
+        "outcome": {
+          "beforePrinted": true,
+          "before": {
+            "worked": false,
+            "error": "SyntaxError"
+          },
+          "after": null,
+          "aborted": true,
+          "freezeCheckFailed": true,
+          "exitCode": 2147483651,
+          "signal": null
+        }
+      }
+    ],
+    "control": [
+      {
+        "node": "26.5.1",
+        "outcome": {
+          "beforePrinted": true,
+          "before": {
+            "worked": false,
+            "error": "SyntaxError"
+          },
+          "after": {
+            "worked": true
+          },
+          "aborted": false,
+          "freezeCheckFailed": false,
+          "exitCode": 0,
+          "signal": null
+        }
+      },
+      {
+        "node": "26.12.0",
+        "outcome": {
+          "beforePrinted": true,
+          "before": {
+            "worked": false,
+            "error": "SyntaxError"
+          },
+          "after": {
+            "worked": true
+          },
+          "aborted": false,
+          "freezeCheckFailed": false,
+          "exitCode": 0,
+          "signal": null
+        }
+      }
+    ],
+    "findings": {
+      "productionAbortsTheAttack": true,
+      "weakeningWorksWithoutFreezeFlag": true
+    }
+  }
+}
