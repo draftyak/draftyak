@@ -91,8 +91,10 @@ const notRun = (why: string): string[] =>
 	["text.format", "submit_draft", "transfer"].map((name) => `${name}: not-run(${why})`);
 // The loopback fakes' hosts fail the name rule, and only they.
 const LOOPBACK_HOSTS = 6;
+// A rehearsal starts its own fakes and child processes: about 9 s, but past 30 s on a loaded machine.
+const REHEARSAL = { timeout: 120_000 };
 
-describe.concurrent("a whole session", () => {
+describe.concurrent("a whole session", REHEARSAL, () => {
 	it("prints the five lines, keeps tokens only in .env.live, and the desktop forgets them before the hub revokes", async (ctx) => {
 		const item = await setUp(ctx, { envLines: ["DY_LIVE_GMAIL_CLIENT_ID=unrelated-value"] });
 		let whileDrafting = "";
@@ -327,7 +329,7 @@ describe.concurrent("a whole session", () => {
 	});
 });
 
-describe.concurrent("drafts the route refuses", () => {
+describe.concurrent("drafts the route refuses", REHEARSAL, () => {
 	it("text.format refused: submit_draft through the namespace, the hub drafts that way, a model override holds", async (ctx) => {
 		const item = await setUp(ctx, {
 			script: (request) =>
@@ -387,7 +389,7 @@ describe.concurrent("drafts the route refuses", () => {
 	);
 });
 
-describe.concurrent("sessions that end short", () => {
+describe.concurrent("sessions that end short", REHEARSAL, () => {
 	it("a declined consent blocks the sign-in; nothing else runs and nothing needs revoking", async (ctx) => {
 		const item = await setUp(ctx, { auth: { consent: "decline" } });
 		const result = await item.run({ fingerprint: print });
@@ -591,7 +593,7 @@ describe.concurrent("sessions that end short", () => {
 	});
 });
 
-describe.concurrent("the transfer and the revocation check", () => {
+describe.concurrent("the transfer and the revocation check", REHEARSAL, () => {
 	it("a hub that refuses the credential: the transfer fails and this process revokes the session", async (ctx) => {
 		const item = await setUp(ctx);
 		const result = await item.run({ runChild: refusingHub, fingerprint: print });
