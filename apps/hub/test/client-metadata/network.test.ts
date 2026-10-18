@@ -692,6 +692,45 @@ it("clears collector references and returns a fixed error if final body assembly
 	expect(requests[0]?.req.destroyed).toBe(true);
 	expect(requests[0]?.req.response?.destroyed).toBe(true);
 });
+it.each(["assembly", "freshness"] as const)(
+	"refuses pinned publication after final %s reaches the CIMD deadline",
+	async (phase) => {
+		let now = 100,
+			assembled = false,
+			advanced = false;
+		vi.spyOn(performance, "now").mockImplementation(() => now);
+		const concat = Buffer.concat,
+			wall = Date.now;
+		vi.spyOn(Buffer, "concat").mockImplementation((blocks, length) => {
+			const bytes = concat(blocks, length);
+			assembled = true;
+			if (phase === "assembly") {
+				now += CIMD_TIMEOUT_MS;
+				advanced = true;
+			}
+			return bytes;
+		});
+		if (phase === "freshness")
+			vi.spyOn(Date, "now").mockImplementation(() => {
+				if (assembled) {
+					now += CIMD_TIMEOUT_MS;
+					advanced = true;
+				}
+				return wall();
+			});
+		await expect(
+			getPinnedMetadata({
+				destination: metadataUrl(CLIENT, "cimd"),
+				address: { address: "8.8.8.8", family: 4 },
+				maxBytes: METADATA_MAX_BYTES,
+				signal: signal(),
+			}),
+		).rejects.toThrow(/^Client metadata refused$/);
+		expect(advanced).toBe(true);
+		expect(requests[0]?.req.destroyed).toBe(true);
+		expect(requests[0]?.req.response?.destroyed).toBe(true);
+	},
+);
 it.each(["declared", "streamed"] as const)(
 	"caps %s CIMD bytes at 5 KiB even with the largest configuration",
 	async (mode) => {

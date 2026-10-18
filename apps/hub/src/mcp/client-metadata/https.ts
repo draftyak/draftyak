@@ -174,6 +174,10 @@ export async function getPinnedMetadata(
 							cacheExpiresAt:
 								finished + metadataCacheTtl(response.rawHeaders, Date.now(), finished - started),
 						});
+						if (expired()) {
+							stop();
+							return;
+						}
 						settled = true;
 						resolve(result);
 					} catch {
