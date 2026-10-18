@@ -1,0 +1,3357 @@
+{
+  "format": "draftyak.vectors.send-ticket.v1",
+  "description": "Broker send tickets. The broker looks the presented ticket's id (`computed.presentedId`) up among the tickets it minted and hasn't burned: `ticket` is the one it found, or null. `request.ticket` is what the plugin presented, from channel_send's _meta[\"io.github.draftyak/send-ticket\"] through host/fetch's sendTicket, absent when it presented none; `request.contentType` is the Content-Type the plugin gave, `request.headers` the hub-rendered headers the broker sends and `request.bodyHex` the exact body; `now` is the broker's clock in UTC ms. `reason` names the first of `checks` that fails, or is null: a ticket was found; it is a SendTicket and now a safe integer; the presented ticket is JCS-equal to it; now <= exp; instanceId, method, url and contentType equal byte for byte; headersSha256 equals headersSha256(request.headers), and those headers hold exactly one content-type, equal to the ticket's; bodySha256 equals the SHA-256 of the body. The broker burns every ticket it found, and the reasons in `disablesPlugin` also disable the plugin. `expiry` gives exp: the earlier of mintedAt + ttlMs and the item's deliverBy.",
+  "metaKey": "io.github.draftyak/send-ticket",
+  "ttlMs": 60000,
+  "checks": [
+    "TICKET_UNKNOWN",
+    "TICKET_INVALID",
+    "TICKET_ALTERED",
+    "TICKET_EXPIRED",
+    "TICKET_INSTANCE_MISMATCH",
+    "TICKET_METHOD_MISMATCH",
+    "TICKET_URL_MISMATCH",
+    "TICKET_CONTENT_TYPE_MISMATCH",
+    "TICKET_HEADERS_MISMATCH",
+    "TICKET_BODY_MISMATCH"
+  ],
+  "disablesPlugin": [
+    "TICKET_UNKNOWN",
+    "TICKET_ALTERED",
+    "TICKET_INSTANCE_MISMATCH",
+    "TICKET_METHOD_MISMATCH",
+    "TICKET_URL_MISMATCH",
+    "TICKET_CONTENT_TYPE_MISMATCH",
+    "TICKET_BODY_MISMATCH"
+  ],
+  "expiry": [
+    {
+      "id": "deliver-by-after-ttl",
+      "mintedAt": 1792000000000,
+      "deliverBy": 1792000900000,
+      "exp": 1792000060000
+    },
+    {
+      "id": "deliver-by-at-ttl",
+      "mintedAt": 1792000000000,
+      "deliverBy": 1792000060000,
+      "exp": 1792000060000
+    },
+    {
+      "id": "deliver-by-within-ttl",
+      "mintedAt": 1792000000000,
+      "deliverBy": 1792000030000,
+      "exp": 1792000030000
+    },
+    {
+      "id": "deliver-by-at-minting",
+      "mintedAt": 1792000000000,
+      "deliverBy": 1792000000000,
+      "exp": 1792000000000
+    }
+  ],
+  "cases": [
+    {
+      "id": "match",
+      "description": "The request the ticket was minted for, when it was minted.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": true,
+      "reason": null
+    },
+    {
+      "id": "match-at-exp",
+      "description": "The same request at exp, 60 s after minting.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000060000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": true,
+      "reason": null
+    },
+    {
+      "id": "expired-1-ms-after-exp",
+      "description": "The broker's clock reads 1792000060001.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000060001,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_EXPIRED"
+    },
+    {
+      "id": "match-at-capped-exp",
+      "description": "The hub minted the ticket with exp 1792000030000. The broker's clock reads 1792000030000.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000030000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000030000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000030000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": true,
+      "reason": null
+    },
+    {
+      "id": "expired-1-ms-after-capped-exp",
+      "description": "The hub minted the ticket with exp 1792000030000. The broker's clock reads 1792000030001.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000030000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000030000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000030001,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_EXPIRED"
+    },
+    {
+      "id": "headers-in-other-order-and-case",
+      "description": "The request has headers [[\"ACCEPT\",\"application/json\"],[\"CONTENT-TYPE\",\"application/json\"]].",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "ACCEPT",
+            "application/json"
+          ],
+          [
+            "CONTENT-TYPE",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": true,
+      "reason": null
+    },
+    {
+      "id": "presented-members-in-other-order",
+      "description": "The plugin presents the ticket's members in reverse order.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "exp": 1792000060000,
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "contentType": "application/json",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "method": "POST",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4"
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": true,
+      "reason": null
+    },
+    {
+      "id": "match-with-port-and-encoded-reserved",
+      "description": "The hub minted the ticket with url \"https://hello.draftyak.example:8443/v1/conversations/a%2Fb/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\". The request has url \"https://hello.draftyak.example:8443/v1/conversations/a%2Fb/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example:8443/v1/conversations/a%2Fb/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example:8443/v1/conversations/a%2Fb/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example:8443/v1/conversations/a%2Fb/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": true,
+      "reason": null
+    },
+    {
+      "id": "unticketed",
+      "description": "The plugin presents no ticket.",
+      "ticket": null,
+      "request": {
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": null,
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_UNKNOWN"
+    },
+    {
+      "id": "presented-not-a-ticket",
+      "description": "The plugin presents the ticket's id alone, which names no ticket.",
+      "ticket": null,
+      "request": {
+        "ticket": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": null,
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_UNKNOWN"
+    },
+    {
+      "id": "replayed-after-burn",
+      "description": "The match again, after it burned.",
+      "ticket": null,
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_UNKNOWN"
+    },
+    {
+      "id": "presented-id-changed",
+      "description": "The plugin presents the ticket with id \"01JAZ3W5N8P0Q2R4S6T8V0W2X5\".",
+      "ticket": null,
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X5",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X5",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_UNKNOWN"
+    },
+    {
+      "id": "presented-outbox-id-changed",
+      "description": "The plugin presents the ticket with outboxId \"01JAZ3W3B6Q8M2V0G5T9K4X7RD\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_ALTERED"
+    },
+    {
+      "id": "presented-instance-id-changed",
+      "description": "The plugin presents the ticket with instanceId \"01JAZ3W4C8D9E0F1G2H3J4K5M7\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M7",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_ALTERED"
+    },
+    {
+      "id": "presented-method-changed",
+      "description": "The plugin presents the ticket with method \"POSt\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POSt",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_ALTERED"
+    },
+    {
+      "id": "presented-url-changed",
+      "description": "The plugin presents the ticket with url \"https://hello.draftyak.example/v1/conversations/conv-2/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-2/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_ALTERED"
+    },
+    {
+      "id": "presented-headers-sha256-changed",
+      "description": "The plugin presents the ticket with headersSha256 \"d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f28590\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f28590",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_ALTERED"
+    },
+    {
+      "id": "presented-content-type-changed",
+      "description": "The plugin presents the ticket with contentType \"application/jsom\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/jsom",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_ALTERED"
+    },
+    {
+      "id": "presented-body-sha256-changed",
+      "description": "The plugin presents the ticket with bodySha256 \"f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649470\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649470",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_ALTERED"
+    },
+    {
+      "id": "presented-exp-changed",
+      "description": "The plugin presents the ticket with exp 1792000060001.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060001
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_ALTERED"
+    },
+    {
+      "id": "presented-note-changed",
+      "description": "The plugin presents the ticket with note \"x\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000,
+          "note": "x"
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_ALTERED"
+    },
+    {
+      "id": "minted-ticket-extra-member",
+      "description": "The hub minted the ticket with note \"x\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000,
+        "note": "x"
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000,
+          "note": "x"
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-content-type-trailing-line-feed",
+      "description": "The hub minted the ticket with contentType \"application/json\\n\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json\n",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json\n",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "clock-not-an-integer",
+      "description": "The broker's clock reads 1.5.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1.5,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-http",
+      "description": "The hub minted the ticket with url \"http://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\". The request has url \"http://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "http://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "http://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "http://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-dot-segment",
+      "description": "The hub minted the ticket with url \"https://hello.draftyak.example/v1/conversations/../messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\". The request has url \"https://hello.draftyak.example/v1/conversations/../messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/../messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/../messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/../messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-encoded-dot-segment",
+      "description": "The hub minted the ticket with url \"https://hello.draftyak.example/v1/conversations/%2E%2E/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\". The request has url \"https://hello.draftyak.example/v1/conversations/%2E%2E/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/%2E%2E/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/%2E%2E/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/%2E%2E/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-lower-case-encoding",
+      "description": "The hub minted the ticket with url \"https://hello.draftyak.example/v1/conversations/%2e%2e/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\". The request has url \"https://hello.draftyak.example/v1/conversations/%2e%2e/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/%2e%2e/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/%2e%2e/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/%2e%2e/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-encoded-unreserved",
+      "description": "The hub minted the ticket with url \"https://hello.draftyak.example/v1/conversations/conv%2D1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\". The request has url \"https://hello.draftyak.example/v1/conversations/conv%2D1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv%2D1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv%2D1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv%2D1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-userinfo",
+      "description": "The hub minted the ticket with url \"https://dytest@hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\". The request has url \"https://dytest@hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://dytest@hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://dytest@hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://dytest@hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-upper-case-host",
+      "description": "The hub minted the ticket with url \"https://Hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\". The request has url \"https://Hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://Hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://Hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://Hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-port-443",
+      "description": "The hub minted the ticket with url \"https://hello.draftyak.example:443/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\". The request has url \"https://hello.draftyak.example:443/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example:443/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example:443/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example:443/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-ip-address",
+      "description": "The hub minted the ticket with url \"https://192.0.2.10/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\". The request has url \"https://192.0.2.10/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://192.0.2.10/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://192.0.2.10/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://192.0.2.10/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-quote-in-query",
+      "description": "The hub minted the ticket with url \"https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC&q=\\\"x\\\"\". The request has url \"https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC&q=\\\"x\\\"\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC&q=\"x\"",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC&q=\"x\"",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC&q=\"x\"",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-fragment",
+      "description": "The hub minted the ticket with url \"https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC#top\". The request has url \"https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC#top\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC#top",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC#top",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC#top",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "minted-url-trailing-line-feed",
+      "description": "The hub minted the ticket with url \"https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\\n\". The request has url \"https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\\n\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\n",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\n",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\n",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "request-from-another-instance",
+      "description": "Another instance sends.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M7",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INSTANCE_MISMATCH"
+    },
+    {
+      "id": "method-byte-changed",
+      "description": "The request has method \"POSt\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POSt",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_METHOD_MISMATCH"
+    },
+    {
+      "id": "url-path-byte-changed",
+      "description": "The URL names conv-2.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-2/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_URL_MISMATCH"
+    },
+    {
+      "id": "url-host-letter-upper-case",
+      "description": "The request has url \"https://Hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://Hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_URL_MISMATCH"
+    },
+    {
+      "id": "url-query-byte-changed",
+      "description": "The request has url \"https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RD\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_URL_MISMATCH"
+    },
+    {
+      "id": "url-dot-segment-added",
+      "description": "The request has url \"https://hello.draftyak.example/v1/x/../conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/x/../conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_URL_MISMATCH"
+    },
+    {
+      "id": "content-type-byte-changed",
+      "description": "The request has contentType \"application/jsom\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/jsom",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_CONTENT_TYPE_MISMATCH"
+    },
+    {
+      "id": "content-type-case-changed",
+      "description": "The request has contentType \"Application/json\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "Application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_CONTENT_TYPE_MISMATCH"
+    },
+    {
+      "id": "content-type-parameter-added",
+      "description": "The request has contentType \"application/json; charset=utf-8\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json; charset=utf-8",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_CONTENT_TYPE_MISMATCH"
+    },
+    {
+      "id": "header-value-byte-changed",
+      "description": "The rendered Accept value differs.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/jsom"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "15567253b28b0ea0bdd44bcf057961041b5128036df29346cd47e13a046a1950",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_HEADERS_MISMATCH"
+    },
+    {
+      "id": "header-added",
+      "description": "The request has headers [[\"Content-Type\",\"application/json\"],[\"Accept\",\"application/json\"],[\"X-Extra\",\"1\"]].",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "X-Extra",
+            "1"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "0580799735adbdbdce8be68dc628d66ca1333cf1ff065921c3d2f13e932a4af1",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_HEADERS_MISMATCH"
+    },
+    {
+      "id": "header-removed",
+      "description": "The request has headers [[\"Content-Type\",\"application/json\"]].",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "0949a58837e00ae2e2ba7a20c5a97cae937e5853bee9562865dce21831f0a7be",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_HEADERS_MISMATCH"
+    },
+    {
+      "id": "header-repeated",
+      "description": "The request has headers [[\"Content-Type\",\"application/json\"],[\"Accept\",\"application/json\"],[\"Accept\",\"application/json\"]].",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d1fad7add634126e7c6de667b5b948095ed18fb46600afab0fded39f92132c89",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_HEADERS_MISMATCH"
+    },
+    {
+      "id": "minted-headers-sha256-changed",
+      "description": "The hub minted the ticket with headersSha256 \"d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f28590\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f28590",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f28590",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_HEADERS_MISMATCH"
+    },
+    {
+      "id": "rendered-content-type-differs",
+      "description": "The hub minted the ticket with headersSha256 \"d5d8f835b76172064b6fda6054070ca1e004f4b0c3951d4696afa54b3ec3152c\". The request has headers [[\"Content-Type\",\"text/plain\"],[\"Accept\",\"application/json\"]].",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d5d8f835b76172064b6fda6054070ca1e004f4b0c3951d4696afa54b3ec3152c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d5d8f835b76172064b6fda6054070ca1e004f4b0c3951d4696afa54b3ec3152c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "text/plain"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d5d8f835b76172064b6fda6054070ca1e004f4b0c3951d4696afa54b3ec3152c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_HEADERS_MISMATCH"
+    },
+    {
+      "id": "rendered-content-type-missing",
+      "description": "The hub minted the ticket with headersSha256 \"4295e0c77731a7a170babe6ec10ef6a202854108c339223a6b364227b0ec3831\". The request has headers [[\"Accept\",\"application/json\"]].",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "4295e0c77731a7a170babe6ec10ef6a202854108c339223a6b364227b0ec3831",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "4295e0c77731a7a170babe6ec10ef6a202854108c339223a6b364227b0ec3831",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "4295e0c77731a7a170babe6ec10ef6a202854108c339223a6b364227b0ec3831",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_HEADERS_MISMATCH"
+    },
+    {
+      "id": "rendered-content-type-repeated",
+      "description": "The hub minted the ticket with headersSha256 \"d93d69febc4d4a34c12216e1e052de6a4f5e52ca1624854cffcb3247e4d47fce\". The request has headers [[\"Content-Type\",\"application/json\"],[\"Accept\",\"application/json\"],[\"content-type\",\"application/json\"]].",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d93d69febc4d4a34c12216e1e052de6a4f5e52ca1624854cffcb3247e4d47fce",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d93d69febc4d4a34c12216e1e052de6a4f5e52ca1624854cffcb3247e4d47fce",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d93d69febc4d4a34c12216e1e052de6a4f5e52ca1624854cffcb3247e4d47fce",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_HEADERS_MISMATCH"
+    },
+    {
+      "id": "body-byte-changed",
+      "description": "A body byte differs.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a22445954455354206a656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "ae22b337db780c4bc1ac4a5c27f5dec8354eb5babcc2a208378f68584c6fb6ed"
+      },
+      "matches": false,
+      "reason": "TICKET_BODY_MISMATCH"
+    },
+    {
+      "id": "body-trailing-line-feed",
+      "description": "The request has body \"{\\\"text\\\":\\\"DYTEST hello from the send-ticket vectors\\\"}\\n\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d0a"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "a3c53d7d51aa13280df44c2c553c5e673818d4963eefd5154659110c3c70b58d"
+      },
+      "matches": false,
+      "reason": "TICKET_BODY_MISMATCH"
+    },
+    {
+      "id": "body-empty",
+      "description": "The request has body \"\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": ""
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "matches": false,
+      "reason": "TICKET_BODY_MISMATCH"
+    },
+    {
+      "id": "minted-body-sha256-changed",
+      "description": "The hub minted the ticket with bodySha256 \"f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649470\".",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649470",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649470",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_BODY_MISMATCH"
+    },
+    {
+      "id": "unknown-before-invalid",
+      "description": "No unburned ticket has the presented id, and the broker's clock reads 1.5.",
+      "ticket": null,
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1.5,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_UNKNOWN"
+    },
+    {
+      "id": "invalid-before-altered",
+      "description": "The broker's clock reads 1.5, and the plugin presents the ticket with another outboxId.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1.5,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INVALID"
+    },
+    {
+      "id": "altered-before-expired",
+      "description": "The plugin presents the ticket with another outboxId, and the clock reads 1 ms after exp.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000060001,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_ALTERED"
+    },
+    {
+      "id": "expired-before-instance-mismatch",
+      "description": "The clock reads 1 ms after exp, and another instance sends.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M7",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000060001,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_EXPIRED"
+    },
+    {
+      "id": "instance-mismatch-before-method-mismatch",
+      "description": "Another instance sends, and the method is PUT.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M7",
+        "method": "PUT",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_INSTANCE_MISMATCH"
+    },
+    {
+      "id": "method-mismatch-before-url-mismatch",
+      "description": "The method is PUT, and the URL names conv-2.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "PUT",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-2/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_METHOD_MISMATCH"
+    },
+    {
+      "id": "url-mismatch-before-content-type-mismatch",
+      "description": "The URL names conv-2, and the plugin gives text/plain.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-2/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "text/plain",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/json"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_URL_MISMATCH"
+    },
+    {
+      "id": "content-type-mismatch-before-headers-mismatch",
+      "description": "The plugin gives text/plain, and the rendered Accept value differs.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "text/plain",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/jsom"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a224459544553542068656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "15567253b28b0ea0bdd44bcf057961041b5128036df29346cd47e13a046a1950",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475"
+      },
+      "matches": false,
+      "reason": "TICKET_CONTENT_TYPE_MISMATCH"
+    },
+    {
+      "id": "headers-mismatch-before-body-mismatch",
+      "description": "The rendered Accept value differs, and a body byte differs.",
+      "ticket": {
+        "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+        "contentType": "application/json",
+        "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+        "exp": 1792000060000
+      },
+      "request": {
+        "ticket": {
+          "id": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+          "outboxId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+          "method": "POST",
+          "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "headersSha256": "d33c5901b41788cc15e274196a4db43be6dbd01cd499853d8e58ad99d1f2859c",
+          "contentType": "application/json",
+          "bodySha256": "f0ede3661d70f98862cc15849035f81866d28dde77385426cf8cb48daa649475",
+          "exp": 1792000060000
+        },
+        "instanceId": "01JAZ3W4C8D9E0F1G2H3J4K5M6",
+        "method": "POST",
+        "url": "https://hello.draftyak.example/v1/conversations/conv-1/messages?idempotency_key=01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "contentType": "application/json",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ],
+          [
+            "Accept",
+            "application/jsom"
+          ]
+        ],
+        "bodyHex": "7b2274657874223a22445954455354206a656c6c6f2066726f6d207468652073656e642d7469636b657420766563746f7273227d"
+      },
+      "now": 1792000000000,
+      "computed": {
+        "presentedId": "01JAZ3W5N8P0Q2R4S6T8V0W2X4",
+        "headersSha256": "15567253b28b0ea0bdd44bcf057961041b5128036df29346cd47e13a046a1950",
+        "bodySha256": "ae22b337db780c4bc1ac4a5c27f5dec8354eb5babcc2a208378f68584c6fb6ed"
+      },
+      "matches": false,
+      "reason": "TICKET_HEADERS_MISMATCH"
+    }
+  ]
+}
