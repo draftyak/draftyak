@@ -3,8 +3,23 @@
   "productName": "DraftYak Spike Desktop",
   "version": "0.0.0",
   "identifier": "com.draftyak.spike.desktop",
+  "build": {
+    "frontendDist": "../ui"
+  },
   "app": {
-    "windows": []
+    "windows": [
+      {
+        "label": "main",
+        "create": false,
+        "url": "index.html",
+        "title": "DraftYak Spike Desktop",
+        "width": 640,
+        "height": 420
+      }
+    ],
+    "security": {
+      "csp": "default-src 'none'; script-src 'self'; style-src 'none'; img-src 'none'; connect-src ipc: http://ipc.localhost; worker-src 'none'; child-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types 'none'"
+    }
   },
   "bundle": {
     "active": false,

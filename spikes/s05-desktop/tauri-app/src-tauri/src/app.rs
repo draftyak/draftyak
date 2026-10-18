@@ -1,15 +1,20 @@
-//! The spike app: no window and one supervised hub. It prints every supervisor [`Event`] as one
-//! JSON line on stdout for the tests; the hub's stderr arrives as log events.
+//! The spike app: one supervised hub, a tray with Open and Quit, the main window (created on Open)
+//! and the approval window ([`crate::shell`], [`crate::approval`]). It prints every supervisor
+//! [`Event`](crate::sidecar::Event) as one JSON line on stdout for the tests, as does the
+//! spike-only test control ([`crate::control`]); the hub's stderr arrives as log events.
 
 use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
+use serde_json::Value;
 use tauri::path::BaseDirectory;
-use tauri::{Manager, RunEvent};
+use tauri::{AppHandle, Manager, RunEvent};
 
-use crate::sidecar::{self, Config, Event, STOP_GRACE, Secrets, Supervisor};
+use crate::sidecar::{self, Config, STOP_GRACE, Secrets, Supervisor};
+use crate::{approval, control, shell};
 
 /// The hub's store folder, passed to the hub.
 const DATA_DIR: &str = "DRAFTYAK_DATA_DIR";
@@ -23,7 +28,8 @@ struct Hub {
 
 /// The spike's master key is new on every launch, so its store is too: `DRAFTYAK_DATA_DIR` if it
 /// holds no store yet, else a new folder under the OS temp folder that the app removes when it
-/// exits (a killed app leaves it behind).
+/// exits (a killed app leaves it behind). The windows keep their WebView data in it as well, which
+/// is why Quit destroys them before exiting ([`shell::on_menu`]).
 struct Store {
     dir: PathBuf,
     temporary: bool,
@@ -51,8 +57,20 @@ impl Store {
     }
 }
 
+/// Where a window keeps its WebView data: inside this launch's store, never under the user's
+/// application data (Tauri's default on Windows and Linux).
+pub fn webview_data(app: &AppHandle, label: &str) -> PathBuf {
+    app.state::<Hub>().store.dir.join("webview").join(label)
+}
+
 pub fn run() {
+    let context = tauri::generate_context!();
+    let autostart = shell::autostart_plugin(&context.config().identifier);
     let app = tauri::Builder::default()
+        .plugin(autostart)
+        .register_uri_scheme_protocol(approval::SCHEME, approval::serve)
+        .invoke_handler(tauri::generate_handler![approval::approval_ready])
+        .manage(approval::Log::default())
         .setup(|app| {
             let node = sidecar::sibling_binary("draftyak-node")?;
             let hub = app.path().resolve("resources/hub.mjs", BaseDirectory::Resource)?;
@@ -63,28 +81,46 @@ pub fn run() {
             );
             let store = Store::for_launch()?;
             config.env.push((DATA_DIR.into(), store.dir.clone().into()));
-            let supervisor = Supervisor::start(config, print)?;
+            // M0.23b holds keep-awake here on Event::KeepAwake, and sends ToHub::Resumed on wake.
+            let supervisor = Supervisor::start(config, |event| emit(&event.to_json()))?;
             app.manage(Hub { supervisor: Mutex::new(Some(supervisor)), store });
+            shell::tray(app.handle())?;
+            if std::env::args().any(|arg| arg == control::FLAG) {
+                control::start(app.handle().clone())?;
+            }
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("the spike app failed to start");
-    app.run(|app, event| {
-        if let RunEvent::Exit = event {
+    app.run(|app, event| match event {
+        // Closing the last window keeps the app, and with it the hub, running (plan §7 Tray);
+        // only Quit, through app.exit, ends both.
+        RunEvent::ExitRequested { code: None, api, .. } => api.prevent_exit(),
+        RunEvent::Exit => {
             let hub = app.state::<Hub>();
             let supervisor = hub.supervisor.lock().ok().and_then(|mut slot| slot.take());
             if let Some(supervisor) = supervisor {
                 supervisor.shutdown(STOP_GRACE);
             }
             if hub.store.temporary {
-                let _ = fs::remove_dir_all(&hub.store.dir);
+                remove_store(&hub.store.dir);
             }
         }
+        _ => {}
     });
 }
 
-fn print(event: Event) {
+// WebView2's processes hold files in the store for a moment after their webviews are destroyed.
+fn remove_store(dir: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fs::remove_dir_all(dir).is_err() && dir.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Prints one JSON line on stdout.
+pub fn emit(value: &Value) {
     let mut out = io::stdout().lock();
-    let _ = writeln!(out, "{}", event.to_json());
+    let _ = writeln!(out, "{value}");
     let _ = out.flush();
 }

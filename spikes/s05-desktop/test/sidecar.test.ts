@@ -70,9 +70,9 @@ describe("tauri-app config", () => {
 
 	it("pins tauri 2.12.4, tauri-build 2.7.3 and @tauri-apps/api 2.12.4, without the shell plugin", () => {
 		const manifest = read(path.join(tauriDir, "Cargo.toml"));
-		expect(manifest).toMatch(/^tauri = \{ version = "=2\.12\.4", optional = true \}$/m);
+		expect(manifest).toMatch(/^tauri = \{ version = "=2\.12\.4", optional = true(?:,| \})/m);
 		expect(manifest).toMatch(/^tauri-build = \{ version = "=2\.7\.3", optional = true \}$/m);
-		expect(manifest).toMatch(/^default = \["app"\]\napp = \["dep:tauri", "dep:tauri-build"\]$/m);
+		expect(manifest).toMatch(/^default = \["app"\]\napp = \["dep:tauri", "dep:tauri-build"[,\]]/m);
 		expect([lockedVersion("tauri"), lockedVersion("tauri-build")]).toEqual(["2.12.4", "2.7.3"]);
 		expect(lockedVersion("tauri-plugin-shell")).toBeUndefined();
 		expect(json(require.resolve("@tauri-apps/api/package.json")).version).toBe("2.12.4");
