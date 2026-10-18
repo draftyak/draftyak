@@ -1,0 +1,13 @@
+{
+  "$schema": "../../node_modules/turbo/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/vendor-guard/src/**",
+        "$TURBO_ROOT$/tools/vendor-guard/rules/**"
+      ]
+    }
+  }
+}
