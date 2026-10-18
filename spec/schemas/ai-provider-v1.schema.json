@@ -1,0 +1,748 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/schemas/ai-provider-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "ai_describe": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "structuredOutput": {
+              "type": "string",
+              "enum": [
+                "native",
+                "validated"
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "structuredOutput"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "ai_describe",
+      "description": "The provider's name and how its structured output is enforced."
+    },
+    "ai_models_list": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "models": {
+              "maxItems": 500,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[!-~]+$",
+                    "description": "A provider's model id: visible ASCII, no spaces."
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "contextTokens": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "fallbacks": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "models"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "ai_models_list",
+      "description": "The models the instance can use."
+    },
+    "ai_probe": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$",
+              "description": "A provider's model id: visible ASCII, no spaces."
+            }
+          },
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "degraded"
+              ]
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "ai_probe",
+      "description": "Checks the endpoint and credentials with a minimal call; returns status only."
+    },
+    "ai_draft_generate": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$",
+              "description": "A provider's model id: visible ASCII, no spaces."
+            },
+            "system": {
+              "type": "string",
+              "maxLength": 100000
+            },
+            "prompt": {
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "contextIds": {
+              "maxItems": 3,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "c1",
+                  "c2",
+                  "c3"
+                ]
+              },
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "model",
+            "system",
+            "prompt",
+            "contextIds"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "draft"
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-~]+$",
+                  "description": "A provider's model id: visible ASCII, no spaces."
+                },
+                "fallback": {
+                  "type": "boolean"
+                },
+                "usage": {
+                  "type": "object",
+                  "properties": {
+                    "input": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "output": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "input",
+                    "output"
+                  ],
+                  "additionalProperties": false
+                },
+                "output": {
+                  "type": "object",
+                  "properties": {
+                    "body": {
+                      "type": "string",
+                      "maxLength": 8000
+                    },
+                    "ownerNotes": {
+                      "type": "string",
+                      "maxLength": 1000
+                    },
+                    "needsOwnerInput": {
+                      "maxItems": 5,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 300
+                      }
+                    },
+                    "suspectedInstructions": {
+                      "type": "boolean"
+                    },
+                    "contextRefs": {
+                      "maxItems": 3,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "c1",
+                          "c2",
+                          "c3"
+                        ]
+                      },
+                      "uniqueItems": true
+                    }
+                  },
+                  "required": [
+                    "body",
+                    "ownerNotes",
+                    "needsOwnerInput",
+                    "suspectedInstructions",
+                    "contextRefs"
+                  ],
+                  "additionalProperties": false,
+                  "title": "DraftOutputV1",
+                  "description": "A model's draft: the reply body and notes for the owner."
+                }
+              },
+              "required": [
+                "kind",
+                "model",
+                "fallback",
+                "usage",
+                "output"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "refusal"
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-~]+$",
+                  "description": "A provider's model id: visible ASCII, no spaces."
+                },
+                "fallback": {
+                  "type": "boolean"
+                },
+                "usage": {
+                  "type": "object",
+                  "properties": {
+                    "input": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "output": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "input",
+                    "output"
+                  ],
+                  "additionalProperties": false
+                },
+                "category": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "explanation": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "recommendedModel": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[!-~]+$",
+                      "description": "A provider's model id: visible ASCII, no spaces."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "model",
+                "fallback",
+                "usage",
+                "category",
+                "explanation",
+                "recommendedModel"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "truncated"
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-~]+$",
+                  "description": "A provider's model id: visible ASCII, no spaces."
+                },
+                "fallback": {
+                  "type": "boolean"
+                },
+                "usage": {
+                  "type": "object",
+                  "properties": {
+                    "input": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "output": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "input",
+                    "output"
+                  ],
+                  "additionalProperties": false
+                },
+                "stopReason": {
+                  "type": "string",
+                  "enum": [
+                    "max_tokens",
+                    "model_context_window_exceeded"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "model",
+                "fallback",
+                "usage",
+                "stopReason"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "invalid"
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-~]+$",
+                  "description": "A provider's model id: visible ASCII, no spaces."
+                },
+                "fallback": {
+                  "type": "boolean"
+                },
+                "usage": {
+                  "type": "object",
+                  "properties": {
+                    "input": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "output": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "input",
+                    "output"
+                  ],
+                  "additionalProperties": false
+                },
+                "problems": {
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "pattern": "^[A-Za-z0-9_]+(?:[.][A-Za-z0-9_]+)*: [A-Za-z0-9_]+(?: [A-Za-z0-9_]+)*$",
+                    "description": "A schema path and an issue, such as output.body: too_big."
+                  }
+                }
+              },
+              "required": [
+                "kind",
+                "model",
+                "fallback",
+                "usage",
+                "problems"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "unexpected"
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-~]+$",
+                  "description": "A provider's model id: visible ASCII, no spaces."
+                },
+                "fallback": {
+                  "type": "boolean"
+                },
+                "usage": {
+                  "type": "object",
+                  "properties": {
+                    "input": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "output": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "input",
+                    "output"
+                  ],
+                  "additionalProperties": false
+                },
+                "stopReason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "model",
+                "fallback",
+                "usage",
+                "stopReason"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "type": "object",
+          "title": "DraftOutcome",
+          "description": "How a draft call ended, with its usage."
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "ai_draft_generate",
+      "description": "Drafts a reply from the hub-built prompt parts, reporting progress while it works. Only contextIds may appear in the draft's contextRefs."
+    }
+  },
+  "required": [
+    "ai_describe",
+    "ai_models_list",
+    "ai_probe",
+    "ai_draft_generate"
+  ],
+  "additionalProperties": false,
+  "title": "io.github.draftyak/ai-provider v1",
+  "description": "The tools of io.github.draftyak/ai-provider version 1."
+}

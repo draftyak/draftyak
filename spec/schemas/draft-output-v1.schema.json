@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/schemas/draft-output-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "string",
+      "maxLength": 8000
+    },
+    "ownerNotes": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "needsOwnerInput": {
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 300
+      }
+    },
+    "suspectedInstructions": {
+      "type": "boolean"
+    },
+    "contextRefs": {
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "c1",
+          "c2",
+          "c3"
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "body",
+    "ownerNotes",
+    "needsOwnerInput",
+    "suspectedInstructions",
+    "contextRefs"
+  ],
+  "additionalProperties": false,
+  "title": "DraftOutputV1",
+  "description": "A model's draft: the reply body and notes for the owner."
+}
