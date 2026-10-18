@@ -1082,6 +1082,36 @@ it("independently caps the pinned helper's CIMD body and deadline without an out
 	expect(requests[1]?.req.destroyed).toBe(true);
 });
 
+it("independently caps the pinned helper's JWKS deadline at five seconds", async () => {
+	vi.useFakeTimers();
+	vi.spyOn(performance, "now").mockReturnValue(100);
+	shape.hold = true;
+	const controller = new AbortController();
+	let settled = false;
+	const result = getPinnedMetadata({
+		destination: metadataUrl("https://keys.example/keys.json", "jwks"),
+		address: { address: "8.8.8.8", family: 4 },
+		maxBytes: METADATA_MAX_BYTES,
+		signal: controller.signal,
+	})
+		.catch((error: Error) => error.message)
+		.finally(() => {
+			settled = true;
+		});
+	try {
+		await vi.advanceTimersByTimeAsync(JWKS_TIMEOUT_MS - 1);
+		expect(requests[0]?.req.ended).toBe(true);
+		expect(requests[0]?.req.destroyed).toBe(false);
+		expect(settled).toBe(false);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(settled).toBe(true);
+		expect(await result).toBe("Client metadata refused");
+		expect(requests[0]?.req.destroyed).toBe(true);
+	} finally {
+		controller.abort();
+	}
+});
+
 it.each(["body", "await continuation"] as const)(
 	"refuses a late CIMD %s even before its timeout callback runs",
 	async (phase) => {

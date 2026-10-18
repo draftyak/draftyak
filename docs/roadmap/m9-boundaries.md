@@ -12,7 +12,7 @@ getters, proxies and serialization hooks are refused without execution.
 
 | Limit | Value and source |
 |---|---|
-| CIMD body | At most 5,120 bytes, preserving the S4/oidc-provider body limit (`5 * 1024`). This is the exact implementation ceiling, rather than a new interpretation of the plan's informal KB unit. |
+| CIMD body | At most 5,120 bytes, preserving the S4/oidc-provider body limit (`5 * 1024`). |
 | CIMD operation | At most 2,500 ms across DNS, TLS and collection, as required by the remote OAuth design. |
 | JWKS body | At most 1 MiB as a configurable transport ceiling; accepted JWK/document structure remains a later AS check. |
 | JWKS operation | At most 5,000 ms across DNS, TLS and collection, leaving time for CIMD and other work inside the plan's under-ten-second token endpoint. |
@@ -29,7 +29,9 @@ and current interfaces are also denied; mapped spellings cannot evade that
 check. The destination host uses the merged `PublicDnsHost` validator. Metadata
 policy permits only canonical HTTPS on port 443, with no userinfo, query,
 fragment, explicit port, percent escape, backslash or ambiguous path spelling.
-Every returned address is checked before selecting a pin.
+Every returned address is checked before selecting a pin. The shared guard always
+blocks hub ports 47613-47615 and inspector port 9229, plus caller-specified
+active native ports; a local-rule exception cannot override these denials.
 
 TLS uses the original destination host for SNI, certificate identity and Host,
 and connects to the checked IP without another hostname lookup. Requests are
