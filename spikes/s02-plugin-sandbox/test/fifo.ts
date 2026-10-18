@@ -7,7 +7,7 @@ import type { ChildProcess } from "node:child_process";
 import { EventEmitter, once } from "node:events";
 import path from "node:path";
 import { Duplex, type Readable, type Writable } from "node:stream";
-import { openFifoStdio } from "../src/fifo-stdio.ts";
+import { type FifoDrain, openFifoStdio } from "../src/fifo-stdio.ts";
 import {
 	attachHostChannel,
 	createChannelDecoder,
@@ -37,7 +37,7 @@ const NEWLINE = 0x0a;
 // hub end, or the host lane of stdout. Kills the real plugin on a violation.
 export function channelOver(
 	child: ChildProcess,
-	stream: Duplex,
+	stream: Readable,
 	options: HostChannelOptions = {},
 ): HostChannel {
 	const view = Object.assign(new EventEmitter(), { stdio: [null, null, null, stream] });
@@ -176,6 +176,30 @@ export interface StdioRoundTrip {
 	readonly outcomes: readonly { readonly denied: boolean; readonly reason?: string | null }[];
 }
 
+// How long the stand-in hub waits for the plugin's exit before it kills it.
+export const FIFO_WAIT_MS = 10_000;
+
+// How a FIFO the plugin writes ended: "eof" at libuv's end-of-file, "drain" at the exit drain's
+// (its read(2) returned 0), "hub" closed by the hub at a violation, "error" its descriptor failed,
+// or "open" if it never ended.
+export type FifoEnding = "eof" | "drain" | "hub" | "error" | "open";
+
+export interface FifoOutputEnd {
+	readonly fifo: FifoLane;
+	readonly endedBy: FifoEnding;
+	// The errno code when endedBy is "error"; null otherwise.
+	readonly error: string | null;
+	// From the plugin's exit to the output's close (negative: before the exit); null while open.
+	readonly afterExitMs: number | null;
+	// Only when a writer still held the FIFO at the drain (EAGAIN or limit): every descriptor on it
+	// among the hub's user's processes ("hub fd 15 r", "pid 812 (node) fd 4 w"), matched by device
+	// and inode in Linux and by inode on macOS, whose lsof prints no device for a FIFO; null
+	// otherwise, or when the processes couldn't be listed.
+	readonly holders: readonly string[] | null;
+	// The exit drain's reads ("closed" if it had already ended).
+	readonly drain: FifoDrain;
+}
+
 export interface FifoResult {
 	readonly mode: string;
 	readonly layout: FifoLayout;
@@ -187,9 +211,13 @@ export interface FifoResult {
 		readonly folderGone: boolean;
 	};
 	readonly violations: readonly ViolationRecord[];
-	// closed: every FIFO the plugin writes reached end-of-file, or the hub closed it on a violation.
+	// closed: no FIFO the plugin writes was still open after the drain (outputs says how each ended).
 	readonly pluginEnded: PluginEnd;
+	// From the FIFOs' setup to the plugin's exit; killedAtTimeout: still running at FIFO_WAIT_MS.
 	readonly exitMs: number;
+	readonly killedAtTimeout: boolean;
+	// Each FIFO the plugin writes, in fd order.
+	readonly outputs: readonly FifoOutputEnd[];
 	readonly fds: Fds | null;
 	// Bytes the hub read from each FIFO the plugin writes (fd3 is null in the stdio layout).
 	readonly bytesRead: {
@@ -219,50 +247,169 @@ export function roundTripProblem(trip: StdioRoundTrip | null): string | null {
 // socket fails, so neither the descriptor nor the message's bytes leave the plugin.
 const NOT_A_SOCKET = "ENOTSOCK";
 
+function sendProblem(plugin: readonly Record<string, unknown>[]): string | null {
+	const sends = plugin.find((line) => Array.isArray(line.sendStatus))?.sendStatus;
+	if (!Array.isArray(sends) || sends.length !== 10) return "the plugin did not report ten sends";
+	if (sends.includes("ok")) return "a handle-bearing write succeeded";
+	if (sends.some((status) => status !== NOT_A_SOCKET)) {
+		const seen = [...new Set(sends.map(String))].join(", ");
+		return `the handle-bearing writes ended ${seen}, not ${NOT_A_SOCKET} alone`;
+	}
+	return null;
+}
+
+// Each FIFO the plugin writes must have ended at end-of-file (libuv's, or the exit drain's read of
+// 0), or been closed by the hub at a violation, with no writer left at the drain.
+function endingProblem(output: FifoOutputEnd, violated: boolean): string | null {
+	const { fifo, endedBy, drain } = output;
+	const holders =
+		output.holders === null ? "" : `; holders: ${output.holders.join(", ") || "none"}`;
+	const read = `drain ${drain.result} after ${drain.bytes} bytes${holders}`;
+	if (endedBy === "open") return `the ${fifo} FIFO never reached end-of-file (${read})`;
+	if (endedBy === "error") return `the ${fifo} FIFO failed with ${output.error ?? "?"} (${read})`;
+	if (endedBy === "hub" && !violated) return `the hub closed the ${fifo} FIFO with no violation`;
+	if (drain.result !== "eof" && drain.result !== "closed") {
+		return `a writer still held the ${fifo} FIFO at the drain (${read})`;
+	}
+	return null;
+}
+
 // FIFO stdio holds for a mode when the hub survives, its descriptor count does not move, the plugin
-// ends (by SIGKILL or on its own) with every FIFO closed, the hub raises exactly the expected
-// violation, each of the ten handle-bearing writes failed in the plugin with ENOTSOCK while the hub
-// read nothing from the FIFO they went over, and every FIFO was unlinked (with its folder) before
-// the spawn. The unlink check runs last, so a run that fails only there still shows the rest held.
-export function fifoProblem(mode: string, run: HubRun<FifoResult>): string | null {
+// ends (by SIGKILL or on its own, before FIFO_WAIT_MS), every FIFO it writes has ended (above) by
+// the end of the drain, the hub raises exactly the expected violation, each of the ten
+// handle-bearing writes failed in the plugin with ENOTSOCK while the hub read nothing from the FIFO
+// they went over, and every FIFO was unlinked (with its folder) before the spawn. Every failing
+// check is listed, so one failure can't hide another's result.
+export function fifoProblems(mode: string, run: HubRun<FifoResult>): string[] {
 	const r = run.result;
-	if (!run.survived || r === null) return died(run);
+	if (!run.survived || r === null) return [died(run)];
 	const { violation: expected, handlesOver } = fifoMode(mode);
+	const problems: string[] = [];
 	const first = r.violations[0]?.kind ?? null;
 	const end = r.pluginEnded;
 	const how = end.signal ?? `exit ${end.code}`;
-	if (r.fds === null) return "the hub's descriptors could not be counted";
-	if (r.fds.after !== r.fds.before) {
+	if (r.fds === null) problems.push("the hub's descriptors could not be counted");
+	else if (r.fds.after !== r.fds.before) {
 		const added = r.fds.added?.length ? `; new: ${r.fds.added.join("; ")}` : "";
-		return `the hub's open fds went from ${r.fds.before} to ${r.fds.after} on FIFO stdio (violation ${first ?? "none"}, ended by ${how}, ${r.exitMs} ms)${added}`;
+		problems.push(
+			`the hub's open fds went from ${r.fds.before} to ${r.fds.after} on FIFO stdio (violation ${first ?? "none"}, ended by ${how}, ${r.exitMs} ms)${added}`,
+		);
 	}
-	if (end.signal === null && end.code === null) return "the plugin never ended";
-	if (!end.closed) return "a FIFO the plugin writes never closed";
-	if (first !== expected) return `violation ${first ?? "none"}, expected ${expected ?? "none"}`;
-	if (expected !== null && end.signal !== "SIGKILL") return `the plugin ended by ${how}`;
+	if (end.signal === null && end.code === null) problems.push("the plugin never ended");
+	if (r.killedAtTimeout) {
+		problems.push(`the plugin was still running after ${FIFO_WAIT_MS / 1000} s and was killed`);
+	}
+	for (const output of r.outputs) {
+		const problem = endingProblem(output, first !== null);
+		if (problem !== null) problems.push(problem);
+	}
+	if (first !== expected)
+		problems.push(`violation ${first ?? "none"}, expected ${expected ?? "none"}`);
+	else if (expected !== null && end.signal !== "SIGKILL")
+		problems.push(`the plugin ended by ${how}`);
 	if (mode.startsWith("reinstate-") && !r.plugin.some((line) => line.reinstated === true)) {
-		return `process.send did not come back over ${handlesOver ?? "stdout"}`;
+		problems.push(`process.send did not come back over ${handlesOver ?? "stdout"}`);
 	}
 	if (handlesOver !== null) {
-		const sends = r.plugin.find((line) => Array.isArray(line.sendStatus))?.sendStatus;
-		if (!Array.isArray(sends) || sends.length !== 10) return "the plugin did not report ten sends";
-		if (sends.includes("ok")) return "a handle-bearing write succeeded";
-		if (sends.some((status) => status !== NOT_A_SOCKET)) {
-			const seen = [...new Set(sends.map(String))].join(", ");
-			return `the handle-bearing writes ended ${seen}, not ${NOT_A_SOCKET} alone`;
-		}
+		const sends = sendProblem(r.plugin);
+		if (sends !== null) problems.push(sends);
 		const read = r.bytesRead[handlesOver];
 		if (read !== 0) {
-			return `the hub read ${read ?? "an unknown number of"} bytes from the ${handlesOver} FIFO the handles went over`;
+			problems.push(
+				`the hub read ${read ?? "an unknown number of"} bytes from the ${handlesOver} FIFO the handles went over`,
+			);
 		}
 	}
 	const trip = mode === "round-trip" ? roundTripProblem(r.roundTrip) : null;
-	if (trip !== null) return trip;
+	if (trip !== null) problems.push(trip);
 	const { ends, unlinkedFifos, folderGone } = r.beforeSpawn;
 	if (unlinkedFifos !== ends) {
-		return `${ends - unlinkedFifos} of ${ends} ends weren't unlinked FIFOs at the spawn`;
+		problems.push(`${ends - unlinkedFifos} of ${ends} ends weren't unlinked FIFOs at the spawn`);
 	}
-	return folderGone ? null : "the FIFOs' folder was still there at the spawn";
+	if (!folderGone) problems.push("the FIFOs' folder was still there at the spawn");
+	return problems;
+}
+
+export const fifoProblem = (mode: string, run: HubRun<FifoResult>): string | null =>
+	fifoProblems(mode, run)[0] ?? null;
+
+// How many of the FIFOs the plugins wrote ended each way, over these runs.
+export function endingCounts(runs: Iterable<HubRun<FifoResult>>): Record<FifoEnding, number> {
+	const counts: Record<FifoEnding, number> = { eof: 0, drain: 0, hub: 0, error: 0, open: 0 };
+	for (const run of runs) {
+		for (const output of run.result?.outputs ?? []) counts[output.endedBy] += 1;
+	}
+	return counts;
+}
+
+// One content-free line per Node, printed whether the control passes or not: how the FIFOs ended,
+// what the exit drains returned with the bytes they read, and any mode killed at FIFO_WAIT_MS.
+export function fifoSummary(node: string, runs: ReadonlyMap<string, HubRun<FifoResult>>): string {
+	const drains = new Map<string, { count: number; bytes: number }>();
+	const killed: string[] = [];
+	const lost: string[] = [];
+	for (const [mode, run] of runs) {
+		if (run.result === null) lost.push(mode);
+		else if (run.result.killedAtTimeout) killed.push(mode);
+		for (const { drain } of run.result?.outputs ?? []) {
+			const seen = drains.get(drain.result) ?? { count: 0, bytes: 0 };
+			drains.set(drain.result, { count: seen.count + 1, bytes: seen.bytes + drain.bytes });
+		}
+	}
+	const ended = Object.entries(endingCounts(runs.values()))
+		.map(([how, count]) => `${how} ${count}`)
+		.join(", ");
+	const drained = [...drains]
+		.map(([result, { count, bytes }]) => `${result} ${count} (${bytes} bytes)`)
+		.join(", ");
+	const none = lost.length > 0 ? `; no result: ${lost.join(", ")}` : "";
+	return `FIFO stdio, ${node}: ended ${ended}; drains ${drained || "none"}; killed at ${FIFO_WAIT_MS / 1000} s: ${killed.join(", ") || "none"}${none}`;
+}
+
+// The "fifo-held" control for the FIFO diagnostics: the hub opens a second write end of the
+// plugin's stdout FIFO and keeps it past the plugin's exit, so the FIFO can't end. The drain must
+// find that writer (EAGAIN), the holders must be exactly the hub's two descriptors on the FIFO, and
+// once the hub closes its writer, the next drain must end the output (its read returning 0).
+export interface FifoHeldResult {
+	// The hub's read end of the plugin's stdout FIFO, and the second write end it kept.
+	readonly reader: number;
+	readonly writer: number;
+	readonly exitMs: number;
+	readonly killedAtTimeout: boolean;
+	readonly held: FifoDrain;
+	readonly holders: readonly string[] | null;
+	readonly released: FifoDrain;
+	readonly endedBy: FifoEnding;
+	readonly bytesRead: number;
+}
+
+// The plugin ("ready" mode) writes "ready\n" and exits.
+const READY_BYTES = 6;
+
+export function fifoHeldProblem(run: HubRun<FifoHeldResult>): string | null {
+	const r = run.result;
+	if (!run.survived || r === null) return died(run);
+	if (r.killedAtTimeout) return `the plugin was still running after ${FIFO_WAIT_MS / 1000} s`;
+	if (r.held.result !== "EAGAIN") {
+		return `the drain gave ${r.held.result} while the hub held a second writer, not EAGAIN`;
+	}
+	const expected = [`hub fd ${r.reader} r`, `hub fd ${r.writer} w`].sort();
+	if (r.holders === null || [...r.holders].sort().join() !== expected.join()) {
+		const found = r.holders === null ? "not listed" : r.holders.join(", ") || "none";
+		return `holders ${found}, expected ${expected.join(", ")}`;
+	}
+	if (r.released.result !== "eof" || r.endedBy !== "drain") {
+		return `after the hub closed its writer the drain gave ${r.released.result} and the FIFO ended by ${r.endedBy}, not eof and drain`;
+	}
+	if (r.bytesRead !== READY_BYTES) return `the hub read ${r.bytesRead} bytes, not ${READY_BYTES}`;
+	return null;
+}
+
+export function fifoHeldSummary(node: string, run: HubRun<FifoHeldResult>): string {
+	const r = run.result;
+	if (r === null) return `FIFO held-writer control, ${node}: no result`;
+	const holders = r.holders === null ? "not listed" : r.holders.join(", ") || "none";
+	return `FIFO held-writer control, ${node}: drain ${r.held.result} (holders ${holders}), then ${r.released.result}; ended by ${r.endedBy}; ${r.bytesRead} bytes read`;
 }
 
 // Fallback 1 on spawn's own pipes (socketpairs on POSIX, named pipes on Windows), with no fd 3 and

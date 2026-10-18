@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T16:27:40.551Z",
+  "recordedAt": "2026-10-19T02:52:19.510Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,13 +11,13 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "888d1a9d15f3c3dcab7e64d3af9535c5a08cbd2a",
+    "commit": "6046ad90a74694f9fccb5ef1a6a460b8bac814d2",
     "dirty": false,
     "load": {
-      "cpuPercent": 28.3,
+      "cpuPercent": 6.1,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 71.2,
+      "memoryUsedPercent": 67.6,
       "concurrentBuilds": 0
     }
   },
@@ -67,7 +67,7 @@
               "signal": null,
               "closed": true
             },
-            "exitMs": 3233,
+            "exitMs": 3042,
             "fds": {
               "before": 19,
               "after": 19
@@ -226,7 +226,7 @@
               "signal": null,
               "closed": true
             },
-            "exitMs": 3045,
+            "exitMs": 3044,
             "fds": {
               "before": 19,
               "after": 19
