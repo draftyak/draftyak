@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import os from "node:os";
 import path from "node:path";
+import { cacheDir } from "../../../spikes/kit/repo.ts";
 import { fromExitCode, type Profile, type Step, stepsFor } from "../lib/registry.ts";
 import {
 	dockerState,
@@ -38,17 +38,18 @@ async function toolCheck(name: "uv" | "gpgv", exec: Exec, env: NodeJS.ProcessEnv
 	return { name, state: pinned ? "ok" : "warn", detail };
 }
 
-// Playwright 1.64 keeps browsers in PLAYWRIGHT_BROWSERS_PATH ("0": inside playwright-core) or in the
-// user cache's ms-playwright, one <name with _>-<revision>/INSTALLATION_COMPLETE per browser.
-function browsersDir(core: string, env: NodeJS.ProcessEnv): string {
+// Where the packages that use Playwright 1.64 install and launch its browsers (each spike's
+// prefetch.ts applies the same rule): PLAYWRIGHT_BROWSERS_PATH ("0": inside playwright-core), else
+// <DRAFTYAK_CACHE_DIR>/playwright, never the user profile. A relative value is refused, since each
+// tool would resolve it against its own working folder. One <name with _>-<revision>/
+// INSTALLATION_COMPLETE per browser.
+export function browsersDir(core: string, env: NodeJS.ProcessEnv): string {
 	const configured = env.PLAYWRIGHT_BROWSERS_PATH;
-	if (configured) return configured === "0" ? path.join(core, ".local-browsers") : configured;
-	const home = os.homedir();
-	if (process.platform === "darwin") return path.join(home, "Library", "Caches", "ms-playwright");
-	if (process.platform === "win32") {
-		return path.join(env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"), "ms-playwright");
+	if (configured === "0") return path.join(core, ".local-browsers");
+	if (configured && !path.isAbsolute(configured)) {
+		throw new Error(`PLAYWRIGHT_BROWSERS_PATH must be absolute or 0, not ${configured}`);
 	}
-	return path.join(env.XDG_CACHE_HOME ?? path.join(home, ".cache"), "ms-playwright");
+	return configured ? path.resolve(configured) : path.join(cacheDir(env), "playwright");
 }
 
 function missingBrowsers(

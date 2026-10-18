@@ -19,6 +19,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { Hono } from "hono";
 import * as z from "zod";
+import { declaresUi, registerApps, UI_EXTENSION, withoutViews, withUiMeta } from "./apps.ts";
 import { capCompletion } from "./completion.ts";
 import { type Params, principalId } from "./elicit.ts";
 import {
@@ -43,7 +44,8 @@ import {
 	type Surface,
 } from "./resources.ts";
 
-export const UI_EXTENSION = "io.modelcontextprotocol/ui";
+export { UI_EXTENSION };
+
 const HOUR = 3_600_000;
 
 // §6 caching hints. Tool calls, completion and InputRequiredResult get none: the SDK adds hints
@@ -192,6 +194,7 @@ export function surfaceFactory(hub: Hub): ServerFactory {
 		};
 		registerResources(server, surface);
 		registerPrompts(server, surface);
+		if (hub.apps) registerApps(server, hub.apps);
 		// In order: the completion bucket, the params' shape, the raw URI, then the params kept for
 		// the requestState digest (Mrtr.mint and Mrtr.resume).
 		for (const method of Object.keys(WIRE) as SurfaceMethod[]) {
@@ -204,9 +207,17 @@ export function surfaceFactory(hub: Hub): ServerFactory {
 					sent.set(ctx.mcpReq.id, params);
 				}
 				const result = await next(request, ctx);
+				if (method === "resources/list") return withoutViews(result);
 				return method === "completion/complete" ? capCompletion(result) : result;
 			});
 		}
+		// §6 Tool metadata: _meta.ui always on the 2025 legacy path, on 2026-era requests only when they
+		// declare the extension, and never while the principal's appsViews toggle is off.
+		const views = authInfo?.extra?.appsViews !== false;
+		intercept(server, "tools/list", (next) => async (request, ctx) => {
+			const result = await next(request, ctx);
+			return views && (era === "legacy" || declaresUi(ctx)) ? withUiMeta(result) : result;
+		});
 		return server;
 	};
 }

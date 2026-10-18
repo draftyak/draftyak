@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="light dark">
+    <title>DraftYak draft</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 12px 16px;
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 15px;
+      }
+      p {
+        margin: 4px 0;
+      }
+      .muted {
+        opacity: 0.75;
+      }
+      #notice {
+        font-weight: 600;
+      }
+      #body {
+        margin: 8px 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font: inherit;
+      }
+      ul {
+        margin: 4px 0;
+        padding-left: 20px;
+      }
+    </style>
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <p id="status">Waiting for the draft.</p>
+    <main id="draft" hidden>
+      <h1 id="title">Draft</h1>
+      <p id="source" class="muted"></p>
+      <p id="notice"></p>
+      <ul id="flags"></ul>
+      <pre id="body"></pre>
+      <p id="send"></p>
+      <p class="muted">Nothing is sent until you approve it on your paired desktop with your PIN.</p>
+    </main>
+  </body>
+</html>

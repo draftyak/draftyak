@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-17T17:50:03.906Z",
+  "recordedAt": "2026-10-18T01:34:55.808Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,14 +11,14 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "1419a4be0f576d04a2c771e637c2175d034c88c9",
+    "commit": "725197fbc88cb2e92a0e68a16d42c4dafa5cc4f7",
     "dirty": false,
     "load": {
-      "cpuPercent": 8.7,
+      "cpuPercent": 5,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 64.6,
-      "concurrentBuilds": 0
+      "memoryUsedPercent": 62.1,
+      "concurrentBuilds": 1
     }
   },
   "data": {
@@ -52,7 +52,7 @@
           "SKIPPED": 0,
           "INFO": 5
         },
-        "durationMs": 1087,
+        "durationMs": 1104,
         "baseline": {
           "logging-set-level:logging-set-level": "FAILURE",
           "tools-call-with-logging:tools-call-with-logging": "FAILURE",
@@ -380,7 +380,7 @@
           "SKIPPED": 5,
           "INFO": 1
         },
-        "durationMs": 1039,
+        "durationMs": 1088,
         "baseline": {
           "tools-call-with-progress:tools-call-with-progress": "FAILURE"
         },

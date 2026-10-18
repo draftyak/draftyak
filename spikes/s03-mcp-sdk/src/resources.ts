@@ -9,6 +9,7 @@ import {
 	ResourceTemplate,
 	type ServerContext,
 } from "@modelcontextprotocol/server";
+import type { Apps } from "./apps.ts";
 import { CompletionBucket } from "./completion.ts";
 import {
 	appError,
@@ -48,7 +49,8 @@ export interface Principal {
 }
 
 // The spike's stand-in for the hub's stores: per-principal account aliases (allowlist ∩ routing),
-// items by ULID, device-approved sessions, the device prompts raised, L3 and the MRTR state.
+// items by ULID, device-approved sessions, the device prompts raised, L3, the MRTR state and the
+// Apps views, if served.
 export interface Hub {
 	readonly aliases: ReadonlyMap<string, readonly string[]>;
 	readonly items: ReadonlyMap<string, Item>;
@@ -57,6 +59,7 @@ export interface Hub {
 	readonly publicBaseUrl: string | undefined;
 	readonly mrtr: Mrtr;
 	readonly completions: CompletionBucket;
+	readonly apps?: Apps;
 }
 
 export interface HubSeed {
@@ -64,6 +67,7 @@ export interface HubSeed {
 	readonly items?: Readonly<Record<string, Item>>;
 	readonly publicBaseUrl?: string;
 	readonly epoch?: number;
+	readonly apps?: Apps;
 }
 
 export function createHub(seed: HubSeed = {}): Hub {
@@ -75,6 +79,7 @@ export function createHub(seed: HubSeed = {}): Hub {
 		publicBaseUrl: seed.publicBaseUrl,
 		mrtr: new Mrtr(randomBytes(32), seed.epoch),
 		completions: new CompletionBucket(),
+		apps: seed.apps,
 	};
 }
 
