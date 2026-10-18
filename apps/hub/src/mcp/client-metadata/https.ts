@@ -1,0 +1,177 @@
+import { Agent, type RequestOptions, request } from "node:https";
+import { isIP } from "node:net";
+import type { TLSSocket } from "node:tls";
+import { canonicalAddress, type PinnedAddress, publicAddress } from "./addresses.ts";
+import { metadataCacheTtl } from "./cache.ts";
+import { type MetadataDestination, metadataUrl, refused } from "./policy.ts";
+
+export interface MetadataBytes {
+	readonly body: Uint8Array;
+	readonly contentType: string;
+}
+interface PinnedMetadataBytes extends MetadataBytes {
+	readonly cacheExpiresAt: number;
+}
+export interface PinnedMetadataRequest {
+	readonly destination: MetadataDestination;
+	readonly address: PinnedAddress;
+	readonly maxBytes: number;
+	readonly signal: AbortSignal;
+}
+/** GET only, no supplied headers or credentials, no redirects, pooled sockets or environment proxy. */
+export async function getPinnedMetadata(
+	input: PinnedMetadataRequest,
+): Promise<PinnedMetadataBytes> {
+	const started = performance.now();
+	const destination = metadataUrl(input.destination.url, input.destination.kind);
+	if (
+		destination.host !== input.destination.host ||
+		destination.path !== input.destination.path ||
+		!publicAddress(input.address.address) ||
+		isIP(input.address.address) !== input.address.family ||
+		!Number.isSafeInteger(input.maxBytes) ||
+		input.maxBytes < 1 ||
+		input.maxBytes > 1048576
+	)
+		throw refused();
+	const agent = new Agent({ keepAlive: false, maxSockets: 1, maxCachedSessions: 0, proxyEnv: {} });
+	try {
+		return await new Promise<PinnedMetadataBytes>((resolve, reject) => {
+			let settled = false;
+			const fail = () => {
+				if (!settled) {
+					settled = true;
+					reject(refused());
+				}
+			};
+			const options: RequestOptions & { autoSelectFamily: false } = {
+				protocol: "https:",
+				hostname: input.destination.host,
+				port: 443,
+				path: input.destination.path,
+				method: "GET",
+				agent,
+				family: input.address.family,
+				autoSelectFamily: false,
+				servername: input.destination.host,
+				rejectUnauthorized: true,
+				minVersion: "TLSv1.2",
+				maxHeaderSize: 16384,
+				headers: {
+					Host: input.destination.host,
+					Accept: "application/json, application/jwk-set+json",
+					"Accept-Encoding": "identity",
+					Connection: "close",
+				},
+				lookup: (_host, lookupOptions, callback) =>
+					lookupOptions.all
+						? callback(null, [{ address: input.address.address, family: input.address.family }])
+						: callback(null, input.address.address, input.address.family),
+			};
+			const req = request(options, (response) => {
+				const one = (name: string): string | undefined => {
+					const values: string[] = [];
+					for (let i = 0; i < response.rawHeaders.length; i += 2)
+						if (response.rawHeaders[i]?.toLowerCase() === name)
+							values.push(response.rawHeaders[i + 1] ?? "");
+					if (values.length > 1) throw refused();
+					return values[0];
+				};
+				const chunks: Buffer[] = [];
+				let bytes = 0,
+					length: number | undefined,
+					contentType: string;
+				const stop = () => {
+					fail();
+					response.destroy();
+					req.destroy();
+				};
+				try {
+					contentType = one("content-type") ?? "";
+					const type = contentType.split(";")[0]?.toLowerCase();
+					const encoding = one("content-encoding"),
+						rawLength = one("content-length");
+					if (
+						response.statusCode !== 200 ||
+						(type !== "application/json" &&
+							!(input.destination.kind === "jwks" && type === "application/jwk-set+json")) ||
+						!/^application\/(?:json|jwk-set\+json)(?:;[ \t]*charset=(?:utf-8|"utf-8"))?$/i.test(
+							contentType,
+						) ||
+						(encoding !== undefined && encoding.toLowerCase() !== "identity")
+					)
+						throw refused();
+					if (rawLength !== undefined) {
+						if (!/^(0|[1-9][0-9]{0,9})$/.test(rawLength)) throw refused();
+						length = Number(rawLength);
+						if (length > input.maxBytes) throw refused();
+					}
+				} catch {
+					stop();
+					return;
+				}
+				response.on("data", (chunk: Buffer) => {
+					bytes += chunk.byteLength;
+					if (bytes > input.maxBytes) stop();
+					else if (!settled) chunks.push(Buffer.from(chunk));
+				});
+				response.once("error", fail);
+				response.once("aborted", fail);
+				response.once("end", () => {
+					if (settled) return;
+					if (
+						!response.complete ||
+						input.signal.aborted ||
+						(length !== undefined && length !== bytes)
+					) {
+						stop();
+						return;
+					}
+					settled = true;
+					const finished = performance.now();
+					resolve(
+						Object.freeze({
+							body: Buffer.concat(chunks, bytes),
+							contentType,
+							cacheExpiresAt:
+								finished + metadataCacheTtl(response.rawHeaders, Date.now(), finished - started),
+						}),
+					);
+				});
+			});
+			const abort = () => {
+				fail();
+				req.destroy();
+			};
+			input.signal.addEventListener("abort", abort, { once: true });
+			req.once("error", fail);
+			req.once("close", () => {
+				input.signal.removeEventListener("abort", abort);
+				// A successful response ends before request close; every earlier close must settle too.
+				fail();
+			});
+			req.once("socket", (socket) => {
+				const tls = socket as TLSSocket;
+				tls.once("secureConnect", () => {
+					try {
+						if (
+							input.signal.aborted ||
+							!tls.authorized ||
+							tls.remoteAddress === undefined ||
+							canonicalAddress(tls.remoteAddress) !== canonicalAddress(input.address.address)
+						)
+							throw refused();
+						req.end();
+					} catch {
+						abort();
+					}
+				});
+			});
+			if (input.signal.aborted) abort();
+		});
+	} catch {
+		throw refused();
+	} finally {
+		agent.destroy();
+	}
+}

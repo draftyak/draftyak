@@ -1,0 +1,31 @@
+{
+  "name": "@draftyak/hub",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "build": "tsdown"
+  },
+  "dependencies": {
+    "@draftyak/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "tsdown": "0.23.1"
+  }
+}
