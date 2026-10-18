@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import {
 	hostTarget,
@@ -40,6 +39,7 @@ import {
 	spikeDir,
 	type TemplateResult,
 	templateProblem,
+	tempRoot,
 	type V8Outcome,
 	type ValidatorControl,
 	v8Blocked,
@@ -171,7 +171,7 @@ function hostSuite(
 		beforeAll(async () => {
 			if (process.platform !== platform) return;
 			for (const v of NODES) bins[v] = await nodeBinary(v, hostTarget());
-			root = fs.mkdtempSync(path.join(os.tmpdir(), `dy-s02-ipc-${label}-`));
+			root = tempRoot(`dy-s02-ipc-${label}-`);
 			bundleDir = bundleTemplatePlugin(path.join(root, "bundle")).dir;
 			pluginDir = path.join(root, "plugin");
 			fs.cpSync(path.join(spikeDir, "fixtures", "s2b"), pluginDir, { recursive: true });

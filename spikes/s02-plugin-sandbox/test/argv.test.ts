@@ -200,6 +200,26 @@ describe("scrubbed environment", () => {
 		});
 		expect(env.NODE_OPTIONS).toBeUndefined();
 		expect(env.SECRET_TOKEN).toBeUndefined();
+		expect(Object.keys(env).toSorted()).toEqual([
+			"APPDATA",
+			"DRAFTYAK_INSTANCE_ID",
+			"DRAFTYAK_PLUGIN_ID",
+			"HOMEDRIVE",
+			"HOMEPATH",
+			"LANG",
+			"LOCALAPPDATA",
+			"LOGONSERVER",
+			"PATH",
+			"SYSTEMDRIVE",
+			"SystemRoot",
+			"TEMP",
+			"TMP",
+			"TZ",
+			"USERDOMAIN",
+			"USERNAME",
+			"USERPROFILE",
+			"WINDIR",
+		]);
 		expect([env.USERPROFILE, env.APPDATA, env.LOCALAPPDATA, env.TEMP, env.TMP]).toEqual([
 			"D:\\data",
 			"D:\\data",
@@ -207,8 +227,32 @@ describe("scrubbed environment", () => {
 			"D:\\data",
 			"D:\\data",
 		]);
-		// libuv copies these from the parent unless set, so they are set empty, not omitted.
-		expect([env.PATH, env.USERNAME, env.USERDOMAIN, env.LOGONSERVER]).toEqual(["", "", "", ""]);
+		// libuv copies each of these from the hub into a child environment that lacks it (ADR 0003,
+		// §4 Environment), so every one is set: home and temp to the data dir, the rest empty.
+		const libuv = [
+			"HOMEDRIVE",
+			"HOMEPATH",
+			"LOGONSERVER",
+			"PATH",
+			"SYSTEMDRIVE",
+			"TEMP",
+			"USERDOMAIN",
+			"USERNAME",
+			"USERPROFILE",
+			"WINDIR",
+		];
+		expect(Object.fromEntries(libuv.map((name) => [name, env[name]]))).toEqual({
+			HOMEDRIVE: "",
+			HOMEPATH: "",
+			LOGONSERVER: "",
+			PATH: "",
+			SYSTEMDRIVE: "",
+			TEMP: "D:\\data",
+			USERDOMAIN: "",
+			USERNAME: "",
+			USERPROFILE: "D:\\data",
+			WINDIR: "",
+		});
 		expect([env.SystemRoot, env.LANG, env.TZ]).toEqual(["C:\\Windows", "en_US.UTF-8", "UTC"]);
 		expect([env.DRAFTYAK_PLUGIN_ID, env.DRAFTYAK_INSTANCE_ID]).toEqual(["p", "i"]);
 		expect(Object.values(env).some((v) => v.includes("owner"))).toBe(false);

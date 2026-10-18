@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import {
 	acquireBenchLock,
@@ -31,7 +30,7 @@ import {
 	type UntouchedOutcome,
 } from "./memory.ts";
 import { evidenceFile, missing, recordEvidence, unmet } from "./record.ts";
-import { bundleTemplatePlugin, selectedNodes, spikeDir } from "./s2b.ts";
+import { bundleTemplatePlugin, selectedNodes, spikeDir, tempRoot } from "./s2b.ts";
 
 const NODES = selectedNodes(nodeVersions());
 const arch = hostTarget().arch;
@@ -121,7 +120,7 @@ function hostSuite(
 		beforeAll(async () => {
 			if (process.platform !== platform) return;
 			for (const v of NODES) bins[v] = await nodeBinary(v, hostTarget());
-			root = fs.mkdtempSync(path.join(os.tmpdir(), `dy-s02-measure-${label}-`));
+			root = tempRoot(`dy-s02-measure-${label}-`);
 			pluginDir = path.join(root, "plugin");
 			fs.cpSync(path.join(spikeDir, "fixtures", "s2b"), pluginDir, { recursive: true });
 		}, 180_000);

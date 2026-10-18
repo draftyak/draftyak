@@ -1,10 +1,17 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { hostTarget, nodeBinary, nodeVersions } from "@draftyak/spike-kit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { evidenceFile, missing, recordEvidence, unmet } from "./record.ts";
-import { runV8, selectedNodes, spikeDir, type V8Outcome, v8Blocked, v8Weakened } from "./s2b.ts";
+import {
+	runV8,
+	selectedNodes,
+	spikeDir,
+	tempRoot,
+	type V8Outcome,
+	v8Blocked,
+	v8Weakened,
+} from "./s2b.ts";
 
 const NODES = selectedNodes(nodeVersions());
 const arch = hostTarget().arch;
@@ -25,7 +32,7 @@ function hostSuite(
 		beforeAll(async () => {
 			if (process.platform !== platform) return;
 			for (const v of NODES) bins[v] = await nodeBinary(v, hostTarget());
-			root = fs.mkdtempSync(path.join(os.tmpdir(), `dy-s02-v8-${label}-`));
+			root = tempRoot(`dy-s02-v8-${label}-`);
 			pluginDir = path.join(root, "plugin");
 			fs.cpSync(path.join(spikeDir, "fixtures", "s2b"), pluginDir, { recursive: true });
 		}, 180_000);

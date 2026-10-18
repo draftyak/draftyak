@@ -6,6 +6,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { buildArgv } from "../src/argv.ts";
@@ -45,6 +46,12 @@ export function selectedNodes(
 	if (value === "both") return [...new Set([versions.minimum, versions.bundled])];
 	if (value === "minimum" || value === "bundled") return [versions[value]];
 	throw new Error(`DRAFTYAK_NODES is both, minimum or bundled, not "${value}"`);
+}
+
+// A new temp folder by its real path. macOS's temp folder sits behind the /var link: the pre-spawn
+// scan refuses a plugin dir there, and Node can't resolve an entry through a link outside its grant.
+export function tempRoot(prefix: string): string {
+	return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 }
 
 // A plugin's ctx.fetch targets: the inspector and hub ports on loopback, three other spellings that
