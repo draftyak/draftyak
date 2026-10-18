@@ -1,0 +1,17 @@
+{
+  "feed": "fixtures/dst-london.ics",
+  "window": {
+    "start": "2026-10-25T00:00:00.000Z",
+    "end": "2026-10-26T00:00:00.000Z"
+  },
+  "timeZone": "Europe/London",
+  "expected": {
+    "busy": [
+      {
+        "start": 1792888200000,
+        "end": 1792895400000,
+        "status": "busy"
+      }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "feed": "fixtures/window-merge.ics",
+  "window": {
+    "start": "2026-10-12T10:30:00.000Z",
+    "end": "2026-10-12T14:00:00.000Z"
+  },
+  "timeZone": "America/Chicago",
+  "expected": {
+    "busy": [
+      {
+        "start": 1791801000000,
+        "end": 1791804600000,
+        "status": "busy"
+      },
+      {
+        "start": 1791806400000,
+        "end": 1791808200000,
+        "status": "tentative"
+      },
+      {
+        "start": 1791810000000,
+        "end": 1791813600000,
+        "status": "busy"
+      }
+    ]
+  }
+}

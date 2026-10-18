@@ -1,0 +1,27 @@
+{
+  "feed": "fixtures/provider-fastmail.ics",
+  "window": {
+    "start": "2026-03-27T00:00:00.000Z",
+    "end": "2026-04-04T00:00:00.000Z"
+  },
+  "timeZone": "Europe/London",
+  "expected": {
+    "busy": [
+      {
+        "start": 1774656000000,
+        "end": 1774825200000,
+        "status": "busy"
+      },
+      {
+        "start": 1775084400000,
+        "end": 1775170800000,
+        "status": "busy"
+      },
+      {
+        "start": 1775203200000,
+        "end": 1775206800000,
+        "status": "busy"
+      }
+    ]
+  }
+}

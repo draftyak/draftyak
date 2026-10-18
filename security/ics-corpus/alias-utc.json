@@ -1,0 +1,6 @@
+{
+  "feed": "fixtures/alias-utc.ics",
+  "window": { "start": "2026-01-02T00:00:00Z", "end": "2026-01-03T00:00:00Z" },
+  "timeZone": "UTC",
+  "expected": { "busy": [{ "start": 1767344400000, "end": 1767348000000, "status": "busy" }] }
+}

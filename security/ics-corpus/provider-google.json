@@ -1,0 +1,27 @@
+{
+  "feed": "fixtures/provider-google.ics",
+  "window": {
+    "start": "2026-03-07T00:00:00.000Z",
+    "end": "2026-03-12T00:00:00.000Z"
+  },
+  "timeZone": "America/New_York",
+  "expected": {
+    "busy": [
+      {
+        "start": 1772892000000,
+        "end": 1772895600000,
+        "status": "busy"
+      },
+      {
+        "start": 1773154800000,
+        "end": 1773158400000,
+        "status": "tentative"
+      },
+      {
+        "start": 1773234000000,
+        "end": 1773237600000,
+        "status": "busy"
+      }
+    ]
+  }
+}
