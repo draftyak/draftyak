@@ -9,6 +9,7 @@ import { hostTarget, nodeBinary, nodeVersions } from "@draftyak/spike-kit";
 import { fetchRuntime, type RuntimeLock, spikeDir } from "../scripts/fetch-runtime.ts";
 import { copyRuntime, SHIM } from "../src/runtime.ts";
 import { buildBundle } from "./bundle.ts";
+import { lsofArgs, lsofReport, pluginTcpSockets, WATCHER_INCONCLUSIVE } from "./lsof.ts";
 import { type CanaryArgs, HOME_CANARY, MK_CANARY, OFF_PROFILE, type PluginSpec } from "./suite.ts";
 
 export const AUDIT_PRELOAD = "audit-preload.mjs";
@@ -116,45 +117,41 @@ export function specFor(prepared: Prepared, nodeBinary: string): PluginSpec {
 	};
 }
 
-// The audit connection watcher on this host: Windows Get-NetTCPConnection, macOS lsof; Linux uses
-// Docker --network none, so there is no host watcher there. Returns the count of TCP sockets the
-// plugin process owns (0 is the clean result). It FAILS CLOSED: a spawn error, a non-zero exit, a
-// timeout or an unparseable result returns -1 (inconclusive), which auditProblem treats as a failure
-// rather than reading a timed-out watcher as "0 connections, clean". The diagnostics-channel net
-// count is the primary net detector on both Nodes; this watcher is a secondary check.
-const WATCHER_INCONCLUSIVE = -1;
-
+// The audit connection watcher on this host; Linux uses Docker --network none, so it has none there.
+// Returns the number of TCP sockets the plugin process owns, in any state (0 is the clean result).
+// It fails closed: a spawn error, a timeout, a non-zero exit or a result that doesn't show the plugin
+// returns -1 (inconclusive), which auditProblem fails, so a plugin that has exited never reads as 0.
+// Windows counts Get-NetTCPConnection -OwningProcess and keeps the count only if Get-Process still
+// finds the plugin afterwards; macOS reads lsof's field listing of the plugin's own files (lsof.ts)
+// and logs lsof's exit and output whenever it reads anything but 0.
+// The diagnostics-channel net count is the primary net detector on both Nodes; this is a second check.
 export function hostTcpWatcher(): ((pid: number) => Promise<number>) | undefined {
 	if (process.platform === "win32") {
 		return async (pid: number) => {
+			const script = [
+				`$n = @(Get-NetTCPConnection -OwningProcess ${pid} -ErrorAction SilentlyContinue).Count`,
+				`if (Get-Process -Id ${pid} -ErrorAction SilentlyContinue) { $n } else { -1 }`,
+			].join("; ");
 			const result = spawnSync(
 				"powershell.exe",
-				[
-					"-NoProfile",
-					"-NonInteractive",
-					"-Command",
-					`@(Get-NetTCPConnection -OwningProcess ${pid} -ErrorAction SilentlyContinue).Count`,
-				],
+				["-NoProfile", "-NonInteractive", "-Command", script],
 				{ encoding: "utf8", timeout: 20_000 },
 			);
 			if (result.error !== undefined || result.status !== 0) return WATCHER_INCONCLUSIVE;
 			const text = typeof result.stdout === "string" ? result.stdout.trim() : "";
-			const count = Number.parseInt(text, 10);
-			return Number.isNaN(count) ? WATCHER_INCONCLUSIVE : count;
+			return /^\d+$/.test(text) ? Number(text) : WATCHER_INCONCLUSIVE;
 		};
 	}
 	if (process.platform === "darwin") {
 		return async (pid: number) => {
-			const result = spawnSync("lsof", ["-nP", "-p", String(pid), "-iTCP"], {
-				encoding: "utf8",
-				timeout: 20_000,
-			});
-			// lsof exits non-zero when the process owns no matching files, so an empty stdout with a
-			// non-zero status is a legitimate 0; only a spawn error or a timeout is inconclusive.
-			if (result.error !== undefined) return WATCHER_INCONCLUSIVE;
-			if (typeof result.stdout !== "string") return WATCHER_INCONCLUSIVE;
-			return result.stdout.split(/\r?\n/).filter((line) => /ESTABLISHED|SYN_SENT|->/.test(line))
-				.length;
+			const result = spawnSync("lsof", lsofArgs(pid), { encoding: "utf8", timeout: 20_000 });
+			// With -p alone, lsof exits 1 when the plugin isn't found; only the report shows stderr.
+			const count =
+				result.error === undefined && result.status === 0
+					? pluginTcpSockets(result.stdout, pid)
+					: WATCHER_INCONCLUSIVE;
+			if (count !== 0) console.log(lsofReport(pid, count, result));
+			return count;
 		};
 	}
 	return undefined;
