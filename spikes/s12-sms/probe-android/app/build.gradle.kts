@@ -17,8 +17,8 @@ android {
         applicationId = "com.draftyak.smsprobe"
         minSdk = 34
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     // A Play Store check that doesn't apply: the probe is installed over adb on a phone.
@@ -39,8 +39,8 @@ abstract class ProbeClasses : Zip() {
 }
 
 // The JVM tests read the merged manifest, the variant's resource folders, every class the APK
-// gets, M0.36's report schema and its synthetic other-person corpus, and write sample reports for
-// receive-report's check in the heavy test.
+// gets, M0.36's report schema, synthetic other-person corpus and segment vectors, and the merged
+// assets, and write sample reports for receive-report's check in the heavy test.
 abstract class ProbeTestFiles : CommandLineArgumentProvider {
     @get:InputFile @get:PathSensitive(PathSensitivity.NONE)
     abstract val mergedManifest: RegularFileProperty
@@ -60,6 +60,12 @@ abstract class ProbeTestFiles : CommandLineArgumentProvider {
     @get:InputFile @get:PathSensitive(PathSensitivity.NONE)
     abstract val corpus: RegularFileProperty
 
+    @get:InputFile @get:PathSensitive(PathSensitivity.NONE)
+    abstract val vectors: RegularFileProperty
+
+    @get:InputDirectory @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val assets: DirectoryProperty
+
     @get:OutputDirectory
     abstract val samples: DirectoryProperty
 
@@ -70,6 +76,8 @@ abstract class ProbeTestFiles : CommandLineArgumentProvider {
         "classes" to classes.get().asFile.absolutePath,
         "schema" to schema.get().asFile.absolutePath,
         "corpus" to corpus.get().asFile.absolutePath,
+        "vectors" to vectors.get().asFile.absolutePath,
+        "assets" to assets.get().asFile.absolutePath,
         "samples" to samples.get().asFile.absolutePath,
     ).map { (name, value) -> "-Ddyprobe.$name=$value" }
 }
@@ -78,6 +86,8 @@ abstract class ProbeTestFiles : CommandLineArgumentProvider {
 androidComponents {
     beforeVariants(selector().withBuildType("release")) { it.enable = false }
     onVariants { variant ->
+        // M0.36's vectors/segments.v1.json, the folder's only file, ships as the vectors asset.
+        variant.sources.assets?.addStaticSourceDirectory("../../vectors")
         val allClasses = tasks.register<ProbeClasses>("${variant.name}ProbeClasses") {
             destinationDirectory.set(layout.buildDirectory.dir("probe-classes"))
             archiveFileName.set("${variant.name}.zip")
@@ -98,6 +108,8 @@ androidComponents {
             corpus.set(
                 layout.projectDirectory.file("../../test/fixtures/other-person-corpus.json"),
             )
+            vectors.set(layout.projectDirectory.file("../../vectors/segments.v1.json"))
+            assets.set(variant.artifacts.get(SingleArtifact.ASSETS))
             samples.set(layout.buildDirectory.dir("probe-samples"))
         }
         variant.hostTests[HostTestBuilder.UNIT_TEST_TYPE]?.configureTestTask { test ->
