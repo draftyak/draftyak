@@ -115,6 +115,7 @@ On Windows every check of §15 S5 passed: the ready frame, the addon loaded from
 - **Command:** `pnpm --filter @draftyak/spike-s05-desktop test:heavy` (its `cargo test --no-default-features`)
 - **Guards:** the frame codec and its limits, the restart backoff and budget, the policy defaults, the hub's environment allowlist (on macOS with the one variable CoreFoundation sets in every Node), the health probe against a hung or deaf hub, the Job Object ending children that ignore stdin, and a restart ending the old plugin (plugins staged by real path).
 - **Destination:** M4 `apps/app/src-tauri/tests/`
+- **Changes in M4:** `spec/pairing-v1.md` (Sidecar auto-pairing) changes two of its inputs. The ready frame `{ready, l2Port, hubId}` gains the full 64-hex-digit SPKI hash beside the display ID, and the sidecar's pairing window takes its `pid` and `sec` from the bootstrap secret through HKDF.
 - **Path:** `spikes/s05-desktop/tauri-app/src-tauri/tests/power.rs`
 - **Command:** `pnpm --filter @draftyak/spike-s05-desktop test:heavy` (its `cargo test --no-default-features`)
 - **Guards:** keep-awake over a mocked OS layer: held from a frame until `null`, extended, ended at `untilMs`, with its hub and at stop; a refused hold (logind's) logged, reported and tried again; the hub's frames and the resumed frame wired through the real supervisor; this OS's own layer registering for resumes and holding, on Windows once no other process holds the machine's `ES_SYSTEM_REQUIRED` (adding it alone), and on Linux wherever a system bus exists, refused only by logind's policy.

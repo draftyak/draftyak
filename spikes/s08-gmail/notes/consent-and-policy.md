@@ -19,7 +19,7 @@ To decide for the setup wizard:
 
 M0.29 consents with and without the flag, records the consent wording of each as text (never screenshots of personal data), and ADR 0010 states the recommendation. Because the flag is fixed when a client is created, that takes two throwaway spike clients in the test project, one with the flag and one without:
 - The one without uses `DY_LIVE_GMAIL_CLIENT_ID` and `DY_LIVE_GMAIL_CLIENT_SECRET`.
-- The one with the flag uses `DY_LIVE_GMAIL_AGENT_CLIENT_ID` and `DY_LIVE_GMAIL_AGENT_CLIENT_SECRET`. These names are still to be added to `.env.live.example`.
+- The one with the flag uses `DY_LIVE_GMAIL_AGENT_CLIENT_ID` and `DY_LIVE_GMAIL_AGENT_CLIENT_SECRET`.
 - Both pairs are read only through the kit's `loadEnvLive()`.
 - The session's cleanup (step 6) deletes both clients in the project, along with the revocations and the `DY_LIVE_*` entries.
 
