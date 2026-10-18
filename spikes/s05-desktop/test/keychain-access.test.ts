@@ -167,7 +167,7 @@ describe("the keychain item's access list", () => {
 
 // Only a billed macOS run reaches the keychain case, so its fixed text and the access list's
 // shape are checked here against the kit's evidence rules (run B1's rerun lost its record to a
-// 330-character prompts line).
+// 313-character prompts string).
 describe("keyring-macos.json's own fields", () => {
 	it("pass the kit's content check", () => {
 		const access = itemAccess(item("probe-0a1b2c3d", standard), "probe-0a1b2c3d");
