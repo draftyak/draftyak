@@ -69,6 +69,8 @@ Run against owner-controlled, quiescent directories. The guard is not an OS sand
 
 `src/schedule.ts` exports `inspectScheduleEquivalence({ repo, root, nativeArtifact, node, nodeSource })`. This separate, opt-in API builds a small oracle from the reviewed product sources; the manifest CLI does not run it or accept a claimed result as a waiver. `repo` must be a source directory within this worktree, such as a reviewed committed snapshot under `.cache/product`. `root` contains the staged native application and Node. `nativeArtifact` and `node` use the measured file records above; `node` also declares its exact version. `nodeSource` uses the same independently authenticated official archive cache as the ordinary Node inspector.
 
+The stored manifest is inert `native-oracle/Cargo.toml.template`. The driver measures that filename and materializes its unchanged bytes as `Cargo.toml` only inside the generated private workspace. The repository template is not an untested executable Cargo workspace and receives no CI-policy exemption.
+
 For example, run this JavaScript from the worktree with `node --input-type=module`, supplying the real staging paths:
 
 ```js
@@ -98,6 +100,8 @@ The comparison covers New York, London and Lord Howe from 2026-01-01 through 202
 Requests and responses are bounded to 1 MiB; there are at most 256 wall times, 256 instants and 512 schedules. Compilation has a 180-second timeout and a 1 MiB output limit, with at most 8 KiB of compiler diagnostics retained on failure. Each engine request has a 15-second timeout. Product sources and the app candidate are measured before and after the comparison. Compile-time source, protocol, oracle and lock digests must match every native response. The result records these identities, engine/tzdata versions, counts and warnings. The authenticated Node runs in the clean private directory described above, with `--disable-sigusr1`; the app candidate is never executed.
 
 The real Windows run passed against source snapshot `821a2270a0bfe4633b13f3436d9b30ee49f996e8`, jiff `0.2.38` and official Node `26.12.0`; both engines reported tzdata `2026e`. All 12 transitions, 72 wall times, 96 instants and 400 schedule cases agreed, with no warnings. The final run measured the actual MSI's extracted `draftyak.exe` (16,153,088 bytes), whose SHA-256 remained unchanged throughout the check; its identity and the oracle/source digests are recorded in the local `.cache/windows/schedule-report.json`. The heavy test passed in 65.85 seconds. A measured native application digest alone cannot prove that its machine code contains the compared sources, features and bundled database. Verified application/source binding and installed-binary schedule behavior remain full-release acceptance gates.
+
+That is historical handoff evidence, not a run on this candidate or validation of the adapted manifest materialization. Current-base native compilation and product acceptance remain separate gates.
 
 The repeatable heavy test requires an already reviewed source snapshot, cached official Node and a real single-link staged native candidate:
 

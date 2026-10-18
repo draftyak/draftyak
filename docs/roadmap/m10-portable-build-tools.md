@@ -5,13 +5,24 @@ This local candidate starts directly from merged `origin/m10`
 foundation `32eef0ebb9ef2ffcdcacd1c62405680c98f6469e` with only the portable
 M10.3 source checkpoint `c163c0a7e8178850f3167b638130651589665ac6`.
 
-The bundle and release-guard source trees retain their exact foundation Git
-objects, including the shared bounded file reader and tar work limit. The
+The initial bundle and release-guard source trees retained their exact foundation
+Git objects, including the shared bounded file reader and tar work limit. The
 portable packaging tree, two Docker launcher/healthcheck files and templates
 retain their exact reviewed source objects. No root policy, CI workflow,
 product application, contract, native driver or earlier-milestone runtime is
 copied. The component notes retain their historical source-checkpoint context;
 this note records the combined candidate's validation separately.
+
+The first independent full-suite attempt exposed a real integration failure:
+CI discovery treated the stored oracle `Cargo.toml` as an executable, untested
+Rust workspace. The template now uses `Cargo.toml.template`, retaining the exact
+pinned manifest bytes. The schedule driver measures the template and creates
+the real manifest only inside its generated private workspace. A focused test
+checks both locations and exact materialized bytes. Existing CI discovery is
+tested without any M0 policy or test change. This adaptation changes the
+release-guard source tree and its measured oracle digest; it is recorded
+separately from the initial exact component-object proof. Historical native
+comparison evidence does not validate the adapted candidate.
 
 The real dependency closure uses those three private tooling packages and
 already-merged fetch-node, vendor-guard and shared test helpers. Ordinary
@@ -35,17 +46,24 @@ The combined component checks passed on Node 26.12.0:
 
 - Bundle-hub: 67 unit tests passed; one unchanged POSIX umask case is skipped
   on Windows.
-- Release guard: 84 unit tests passed.
+- Release guard: 85 unit tests passed after the template adaptation.
 - Portable packaging: 40 unit tests and the one explicit offline npm heavy
   test passed. The actual installed fixture launcher preserved the signal
   disabling flag and exact literal arguments.
 - All three scoped typechecks passed; scoped Biome checked 42 files.
 - Guard reported zero findings across 826 files.
 
-The runner held the actual kit OS lock, used two CPUs and one test worker,
+After the template adaptation, all 33 unchanged CI-discovery tests passed. The
+same no-base CLI call that refused the original candidate now exits zero,
+without discovering an executable workspace beneath the oracle template. The
+manifest's pinned bytes remain unchanged. The native-oracle compiler was not
+run by either the fixture regression or the discovery check.
+
+The initial component runner held the actual kit OS lock, used two CPUs and one test worker,
 required at least 8 GiB free immediately after lock acquisition, and monitored
 the continuous 6 GiB floor. Its minimum across the queue and execution was
-6.85 GiB. At this component checkpoint, full normal Windows verification is
+6.85 GiB. The affected template/discovery rerun started with 10.65 GiB and
+recorded an 8.80 GiB minimum. At this component checkpoint, full normal Windows verification is
 still the next gate: it must run in an independent Git clone against the fresh
 integration base. Publication is not authorized by these component results.
 

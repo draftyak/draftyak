@@ -238,6 +238,21 @@ describe("fresh native schedule / authenticated Temporal comparison", () => {
 		expect(f.execute).toHaveBeenCalledTimes(5);
 		expect(existsSync(path.dirname(f.project()))).toBe(false);
 	});
+	it("materializes the measured inert Cargo template only inside its private workspace", async () => {
+		const oracle = path.join(worktree, "tools/release-guard/native-oracle");
+		const template = readFileSync(path.join(oracle, "Cargo.toml.template"));
+		expect(existsSync(path.join(oracle, "Cargo.toml"))).toBe(false);
+		const f = fixture();
+		const original = f.compile.getMockImplementation();
+		f.compile.mockImplementation(async (project, target, env) => {
+			expect(readFileSync(path.join(project, "Cargo.toml"))).toEqual(template);
+			expect(existsSync(path.join(project, "Cargo.toml.template"))).toBe(false);
+			await original?.(project, target, env);
+		});
+		await inspectScheduleEquivalence(f.options, f.deps);
+		expect(f.compile).toHaveBeenCalledOnce();
+		expect(existsSync(path.dirname(f.project()))).toBe(false);
+	});
 	it.each(["native-candidate.exe", binary])("rejects changed candidate %s", async (file) => {
 		const f = fixture();
 		f.put(f.stage, file, "changed candidate");

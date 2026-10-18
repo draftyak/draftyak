@@ -422,7 +422,7 @@ export async function inspectScheduleEquivalence(
 	const protocolSha = sourceDigest(protocolRows);
 	const sourceSha = measured(repo, modulePath).sha256;
 	const lockSha = measured(oracle, "Cargo.lock").sha256;
-	const oracleRows = ["Cargo.toml", "Cargo.lock", "src/main.rs"].map((file) =>
+	const oracleRows = ["Cargo.toml.template", "Cargo.lock", "src/main.rs"].map((file) =>
 		measured(oracle, file),
 	);
 	const oracleSha = sourceDigest(oracleRows);
@@ -445,7 +445,12 @@ export async function inspectScheduleEquivalence(
 			target = path.join(temporary, "target");
 		mkdirSync(target, { mode: 0o700 });
 		directory(target);
-		for (const row of oracleRows) put(project, row.path, read(oracle, row.path));
+		for (const row of oracleRows)
+			put(
+				project,
+				row.path === "Cargo.toml.template" ? "Cargo.toml" : row.path,
+				read(oracle, row.path),
+			);
 		put(project, "src/schedule.rs", read(repo, modulePath));
 		for (const row of protocolRows)
 			put(
