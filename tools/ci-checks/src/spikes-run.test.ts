@@ -115,6 +115,7 @@ const job = (overrides: Partial<Entry>): Entry => ({
 	rustTargets: "",
 	rustKey: "kit",
 	rustWorkspaces: "",
+	tests: "",
 	...overrides,
 });
 
@@ -125,6 +126,7 @@ describe("planRun", () => {
 			spikes: ["kit", "s05-desktop"],
 			os: ["ubuntu-24.04"],
 			node: "both",
+			tests: [],
 			entries: [
 				job({ docker: true }),
 				job({
@@ -279,6 +281,133 @@ describe("planRun", () => {
 	});
 });
 
+describe("planRun with tests, a partial run of one spike", () => {
+	const s11 = "spikes/s11-python-runtime";
+	const heavyFile = (name: string): [string, string] => [`${s11}/test/${name}.heavy.test.ts`, ""];
+	const files: Record<string, string | undefined> = {
+		...spikes,
+		[`${s11}/package.json`]: heavy,
+		[`${s11}/ci.json`]: ci({ "macos-15": { timeout: 30 }, "ubuntu-24.04": { timeout: 45 } }),
+		[`${s11}/test/host.ts`]: "",
+		[`${s11}/test/escape.test.ts`]: "",
+		...Object.fromEntries(["escape", "audit", "budgets", "prints"].map(heavyFile)),
+	};
+	const pair = ["test/escape.heavy.test.ts", "test/audit.heavy.test.ts"];
+	const request = { spikes: ["s11"], os: ["macos-15"], node: "both", tests: pair };
+	const refused = (overrides: object, tree = files): string => {
+		try {
+			plan({ ...request, ...overrides }, tree);
+		} catch (error) {
+			if (error instanceof PlanError) return error.problems.join("\n");
+			throw error;
+		}
+		return "";
+	};
+
+	it("hands the files to each job and names them in the plan, at the same worst case", () => {
+		const result = plan({ ...request, os: ["macos-15", "ubuntu-24.04"] }, files);
+		expect(result.tests).toEqual(pair);
+		expect(result.entries.map((entry) => entry.tests)).toEqual([
+			"test/escape.heavy.test.ts test/audit.heavy.test.ts",
+			"test/escape.heavy.test.ts test/audit.heavy.test.ts",
+		]);
+		expect(worstCase(result)).toBe(30 * 10 + 45 + 1);
+		expect(describePlan(result)[0]).toBe(
+			"spikes-run: 2 jobs, node both, at most 346 billed minutes (timeouts x runner rates, plus 1 for plan); only test/escape.heavy.test.ts, test/audit.heavy.test.ts",
+		);
+	});
+
+	it("plans a request without tests as before: the whole heavy tier in every job", () => {
+		const result = plan({ spikes: ["s11"], os: ["macos-15"], node: "both" }, files);
+		expect(result.tests).toEqual([]);
+		expect(result.entries.map((entry) => entry.tests)).toEqual([""]);
+		expect(describePlan(result)[0]).toBe(
+			"spikes-run: 1 job, node both, at most 301 billed minutes (timeouts x runner rates, plus 1 for plan)",
+		);
+	});
+
+	it("takes up to 20 files", () => {
+		const many = Array.from({ length: 21 }, (_, at) => `t${at}`);
+		const tree = { ...files, ...Object.fromEntries(many.map(heavyFile)) };
+		const named = many.map((name) => `test/${name}.heavy.test.ts`);
+		expect(plan({ ...request, tests: named.slice(0, 20) }, tree).tests).toHaveLength(20);
+		expect(refused({ tests: named }, tree)).toBe("tests: at most 20 files, not 21");
+	});
+
+	const form = "isn't test/<name>.heavy.test.ts, with <name> of a-z, 0-9 and dashes";
+	it.each([
+		["a leading '-'", "-t"],
+		["a Vitest flag", "--reporter=json"],
+		["a parent folder", "../kit/test/env.heavy.test.ts"],
+		["'..' inside", "test/../test/escape.heavy.test.ts"],
+		["a space", "test/escape heavy.heavy.test.ts"],
+		["shell syntax", "test/$(id).heavy.test.ts"],
+		["a glob", "test/*.heavy.test.ts"],
+		["a capital letter", "test/Escape.heavy.test.ts"],
+		["a unit test file", "test/escape.test.ts"],
+		["a nested folder", "test/x/escape.heavy.test.ts"],
+		["a path from the repository root", `${s11}/test/escape.heavy.test.ts`],
+		["a backslash", "test\\escape.heavy.test.ts"],
+		["a line filter", "test/escape.heavy.test.ts:12"],
+		["an empty name", ""],
+		["a number", 5],
+	])("refuses %s", (_, test) => {
+		expect(refused({ tests: [test] })).toBe(`tests: ${JSON.stringify(test)} ${form}`);
+	});
+
+	it.each([
+		[
+			"more than one spike",
+			{ spikes: ["s11", "kit"] },
+			"tests: allowed only with exactly one spike, not s11, kit",
+		],
+		["a file twice", { tests: [...pair, pair[0]] }, `tests lists ${pair[0]} twice`],
+		[
+			"a file that isn't committed",
+			{ tests: ["test/nope.heavy.test.ts"] },
+			`tests: ${s11}/test/nope.heavy.test.ts isn't a committed file`,
+		],
+		["an empty list", { tests: [] }, "tests must be a non-empty list"],
+		["a string", { tests: pair[0] }, "tests must be a non-empty list"],
+	])("refuses %s", (_, overrides, problem) => {
+		expect(refused(overrides)).toContain(problem);
+	});
+
+	// Vitest's filter is a lower-cased substring of each test file's path in the spike's folder.
+	it("refuses a file whose name Vitest would also find in another heavy file's path", () => {
+		const tree = { ...files, [`${s11}/fixtures/Test/escape.heavy.test.ts`]: "" };
+		expect(refused({}, tree)).toBe(
+			`tests: test/escape.heavy.test.ts would also run ${s11}/fixtures/Test/escape.heavy.test.ts`,
+		);
+		expect(plan({ ...request, tests: ["test/audit.heavy.test.ts"] }, tree).tests).toHaveLength(1);
+	});
+
+	const script = (command: string): string =>
+		JSON.stringify({ scripts: { "test:heavy": command } });
+	// Vitest would get the files after a `--` and run the whole tier.
+	it.each([
+		["Vitest itself", "vitest run --mode heavy"],
+		["the kit's runner and a Vitest flag", "node ../kit/run.ts --heavy --reporter=verbose"],
+		["a runner of the spike's own", "node run.ts --heavy"],
+	])("refuses tests when test:heavy is %s, and still plans the whole tier", (_, command) => {
+		const tree = { ...files, [`${s11}/package.json`]: script(command) };
+		expect(refused({}, tree)).toBe(
+			`tests: ${s11}/package.json's test:heavy isn't "node ../kit/run.ts --heavy", which hands the files to Vitest`,
+		);
+		expect(plan({ spikes: ["s11"], os: ["macos-15"], node: "both" }, tree).tests).toEqual([]);
+	});
+
+	it("takes the kit's runner as the kit calls it, from its own folder", () => {
+		const tree = {
+			...files,
+			"spikes/kit/package.json": script("node run.ts --heavy"),
+			"spikes/kit/test/env.heavy.test.ts": "",
+		};
+		const kit = { spikes: ["kit"], os: ["ubuntu-24.04"], tests: ["test/env.heavy.test.ts"] };
+		expect(plan({ ...request, ...kit }, tree).entries[0]?.tests).toBe("test/env.heavy.test.ts");
+	});
+});
+
 describe("the committed ci.json files", () => {
 	const listed = spawnSync(
 		"git",
@@ -300,6 +429,15 @@ describe("the committed ci.json files", () => {
 		const { os } = JSON.parse(tree.read(`spikes/${spike}/ci.json`) ?? "{}");
 		const request = { spikes: [spike], os: Object.keys(os ?? {}), node: "both" };
 		expect(planRun(request, tree).entries.length).toBe(Object.keys(os).length);
+	});
+
+	// A made-up file stands in for the spike's heavy files, which this package's turbo inputs omit.
+	it.each(withCi)("spikes/%s takes a partial run through its test:heavy", (spike) => {
+		const { os } = JSON.parse(tree.read(`spikes/${spike}/ci.json`) ?? "{}");
+		const probe = "test/spikes-run-probe.heavy.test.ts";
+		const files = (dir: string): string[] => [...tree.files(dir), `spikes/${spike}/${probe}`];
+		const request = { spikes: [spike], os: Object.keys(os ?? {}), node: "both", tests: [probe] };
+		expect(planRun(request, { ...tree, files }).tests).toEqual([probe]);
 	});
 
 	it("runs the kit on every runner, so each one checks fetch-node and gpgv", () => {
@@ -390,7 +528,59 @@ describe("spikes.yml", () => {
 		expect(step?.env).toEqual({
 			SPIKE: expression("matrix.spike"),
 			XVFB: expression("matrix.tauriLinux"),
+			TESTS: expression("matrix.tests"),
 		});
+		expect(run).not.toContain("${{");
+	});
+
+	it("hands plan the dispatch inputs only through env, as spikes/run.json's fields", () => {
+		const step = jobs.plan?.steps.find(withId("plan"));
+		expect(step?.run).toBe("node tools/ci-checks/src/spikes-run.ts --plan");
+		expect(step?.env).toEqual({
+			RUN_SPIKES: expression("inputs.spikes"),
+			RUN_OS: expression("inputs.os"),
+			RUN_NODE: expression("inputs.node"),
+			RUN_TESTS: expression("inputs.tests"),
+		});
+	});
+
+	// GitHub runs `bash --noprofile --norc -eo pipefail` on every runner, Git's bash on Windows;
+	// `bash` on a Windows PATH can be WSL's.
+	const bash =
+		process.platform === "win32"
+			? path.resolve(
+					spawnSync("git", ["--exec-path"], { encoding: "utf8" }).stdout.trim(),
+					"../../../bin/bash.exe",
+				)
+			: "bash";
+
+	it("runs today's command without TESTS, and hands TESTS to the kit after --", () => {
+		const script = String(steps.find(withId("heavy"))?.run);
+		// Stand-ins that print the command, one argument per line.
+		const stubs =
+			'pnpm() { printf "%s\\n" pnpm "$@"; }\nxvfb-run() { printf "%s\\n" xvfb-run "$@"; }\n';
+		const command = (env: Record<string, string>): string[] => {
+			const result = spawnSync(bash, ["--noprofile", "--norc", "-eo", "pipefail", "-s"], {
+				input: stubs + script,
+				env: { ...process.env, SPIKE: "s11-python-runtime", XVFB: "false", ...env },
+				encoding: "utf8",
+			});
+			expect(result.status, result.stderr).toBe(0);
+			return result.stdout.split("\n").filter(Boolean);
+		};
+		const filter = ["--filter", "./spikes/s11-python-runtime", "--fail-if-no-match"];
+		const today = ["pnpm", ...filter, "run", "test:heavy"];
+		const pair = ["test/escape.heavy.test.ts", "test/audit.heavy.test.ts"];
+		expect(command({ TESTS: "" })).toEqual(today);
+		expect(command({ TESTS: pair.join(" ") })).toEqual([...today, "--", ...pair]);
+		const xvfb = ["xvfb-run", "--auto-servernum"];
+		expect(command({ XVFB: "true", TESTS: "" })).toEqual([...xvfb, ...today]);
+		expect(command({ XVFB: "true", TESTS: pair[0] ?? "" })).toEqual([
+			...xvfb,
+			...today,
+			"--",
+			pair[0],
+		]);
 	});
 
 	it("fetches the Nodes that DRAFTYAK_NODES selects", () => {
@@ -447,9 +637,28 @@ describe("parseCli", () => {
 			spikes: spikeList,
 			os: osList,
 			node: "both",
+			tests: [],
 			dryRun: false,
 			yes: false,
 		});
+	});
+
+	const pair = ["test/escape.heavy.test.ts", "test/audit.heavy.test.ts"];
+	const s11 = ["--spikes", "s11", "--os", "macos-15"];
+	it.each([
+		[[...s11, "--tests", pair.join(",")]],
+		[[...s11, "--tests", pair.join(", ")]],
+		[[...s11, "--tests", pair.join(" ")]],
+		// PowerShell passes an unquoted list as separate arguments.
+		[[...s11, "--tests", ...pair]],
+		[["--", `--tests=${pair[0]}`, ...s11, "--tests", pair[1] ?? ""]],
+	])("reads the --tests list in %j as it reads --spikes", (argv) => {
+		expect(parseCli(argv)).toMatchObject({ spikes: ["s11"], tests: pair });
+	});
+
+	it("leaves the checks of each test file to planRun, which spikes.yml's plan job shares", () => {
+		const cli = parseCli([...s11, "--tests=-t,../x,test/*.heavy.test.ts"]);
+		expect(cli.tests).toEqual(["-t", "../x", "test/*.heavy.test.ts"]);
 	});
 
 	it("reads --node, --dry-run, --yes and the workflow's modes", () => {
@@ -466,6 +675,13 @@ describe("parseCli", () => {
 		[["--spikes", "kit", "--os", "macos-15", "--node", "both", "extra"], "unexpected extra"],
 		[["--spikes", "kit", "--os", "macos-15", "--bogus"], "Unknown option '--bogus'"],
 		[["--spikes"], "argument missing"],
+		[["--spikes", "kit", "--os", "macos-15", "--tests", ""], "--tests names no test file"],
+		[["--spikes", "kit", "--os", "macos-15", "--tests", " , "], "--tests names no test file"],
+		[["--spikes", "kit", "--os", "macos-15", "--tests", "-t"], "argument is ambiguous"],
+		[
+			["--spikes", "kit", "--os", "macos-15", "--tests", "test/env.heavy.test.ts", "--reporter=x"],
+			"Unknown option '--reporter'",
+		],
 	])("refuses %j", (argv, problem) => {
 		expect(() => parseCli(argv)).toThrow(problem);
 	});
@@ -545,6 +761,77 @@ describe("planStep, spikes.yml's plan job", () => {
 		expect(run.output).toMatch(/^node=minimum$/m);
 	});
 
+	const heavyFiles = {
+		...spikes,
+		"spikes/kit/test/env.heavy.test.ts": "",
+		"spikes/kit/test/docker.heavy.test.ts": "",
+	};
+	const matrixOf = (output: string): Entry[] =>
+		JSON.parse(/^matrix=(.*)$/m.exec(output)?.[1] ?? "{}").include;
+
+	// A run.json as spikes:run wrote it before tests existed.
+	it("plans a spikes/run.json without tests as before: the whole heavy tier", () => {
+		const runJson =
+			'{\n  "spikes": [\n    "kit"\n  ],\n  "os": [\n    "ubuntu-24.04"\n  ],\n  "node": "both"\n}\n';
+		const run = step({ GITHUB_EVENT_NAME: "push" }, { ...heavyFiles, "spikes/run.json": runJson });
+		expect(run.code).toBe(0);
+		expect(matrixOf(run.output)).toEqual([job({ docker: true, tests: "" })]);
+		expect(run.summary).not.toContain("Only these test files run");
+	});
+
+	it("hands a pushed run.json's tests to every job and names them in the log and the summary", () => {
+		const tests = ["test/env.heavy.test.ts", "test/docker.heavy.test.ts"];
+		const runJson = JSON.stringify({ ...request, os: ["ubuntu-24.04", "macos-15"], tests });
+		const run = step({ GITHUB_EVENT_NAME: "push" }, { ...heavyFiles, "spikes/run.json": runJson });
+		expect(run.code).toBe(0);
+		expect(matrixOf(run.output).map((entry) => entry.tests)).toEqual([
+			"test/env.heavy.test.ts test/docker.heavy.test.ts",
+			"test/env.heavy.test.ts test/docker.heavy.test.ts",
+		]);
+		expect(run.lines[0]).toMatch(
+			/; only test\/env\.heavy\.test\.ts, test\/docker\.heavy\.test\.ts$/,
+		);
+		expect(run.summary).toContain(
+			"Only these test files run: `test/env.heavy.test.ts`, `test/docker.heavy.test.ts`.",
+		);
+	});
+
+	const dispatch = {
+		GITHUB_EVENT_NAME: "workflow_dispatch",
+		RUN_SPIKES: "kit",
+		RUN_OS: "ubuntu-24.04",
+		RUN_NODE: "both",
+	};
+	it("takes workflow_dispatch's tests from RUN_TESTS, where empty runs the whole tier", () => {
+		const partial = step(
+			{ ...dispatch, RUN_TESTS: "test/env.heavy.test.ts, test/docker.heavy.test.ts" },
+			heavyFiles,
+		);
+		expect(matrixOf(partial.output)[0]?.tests).toBe(
+			"test/env.heavy.test.ts test/docker.heavy.test.ts",
+		);
+		const full = step({ ...dispatch, RUN_TESTS: "" }, heavyFiles);
+		expect(matrixOf(full.output)[0]?.tests).toBe("");
+		const twoSpikes = step(
+			{ ...dispatch, RUN_SPIKES: "kit,s03", RUN_TESTS: "test/env.heavy.test.ts" },
+			heavyFiles,
+		);
+		expect(twoSpikes.code).toBe(1);
+		expect(twoSpikes.lines).toContain(
+			"::error::spikes-run: tests: allowed only with exactly one spike, not kit, s03",
+		);
+	});
+
+	// The CLI refuses these as --tests too: a stray separator mustn't run the whole tier.
+	it.each([",", " , ", ",,", " "])("refuses RUN_TESTS %j, which names no file", (value) => {
+		const run = step({ ...dispatch, RUN_TESTS: value }, heavyFiles);
+		expect(run.code).toBe(1);
+		expect(run.lines).toEqual([
+			"::error::spikes-run: tests names no test file; leave it empty to run the whole heavy tier",
+		]);
+		expect([run.output, run.summary]).toEqual(["", ""]);
+	});
+
 	it.each([
 		[
 			"no spikes/run.json",
@@ -557,6 +844,26 @@ describe("planStep, spikes.yml's plan job", () => {
 			"an unknown spike",
 			JSON.stringify({ ...request, spikes: ["s42"] }),
 			"spikes: no spike matches s42",
+		],
+		[
+			"tests with two spikes",
+			JSON.stringify({ ...request, spikes: ["kit", "s03"], tests: ["test/env.heavy.test.ts"] }),
+			"tests: allowed only with exactly one spike, not kit, s03",
+		],
+		[
+			"a test file that isn't in the commit",
+			JSON.stringify({ ...request, tests: ["test/env.heavy.test.ts"] }),
+			"tests: spikes/kit/test/env.heavy.test.ts isn't a committed file",
+		],
+		[
+			"a malformed test file",
+			JSON.stringify({ ...request, tests: ["test/*.heavy.test.ts"] }),
+			'tests: "test/*.heavy.test.ts" isn\'t test/<name>.heavy.test.ts',
+		],
+		[
+			"an unknown field",
+			JSON.stringify({ ...request, files: ["test/env.heavy.test.ts"] }),
+			'the request: unknown key "files"',
 		],
 	])("fails on %s, with an annotation and no outputs", (_, runJson, problem) => {
 		const run = step({ GITHUB_EVENT_NAME: "push" }, { ...spikes, "spikes/run.json": runJson });
@@ -739,6 +1046,8 @@ describe("runOnGitHub, the local CLI", () => {
 				must(plain, "commit", "-q", "-m", message);
 				return must(plain, "rev-parse", "HEAD");
 			},
+			// The bytes of a committed file, final newline included.
+			show: (spec: string): string => plain(["show", spec]).stdout,
 			dir,
 		};
 
@@ -862,6 +1171,7 @@ describe("runOnGitHub, the local CLI", () => {
 		spikes: ["kit"],
 		os: ["ubuntu-24.04"],
 		node: "both",
+		tests: [],
 		dryRun: false,
 		yes: false,
 		...overrides,
@@ -886,11 +1196,10 @@ describe("runOnGitHub, the local CLI", () => {
 		]);
 		expect(run.repo.git("rev-parse", `${commit}^`)).toBe(run.head);
 		expect(run.repo.git("diff", "--name-only", run.head, commit)).toBe("spikes/run.json");
-		expect(JSON.parse(run.repo.git("show", `${commit}:spikes/run.json`))).toEqual({
-			spikes: ["kit"],
-			os: ["ubuntu-24.04"],
-			node: "both",
-		});
+		// Byte for byte what spikes:run wrote before partial runs existed.
+		expect(run.repo.show(`${commit}:spikes/run.json`)).toBe(
+			'{\n  "spikes": [\n    "kit"\n  ],\n  "os": [\n    "ubuntu-24.04"\n  ],\n  "node": "both"\n}\n',
+		);
 		expect(run.repo.git("log", "-1", "--format=%s", commit)).toBe(
 			"ci(spikes-run): kit on ubuntu-24.04, node both",
 		);
@@ -953,6 +1262,10 @@ describe("runOnGitHub, the local CLI", () => {
 			],
 		]);
 		const log = run.logs.join("\n");
+		expect(run.logs[0]).toBe(
+			"spikes-run: 1 job, node both, at most 11 billed minutes (timeouts x runner rates, plus 1 for plan)",
+		);
+		expect(log).not.toContain("it ran only");
 		expect(log).toContain("spikes-run: 0 billed minutes this month; at most 11 after this run");
 		expect(log).toContain(
 			`spikes-run: pushed ${commit.slice(0, 12)} (HEAD plus spikes/run.json) to ${ref}`,
@@ -1133,6 +1446,93 @@ describe("runOnGitHub, the local CLI", () => {
 		expect(log).toContain('"os": [\n    "macos-15",\n    "ubuntu-24.04"\n  ],');
 	});
 
+	const pair = ["test/env.heavy.test.ts", "test/docker.heavy.test.ts"];
+	const withHeavyFiles = (run: ReturnType<typeof setup>): string => {
+		for (const file of pair) run.repo.write(`spikes/kit/${file}`, "export {};\n");
+		run.repo.write("spikes/kit/evidence/docker.json", evidence(0));
+		return run.repo.commit("test(kit): heavy files and committed evidence");
+	};
+
+	it("pushes a partial run: spikes/run.json and the title name the files, and the log says what ran", async () => {
+		const files = { "kit/evidence/env.json": evidence(1) };
+		const run = setup({ artifacts: { "evidence_kit_ubuntu-24.04": files } });
+		const head = withHeavyFiles(run);
+		expect(await runOnGitHub(cli({ tests: pair }), run.deps)).toBe(0);
+		const commit = run.pushedCommit();
+		expect(run.repo.git("rev-parse", `${commit}^`)).toBe(head);
+		expect(run.repo.show(`${commit}:spikes/run.json`)).toBe(
+			`${JSON.stringify({ spikes: ["kit"], os: ["ubuntu-24.04"], node: "both", tests: pair }, null, 2)}\n`,
+		);
+		expect(run.repo.git("log", "-1", "--format=%s", commit)).toBe(
+			"ci(spikes-run): kit on ubuntu-24.04, node both, only test/env.heavy.test.ts, test/docker.heavy.test.ts",
+		);
+		expect(run.logs[0]).toBe(
+			"spikes-run: 1 job, node both, at most 11 billed minutes (timeouts x runner rates, plus 1 for plan); only test/env.heavy.test.ts, test/docker.heavy.test.ts",
+		);
+		const ran = run.logs.indexOf(
+			"spikes-run: it ran only test/env.heavy.test.ts, test/docker.heavy.test.ts; the spike's other evidence files stay as they are",
+		);
+		expect(ran).toBeGreaterThan(0);
+		expect(run.logs[ran - 1]).toMatch(/^spikes-run: run 42: success /);
+		// Only the files the run wrote change; the committed evidence of the others stays.
+		expect(run.repo.git("status", "--porcelain", "--untracked-files=all")).toBe(
+			"?? spikes/kit/evidence/env.json",
+		);
+		expect(run.remoteRefs()).toEqual([]);
+	});
+
+	it("prints a partial run's plan and spikes/run.json on a dry run, and pushes nothing", async () => {
+		const run = setup();
+		withHeavyFiles(run);
+		const request = cli({ dryRun: true, os: ["macos-15"], tests: pair });
+		expect(await runOnGitHub(request, run.deps)).toBe(0);
+		const written = ["push", "commit-tree", "hash-object"];
+		expect(run.gitCalls.some(({ args }) => written.includes(args[0] ?? ""))).toBe(false);
+		expect(run.ghCalls).toEqual([]);
+		const log = run.logs.join("\n");
+		expect(log).toContain(
+			"spikes-run: 1 job, node both, at most 101 billed minutes (timeouts x runner rates, plus 1 for plan); only test/env.heavy.test.ts, test/docker.heavy.test.ts",
+		);
+		expect(log).toContain(
+			'"node": "both",\n  "tests": [\n    "test/env.heavy.test.ts",\n    "test/docker.heavy.test.ts"\n  ]\n}',
+		);
+	});
+
+	it.each([
+		[
+			"tests with two spikes",
+			{ spikes: ["kit", "s01"] },
+			"spikes-run: tests: allowed only with exactly one spike, not kit, s01",
+		],
+		[
+			"a file that isn't committed",
+			{ tests: ["test/new.heavy.test.ts"] },
+			"spikes-run: tests: spikes/kit/test/new.heavy.test.ts isn't a committed file",
+		],
+		[
+			"a leading '-'",
+			{ tests: ["--reporter=json"] },
+			'spikes-run: tests: "--reporter=json" isn\'t test/<name>.heavy.test.ts, with <name> of a-z, 0-9 and dashes',
+		],
+		[
+			"'..'",
+			{ tests: ["test/../ci.json"] },
+			'spikes-run: tests: "test/../ci.json" isn\'t test/<name>.heavy.test.ts',
+		],
+	])("refuses %s before it creates or pushes anything", async (_, overrides, problem) => {
+		const run = setup();
+		withHeavyFiles(run);
+		// An uncommitted heavy file can't be tested: the run tests HEAD.
+		run.repo.write("spikes/kit/test/new.heavy.test.ts", "export {};\n");
+		expect(await runOnGitHub(cli({ tests: pair, ...overrides }), run.deps)).toBe(1);
+		const commands = run.gitCalls.map(({ args }) => args[0]);
+		expect(commands.filter((command) => !["ls-tree", "cat-file"].includes(command ?? ""))).toEqual(
+			[],
+		);
+		expect(run.ghCalls).toEqual([]);
+		expect(run.logs.join("\n")).toContain(problem);
+	});
+
 	it("keeps each runner's file when jobs write different evidence under one name", async () => {
 		const artifacts = {
 			"evidence_kit_ubuntu-24.04": {
@@ -1262,5 +1662,17 @@ describe("the spikes-run CLI", () => {
 		const result = cliRun(["--spikes", "kit", "--os", "ubuntu-24.04", "--bogus"]);
 		expect(result.status).toBe(2);
 		expect(result.stderr).toContain("usage: pnpm spikes:run --spikes 'kit,s01' --os ubuntu-24.04");
+	});
+
+	it("refuses a test file that HEAD doesn't hold, and an empty --tests", () => {
+		const kit = ["--spikes", "kit", "--os", "ubuntu-24.04", "--dry-run"];
+		const missing = cliRun(["--", ...kit, "--tests", "test/nope.heavy.test.ts"]);
+		expect(missing.status).toBe(1);
+		expect(missing.stdout).toContain(
+			"spikes-run: tests: spikes/kit/test/nope.heavy.test.ts isn't a committed file",
+		);
+		const empty = cliRun([...kit, "--tests", ""]);
+		expect(empty.status).toBe(2);
+		expect(empty.stderr).toContain("spikes-run: --tests names no test file");
 	});
 });

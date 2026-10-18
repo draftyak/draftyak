@@ -45,7 +45,7 @@ Run them from the repository root, in PowerShell or Git Bash. In Windows PowerSh
 | `pnpm m0:prefetch` | Downloads what `verify:m0` needs: both Nodes, the pinned images, each spike's files | M0.6b |
 | `uv sync`, `uv run ruff check`, `uv run pyright`, `uv run pytest` | The Python workspace: install, lint, type-check, test | M2c |
 
-`pnpm fetch-node` takes `--version`, `--platform` (`win`, `linux` or `darwin`), `--arch` (`x64` or `arm64`), `--offline`, `--print-path` and `--docker-smoke`. `pnpm spikes:run` takes `--spikes 's01,s02'` (quoted, see below), `--os macos-15` and `--node` (`both`, `minimum` or `bundled`).
+`pnpm fetch-node` takes `--version`, `--platform` (`win`, `linux` or `darwin`), `--arch` (`x64` or `arm64`), `--offline`, `--print-path` and `--docker-smoke`. `pnpm spikes:run` takes `--spikes 's01,s02'` (quoted, see below), `--os macos-15`, `--node` (`both`, `minimum` or `bundled`) and, for one spike only, `--tests 'test/a.heavy.test.ts,test/b.heavy.test.ts'`: up to 20 of its heavy test files, relative to its folder, to run instead of its whole heavy tier. A partial run writes evidence only from the files it ran, so the evidence of the spike's other test files keeps its committed version.
 
 ### Test tiers
 

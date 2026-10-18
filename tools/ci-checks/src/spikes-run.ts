@@ -35,15 +35,18 @@ const runFile = "spikes/run.json";
 const workflowFile = ".github/workflows/spikes.yml";
 const settingKeys = ["timeout", "docker", "java", "android", "tauriLinux", "apt", "rust"];
 const maxEvidenceBytes = 1 << 20;
+const maxTests = 20;
 const valid = {
 	spike: /^[a-z0-9][a-z0-9-]*$/,
 	apt: /^[a-z0-9][a-z0-9+.-]+$/,
 	android: /^[a-z][\w.-]*(?:;[\w.-]+)*$/,
 	target: /^[a-z0-9_]+(?:-[a-z0-9_.]+){1,4}$/,
 	evidence: /^[A-Za-z0-9][\w.-]*\.json$/,
+	// Relative to the spike's folder: never a flag, '..', a space, shell syntax or a glob.
+	test: /^test\/[a-z0-9][a-z0-9-]*\.heavy\.test\.ts$/,
 };
 const usage =
-	"usage: pnpm spikes:run --spikes 'kit,s01' --os ubuntu-24.04 [--node both|minimum|bundled] [--dry-run] [--yes]";
+	"usage: pnpm spikes:run --spikes 'kit,s01' --os ubuntu-24.04 [--node both|minimum|bundled] [--tests 'test/a.heavy.test.ts,test/b.heavy.test.ts'] [--dry-run] [--yes]";
 const jobQuery = ".jobs[] | {labels, status, conclusion, started_at, completed_at}";
 
 export interface Proc {
@@ -93,12 +96,15 @@ export interface Entry {
 	readonly rustTargets: string;
 	readonly rustKey: string;
 	readonly rustWorkspaces: string;
+	// A partial run's test files, space-separated; "" runs the whole heavy tier.
+	readonly tests: string;
 }
 
 export interface Plan {
 	readonly spikes: readonly string[];
 	readonly os: readonly string[];
 	readonly node: string;
+	readonly tests: readonly string[];
 	readonly entries: readonly Entry[];
 }
 
@@ -161,6 +167,7 @@ function strings(
 	where: string,
 	problems: string[],
 	required = false,
+	refusal = "is unknown or malformed",
 ): string[] {
 	if (value === undefined && !required) return [];
 	if (!Array.isArray(value) || (required && value.length === 0)) {
@@ -170,10 +177,37 @@ function strings(
 	const count = problems.length;
 	for (const [index, item] of value.entries()) {
 		if (typeof item !== "string" || !test(item)) {
-			problems.push(`${where}: ${JSON.stringify(item)} is unknown or malformed`);
+			problems.push(`${where}: ${JSON.stringify(item)} ${refusal}`);
 		} else if (value.indexOf(item) !== index) problems.push(`${where} lists ${item} twice`);
 	}
 	return problems.length === count ? (value as string[]) : [];
+}
+
+// A partial run's heavy test files, as the request names them; [] runs them all.
+function testList(value: unknown, problems: string[]): string[] {
+	if (value === undefined) return [];
+	if (Array.isArray(value) && value.length > maxTests) {
+		problems.push(`tests: at most ${maxTests} files, not ${value.length}`);
+		return [];
+	}
+	const refusal = "isn't test/<name>.heavy.test.ts, with <name> of a-z, 0-9 and dashes";
+	return strings(value, (file) => valid.test.test(file), "tests", problems, true, refusal);
+}
+
+// Vitest reads each test file as a filter and runs every heavy file whose path holds it, so each
+// one must be a committed heavy file of the spike that holds no other.
+function checkTests(tests: readonly string[], dir: string, files: readonly string[]): string[] {
+	const folder = `spikes/${dir}/`;
+	const heavy = files
+		.filter((file) => file.startsWith(folder) && file.endsWith(".heavy.test.ts"))
+		.map((file) => file.slice(folder.length));
+	return tests.flatMap((test) => {
+		if (!heavy.includes(test)) return [`tests: ${folder}${test} isn't a committed file`];
+		const also = heavy.filter((file) => file !== test && file.toLowerCase().includes(test));
+		return also.length === 0
+			? []
+			: [`tests: ${test} would also run ${also.map((file) => folder + file).join(", ")}`];
+	});
 }
 
 function settings(raw: unknown, where: string, os: string, problems: string[]): Settings | null {
@@ -263,7 +297,13 @@ function rustWorkspaces(tree: Tree, files: readonly string[], dir: string): stri
 	return [...roots, ...packages].sort();
 }
 
-function entry(spike: string, os: string, setup: Settings, workspaces: readonly string[]): Entry {
+function entry(
+	spike: string,
+	os: string,
+	setup: Settings,
+	workspaces: readonly string[],
+	tests: readonly string[],
+): Entry {
 	const targets = setup.rust?.targets ?? [];
 	return {
 		spike,
@@ -279,28 +319,39 @@ function entry(spike: string, os: string, setup: Settings, workspaces: readonly 
 		rustTargets: targets.join(","),
 		rustKey: [spike, ...targets].join("-"),
 		rustWorkspaces: setup.rust ? workspaces.join("\n") : "",
+		tests: tests.join(" "),
 	};
 }
 
-function hasHeavyTests(tree: Tree, dir: string): boolean {
+function heavyScript(tree: Tree, dir: string): unknown {
 	try {
 		const manifest: unknown = JSON.parse(tree.read(`spikes/${dir}/package.json`) ?? "");
-		return isObject(manifest) && isObject(manifest.scripts) && !!manifest.scripts["test:heavy"];
+		return isObject(manifest) && isObject(manifest.scripts) ? manifest.scripts["test:heavy"] : null;
 	} catch {
-		return false;
+		return null;
 	}
 }
 
-// Validates a request ({ spikes, os, node }) and each spike's ci.json; any problem throws.
+// A partial run's files follow pnpm's `--`. The kit's runner reads its flags across it and hands
+// the files to Vitest as filters; Vitest takes nothing after a `--` as a filter, so runs them all.
+const kitRun = "node ../kit/run.ts --heavy";
+const runsKit = (dir: string, script: unknown): boolean =>
+	script === kitRun || (dir === "kit" && script === "node run.ts --heavy");
+
+// Validates a request ({ spikes, os, node, tests? }) and each spike's ci.json; any problem throws.
 export function planRun(request: unknown, tree: Tree): Plan {
 	const problems: string[] = [];
 	const value = isObject(request) ? request : {};
-	unknownKeys(value, ["spikes", "os", "node"], "the request", problems);
+	unknownKeys(value, ["spikes", "os", "node", "tests"], "the request", problems);
 	const ids = strings(value.spikes, (id) => valid.spike.test(id), "spikes", problems, true);
 	const labels = strings(value.os, (os) => runners.includes(os), "os", problems, true);
 	if (labels.length === 0) problems.push(`os: the runners are ${runners.join(", ")}`);
 	const node = typeof value.node === "string" ? value.node : "";
 	if (!nodeChoices.includes(node)) problems.push(`node must be ${nodeChoices.join(", ")}`);
+	const tests = testList(value.tests, problems);
+	if (value.tests !== undefined && ids.length > 1) {
+		problems.push(`tests: allowed only with exactly one spike, not ${ids.join(", ")}`);
+	}
 	const files = tree.files("spikes");
 	const folders = files.flatMap((file) => /^spikes\/([^/]+)\/package\.json$/.exec(file)?.[1] ?? []);
 	const spikes: string[] = [];
@@ -315,8 +366,13 @@ export function planRun(request: unknown, tree: Tree): Plan {
 	}
 	const entries: Entry[] = [];
 	for (const dir of spikes) {
-		if (!hasHeavyTests(tree, dir)) {
+		const script = heavyScript(tree, dir);
+		if (!script) {
 			problems.push(`spikes/${dir}/package.json has no test:heavy script, which spikes.yml runs`);
+		} else if (tests.length > 0 && !runsKit(dir, script)) {
+			problems.push(
+				`tests: spikes/${dir}/package.json's test:heavy isn't "${kitRun}", which hands the files to Vitest`,
+			);
 		}
 		const ci = readCi(tree, dir, problems);
 		if (!ci) continue;
@@ -329,11 +385,13 @@ export function planRun(request: unknown, tree: Tree): Plan {
 				);
 			} else if (setup.rust && workspaces.length === 0) {
 				problems.push(`spikes/${dir}/ci.json: rust on ${os}, but spikes/${dir} has no Cargo.toml`);
-			} else entries.push(entry(dir, os, setup, workspaces));
+			} else entries.push(entry(dir, os, setup, workspaces, tests));
 		}
 	}
+	const [only] = spikes;
+	if (only !== undefined && spikes.length === 1) problems.push(...checkTests(tests, only, files));
 	if (problems.length > 0) throw new PlanError(problems);
-	return { spikes, os: labels, node, entries };
+	return { spikes, os: labels, node, tests, entries };
 }
 
 // Each job's timeout times its runner's rate, plus a minute for plan.
@@ -353,10 +411,13 @@ function setupOf(job: Entry): string {
 	return parts.filter(Boolean).join("; ") || "none";
 }
 
+const onlyTests = (plan: Plan, separator: string): string =>
+	plan.tests.length > 0 ? `${separator}only ${plan.tests.join(", ")}` : "";
+
 export function describePlan(plan: Plan): string[] {
 	const jobs = plan.entries.length;
 	return [
-		`spikes-run: ${jobs} job${jobs === 1 ? "" : "s"}, node ${plan.node}, at most ${worstCase(plan)} billed minutes (timeouts x runner rates, plus 1 for plan)`,
+		`spikes-run: ${jobs} job${jobs === 1 ? "" : "s"}, node ${plan.node}, at most ${worstCase(plan)} billed minutes (timeouts x runner rates, plus 1 for plan)${onlyTests(plan, "; ")}`,
 		...plan.entries.map(
 			(job) =>
 				`  ${job.spike} on ${job.os}: up to ${job.timeout} min x ${job.rate}; ${setupOf(job)}`,
@@ -375,11 +436,14 @@ function planSummary(plan: Plan): string {
 		),
 		"",
 		`Node: ${plan.node}. At most ${worstCase(plan)} billed minutes (each timeout times its runner's rate, plus 1 for plan); each job's summary has its estimate.`,
+		...(plan.tests.length > 0
+			? ["", `Only these test files run: ${plan.tests.map((file) => `\`${file}\``).join(", ")}.`]
+			: []),
 	].join("\n");
 }
 
 // spikes.yml's plan step: the request comes from the pushed spikes/run.json, or after the gate
-// from workflow_dispatch inputs (RUN_SPIKES, RUN_OS, RUN_NODE).
+// from workflow_dispatch inputs (RUN_SPIKES, RUN_OS, RUN_NODE, RUN_TESTS).
 export function planStep(tree: Tree, env: NodeJS.ProcessEnv, log: (line: string) => void): number {
 	const fail = (line: string): number => {
 		log(`${env.GITHUB_ACTIONS === "true" ? "::error::" : ""}spikes-run: ${line}`);
@@ -388,7 +452,14 @@ export function planStep(tree: Tree, env: NodeJS.ProcessEnv, log: (line: string)
 	let request: unknown;
 	if (env.GITHUB_EVENT_NAME === "workflow_dispatch") {
 		const [spikes, os] = [split(env.RUN_SPIKES ?? ""), split(env.RUN_OS ?? "")];
-		request = { spikes, os, node: env.RUN_NODE ?? "" };
+		const fields = { spikes, os, node: env.RUN_NODE ?? "" };
+		const raw = env.RUN_TESTS ?? "";
+		const tests = split(raw);
+		// An empty input runs the whole tier; separators alone are refused, as --tests refuses them.
+		if (raw !== "" && tests.length === 0) {
+			return fail("tests names no test file; leave it empty to run the whole heavy tier");
+		}
+		request = tests.length > 0 ? { ...fields, tests } : fields;
 	} else {
 		const text = tree.read(runFile);
 		if (text === undefined) return fail(`${runFile} is missing: start runs with pnpm spikes:run`);
@@ -473,6 +544,8 @@ export interface Cli {
 	readonly spikes: readonly string[];
 	readonly os: readonly string[];
 	readonly node: string;
+	// Heavy test files of the one spike to run instead of all of them.
+	readonly tests: readonly string[];
 	readonly dryRun: boolean;
 	// The owner's OK to run although this month's billed minutes reach prChecksOnlyFrom.
 	readonly yes: boolean;
@@ -482,6 +555,7 @@ const cliOptions = {
 	spikes: { type: "string" },
 	os: { type: "string" },
 	node: { type: "string" },
+	tests: { type: "string" },
 	"dry-run": { type: "boolean" },
 	yes: { type: "boolean" },
 	plan: { type: "boolean" },
@@ -501,7 +575,7 @@ function tokens(argv: readonly string[]) {
 // bare argument continues the list before it. A leading `--` (pnpm from bash or cmd) is ignored.
 export function parseCli(argv: readonly string[]): Cli {
 	const parsed = tokens(argv);
-	const lists: Record<string, string[]> = { spikes: [], os: [] };
+	const lists: Record<string, string[]> = { spikes: [], os: [], tests: [] };
 	let list: string[] | undefined;
 	for (const token of parsed.tokens) {
 		if (token.kind === "option") list = lists[token.name];
@@ -512,12 +586,16 @@ export function parseCli(argv: readonly string[]): Cli {
 	}
 	const { values } = parsed;
 	const mode = values.plan ? "plan" : values["check-evidence"] ? "check-evidence" : "run";
-	const [spikes = [], os = []] = [lists.spikes, lists.os];
+	const [spikes = [], os = [], tests = []] = [lists.spikes, lists.os, lists.tests];
 	if (mode === "run" && (spikes.length === 0 || os.length === 0)) {
 		throw new UsageError(`--spikes and --os are required\n${usage}`);
 	}
+	// An empty --tests (an unset variable, say) would otherwise run the whole heavy tier.
+	if (values.tests !== undefined && tests.length === 0) {
+		throw new UsageError(`--tests names no test file\n${usage}`);
+	}
 	const [dryRun, yes] = [values["dry-run"] === true, values.yes === true];
-	return { mode, spikes, os, node: values.node ?? "both", dryRun, yes };
+	return { mode, spikes, os, node: values.node ?? "both", tests, dryRun, yes };
 }
 
 export function stamp(date: Date): string {
@@ -853,9 +931,10 @@ function deleteBranch(git: Run, ref: string, log: (line: string) => void): boole
 export async function runOnGitHub(cli: Cli, deps: Deps): Promise<number> {
 	const { git, gh, log } = deps;
 	const tree = gitTree(git, "HEAD");
+	const fields = { spikes: cli.spikes, os: cli.os, node: cli.node };
 	let plan: Plan;
 	try {
-		plan = planRun({ spikes: cli.spikes, os: cli.os, node: cli.node }, tree);
+		plan = planRun(cli.tests.length > 0 ? { ...fields, tests: cli.tests } : fields, tree);
 	} catch (error) {
 		if (!(error instanceof PlanError)) throw error;
 		for (const problem of error.problems) log(`spikes-run: ${problem}`);
@@ -869,7 +948,10 @@ export async function runOnGitHub(cli: Cli, deps: Deps): Promise<number> {
 	const branch = ok(git(["rev-parse", "--abbrev-ref", "HEAD"]), "git rev-parse").trim();
 	const name = branch === "HEAD" ? `detached-${head.slice(0, 8)}` : branch;
 	const ref = `spikes-run/${refPart(name)}-${stamp(deps.now())}`;
-	const runJson = `${JSON.stringify({ spikes: plan.spikes, os: plan.os, node: plan.node }, null, 2)}\n`;
+	// "tests" only for a partial run, so a full run's spikes/run.json stays as it always was.
+	const request = { spikes: plan.spikes, os: plan.os, node: plan.node };
+	const runFields = plan.tests.length > 0 ? { ...request, tests: plan.tests } : request;
+	const runJson = `${JSON.stringify(runFields, null, 2)}\n`;
 	if (cli.dryRun) {
 		log(`spikes-run: dry run; would push HEAD plus this ${runFile} to ${ref}:\n${runJson}`);
 		return 0;
@@ -880,7 +962,7 @@ export async function runOnGitHub(cli: Cli, deps: Deps): Promise<number> {
 	checkGh(gh, repo);
 	if (!(await withinBudget(deps, repo, plan, cli.yes))) return 1;
 	warnUncommitted(git, log);
-	const title = `ci(spikes-run): ${plan.spikes.join(", ")} on ${plan.os.join(", ")}, node ${plan.node}`;
+	const title = `ci(spikes-run): ${plan.spikes.join(", ")} on ${plan.os.join(", ")}, node ${plan.node}${onlyTests(plan, ", ")}`;
 	const commit = throwawayCommit(git, head, runJson, title);
 
 	let signal: string | undefined;
@@ -931,6 +1013,11 @@ export async function runOnGitHub(cli: Cli, deps: Deps): Promise<number> {
 		const run = await poll(deps, checkpoint, [15_000, minutes * 4], ended, late);
 		completed = true;
 		log(`spikes-run: run ${id}: ${run.conclusion} (${run.url})`);
+		if (plan.tests.length > 0) {
+			log(
+				`spikes-run: it ran ${onlyTests(plan, "")}; the spike's other evidence files stay as they are`,
+			);
+		}
 		log(billedMinutes(gh, repo, id));
 		pushed = !deleteBranch(git, ref, log);
 		const written = collectEvidence(deps, repo, id, plan);
