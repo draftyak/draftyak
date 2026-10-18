@@ -2,20 +2,20 @@ import { EventEmitter } from "node:events";
 import type { RequestOptions } from "node:https";
 import { mock } from "node:test";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { resolvePublic } from "../../src/mcp/client-metadata/addresses.ts";
-import { MetadataCache } from "../../src/mcp/client-metadata/cache.ts";
-import { getPinnedMetadata } from "../../src/mcp/client-metadata/https.ts";
+import { resolvePublic } from "../../src/oauth-as/client-metadata/addresses.ts";
+import { MetadataCache } from "../../src/oauth-as/client-metadata/cache.ts";
+import { getPinnedMetadata } from "../../src/oauth-as/client-metadata/https.ts";
 import {
 	ClientMetadataFetcher,
 	type ClientMetadataOptions,
-} from "../../src/mcp/client-metadata/index.ts";
+} from "../../src/oauth-as/client-metadata/index.ts";
 import {
 	CIMD_MAX_BYTES,
 	CIMD_TIMEOUT_MS,
 	JWKS_TIMEOUT_MS,
 	METADATA_MAX_BYTES,
-} from "../../src/mcp/client-metadata/limits.ts";
-import { metadataUrl } from "../../src/mcp/client-metadata/policy.ts";
+} from "../../src/oauth-as/client-metadata/limits.ts";
+import { metadataUrl } from "../../src/oauth-as/client-metadata/policy.ts";
 
 const fake = vi.hoisted(() => ({
 	request: vi.fn(),

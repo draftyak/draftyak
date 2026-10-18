@@ -1,7 +1,4 @@
 import { expect, it, vi } from "vitest";
-import { canonicalAddress, validateAnswers } from "../../src/mcp/client-metadata/addresses.ts";
-import { getPinnedMetadata } from "../../src/mcp/client-metadata/https.ts";
-import { MetadataDestinations, metadataUrl } from "../../src/mcp/client-metadata/policy.ts";
 import {
 	captureEgressPolicy,
 	type EgressPolicy,
@@ -12,6 +9,9 @@ import {
 } from "../../src/net/addresses.ts";
 import { createPinnedHttpsConnection } from "../../src/net/pinned-https.ts";
 import { withNetworkTestHooks } from "../../src/net/test-context.ts";
+import { canonicalAddress, validateAnswers } from "../../src/oauth-as/client-metadata/addresses.ts";
+import { getPinnedMetadata } from "../../src/oauth-as/client-metadata/https.ts";
+import { MetadataDestinations, metadataUrl } from "../../src/oauth-as/client-metadata/policy.ts";
 
 vi.mock("node:os", () => ({
 	networkInterfaces: () => ({

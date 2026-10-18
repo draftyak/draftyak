@@ -66,6 +66,11 @@ monotonic-clock checks and return fresh owned bytes. Failed refreshes never
 fall back to stale data. The cache retains no headers, credentials or parsed
 authorization decision. A monotonic rollback permanently closes the instance.
 
+Eligible untrusted bytes inserted before the native operation's deadline can
+remain cached if the originating caller later fails its final copy/deadline
+check. Every later caller still repeats its own current checks; this cannot
+extend freshness or accept a document. A closed instance cannot be refilled.
+
 ## Native ingress observations
 
 The L3 helpers are unmounted. `createPeerPolicy` is an additional native-address

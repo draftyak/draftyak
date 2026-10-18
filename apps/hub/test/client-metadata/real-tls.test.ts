@@ -5,12 +5,12 @@ import { createServer, type Server } from "node:https";
 import type { AddressInfo, Socket } from "node:net";
 import { gzipSync } from "node:zlib";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
-import { getPinnedMetadata } from "../../src/mcp/client-metadata/https.ts";
-import { ClientMetadataFetcher } from "../../src/mcp/client-metadata/index.ts";
-import { CIMD_MAX_BYTES, METADATA_MAX_BYTES } from "../../src/mcp/client-metadata/limits.ts";
-import { type MetadataKind, metadataUrl } from "../../src/mcp/client-metadata/policy.ts";
 import type { PinnedAddress } from "../../src/net/addresses.ts";
 import { type NetworkTestHooks, withNetworkTestHooks } from "../../src/net/test-context.ts";
+import { getPinnedMetadata } from "../../src/oauth-as/client-metadata/https.ts";
+import { ClientMetadataFetcher } from "../../src/oauth-as/client-metadata/index.ts";
+import { CIMD_MAX_BYTES, METADATA_MAX_BYTES } from "../../src/oauth-as/client-metadata/limits.ts";
+import { type MetadataKind, metadataUrl } from "../../src/oauth-as/client-metadata/policy.ts";
 import { createMetadataTlsFixture, type MetadataTlsFixture } from "../helpers/metadata-tls.ts";
 
 let tls: MetadataTlsFixture;

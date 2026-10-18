@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
 	ClientMetadataFetcher,
 	type ClientMetadataOptions,
-} from "../../src/mcp/client-metadata/index.ts";
-import { configData, MetadataDestinations } from "../../src/mcp/client-metadata/policy.ts";
+} from "../../src/oauth-as/client-metadata/index.ts";
+import { configData, MetadataDestinations } from "../../src/oauth-as/client-metadata/policy.ts";
 
 const ENVELOPE = 9 * 1024 * 1024;
 afterEach(() => vi.restoreAllMocks());

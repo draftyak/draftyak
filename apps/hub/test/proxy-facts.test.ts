@@ -5,7 +5,7 @@ import {
 	MAX_PUBLIC_HEADER_BYTES,
 	MAX_PUBLIC_HEADER_FIELDS,
 	PublicRequestFactsError,
-} from "../src/mcp/proxy-facts.ts";
+} from "../src/listeners/l3/proxy-facts.ts";
 
 const origin = "https://hub.example:8443";
 const host = "hub.example:8443";

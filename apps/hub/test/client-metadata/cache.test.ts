@@ -6,8 +6,8 @@ import {
 	METADATA_CACHE_MAX_TTL_MS,
 	MetadataCache,
 	metadataCacheTtl,
-} from "../../src/mcp/client-metadata/cache.ts";
-import { CIMD_MAX_BYTES, METADATA_MAX_BYTES } from "../../src/mcp/client-metadata/limits.ts";
+} from "../../src/oauth-as/client-metadata/cache.ts";
+import { CIMD_MAX_BYTES, METADATA_MAX_BYTES } from "../../src/oauth-as/client-metadata/limits.ts";
 
 const wall = Date.UTC(2026, 9, 18, 12);
 const date = new Date(wall).toUTCString();

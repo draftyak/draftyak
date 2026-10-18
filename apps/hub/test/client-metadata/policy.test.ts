@@ -3,16 +3,16 @@ import {
 	canonicalAddress,
 	publicAddress,
 	validateAnswers,
-} from "../../src/mcp/client-metadata/addresses.ts";
+} from "../../src/oauth-as/client-metadata/addresses.ts";
 import {
 	ClientMetadataFetcher,
 	type ClientMetadataOptions,
-} from "../../src/mcp/client-metadata/index.ts";
+} from "../../src/oauth-as/client-metadata/index.ts";
 import {
 	type MetadataDestinationRule,
 	MetadataDestinations,
 	metadataUrl,
-} from "../../src/mcp/client-metadata/policy.ts";
+} from "../../src/oauth-as/client-metadata/policy.ts";
 
 const rules: readonly MetadataDestinationRule[] = [
 	{

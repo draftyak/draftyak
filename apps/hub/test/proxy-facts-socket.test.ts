@@ -8,7 +8,7 @@ import {
 	MAX_PUBLIC_HEADER_BYTES,
 	type PublicRequestFacts,
 	PublicRequestFactsError,
-} from "../src/mcp/proxy-facts.ts";
+} from "../src/listeners/l3/proxy-facts.ts";
 import { createMetadataTlsFixture } from "./helpers/metadata-tls.ts";
 
 const origin = "https://hub.example:8443";

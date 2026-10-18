@@ -1,6 +1,10 @@
 import { BlockList } from "node:net";
 import { describe, expect, it } from "vitest";
-import { createPeerPolicy, MAX_PEER_CIDRS, PeerPolicyError } from "../src/mcp/peer-policy.ts";
+import {
+	createPeerPolicy,
+	MAX_PEER_CIDRS,
+	PeerPolicyError,
+} from "../src/listeners/l3/peer-policy.ts";
 
 describe("native socket CIDR filter", () => {
 	it("distinguishes an omitted filter from an explicitly empty allowlist", () => {
