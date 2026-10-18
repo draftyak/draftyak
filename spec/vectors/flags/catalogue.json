@@ -1,0 +1,70 @@
+{
+  "format": "draftyak.vectors.flags.v1",
+  "description": "The flag catalogue in order: every code with its severity. A flag with a severity other than its code's is refused (FLAGS_INVALID).",
+  "codes": [
+    {
+      "code": "NEW_RECIPIENT",
+      "severity": "ack"
+    },
+    {
+      "code": "RECIPIENT_ADDED_BY_AGENT",
+      "severity": "ack"
+    },
+    {
+      "code": "REPLY_TO_REDIRECT",
+      "severity": "ack"
+    },
+    {
+      "code": "AGENT_AUTHORED",
+      "severity": "ack"
+    },
+    {
+      "code": "DMARC_FAIL",
+      "severity": "ack"
+    },
+    {
+      "code": "EXTERNAL_LINK",
+      "severity": "ack"
+    },
+    {
+      "code": "AGENT_INSERTED_CONTACT",
+      "severity": "ack"
+    },
+    {
+      "code": "ATTACHMENT_ADDED_BY_AGENT",
+      "severity": "ack"
+    },
+    {
+      "code": "INVISIBLE_CHARS",
+      "severity": "ack"
+    },
+    {
+      "code": "MASS_MENTION",
+      "severity": "ack"
+    },
+    {
+      "code": "CROSS_THREAD_DATA",
+      "severity": "ack"
+    },
+    {
+      "code": "SECRET_PATTERN",
+      "severity": "ack"
+    },
+    {
+      "code": "SUSPECTED_INSTRUCTIONS",
+      "severity": "advisory"
+    },
+    {
+      "code": "TOOL_DATA_IN_BODY",
+      "severity": "ack"
+    },
+    {
+      "code": "TOOL_CONTEXT_USED",
+      "severity": "info"
+    },
+    {
+      "code": "TOOL_INSTRUCTIONS",
+      "severity": "advisory"
+    }
+  ]
+}
