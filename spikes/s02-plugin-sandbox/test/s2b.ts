@@ -9,7 +9,9 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import type { Readable, Writable } from "node:stream";
 import { buildArgv } from "../src/argv.ts";
+import { openFifoStdio } from "../src/fifo-stdio.ts";
 import type { ViolationKind } from "../src/host-channel.ts";
 import {
 	execArgvFor,
@@ -174,8 +176,9 @@ export interface FixtureSpawnSpec extends Pick<SpawnPluginSpec, "runtime" | "run
 	readonly grantData?: boolean;
 	readonly entry: string;
 	readonly entryArgs?: readonly string[];
-	// Default: the production layout (PLUGIN_STDIO with the child's IPC channel on fd 3).
-	readonly stdio?: readonly Fd[];
+	// Default: the production layout (PLUGIN_STDIO with the child's IPC channel on fd 3). A number
+	// is a descriptor the child inherits there, such as the plugin's end of a FIFO.
+	readonly stdio?: readonly (Fd | number)[];
 	// false: no NODE_CHANNEL_* for the child, as for a plain pipe or Node's own stdio 'ipc'.
 	readonly channel?: boolean;
 	readonly dropFreezeFlag?: boolean;
@@ -302,31 +305,53 @@ type McpReply = {
 
 // The template plugin over MCP stdio under the production argv: server/discover, tools/list, and
 // tools/call with valid and invalid input on the zod tool (echo) and the cf-worker tool (count).
+// "pipe" is the layout S2 tested (spawnPlugin, with the fd-3 channel); "fallback1" is Fallback 1's
+// (spawn's three pipes, no fd 3, no NODE_CHANNEL_*), and "fifo" the same on FIFOs (remedy (f)).
 export async function runTemplatePlugin(
 	nodeBin: string,
 	bundleDir: string,
 	dataDir: string,
+	stdio: "pipe" | "fallback1" | "fifo" = "pipe",
 ): Promise<TemplateResult> {
-	const child = spawnPlugin({
-		nodeBin,
-		pluginDir: bundleDir,
-		dataDir,
-		pluginId: "s02-template",
-		instanceId: "template",
-		entry: path.join(bundleDir, "plugin.mjs"),
-	});
+	const entry = path.join(bundleDir, "plugin.mjs");
+	const fifo = stdio === "fifo" ? await openFifoStdio(2) : null;
+	let child: ChildProcess;
+	try {
+		child =
+			stdio === "pipe"
+				? spawnPlugin({
+						nodeBin,
+						pluginDir: bundleDir,
+						dataDir,
+						pluginId: "s02-template",
+						instanceId: "template",
+						entry,
+					})
+				: spawnFixture({
+						nodeBin,
+						pluginDir: bundleDir,
+						dataDir,
+						entry,
+						stdio: fifo?.pluginFds ?? ["pipe", "pipe", "pipe"],
+						channel: false,
+					});
+	} catch (error) {
+		fifo?.destroy();
+		throw error;
+	}
+	fifo?.releasePluginEnds();
+	const input = (fifo?.input ?? child.stdin) as Writable;
+	const output = (fifo?.outputs[0] ?? child.stdout) as Readable;
+	(fifo?.outputs[1] ?? child.stderr)?.resume();
 	const meta = {
 		"io.modelcontextprotocol/protocolVersion": "2026-07-28",
 		"io.modelcontextprotocol/clientCapabilities": {},
 	};
-	child.stderr?.resume();
-	const lines = createInterface({ input: child.stdout as NodeJS.ReadableStream })[
-		Symbol.asyncIterator
-	]();
+	const lines = createInterface({ input: output })[Symbol.asyncIterator]();
 	let nextId = 0;
 	const ask = async (method: string, params: object = {}): Promise<McpReply> => {
 		const id = ++nextId;
-		child.stdin?.write(
+		input.write(
 			`${JSON.stringify({ jsonrpc: "2.0", id, method, params: { ...params, _meta: meta } })}\n`,
 		);
 		const deadline = setTimeout(() => child.kill("SIGKILL"), 20_000);
@@ -368,6 +393,7 @@ export async function runTemplatePlugin(
 		};
 	} finally {
 		child.kill("SIGKILL");
+		fifo?.destroy();
 	}
 }
 
@@ -623,7 +649,7 @@ export interface ControlResult {
 	readonly plugin: readonly Record<string, unknown>[];
 }
 
-const died = (run: HubRun<unknown>): string =>
+export const died = (run: HubRun<unknown>): string =>
 	`the hub died (${run.crash ?? "unknown"}, exit ${run.exitCode ?? run.signal ?? "?"}${run.timedOut ? ", timed out" : ""})`;
 
 export function channelProblem(run: HubRun<ChannelResult>): string | null {

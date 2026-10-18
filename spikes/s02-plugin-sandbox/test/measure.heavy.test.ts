@@ -14,6 +14,7 @@ import {
 	stageForDocker,
 } from "@draftyak/spike-kit";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
+import { type SpawnCostOutcome, spawnCostOrError } from "./fifo.ts";
 import {
 	busyReport,
 	FAST_INTERVAL_MS,
@@ -123,6 +124,9 @@ interface Benchmarks {
 	readonly lock: { readonly waitedMs: number; readonly idle: unknown };
 	readonly samplingCost: readonly SamplingCost[];
 	readonly rehash: readonly RehashCost[];
+	// FIFO stdio (remedy (f)) against libuv's socketpairs, or the code it failed with (best-effort:
+	// it never fails the benchmark); null on Windows, which has no FIFOs.
+	readonly spawnCost: SpawnCostOutcome | null;
 }
 
 function hostSuite(
@@ -208,7 +212,15 @@ function hostSuite(
 					measureRehash("synthetic-16MiB", makeTree(path.join(root, "tree-16"), 16 * MIB)),
 					measureRehash("template-bundle", bundle),
 				];
-				benchmarks = { lock: { waitedMs: lock.waitedMs, idle: lock.idle }, samplingCost, rehash };
+				const bundled = NODES.at(-1) as string;
+				const spawnCost =
+					platform === "win32" ? null : await spawnCostOrError(at(bundled), bundled);
+				benchmarks = {
+					lock: { waitedMs: lock.waitedMs, idle: lock.idle },
+					samplingCost,
+					rehash,
+					spawnCost,
+				};
 				const killCost = samplingCost.find((c) => c.method === killSamplerFor(platform).method);
 				expect(killCost?.available, "the kill sampler read the plugin").toBe(true);
 			} finally {
@@ -277,7 +289,9 @@ describe("Linux Docker RSS watchdog and sampler cost", () => {
 	const images = path.resolve(spikeDir, "..", "..", "tools", "fetch-node", "images.json");
 	let image = "";
 	let memoryRun: { kills: KillOutcome[]; untouched: UntouchedOutcome[] } | undefined;
-	let cost: { lock: Benchmarks["lock"]; samplingCost: SamplingCost[] } | undefined;
+	let cost:
+		| { lock: Benchmarks["lock"]; samplingCost: SamplingCost[]; spawnCost: SpawnCostOutcome | null }
+		| undefined;
 
 	afterAll(async () => {
 		if (memoryRun === undefined && cost === undefined) return;
@@ -320,7 +334,14 @@ describe("Linux Docker RSS watchdog and sampler cost", () => {
 		using stage = stageForDocker({
 			name: "s02-s2b-measure",
 			from: spikeDir,
-			files: ["src", "fixtures/s2b", "test/s2b.ts", "test/memory.ts", "test/docker-runner-s2b.ts"],
+			files: [
+				"src",
+				"fixtures/s2b",
+				"test/s2b.ts",
+				"test/memory.ts",
+				"test/fifo.ts",
+				"test/docker-runner-s2b.ts",
+			],
 		});
 		const nodes = labels.map((label, i) => ({ bin: `/opt/n${i}`, label }));
 		const result = await runInDocker({
@@ -351,10 +372,16 @@ describe("Linux Docker RSS watchdog and sampler cost", () => {
 	}, async (ctx: TestContext) => {
 		await needDocker(ctx);
 		using lock = await benchLock("s2b-measure-docker", ctx.signal);
-		const [node] = await runner<{ costs: SamplingCost[] }>(ctx, "sampler-cost", [
-			NODES.at(-1) as string,
-		]);
-		cost = { lock: { waitedMs: lock.waitedMs, idle: lock.idle }, samplingCost: node?.costs ?? [] };
+		const [node] = await runner<{ costs: SamplingCost[]; spawnCost: SpawnCostOutcome }>(
+			ctx,
+			"sampler-cost",
+			[NODES.at(-1) as string],
+		);
+		cost = {
+			lock: { waitedMs: lock.waitedMs, idle: lock.idle },
+			samplingCost: node?.costs ?? [],
+			spawnCost: node?.spawnCost ?? null,
+		};
 		const killCost = cost.samplingCost.find((c) => c.method === killSamplerFor("linux").method);
 		expect(killCost?.available, "VmRSS read the plugin").toBe(true);
 	});

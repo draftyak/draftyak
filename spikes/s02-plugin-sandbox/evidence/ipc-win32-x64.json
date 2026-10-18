@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T02:18:25.477Z",
+  "recordedAt": "2026-10-18T16:25:38.064Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,14 +11,14 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "96f958d02f293dd311fa3c94bee8efd641116545",
+    "commit": "888d1a9d15f3c3dcab7e64d3af9535c5a08cbd2a",
     "dirty": false,
     "load": {
-      "cpuPercent": 15.9,
+      "cpuPercent": 93.6,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 74.6,
-      "concurrentBuilds": 0
+      "memoryUsedPercent": 84.6,
+      "concurrentBuilds": 8
     }
   },
   "data": {
@@ -206,7 +206,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 53,
+              "exitMs": 193,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -238,7 +238,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 54,
+              "exitMs": 80,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -270,7 +270,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 55,
+              "exitMs": 62,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -302,7 +302,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 56,
+              "exitMs": 59,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -338,7 +338,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 60,
+              "exitMs": 83,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -370,7 +370,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 58,
+              "exitMs": 100,
               "auditCount": 0,
               "fds": null,
               "plugin": []
@@ -392,7 +392,7 @@
                 "signal": null,
                 "closed": true
               },
-              "exitMs": 3067,
+              "exitMs": 3200,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -404,7 +404,19 @@
                   "mode": "handle-send",
                   "attempted": 10,
                   "failed": 10,
-                  "code": "ENOTSUP"
+                  "code": "ENOTSUP",
+                  "sendStatus": [
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP"
+                  ]
                 }
               ]
             }
@@ -430,7 +442,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 54,
+              "exitMs": 284,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -462,7 +474,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 57,
+              "exitMs": 126,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -494,7 +506,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 55,
+              "exitMs": 157,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -577,7 +589,19 @@
                   "mode": "handle-send",
                   "attempted": 10,
                   "failed": 10,
-                  "code": "ENOTSUP"
+                  "code": "ENOTSUP",
+                  "sendStatus": [
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP"
+                  ]
                 }
               ]
             }
@@ -741,7 +765,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 57,
+              "exitMs": 143,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -773,7 +797,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 56,
+              "exitMs": 122,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -805,7 +829,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 53,
+              "exitMs": 171,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -837,7 +861,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 57,
+              "exitMs": 238,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -873,7 +897,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 71,
+              "exitMs": 241,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -905,7 +929,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 55,
+              "exitMs": 348,
               "auditCount": 0,
               "fds": null,
               "plugin": []
@@ -927,7 +951,7 @@
                 "signal": null,
                 "closed": true
               },
-              "exitMs": 3062,
+              "exitMs": 3258,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -939,7 +963,19 @@
                   "mode": "handle-send",
                   "attempted": 10,
                   "failed": 10,
-                  "code": "ENOTSUP"
+                  "code": "ENOTSUP",
+                  "sendStatus": [
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP"
+                  ]
                 }
               ]
             }
@@ -965,7 +1001,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 66,
+              "exitMs": 117,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -997,7 +1033,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 55,
+              "exitMs": 222,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -1029,7 +1065,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 55,
+              "exitMs": 138,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -1112,7 +1148,19 @@
                   "mode": "handle-send",
                   "attempted": 10,
                   "failed": 10,
-                  "code": "ENOTSUP"
+                  "code": "ENOTSUP",
+                  "sendStatus": [
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP",
+                    "ENOTSUP"
+                  ]
                 }
               ]
             }

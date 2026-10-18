@@ -13,6 +13,14 @@ import {
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import { MAX_MESSAGE_BYTES } from "../src/host-channel.ts";
 import { PLUGIN_CHANNEL_ENV, PLUGIN_STDIO } from "../src/spawn.ts";
+import {
+	type Fallback1RoundTripResult,
+	FIFO_MODES,
+	type FifoResult,
+	fallback1RoundTripProblem,
+	fifoProblem,
+	HOST_FRAME_TAG,
+} from "./fifo.ts";
 import { describeFds, fdOf } from "./hub-probes.ts";
 import { evidenceFile, missing, recordEvidence, unmet } from "./record.ts";
 import {
@@ -52,29 +60,134 @@ import {
 	validatorProblem,
 } from "./s2b.ts";
 
-// Fallback 1 holds on a target when no plugin can grow the hub's descriptor count without an IPC
-// channel; the data is the per-Node run, written to its own file so it never depends on the fuzz
+// Fallback 1 on spawn's own pipes, per Node: the hostile reinstate (a plugin that reinstates
+// process.send over stdout and passes a handle must not grow the hub's descriptor count) and the
+// benign round trip and template plugin. Written to its own file, so it never depends on the fuzz
 // finding (which fails on macOS under rule (d)).
+interface Fallback1Node {
+	hostile?: HubRun<Fallback1Result>;
+	roundTrip?: HubRun<Fallback1RoundTripResult>;
+	template?: TemplateResult;
+}
+
+const FALLBACK1_LAYOUT = {
+	stdio:
+		"spawn's three pipes (socketpairs on Linux and macOS, named pipes on Windows); no fd 3 and no NODE_CHANNEL_*",
+	stdoutParser: "lines tagged as host frames or MCP, each lane json-lines under the fd-3 decoder",
+	hostFrameTag: `0x${HOST_FRAME_TAG.toString(16)}`,
+};
+
 function fallback1Evidence(
 	target: string,
-	runs: ReadonlyMap<string, HubRun<Fallback1Result>>,
+	runs: ReadonlyMap<string, Fallback1Node>,
 	nodes: readonly string[],
 ) {
-	const held = nodes.every((v) => {
-		const run = runs.get(v);
-		return run !== undefined && fallback1Problem(run) === null;
-	});
+	const every = (test: (node: Fallback1Node) => boolean): boolean =>
+		nodes.every((v) => {
+			const node = runs.get(v);
+			return node !== undefined && test(node);
+		});
+	const findings = {
+		hubTakesNoDescriptorWithoutAnIpcChannel: every(
+			(node) => node.hostile !== undefined && fallback1Problem(node.hostile) === null,
+		),
+		roundTripsOnSpawnPipes: every(
+			(node) => node.roundTrip !== undefined && fallback1RoundTripProblem(node.roundTrip) === null,
+		),
+		templatePluginServesOnSpawnPipes: every(
+			(node) => node.template !== undefined && templateProblem(node.template) === null,
+		),
+	};
 	return {
 		data: {
 			target,
 			nodes,
-			runs: nodes.map((node) => ({ node, ...(runs.get(node) ?? null) })),
-			findings: { hubTakesNoDescriptorWithoutAnIpcChannel: held },
+			layout: FALLBACK1_LAYOUT,
+			runs: nodes.map((node) => ({
+				node,
+				hostile: runs.get(node)?.hostile ?? null,
+				roundTrip: runs.get(node)?.roundTrip ?? null,
+				template: runs.get(node)?.template ?? null,
+			})),
+			findings,
 		},
-		problems: [
-			...missing("fallback1 node", nodes, runs),
-			...unmet({ hubTakesNoDescriptorWithoutAnIpcChannel: held }),
-		],
+		problems: [...missing("fallback1 node", nodes, runs), ...unmet(findings)],
+	};
+}
+
+interface FifoNode {
+	readonly modes: ReadonlyMap<string, HubRun<FifoResult>>;
+	readonly template: TemplateResult | undefined;
+}
+
+const FIFO_MODE_NAMES = Object.keys(FIFO_MODES);
+const SEND_MODES = FIFO_MODE_NAMES.filter((mode) => FIFO_MODES[mode]?.handlesOver != null);
+const NODE_LINE_MODES = FIFO_MODE_NAMES.filter((mode) => FIFO_MODES[mode]?.violation === "handle");
+const FIFO_LAYOUT = {
+	fifos:
+		"mkfifo -m 600 in a fresh 0700 temp dir, unlinked once both ends are open: no socket joins hub and plugin",
+	stdio: "stdin, stdout and stderr; no fd 3 and no NODE_CHANNEL_* (Fallback 1)",
+	fd3: "the stdio layout plus fd 3, a FIFO the plugin writes, with NODE_CHANNEL_FD=3",
+	stdoutParser: "lines tagged as host frames or MCP, each lane json-lines under the fd-3 decoder",
+	hostFrameTag: `0x${HOST_FRAME_TAG.toString(16)}`,
+	maxMessageBytes: MAX_MESSAGE_BYTES,
+	handleSends:
+		"ten per mode, each ending ENOTSOCK in the plugin, with no byte read by the hub from the FIFO they went over",
+	modes: FIFO_MODES,
+};
+
+// Remedy (f) holds on a target when every FIFO mode and the template plugin pass on every Node;
+// written to its own file whatever the fuzz and Fallback-1 findings (which fail on macOS).
+function fifoEvidence(
+	target: string,
+	runs: ReadonlyMap<string, FifoNode>,
+	nodes: readonly string[],
+) {
+	const every = (test: (node: FifoNode) => boolean): boolean =>
+		nodes.every((v) => {
+			const node = runs.get(v);
+			return node !== undefined && test(node);
+		});
+	const hold =
+		(...modes: string[]) =>
+		(node: FifoNode): boolean =>
+			modes.every((mode) => {
+				const run = node.modes.get(mode);
+				return run !== undefined && fifoProblem(mode, run) === null;
+			});
+	const findings = {
+		roundTripsOnFifoStdio: every(hold("round-trip")),
+		templatePluginServesOnFifoStdio: every(
+			(node) => node.template !== undefined && templateProblem(node.template) === null,
+		),
+		fifosUnlinkedBeforeEverySpawn: every((node) =>
+			FIFO_MODE_NAMES.every((mode) => {
+				const at = node.modes.get(mode)?.result?.beforeSpawn;
+				return at?.folderGone === true && at.unlinkedFifos === at.ends;
+			}),
+		),
+		everyHandleSendFailsWithEnotsock: every(hold(...SEND_MODES)),
+		decoderKillsNodeMessagesOnFifos: every(hold(...NODE_LINE_MODES)),
+		hubDescriptorsHold: every((node) =>
+			FIFO_MODE_NAMES.every((mode) => {
+				const fds = node.modes.get(mode)?.result?.fds;
+				return fds != null && fds.after === fds.before;
+			}),
+		),
+	};
+	return {
+		data: {
+			target,
+			nodes,
+			layout: FIFO_LAYOUT,
+			runs: nodes.map((node) => ({
+				node,
+				modes: [...(runs.get(node)?.modes ?? new Map())].map(([mode, run]) => ({ mode, ...run })),
+				template: runs.get(node)?.template ?? null,
+			})),
+			findings,
+		},
+		problems: [...missing("fifo node", nodes, runs), ...unmet(findings)],
 	};
 }
 
@@ -197,8 +310,14 @@ function hostSuite(
 		const runs = new Map<string, NodeRuns>(
 			NODES.map((v) => [v, { fuzz: new Map(), controls: new Map() }]),
 		);
-		const fallback1 = new Map<string, HubRun<Fallback1Result>>();
+		const fallback1 = new Map<string, Fallback1Node>();
+		const fifo = new Map<string, FifoNode>();
 		const at = (v: string): NodeRuns => runs.get(v) as NodeRuns;
+		const f1 = (v: string): Fallback1Node => {
+			const node = fallback1.get(v) ?? {};
+			fallback1.set(v, node);
+			return node;
+		};
 
 		beforeAll(async () => {
 			if (process.platform !== platform) return;
@@ -220,8 +339,11 @@ function hostSuite(
 				[...missing("node", NODES, planned), ...unmet(data.findings)],
 				data,
 			);
-			const f1 = fallback1Evidence(target, fallback1, NODES);
-			await recordEvidence(evidenceFile("fallback1", target), f1.problems, f1.data);
+			const fb = fallback1Evidence(target, fallback1, NODES);
+			await recordEvidence(evidenceFile("fallback1", target), fb.problems, fb.data);
+			if (platform === "win32") return;
+			const f = fifoEvidence(target, fifo, NODES);
+			await recordEvidence(evidenceFile("fifo", target), f.problems, f.data);
 		});
 
 		const t = (): { tags: string[] } => ({ tags: [`requires:${capTag}`] });
@@ -279,13 +401,68 @@ function hostSuite(
 			"a plugin cannot grow the hub's descriptors without an IPC channel (Fallback 1)",
 			t(),
 			async () => {
+				const problems: string[] = [];
 				for (const v of NODES) {
 					const run = await hub<Fallback1Result>(v, "fallback1");
-					fallback1.set(v, run);
-					expect(fallback1Problem(run), v).toBeNull();
+					f1(v).hostile = run;
+					const problem = fallback1Problem(run);
+					if (problem !== null) problems.push(`${v}: ${problem}`);
 				}
+				expect(problems).toEqual([]);
 			},
 		);
+
+		// Fallback 1's channel itself on spawn's own pipes (the pipes Windows keeps under remedy (f)):
+		// MCP and tagged host frames round-trip with the broker's verdicts, and the template plugin
+		// serves, with no fd 3 and no NODE_CHANNEL_*. Every Node runs before the verdict.
+		it(
+			"Fallback 1 round-trips MCP and host frames on spawn's pipes, and serves the template plugin",
+			t(),
+			async () => {
+				const problems: string[] = [];
+				for (const v of NODES) {
+					const roundTrip = await hub<Fallback1RoundTripResult>(v, "fallback1-round-trip");
+					f1(v).roundTrip = roundTrip;
+					const problem = fallback1RoundTripProblem(roundTrip);
+					if (problem !== null) problems.push(`${v}: ${problem}`);
+					const template = await runTemplatePlugin(
+						bins[v] as string,
+						bundleDir,
+						dataDir(),
+						"fallback1",
+					);
+					f1(v).template = template;
+					const served = templateProblem(template);
+					if (served !== null) problems.push(`${v} template on spawn's pipes: ${served}`);
+				}
+				expect(problems).toEqual([]);
+			},
+		);
+
+		// Remedy (f): the plugin's stdio on FIFOs, which can't carry a descriptor, so every
+		// handle-bearing write fails in the plugin, over fd 3 or a stdout or stderr reinstated with
+		// _forkChild, and the hub's count holds. Every mode and Node runs before the verdict.
+		it(platform === "win32"
+			? "FIFO stdio (remedy (f)) is not run on Windows: it has no FIFOs, and its pipes carry no descriptors"
+			: "on FIFO stdio no plugin can hand the hub a descriptor, over fd 3 or a reinstated stdout or stderr (remedy (f))", {
+			tags: [`requires:${capTag}`, "requires:posix"],
+		}, async () => {
+			const problems: string[] = [];
+			for (const v of NODES) {
+				const modes = new Map<string, HubRun<FifoResult>>();
+				for (const mode of FIFO_MODE_NAMES) {
+					const run = await hub<FifoResult>(v, "fifo", mode);
+					modes.set(mode, run);
+					const problem = fifoProblem(mode, run);
+					if (problem !== null) problems.push(`${v} ${mode}: ${problem}`);
+				}
+				const template = await runTemplatePlugin(bins[v] as string, bundleDir, dataDir(), "fifo");
+				fifo.set(v, { modes, template });
+				const problem = templateProblem(template);
+				if (problem !== null) problems.push(`${v} template on FIFO stdio: ${problem}`);
+			}
+			expect(problems).toEqual([]);
+		});
 
 		it("drops a late reply and a send to a plugin that has exited", t(), async () => {
 			for (const v of NODES) {
@@ -389,6 +566,8 @@ interface DockerNode {
 	readonly channel: HubRun<ChannelResult>;
 	readonly fuzz: { readonly mode: string; readonly run: HubRun<FuzzResult> }[];
 	readonly fallback1: HubRun<Fallback1Result>;
+	readonly fallback1RoundTrip: HubRun<Fallback1RoundTripResult>;
+	readonly fallback1Template: TemplateResult;
 	readonly lateReply: HubRun<LateReplyResult>;
 	readonly sendAfterExit: HubRun<SendAfterExitResult>;
 	readonly controls: Record<ControlName, HubRun<ControlResult>>;
@@ -399,62 +578,81 @@ interface DockerNode {
 	readonly validators: ValidatorControl;
 }
 
+// docker-runner-s2b.ts in the images.json glibc image (--network none, a read-only stage with the
+// template-plugin bundle), on both Nodes; returns the image and the runner's per-Node results.
+async function s2bInDocker<T extends { readonly label: string }>(
+	ctx: TestContext,
+	mode: "matrix" | "fifo",
+): Promise<{ image: string; nodes: T[] }> {
+	const images = path.resolve(spikeDir, "..", "..", "tools", "fetch-node", "images.json");
+	const image: string = JSON.parse(fs.readFileSync(images, "utf8")).glibc;
+	const bins: string[] = [];
+	for (const v of NODES) bins.push(await nodeBinary(v, { platform: "linux", arch }));
+	using stage = stageForDocker({
+		name: `s02-s2b-${mode}`,
+		from: spikeDir,
+		files: [
+			"src",
+			"fixtures/s2b",
+			"test/s2b.ts",
+			"test/memory.ts",
+			"test/hub-probes.ts",
+			"test/fifo.ts",
+			"test/docker-runner-s2b.ts",
+		],
+	});
+	bundleTemplatePlugin(path.join(stage.dir, "bundle"));
+	const nodes = NODES.map((label, i) => ({ bin: `/opt/n${i}`, label }));
+	const config = { nodes, workRoot: "/tmp/dywork", bundleDir: "/stage/bundle" };
+	const result = await runInDocker({
+		image,
+		network: "none",
+		mounts: [
+			{ source: stage.dir, target: "/stage" },
+			...bins.map((bin, i) => ({ source: bin, target: `/opt/n${i}` })),
+		],
+		cmd: [
+			nodes.at(-1)?.bin as string,
+			"/stage/test/docker-runner-s2b.ts",
+			mode,
+			JSON.stringify(config),
+		],
+		signal: ctx.signal,
+		timeoutMs: 240_000,
+	});
+	expect(result.code, `runner exit ${result.code}; stderr: ${result.stderr.slice(-800)}`).toBe(0);
+	const line = result.stdout.split(/\r?\n/).findLast((l) => l.startsWith("##DYS2BMATRIX##"));
+	expect(line, `no ${mode} line; stdout tail: ${result.stdout.slice(-400)}`).toBeDefined();
+	const parsed = JSON.parse((line as string).slice("##DYS2BMATRIX##".length)) as { nodes: T[] };
+	expect(parsed.nodes.map((n) => n.label)).toEqual(NODES);
+	return { image, nodes: parsed.nodes };
+}
+
 describe("Linux Docker S2b matrix", () => {
 	it("runs every S2b probe in Linux on both Nodes", {
 		tags: ["requires:docker"],
 		timeout: 280_000,
 	}, async (ctx: TestContext) => {
 		await needDocker(ctx);
-		const images = path.resolve(spikeDir, "..", "..", "tools", "fetch-node", "images.json");
-		const glibcImage: string = JSON.parse(fs.readFileSync(images, "utf8")).glibc;
-		const bins: string[] = [];
-		for (const v of NODES) bins.push(await nodeBinary(v, { platform: "linux", arch }));
-		using stage = stageForDocker({
-			name: "s02-s2b",
-			from: spikeDir,
-			files: [
-				"src",
-				"fixtures/s2b",
-				"test/s2b.ts",
-				"test/memory.ts",
-				"test/hub-probes.ts",
-				"test/docker-runner-s2b.ts",
-			],
-		});
-		bundleTemplatePlugin(path.join(stage.dir, "bundle"));
-		const nodes = NODES.map((label, i) => ({ bin: `/opt/n${i}`, label }));
-		const config = { nodes, workRoot: "/tmp/dywork", bundleDir: "/stage/bundle" };
-		const result = await runInDocker({
-			image: glibcImage,
-			network: "none",
-			mounts: [
-				{ source: stage.dir, target: "/stage" },
-				...bins.map((bin, i) => ({ source: bin, target: `/opt/n${i}` })),
-			],
-			cmd: [
-				nodes.at(-1)?.bin as string,
-				"/stage/test/docker-runner-s2b.ts",
-				"matrix",
-				JSON.stringify(config),
-			],
-			signal: ctx.signal,
-			timeoutMs: 240_000,
-		});
-		expect(result.code, `runner exit ${result.code}; stderr: ${result.stderr.slice(-800)}`).toBe(0);
-		const line = result.stdout.split(/\r?\n/).findLast((l) => l.startsWith("##DYS2BMATRIX##"));
-		expect(line, `no matrix line; stdout tail: ${result.stdout.slice(-400)}`).toBeDefined();
-		const matrix = JSON.parse((line as string).slice("##DYS2BMATRIX##".length)) as {
-			nodes: DockerNode[];
-		};
-		expect(matrix.nodes.map((n) => n.label)).toEqual(NODES);
+		const { image: glibcImage, nodes } = await s2bInDocker<DockerNode>(ctx, "matrix");
+		const matrix = { nodes };
 		const runs = new Map<string, NodeRuns>();
-		const fallback1 = new Map<string, HubRun<Fallback1Result>>();
+		const fallback1 = new Map<string, Fallback1Node>();
 		for (const n of matrix.nodes) {
 			expect(channelProblem(n.channel), n.label).toBeNull();
 			for (const { mode, run } of n.fuzz)
 				expect(fuzzProblem(mode, "linux", run), `${n.label} ${mode}`).toBeNull();
 			expect(fallback1Problem(n.fallback1), `${n.label} fallback1`).toBeNull();
-			fallback1.set(n.label, n.fallback1);
+			expect(
+				fallback1RoundTripProblem(n.fallback1RoundTrip),
+				`${n.label} fallback1 round trip`,
+			).toBeNull();
+			expect(templateProblem(n.fallback1Template), `${n.label} fallback1 template`).toBeNull();
+			fallback1.set(n.label, {
+				hostile: n.fallback1,
+				roundTrip: n.fallback1RoundTrip,
+				template: n.fallback1Template,
+			});
 			expect(lateReplyProblem(n.lateReply), n.label).toBeNull();
 			expect(sendAfterExitProblem(n.sendAfterExit), n.label).toBeNull();
 			for (const [name] of CONTROLS)
@@ -511,5 +709,41 @@ describe("Linux Docker S2b matrix", () => {
 			},
 		};
 		await recordEvidence(file("inspector"), unmet(inspector.findings), inspector);
+	});
+});
+
+// Remedy (f) in Linux Docker on both Nodes: every FIFO mode, then the template plugin on FIFO
+// stdio. Writes fifo-docker-linux-<arch>.json whenever it holds.
+interface DockerFifoNode {
+	readonly label: string;
+	readonly modes: { readonly mode: string; readonly run: HubRun<FifoResult> }[];
+	readonly template: TemplateResult;
+}
+
+describe("Linux Docker FIFO stdio (remedy (f))", () => {
+	it("on FIFO stdio no plugin can hand the hub a descriptor, in Linux on both Nodes", {
+		tags: ["requires:docker"],
+		timeout: 280_000,
+	}, async (ctx: TestContext) => {
+		await needDocker(ctx);
+		const { image, nodes } = await s2bInDocker<DockerFifoNode>(ctx, "fifo");
+		const runs = new Map<string, FifoNode>();
+		const problems: string[] = [];
+		for (const n of nodes) {
+			for (const { mode, run } of n.modes) {
+				const problem = fifoProblem(mode, run);
+				if (problem !== null) problems.push(`${n.label} ${mode}: ${problem}`);
+			}
+			const problem = templateProblem(n.template);
+			if (problem !== null) problems.push(`${n.label} template on FIFO stdio: ${problem}`);
+			runs.set(n.label, {
+				modes: new Map(n.modes.map(({ mode, run }) => [mode, run])),
+				template: n.template,
+			});
+		}
+		const target = `docker-linux-${arch}`;
+		const f = fifoEvidence(target, runs, NODES);
+		await recordEvidence(evidenceFile("fifo", target), f.problems, { ...f.data, image });
+		expect(problems).toEqual([]);
 	});
 });

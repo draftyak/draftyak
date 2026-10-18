@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T02:17:24.415Z",
+  "recordedAt": "2026-10-18T15:31:18.907Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,14 +11,14 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "96f958d02f293dd311fa3c94bee8efd641116545",
+    "commit": "888d1a9d15f3c3dcab7e64d3af9535c5a08cbd2a",
     "dirty": false,
     "load": {
-      "cpuPercent": 15,
+      "cpuPercent": 19.6,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 75.1,
-      "concurrentBuilds": 0
+      "memoryUsedPercent": 67.8,
+      "concurrentBuilds": 1
     }
   },
   "data": {
@@ -41,9 +41,9 @@
         "intervalMs": 150,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 676,
-        "overshootMiB": 164,
-        "timeToKillMs": 913,
+        "peakMiB": 548,
+        "overshootMiB": 36,
+        "timeToKillMs": 750,
         "growerCeilingMiB": null,
         "growerCeilingMs": null
       },
@@ -54,9 +54,9 @@
         "intervalMs": 150,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 750,
-        "overshootMiB": 238,
-        "timeToKillMs": 900,
+        "peakMiB": 610,
+        "overshootMiB": 98,
+        "timeToKillMs": 822,
         "growerCeilingMiB": null,
         "growerCeilingMs": null
       },
@@ -67,9 +67,9 @@
         "intervalMs": 150,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 739,
-        "overshootMiB": 227,
-        "timeToKillMs": 938,
+        "peakMiB": 611,
+        "overshootMiB": 99,
+        "timeToKillMs": 826,
         "growerCeilingMiB": null,
         "growerCeilingMs": null
       },
@@ -80,9 +80,9 @@
         "intervalMs": 150,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 738,
-        "overshootMiB": 226,
-        "timeToKillMs": 941,
+        "peakMiB": 546,
+        "overshootMiB": 34,
+        "timeToKillMs": 743,
         "growerCeilingMiB": null,
         "growerCeilingMs": null
       },
@@ -93,11 +93,11 @@
         "intervalMs": 5000,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 1582,
-        "overshootMiB": 1070,
-        "timeToKillMs": 5237,
+        "peakMiB": 1572,
+        "overshootMiB": 1060,
+        "timeToKillMs": 5216,
         "growerCeilingMiB": 1536,
-        "growerCeilingMs": 287
+        "growerCeilingMs": 279
       },
       {
         "mode": "wasm-fast",
@@ -106,11 +106,11 @@
         "intervalMs": 5000,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 1571,
-        "overshootMiB": 1059,
-        "timeToKillMs": 5741,
+        "peakMiB": 1570,
+        "overshootMiB": 1058,
+        "timeToKillMs": 5213,
         "growerCeilingMiB": 1536,
-        "growerCeilingMs": 600
+        "growerCeilingMs": 330
       },
       {
         "mode": "arraybuffer-fast",
@@ -121,9 +121,9 @@
         "killSignal": "SIGKILL",
         "peakMiB": 1571,
         "overshootMiB": 1059,
-        "timeToKillMs": 5246,
+        "timeToKillMs": 5226,
         "growerCeilingMiB": 1536,
-        "growerCeilingMs": 503
+        "growerCeilingMs": 283
       },
       {
         "mode": "wasm-fast",
@@ -134,15 +134,15 @@
         "killSignal": "SIGKILL",
         "peakMiB": 1570,
         "overshootMiB": 1058,
-        "timeToKillMs": 5189,
+        "timeToKillMs": 5240,
         "growerCeilingMiB": 1536,
-        "growerCeilingMs": 418
+        "growerCeilingMs": 345
       }
     ],
     "observations": {
-      "planIntervalMaxOvershootMiB": 1070,
-      "fastestGrowthMiBPerSecond": 5352,
-      "projectedMiBPerPlanInterval": 26760
+      "planIntervalMaxOvershootMiB": 1060,
+      "fastestGrowthMiBPerSecond": 5505,
+      "projectedMiBPerPlanInterval": 27527
     },
     "untouched": [
       {
@@ -180,18 +180,18 @@
     ],
     "benchmarks": {
       "lock": {
-        "waitedMs": 0,
+        "waitedMs": 20842,
         "idle": {
           "samples": [
-            15.4,
-            13.3,
-            6.4,
-            9.4,
-            16.1
+            14.9,
+            12.4,
+            13,
+            12,
+            14.8
           ],
-          "maxCpuPercent": 16.1,
+          "maxCpuPercent": 14.9,
           "thresholdPercent": 20,
-          "waitedMs": 108260,
+          "waitedMs": 8153,
           "concurrentBuilds": 0
         }
       },
@@ -200,22 +200,22 @@
           "method": "tasklist-csv",
           "metric": "working-set",
           "available": true,
-          "firstMs": 147.835,
+          "firstMs": 247.307,
           "reads": 25,
-          "medianMs": 129.99,
-          "minMs": 86.668,
-          "maxMs": 168.763,
+          "medianMs": 206.24,
+          "minMs": 172.653,
+          "maxMs": 235.035,
           "lastMiB": 34
         },
         {
           "method": "powershell-private-bytes",
           "metric": "private-bytes",
           "available": true,
-          "firstMs": 13.295,
+          "firstMs": 60.712,
           "reads": 25,
-          "medianMs": 3.05,
-          "minMs": 2.425,
-          "maxMs": 4.232,
+          "medianMs": 6.01,
+          "minMs": 5.564,
+          "maxMs": 9.187,
           "lastMiB": 18
         }
       ],
@@ -225,26 +225,27 @@
           "files": 16,
           "bytes": 2097152,
           "runs": 7,
-          "medianMs": 7.68,
-          "minMs": 7.12
+          "medianMs": 30.88,
+          "minMs": 25.05
         },
         {
           "label": "synthetic-16MiB",
           "files": 16,
           "bytes": 16777216,
           "runs": 7,
-          "medianMs": 17.32,
-          "minMs": 15.62
+          "medianMs": 27.18,
+          "minMs": 22.7
         },
         {
           "label": "template-bundle",
           "files": 948,
           "bytes": 13956673,
           "runs": 7,
-          "medianMs": 322.74,
-          "minMs": 287.28
+          "medianMs": 649.71,
+          "minMs": 567.78
         }
-      ]
+      ],
+      "spawnCost": null
     },
     "findings": {
       "watchdogSigkillsAboveTheLimit": true,
