@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T09:00:28.146Z",
+  "recordedAt": "2026-10-18T16:20:41.206Z",
   "fingerprint": {
     "os": {
       "platform": "darwin",
@@ -11,13 +11,13 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "e961e3a6bd7d269e1322b06fc678ac6b136bf897",
+    "commit": "d983de9812f6a98a1d34194a08dcc515107057d9",
     "dirty": false,
     "load": {
-      "cpuPercent": 11,
+      "cpuPercent": 15.9,
       "cpuCount": 3,
       "cpuModel": "Apple M1 (Virtual)",
-      "memoryUsedPercent": 96.9,
+      "memoryUsedPercent": 96.5,
       "concurrentBuilds": 0
     }
   },
@@ -48,7 +48,7 @@
     },
     "deadline": {
       "untilMsFromNow": 3000,
-      "releasedAfterMs": 3070,
+      "releasedAfterMs": 3122,
       "releasedBy": "deadline",
       "shownBy": "pmset -g assertions",
       "shownBefore": false,
@@ -61,7 +61,7 @@
       "shownBefore": false,
       "shownWhileHeld": true,
       "shownAfterRelease": false,
-      "hubBackMs": 1483,
+      "hubBackMs": 1284,
       "sameHubId": true
     },
     "wake": {
