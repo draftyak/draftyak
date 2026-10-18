@@ -1,0 +1,15 @@
+{
+  "name": "@draftyak/mcpb",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 --test-timeout=30000 test/bundle.test.mjs test/close-ownership.test.mjs"
+  },
+  "dependencies": {
+    "@draftyak/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@cfworker/json-schema": "4.1.1"
+  }
+}
