@@ -7,6 +7,11 @@
 // identity, wants the item, and Always Allow adds that binary and its partition ID
 // (securityd/src/acl_keychain.cpp; acls.cpp, extendPartition).
 
+// keyring-macos.json's `prompts`: how the probe runs. Evidence strings stay within the kit's 256
+// characters, which the unit tests check, because only a billed macOS run reaches this case.
+export const KEYCHAIN_PROMPTS =
+	"off (SecKeychainSetUserInteractionAllowed false): a check only a prompt could pass fails as errSecAuthFailed (-25293); a step needing UI that can't be shown fails as errSecInteractionNotAllowed (-25308)";
+
 export interface AccessEntry {
 	readonly authorizations: readonly string[];
 	/** Whether its prompt asks for the keychain's password; null when `security` shows neither. */

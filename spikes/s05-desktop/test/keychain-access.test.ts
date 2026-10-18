@@ -1,7 +1,8 @@
 // The keychain probe's access-list reader against synthetic `security dump-keychain -a` output,
 // shaped as Apple's print_access and print_keychain_item_attributes print it.
+import { assertContentFree } from "@draftyak/spike-kit";
 import { describe, expect, it } from "vitest";
-import { itemAccess } from "./keychain-access.ts";
+import { itemAccess, KEYCHAIN_PROMPTS } from "./keychain-access.ts";
 
 const hash = "00".repeat(20);
 
@@ -161,5 +162,18 @@ describe("the keychain item's access list", () => {
 			undefined,
 		);
 		expect(itemAccess("", "probe-5")).toBeUndefined();
+	});
+});
+
+// Only a billed macOS run reaches the keychain case, so its fixed text and the access list's
+// shape are checked here against the kit's evidence rules (run B1's rerun lost its record to a
+// 330-character prompts line).
+describe("keyring-macos.json's own fields", () => {
+	it("pass the kit's content check", () => {
+		const access = itemAccess(item("probe-0a1b2c3d", standard), "probe-0a1b2c3d");
+		expect(access).toBeDefined();
+		expect(() =>
+			assertContentFree({ prompts: KEYCHAIN_PROMPTS, itemAccess: { read: true, ...access } }),
+		).not.toThrow();
 	});
 });
