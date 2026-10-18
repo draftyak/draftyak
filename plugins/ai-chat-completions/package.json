@@ -1,0 +1,39 @@
+{
+  "name": "@draftyak/ai-chat-completions",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "./*": {
+        "types": "./dist/*.d.mts",
+        "default": "./dist/*.mjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run --maxWorkers=1",
+    "test:heavy": "vitest run --mode heavy --maxWorkers=1",
+    "build": "tsdown",
+    "prepack": "tsdown"
+  },
+  "dependencies": {
+    "@draftyak/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2",
+    "tsdown": "0.23.1"
+  }
+}
