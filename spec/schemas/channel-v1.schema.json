@@ -246,18 +246,10 @@
                         "const": "email.message"
                       },
                       "providerId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "threadId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "internalDate": {
                         "type": "integer",
@@ -269,11 +261,7 @@
                         "maxItems": 256,
                         "type": "array",
                         "items": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 256,
-                          "pattern": "^[!-~]+$",
-                          "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                         }
                       },
                       "sizeBytes": {
@@ -335,11 +323,7 @@
                         "const": "email.deleted"
                       },
                       "providerId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       }
                     },
                     "required": [
@@ -356,28 +340,16 @@
                         "const": "email.labels"
                       },
                       "providerId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "threadId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "labelIds": {
                         "maxItems": 256,
                         "type": "array",
                         "items": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 256,
-                          "pattern": "^[!-~]+$",
-                          "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                         }
                       }
                     },
@@ -397,25 +369,13 @@
                         "const": "chat.message"
                       },
                       "channelId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "ts": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "threadTs": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "sentAt": {
                         "type": "integer",
@@ -434,11 +394,7 @@
                             ]
                           },
                           "id": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^[!-~]+$",
-                            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                           }
                         },
                         "required": [
@@ -469,22 +425,14 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256,
-                              "pattern": "^[!-~]+$",
-                              "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                             },
                             "name": {
                               "type": "string",
                               "maxLength": 255
                             },
                             "contentType": {
-                              "type": "string",
-                              "minLength": 3,
-                              "maxLength": 255,
-                              "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$",
-                              "description": "A lower-case type/subtype without parameters, such as image/png."
+                              "$ref": "#/$defs/draftyak.normalized-change.MediaType"
                             },
                             "size": {
                               "type": "integer",
@@ -520,18 +468,10 @@
                         "const": "chat.deleted"
                       },
                       "channelId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "ts": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       }
                     },
                     "required": [
@@ -549,24 +489,14 @@
                         "const": "chat.conversation"
                       },
                       "channelId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "name": {
                         "type": "string",
                         "maxLength": 256
                       },
                       "type": {
-                        "type": "string",
-                        "enum": [
-                          "dm",
-                          "group_dm",
-                          "public",
-                          "private"
-                        ]
+                        "$ref": "#/$defs/draftyak.normalized-change.ChatChannelType"
                       },
                       "external": {
                         "type": "boolean"
@@ -678,11 +608,7 @@
                       "const": "email"
                     },
                     "providerId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     }
                   },
                   "required": [
@@ -699,18 +625,10 @@
                       "const": "chat"
                     },
                     "channelId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     },
                     "ts": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     }
                   },
                   "required": [
@@ -741,18 +659,10 @@
                       "const": "email.message"
                     },
                     "providerId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     },
                     "threadId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     },
                     "internalDate": {
                       "type": "integer",
@@ -764,11 +674,7 @@
                       "maxItems": 256,
                       "type": "array",
                       "items": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       }
                     },
                     "sizeBytes": {
@@ -831,25 +737,13 @@
                       "const": "chat.message"
                     },
                     "channelId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     },
                     "ts": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     },
                     "threadTs": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     },
                     "sentAt": {
                       "type": "integer",
@@ -868,11 +762,7 @@
                           ]
                         },
                         "id": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 256,
-                          "pattern": "^[!-~]+$",
-                          "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                         }
                       },
                       "required": [
@@ -903,22 +793,14 @@
                         "type": "object",
                         "properties": {
                           "id": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^[!-~]+$",
-                            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                           },
                           "name": {
                             "type": "string",
                             "maxLength": 255
                           },
                           "contentType": {
-                            "type": "string",
-                            "minLength": 3,
-                            "maxLength": 255,
-                            "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$",
-                            "description": "A lower-case type/subtype without parameters, such as image/png."
+                            "$ref": "#/$defs/draftyak.normalized-change.MediaType"
                           },
                           "size": {
                             "type": "integer",
@@ -1016,11 +898,7 @@
                       "const": "email"
                     },
                     "providerId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     }
                   },
                   "required": [
@@ -1037,18 +915,10 @@
                       "const": "chat"
                     },
                     "channelId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     },
                     "ts": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     }
                   },
                   "required": [
@@ -1061,11 +931,7 @@
               ]
             },
             "attachmentId": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256,
-              "pattern": "^[!-~]+$",
-              "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
             }
           },
           "required": [
@@ -1078,11 +944,7 @@
           "type": "object",
           "properties": {
             "contentType": {
-              "type": "string",
-              "minLength": 3,
-              "maxLength": 255,
-              "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$",
-              "description": "A lower-case type/subtype without parameters, such as image/png."
+              "$ref": "#/$defs/draftyak.normalized-change.MediaType"
             },
             "size": {
               "type": "integer",
@@ -1210,11 +1072,7 @@
                             "const": "email"
                           },
                           "providerId": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^[!-~]+$",
-                            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                           }
                         },
                         "required": [
@@ -1231,18 +1089,10 @@
                             "const": "chat"
                           },
                           "channelId": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^[!-~]+$",
-                            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                           },
                           "ts": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^[!-~]+$",
-                            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                           }
                         },
                         "required": [
@@ -1286,11 +1136,7 @@
                             "const": "email"
                           },
                           "providerId": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^[!-~]+$",
-                            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                           }
                         },
                         "required": [
@@ -1307,18 +1153,10 @@
                             "const": "chat"
                           },
                           "channelId": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^[!-~]+$",
-                            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                           },
                           "ts": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^[!-~]+$",
-                            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                           }
                         },
                         "required": [
@@ -1336,11 +1174,7 @@
                   "maxItems": 20,
                   "type": "array",
                   "items": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256,
-                    "pattern": "^[!-~]+$",
-                    "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                    "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                   }
                 }
               },
@@ -1471,11 +1305,7 @@
                       "const": "email"
                     },
                     "providerId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     }
                   },
                   "required": [
@@ -1492,18 +1322,10 @@
                       "const": "chat"
                     },
                     "channelId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     },
                     "ts": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     }
                   },
                   "required": [
@@ -1677,11 +1499,7 @@
                       "const": "email"
                     },
                     "threadId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     },
                     "rfc822MessageId": {
                       "type": "string",
@@ -1702,18 +1520,10 @@
                       "const": "chat"
                     },
                     "channelId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     },
                     "threadTs": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256,
-                      "pattern": "^[!-~]+$",
-                      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                     }
                   },
                   "required": [
@@ -1747,18 +1557,10 @@
                         "const": "email.message"
                       },
                       "providerId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "threadId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "internalDate": {
                         "type": "integer",
@@ -1770,11 +1572,7 @@
                         "maxItems": 256,
                         "type": "array",
                         "items": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 256,
-                          "pattern": "^[!-~]+$",
-                          "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                         }
                       },
                       "sizeBytes": {
@@ -1837,25 +1635,13 @@
                         "const": "chat.message"
                       },
                       "channelId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "ts": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "threadTs": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256,
-                        "pattern": "^[!-~]+$",
-                        "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                       },
                       "sentAt": {
                         "type": "integer",
@@ -1874,11 +1660,7 @@
                             ]
                           },
                           "id": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^[!-~]+$",
-                            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                           }
                         },
                         "required": [
@@ -1909,22 +1691,14 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256,
-                              "pattern": "^[!-~]+$",
-                              "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces."
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                             },
                             "name": {
                               "type": "string",
                               "maxLength": 255
                             },
                             "contentType": {
-                              "type": "string",
-                              "minLength": 3,
-                              "maxLength": 255,
-                              "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$",
-                              "description": "A lower-case type/subtype without parameters, such as image/png."
+                              "$ref": "#/$defs/draftyak.normalized-change.MediaType"
                             },
                             "size": {
                               "type": "integer",
@@ -2099,5 +1873,37 @@
   ],
   "additionalProperties": false,
   "title": "io.github.draftyak/channel v1",
-  "description": "The tools of io.github.draftyak/channel version 1."
+  "description": "The tools of io.github.draftyak/channel version 1.",
+  "$defs": {
+    "draftyak.normalized-change.ProviderId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[!-~]+$",
+      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces.",
+      "not": {
+        "pattern": "\\n"
+      }
+    },
+    "draftyak.normalized-change.MediaType": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255,
+      "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$",
+      "description": "A lower-case type/subtype without parameters, such as image/png.",
+      "not": {
+        "pattern": "\\n"
+      }
+    },
+    "draftyak.normalized-change.ChatChannelType": {
+      "type": "string",
+      "enum": [
+        "dm",
+        "group_dm",
+        "public",
+        "private"
+      ],
+      "description": "A direct message, a group direct message, or a public or private channel."
+    }
+  }
 }

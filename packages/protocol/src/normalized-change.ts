@@ -7,19 +7,31 @@ import { Base64Url, Ulid, UtcMs } from "./scalars.ts";
 export const MAX_CHANGES = 500;
 export const MAX_INLINE_BYTES = 65_536;
 
+// Python's re lets `$` match before a final line feed, so the JSON Schema also refuses one.
+const noLineFeed = { not: { pattern: "\\n" } };
+
+// The entities use these too: one definition each.
 export const ProviderId: z.ZodString = z
 	.string()
 	.min(1)
 	.max(256)
 	.regex(/^[!-~]+$/)
-	.meta({ description: "A provider's own id, opaque to the hub: visible ASCII, no spaces." });
+	.meta({
+		id: "draftyak.normalized-change.ProviderId",
+		description: "A provider's own id, opaque to the hub: visible ASCII, no spaces.",
+		...noLineFeed,
+	});
 
 export const MediaType: z.ZodString = z
 	.string()
 	.min(3)
 	.max(255)
 	.regex(/^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$/)
-	.meta({ description: "A lower-case type/subtype without parameters, such as image/png." });
+	.meta({
+		id: "draftyak.normalized-change.MediaType",
+		description: "A lower-case type/subtype without parameters, such as image/png.",
+		...noLineFeed,
+	});
 
 export interface BlobRef {
 	readonly ref: string;
@@ -100,6 +112,12 @@ export interface ChatDeletedChange {
 }
 export const CHAT_CHANNEL_TYPES = ["dm", "group_dm", "public", "private"] as const;
 export type ChatChannelType = (typeof CHAT_CHANNEL_TYPES)[number];
+export const ChatChannelType: z.ZodEnum<z.core.util.ToEnum<ChatChannelType>> = z
+	.enum(CHAT_CHANNEL_TYPES)
+	.meta({
+		id: "draftyak.normalized-change.ChatChannelType",
+		description: "A direct message, a group direct message, or a public or private channel.",
+	});
 export interface ChatConversationChange {
 	readonly kind: "chat.conversation";
 	readonly channelId: string;
@@ -151,7 +169,7 @@ const chatConversation = z.strictObject({
 	kind: z.literal("chat.conversation"),
 	channelId: ProviderId,
 	name: wellFormedText(256).optional(),
-	type: z.enum(CHAT_CHANNEL_TYPES),
+	type: ChatChannelType,
 	external: z.boolean(),
 	memberCount: z.int().min(0),
 	archived: z.boolean(),
