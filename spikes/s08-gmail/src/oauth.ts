@@ -111,6 +111,8 @@ export interface AuthorizationRequest {
 	readonly state: string;
 	readonly challenge: string;
 	readonly loginHint?: string;
+	// "offline" asks for a refresh token explicitly, as Google's Desktop quickstarts do.
+	readonly accessType?: "offline";
 }
 
 export function authorizationUrl(request: AuthorizationRequest): string {
@@ -124,6 +126,7 @@ export function authorizationUrl(request: AuthorizationRequest): string {
 		code_challenge: request.challenge,
 		code_challenge_method: "S256",
 		...(request.loginHint === undefined ? {} : { login_hint: request.loginHint }),
+		...(request.accessType === undefined ? {} : { access_type: request.accessType }),
 	};
 	for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
 	return url.href;
@@ -306,6 +309,7 @@ export interface ConnectOptions extends TokenClient {
 	readonly mode?: Mode;
 	readonly openBrowser?: (url: string) => void | Promise<void>;
 	readonly loginHint?: string;
+	readonly accessType?: "offline";
 	readonly timeoutMs?: number;
 	readonly signal?: AbortSignal;
 }
@@ -328,6 +332,7 @@ export async function connect(options: ConnectOptions): Promise<TokenSet> {
 				state,
 				challenge: pkce.challenge,
 				...(options.loginHint === undefined ? {} : { loginHint: options.loginHint }),
+				...(options.accessType === undefined ? {} : { accessType: options.accessType }),
 			}),
 		);
 		const code = await loopback.code;
