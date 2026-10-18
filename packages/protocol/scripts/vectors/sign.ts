@@ -1,6 +1,9 @@
+import { createPublicKey, verify } from "node:crypto";
+import path from "node:path";
 import { canonicalize } from "../../src/jcs.ts";
 import { fromBase64Url, toBase64Url } from "../../src/scalars.ts";
 import { SignError, signingInput, verifyStatement } from "../../src/sign.ts";
+import { startXcheck, type Xcheck } from "../../test/cross/xcheck.ts";
 import { keptSignature, type TestKey, testKey } from "../lib.ts";
 import type { VectorContext, VectorFile } from "../vectors.ts";
 
@@ -17,7 +20,7 @@ const statement = {
 
 interface Recorded {
 	readonly keys?: { readonly signer?: unknown; readonly other?: unknown };
-	readonly cases?: readonly { readonly id?: unknown; readonly signature?: unknown }[];
+	readonly cases?: readonly Readonly<Record<string, unknown>>[];
 }
 
 // The same r and s as an ASN.1 DER sequence, an encoding the protocol never accepts.
@@ -70,7 +73,87 @@ function refusal(typ: string, body: object): string | undefined {
 	}
 }
 
-export function generate(context: VectorContext): VectorFile[] {
+// The order n of the P-256 group.
+const ORDER = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+
+// The signature with each half of S, s and n − s: both verify, and nothing normalizes S.
+function sHalves(signature: string): { high: string; low: string } {
+	const bytes = Buffer.from(fromBase64Url(signature) ?? new Uint8Array(64));
+	const s = BigInt(`0x${bytes.subarray(32).toString("hex")}`);
+	const write = (half: bigint): string =>
+		toBase64Url(
+			Buffer.concat([
+				bytes.subarray(0, 32),
+				Buffer.from(half.toString(16).padStart(64, "0"), "hex"),
+			]),
+		);
+	const [high, low] = s > ORDER / 2n ? [s, ORDER - s] : [ORDER - s, s];
+	return { high: write(high), low: write(low) };
+}
+
+function signs(signature: unknown, input: Uint8Array, key: TestKey): boolean {
+	const bytes = typeof signature === "string" ? fromBase64Url(signature) : undefined;
+	const options = { key: createPublicKey(key.privateKey), dsaEncoding: "ieee-p1363" } as const;
+	return bytes?.length === 64 && verify("sha256", input, options, bytes);
+}
+
+type Case = Readonly<Record<string, unknown>> & {
+	readonly id: string;
+	readonly signingInputHex: string;
+};
+
+// Only `pnpm --filter @draftyak/protocol vectors` writes: its --check and the drift test in
+// pnpm test never start cargo.
+function writing(): boolean {
+	const [, script, ...args] = process.argv;
+	const cli = path.resolve(import.meta.dirname, "..", "vectors.ts");
+	return script !== undefined && path.relative(script, cli) === "" && !args.includes("--check");
+}
+
+// Beside the signature of each case that signs its own input (the valid statements, the refused
+// ones and the received bytes), the RFC 6979 signature, which only Rust makes here. Writing with
+// cargo signs each one again, which never churns. A check, or writing without cargo, keeps a
+// recorded one while it verifies and otherwise fails.
+async function withRfc6979(cases: Case[], signer: TestKey, recorded?: Recorded): Promise<object[]> {
+	const write = writing();
+	let rust: Promise<Xcheck | Error> | undefined;
+	const rfc6979 = async ({ id, signingInputHex }: Case): Promise<string> => {
+		const input = Buffer.from(signingInputHex, "hex");
+		const previous = recorded?.cases?.find((item) => item.id === id)?.rfc6979Signature;
+		const kept = signs(previous, input, signer) ? (previous as string) : undefined;
+		rust ??= write ? startXcheck().catch((error: Error) => error) : undefined;
+		const xcheck = await rust;
+		if (xcheck === undefined || xcheck instanceof Error) {
+			if (kept !== undefined) return kept;
+			const why = xcheck?.message ?? "it is missing or doesn't verify";
+			throw new Error(
+				`sign ${id}: rfc6979Signature: ${why}; run pnpm --filter @draftyak/protocol vectors with cargo`,
+			);
+		}
+		const fields = { privateKeyPkcs8: signer.record.privateKeyPkcs8, inputHex: signingInputHex };
+		const { signature } = await xcheck.run("sign", fields);
+		if (signs(signature, input, signer)) return signature as string;
+		throw new Error(`sign ${id}: xcheck signed with ${String(signature)}`);
+	};
+	try {
+		const out: object[] = [];
+		for (const item of cases) {
+			const refused = item.error !== undefined || item.receivedHex !== undefined;
+			const own = refused || (item.valid === true && item.s === undefined);
+			const rfc6979Signature = own ? await rfc6979(item) : undefined;
+			const entries = Object.entries(item).flatMap((entry) =>
+				entry[0] === "signature" && own ? [entry, ["rfc6979Signature", rfc6979Signature]] : [entry],
+			);
+			out.push(Object.fromEntries(entries));
+		}
+		return out;
+	} finally {
+		const xcheck = await rust;
+		if (xcheck !== undefined && !(xcheck instanceof Error)) await xcheck.close();
+	}
+}
+
+export async function generate(context: VectorContext): Promise<VectorFile[]> {
 	const recorded = context.previous(file) as Recorded | undefined;
 	const signer: TestKey = testKey(recorded?.keys?.signer);
 	const other: TestKey = testKey(recorded?.keys?.other);
@@ -119,6 +202,7 @@ export function generate(context: VectorContext): VectorFile[] {
 	};
 	const der = toBase64Url(derEncoded(fromBase64Url(signature) ?? new Uint8Array()));
 	const outOfRange = toBase64Url(new Uint8Array(64).fill(255));
+	const halves = sHalves(signature);
 	const cases = [
 		variant("valid", {}, true),
 		variant("statement-byte-changed", { statement: { ...statement, iat: 1792000000001 } }, false),
@@ -145,6 +229,8 @@ export function generate(context: VectorContext): VectorFile[] {
 		received("received-trailing-line-feed", `${jcs}\n`),
 		received("received-members-in-other-order", JSON.stringify(statement)),
 		received("received-duplicate-member", `{"v":2,${jcs.slice(1)}`),
+		variant("signature-high-s", { signature: halves.high, s: "high" }, true),
+		variant("signature-low-s", { signature: halves.low, s: "low" }, true),
 	];
 	const description =
 		'ES256 statement signatures. "signingInputHex" is the case\'s signing input: the UTF-8 of ' +
@@ -159,8 +245,15 @@ export function generate(context: VectorContext): VectorFile[] {
 		"Building its signing input fails with that code, and it never verifies. A case with " +
 		'"receivedHex" gives a statement as received, in bytes that aren\'t canonical JCS, and a ' +
 		'correct signature over "draftyak/v1/<typ>\\n" followed by exactly those bytes: a verifier ' +
-		'checks the bytes first, so it never verifies. "keys" are test-only keys made for these ' +
-		'vectors and never used anywhere else; "signer" made every signature.';
+		'checks the bytes first, so it never verifies. "rfc6979Signature", where present, is the ' +
+		"deterministic RFC 6979 signature over the same signing input, as the Rust crate signs; a " +
+		'verifier treats it as "signature", and re-signing gives exactly these bytes. Signatures ' +
+		'are never normalized to a low S: "signature-high-s" and "signature-low-s" hold the valid ' +
+		'signature with each half of S ("s" says which: high is s > n/2), and both verify in both ' +
+		"languages, so a signature's bytes aren't unique: replay and single-use checks key on the " +
+		"statement's nonce, never on signature bytes. " +
+		'"keys" are test-only keys made for these vectors and never used anywhere else; "signer" ' +
+		"made every signature.";
 	return [
 		{
 			path: file,
@@ -168,7 +261,7 @@ export function generate(context: VectorContext): VectorFile[] {
 				format: "draftyak.vectors.sign.v1",
 				description,
 				keys: { signer: signer.record, other: other.record },
-				cases,
+				cases: await withRfc6979(cases as Case[], signer, recorded),
 			},
 		},
 	];

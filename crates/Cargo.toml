@@ -1,0 +1,3 @@
+[workspace]
+members = ["draftyak-protocol"]
+resolver = "3"
