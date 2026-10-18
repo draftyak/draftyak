@@ -1,0 +1,111 @@
+{
+  "format": "draftyak.vectors.pairing.v1",
+  "description": "The proof, the SAS, the hub ID display and the sidecar window. \"ekm\" gives the exporter's parameters: its label, a context of the 16 raw pid bytes, and its length; the EKMs below are synthetic, since only a live TLS connection gives a real one. A proof case's \"messageHex\" is the ASCII of draftyak/pair/v1 followed by \"ekmHex\" and \"pubsHex\"; \"valid\" says whether the presented \"proofHex\" equals HMAC-SHA-256 keyed with \"secHex\" over that message (lengths first, then in constant time). A SAS case's \"sha256\" is the SHA-256 of the ASCII of draftyak/sas/v1 followed by \"ekmHex\", and \"sas\" is the big-endian u32 of its first 4 bytes mod 1,000,000, as six digits with leading zeros. A hub ID's \"display\" is DYK- and the first 16 hex digits of \"hid\" in upper case, in groups of four. A sidecar case's \"pid\" and \"sec\" are base64url of 16 bytes of HKDF-SHA-256 over \"bootstrapSecretHex\" with an empty salt and the info draftyak/pair/v1/sidecar-pid or draftyak/pair/v1/sidecar-sec. Ids starting with skeleton are the S10 transport skeleton's own numbers (ADR 0012's kept test).",
+  "ekm": {
+    "label": "EXPERIMENTAL-draftyak-pair-v1",
+    "contextBytes": 16,
+    "length": 32
+  },
+  "proofs": [
+    {
+      "id": "skeleton",
+      "secHex": "01010101010101010101010101010101",
+      "ekmHex": "0202020202020202020202020202020202020202020202020202020202020202",
+      "pubsHex": "70756273",
+      "messageHex": "647261667479616b2f706169722f7631020202020202020202020202020202020202020202020202020202020202020270756273",
+      "proofHex": "d9351b28b88772134dcbcaa57c493ae1cafff501908e530a1c9f4fe700a850f1",
+      "valid": true
+    },
+    {
+      "id": "skeleton-other-ekm",
+      "secHex": "01010101010101010101010101010101",
+      "ekmHex": "0303030303030303030303030303030303030303030303030303030303030303",
+      "pubsHex": "70756273",
+      "messageHex": "647261667479616b2f706169722f7631030303030303030303030303030303030303030303030303030303030303030370756273",
+      "proofHex": "d9351b28b88772134dcbcaa57c493ae1cafff501908e530a1c9f4fe700a850f1",
+      "valid": false
+    },
+    {
+      "id": "skeleton-other-pubs",
+      "secHex": "01010101010101010101010101010101",
+      "ekmHex": "0202020202020202020202020202020202020202020202020202020202020202",
+      "pubsHex": "7075627a",
+      "messageHex": "647261667479616b2f706169722f763102020202020202020202020202020202020202020202020202020202020202027075627a",
+      "proofHex": "d9351b28b88772134dcbcaa57c493ae1cafff501908e530a1c9f4fe700a850f1",
+      "valid": false
+    },
+    {
+      "id": "skeleton-other-sec",
+      "secHex": "09090909090909090909090909090909",
+      "ekmHex": "0202020202020202020202020202020202020202020202020202020202020202",
+      "pubsHex": "70756273",
+      "messageHex": "647261667479616b2f706169722f7631020202020202020202020202020202020202020202020202020202020202020270756273",
+      "proofHex": "d9351b28b88772134dcbcaa57c493ae1cafff501908e530a1c9f4fe700a850f1",
+      "valid": false
+    },
+    {
+      "id": "skeleton-proof-truncated",
+      "secHex": "01010101010101010101010101010101",
+      "ekmHex": "0202020202020202020202020202020202020202020202020202020202020202",
+      "pubsHex": "70756273",
+      "messageHex": "647261667479616b2f706169722f7631020202020202020202020202020202020202020202020202020202020202020270756273",
+      "proofHex": "d9351b28b88772134dcbcaa57c493ae1cafff501908e530a1c9f4fe700a850",
+      "valid": false
+    },
+    {
+      "id": "device-claim",
+      "secHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "pubsHex": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa",
+      "messageHex": "647261667479616b2f706169722f7631404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5fd5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa",
+      "proofHex": "955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da",
+      "valid": true
+    }
+  ],
+  "sas": [
+    {
+      "id": "skeleton-zeros",
+      "ekmHex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "e0c49f1627e5efb88b376c80a032c988c891c42e0a49cbf340c94e752dda35b6",
+      "sas": "982166"
+    },
+    {
+      "id": "skeleton-ones",
+      "ekmHex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "sha256": "09a805f87da2f61ed99cc689a5ca6193824facab6c5c5e24aafbe6b3311e8d2b",
+      "sas": "006520"
+    },
+    {
+      "id": "device-claim",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "sha256": "6751ad657213c99d9f81f07acbbed2cacfab30e5f975d89fd69d9d8d81eae520",
+      "sas": "406053"
+    }
+  ],
+  "hubIds": [
+    {
+      "id": "skeleton",
+      "hid": "abababababababababababababababababababababababababababababababab",
+      "display": "DYK-ABAB-ABAB-ABAB-ABAB"
+    },
+    {
+      "id": "payload-hub",
+      "hid": "0cdac297491e09806c3af9a8a786b4cdb097fa72fbea7a8dde5a180cff84f844",
+      "display": "DYK-0CDA-C297-491E-0980"
+    }
+  ],
+  "sidecar": [
+    {
+      "id": "zeros",
+      "bootstrapSecretHex": "00000000000000000000000000000000",
+      "pid": "SygdeTdPTytdM_mfddtV6Q",
+      "sec": "V2AfF9W1ZeUwORf1BN7O8Q"
+    },
+    {
+      "id": "run",
+      "bootstrapSecretHex": "101112131415161718191a1b1c1d1e1f",
+      "pid": "dFJ9FnPs-bijfxv97Wlxsg",
+      "sec": "iNlRDGzXKsV9tanXPpCDDg"
+    }
+  ]
+}
