@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T08:59:18.109Z",
+  "recordedAt": "2026-10-18T16:20:02.850Z",
   "fingerprint": {
     "os": {
       "platform": "darwin",
@@ -11,13 +11,13 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "e961e3a6bd7d269e1322b06fc678ac6b136bf897",
+    "commit": "d983de9812f6a98a1d34194a08dcc515107057d9",
     "dirty": false,
     "load": {
-      "cpuPercent": 3,
+      "cpuPercent": 9,
       "cpuCount": 3,
       "cpuModel": "Apple M1 (Virtual)",
-      "memoryUsedPercent": 90.2,
+      "memoryUsedPercent": 94.5,
       "concurrentBuilds": 0
     }
   },
@@ -39,7 +39,7 @@
     },
     "cargo": {
       "build": {
-        "seconds": 10.7,
+        "seconds": 15.1,
         "crates": 31,
         "jobs": 3
       },
@@ -50,7 +50,7 @@
       "fmt": "clean",
       "clippy": {
         "result": "clean",
-        "seconds": 2.9,
+        "seconds": 4.3,
         "crates": 28
       }
     },
@@ -97,7 +97,7 @@
         "readBack": true,
         "persistence": null,
         "removed": true,
-        "ms": 20
+        "ms": 12
       },
       "fallback": {
         "kdf": "pbkdf2-hmac-sha256",
@@ -108,7 +108,7 @@
         "readBack": true,
         "wrongPassphraseRefused": true,
         "tamperRefused": true,
-        "unwrapMs": 86
+        "unwrapMs": 78
       }
     }
   }
