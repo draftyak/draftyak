@@ -92,5 +92,6 @@ These checked-in contracts remain draft until the M1 gate. A dash means the cont
 | Draft output | [AI provider v1](extensions/ai-provider-v1.md) | [Draft output v1](schemas/draft-output-v1.schema.json) | — |
 | Plugin errors | [Channel v1](extensions/channel-v1.md), [Tool v1](extensions/tool-v1.md), [AI provider v1](extensions/ai-provider-v1.md) | [Plugin error v1](schemas/plugin-error-v1.schema.json) | — |
 | Send snapshots | [Approval v1: snapshot](approval-v1.md#snapshot) | [Snapshot v1](schemas/snapshot-v1.schema.json) | [Snapshots](vectors/snapshot/) |
+| Plugin manifests and templates | [Plugin manifest v1](plugin-manifest-v1.md) | [Plugin manifest v1](plugin-manifest-v1.schema.json) | [Manifests](vectors/manifests/) |
 | Approval and identity statements | [Approval v1: statements](approval-v1.md#statements) | — | [Statements](vectors/statements/) |
 | Relay architecture | [Relay protocol v1](relay-protocol-v1.md) | — | — |
