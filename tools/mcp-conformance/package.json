@@ -1,0 +1,9 @@
+{
+  "name": "@draftyak/mcp-conformance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "node --test --test-concurrency=1 artifacts.test.ts gate.test.ts resources.test.ts"
+  }
+}

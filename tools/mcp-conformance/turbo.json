@@ -1,0 +1,13 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../security/mcp-conformance-baseline.json",
+        "../../spikes/s03-mcp-sdk/conformance-baseline.json",
+        "../../spikes/s03-mcp-sdk/evidence/conformance.json"
+      ]
+    }
+  }
+}
