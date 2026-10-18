@@ -9,7 +9,6 @@ import {
 	nodeVersions,
 	runInDocker,
 	stageForDocker,
-	writeEvidence,
 } from "@draftyak/spike-kit";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import {
@@ -36,11 +35,12 @@ import {
 	startListeners,
 	VARIANTS,
 } from "./escape-matrix.ts";
+import { evidenceFile, recordEvidence } from "./record.ts";
+import { selectedNodes, tempRoot } from "./s2b.ts";
 
 const spikeDir = path.resolve(import.meta.dirname, "..");
 const hostileDir = path.join(spikeDir, "fixtures", "hostile");
-const { minimum, bundled } = nodeVersions();
-const NODES = [minimum, bundled];
+const NODES = selectedNodes(nodeVersions());
 const arch = hostTarget().arch;
 const glibcImage: string = JSON.parse(
 	fs.readFileSync(path.resolve(spikeDir, "..", "..", "tools", "fetch-node", "images.json"), "utf8"),
@@ -80,6 +80,32 @@ function aggregateProblems(agg: Aggregate): string[] {
 		...agg.argvReports.map(argvReportProblem),
 		...agg.controls.map(controlProblem),
 	].filter((p): p is string => p !== null);
+}
+
+// Why a host matrix isn't recorded: a planned run that never happened (a skipped or failed test),
+// or a per-case check that the aggregate doesn't repeat.
+function hostShortfall(agg: Aggregate, osKind: "windows" | "posix"): string[] {
+	const per = NODES.length * VARIANTS.length;
+	const links = osKind === "windows" ? PRESPAWN_LINKS.length : PRESPAWN_LINKS.length - 1;
+	const fixtures = FIXTURES.filter((f) => (osKind === "windows" ? f.win : f.posix)).length;
+	const counts: [string, number, number][] = [
+		["fixture runs", agg.cases.length, fixtures * per],
+		["argv reports", agg.argvReports.length, per],
+		["pre-spawn links", agg.prespawn.length, links * per],
+		["data-dir links", agg.dataDirLinks.length, links * NODES.length],
+		["controls", agg.controls.length, 2 * NODES.length],
+	];
+	return [
+		...counts
+			.filter(([, ran, planned]) => ran !== planned)
+			.map(([what, ran, planned]) => `${what}: ${ran} of ${planned} ran`),
+		...agg.cases
+			.filter((c) => c.name.startsWith("write-") && c.realWriteAllowed !== false)
+			.map((c) => `${c.name} ${c.node} ${c.variant}: real-path write not denied`),
+		...agg.dataDirLinks
+			.filter((d) => !d.followed)
+			.map((d) => `data-dir ${d.kind} ${d.node}: not followed`),
+	];
 }
 
 function evidenceData(
@@ -174,7 +200,7 @@ function hostSuite(
 					osKind === "windows" ? { platform: "win", arch } : hostTarget(),
 				);
 			}
-			const root = fs.mkdtempSync(path.join(os.tmpdir(), `dy-s02-${osKind}-`));
+			const root = tempRoot(`dy-s02-${osKind}-`);
 			canaries = setupCanaries(root, hostileDir, process.env, platform);
 			listeners = await startListeners(platform, root);
 		}, 180_000);
@@ -334,8 +360,9 @@ function hostSuite(
 				kernelVersion: os.release(),
 				nodes: NODES.map((v) => nodeIdentity(bins[v] as string, v)),
 			};
-			await writeEvidence(
-				path.join(spikeDir, "evidence", `escape-${platform}-${arch}.json`),
+			await recordEvidence(
+				evidenceFile("escape", `${platform}-${arch}`),
+				hostShortfall(agg, osKind),
 				evidenceData(`${platform}-${arch}`, runtime, agg),
 			);
 		});
@@ -410,8 +437,9 @@ describe("Linux Docker escape matrix", () => {
 				expect(r.realWriteAllowed, `${name}: real-path write must stay denied`).toBe(false);
 			}
 		}
-		await writeEvidence(
-			path.join(spikeDir, "evidence", `escape-docker-linux-${arch}.json`),
+		await recordEvidence(
+			evidenceFile("escape", `docker-linux-${arch}`),
+			[],
 			evidenceData(`docker-linux-${arch}`, { ...matrix.runtime, image: glibcImage }, agg),
 		);
 	});

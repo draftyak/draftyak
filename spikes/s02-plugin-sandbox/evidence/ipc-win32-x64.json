@@ -1,0 +1,1162 @@
+{
+  "recordedAt": "2026-10-18T02:18:25.477Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "96f958d02f293dd311fa3c94bee8efd641116545",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 15.9,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 74.6,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "win32-x64",
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "layout": {
+      "stdio": [
+        "pipe",
+        "pipe",
+        "pipe",
+        "overlapped"
+      ],
+      "childChannelEnv": [
+        "NODE_CHANNEL_FD",
+        "NODE_CHANNEL_SERIALIZATION_MODE"
+      ],
+      "hubParser": "libuv-frames-then-json-lines",
+      "maxMessageBytes": 1048576
+    },
+    "fetchTargets": [
+      {
+        "label": "loopback-9229",
+        "expect": "inspector-port"
+      },
+      {
+        "label": "loopback-47613",
+        "expect": "hub-port"
+      },
+      {
+        "label": "loopback-47614",
+        "expect": "hub-port"
+      },
+      {
+        "label": "loopback-47615",
+        "expect": "hub-port"
+      },
+      {
+        "label": "mapped-9229",
+        "expect": "inspector-port"
+      },
+      {
+        "label": "unspecified-47613",
+        "expect": "hub-port"
+      },
+      {
+        "label": "localhost-dot-9229",
+        "expect": "inspector-port"
+      },
+      {
+        "label": "external-443",
+        "expect": "allowed"
+      }
+    ],
+    "runs": [
+      {
+        "node": "26.5.1",
+        "channel": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "roundTrip": true,
+            "audit": [
+              {
+                "reason": "inspector-port",
+                "port": 9229,
+                "allow": false
+              },
+              {
+                "reason": "hub-port",
+                "port": 47613,
+                "allow": false
+              },
+              {
+                "reason": "hub-port",
+                "port": 47614,
+                "allow": false
+              },
+              {
+                "reason": "hub-port",
+                "port": 47615,
+                "allow": false
+              },
+              {
+                "reason": "inspector-port",
+                "port": 9229,
+                "allow": false
+              },
+              {
+                "reason": "hub-port",
+                "port": 47613,
+                "allow": false
+              },
+              {
+                "reason": "inspector-port",
+                "port": 9229,
+                "allow": false
+              },
+              {
+                "reason": "allowed",
+                "port": 443,
+                "allow": true
+              }
+            ],
+            "outcomes": [
+              {
+                "denied": true,
+                "reason": "inspector-port",
+                "port": 9229
+              },
+              {
+                "denied": true,
+                "reason": "hub-port",
+                "port": 47613
+              },
+              {
+                "denied": true,
+                "reason": "hub-port",
+                "port": 47614
+              },
+              {
+                "denied": true,
+                "reason": "hub-port",
+                "port": 47615
+              },
+              {
+                "denied": true,
+                "reason": "inspector-port",
+                "port": 9229
+              },
+              {
+                "denied": true,
+                "reason": "hub-port",
+                "port": 47613
+              },
+              {
+                "denied": true,
+                "reason": "inspector-port",
+                "port": 9229
+              },
+              {
+                "denied": false,
+                "port": 443
+              }
+            ],
+            "violations": [],
+            "pluginEnded": {
+              "code": 0,
+              "signal": null,
+              "closed": true
+            }
+          }
+        },
+        "fdAdopt": {
+          "outcome": "adopted",
+          "code": null,
+          "nodeVersion": "26.5.1",
+          "gated": false,
+          "denied": false
+        },
+        "fuzz": [
+          {
+            "mode": "node-internal",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "node-internal",
+              "violations": [
+                {
+                  "kind": "handle",
+                  "detail": "NODE_HANDLE"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 53,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "node-internal",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "raw-garbage",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "raw-garbage",
+              "violations": [
+                {
+                  "kind": "bad-frame",
+                  "detail": "header"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 54,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "raw-garbage",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "raw-malformed",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "raw-malformed",
+              "violations": [
+                {
+                  "kind": "parse-error",
+                  "detail": "json"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 55,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "raw-malformed",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "raw-socket",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "raw-socket",
+              "violations": [
+                {
+                  "kind": "parse-error",
+                  "detail": "json"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 56,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "raw-socket",
+                  "adopted": true
+                },
+                {
+                  "mode": "raw-socket",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "oversize",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "oversize",
+              "violations": [
+                {
+                  "kind": "oversize",
+                  "detail": "frame"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 60,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "oversize",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "unterminated",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "unterminated",
+              "violations": [
+                {
+                  "kind": "oversize",
+                  "detail": "message"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 58,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": []
+            }
+          },
+          {
+            "mode": "handle-send",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "handle-send",
+              "violations": [],
+              "killed": false,
+              "pluginEnded": {
+                "code": 0,
+                "signal": null,
+                "closed": true
+              },
+              "exitMs": 3067,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "handle-send",
+                  "attacked": true
+                },
+                {
+                  "mode": "handle-send",
+                  "attempted": 10,
+                  "failed": 10,
+                  "code": "ENOTSUP"
+                }
+              ]
+            }
+          },
+          {
+            "mode": "ignore-sigterm",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "ignore-sigterm",
+              "violations": [
+                {
+                  "kind": "internal-message",
+                  "detail": "NODE_HANDLE_ACK"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 54,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "ignore-sigterm",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "xfer-frame",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "xfer-frame",
+              "violations": [
+                {
+                  "kind": "handle",
+                  "detail": "socket-transfer-frame"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 57,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "xfer-frame",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "bad-header",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "bad-header",
+              "violations": [
+                {
+                  "kind": "bad-frame",
+                  "detail": "header"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 55,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "bad-header",
+                  "attacked": true
+                }
+              ]
+            }
+          }
+        ],
+        "lateReply": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "asked": 1,
+            "droppedWrites": 1,
+            "violations": [],
+            "end": {
+              "code": 0,
+              "signal": null,
+              "closed": true
+            }
+          }
+        },
+        "sendAfterExit": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "notified": false,
+            "request": "rejected",
+            "droppedWrites": 2,
+            "end": {
+              "code": 0,
+              "signal": null,
+              "closed": true
+            }
+          }
+        },
+        "controls": {
+          "malformed": {
+            "survived": false,
+            "exitCode": 1,
+            "signal": null,
+            "timedOut": false,
+            "crash": "SyntaxError",
+            "result": null
+          },
+          "fakeAck": {
+            "survived": false,
+            "exitCode": 1,
+            "signal": null,
+            "timedOut": false,
+            "crash": "ERR_INTERNAL_ASSERTION",
+            "result": null
+          },
+          "handle": {
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "handle-send",
+              "handlesReceived": 0,
+              "closeEmitted": true,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "handle-send",
+                  "attacked": true
+                },
+                {
+                  "mode": "handle-send",
+                  "attempted": 10,
+                  "failed": 10,
+                  "code": "ENOTSUP"
+                }
+              ]
+            }
+          }
+        },
+        "template": {
+          "discover": true,
+          "tools": [
+            "count",
+            "echo"
+          ],
+          "echo": {
+            "valid": true,
+            "invalidRefused": true
+          },
+          "count": {
+            "valid": true,
+            "invalidRefused": true
+          }
+        },
+        "validators": {
+          "codeGeneration": "EvalError",
+          "defaultValidator": "EvalError",
+          "cfWorker": {
+            "valid": "accepted",
+            "invalid": "rejected"
+          },
+          "zodJitless": {
+            "valid": "accepted",
+            "invalid": "rejected"
+          }
+        }
+      },
+      {
+        "node": "26.12.0",
+        "channel": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "roundTrip": true,
+            "audit": [
+              {
+                "reason": "inspector-port",
+                "port": 9229,
+                "allow": false
+              },
+              {
+                "reason": "hub-port",
+                "port": 47613,
+                "allow": false
+              },
+              {
+                "reason": "hub-port",
+                "port": 47614,
+                "allow": false
+              },
+              {
+                "reason": "hub-port",
+                "port": 47615,
+                "allow": false
+              },
+              {
+                "reason": "inspector-port",
+                "port": 9229,
+                "allow": false
+              },
+              {
+                "reason": "hub-port",
+                "port": 47613,
+                "allow": false
+              },
+              {
+                "reason": "inspector-port",
+                "port": 9229,
+                "allow": false
+              },
+              {
+                "reason": "allowed",
+                "port": 443,
+                "allow": true
+              }
+            ],
+            "outcomes": [
+              {
+                "denied": true,
+                "reason": "inspector-port",
+                "port": 9229
+              },
+              {
+                "denied": true,
+                "reason": "hub-port",
+                "port": 47613
+              },
+              {
+                "denied": true,
+                "reason": "hub-port",
+                "port": 47614
+              },
+              {
+                "denied": true,
+                "reason": "hub-port",
+                "port": 47615
+              },
+              {
+                "denied": true,
+                "reason": "inspector-port",
+                "port": 9229
+              },
+              {
+                "denied": true,
+                "reason": "hub-port",
+                "port": 47613
+              },
+              {
+                "denied": true,
+                "reason": "inspector-port",
+                "port": 9229
+              },
+              {
+                "denied": false,
+                "port": 443
+              }
+            ],
+            "violations": [],
+            "pluginEnded": {
+              "code": 0,
+              "signal": null,
+              "closed": true
+            }
+          }
+        },
+        "fdAdopt": {
+          "outcome": "denied",
+          "code": "ERR_ACCESS_DENIED",
+          "nodeVersion": "26.12.0",
+          "gated": true,
+          "denied": true
+        },
+        "fuzz": [
+          {
+            "mode": "node-internal",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "node-internal",
+              "violations": [
+                {
+                  "kind": "handle",
+                  "detail": "NODE_HANDLE"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 57,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "node-internal",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "raw-garbage",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "raw-garbage",
+              "violations": [
+                {
+                  "kind": "bad-frame",
+                  "detail": "header"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 56,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "raw-garbage",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "raw-malformed",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "raw-malformed",
+              "violations": [
+                {
+                  "kind": "parse-error",
+                  "detail": "json"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 53,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "raw-malformed",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "raw-socket",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "raw-socket",
+              "violations": [
+                {
+                  "kind": "parse-error",
+                  "detail": "json"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 57,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "raw-socket",
+                  "adopted": true
+                },
+                {
+                  "mode": "raw-socket",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "oversize",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "oversize",
+              "violations": [
+                {
+                  "kind": "oversize",
+                  "detail": "frame"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 71,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "oversize",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "unterminated",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "unterminated",
+              "violations": [
+                {
+                  "kind": "oversize",
+                  "detail": "message"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 55,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": []
+            }
+          },
+          {
+            "mode": "handle-send",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "handle-send",
+              "violations": [],
+              "killed": false,
+              "pluginEnded": {
+                "code": 0,
+                "signal": null,
+                "closed": true
+              },
+              "exitMs": 3062,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "handle-send",
+                  "attacked": true
+                },
+                {
+                  "mode": "handle-send",
+                  "attempted": 10,
+                  "failed": 10,
+                  "code": "ENOTSUP"
+                }
+              ]
+            }
+          },
+          {
+            "mode": "ignore-sigterm",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "ignore-sigterm",
+              "violations": [
+                {
+                  "kind": "internal-message",
+                  "detail": "NODE_HANDLE_ACK"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 66,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "ignore-sigterm",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "xfer-frame",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "xfer-frame",
+              "violations": [
+                {
+                  "kind": "handle",
+                  "detail": "socket-transfer-frame"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 55,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "xfer-frame",
+                  "attacked": true
+                }
+              ]
+            }
+          },
+          {
+            "mode": "bad-header",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "bad-header",
+              "violations": [
+                {
+                  "kind": "bad-frame",
+                  "detail": "header"
+                }
+              ],
+              "killed": true,
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 55,
+              "auditCount": 0,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "bad-header",
+                  "attacked": true
+                }
+              ]
+            }
+          }
+        ],
+        "lateReply": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "asked": 1,
+            "droppedWrites": 1,
+            "violations": [],
+            "end": {
+              "code": 0,
+              "signal": null,
+              "closed": true
+            }
+          }
+        },
+        "sendAfterExit": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "notified": false,
+            "request": "rejected",
+            "droppedWrites": 2,
+            "end": {
+              "code": 0,
+              "signal": null,
+              "closed": true
+            }
+          }
+        },
+        "controls": {
+          "malformed": {
+            "survived": false,
+            "exitCode": 1,
+            "signal": null,
+            "timedOut": false,
+            "crash": "SyntaxError",
+            "result": null
+          },
+          "fakeAck": {
+            "survived": false,
+            "exitCode": 1,
+            "signal": null,
+            "timedOut": false,
+            "crash": "ERR_INTERNAL_ASSERTION",
+            "result": null
+          },
+          "handle": {
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "handle-send",
+              "handlesReceived": 0,
+              "closeEmitted": true,
+              "fds": null,
+              "plugin": [
+                {
+                  "mode": "handle-send",
+                  "attacked": true
+                },
+                {
+                  "mode": "handle-send",
+                  "attempted": 10,
+                  "failed": 10,
+                  "code": "ENOTSUP"
+                }
+              ]
+            }
+          }
+        },
+        "template": {
+          "discover": true,
+          "tools": [
+            "count",
+            "echo"
+          ],
+          "echo": {
+            "valid": true,
+            "invalidRefused": true
+          },
+          "count": {
+            "valid": true,
+            "invalidRefused": true
+          }
+        },
+        "validators": {
+          "codeGeneration": "EvalError",
+          "defaultValidator": "EvalError",
+          "cfWorker": {
+            "valid": "accepted",
+            "invalid": "rejected"
+          },
+          "zodJitless": {
+            "valid": "accepted",
+            "invalid": "rejected"
+          }
+        }
+      }
+    ],
+    "findings": {
+      "channelRoundTripsAndBrokerRefuses": true,
+      "fdAdoptionDeniedOnGatedNodes": true,
+      "hubSurvivesEveryFuzzCase": true,
+      "fuzzEndsInTheExpectedViolationAndKill": true,
+      "noHandleReachesTheHub": true,
+      "lateReplyAndSendAfterExitAreDropped": true,
+      "nodeIpcParentIsUnsafe": true,
+      "templatePluginServesUnderProductionFlags": true,
+      "cfWorkerAndJitlessNeedNoCodegen": true
+    }
+  }
+}

@@ -5,7 +5,8 @@ import { afterAll, describe, expect, it } from "vitest";
 import { preSpawnLinkScan, RefusedSpawnError, spawnPlugin } from "../src/spawn.ts";
 
 describe("preSpawnLinkScan", () => {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), "dy-s02-scan-"));
+	// By its real path: macOS's temp folder sits behind the /var link, which the scan refuses.
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dy-s02-scan-")));
 	afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 	const freshBundle = (name: string): string => {
