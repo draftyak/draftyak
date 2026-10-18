@@ -230,14 +230,18 @@ describe("workspace policy", () => {
 		// folders such as node_modules are listed as one entry.
 		const ignored = ["ls-files", "-z", "--cached", "--others", "--ignored", "--exclude-standard"];
 		const holding: string[] = [];
-		for (const dir of worktrees) {
-			const found = await git("-C", dir, ...ignored, "--directory");
+		const scan = async (dir: string): Promise<void> => {
+			const found = await git("--no-optional-locks", "-C", dir, ...ignored, "--directory");
 			const files = found.code === 0 ? found.stdout.split("\0") : [];
 			if (found.code !== 0 && existsSync(path.join(dir, ".env.live"))) files.push(".env.live");
 			for (const file of files.filter((file) => path.posix.basename(file) === ".env.live")) {
 				holding.push(`${dir}/${file}`);
 			}
+		};
+		// Eight at a time, read-only: a repo can have a hundred worktrees, some of them in use.
+		for (let i = 0; i < worktrees.length; i += 8) {
+			await Promise.all(worktrees.slice(i, i + 8).map(scan));
 		}
-		expect(holding).toEqual([]);
-	});
+		expect(holding.toSorted()).toEqual([]);
+	}, 120_000);
 });
