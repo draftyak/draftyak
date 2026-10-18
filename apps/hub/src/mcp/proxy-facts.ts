@@ -120,7 +120,7 @@ export interface PublicRequestFacts {
 export interface PublicRequestFactsPolicy {
 	readonly publicOrigin: string;
 	readonly trustedProxyCidrs: readonly string[];
-	/** Native socket facts and IncomingMessage.rawHeaders only; never request-supplied facts. */
+	/** Native socket facts plus IncomingMessage.url/rawHeaders; never request-supplied facts. */
 	inspect(native: unknown): PublicRequestFacts;
 }
 
@@ -137,7 +137,17 @@ export function createPublicRequestFactsPolicy(rawConfig: unknown): PublicReques
 			trustedProxyCidrs: proxies.cidrs,
 			inspect(raw: unknown): PublicRequestFacts {
 				try {
-					const native = fields(raw, ["remoteAddress", "encrypted", "rawHeaders"]);
+					const native = fields(raw, ["url", "remoteAddress", "encrypted", "rawHeaders"]);
+					// Absolute-form authority overrides Host in HTTP/1.1. Check the unparsed native
+					// target before deriving any Host/proxy observations; do not normalize it as a URL.
+					// Network-path references and literal backslashes can also become authority separators.
+					if (
+						typeof native.url !== "string" ||
+						!native.url.startsWith("/") ||
+						native.url.startsWith("//") ||
+						native.url.includes("\\")
+					)
+						refuse();
 					if (typeof native.encrypted !== "boolean") refuse();
 					const socketIP = ip(native.remoteAddress),
 						values = headers(native.rawHeaders);

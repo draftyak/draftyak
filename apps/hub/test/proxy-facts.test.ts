@@ -11,17 +11,61 @@ const origin = "https://hub.example:8443";
 const host = "hub.example:8443";
 const config = () => ({ publicOrigin: origin, trustedProxyCidrs: ["127.0.0.1/32", "::1/128"] });
 const direct = () => ({
+	url: "/mcp",
 	remoteAddress: "198.51.100.8",
 	encrypted: true,
 	rawHeaders: ["Host", host],
 });
 const forwarded = () => ({
+	url: "/mcp",
 	remoteAddress: "127.0.0.1",
 	encrypted: false,
 	rawHeaders: ["Host", host, "X-Forwarded-For", "198.51.100.8", "X-Forwarded-Proto", "https"],
 });
 
 describe("public native request observations", () => {
+	it.each([
+		"",
+		"*",
+		"hub.example:8443",
+		"https://other.example/oauth/token",
+		"//other.example/oauth/token",
+		"/\\other.example/oauth/token",
+		"https://hub.example:8443/oauth/token",
+		undefined,
+		null,
+		42,
+	])(
+		"refuses non-origin-form or authority-looking native targets before matching Host (%s)",
+		(url) => {
+			const policy = createPublicRequestFactsPolicy(config());
+			for (const native of [direct(), forwarded()])
+				expect(() => policy.inspect({ ...native, url })).toThrow(new PublicRequestFactsError());
+		},
+	);
+	it("keeps origin-form query text opaque and never executes a native target accessor", () => {
+		const policy = createPublicRequestFactsPolicy(config());
+		for (const native of [direct(), forwarded()]) {
+			for (const url of [
+				"/oauth/token?aud=https%3A%2F%2Fother.example",
+				"/%5cother.example/oauth/token",
+			])
+				expect(policy.inspect({ ...native, url }).publicOrigin).toBe(origin);
+			let reads = 0;
+			expect(() =>
+				policy.inspect(
+					Object.defineProperty(native, "url", {
+						enumerable: true,
+						get() {
+							reads++;
+							throw new Error("PRIVATE_REQUEST_TARGET_CANARY");
+						},
+					}),
+				),
+			).toThrow(new PublicRequestFactsError());
+			expect(reads).toBe(0);
+		}
+	});
 	it("uses actual TLS socket facts directly, detached from caller configuration and headers", () => {
 		const input = config(),
 			policy = createPublicRequestFactsPolicy(input),

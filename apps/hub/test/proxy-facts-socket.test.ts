@@ -1,6 +1,7 @@
-import { createServer, type IncomingHttpHeaders } from "node:http";
+import { createServer, type IncomingHttpHeaders, type RequestListener } from "node:http";
+import { createServer as createSecureServer } from "node:https";
 import { type AddressInfo, createConnection, type Socket } from "node:net";
-import { TLSSocket } from "node:tls";
+import { connect as connectTls, TLSSocket } from "node:tls";
 import { describe, expect, it } from "vitest";
 import {
 	createPublicRequestFactsPolicy,
@@ -8,6 +9,7 @@ import {
 	type PublicRequestFacts,
 	PublicRequestFactsError,
 } from "../src/mcp/proxy-facts.ts";
+import { createMetadataTlsFixture } from "./helpers/metadata-tls.ts";
 
 const origin = "https://hub.example:8443";
 const host = "hub.example:8443";
@@ -19,6 +21,7 @@ const forwarded = (): string[] => [
 	"X-Forwarded-Proto: https",
 ];
 interface Observation {
+	readonly url: string | undefined;
 	readonly socketIP: string | undefined;
 	readonly encrypted: boolean;
 	readonly rawHeaders: readonly string[];
@@ -28,59 +31,67 @@ interface Observation {
 	readonly refusal?: { readonly code: string; readonly message: string };
 }
 
-/** A synthetic proxy backend connection, never a product listener or proof of external TLS. */
+/** Synthetic loopback HTTP/TLS observations, never a product listener or external TLS deployment. */
 async function observe(
 	lines: readonly string[],
 	trustedProxyCidrs: readonly string[] = ["127.0.0.1/32"],
+	target = "/mcp",
+	tls?: Awaited<ReturnType<typeof createMetadataTlsFixture>>,
 ): Promise<Observation> {
 	const policy = createPublicRequestFactsPolicy({ publicOrigin: origin, trustedProxyCidrs });
 	const seen = Promise.withResolvers<Observation>();
 	const sockets = new Set<Socket>();
-	const server = createServer(
-		{
-			maxHeaderSize: MAX_PUBLIC_HEADER_BYTES,
-			headersTimeout: 1000,
-			requestTimeout: 1000,
-			keepAliveTimeout: 100,
-			connectionsCheckingInterval: 100,
-		},
-		(request, response) => {
-			let bodyBytes = 0;
-			request.on("data", (chunk: Buffer) => {
-				bodyBytes += chunk.byteLength;
-				if (bodyBytes > 0) request.destroy(new Error("Socket fixture body refused"));
-			});
-			request.on("error", () => seen.reject(new Error("Socket fixture request failed")));
-			request.on("end", () => {
-				const socketIP = request.socket.remoteAddress;
-				const encrypted = request.socket instanceof TLSSocket && request.socket.encrypted === true;
-				const native = {
-					socketIP,
+	const serverOptions = {
+		maxHeaderSize: MAX_PUBLIC_HEADER_BYTES,
+		headersTimeout: 1000,
+		requestTimeout: 1000,
+		keepAliveTimeout: 100,
+		connectionsCheckingInterval: 100,
+	};
+	const receive: RequestListener = (request, response) => {
+		let bodyBytes = 0;
+		request.on("data", (chunk: Buffer) => {
+			bodyBytes += chunk.byteLength;
+			if (bodyBytes > 0) request.destroy(new Error("Socket fixture body refused"));
+		});
+		request.on("error", () => seen.reject(new Error("Socket fixture request failed")));
+		request.on("end", () => {
+			const socketIP = request.socket.remoteAddress;
+			const encrypted = request.socket instanceof TLSSocket && request.socket.encrypted === true;
+			const native = {
+				url: request.url,
+				socketIP,
+				encrypted,
+				rawHeaders: [...request.rawHeaders],
+				headers: { ...request.headers },
+				bodyBytes,
+			};
+			try {
+				const facts = policy.inspect({
+					url: request.url,
+					remoteAddress: socketIP,
 					encrypted,
-					rawHeaders: [...request.rawHeaders],
-					headers: { ...request.headers },
-					bodyBytes,
-				};
-				try {
-					const facts = policy.inspect({
-						remoteAddress: socketIP,
-						encrypted,
-						rawHeaders: request.rawHeaders,
-					});
-					seen.resolve({ ...native, facts });
-					response.writeHead(200, { "content-length": "0", connection: "close" }).end();
-				} catch (error) {
-					if (!(error instanceof PublicRequestFactsError)) {
-						seen.reject(new Error("Socket fixture checker failed"));
-						response.destroy();
-						return;
-					}
-					seen.resolve({ ...native, refusal: { code: error.code, message: error.message } });
-					response.writeHead(400, { "content-length": "0", connection: "close" }).end();
+					rawHeaders: request.rawHeaders,
+				});
+				seen.resolve({ ...native, facts });
+				response.writeHead(200, { "content-length": "0", connection: "close" }).end();
+			} catch (error) {
+				if (!(error instanceof PublicRequestFactsError)) {
+					seen.reject(new Error("Socket fixture checker failed"));
+					response.destroy();
+					return;
 				}
-			});
-		},
-	);
+				seen.resolve({ ...native, refusal: { code: error.code, message: error.message } });
+				response.writeHead(400, { "content-length": "0", connection: "close" }).end();
+			}
+		});
+	};
+	const server = tls
+		? createSecureServer(
+				{ ...serverOptions, cert: tls.cert, key: tls.key, handshakeTimeout: 1000 },
+				receive,
+			)
+		: createServer(serverOptions, receive);
 	server.maxConnections = 1;
 	server.maxRequestsPerSocket = 1;
 	server.on("connection", (socket) => {
@@ -109,7 +120,16 @@ async function observe(
 			port = 0;
 		}
 		if (port === 0) throw new Error("Socket fixture received only reserved ports");
-		client = createConnection({ host: "127.0.0.1", port });
+		client = tls
+			? connectTls({
+					host: "127.0.0.1",
+					port,
+					servername: "hub.example",
+					ca: tls.ca,
+					rejectUnauthorized: true,
+					ALPNProtocols: ["http/1.1"],
+				})
+			: createConnection({ host: "127.0.0.1", port });
 		const response = new Promise<string>((resolve, reject) => {
 			let wire = "",
 				ended = false;
@@ -128,14 +148,21 @@ async function observe(
 			client?.on("close", () => {
 				if (!ended) reject(new Error("Socket fixture response ended early"));
 			});
-			client?.once("connect", () => {
-				client?.end(["GET /mcp HTTP/1.1", ...lines, "Connection: close", "", ""].join("\r\n"));
+			client?.once(tls ? "secureConnect" : "connect", () => {
+				if (tls && (!(client instanceof TLSSocket) || !client.authorized)) {
+					reject(new Error("Socket fixture TLS authentication failed"));
+					client?.destroy();
+					return;
+				}
+				const wire = [`GET ${target} HTTP/1.1`, ...lines, "Connection: close", "", ""].join("\r\n");
+				if (tls) client?.write(wire);
+				else client?.end(wire);
 			});
 		});
 		const [observation, wire] = await Promise.all([seen.promise, response]);
 		expect(wire).toMatch(observation.facts ? /^HTTP\/1\.1 200 / : /^HTTP\/1\.1 400 /);
 		expect(observation.socketIP).toBe("127.0.0.1");
-		expect(observation.encrypted).toBe(false);
+		expect(observation.encrypted).toBe(Boolean(tls));
 		expect(observation.bodyBytes).toBe(0);
 		return observation;
 	} finally {
@@ -156,6 +183,45 @@ const refused = (observation: Observation): void => {
 };
 
 describe("proxy facts from actual native HTTP socket observations", () => {
+	it.each([
+		"https://other.example/oauth/token",
+		`${origin}/oauth/token`,
+		"//other.example/oauth/token",
+		"/\\other.example/oauth/token",
+	])("refuses absolute-form authority despite correct trusted-proxy Host: %s", async (target) => {
+		const result = await observe(forwarded(), ["127.0.0.1/32"], target);
+		expect(result.url).toBe(target);
+		expect(result.headers.host).toBe(host);
+		refused(result);
+	});
+	it("retains positive origin-form controls on authenticated direct TLS before refusing absolute authority", async () => {
+		const tls = await createMetadataTlsFixture();
+		for (const target of [
+			"/mcp",
+			"/oauth/token?client=synthetic",
+			"/%5cother.example/oauth/token",
+		]) {
+			const result = await observe([`Host: ${host}`], [], target, tls);
+			expect(result.url).toBe(target);
+			expect(result.facts).toEqual({
+				publicOrigin: origin,
+				socketIP: "127.0.0.1",
+				clientIP: "127.0.0.1",
+				via: "direct",
+			});
+		}
+		for (const target of [
+			"https://other.example/oauth/token",
+			`${origin}/oauth/token`,
+			"//other.example/oauth/token",
+			"/\\other.example/oauth/token",
+		]) {
+			const result = await observe([`Host: ${host}`], [], target, tls);
+			expect(result.url).toBe(target);
+			expect(result.headers.host).toBe(host);
+			refused(result);
+		}
+	});
 	it("keeps the actual plaintext loopback peer distinct from the proxy's asserted HTTPS client", async () => {
 		const result = await observe([...forwarded(), "X-Remote-Address: 203.0.113.9"]);
 		expect(result.facts).toEqual({
