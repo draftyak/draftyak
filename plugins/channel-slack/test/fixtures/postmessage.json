@@ -1,0 +1,42 @@
+[
+  {
+    "name": "machine thread escapes mentions and masked links",
+    "input": {
+      "channelId": "C0CHAN001",
+      "threadTs": "1760000001.000100",
+      "text": "<!channel> & <https://example.invalid|safe>",
+      "origin": "machine"
+    },
+    "body": "{\"channel\":\"C0CHAN001\",\"thread_ts\":\"1760000001.000100\",\"text\":\"&lt;!channel&gt; &amp; &lt;https://example.invalid|safe&gt;\",\"unfurl_links\":false,\"unfurl_media\":false,\"reply_broadcast\":false}"
+  },
+  {
+    "name": "MCP top-level post",
+    "input": {
+      "channelId": "D0DM00001",
+      "threadTs": null,
+      "text": "<@U0OTHER01> & ready",
+      "origin": "mcp"
+    },
+    "body": "{\"channel\":\"D0DM00001\",\"text\":\"&lt;@U0OTHER01&gt; &amp; ready\",\"unfurl_links\":false,\"unfurl_media\":false,\"reply_broadcast\":false}"
+  },
+  {
+    "name": "owner text keeps deliberate Slack markup",
+    "input": {
+      "channelId": "G0GROUP01",
+      "text": "<!here> café\nReady 😀",
+      "origin": "owner"
+    },
+    "body": "{\"channel\":\"G0GROUP01\",\"text\":\"<!here> café\\nReady 😀\",\"unfurl_links\":false,\"unfurl_media\":false,\"reply_broadcast\":false}"
+  },
+  {
+    "name": "owner thread with explicit broadcast",
+    "input": {
+      "channelId": "C0CHAN001",
+      "threadTs": "1760000001.000100",
+      "text": "Owner thread",
+      "origin": "owner",
+      "broadcast": true
+    },
+    "body": "{\"channel\":\"C0CHAN001\",\"thread_ts\":\"1760000001.000100\",\"text\":\"Owner thread\",\"unfurl_links\":false,\"unfurl_media\":false,\"reply_broadcast\":true}"
+  }
+]

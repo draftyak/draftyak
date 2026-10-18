@@ -1,0 +1,21 @@
+[
+  { "name": "successful post", "observation": { "kind": "response", "status": 200, "body": { "ok": true, "channel": "C0CHAN001", "ts": "1760000001.000100", "message": { "text": "PRIVATE_CANARY" } } }, "expected": { "state": "SENT", "channelId": "C0CHAN001", "ts": "1760000001.000100" } },
+  { "name": "wrong echoed destination", "observation": { "kind": "response", "status": 200, "body": { "ok": true, "channel": "C0OTHER01", "ts": "1760000001.000100" } }, "expected": { "state": "UNKNOWN", "reason": "ambiguous" } },
+  { "name": "missing success timestamp", "observation": { "kind": "response", "status": 200, "body": { "ok": true, "channel": "C0CHAN001" } }, "expected": { "state": "UNKNOWN", "reason": "ambiguous" } },
+  { "name": "HTTP 429 seconds", "observation": { "kind": "response", "status": 429, "body": { "detail": "PRIVATE_CANARY" }, "retryAfter": "30" }, "expected": { "state": "RETRY_WAIT", "notBefore": 30000, "reason": "rate_limited" } },
+  { "name": "Slack rate limit", "observation": { "kind": "response", "status": 200, "body": { "ok": false, "error": "ratelimited", "detail": "PRIVATE_CANARY" } }, "expected": { "state": "RETRY_WAIT", "notBefore": 60000, "reason": "rate_limited" } },
+  { "name": "retry after zero still waits", "observation": { "kind": "response", "status": 429, "retryAfter": "0" }, "expected": { "state": "RETRY_WAIT", "notBefore": 1000, "reason": "rate_limited" } },
+  { "name": "HTTP 408", "observation": { "kind": "response", "status": 408 }, "expected": { "state": "RETRY_WAIT", "notBefore": 1000, "reason": "http_408" } },
+  { "name": "definitely never written", "observation": { "kind": "transport", "written": "none" }, "expected": { "state": "RETRY_WAIT", "notBefore": 1000, "reason": "not_written" } },
+  { "name": "timeout reset or crash may have written", "observation": { "kind": "transport", "written": "maybe" }, "expected": { "state": "UNKNOWN", "reason": "ambiguous" } },
+  { "name": "HTTP server error", "observation": { "kind": "response", "status": 503, "body": { "ok": false, "error": "ratelimited" } }, "expected": { "state": "UNKNOWN", "reason": "ambiguous" } },
+  { "name": "redirect never followed", "observation": { "kind": "response", "status": 302 }, "expected": { "state": "UNKNOWN", "reason": "ambiguous" } },
+  { "name": "HTTP forbidden", "observation": { "kind": "response", "status": 403, "body": { "detail": "PRIVATE_CANARY" } }, "expected": { "state": "FAILED", "reason": "rejected" } },
+  { "name": "channel not found", "observation": { "kind": "response", "status": 200, "body": { "ok": false, "error": "channel_not_found" } }, "expected": { "state": "FAILED", "reason": "rejected" } },
+  { "name": "not a channel member", "observation": { "kind": "response", "status": 200, "body": { "ok": false, "error": "not_in_channel" } }, "expected": { "state": "FAILED", "reason": "rejected" } },
+  { "name": "message too long", "observation": { "kind": "response", "status": 200, "body": { "ok": false, "error": "msg_too_long" } }, "expected": { "state": "FAILED", "reason": "rejected" } },
+  { "name": "revoked credential", "observation": { "kind": "response", "status": 200, "body": { "ok": false, "error": "token_revoked" } }, "expected": { "state": "FAILED", "reason": "rejected" } },
+  { "name": "internal Slack error", "observation": { "kind": "response", "status": 200, "body": { "ok": false, "error": "internal_error" } }, "expected": { "state": "UNKNOWN", "reason": "ambiguous" } },
+  { "name": "unknown Slack code", "observation": { "kind": "response", "status": 200, "body": { "ok": false, "error": "PRIVATE_CANARY" } }, "expected": { "state": "UNKNOWN", "reason": "ambiguous" } },
+  { "name": "malformed response", "observation": { "kind": "response", "status": 200, "body": "PRIVATE_CANARY" }, "expected": { "state": "UNKNOWN", "reason": "ambiguous" } }
+]
