@@ -1,8 +1,8 @@
 import { inCode, type PatternRule, type Rule, spawned } from "../src/rules.ts";
 
-// The SIWC DevKit's package names, as S7 (M0.26) records them in spikes/s07-siwc/notes/sources.md;
-// empty until then. Each name is flagged as an exact package or module name.
-export const devkitNames: readonly string[] = [];
+// The SIWC DevKit's package names, as S7 (M0.26) records them in spikes/s07-siwc/notes/sources.md.
+// Each name is flagged as an exact package or module name.
+export const devkitNames: readonly string[] = ["@siwc/local", "@siwc/react"];
 
 const literal = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 
@@ -14,6 +14,33 @@ export function devkitRule(names: readonly string[]): PatternRule {
 		patterns: [new RegExp(`(?<![\\w.@/-])(?:${names.map(literal).join("|")})(?![\\w-])`, "i")],
 		bad: names.map((name) => inCode(`import devkit from "${name}";`)),
 		good: [inCode('import OpenAI from "openai";')],
+	};
+}
+
+// Beyond the recorded names: any package in the DevKit's @siwc scope, and its repository.
+function devkitEntry(): PatternRule {
+	const named = devkitRule(devkitNames);
+	const dependency = (spec: string) => ({
+		path: "package.json",
+		text: `{"dependencies":{${spec}}}`,
+	});
+	const repo = "openai/sign-in-with-chatgpt-devkit";
+	const scope = /(?<![\w.@-])@siwc\/[\w.-]/i;
+	return {
+		...named,
+		patterns: [...named.patterns, scope, /(?<![\w.-])sign-in-with-chatgpt-devkit(?![\w-])/i],
+		bad: [
+			...named.bad,
+			dependency('"@siwc/core": "1.0.0"'),
+			dependency(`"devkit": "git+https://github.com/${repo}.git"`),
+			dependency(`"devkit": "github:${repo}#main"`),
+			inCode('const runtime = require("../node_modules/@siwc/local/dist/index.js");'),
+		],
+		good: [
+			...named.good,
+			inCode('const terms = "https://openai.com/policies/sign-in-with-chatgpt-terms/";'),
+			inCode('const owner = "owner@siwc.example.test";'),
+		],
 	};
 }
 
@@ -74,5 +101,5 @@ export const openai: readonly Rule[] = [
 			inCode('spawn("codex", ["mcp", "list"]);'),
 		],
 	},
-	...(devkitNames.length > 0 ? [devkitRule(devkitNames)] : []),
+	...(devkitNames.length > 0 ? [devkitEntry()] : []),
 ];
