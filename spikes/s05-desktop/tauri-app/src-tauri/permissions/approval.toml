@@ -1,0 +1,6 @@
+# The app's only command. With an app permission defined, Tauri checks every app command against
+# the capabilities, so only capabilities/approval.json's window can call it.
+[[permission]]
+identifier = "allow-approval-ready"
+description = "Lets the approval page report that it loaded and what it sees."
+commands.allow = ["approval_ready"]

@@ -10,7 +10,7 @@ license = "Apache-2.0"
 # system libraries, so its tests also run on CI's plain Linux runners.
 [features]
 default = ["app"]
-app = ["dep:tauri", "dep:tauri-build"]
+app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-autostart"]
 
 [[bin]]
 name = "draftyak-spike-desktop"
@@ -23,7 +23,8 @@ tauri-build = { version = "=2.7.3", optional = true }
 [dependencies]
 getrandom = "=0.3.4"
 serde_json = "=1.0.154"
-tauri = { version = "=2.12.4", optional = true }
+tauri = { version = "=2.12.4", optional = true, features = ["tray-icon"] }
+tauri-plugin-autostart = { version = "=2.7.0", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "=0.2.191"
@@ -34,7 +35,9 @@ windows-sys = { version = "=0.61.2", features = [
   "Win32_Security",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_JobObjects",
+  "Win32_System_Registry",
   "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
 ] }
 
 # No debug info for dependencies: faster builds on the shared dev box.

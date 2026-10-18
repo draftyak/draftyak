@@ -1,9 +1,11 @@
 // Stages what tauri-build needs before any cargo command (plan §7 Bundled sidecar): the official
 // Node that fetch-node verified, as the external binary src-tauri/binaries/draftyak-node-<triple>,
 // and as resources the host's SQLite3MC prebuild plus the package's JavaScript (lib/), which the
-// stub hub loads with nativeBinding. Both come from the installed package by realpath, whose bytes
-// pnpm-lock.yaml pins. An identical file is left alone: Windows can't replace a loaded .node, and an
-// unchanged file keeps cargo from rerunning the build script.
+// stub hub loads with nativeBinding. It also copies the main window's ES modules from the pinned
+// @tauri-apps/api and @tauri-apps/plugin-autostart into ui/vendor/, which the app embeds. All come
+// from the installed packages by realpath, whose bytes pnpm-lock.yaml pins. An identical file is
+// left alone: Windows can't replace a loaded .node, and an unchanged file keeps cargo from
+// rerunning the build script.
 import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
@@ -64,9 +66,26 @@ function place(from: string, to: string): boolean {
 	return true;
 }
 
+const spikeRequire = createRequire(path.join(tauriDir, "..", "..", "package.json"));
+
 function packageDir(): string {
-	const require = createRequire(path.join(tauriDir, "..", "..", "package.json"));
-	return fs.realpathSync(path.dirname(require.resolve(`${PACKAGE}/package.json`)));
+	return fs.realpathSync(path.dirname(spikeRequire.resolve(`${PACKAGE}/package.json`)));
+}
+
+// The main window's modules, at the paths its import map names.
+function uiModules(): (readonly [string, string])[] {
+	const api = fs.realpathSync(path.dirname(spikeRequire.resolve("@tauri-apps/api/package.json")));
+	// The plugin's exports list no package.json; its main entry sits beside the ES module.
+	const autostart = fs.realpathSync(
+		path.dirname(spikeRequire.resolve("@tauri-apps/plugin-autostart")),
+	);
+	const vendor = path.join(tauriDir, "..", "ui", "vendor");
+	const tslib = ["external", "tslib", "tslib.es6.js"];
+	return [
+		[path.join(api, "core.js"), path.join(vendor, "api", "core.js")],
+		[path.join(api, ...tslib), path.join(vendor, "api", ...tslib)],
+		[path.join(autostart, "index.js"), path.join(vendor, "plugin-autostart", "index.js")],
+	];
 }
 
 const filesBelow = (dir: string): string[] =>
@@ -95,6 +114,7 @@ export async function stageSidecar(): Promise<Staged> {
 		...filesBelow(path.join(pkg, "lib")).map(
 			(file) => [path.join(pkg, "lib", file), path.join(wrapper, "lib", file)] as const,
 		),
+		...uiModules(),
 	];
 	const updated = copies
 		.filter(([from, to]) => place(from, to))
