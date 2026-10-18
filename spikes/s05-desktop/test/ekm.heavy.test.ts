@@ -31,6 +31,7 @@ import {
 } from "@draftyak/spike-kit";
 import { afterAll, describe, expect, it, type TestContext } from "vitest";
 import { codeFingerprint } from "./app.ts";
+import { itemAccess } from "./keychain-access.ts";
 
 // Plan section 7, pairing step 6; M0.36's hub stand-in pins the same literals.
 const LABEL = "EXPERIMENTAL-draftyak-pair-v1";
@@ -547,7 +548,9 @@ describe("the master key's stores", () => {
 	// deleted file. Then one item is set by the binary cargo built (ad-hoc signed by the linker) and
 	// read and deleted by a copy re-signed ad hoc under another identifier, as an update's new code
 	// identity would be. A refusal, with its error and OS code, is a result for keyring-macos.json;
-	// only security, codesign or spike-keyring itself failing fails the case.
+	// only security, codesign or spike-keyring itself failing fails the case. With prompts off a
+	// refusal can't say whether a prompt would have come, so CI also records the item's access list
+	// (M0.23c): `security dump-keychain -a` reads every item's ACL and decrypts nothing.
 	it("the macOS keychain round-trips a key; a re-signed binary's access to it is recorded", {
 		tags: ["requires:macos"],
 		timeout: 600_000,
@@ -627,23 +630,42 @@ describe("the master key's stores", () => {
 				expect(result, done.stdout).toBeDefined();
 				return { binary: binary === keyring ? "built" : "re-signed", ...result };
 			};
-			const steps = [
-				await step(keyring, "set"),
-				await step(keyring, "get"),
+			// Recorded, never failing the case: the item an update meets, before the re-signed copy runs.
+			const accessList = async (): Promise<Record<string, unknown>> => {
+				if (!process.env.CI && !process.env.GITHUB_ACTIONS) {
+					return { read: false, reason: "only CI reads the keychain's access lists" };
+				}
+				const holder = made ? temporary : original;
+				const dump = await run("/usr/bin/security", ["dump-keychain", "-a", holder], {
+					signal: ctx.signal,
+					timeoutMs: 30_000,
+				}).catch((error: unknown) => ({ code: null, stdout: "", error }));
+				if (dump.code !== 0) {
+					return { read: false, reason: `security dump-keychain exited ${String(dump.code)}` };
+				}
+				const found = itemAccess(dump.stdout, user);
+				return found
+					? { read: true, ...found }
+					: { read: false, reason: "the dump showed no access list for the item" };
+			};
+			const steps = [await step(keyring, "set"), await step(keyring, "get")];
+			const access = await accessList();
+			steps.push(
 				await step(resigned, "get"),
 				await step(resigned, "delete"),
 				await step(keyring, "delete"),
 				await step(keyring, "get"),
-			];
+			);
 			const ok = (at: number): boolean => steps[at]?.ok === true;
 			parts.keychainMacos = {
 				keychain,
 				roundTrip: { ok: native.ok, ...native.line },
 				builtBinary: { setAndRead: ok(0) && ok(1) && steps[1]?.matches === true },
 				reSignedCopy: { read: ok(2), deleted: ok(3) },
+				itemAccess: access,
 				goneAtEnd: steps[5]?.error === "NoEntry",
 				prompts:
-					"off: SecKeychainSetUserInteractionAllowed(false); a prompt fails as errSecInteractionNotAllowed (-25308)",
+					"off: SecKeychainSetUserInteractionAllowed(false), so no dialog is shown; securityd denies a check only a prompt could pass (the item's ACL or partition list) as errSecAuthFailed (-25293), and a step needing UI that can't be shown, such as finding no default keychain, fails as errSecInteractionNotAllowed (-25308)",
 				binaries: {
 					built: { signature: built.signature, flags: built.flags },
 					reSigned: { signature: update.signature, flags: update.flags, identifier },

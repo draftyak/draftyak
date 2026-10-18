@@ -137,13 +137,24 @@ fn node() -> PathBuf {
     node
 }
 
+// `path` with every link resolved, in the drive-letter form on Windows, as Node's realpath gives it.
+fn real_path(path: &Path) -> PathBuf {
+    let real = fs::canonicalize(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    match real.to_str().and_then(|text| text.strip_prefix(r"\\?\")) {
+        Some(plain) if plain.as_bytes().get(1) == Some(&b':') => PathBuf::from(plain),
+        _ => real,
+    }
+}
+
 struct Scratch(PathBuf);
 
 impl Scratch {
+    // Made first, then named by its real path (ADR 0003): macOS's TMPDIR runs through the /var
+    // link, and a plugin under --permission can't resolve an entry named through a link.
     fn new(name: &str) -> Scratch {
         let dir = env::temp_dir().join(format!("dy-s05-{name}-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        Scratch(dir)
+        fs::create_dir_all(&dir).unwrap_or_else(|error| panic!("{}: {error}", dir.display()));
+        Scratch(real_path(&dir))
     }
 
     fn script(&self, name: &str, source: &str) -> PathBuf {
@@ -438,8 +449,14 @@ process.stdin.on("end", () => process.exit(0));
             .iter()
             .any(|kept| if cfg!(windows) { kept.eq_ignore_ascii_case(name) } else { *kept == name })
     };
+    // CoreFoundation, which Node links on macOS, sets this in its own process as it loads
+    // (__CFInitialize), so the hub has it though the supervisor passed nothing of the kind.
+    let own = |name: &str| cfg!(target_os = "macos") && name == "__CF_USER_TEXT_ENCODING";
     assert!(names.contains(&"DRAFTYAK_TEST_EXTRA"), "{names:?}");
-    assert!(names.iter().all(|name| *name == "DRAFTYAK_TEST_EXTRA" || kept(name)), "{names:?}");
+    assert!(
+        names.iter().all(|name| *name == "DRAFTYAK_TEST_EXTRA" || kept(name) || own(name)),
+        "{names:?}"
+    );
     if cfg!(windows) {
         assert!(names.iter().any(|name| name.eq_ignore_ascii_case("SystemRoot")), "{names:?}");
     }

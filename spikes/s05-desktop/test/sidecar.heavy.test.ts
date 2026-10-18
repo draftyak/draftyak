@@ -441,7 +441,8 @@ describe("S5b supervisor on any OS, without the app feature", () => {
 describe("S5b app on Windows", { tags: ["requires:windows"] }, () => {
 	beforeAll(() => {
 		if (!windows) return;
-		root = fs.mkdtempSync(path.join(os.tmpdir(), "dy-s05-"));
+		// A real path, as on macOS and Linux below: a junction or link above it would deny the plugin.
+		root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dy-s05-")));
 		pluginDir = path.join(root, "plugin");
 		pluginData = path.join(root, "plugin-data");
 		fs.mkdirSync(pluginDir);

@@ -1,0 +1,67 @@
+{
+  "recordedAt": "2026-10-18T08:49:04.378Z",
+  "fingerprint": {
+    "os": {
+      "platform": "linux",
+      "arch": "x64",
+      "osName": "#22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026",
+      "osVersion": "6.17.0-1022-azure"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "e961e3a6bd7d269e1322b06fc678ac6b136bf897",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 1.5,
+      "cpuCount": 2,
+      "cpuModel": "AMD EPYC 7763 64-Core Processor",
+      "memoryUsedPercent": 16.5,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "linux-x64",
+    "versions": {
+      "tauriVersion": "2.12.4",
+      "tauriPluginAutostartVersion": "2.7.0",
+      "autoLaunchVersion": "0.6.0",
+      "trayIconVersion": "0.25.1",
+      "npmPluginAutostartVersion": "2.7.0",
+      "npmApiVersion": "2.12.4"
+    },
+    "tray": {
+      "startedWithWindows": 0,
+      "items": [
+        "Open",
+        "Quit"
+      ],
+      "rectReported": false
+    },
+    "mainWindow": {
+      "openedVia": "tray menu handler",
+      "origin": "tauri://localhost",
+      "path": "",
+      "webviewVersion": "2.52.6"
+    },
+    "closeKeepsHub": {
+      "appRunning": true,
+      "hubGenerationUnchanged": true,
+      "reopened": true
+    },
+    "quit": {
+      "pickedVia": "tray menu handler",
+      "appExitCode": 0,
+      "hubExitCode": 0,
+      "hubStoppedOnShutdownFrame": true,
+      "draftyakNodeLeft": 0
+    },
+    "autostart": {
+      "entry": "XDG autostart .desktop file",
+      "namedAfterIdentifier": true,
+      "argument": "--minimized",
+      "removedOnDisable": true
+    }
+  }
+}

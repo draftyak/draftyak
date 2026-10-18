@@ -47,7 +47,8 @@ pub fn error_kind(error: &Error) -> &'static str {
 }
 
 /// The OS's own code under a store error, where the store keeps one: on macOS the OSStatus, such
-/// as -25308 (errSecInteractionNotAllowed) for a prompt that couldn't be shown.
+/// as -25293 (errSecAuthFailed) for a check securityd would pass only through a prompt, or -25308
+/// (errSecInteractionNotAllowed) for a step that needs UI that can't be shown.
 pub fn os_code(error: &Error) -> Option<i32> {
     match error {
         Error::PlatformFailure(inner) | Error::NoStorageAccess(inner) => {
@@ -62,9 +63,11 @@ pub fn os_code(error: &Error) -> Option<i32> {
     }
 }
 
-/// macOS: keychain prompts stay off while this lives, so a step that needs one (an unlock, or a
-/// binary the item doesn't trust) fails with errSecInteractionNotAllowed instead of waiting for a
-/// click that never comes.
+/// macOS: keychain prompts stay off while this lives, so no step waits for a click that never
+/// comes. The client then sends securityd no prompt credential: a check only a prompt could pass
+/// (the item's ACL or partition list, for a binary the item doesn't trust) fails with
+/// errSecAuthFailed, and a step that needs UI that can't be shown (such as finding no default
+/// keychain) fails with errSecInteractionNotAllowed.
 #[cfg(target_os = "macos")]
 pub fn no_prompts() -> Option<security_framework::os::macos::keychain::KeychainUserInteractionLock>
 {

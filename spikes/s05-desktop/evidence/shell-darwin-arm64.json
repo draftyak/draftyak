@@ -1,0 +1,67 @@
+{
+  "recordedAt": "2026-10-18T08:58:44.458Z",
+  "fingerprint": {
+    "os": {
+      "platform": "darwin",
+      "arch": "arm64",
+      "osName": "Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:34 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_VMAPPLE",
+      "osVersion": "24.6.0"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "e961e3a6bd7d269e1322b06fc678ac6b136bf897",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 14.2,
+      "cpuCount": 3,
+      "cpuModel": "Apple M1 (Virtual)",
+      "memoryUsedPercent": 85.3,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "darwin-arm64",
+    "versions": {
+      "tauriVersion": "2.12.4",
+      "tauriPluginAutostartVersion": "2.7.0",
+      "autoLaunchVersion": "0.6.0",
+      "trayIconVersion": "0.25.1",
+      "npmPluginAutostartVersion": "2.7.0",
+      "npmApiVersion": "2.12.4"
+    },
+    "tray": {
+      "startedWithWindows": 0,
+      "items": [
+        "Open",
+        "Quit"
+      ],
+      "rectReported": true
+    },
+    "mainWindow": {
+      "openedVia": "tray menu handler",
+      "origin": "tauri://localhost",
+      "path": "",
+      "webviewVersion": "20621.3.11.11.3"
+    },
+    "closeKeepsHub": {
+      "appRunning": true,
+      "hubGenerationUnchanged": true,
+      "reopened": true
+    },
+    "quit": {
+      "pickedVia": "tray menu handler",
+      "appExitCode": 0,
+      "hubExitCode": 0,
+      "hubStoppedOnShutdownFrame": true,
+      "draftyakNodeLeft": 0
+    },
+    "autostart": {
+      "entry": "LaunchAgents plist",
+      "namedAfterIdentifier": true,
+      "argument": "--minimized",
+      "removedOnDisable": true
+    }
+  }
+}

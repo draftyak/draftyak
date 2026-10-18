@@ -1,0 +1,113 @@
+{
+  "recordedAt": "2026-10-18T08:55:20.918Z",
+  "fingerprint": {
+    "os": {
+      "platform": "linux",
+      "arch": "x64",
+      "osName": "#22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026",
+      "osVersion": "6.17.0-1022-azure"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "e961e3a6bd7d269e1322b06fc678ac6b136bf897",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 0.5,
+      "cpuCount": 2,
+      "cpuModel": "AMD EPYC 7763 64-Core Processor",
+      "memoryUsedPercent": 15.1,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "linux-x64",
+    "triple": "x86_64-unknown-linux-gnu",
+    "versions": {
+      "nodeVersion": "26.12.0",
+      "tauriVersion": "2.12.4",
+      "tauriBuildVersion": "2.7.3"
+    },
+    "rustfmt": {
+      "clean": true
+    },
+    "clippy": {
+      "clean": true,
+      "features": "none",
+      "allTargets": true,
+      "ms": 30952
+    },
+    "cargoTest": {
+      "passed": 22,
+      "features": "none",
+      "nodeOptionsSet": true,
+      "ms": 25650
+    },
+    "build": {
+      "ms": 9532
+    },
+    "clippyApp": {
+      "clean": true,
+      "features": "app",
+      "allTargets": true,
+      "ms": 67089
+    },
+    "macosClippy": {
+      "clean": true,
+      "target": "aarch64-apple-darwin",
+      "features": "none",
+      "allTargets": true,
+      "ms": 5406
+    },
+    "posixApp": {
+      "readyMs": 148,
+      "processGroup": "the hub leads its own (process_group(0))",
+      "temporal": "object",
+      "temporalNowInstant": "function",
+      "hubExecArgv": [
+        "--disable-sigusr1"
+      ],
+      "hubEnv": [
+        "DRAFTYAK_DATA_DIR",
+        "DRAFTYAK_SPIKE_PLUGIN_ARGV",
+        "HOME",
+        "LANG",
+        "XDG_CONFIG_HOME",
+        "XDG_RUNTIME_DIR"
+      ],
+      "hubNodeOptions": null,
+      "hubInspector": null,
+      "addon": {
+        "target": "linux-x64",
+        "fromResources": true,
+        "napiVersion": 10,
+        "sqliteVersion": "3.53.4",
+        "sqlite3mcVersion": "SQLite3 Multiple Ciphers 2.4.0",
+        "encrypted": true,
+        "sameBytesAsPackage": true
+      },
+      "pluginExecArgvIsBuildArgv": true
+    },
+    "posixRestart": {
+      "killedHubExit": "signal",
+      "delayMs": 1000,
+      "backMs": 1207,
+      "hubIdStable": true,
+      "firstPluginGoneMs": 13
+    },
+    "posixAppEnded": {
+      "how": "SIGKILL",
+      "hubEndedOn": "stdin EOF",
+      "goneMs": 18,
+      "ourProcessesLeft": 0,
+      "draftyakNodeOfThisBuildLeft": 0
+    },
+    "posixIgnoredEof": {
+      "how": "SIGKILL of the app, then 3 s",
+      "hubOutlivedApp": true,
+      "pluginOutlivedApp": true,
+      "endedAfterwardsBy": "the test"
+    }
+  }
+}
