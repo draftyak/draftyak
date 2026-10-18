@@ -557,6 +557,141 @@ it("anchors freshness to response completion rather than later processing of an 
 function metadataBody(size: number): Buffer {
 	return Buffer.from(JSON.stringify({ text: "x".repeat(size - 11) }));
 }
+it("aggregates tiny native response chunks into bounded owned storage and clears collector references", async () => {
+	const body = metadataBody(8200),
+		concat = Buffer.concat,
+		counts: number[] = [],
+		retained: (readonly Uint8Array[])[] = [];
+	shape.chunks = Array.from(body, (byte) => Buffer.from([byte]));
+	vi.spyOn(Buffer, "concat").mockImplementation((blocks, length) => {
+		if (length === body.byteLength) {
+			counts.push(blocks.length);
+			retained.push(blocks);
+		}
+		return concat(blocks, length);
+	});
+	const result = await getPinnedMetadata({
+		destination: metadataUrl("https://keys.example/keys.json", "jwks"),
+		address: { address: "8.8.8.8", family: 4 },
+		maxBytes: METADATA_MAX_BYTES,
+		signal: signal(),
+	});
+	expect(result.body).toEqual(body);
+	expect(counts).toEqual([1]);
+	expect(retained[0]).toHaveLength(0);
+});
+it.each([
+	["cimd", CIMD_MAX_BYTES, 1],
+	["jwks", METADATA_MAX_BYTES, 16],
+	["jwks", 65_537, 2],
+] as const)(
+	"preserves exact %s bytes at %s with %s bounded collector blocks",
+	async (kind, cap, count) => {
+		const body = metadataBody(cap),
+			concat = Buffer.concat,
+			capacities: number[][] = [],
+			retained: (readonly Uint8Array[])[] = [];
+		shape.chunks = [body.subarray(0, 1), body.subarray(1, 65_537), body.subarray(65_537)];
+		shape.headers.push("Content-Length", String(cap));
+		vi.spyOn(Buffer, "concat").mockImplementation((blocks, length) => {
+			if (length === cap) {
+				capacities.push(blocks.map((block) => block.byteLength));
+				retained.push(blocks);
+			}
+			return concat(blocks, length);
+		});
+		const result = await getPinnedMetadata({
+			destination: metadataUrl(CLIENT, kind),
+			address: { address: "8.8.8.8", family: 4 },
+			maxBytes: cap,
+			signal: signal(),
+		});
+		expect(result.body).toEqual(body);
+		expect(capacities).toHaveLength(1);
+		expect(capacities[0]).toHaveLength(count);
+		expect(capacities[0]?.every((size) => size > 0 && size <= 65_536)).toBe(true);
+		expect(capacities[0]?.reduce((total, size) => total + size, 0)).toBe(cap);
+		expect(retained[0]).toHaveLength(0);
+	},
+);
+it.each(["cimd", "jwks"] as const)(
+	"refuses the byte after the %s cap before extra block allocation",
+	async (kind) => {
+		const cap = kind === "cimd" ? CIMD_MAX_BYTES : METADATA_MAX_BYTES;
+		shape.hold = true;
+		const allocate = vi.spyOn(Buffer, "allocUnsafe"),
+			pending = getPinnedMetadata({
+				destination: metadataUrl(CLIENT, kind),
+				address: { address: "8.8.8.8", family: 4 },
+				maxBytes: METADATA_MAX_BYTES,
+				signal: signal(),
+			}).catch((error: Error) => error.message);
+		while (!requests[0]?.req.ended) await new Promise(setImmediate);
+		const response = requests[0]?.req.response;
+		response?.emit("data", metadataBody(cap));
+		const before = allocate.mock.calls.length;
+		response?.emit("data", Buffer.from("x"));
+		expect(await pending).toBe("Client metadata refused");
+		expect(allocate.mock.calls.length).toBe(before);
+		expect(requests[0]?.req.destroyed).toBe(true);
+		expect(response?.destroyed).toBe(true);
+	},
+);
+it.each(["cancellation", "response error", "request close"])(
+	"ignores late data after partial collector %s",
+	async (phase) => {
+		shape.hold = true;
+		const controller = new AbortController(),
+			allocate = vi.spyOn(Buffer, "allocUnsafe"),
+			pending = getPinnedMetadata({
+				destination: metadataUrl(CLIENT, "cimd"),
+				address: { address: "8.8.8.8", family: 4 },
+				maxBytes: METADATA_MAX_BYTES,
+				signal: controller.signal,
+			}).catch((error: Error) => error.message);
+		while (!requests[0]?.req.ended) await new Promise(setImmediate);
+		const req = requests[0]?.req,
+			response = req?.response;
+		response?.emit("data", Buffer.from('{"partial":'));
+		if (phase === "cancellation") controller.abort();
+		else if (phase === "response error")
+			response?.emit("error", new Error("PRIVATE_NETWORK_CANARY"));
+		else req?.emit("close");
+		expect(await pending).toBe("Client metadata refused");
+		const before = allocate.mock.calls.length;
+		let reads = 0;
+		const late = Object.defineProperty(Buffer.alloc(1), "byteLength", {
+			get() {
+				reads++;
+				throw new Error("PRIVATE_LATE_CANARY");
+			},
+		});
+		expect(() => {
+			response?.emit("data", late);
+			response?.emit("end");
+		}).not.toThrow();
+		expect(reads).toBe(0);
+		expect(allocate.mock.calls.length).toBe(before);
+	},
+);
+it("clears collector references and returns a fixed error if final body assembly fails", async () => {
+	let retained: readonly Uint8Array[] | undefined;
+	vi.spyOn(Buffer, "concat").mockImplementation((blocks) => {
+		retained = blocks;
+		throw new Error("PRIVATE_ASSEMBLY_CANARY");
+	});
+	await expect(
+		getPinnedMetadata({
+			destination: metadataUrl(CLIENT, "cimd"),
+			address: { address: "8.8.8.8", family: 4 },
+			maxBytes: METADATA_MAX_BYTES,
+			signal: signal(),
+		}),
+	).rejects.toThrow(/^Client metadata refused$/);
+	expect(retained).toHaveLength(0);
+	expect(requests[0]?.req.destroyed).toBe(true);
+	expect(requests[0]?.req.response?.destroyed).toBe(true);
+});
 it.each(["declared", "streamed"] as const)(
 	"caps %s CIMD bytes at 5 KiB even with the largest configuration",
 	async (mode) => {

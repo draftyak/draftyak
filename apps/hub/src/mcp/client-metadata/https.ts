@@ -6,6 +6,8 @@ import { metadataCacheTtl } from "./cache.ts";
 import { CIMD_TIMEOUT_MS, metadataMaxBytes } from "./limits.ts";
 import { type MetadataDestination, metadataUrl, refused } from "./policy.ts";
 
+const RESPONSE_BLOCK_BYTES = 65_536;
+
 export interface MetadataBytes {
 	readonly body: Uint8Array;
 	readonly contentType: string;
@@ -46,10 +48,21 @@ export async function getPinnedMetadata(
 	const agent = new Agent({ keepAlive: false, maxSockets: 1, maxCachedSessions: 0, proxyEnv: {} });
 	try {
 		return await new Promise<PinnedMetadataBytes>((resolve, reject) => {
+			const blocks: Buffer[] = [];
+			let bytes = 0,
+				offset = 0,
+				allocated = 0;
+			const clear = () => {
+				blocks.length = 0;
+				bytes = 0;
+				offset = 0;
+				allocated = 0;
+			};
 			let settled = false;
 			const fail = () => {
 				if (!settled) {
 					settled = true;
+					clear();
 					reject(refused());
 				}
 			};
@@ -86,10 +99,7 @@ export async function getPinnedMetadata(
 					if (values.length > 1) throw refused();
 					return values[0];
 				};
-				const chunks: Buffer[] = [];
-				let bytes = 0,
-					length: number | undefined,
-					contentType: string;
+				let length: number | undefined, contentType: string;
 				const stop = () => {
 					fail();
 					response.destroy();
@@ -120,9 +130,26 @@ export async function getPinnedMetadata(
 					return;
 				}
 				response.on("data", (chunk: Buffer) => {
+					if (settled) return;
+					if (chunk.byteLength > maxBytes - bytes || expired()) {
+						stop();
+						return;
+					}
 					bytes += chunk.byteLength;
-					if (bytes > maxBytes || expired()) stop();
-					else if (!settled) chunks.push(Buffer.from(chunk));
+					let at = 0;
+					while (at < chunk.byteLength) {
+						if (blocks.length === 0 || offset === blocks[blocks.length - 1]?.byteLength) {
+							const capacity = Math.min(RESPONSE_BLOCK_BYTES, maxBytes - allocated);
+							blocks.push(Buffer.allocUnsafe(capacity));
+							allocated += capacity;
+							offset = 0;
+						}
+						const block = blocks[blocks.length - 1] as Buffer;
+						const take = Math.min(chunk.byteLength - at, block.byteLength - offset);
+						chunk.copy(block, offset, at, at + take);
+						at += take;
+						offset += take;
+					}
 				});
 				response.once("error", fail);
 				response.once("aborted", fail);
@@ -140,15 +167,20 @@ export async function getPinnedMetadata(
 						stop();
 						return;
 					}
-					settled = true;
-					resolve(
-						Object.freeze({
-							body: Buffer.concat(chunks, bytes),
+					try {
+						const result = Object.freeze({
+							body: Buffer.concat(blocks, bytes),
 							contentType,
 							cacheExpiresAt:
 								finished + metadataCacheTtl(response.rawHeaders, Date.now(), finished - started),
-						}),
-					);
+						});
+						settled = true;
+						resolve(result);
+					} catch {
+						stop();
+					} finally {
+						clear();
+					}
 				});
 			});
 			const abort = () => {
