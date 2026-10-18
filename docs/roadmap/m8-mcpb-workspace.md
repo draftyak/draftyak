@@ -35,8 +35,9 @@ lockfile changes only by the ten-line importer, with no registry resolution or
 version changes. Turbo's dry run discovers `@draftyak/mcpb#test`, 57 inputs and
 the merged `@draftyak/protocol#build` dependency.
 
-Execution held the actual kit benchmark lock, used two CPUs and one test-file
-worker, and continuously monitored the six-GiB free-memory floor. The observed
-minimum stayed above nine GiB. Unchanged full Windows verification remains
-queued in an independent Git clone; component checks do not substitute for it.
-No real bridge build, installed client or provider acceptance is claimed.
+Component execution held the actual kit OS lock, used two CPUs and one test-file
+worker, and continuously monitored the six-GiB free-memory floor. The later
+independent full Windows run passed all seven steps, 2,651 unit tests and 15 Rust
+tests with at least 7.412 GiB free. Guard reported zero findings. The
+[M8 backlog](m8.md) defines this M8.4 slice and remaining acceptance; no real
+bridge build, installed client or provider acceptance is claimed.
