@@ -1,7 +1,7 @@
 // One S11a boot case, the same on the host and inside the Linux container: a fresh link-free runtime
 // copy before each spawn, the (a) control without and with the binding stub, then a shim session
-// over stdio MCP with the IPC host channel answering host/fetch as a broker stub would. Imports only
-// node: built-ins, ../src and M0.11's argv and spawn, so docker-runner.mjs can load it.
+// over stdio MCP with the fd-3 host channel answering host/fetch as a broker stub would. Imports only
+// node: built-ins, ../src, ./channel.ts and M0.11/M0.12's src, so docker-runner.mjs can load it.
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
@@ -14,6 +14,7 @@ import {
 	buildExecArgv,
 } from "@draftyak/spike-s02-plugin-sandbox/src/argv.ts";
 import {
+	PLUGIN_CHANNEL_ENV,
 	PLUGIN_STDIO,
 	preSpawnLinkScan,
 	scrubEnv,
@@ -27,6 +28,7 @@ import {
 	SHIM,
 	verifyRuntime,
 } from "../src/runtime.ts";
+import { serveHostChannel } from "./channel.ts";
 
 export const FREEZE = "--freeze-flags-after-init";
 export const BROKER = "https://broker.example";
@@ -115,7 +117,7 @@ interface Run {
 
 // The production path when the shared argv already has the variant's flags; otherwise the same
 // steps with the flags added, which is what M0.12's argv would spawn: runtime and bundle checks, the
-// link scan, the scrubbed env, the IPC channel on fd 3, cwd at the plugin dir, no shell.
+// link scan, the scrubbed env, the fd-3 host channel, cwd at the plugin dir, no shell.
 function launch(run: Run): ChildProcess {
 	const { spec, runtimeDir, pluginDir, entry, entryArgs, signal } = run;
 	const ids = { pluginId: "py-hello", instanceId: "s11-boot" };
@@ -138,7 +140,7 @@ function launch(run: Run): ChildProcess {
 	const argv = buildArgv(argvSpec, entry, entryArgs);
 	argv.splice(execArgv.length, 0, ...spec.variant.extra.filter((flag) => !execArgv.includes(flag)));
 	return spawn(spec.nodeBin, argv, {
-		env: scrubEnv({ ...ids, dataDir }),
+		env: { ...scrubEnv({ ...ids, dataDir }), ...PLUGIN_CHANNEL_ENV },
 		cwd: pluginDir,
 		stdio: [...PLUGIN_STDIO],
 		windowsHide: true,
@@ -245,12 +247,6 @@ export function wireProblems(method: string, frame: Frame | null): string[] {
 	return problems;
 }
 
-interface HostMessage {
-	readonly id?: unknown;
-	readonly method?: string;
-	readonly params?: Record<string, unknown>;
-}
-
 // The broker stub: host/fetch with base64 bodies, as the shim sends and expects them.
 function brokerReply(params: Record<string, unknown>): Record<string, unknown> {
 	const text = (status: number, body: Buffer, type: string) => ({
@@ -303,18 +299,17 @@ async function runSession(
 		let bootFailure: Record<string, unknown> | null = null;
 		const brokerRequests: string[] = [];
 		const logs: string[] = [];
-		child.on("message", (message: HostMessage) => {
-			if (message.method === "host/fetch" && message.id !== undefined) {
-				const params = message.params ?? {};
+		serveHostChannel(child, {
+			fetch: (params) => {
 				brokerRequests.push(`${params.method} ${String(params.url).replace(BROKER, "")}`);
-				const result = brokerReply(params);
-				if (child.connected) child.send({ jsonrpc: "2.0", id: message.id, result });
-			} else if (message.method === "host/log") {
-				const params = message.params ?? {};
+				return brokerReply(params);
+			},
+			notify: (method, params) => {
+				if (method !== "host/log") return;
 				logs.push(String(params.message));
 				if (params.message === "ready") ready = params.data as Record<string, unknown>;
 				if (params.message === "boot failed") bootFailure = params.data as Record<string, unknown>;
-			}
+			},
 		});
 		let next = 0;
 		const problems: string[] = [];
@@ -445,9 +440,11 @@ export async function runRefusal(
 		});
 		const output = watch(child);
 		let bootFailure: Record<string, unknown> | null = null;
-		child.on("message", (message: HostMessage) => {
-			if (message.params?.message === "boot failed")
-				bootFailure = message.params.data as Record<string, unknown>;
+		serveHostChannel(child, {
+			fetch: brokerReply,
+			notify: (_method, params) => {
+				if (params.message === "boot failed") bootFailure = params.data as Record<string, unknown>;
+			},
 		});
 		const discover = {
 			jsonrpc: "2.0",

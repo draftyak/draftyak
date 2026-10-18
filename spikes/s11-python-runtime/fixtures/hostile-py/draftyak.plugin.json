@@ -1,0 +1,11 @@
+{
+  "id": "dy-hostile",
+  "version": "0.1.0",
+  "kind": "tool",
+  "runtime": "python",
+  "python": {
+    "abi": "pyemscripten_2026_0",
+    "entry": "dy_hostile:plugin"
+  },
+  "isolation": "standard"
+}

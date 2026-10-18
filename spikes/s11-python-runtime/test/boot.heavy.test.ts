@@ -396,7 +396,13 @@ describe("Linux Docker boot (glibc, --network none)", () => {
 			mounts.push({ source: await nodeBinary(node, linux), target: `/opt/n${index}` });
 			nodes.push({ bin: `/opt/n${index}`, label: node });
 		}
-		const files = ["src", "test/session.ts", "test/docker-runner.mjs", "runtime.lock.json"];
+		const files = [
+			"src",
+			"test/session.ts",
+			"test/channel.ts",
+			"test/docker-runner.mjs",
+			"runtime.lock.json",
+		];
 		using spike = stageForDocker({
 			name: "s11-boot",
 			from: spikeDir,
