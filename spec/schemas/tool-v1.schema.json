@@ -1,0 +1,505 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/schemas/tool-v1.schema.json",
+  "title": "tool-v1",
+  "description": "The canonical tools of io.github.draftyak/tool v1: each tools/list entry as a const, and each tool's arguments and result. A tool plugin declares the SHA-256 of this document's canonical JSON as its schemaDigest.",
+  "$defs": {
+    "CalendarFreebusyArguments": {
+      "type": "object",
+      "properties": {
+        "window": {
+          "type": "object",
+          "description": "UTC milliseconds; start is before end.",
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": false
+        },
+        "tz": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)*$",
+          "description": "The owner's IANA time zone, for floating times."
+        }
+      },
+      "required": [
+        "window",
+        "tz"
+      ],
+      "additionalProperties": false
+    },
+    "CalendarFreebusyEntry": {
+      "const": {
+        "name": "calendar.freebusy",
+        "title": "Calendar free/busy",
+        "description": "Busy times in a UTC window. Returns intervals only, never event titles, attendees, locations or other event text.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "window": {
+              "type": "object",
+              "description": "UTC milliseconds; start is before end.",
+              "properties": {
+                "start": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "end": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "additionalProperties": false
+            },
+            "tz": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)*$",
+              "description": "The owner's IANA time zone, for floating times."
+            }
+          },
+          "required": [
+            "window",
+            "tz"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "busy": {
+              "type": "array",
+              "description": "UTC milliseconds, sorted: each interval starts before it ends and ends before the next one starts.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "end": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "busy",
+                      "tentative"
+                    ]
+                  }
+                },
+                "required": [
+                  "start",
+                  "end",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 200
+            }
+          },
+          "required": [
+            "busy"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "CalendarFreebusyResult": {
+      "type": "object",
+      "properties": {
+        "busy": {
+          "type": "array",
+          "description": "UTC milliseconds, sorted: each interval starts before it ends and ends before the next one starts.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "busy",
+                  "tentative"
+                ]
+              }
+            },
+            "required": [
+              "start",
+              "end",
+              "status"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 200
+        }
+      },
+      "required": [
+        "busy"
+      ],
+      "additionalProperties": false
+    },
+    "ContactNotesArguments": {
+      "type": "object",
+      "properties": {
+        "participant": {
+          "type": "string",
+          "maxLength": 254,
+          "pattern": "^(?:[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?|[UW][A-Z0-9]{2,20})$",
+          "description": "A verified email address or Slack user id that the hub binds, never a display name or a phone number."
+        }
+      },
+      "required": [
+        "participant"
+      ],
+      "additionalProperties": false
+    },
+    "ContactNotesEntry": {
+      "const": {
+        "name": "contact.notes",
+        "title": "Contact notes",
+        "description": "The owner's notes about one participant.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "participant": {
+              "type": "string",
+              "maxLength": 254,
+              "pattern": "^(?:[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?|[UW][A-Z0-9]{2,20})$",
+              "description": "A verified email address or Slack user id that the hub binds, never a display name or a phone number."
+            }
+          },
+          "required": [
+            "participant"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "label",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 5
+            }
+          },
+          "required": [
+            "notes"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "ContactNotesResult": {
+      "type": "object",
+      "properties": {
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "label",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 5
+        }
+      },
+      "required": [
+        "notes"
+      ],
+      "additionalProperties": false
+    },
+    "KbLookupArguments": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+          "description": "An owner-defined topic id."
+        }
+      },
+      "required": [
+        "topic"
+      ],
+      "additionalProperties": false
+    },
+    "KbLookupEntry": {
+      "const": {
+        "name": "kb.lookup",
+        "title": "Knowledge base lookup",
+        "description": "Entries for one owner-defined topic.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+              "description": "An owner-defined topic id."
+            }
+          },
+          "required": [
+            "topic"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "label",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 5
+            }
+          },
+          "required": [
+            "entries"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "KbLookupResult": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "label",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 5
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "additionalProperties": false
+    },
+    "ToolDescribeArguments": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ToolDescribeEntry": {
+      "const": {
+        "name": "tool_describe",
+        "title": "Describe",
+        "description": "The lookup kinds this tool instance serves.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "kinds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+              },
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "kinds"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "ToolDescribeResult": {
+      "type": "object",
+      "properties": {
+        "kinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+          },
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "kinds"
+      ],
+      "additionalProperties": false
+    },
+    "ToolProbeArguments": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ToolProbeEntry": {
+      "const": {
+        "name": "tool_probe",
+        "title": "Probe",
+        "description": "Checks the instance's configuration and returns its status and sizes, never data.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "degraded"
+              ],
+              "description": "degraded when the upstream answered with something the plugin can't fully use."
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Bytes the upstream returned."
+            },
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Items found, such as events, notes or entries."
+            }
+          },
+          "required": [
+            "status",
+            "bytes",
+            "items"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "ToolProbeResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "degraded"
+          ],
+          "description": "degraded when the upstream answered with something the plugin can't fully use."
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Bytes the upstream returned."
+        },
+        "items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Items found, such as events, notes or entries."
+        }
+      },
+      "required": [
+        "status",
+        "bytes",
+        "items"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

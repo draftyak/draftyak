@@ -1,0 +1,1910 @@
+{
+  "format": "draftyak.vectors.tool-v1.v1",
+  "description": "The canonical tools/list entries of io.github.draftyak/tool v1. A plugin serving some kinds lists tool_describe, tool_probe and one entry per kind, each equal to its entry here as RFC 8785 JSON: \"jcs\" is that canonical form (UTF-8) and \"sha256\" its hash. \"declaration\" is what a tool plugin declares in server/discover; its schemaDigest is the SHA-256 of the canonical JSON of spec/schemas/tool-v1.schema.json. \"kinds\" gives each kind's data class, output ceiling (bytes of the result's canonical JSON) and lookup timeout. \"lists\" gives, for each set of kinds, the names in order (UTF-16 code units) and the SHA-256 of the canonical JSON of the entries in that order. In \"cases\", \"result\" is a tools/list result as a plugin sent it: it is canonical for \"kinds\" when its resultType is \"complete\", it has no nextCursor, and its tools equal the canonical entries by name, in any order, each as canonical JSON; \"canonical\" is the expected answer.",
+  "extension": "io.github.draftyak/tool",
+  "declaration": {
+    "version": 1,
+    "schemaDigest": "689d823623eb2652ea704224e57f3b96b2e1c54e91686c2b30b28532e9c0e69a"
+  },
+  "entries": [
+    {
+      "name": "calendar.freebusy",
+      "entry": {
+        "name": "calendar.freebusy",
+        "title": "Calendar free/busy",
+        "description": "Busy times in a UTC window. Returns intervals only, never event titles, attendees, locations or other event text.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "window": {
+              "type": "object",
+              "description": "UTC milliseconds; start is before end.",
+              "properties": {
+                "start": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "end": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "additionalProperties": false
+            },
+            "tz": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)*$",
+              "description": "The owner's IANA time zone, for floating times."
+            }
+          },
+          "required": [
+            "window",
+            "tz"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "busy": {
+              "type": "array",
+              "description": "UTC milliseconds, sorted: each interval starts before it ends and ends before the next one starts.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "end": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "busy",
+                      "tentative"
+                    ]
+                  }
+                },
+                "required": [
+                  "start",
+                  "end",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 200
+            }
+          },
+          "required": [
+            "busy"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "jcs": "{\"description\":\"Busy times in a UTC window. Returns intervals only, never event titles, attendees, locations or other event text.\",\"inputSchema\":{\"additionalProperties\":false,\"properties\":{\"tz\":{\"description\":\"The owner's IANA time zone, for floating times.\",\"maxLength\":64,\"pattern\":\"^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)*$\",\"type\":\"string\"},\"window\":{\"additionalProperties\":false,\"description\":\"UTC milliseconds; start is before end.\",\"properties\":{\"end\":{\"maximum\":9007199254740991,\"minimum\":0,\"type\":\"integer\"},\"start\":{\"maximum\":9007199254740991,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"start\",\"end\"],\"type\":\"object\"}},\"required\":[\"window\",\"tz\"],\"type\":\"object\"},\"name\":\"calendar.freebusy\",\"outputSchema\":{\"additionalProperties\":false,\"properties\":{\"busy\":{\"description\":\"UTC milliseconds, sorted: each interval starts before it ends and ends before the next one starts.\",\"items\":{\"additionalProperties\":false,\"properties\":{\"end\":{\"maximum\":9007199254740991,\"minimum\":0,\"type\":\"integer\"},\"start\":{\"maximum\":9007199254740991,\"minimum\":0,\"type\":\"integer\"},\"status\":{\"enum\":[\"busy\",\"tentative\"],\"type\":\"string\"}},\"required\":[\"start\",\"end\",\"status\"],\"type\":\"object\"},\"maxItems\":200,\"type\":\"array\"}},\"required\":[\"busy\"],\"type\":\"object\"},\"title\":\"Calendar free/busy\"}",
+      "sha256": "4d32d30943f0c25f7bbcfd5e5627dbb7ee24b71e986135e5e221fbe4ea56567a"
+    },
+    {
+      "name": "contact.notes",
+      "entry": {
+        "name": "contact.notes",
+        "title": "Contact notes",
+        "description": "The owner's notes about one participant.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "participant": {
+              "type": "string",
+              "maxLength": 254,
+              "pattern": "^(?:[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?|[UW][A-Z0-9]{2,20})$",
+              "description": "A verified email address or Slack user id that the hub binds, never a display name or a phone number."
+            }
+          },
+          "required": [
+            "participant"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "label",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 5
+            }
+          },
+          "required": [
+            "notes"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "jcs": "{\"description\":\"The owner's notes about one participant.\",\"inputSchema\":{\"additionalProperties\":false,\"properties\":{\"participant\":{\"description\":\"A verified email address or Slack user id that the hub binds, never a display name or a phone number.\",\"maxLength\":254,\"pattern\":\"^(?:[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?|[UW][A-Z0-9]{2,20})$\",\"type\":\"string\"}},\"required\":[\"participant\"],\"type\":\"object\"},\"name\":\"contact.notes\",\"outputSchema\":{\"additionalProperties\":false,\"properties\":{\"notes\":{\"items\":{\"additionalProperties\":false,\"properties\":{\"label\":{\"maxLength\":64,\"type\":\"string\"},\"text\":{\"maxLength\":1000,\"type\":\"string\"}},\"required\":[\"label\",\"text\"],\"type\":\"object\"},\"maxItems\":5,\"type\":\"array\"}},\"required\":[\"notes\"],\"type\":\"object\"},\"title\":\"Contact notes\"}",
+      "sha256": "45651f2a5137a2e0839787d2ba38015315fb00ce922be597f62ddd995e8e8425"
+    },
+    {
+      "name": "kb.lookup",
+      "entry": {
+        "name": "kb.lookup",
+        "title": "Knowledge base lookup",
+        "description": "Entries for one owner-defined topic.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+              "description": "An owner-defined topic id."
+            }
+          },
+          "required": [
+            "topic"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "label",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 5
+            }
+          },
+          "required": [
+            "entries"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "jcs": "{\"description\":\"Entries for one owner-defined topic.\",\"inputSchema\":{\"additionalProperties\":false,\"properties\":{\"topic\":{\"description\":\"An owner-defined topic id.\",\"pattern\":\"^[a-z0-9][a-z0-9-]{0,63}$\",\"type\":\"string\"}},\"required\":[\"topic\"],\"type\":\"object\"},\"name\":\"kb.lookup\",\"outputSchema\":{\"additionalProperties\":false,\"properties\":{\"entries\":{\"items\":{\"additionalProperties\":false,\"properties\":{\"label\":{\"maxLength\":64,\"type\":\"string\"},\"text\":{\"maxLength\":2000,\"type\":\"string\"}},\"required\":[\"label\",\"text\"],\"type\":\"object\"},\"maxItems\":5,\"type\":\"array\"}},\"required\":[\"entries\"],\"type\":\"object\"},\"title\":\"Knowledge base lookup\"}",
+      "sha256": "ec470885849334a11eb5e5c1f557abea814071e8b936ef2caa96415539a125ce"
+    },
+    {
+      "name": "tool_describe",
+      "entry": {
+        "name": "tool_describe",
+        "title": "Describe",
+        "description": "The lookup kinds this tool instance serves.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "kinds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+              },
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "kinds"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "jcs": "{\"description\":\"The lookup kinds this tool instance serves.\",\"inputSchema\":{\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"},\"name\":\"tool_describe\",\"outputSchema\":{\"additionalProperties\":false,\"properties\":{\"kinds\":{\"items\":{\"maxLength\":64,\"pattern\":\"^[a-z][a-z0-9]*(?:\\\\.[a-z][a-z0-9]*)+$\",\"type\":\"string\"},\"maxItems\":16,\"minItems\":1,\"type\":\"array\",\"uniqueItems\":true}},\"required\":[\"kinds\"],\"type\":\"object\"},\"title\":\"Describe\"}",
+      "sha256": "aba9cfe7e13e49a55d1a8ccf9cb22e66bc5628644da5a32685a0b943ff683189"
+    },
+    {
+      "name": "tool_probe",
+      "entry": {
+        "name": "tool_probe",
+        "title": "Probe",
+        "description": "Checks the instance's configuration and returns its status and sizes, never data.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "degraded"
+              ],
+              "description": "degraded when the upstream answered with something the plugin can't fully use."
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Bytes the upstream returned."
+            },
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Items found, such as events, notes or entries."
+            }
+          },
+          "required": [
+            "status",
+            "bytes",
+            "items"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "jcs": "{\"description\":\"Checks the instance's configuration and returns its status and sizes, never data.\",\"inputSchema\":{\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"},\"name\":\"tool_probe\",\"outputSchema\":{\"additionalProperties\":false,\"properties\":{\"bytes\":{\"description\":\"Bytes the upstream returned.\",\"maximum\":9007199254740991,\"minimum\":0,\"type\":\"integer\"},\"items\":{\"description\":\"Items found, such as events, notes or entries.\",\"maximum\":9007199254740991,\"minimum\":0,\"type\":\"integer\"},\"status\":{\"description\":\"degraded when the upstream answered with something the plugin can't fully use.\",\"enum\":[\"ok\",\"degraded\"],\"type\":\"string\"}},\"required\":[\"status\",\"bytes\",\"items\"],\"type\":\"object\"},\"title\":\"Probe\"}",
+      "sha256": "ec915ebfddf206dce9d2bea5b6d2d7c04b5211f2a544c95f2dc592c8d1686e5c"
+    }
+  ],
+  "kinds": [
+    {
+      "kind": "calendar.freebusy",
+      "dataClass": "tool.calendar.freebusy",
+      "maxBytes": 20480,
+      "timeoutMs": 15000
+    },
+    {
+      "kind": "contact.notes",
+      "dataClass": "tool.contact.notes",
+      "maxBytes": 4096,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "kb.lookup",
+      "dataClass": "tool.kb.lookup",
+      "maxBytes": 4096,
+      "timeoutMs": 5000
+    }
+  ],
+  "lists": [
+    {
+      "kinds": [
+        "calendar.freebusy"
+      ],
+      "names": [
+        "calendar.freebusy",
+        "tool_describe",
+        "tool_probe"
+      ],
+      "sha256": "e19513984da0cdc301f875c943de7ff87e85868548e86bf7a7412bade3707f9f"
+    },
+    {
+      "kinds": [
+        "contact.notes"
+      ],
+      "names": [
+        "contact.notes",
+        "tool_describe",
+        "tool_probe"
+      ],
+      "sha256": "4ce10c08cbaddef7f43e4c5b10c974f719ab6b6e2998bb7665fe0b377f5c9bc8"
+    },
+    {
+      "kinds": [
+        "kb.lookup"
+      ],
+      "names": [
+        "kb.lookup",
+        "tool_describe",
+        "tool_probe"
+      ],
+      "sha256": "17615c0d2d354f1b9cbaebad7ec9fa819af585444f15daf7df7c451f042bb616"
+    },
+    {
+      "kinds": [
+        "calendar.freebusy",
+        "contact.notes"
+      ],
+      "names": [
+        "calendar.freebusy",
+        "contact.notes",
+        "tool_describe",
+        "tool_probe"
+      ],
+      "sha256": "a2ce7ae725ebc1d33a49053399b59aa2e22c005c3cdf80471209228a89be59cc"
+    },
+    {
+      "kinds": [
+        "calendar.freebusy",
+        "kb.lookup"
+      ],
+      "names": [
+        "calendar.freebusy",
+        "kb.lookup",
+        "tool_describe",
+        "tool_probe"
+      ],
+      "sha256": "bdafeab40425dfb48c5e318e8d6ef408b79676d086932b07cdbff29cb0bf7ada"
+    },
+    {
+      "kinds": [
+        "contact.notes",
+        "kb.lookup"
+      ],
+      "names": [
+        "contact.notes",
+        "kb.lookup",
+        "tool_describe",
+        "tool_probe"
+      ],
+      "sha256": "d60f6ae038e5b3d0bcc2ee0dcd212f067301ec37a88fdb30bc0d4f571be5a2ae"
+    },
+    {
+      "kinds": [
+        "calendar.freebusy",
+        "contact.notes",
+        "kb.lookup"
+      ],
+      "names": [
+        "calendar.freebusy",
+        "contact.notes",
+        "kb.lookup",
+        "tool_describe",
+        "tool_probe"
+      ],
+      "sha256": "e7f7219a66ad340c0f96c7b873b161c729c7e382cc5c11bbcf1d74bf708853a0"
+    }
+  ],
+  "cases": [
+    {
+      "id": "canonical",
+      "kinds": [
+        "kb.lookup"
+      ],
+      "result": {
+        "resultType": "complete",
+        "ttlMs": 0,
+        "cacheScope": "private",
+        "tools": [
+          {
+            "name": "kb.lookup",
+            "title": "Knowledge base lookup",
+            "description": "Entries for one owner-defined topic.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                  "description": "An owner-defined topic id."
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_describe",
+            "title": "Describe",
+            "description": "The lookup kinds this tool instance serves.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kinds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_probe",
+            "title": "Probe",
+            "description": "Checks the instance's configuration and returns its status and sizes, never data.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "degraded"
+                  ],
+                  "description": "degraded when the upstream answered with something the plugin can't fully use."
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Bytes the upstream returned."
+                },
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Items found, such as events, notes or entries."
+                }
+              },
+              "required": [
+                "status",
+                "bytes",
+                "items"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "canonical": true
+    },
+    {
+      "id": "other-order",
+      "kinds": [
+        "kb.lookup"
+      ],
+      "result": {
+        "resultType": "complete",
+        "ttlMs": 60000,
+        "cacheScope": "public",
+        "tools": [
+          {
+            "outputSchema": {
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "bytes",
+                "items"
+              ],
+              "properties": {
+                "items": {
+                  "description": "Items found, such as events, notes or entries.",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "bytes": {
+                  "description": "Bytes the upstream returned.",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "status": {
+                  "description": "degraded when the upstream answered with something the plugin can't fully use.",
+                  "enum": [
+                    "ok",
+                    "degraded"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "inputSchema": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            },
+            "description": "Checks the instance's configuration and returns its status and sizes, never data.",
+            "title": "Probe",
+            "name": "tool_probe"
+          },
+          {
+            "outputSchema": {
+              "additionalProperties": false,
+              "required": [
+                "kinds"
+              ],
+              "properties": {
+                "kinds": {
+                  "uniqueItems": true,
+                  "maxItems": 16,
+                  "minItems": 1,
+                  "items": {
+                    "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$",
+                    "maxLength": 64,
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "inputSchema": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            },
+            "description": "The lookup kinds this tool instance serves.",
+            "title": "Describe",
+            "name": "tool_describe"
+          },
+          {
+            "outputSchema": {
+              "additionalProperties": false,
+              "required": [
+                "entries"
+              ],
+              "properties": {
+                "entries": {
+                  "maxItems": 5,
+                  "items": {
+                    "additionalProperties": false,
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "properties": {
+                      "text": {
+                        "maxLength": 2000,
+                        "type": "string"
+                      },
+                      "label": {
+                        "maxLength": 64,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "inputSchema": {
+              "additionalProperties": false,
+              "required": [
+                "topic"
+              ],
+              "properties": {
+                "topic": {
+                  "description": "An owner-defined topic id.",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "description": "Entries for one owner-defined topic.",
+            "title": "Knowledge base lookup",
+            "name": "kb.lookup"
+          }
+        ]
+      },
+      "canonical": true
+    },
+    {
+      "id": "changed-description",
+      "kinds": [
+        "kb.lookup"
+      ],
+      "result": {
+        "resultType": "complete",
+        "ttlMs": 0,
+        "cacheScope": "private",
+        "tools": [
+          {
+            "name": "kb.lookup",
+            "title": "Knowledge base lookup",
+            "description": "Entries for one owner-defined topics.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                  "description": "An owner-defined topic id."
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_describe",
+            "title": "Describe",
+            "description": "The lookup kinds this tool instance serves.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kinds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_probe",
+            "title": "Probe",
+            "description": "Checks the instance's configuration and returns its status and sizes, never data.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "degraded"
+                  ],
+                  "description": "degraded when the upstream answered with something the plugin can't fully use."
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Bytes the upstream returned."
+                },
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Items found, such as events, notes or entries."
+                }
+              },
+              "required": [
+                "status",
+                "bytes",
+                "items"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "canonical": false
+    },
+    {
+      "id": "changed-schema",
+      "kinds": [
+        "kb.lookup"
+      ],
+      "result": {
+        "resultType": "complete",
+        "ttlMs": 0,
+        "cacheScope": "private",
+        "tools": [
+          {
+            "name": "kb.lookup",
+            "title": "Knowledge base lookup",
+            "description": "Entries for one owner-defined topic.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,64}$",
+                  "description": "An owner-defined topic id."
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_describe",
+            "title": "Describe",
+            "description": "The lookup kinds this tool instance serves.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kinds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_probe",
+            "title": "Probe",
+            "description": "Checks the instance's configuration and returns its status and sizes, never data.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "degraded"
+                  ],
+                  "description": "degraded when the upstream answered with something the plugin can't fully use."
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Bytes the upstream returned."
+                },
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Items found, such as events, notes or entries."
+                }
+              },
+              "required": [
+                "status",
+                "bytes",
+                "items"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "canonical": false
+    },
+    {
+      "id": "extra-field",
+      "kinds": [
+        "kb.lookup"
+      ],
+      "result": {
+        "resultType": "complete",
+        "ttlMs": 0,
+        "cacheScope": "private",
+        "tools": [
+          {
+            "name": "kb.lookup",
+            "title": "Knowledge base lookup",
+            "description": "Entries for one owner-defined topic.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                  "description": "An owner-defined topic id."
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "entries"
+              ],
+              "additionalProperties": false
+            },
+            "annotations": {
+              "readOnlyHint": true
+            }
+          },
+          {
+            "name": "tool_describe",
+            "title": "Describe",
+            "description": "The lookup kinds this tool instance serves.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kinds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_probe",
+            "title": "Probe",
+            "description": "Checks the instance's configuration and returns its status and sizes, never data.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "degraded"
+                  ],
+                  "description": "degraded when the upstream answered with something the plugin can't fully use."
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Bytes the upstream returned."
+                },
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Items found, such as events, notes or entries."
+                }
+              },
+              "required": [
+                "status",
+                "bytes",
+                "items"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "canonical": false
+    },
+    {
+      "id": "extra-tool",
+      "kinds": [
+        "kb.lookup"
+      ],
+      "result": {
+        "resultType": "complete",
+        "ttlMs": 0,
+        "cacheScope": "private",
+        "tools": [
+          {
+            "name": "kb.lookup",
+            "title": "Knowledge base lookup",
+            "description": "Entries for one owner-defined topic.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                  "description": "An owner-defined topic id."
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_describe",
+            "title": "Describe",
+            "description": "The lookup kinds this tool instance serves.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kinds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_probe",
+            "title": "Probe",
+            "description": "Checks the instance's configuration and returns its status and sizes, never data.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "degraded"
+                  ],
+                  "description": "degraded when the upstream answered with something the plugin can't fully use."
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Bytes the upstream returned."
+                },
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Items found, such as events, notes or entries."
+                }
+              },
+              "required": [
+                "status",
+                "bytes",
+                "items"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "contact.notes",
+            "title": "Contact notes",
+            "description": "The owner's notes about one participant.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "participant": {
+                  "type": "string",
+                  "maxLength": 254,
+                  "pattern": "^(?:[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?|[UW][A-Z0-9]{2,20})$",
+                  "description": "A verified email address or Slack user id that the hub binds, never a display name or a phone number."
+                }
+              },
+              "required": [
+                "participant"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "notes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "notes"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "canonical": false
+    },
+    {
+      "id": "missing-tool",
+      "kinds": [
+        "kb.lookup"
+      ],
+      "result": {
+        "resultType": "complete",
+        "ttlMs": 0,
+        "cacheScope": "private",
+        "tools": [
+          {
+            "name": "kb.lookup",
+            "title": "Knowledge base lookup",
+            "description": "Entries for one owner-defined topic.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                  "description": "An owner-defined topic id."
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_describe",
+            "title": "Describe",
+            "description": "The lookup kinds this tool instance serves.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kinds"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "canonical": false
+    },
+    {
+      "id": "renamed-tool",
+      "kinds": [
+        "kb.lookup"
+      ],
+      "result": {
+        "resultType": "complete",
+        "ttlMs": 0,
+        "cacheScope": "private",
+        "tools": [
+          {
+            "name": "kb.lookup",
+            "title": "Knowledge base lookup",
+            "description": "Entries for one owner-defined topic.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                  "description": "An owner-defined topic id."
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_describe",
+            "title": "Describe",
+            "description": "The lookup kinds this tool instance serves.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kinds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_check",
+            "title": "Probe",
+            "description": "Checks the instance's configuration and returns its status and sizes, never data.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "degraded"
+                  ],
+                  "description": "degraded when the upstream answered with something the plugin can't fully use."
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Bytes the upstream returned."
+                },
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Items found, such as events, notes or entries."
+                }
+              },
+              "required": [
+                "status",
+                "bytes",
+                "items"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "canonical": false
+    },
+    {
+      "id": "repeated-tool",
+      "kinds": [
+        "kb.lookup"
+      ],
+      "result": {
+        "resultType": "complete",
+        "ttlMs": 0,
+        "cacheScope": "private",
+        "tools": [
+          {
+            "name": "kb.lookup",
+            "title": "Knowledge base lookup",
+            "description": "Entries for one owner-defined topic.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                  "description": "An owner-defined topic id."
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_describe",
+            "title": "Describe",
+            "description": "The lookup kinds this tool instance serves.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kinds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "kb.lookup",
+            "title": "Knowledge base lookup",
+            "description": "Entries for one owner-defined topic.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                  "description": "An owner-defined topic id."
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "canonical": false
+    },
+    {
+      "id": "next-cursor",
+      "kinds": [
+        "kb.lookup"
+      ],
+      "result": {
+        "resultType": "complete",
+        "ttlMs": 0,
+        "cacheScope": "private",
+        "tools": [
+          {
+            "name": "kb.lookup",
+            "title": "Knowledge base lookup",
+            "description": "Entries for one owner-defined topic.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                  "description": "An owner-defined topic id."
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_describe",
+            "title": "Describe",
+            "description": "The lookup kinds this tool instance serves.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kinds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_probe",
+            "title": "Probe",
+            "description": "Checks the instance's configuration and returns its status and sizes, never data.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "degraded"
+                  ],
+                  "description": "degraded when the upstream answered with something the plugin can't fully use."
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Bytes the upstream returned."
+                },
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Items found, such as events, notes or entries."
+                }
+              },
+              "required": [
+                "status",
+                "bytes",
+                "items"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ],
+        "nextCursor": "2"
+      },
+      "canonical": false
+    },
+    {
+      "id": "no-result-type",
+      "kinds": [
+        "kb.lookup"
+      ],
+      "result": {
+        "ttlMs": 0,
+        "cacheScope": "private",
+        "tools": [
+          {
+            "name": "kb.lookup",
+            "title": "Knowledge base lookup",
+            "description": "Entries for one owner-defined topic.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                  "description": "An owner-defined topic id."
+                }
+              },
+              "required": [
+                "topic"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_describe",
+            "title": "Describe",
+            "description": "The lookup kinds this tool instance serves.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "kinds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "tool_probe",
+            "title": "Probe",
+            "description": "Checks the instance's configuration and returns its status and sizes, never data.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "degraded"
+                  ],
+                  "description": "degraded when the upstream answered with something the plugin can't fully use."
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Bytes the upstream returned."
+                },
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Items found, such as events, notes or entries."
+                }
+              },
+              "required": [
+                "status",
+                "bytes",
+                "items"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "canonical": false
+    }
+  ]
+}
