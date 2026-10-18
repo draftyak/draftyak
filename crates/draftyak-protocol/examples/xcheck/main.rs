@@ -3,6 +3,8 @@
 //! `{"fault": <message>}` when the request itself is wrong.
 
 mod jcs_sign;
+mod snapshot;
+mod statements;
 
 use draftyak_protocol::jcs::parse_strict;
 use serde_json::{Map, Value, json};
@@ -14,6 +16,8 @@ type Command = fn(&Map<String, Value>) -> Result<Value, String>;
 // One line per area module, and no command name in two areas.
 const AREAS: &[&[(&str, Command)]] = &[
     jcs_sign::COMMANDS,
+    snapshot::COMMANDS,
+    statements::COMMANDS,
     // Later areas follow, one line each.
 ];
 
