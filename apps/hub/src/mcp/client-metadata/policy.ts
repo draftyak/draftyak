@@ -1,5 +1,5 @@
-import { isIP } from "node:net";
 import { isProxy } from "node:util/types";
+import { PublicDnsHost } from "@draftyak/protocol/tool-v1";
 
 export type MetadataKind = "cimd" | "jwks";
 export interface MetadataDestinationRule {
@@ -104,13 +104,7 @@ export function record(raw: unknown, keys: readonly string[]): raw is Record<str
 	);
 }
 function hostName(raw: unknown): raw is string {
-	if (typeof raw !== "string" || raw.length > 253 || isIP(raw) !== 0) return false;
-	const labels = raw.split(".");
-	return (
-		labels.length >= 2 &&
-		!/^\d+$/.test(labels.at(-1) ?? "") &&
-		labels.every((label) => label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))
-	);
+	return PublicDnsHost.safeParse(raw).success;
 }
 function pathName(raw: unknown): raw is string {
 	return (

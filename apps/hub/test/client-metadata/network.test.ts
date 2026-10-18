@@ -182,6 +182,9 @@ it("uses the validated DNS pin with original SNI/Host and no proxy, credentials,
 	const callback = vi.fn();
 	sent?.lookup?.("rebinding-host-is-ignored", { all: true }, callback);
 	expect(callback).toHaveBeenCalledWith(null, [{ address: "8.8.8.8", family: 4 }]);
+	callback.mockClear();
+	sent.lookup?.("rebinding-host-is-ignored", { family: 4, hints: 0 }, callback);
+	expect(callback).toHaveBeenCalledWith(null, "8.8.8.8", 4);
 	fake.resolve4.mockResolvedValue(["127.0.0.1"]);
 	await expect(fetcher.fetch(CLIENT, "cimd", signal())).rejects.toThrow(
 		/^Client metadata refused$/,

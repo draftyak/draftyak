@@ -1,9 +1,8 @@
-import { Agent, type RequestOptions, request } from "node:https";
-import { isIP } from "node:net";
-import type { TLSSocket } from "node:tls";
-import { canonicalAddress, type PinnedAddress, publicAddress } from "./addresses.ts";
+import { request } from "node:https";
+import { createPinnedHttpsConnection } from "../../net/pinned-https.ts";
+import { METADATA_DENIED_PORTS, type PinnedAddress, validateAnswers } from "./addresses.ts";
 import { metadataCacheTtl } from "./cache.ts";
-import { CIMD_TIMEOUT_MS, metadataMaxBytes } from "./limits.ts";
+import { METADATA_TIMEOUT_MS, metadataMaxBytes, metadataTimeoutMs } from "./limits.ts";
 import { type MetadataDestination, metadataUrl, refused } from "./policy.ts";
 
 const RESPONSE_BLOCK_BYTES = 65_536;
@@ -28,24 +27,28 @@ export async function getPinnedMetadata(
 	const started = performance.now();
 	const destination = metadataUrl(input.destination.url, input.destination.kind);
 	const maxBytes = metadataMaxBytes(destination.kind, input.maxBytes);
+	const address = validateAnswers([input.address], []);
 	if (
 		destination.host !== input.destination.host ||
 		destination.path !== input.destination.path ||
-		!publicAddress(input.address.address) ||
-		isIP(input.address.address) !== input.address.family ||
 		!Number.isFinite(started) ||
 		started < 0
 	)
 		throw refused();
 	const timeout = new AbortController(),
 		signal = AbortSignal.any([input.signal, timeout.signal]),
-		deadline = destination.kind === "cimd" ? started + CIMD_TIMEOUT_MS : Infinity;
+		deadline = started + metadataTimeoutMs(destination.kind, METADATA_TIMEOUT_MS);
 	const expired = () => signal.aborted || performance.now() >= deadline;
-	const timer =
-		destination.kind === "cimd"
-			? setTimeout(() => timeout.abort(), Math.max(0, deadline - performance.now()))
-			: undefined;
-	const agent = new Agent({ keepAlive: false, maxSockets: 1, maxCachedSessions: 0, proxyEnv: {} });
+	let connection: ReturnType<typeof createPinnedHttpsConnection>;
+	try {
+		connection = createPinnedHttpsConnection(destination.host, 443, address, {
+			deniedAddresses: [],
+			deniedPorts: METADATA_DENIED_PORTS,
+		});
+	} catch {
+		throw refused();
+	}
+	const timer = setTimeout(() => timeout.abort(), Math.max(0, deadline - performance.now()));
 	try {
 		return await new Promise<PinnedMetadataBytes>((resolve, reject) => {
 			const blocks: Buffer[] = [];
@@ -66,29 +69,16 @@ export async function getPinnedMetadata(
 					reject(refused());
 				}
 			};
-			const options: RequestOptions & { autoSelectFamily: false } = {
-				protocol: "https:",
-				hostname: input.destination.host,
-				port: 443,
-				path: input.destination.path,
+			const options = {
+				...connection.options,
+				path: destination.path,
 				method: "GET",
-				agent,
-				family: input.address.family,
-				autoSelectFamily: false,
-				servername: input.destination.host,
-				rejectUnauthorized: true,
-				minVersion: "TLSv1.2",
-				maxHeaderSize: 16384,
 				headers: {
-					Host: input.destination.host,
+					Host: destination.host,
 					Accept: "application/json, application/jwk-set+json",
 					"Accept-Encoding": "identity",
 					Connection: "close",
 				},
-				lookup: (_host, lookupOptions, callback) =>
-					lookupOptions.all
-						? callback(null, [{ address: input.address.address, family: input.address.family }])
-						: callback(null, input.address.address, input.address.family),
 			};
 			const req = request(options, (response) => {
 				const one = (name: string): string | undefined => {
@@ -113,7 +103,7 @@ export async function getPinnedMetadata(
 					if (
 						response.statusCode !== 200 ||
 						(type !== "application/json" &&
-							!(input.destination.kind === "jwks" && type === "application/jwk-set+json")) ||
+							!(destination.kind === "jwks" && type === "application/jwk-set+json")) ||
 						!/^application\/(?:json|jwk-set\+json)(?:;[ \t]*charset=(?:utf-8|"utf-8"))?$/i.test(
 							contentType,
 						) ||
@@ -198,29 +188,13 @@ export async function getPinnedMetadata(
 				// A successful response ends before request close; every earlier close must settle too.
 				fail();
 			});
-			req.once("socket", (socket) => {
-				const tls = socket as TLSSocket;
-				tls.once("secureConnect", () => {
-					try {
-						if (
-							expired() ||
-							!tls.authorized ||
-							tls.remoteAddress === undefined ||
-							canonicalAddress(tls.remoteAddress) !== canonicalAddress(input.address.address)
-						)
-							throw refused();
-						req.end();
-					} catch {
-						abort();
-					}
-				});
-			});
+			connection.guard(req, expired, () => req.end(), abort);
 			if (expired()) abort();
 		});
 	} catch {
 		throw refused();
 	} finally {
 		clearTimeout(timer);
-		agent.destroy();
+		connection.destroy();
 	}
 }
