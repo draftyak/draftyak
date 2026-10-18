@@ -1,0 +1,362 @@
+{
+  "recordedAt": "2026-10-18T16:27:40.551Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "888d1a9d15f3c3dcab7e64d3af9535c5a08cbd2a",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 28.3,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 71.2,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "docker-linux-x64",
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "layout": {
+      "stdio": "spawn's three pipes (socketpairs on Linux and macOS, named pipes on Windows); no fd 3 and no NODE_CHANNEL_*",
+      "stdoutParser": "lines tagged as host frames or MCP, each lane json-lines under the fd-3 decoder",
+      "hostFrameTag": "0x1e"
+    },
+    "runs": [
+      {
+        "node": "26.5.1",
+        "hostile": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "reinstated": true,
+            "pluginReport": {
+              "mode": "reinstate-send",
+              "reinstated": true,
+              "attempted": 10,
+              "failed": 0,
+              "code": null,
+              "sendStatus": [
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok"
+              ]
+            },
+            "pluginEnded": {
+              "code": 0,
+              "signal": null,
+              "closed": true
+            },
+            "exitMs": 3233,
+            "fds": {
+              "before": 19,
+              "after": 19
+            }
+          }
+        },
+        "roundTrip": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "roundTrip": {
+              "mcp": true,
+              "host": true,
+              "audit": [
+                {
+                  "reason": "inspector-port",
+                  "port": 9229,
+                  "allow": false
+                },
+                {
+                  "reason": "hub-port",
+                  "port": 47613,
+                  "allow": false
+                },
+                {
+                  "reason": "hub-port",
+                  "port": 47614,
+                  "allow": false
+                },
+                {
+                  "reason": "hub-port",
+                  "port": 47615,
+                  "allow": false
+                },
+                {
+                  "reason": "inspector-port",
+                  "port": 9229,
+                  "allow": false
+                },
+                {
+                  "reason": "hub-port",
+                  "port": 47613,
+                  "allow": false
+                },
+                {
+                  "reason": "inspector-port",
+                  "port": 9229,
+                  "allow": false
+                },
+                {
+                  "reason": "allowed",
+                  "port": 443,
+                  "allow": true
+                }
+              ],
+              "outcomes": [
+                {
+                  "denied": true,
+                  "reason": "inspector-port",
+                  "port": 9229
+                },
+                {
+                  "denied": true,
+                  "reason": "hub-port",
+                  "port": 47613
+                },
+                {
+                  "denied": true,
+                  "reason": "hub-port",
+                  "port": 47614
+                },
+                {
+                  "denied": true,
+                  "reason": "hub-port",
+                  "port": 47615
+                },
+                {
+                  "denied": true,
+                  "reason": "inspector-port",
+                  "port": 9229
+                },
+                {
+                  "denied": true,
+                  "reason": "hub-port",
+                  "port": 47613
+                },
+                {
+                  "denied": true,
+                  "reason": "inspector-port",
+                  "port": 9229
+                },
+                {
+                  "denied": false,
+                  "port": 443
+                }
+              ]
+            },
+            "violations": [],
+            "pluginEnded": {
+              "code": 0,
+              "signal": null,
+              "closed": true
+            }
+          }
+        },
+        "template": {
+          "discover": true,
+          "tools": [
+            "count",
+            "echo"
+          ],
+          "echo": {
+            "valid": true,
+            "invalidRefused": true
+          },
+          "count": {
+            "valid": true,
+            "invalidRefused": true
+          }
+        }
+      },
+      {
+        "node": "26.12.0",
+        "hostile": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "reinstated": true,
+            "pluginReport": {
+              "mode": "reinstate-send",
+              "reinstated": true,
+              "attempted": 10,
+              "failed": 0,
+              "code": null,
+              "sendStatus": [
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok",
+                "ok"
+              ]
+            },
+            "pluginEnded": {
+              "code": 0,
+              "signal": null,
+              "closed": true
+            },
+            "exitMs": 3045,
+            "fds": {
+              "before": 19,
+              "after": 19
+            }
+          }
+        },
+        "roundTrip": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "roundTrip": {
+              "mcp": true,
+              "host": true,
+              "audit": [
+                {
+                  "reason": "inspector-port",
+                  "port": 9229,
+                  "allow": false
+                },
+                {
+                  "reason": "hub-port",
+                  "port": 47613,
+                  "allow": false
+                },
+                {
+                  "reason": "hub-port",
+                  "port": 47614,
+                  "allow": false
+                },
+                {
+                  "reason": "hub-port",
+                  "port": 47615,
+                  "allow": false
+                },
+                {
+                  "reason": "inspector-port",
+                  "port": 9229,
+                  "allow": false
+                },
+                {
+                  "reason": "hub-port",
+                  "port": 47613,
+                  "allow": false
+                },
+                {
+                  "reason": "inspector-port",
+                  "port": 9229,
+                  "allow": false
+                },
+                {
+                  "reason": "allowed",
+                  "port": 443,
+                  "allow": true
+                }
+              ],
+              "outcomes": [
+                {
+                  "denied": true,
+                  "reason": "inspector-port",
+                  "port": 9229
+                },
+                {
+                  "denied": true,
+                  "reason": "hub-port",
+                  "port": 47613
+                },
+                {
+                  "denied": true,
+                  "reason": "hub-port",
+                  "port": 47614
+                },
+                {
+                  "denied": true,
+                  "reason": "hub-port",
+                  "port": 47615
+                },
+                {
+                  "denied": true,
+                  "reason": "inspector-port",
+                  "port": 9229
+                },
+                {
+                  "denied": true,
+                  "reason": "hub-port",
+                  "port": 47613
+                },
+                {
+                  "denied": true,
+                  "reason": "inspector-port",
+                  "port": 9229
+                },
+                {
+                  "denied": false,
+                  "port": 443
+                }
+              ]
+            },
+            "violations": [],
+            "pluginEnded": {
+              "code": 0,
+              "signal": null,
+              "closed": true
+            }
+          }
+        },
+        "template": {
+          "discover": true,
+          "tools": [
+            "count",
+            "echo"
+          ],
+          "echo": {
+            "valid": true,
+            "invalidRefused": true
+          },
+          "count": {
+            "valid": true,
+            "invalidRefused": true
+          }
+        }
+      }
+    ],
+    "findings": {
+      "hubTakesNoDescriptorWithoutAnIpcChannel": true,
+      "roundTripsOnSpawnPipes": true,
+      "templatePluginServesOnSpawnPipes": true
+    },
+    "image": "node:26.12.0-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913"
+  }
+}

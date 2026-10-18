@@ -1,9 +1,11 @@
 // Runs S2b's probes inside a Linux container (a read-only stage, --network none) for each mounted
-// Node: `node docker-runner-s2b.ts <matrix|memory|sampler-cost> <config>`. It covers the POSIX paths
-// a Windows host can't (SIGUSR1, real handle passing, /proc sampling) and prints one
-// ##DYS2BMATRIX## line. It imports only ./s2b.ts and ./memory.ts, which stay install-free.
+// Node: `node docker-runner-s2b.ts <matrix|memory|sampler-cost|fifo> <config>`. It covers the POSIX
+// paths a Windows host can't (SIGUSR1, real handle passing, /proc sampling, FIFO stdio) and prints
+// one ##DYS2BMATRIX## line. It imports only ./s2b.ts, ./memory.ts and ./fifo.ts, which stay
+// install-free.
 import fs from "node:fs";
 import path from "node:path";
+import { FIFO_MODES, spawnCostOrError } from "./fifo.ts";
 import {
 	FAST_INTERVAL_MS,
 	killSamplerFor,
@@ -59,6 +61,8 @@ async function matrix(node: RunnerNode) {
 		channel: await hub("channel"),
 		fuzz,
 		fallback1: await hub("fallback1"),
+		fallback1RoundTrip: await hub("fallback1-round-trip"),
+		fallback1Template: await runTemplatePlugin(node.bin, bundle, dataDir(), "fallback1"),
 		lateReply: await hub("late-reply"),
 		sendAfterExit: await hub("send-after-exit"),
 		controls: {
@@ -103,10 +107,27 @@ async function samplerCost(node: RunnerNode) {
 		sampler.close();
 	}
 	idle.kill("SIGKILL");
-	return { label: node.label, costs };
+	const spawnCost = await spawnCostOrError(
+		{ nodeBin: node.bin, pluginDir, dataDir: dataDir() },
+		node.label,
+	);
+	return { label: node.label, costs, spawnCost };
 }
 
-const runs = { matrix, memory, "sampler-cost": samplerCost } as const;
+// Remedy (f): every FIFO mode in a stand-in hub, then the template plugin on FIFO stdio.
+async function fifo(node: RunnerNode) {
+	const modes = [];
+	for (const mode of Object.keys(FIFO_MODES)) {
+		modes.push({
+			mode,
+			run: await runHubProbe(node.bin, "fifo", { pluginDir, dataDir: dataDir(), mode }),
+		});
+	}
+	const template = await runTemplatePlugin(node.bin, config.bundleDir ?? "", dataDir(), "fifo");
+	return { label: node.label, modes, template };
+}
+
+const runs = { matrix, memory, "sampler-cost": samplerCost, fifo } as const;
 const run = runs[mode as keyof typeof runs];
 if (run === undefined) throw new Error(`unknown runner mode ${mode}`);
 const nodes = [];

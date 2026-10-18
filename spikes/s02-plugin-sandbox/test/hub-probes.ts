@@ -4,10 +4,23 @@
 // non-zero, which is how runHubProbe judges survival. The control-* probes use Node's own stdio
 // 'ipc' parent side instead, to show why the hub doesn't.
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
+import type net from "node:net";
 import path from "node:path";
+import type { Readable, Writable } from "node:stream";
+import { type FifoStdio, openFifoStdio } from "../src/fifo-stdio.ts";
 import { attachHostChannel, type HostChannel } from "../src/host-channel.ts";
 import { PLUGIN_STDIO, spawnPlugin } from "../src/spawn.ts";
+import {
+	attachTaggedStdio,
+	channelOver,
+	type Fallback1RoundTripResult,
+	type FifoResult,
+	fifoMode,
+	type StdioRoundTrip,
+	type TaggedStdio,
+} from "./fifo.ts";
 import {
 	type ChannelResult,
 	type ControlResult,
@@ -301,6 +314,217 @@ async function fallback1Probe(config: HubConfig): Promise<Fallback1Result> {
 	};
 }
 
+// Collects a stream's text, for the plugin's ##DYS2B## reports.
+function textOf(stream: NodeJS.ReadableStream): () => string {
+	let text = "";
+	stream.setEncoding("utf8").on("data", (chunk: string) => {
+		text += chunk;
+	});
+	return () => text;
+}
+
+// Waits for the plugin's exit and for every FIFO it writes to close (end-of-file, or the hub's own
+// close on a violation), else SIGKILLs it and settles on its exit with closed false.
+function fifoEnded(
+	child: ChildProcess,
+	outputs: readonly net.Socket[],
+	timeoutMs: number,
+): Promise<PluginEnd> {
+	const exited =
+		child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : once(child, "exit");
+	const closed = Promise.all(
+		outputs.map((socket) => (socket.closed ? Promise.resolve() : once(socket, "close"))),
+	);
+	return new Promise((resolve) => {
+		const finish = (all: boolean): void =>
+			resolve({ code: child.exitCode, signal: child.signalCode, closed: all });
+		const timer = setTimeout(() => {
+			child.kill("SIGKILL");
+			exited.then(() => finish(false));
+		}, timeoutMs);
+		Promise.all([exited, closed]).then(() => {
+			clearTimeout(timer);
+			finish(true);
+		});
+	});
+}
+
+// Counts the bytes a stream delivers, whatever its encoding.
+function bytesOf(stream: Readable): () => number {
+	let bytes = 0;
+	stream.on("data", (chunk: Buffer | string) => {
+		bytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
+	});
+	return () => bytes;
+}
+
+interface TaggedHub {
+	readonly io: TaggedStdio;
+	// Settles with the outcomes of the plugin's fetch-done report.
+	readonly fetched: Promise<unknown>;
+	// Every other "report" notification's params, in order.
+	readonly notes: readonly Record<string, unknown>[];
+}
+
+// Fallback 1's hub side, collecting the plugin's "report" notifications from the host lane.
+function taggedHub(child: ChildProcess, input: Writable, output: Readable): TaggedHub {
+	const notes: Record<string, unknown>[] = [];
+	let settle: (outcomes: unknown) => void = () => {};
+	const fetched = new Promise<unknown>((resolve) => {
+		settle = resolve;
+	});
+	const io = attachTaggedStdio(child, input, output, {
+		onNotification: (method, params) => {
+			if (method !== "report") return;
+			const body = params as { event?: string; outcomes?: unknown };
+			if (body.event === "fetch-done") settle(body.outcomes ?? []);
+			else notes.push(params as Record<string, unknown>);
+		},
+	});
+	return { io, fetched, notes };
+}
+
+// The benign exchange on Fallback 1's stdio: an MCP ping on the untagged lane, the hub's
+// plugin/echo and the plugin's host/fetch calls on the tagged one.
+async function stdioRoundTrip(io: TaggedStdio, report: Promise<unknown>): Promise<StdioRoundTrip> {
+	const mcp = (await io.request("ping")) !== null;
+	const host = await io.host
+		.request("plugin/echo", { ping: 1 }, 10_000)
+		.then((reply) => (reply.result as { echoed?: { ping?: number } })?.echoed?.ping === 1)
+		.catch(() => false);
+	const outcomes = (await within(report, 10_000, [])) as StdioRoundTrip["outcomes"];
+	return {
+		mcp,
+		host,
+		audit: io.host.audit.map(({ reason, port, allow }) => ({ reason, port, allow })),
+		outcomes,
+	};
+}
+
+// Fallback 1's benign exchange on spawn's own pipes (socketpairs on POSIX, named pipes on
+// Windows), with no fd 3 and no NODE_CHANNEL_*: the FIFO control's round trip, on every OS.
+async function fallback1RoundTripProbe(config: HubConfig): Promise<Fallback1RoundTripResult> {
+	const child = spawnFixture({
+		nodeBin: process.execPath,
+		pluginDir: config.pluginDir,
+		dataDir: config.dataDir,
+		grantData: true,
+		entry: path.join(config.pluginDir, "ipc-plugin.mjs"),
+		entryArgs: ["stdio-frames", JSON.stringify(FETCH_TARGETS.map((target) => target.url))],
+		stdio: ["pipe", "pipe", "pipe"],
+		channel: false,
+	});
+	child.stderr?.resume();
+	const { io, fetched } = taggedHub(child, child.stdin as Writable, child.stdout as Readable);
+	const roundTrip = await stdioRoundTrip(io, fetched);
+	const end = await ended(child, 10_000);
+	return {
+		roundTrip,
+		violations: io.violations.map(({ kind, detail }) => ({ kind, detail })),
+		pluginEnded: end,
+	};
+}
+
+// Before the spawn, every end the hub and the plugin hold must be a FIFO with no name left (nlink
+// 0), and the folder the FIFOs were made in must be gone.
+function unlinkedBeforeSpawn(fifo: FifoStdio): FifoResult["beforeSpawn"] {
+	const ends = [...fifo.pluginFds, ...[fifo.input, ...fifo.outputs].map((socket) => fdOf(socket))];
+	const unlinked = ends.filter((fd) => {
+		try {
+			const stats = fs.fstatSync(fd);
+			return stats.isFIFO() && stats.nlink === 0;
+		} catch {
+			return false;
+		}
+	});
+	return {
+		ends: ends.length,
+		unlinkedFifos: unlinked.length,
+		folderGone: !fs.existsSync(fifo.dir),
+	};
+}
+
+// Remedy (f): the plugin's stdio on FIFOs (src/fifo-stdio.ts), so no socket joins it to the hub.
+// The "stdio" layout is Fallback 1 (no fd 3, no NODE_CHANNEL_*; tagged host frames and MCP on
+// stdin/stdout, both lanes under the decoder); "fd3" adds a fourth FIFO as fd 3 with
+// NODE_CHANNEL_*. Counts the hub's descriptors across the attempt, as the fuzz probe does, and the
+// bytes it reads from each FIFO.
+async function fifoProbe(config: HubConfig): Promise<FifoResult> {
+	const mode = config.mode ?? "";
+	const { layout } = fifoMode(mode);
+	await warmUp();
+	(await openFifoStdio(1)).destroy();
+	const before = await fdTable();
+	const started = performance.now();
+	const fifo = await openFifoStdio(layout === "fd3" ? 3 : 2);
+	const beforeSpawn = unlinkedBeforeSpawn(fifo);
+	const benign = mode === "round-trip";
+	let child: ChildProcess;
+	try {
+		child = spawnFixture({
+			nodeBin: process.execPath,
+			pluginDir: config.pluginDir,
+			dataDir: config.dataDir,
+			grantData: true,
+			entry: path.join(config.pluginDir, benign ? "ipc-plugin.mjs" : "hostile-channel.mjs"),
+			entryArgs: benign
+				? ["stdio-frames", JSON.stringify(FETCH_TARGETS.map((target) => target.url))]
+				: [mode],
+			stdio: fifo.pluginFds,
+			channel: layout === "fd3",
+		});
+	} catch (error) {
+		fifo.destroy();
+		throw error;
+	}
+	fifo.releasePluginEnds();
+	const [stdout, stderr, fd3] = fifo.outputs as [net.Socket, net.Socket, net.Socket | undefined];
+	const labels = new Map<number, string>([
+		[fdOf(fifo.input), "the hub's end of the plugin's stdin FIFO"],
+		[fdOf(stdout), "the hub's end of the plugin's stdout FIFO"],
+		[fdOf(stderr), "the hub's end of the plugin's stderr FIFO"],
+	]);
+	if (fd3 !== undefined) labels.set(fdOf(fd3), "the hub's end of the fd-3 FIFO");
+	const read = {
+		stdout: bytesOf(stdout),
+		stderr: bytesOf(stderr),
+		fd3: fd3 === undefined ? () => null : bytesOf(fd3),
+	};
+	const reports = textOf(layout === "fd3" ? stdout : stderr);
+	let violations: () => ViolationRecord[];
+	let notes: readonly Record<string, unknown>[] = [];
+	let roundTrip: StdioRoundTrip | null = null;
+	if (fd3 !== undefined) {
+		stderr.resume();
+		const channel = channelOver(child, fd3);
+		violations = () => violationsOf(channel);
+	} else {
+		const hub = taggedHub(child, fifo.input, stdout);
+		notes = hub.notes;
+		violations = () => hub.io.violations.map(({ kind, detail }) => ({ kind, detail }));
+		if (benign) roundTrip = await stdioRoundTrip(hub.io, hub.fetched);
+	}
+	const end = await fifoEnded(child, fifo.outputs, 10_000);
+	const exitMs = Math.round(performance.now() - started);
+	const closing = [fifo.input, ...fifo.outputs].map((socket) =>
+		socket.closed ? Promise.resolve() : once(socket, "close"),
+	);
+	fifo.destroy();
+	await within(Promise.all(closing), 2_000, undefined);
+	return {
+		mode,
+		layout,
+		beforeSpawn,
+		violations: violations(),
+		pluginEnded: end,
+		exitMs,
+		fds: before === null ? null : fdChange(before, await fdTable(), labels),
+		bytesRead: { stdout: read.stdout(), stderr: read.stderr(), fd3: read.fd3() },
+		plugin: [...tagged(reports()), ...notes],
+		roundTrip,
+	};
+}
+
 async function lateReplyProbe(config: HubConfig): Promise<LateReplyResult> {
 	const child = plugin(config, "ipc-plugin.mjs", ["late"]);
 	stdoutOf(child);
@@ -366,6 +590,8 @@ const probes: Record<string, (config: HubConfig) => Promise<unknown>> = {
 	channel: channelProbe,
 	fuzz: fuzzProbe,
 	fallback1: fallback1Probe,
+	"fallback1-round-trip": fallback1RoundTripProbe,
+	fifo: fifoProbe,
 	"late-reply": lateReplyProbe,
 	"send-after-exit": sendAfterExitProbe,
 	"control-malformed": (config) => controlProbe(config, "raw-malformed"),
