@@ -271,9 +271,17 @@ importers:
 
   tools/adr-check: {}
 
+  tools/bundle-hub: {}
+
   tools/ci-checks: {}
 
   tools/fetch-node: {}
+
+  tools/release-guard:
+    dependencies:
+      '@draftyak/bundle-hub':
+        specifier: workspace:*
+        version: link:../bundle-hub
 
   tools/vendor-guard: {}
 

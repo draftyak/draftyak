@@ -1,0 +1,10 @@
+{
+  "name": "@draftyak/bundle-hub",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bundle-hub": "node src/cli.ts",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  }
+}

@@ -1,0 +1,7 @@
+# Native schedule oracle build template
+
+Run this through `inspectScheduleEquivalence` in `../src/schedule.ts`; its API and acceptance boundary are documented in the parent README. This manifest intentionally references a `protocol/` source directory that the driver supplies from the reviewed product checkout. The driver also supplies `src/schedule.rs` as an unchanged copy of the real native schedule module. Do not replace those sources with a parallel implementation.
+
+The template lockfile pins the oracle's complete dependency graph. The driver checks those package versions, registry sources and checksums against the product lock before building. It copies only the measured template, native module and protocol package/source into a private worktree cache directory, sets measured compile-time provenance values, and builds offline with the installed pinned Rust toolchain. This directory is not a standalone application or a product native binary.
+
+The executable accepts one bounded JSON request on stdin and returns one bounded JSON response. Requests can list zone transition ranges, wall times, instants and actual protocol schedules. It calls the real native validation/display functions for schedules and uses jiff's bundled database for independent transition, resolution and rendering queries. Errors return a fixed message and nonzero exit status; arbitrary filesystem paths, commands and secrets are not request fields.
