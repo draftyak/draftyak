@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/schemas/flags-v1.schema.json",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/draftyak.flags.Flag"
+  },
+  "uniqueItems": true,
+  "description": "A revision's flags, in any order; flagsHash sorts them.",
+  "$defs": {
+    "draftyak.flags.Flag": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "NEW_RECIPIENT",
+                "RECIPIENT_ADDED_BY_AGENT",
+                "REPLY_TO_REDIRECT",
+                "AGENT_AUTHORED",
+                "DMARC_FAIL",
+                "EXTERNAL_LINK",
+                "AGENT_INSERTED_CONTACT",
+                "ATTACHMENT_ADDED_BY_AGENT",
+                "INVISIBLE_CHARS",
+                "MASS_MENTION",
+                "CROSS_THREAD_DATA",
+                "SECRET_PATTERN",
+                "TOOL_DATA_IN_BODY"
+              ]
+            },
+            "severity": {
+              "type": "string",
+              "const": "ack"
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code",
+            "severity"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "TOOL_CONTEXT_USED"
+              ]
+            },
+            "severity": {
+              "type": "string",
+              "const": "info"
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code",
+            "severity"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "SUSPECTED_INSTRUCTIONS",
+                "TOOL_INSTRUCTIONS"
+              ]
+            },
+            "severity": {
+              "type": "string",
+              "const": "advisory"
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code",
+            "severity"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "A flag on a draft revision: its code, the code's severity, and an optional detail (1 to 1,000 Unicode scalar values) that the composer and the approval window show as data."
+    }
+  }
+}
