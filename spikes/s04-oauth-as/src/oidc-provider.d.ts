@@ -13,8 +13,18 @@ declare module "oidc-provider" {
 		readonly clientName?: string;
 		readonly clientAuthMethod: string;
 		readonly redirectUris: string[];
+		readonly grantTypes: string[];
+		readonly jwksUri?: string;
+		// Set on clients resolved from a client ID metadata document.
+		readonly clientIdMetadataDocument?: true;
 		grantTypeAllowed(type: string): boolean;
 		redirectUriAllowed(value: string): boolean;
+	}
+
+	// The per-request context (ctx.oidc); one class per provider.
+	export interface OIDCContext {
+		readonly route: string;
+		clientJwtAuthExpectedAudience(): Set<string>;
 	}
 
 	export interface InteractionResults {
@@ -35,6 +45,7 @@ declare module "oidc-provider" {
 		set(field: string, value: string): void;
 		remove(field: string): void;
 		readonly oidc: {
+			readonly provider: Provider;
 			readonly route?: string;
 			readonly result?: InteractionResults;
 			readonly client?: Client;
@@ -94,6 +105,9 @@ declare module "oidc-provider" {
 		constructor(issuer: string, configuration: Configuration);
 		readonly issuer: string;
 		proxy: boolean;
+		readonly OIDCContext: { readonly prototype: OIDCContext };
+		// A route's URL under the issuer, whatever the request named.
+		urlFor(name: string): string;
 		callback(): (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 		use(middleware: Middleware): this;
 		on(event: string, listener: (...args: unknown[]) => void): this;
@@ -132,6 +146,8 @@ declare module "oidc-provider" {
 
 	export const errors: {
 		InvalidTarget: new (description?: string) => Error;
+		InvalidClientAuth: new (description?: string) => Error;
+		OIDCProviderError: new (status: number, error: string) => Error;
 	};
 
 	export default Provider;

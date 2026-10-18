@@ -6,7 +6,9 @@
     "typecheck": "tsc -b",
     "test": "node ../kit/run.ts",
     "test:heavy": "node ../kit/run.ts --heavy",
-    "test:live": "node ../kit/run.ts --live"
+    "test:live": "node ../kit/run.ts --live",
+    "record-cimd": "node test/record-cimd.ts",
+    "dcr-window": "node src/dcr-window.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",
@@ -14,6 +16,7 @@
     "oidc-provider": "9.12.2"
   },
   "devDependencies": {
-    "@draftyak/spike-kit": "workspace:*"
+    "@draftyak/spike-kit": "workspace:*",
+    "@peculiar/x509": "2.2.0"
   }
 }

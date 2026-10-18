@@ -1,0 +1,27 @@
+{
+  "source": "https://claude.ai/oauth/mcp-oauth-client-metadata",
+  "fetchedAt": "2026-10-18T00:05:02.319Z",
+  "response": {
+    "status": 200,
+    "contentType": "application/json",
+    "cacheControl": "public, max-age=300"
+  },
+  "sha256": "049f8cf53fbaaa902e71402620e96269a8973917b90e69c98b0edccfb9b07f79",
+  "document": {
+    "client_id": "https://claude.ai/oauth/mcp-oauth-client-metadata",
+    "client_name": "Claude",
+    "client_uri": "https://claude.ai",
+    "redirect_uris": [
+      "https://claude.ai/api/mcp/auth_callback"
+    ],
+    "grant_types": [
+      "authorization_code",
+      "refresh_token",
+      "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    ],
+    "response_types": [
+      "code"
+    ],
+    "token_endpoint_auth_method": "none"
+  }
+}

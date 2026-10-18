@@ -1,0 +1,12 @@
+{
+  "synthetic": "an owner-added host's public client with one loopback and one https redirect URI",
+  "url": "https://cimd.example/mixed.json",
+  "document": {
+    "client_id": "https://cimd.example/mixed.json",
+    "client_name": "Mixed redirects (stand-in)",
+    "redirect_uris": ["http://localhost/callback", "https://cimd.example/callback"],
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+    "token_endpoint_auth_method": "none"
+  }
+}
