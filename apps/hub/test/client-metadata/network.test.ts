@@ -576,7 +576,7 @@ it("aggregates tiny native response chunks into bounded owned storage and clears
 		maxBytes: METADATA_MAX_BYTES,
 		signal: signal(),
 	});
-	expect(result.body).toEqual(body);
+	expect(Buffer.compare(result.body, body)).toBe(0);
 	expect(counts).toEqual([1]);
 	expect(retained[0]).toHaveLength(0);
 });
@@ -606,7 +606,7 @@ it.each([
 			maxBytes: cap,
 			signal: signal(),
 		});
-		expect(result.body).toEqual(body);
+		expect(Buffer.compare(result.body, body)).toBe(0);
 		expect(capacities).toHaveLength(1);
 		expect(capacities[0]).toHaveLength(count);
 		expect(capacities[0]?.every((size) => size > 0 && size <= 65_536)).toBe(true);
