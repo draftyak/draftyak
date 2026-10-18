@@ -31,7 +31,7 @@ import {
 } from "@draftyak/spike-kit";
 import { afterAll, describe, expect, it, type TestContext } from "vitest";
 import { codeFingerprint } from "./app.ts";
-import { itemAccess } from "./keychain-access.ts";
+import { itemAccess, KEYCHAIN_PROMPTS } from "./keychain-access.ts";
 
 // Plan section 7, pairing step 6; M0.36's hub stand-in pins the same literals.
 const LABEL = "EXPERIMENTAL-draftyak-pair-v1";
@@ -664,8 +664,7 @@ describe("the master key's stores", () => {
 				reSignedCopy: { read: ok(2), deleted: ok(3) },
 				itemAccess: access,
 				goneAtEnd: steps[5]?.error === "NoEntry",
-				prompts:
-					"off: SecKeychainSetUserInteractionAllowed(false), so no dialog is shown; securityd denies a check only a prompt could pass (the item's ACL or partition list) as errSecAuthFailed (-25293), and a step needing UI that can't be shown, such as finding no default keychain, fails as errSecInteractionNotAllowed (-25308)",
+				prompts: KEYCHAIN_PROMPTS,
 				binaries: {
 					built: { signature: built.signature, flags: built.flags },
 					reSigned: { signature: update.signature, flags: update.flags, identifier },
