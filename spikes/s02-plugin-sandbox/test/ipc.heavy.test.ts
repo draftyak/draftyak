@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import {
 	hostTarget,
@@ -11,6 +13,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import { MAX_MESSAGE_BYTES } from "../src/host-channel.ts";
 import { PLUGIN_CHANNEL_ENV, PLUGIN_STDIO } from "../src/spawn.ts";
+import { describeFds, fdOf } from "./hub-probes.ts";
 import { evidenceFile, missing, recordEvidence, unmet } from "./record.ts";
 import {
 	bundleTemplatePlugin,
@@ -19,9 +22,11 @@ import {
 	type ControlResult,
 	channelProblem,
 	controlProblem,
+	type Fallback1Result,
 	type FdAdoptResult,
 	FETCH_TARGETS,
 	type FuzzResult,
+	fallback1Problem,
 	fuzzModes,
 	fuzzProblem,
 	type HubRun,
@@ -46,6 +51,32 @@ import {
 	v8Weakened,
 	validatorProblem,
 } from "./s2b.ts";
+
+// Fallback 1 holds on a target when no plugin can grow the hub's descriptor count without an IPC
+// channel; the data is the per-Node run, written to its own file so it never depends on the fuzz
+// finding (which fails on macOS under rule (d)).
+function fallback1Evidence(
+	target: string,
+	runs: ReadonlyMap<string, HubRun<Fallback1Result>>,
+	nodes: readonly string[],
+) {
+	const held = nodes.every((v) => {
+		const run = runs.get(v);
+		return run !== undefined && fallback1Problem(run) === null;
+	});
+	return {
+		data: {
+			target,
+			nodes,
+			runs: nodes.map((node) => ({ node, ...(runs.get(node) ?? null) })),
+			findings: { hubTakesNoDescriptorWithoutAnIpcChannel: held },
+		},
+		problems: [
+			...missing("fallback1 node", nodes, runs),
+			...unmet({ hubTakesNoDescriptorWithoutAnIpcChannel: held }),
+		],
+	};
+}
 
 const NODES = selectedNodes(nodeVersions());
 const arch = hostTarget().arch;
@@ -166,6 +197,7 @@ function hostSuite(
 		const runs = new Map<string, NodeRuns>(
 			NODES.map((v) => [v, { fuzz: new Map(), controls: new Map() }]),
 		);
+		const fallback1 = new Map<string, HubRun<Fallback1Result>>();
 		const at = (v: string): NodeRuns => runs.get(v) as NodeRuns;
 
 		beforeAll(async () => {
@@ -180,13 +212,16 @@ function hostSuite(
 		afterAll(async () => {
 			if (root) fs.rmSync(root, { recursive: true, force: true });
 			if (process.platform !== platform) return;
-			const data = ipcEvidence(`${platform}-${arch}`, platform, runs);
+			const target = `${platform}-${arch}`;
+			const data = ipcEvidence(target, platform, runs);
 			const planned = new Map([...runs].filter(([, r]) => r.channel !== undefined));
 			await recordEvidence(
-				evidenceFile("ipc", `${platform}-${arch}`),
+				evidenceFile("ipc", target),
 				[...missing("node", NODES, planned), ...unmet(data.findings)],
 				data,
 			);
+			const f1 = fallback1Evidence(target, fallback1, NODES);
+			await recordEvidence(evidenceFile("fallback1", target), f1.problems, f1.data);
 		});
 
 		const t = (): { tags: string[] } => ({ tags: [`requires:${capTag}`] });
@@ -223,15 +258,34 @@ function hostSuite(
 			},
 		);
 
+		// Every Node and mode runs before the verdict, so one failure can't hide another's result.
 		it("survives every hostile host-channel input and SIGKILLs the plugin", t(), async () => {
+			const problems: string[] = [];
 			for (const v of NODES) {
 				for (const mode of fuzzModes(platform)) {
 					const run = await hub<FuzzResult>(v, "fuzz", mode);
 					at(v).fuzz.set(mode, run);
-					expect(fuzzProblem(mode, platform, run), `${v} ${mode}`).toBeNull();
+					const problem = fuzzProblem(mode, platform, run);
+					if (problem !== null) problems.push(`${v} ${mode}: ${problem}`);
 				}
 			}
+			expect(problems).toEqual([]);
 		});
+
+		// Fallback 1 (the recommended remedy): with no fd 3 and no NODE_CHANNEL_*, a plugin reinstates
+		// process.send over stdout and tries to pass a handle; the hub reading stdout as a plain stream
+		// must not take the descriptor. Checks the recommended design on every OS, macOS included.
+		it(
+			"a plugin cannot grow the hub's descriptors without an IPC channel (Fallback 1)",
+			t(),
+			async () => {
+				for (const v of NODES) {
+					const run = await hub<Fallback1Result>(v, "fallback1");
+					fallback1.set(v, run);
+					expect(fallback1Problem(run), v).toBeNull();
+				}
+			},
+		);
 
 		it("drops a late reply and a send to a plugin that has exited", t(), async () => {
 			for (const v of NODES) {
@@ -288,6 +342,45 @@ hostSuite("windows", "windows", "win32");
 hostSuite("linux", "linux", "linux");
 hostSuite("macos", "macos", "darwin");
 
+// describeFds names a grown descriptor from lsof on macOS; that branch and parseLsof have no macOS
+// coverage otherwise (diagnostics.test.ts is a unit test, which spikes.yml never runs on the runner).
+// This self-check runs before the fuzz finding: the hub holds both ends of a connected UNIX socket,
+// and describeFds must list them and match each as the other's peer; on a miss the raw lsof shows why.
+describe("macOS lsof descriptor diagnostics (self-check)", () => {
+	it("lists a connected socket and finds its peer in the hub's own table", {
+		tags: ["requires:macos"],
+		timeout: 30_000,
+	}, async () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dy-s02-lsof-"));
+		const sockPath = path.join(dir, "s.sock");
+		const server = net.createServer();
+		let client: net.Socket | undefined;
+		let accepted: net.Socket | undefined;
+		try {
+			await new Promise<void>((resolve) => server.listen(sockPath, resolve));
+			const incoming = new Promise<net.Socket>((resolve) => server.once("connection", resolve));
+			client = net.connect(sockPath);
+			await new Promise((resolve) => (client as net.Socket).once("connect", resolve));
+			accepted = await incoming;
+			const clientFd = fdOf(client);
+			const serverFd = fdOf(accepted);
+			const labels = new Map([
+				[clientFd, "client end"],
+				[serverFd, "server end"],
+			]);
+			const lines = describeFds([clientFd, serverFd], labels);
+			const shown = lines.join(" | ");
+			expect(shown, shown).not.toMatch(/not listed by lsof/);
+			expect(shown, shown).toMatch(/peer fd/);
+		} finally {
+			client?.destroy();
+			accepted?.destroy();
+			server.close();
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
 // The same probes in Linux Docker (both Nodes), plus the POSIX paths a Windows host can't take:
 // SIGUSR1, a real handle passed to the hub, and the IPC fd's EEXIST. Writes the Docker evidence
 // for the IPC, V8 and inspector areas.
@@ -295,6 +388,7 @@ interface DockerNode {
 	readonly label: string;
 	readonly channel: HubRun<ChannelResult>;
 	readonly fuzz: { readonly mode: string; readonly run: HubRun<FuzzResult> }[];
+	readonly fallback1: HubRun<Fallback1Result>;
 	readonly lateReply: HubRun<LateReplyResult>;
 	readonly sendAfterExit: HubRun<SendAfterExitResult>;
 	readonly controls: Record<ControlName, HubRun<ControlResult>>;
@@ -354,10 +448,13 @@ describe("Linux Docker S2b matrix", () => {
 		};
 		expect(matrix.nodes.map((n) => n.label)).toEqual(NODES);
 		const runs = new Map<string, NodeRuns>();
+		const fallback1 = new Map<string, HubRun<Fallback1Result>>();
 		for (const n of matrix.nodes) {
 			expect(channelProblem(n.channel), n.label).toBeNull();
 			for (const { mode, run } of n.fuzz)
 				expect(fuzzProblem(mode, "linux", run), `${n.label} ${mode}`).toBeNull();
+			expect(fallback1Problem(n.fallback1), `${n.label} fallback1`).toBeNull();
+			fallback1.set(n.label, n.fallback1);
 			expect(lateReplyProblem(n.lateReply), n.label).toBeNull();
 			expect(sendAfterExitProblem(n.sendAfterExit), n.label).toBeNull();
 			for (const [name] of CONTROLS)
@@ -384,6 +481,8 @@ describe("Linux Docker S2b matrix", () => {
 		const file = (area: string): string => evidenceFile(area, target);
 		const ipc = { ...ipcEvidence(target, "linux", runs), image: glibcImage };
 		await recordEvidence(file("ipc"), unmet(ipc.findings), ipc);
+		const f1 = fallback1Evidence(target, fallback1, NODES);
+		await recordEvidence(file("fallback1"), f1.problems, { ...f1.data, image: glibcImage });
 		const v8 = {
 			target,
 			nodes: NODES,

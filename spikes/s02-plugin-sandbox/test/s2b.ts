@@ -562,6 +562,8 @@ export interface PluginEnd {
 export interface Fds {
 	readonly before: number;
 	readonly after: number | null;
+	// Only when the count changed: what each new descriptor is (hub-probes.ts).
+	readonly added?: readonly string[];
 }
 
 export interface ChannelResult {
@@ -593,6 +595,17 @@ export interface LateReplyResult {
 	readonly droppedWrites: number;
 	readonly violations: readonly ViolationRecord[];
 	readonly end: PluginEnd;
+}
+
+// Fallback 1 (no fd 3, no NODE_CHANNEL_*): a plugin that reinstates process.send over stdout with
+// child_process._forkChild and tries to pass a handle. reinstated says whether process.send came
+// back; fds is the hub's descriptor count across the attempt.
+export interface Fallback1Result {
+	readonly reinstated: boolean;
+	readonly pluginReport: Record<string, unknown> | null;
+	readonly pluginEnded: PluginEnd;
+	readonly exitMs: number;
+	readonly fds: Fds | null;
 }
 
 export interface SendAfterExitResult {
@@ -637,7 +650,14 @@ export function fuzzProblem(
 	const expected = expectedViolation(mode, platform);
 	const first = r.violations[0]?.kind ?? null;
 	if (r.fds !== null && r.fds.after !== r.fds.before) {
-		return `the hub's open fds went from ${r.fds.before} to ${r.fds.after}`;
+		const added = r.fds.added?.length ? `; new: ${r.fds.added.join("; ")}` : "";
+		const end = [
+			`violation ${first ?? "none"}`,
+			`ended by ${r.pluginEnded.signal ?? `exit ${r.pluginEnded.code}`}`,
+			`'close' ${r.pluginEnded.closed ? "fired" : "never fired"}`,
+			`${r.exitMs} ms`,
+		].join(", ");
+		return `the hub's open fds went from ${r.fds.before} to ${r.fds.after} (${end})${added}`;
 	}
 	if (expected === null) {
 		if (first !== null) return `unexpected violation ${first}`;
@@ -650,6 +670,26 @@ export function fuzzProblem(
 	if (r.pluginEnded.signal !== "SIGKILL") return `the plugin ended by ${r.pluginEnded.signal}`;
 	if (r.auditCount !== 0) return `${r.auditCount} requests dispatched after the violation`;
 	if (!r.pluginEnded.closed) return "'close' never fired";
+	return null;
+}
+
+// Fallback 1 holds on a target when the hub survives and its descriptor count does not grow, even
+// though the plugin reinstated process.send over stdout. The descriptor barrier is the hub reading
+// stdout as a plain stream, the same read fd 3 relied on: Linux drops the passed descriptor and
+// Windows crashes the plugin before it is sent (fds is null there); macOS is the open question, and
+// a growth there fails this just as the fd-3 handle-send does.
+export function fallback1Problem(run: HubRun<Fallback1Result>): string | null {
+	const r = run.result;
+	if (!run.survived || r === null) return died(run);
+	if (r.fds !== null && r.fds.after !== r.fds.before) {
+		const added = r.fds.added?.length ? `; new: ${r.fds.added.join("; ")}` : "";
+		const end = [
+			`reinstated ${r.reinstated}`,
+			`ended by ${r.pluginEnded.signal ?? `exit ${r.pluginEnded.code}`}`,
+			`${r.exitMs} ms`,
+		].join(", ");
+		return `the hub's open fds went from ${r.fds.before} to ${r.fds.after} without an IPC channel (${end})${added}`;
+	}
 	return null;
 }
 

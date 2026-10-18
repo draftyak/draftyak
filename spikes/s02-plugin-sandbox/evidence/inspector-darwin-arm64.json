@@ -1,0 +1,92 @@
+{
+  "recordedAt": "2026-10-18T02:50:02.957Z",
+  "fingerprint": {
+    "os": {
+      "platform": "darwin",
+      "arch": "arm64",
+      "osName": "Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:34 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_VMAPPLE",
+      "osVersion": "24.6.0"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "f7a5a04e41e36ace347116af94db54c5666920fa",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 75.3,
+      "cpuCount": 3,
+      "cpuModel": "Apple M1 (Virtual)",
+      "memoryUsedPercent": 95.9,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "darwin-arm64",
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "platform": "darwin",
+    "production": [
+      {
+        "node": "26.5.1",
+        "attempts": {
+          "debugProcess": {
+            "called": true
+          },
+          "sigusr1": {
+            "called": true
+          }
+        },
+        "answers": 8,
+        "hubInspectorOpened": false
+      },
+      {
+        "node": "26.12.0",
+        "attempts": {
+          "debugProcess": {
+            "called": true
+          },
+          "sigusr1": {
+            "called": true
+          }
+        },
+        "answers": 8,
+        "hubInspectorOpened": false
+      }
+    ],
+    "control": [
+      {
+        "node": "26.5.1",
+        "attempts": {
+          "debugProcess": {
+            "called": true
+          },
+          "sigusr1": {
+            "called": true
+          }
+        },
+        "answers": 8,
+        "hubInspectorOpened": true
+      },
+      {
+        "node": "26.12.0",
+        "attempts": {
+          "debugProcess": {
+            "called": true
+          },
+          "sigusr1": {
+            "called": true
+          }
+        },
+        "answers": 8,
+        "hubInspectorOpened": true
+      }
+    ],
+    "findings": {
+      "noInspectorUnderDisableSigusr1": true,
+      "controlOpensInspectorWithoutTheFlag": true
+    }
+  }
+}

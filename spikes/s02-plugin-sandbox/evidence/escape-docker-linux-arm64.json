@@ -1,0 +1,974 @@
+{
+  "recordedAt": "2026-10-18T02:39:06.051Z",
+  "fingerprint": {
+    "os": {
+      "platform": "linux",
+      "arch": "arm64",
+      "osName": "#22-Ubuntu SMP Mon Jul 27 17:12:01 UTC 2026",
+      "osVersion": "6.17.0-1022-azure"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "a3b349adce9e6d44de4870603ceccd598ae19197",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 0,
+      "cpuCount": 2,
+      "cpuModel": "unknown",
+      "memoryUsedPercent": 20,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "os": "docker-linux-arm64",
+    "runtime": {
+      "platform": "linux",
+      "arch": "arm64",
+      "kernelVersion": "6.17.0-1022-azure",
+      "nodes": [
+        {
+          "label": "26.5.1",
+          "nodeVersion": "26.5.1",
+          "v8Version": "14.6.202.34-node.24"
+        },
+        {
+          "label": "26.12.0",
+          "nodeVersion": "26.12.0",
+          "v8Version": "14.6.202.34-node.39"
+        }
+      ],
+      "image": "node:26.12.0-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913"
+    },
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "variants": [
+      "A",
+      "B"
+    ],
+    "caseCount": 76,
+    "escapes": 0,
+    "cases": [
+      {
+        "name": "read-mk",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "read-mk",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "read-fake-profile",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "read-fake-profile",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "prefix-sibling",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "prefix-sibling",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "data-sibling",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "data-sibling",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "write-startup",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "write-startup",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "write-bashrc",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "write-bashrc",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "runtime-symlink",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "runtime-symlink",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "runtime-hardlink",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "runtime-hardlink",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "child-process",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "child-process",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "worker",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "worker",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "addons",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_DLOPEN_DISABLED"
+        ]
+      },
+      {
+        "name": "addons",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_DLOPEN_DISABLED"
+        ]
+      },
+      {
+        "name": "wasi",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "wasi",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "inspector",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "inspector",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "ffi",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_UNKNOWN_BUILTIN_MODULE"
+        ]
+      },
+      {
+        "name": "ffi",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_UNKNOWN_BUILTIN_MODULE"
+        ]
+      },
+      {
+        "name": "openssl-store",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_INVALID_ARG_TYPE",
+          "ERR_INVALID_ARG_TYPE"
+        ]
+      },
+      {
+        "name": "openssl-store",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_INVALID_ARG_TYPE",
+          "ERR_INVALID_ARG_TYPE"
+        ]
+      },
+      {
+        "name": "sqlite-attach",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_UNKNOWN_BUILTIN_MODULE"
+        ]
+      },
+      {
+        "name": "sqlite-attach",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_UNKNOWN_BUILTIN_MODULE"
+        ]
+      },
+      {
+        "name": "vfs-mount",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_UNKNOWN_BUILTIN_MODULE"
+        ]
+      },
+      {
+        "name": "vfs-mount",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_UNKNOWN_BUILTIN_MODULE"
+        ]
+      },
+      {
+        "name": "net-tcp",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "net-tcp",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "net-unix",
+        "node": "26.5.1",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "net-unix",
+        "node": "26.5.1",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "read-mk",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "read-mk",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "read-fake-profile",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "read-fake-profile",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "prefix-sibling",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "prefix-sibling",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "data-sibling",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "data-sibling",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "write-startup",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "write-startup",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "write-bashrc",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "write-bashrc",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "runtime-symlink",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "runtime-symlink",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "runtime-hardlink",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "runtime-hardlink",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "child-process",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "child-process",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "worker",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "worker",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "addons",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_DLOPEN_DISABLED"
+        ]
+      },
+      {
+        "name": "addons",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_DLOPEN_DISABLED"
+        ]
+      },
+      {
+        "name": "wasi",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "wasi",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "inspector",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "inspector",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "ffi",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "ffi",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "openssl-store",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "openssl-store",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "sqlite-attach",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_UNKNOWN_BUILTIN_MODULE"
+        ]
+      },
+      {
+        "name": "sqlite-attach",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_UNKNOWN_BUILTIN_MODULE"
+        ]
+      },
+      {
+        "name": "vfs-mount",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_UNKNOWN_BUILTIN_MODULE"
+        ]
+      },
+      {
+        "name": "vfs-mount",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_UNKNOWN_BUILTIN_MODULE"
+        ]
+      },
+      {
+        "name": "net-tcp",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "net-tcp",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "net-unix",
+        "node": "26.12.0",
+        "variant": "A",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      },
+      {
+        "name": "net-unix",
+        "node": "26.12.0",
+        "variant": "B",
+        "outcome": "denied",
+        "codes": [
+          "ERR_ACCESS_DENIED",
+          "ERR_ACCESS_DENIED"
+        ]
+      }
+    ],
+    "prespawn": [
+      {
+        "kind": "symlink",
+        "node": "26.5.1",
+        "variant": "A",
+        "refused": true,
+        "controlEscaped": true
+      },
+      {
+        "kind": "hardlink",
+        "node": "26.5.1",
+        "variant": "A",
+        "refused": true,
+        "controlEscaped": true
+      },
+      {
+        "kind": "symlink",
+        "node": "26.5.1",
+        "variant": "B",
+        "refused": true,
+        "controlEscaped": true
+      },
+      {
+        "kind": "hardlink",
+        "node": "26.5.1",
+        "variant": "B",
+        "refused": true,
+        "controlEscaped": true
+      },
+      {
+        "kind": "symlink",
+        "node": "26.12.0",
+        "variant": "A",
+        "refused": true,
+        "controlEscaped": true
+      },
+      {
+        "kind": "hardlink",
+        "node": "26.12.0",
+        "variant": "A",
+        "refused": true,
+        "controlEscaped": true
+      },
+      {
+        "kind": "symlink",
+        "node": "26.12.0",
+        "variant": "B",
+        "refused": true,
+        "controlEscaped": true
+      },
+      {
+        "kind": "hardlink",
+        "node": "26.12.0",
+        "variant": "B",
+        "refused": true,
+        "controlEscaped": true
+      }
+    ],
+    "dataDirLinks": [
+      {
+        "kind": "symlink",
+        "node": "26.5.1",
+        "followed": true
+      },
+      {
+        "kind": "hardlink",
+        "node": "26.5.1",
+        "followed": true
+      },
+      {
+        "kind": "symlink",
+        "node": "26.12.0",
+        "followed": true
+      },
+      {
+        "kind": "hardlink",
+        "node": "26.12.0",
+        "followed": true
+      }
+    ],
+    "controls": [
+      {
+        "kind": "sqlite",
+        "node": "26.5.1",
+        "name": "control-sqlite",
+        "outcome": "control",
+        "moduleLoaded": true,
+        "attachRead": true,
+        "code": null
+      },
+      {
+        "kind": "vfs",
+        "node": "26.5.1",
+        "name": "control-vfs",
+        "outcome": "control",
+        "moduleLoaded": true,
+        "constructed": true,
+        "mountCode": "ERR_INVALID_STATE"
+      },
+      {
+        "kind": "sqlite",
+        "node": "26.12.0",
+        "name": "control-sqlite",
+        "outcome": "control",
+        "moduleLoaded": true,
+        "attachRead": true,
+        "code": null
+      },
+      {
+        "kind": "vfs",
+        "node": "26.12.0",
+        "name": "control-vfs",
+        "outcome": "control",
+        "moduleLoaded": true,
+        "constructed": true,
+        "mountCode": "ERR_INVALID_STATE"
+      }
+    ],
+    "argvReports": [
+      {
+        "node": "26.5.1",
+        "variant": "A",
+        "nodeOptionsInherited": false,
+        "argvMatchesAllowlist": true,
+        "childSpawned": false
+      },
+      {
+        "node": "26.5.1",
+        "variant": "B",
+        "nodeOptionsInherited": false,
+        "argvMatchesAllowlist": true,
+        "childSpawned": false
+      },
+      {
+        "node": "26.12.0",
+        "variant": "A",
+        "nodeOptionsInherited": false,
+        "argvMatchesAllowlist": true,
+        "childSpawned": false
+      },
+      {
+        "node": "26.12.0",
+        "variant": "B",
+        "nodeOptionsInherited": false,
+        "argvMatchesAllowlist": true,
+        "childSpawned": false
+      }
+    ],
+    "realPathProbes": {
+      "startupWriteAllowed": false,
+      "rcWriteAllowed": false
+    },
+    "realpathOracle": {
+      "existing": "resolved",
+      "missing": "ENOENT",
+      "statDenied": true
+    },
+    "findings": {
+      "nodeModelFollowsPrespawnLinks": true,
+      "dataDirLinkFollowed": true,
+      "sqliteAttachBypassesPermissionModel": true,
+      "vfsDeniedUnderProductionArgv": true,
+      "nodeOptionsNotInherited": true,
+      "argvEqualsAllowlist": true
+    }
+  }
+}

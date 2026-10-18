@@ -4,6 +4,7 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { spawnFixture, tagged, within } from "./s2b.ts";
@@ -208,6 +209,48 @@ export async function measureSamplingCost(
 		maxMs: ms3(Math.max(...durations)),
 		lastMiB: last,
 	};
+}
+
+// The busiest processes in `ps -A -o pcpu= -o comm=` output, by name only, and the share of them
+// all. Two `-o` options, not one `-o pcpu=,comm=`: a BSD/macOS ps reads the `=string` of the last
+// keyword as spanning the rest of the argument, so the comma form yields a single unnamed column.
+export function busiestProcesses(psOutput: string, count = 8): string {
+	const rows = psOutput
+		.split(/\r?\n/)
+		.map((line) => /^\s*(\d+(?:[.,]\d+)?)\s+(\S.*?)\s*$/.exec(line))
+		.filter((match) => match !== null)
+		.map(([, cpu = "0", name = ""]) => ({
+			cpu: Number(cpu.replace(",", ".")),
+			name: path.basename(name),
+		}))
+		.sort((a, b) => b.cpu - a.cpu);
+	const total = rows.reduce((sum, row) => sum + row.cpu, 0);
+	const top = rows.slice(0, count).map((row) => `${row.name} ${row.cpu}%`);
+	return `${Math.round(total * 10) / 10}% in all; ${top.join(", ")}`;
+}
+
+// What the machine showed when the bench lock's idle check gave up: every CPU sample it took, the
+// load average, the not-free memory and the busiest processes by ps's %cpu (on macOS a decaying
+// average over the last minute), which says what kept the CPU busy without changing the check. The
+// memory figure is what os.freemem() reports as not free, which on macOS counts the file cache and
+// other reclaimable memory and so reads close to full on an ordinary runner; swap use (macOS) is the
+// real pressure signal, so it is reported too.
+export async function busyReport(samples: readonly number[]): Promise<string> {
+	const load = os.loadavg().map((value) => value.toFixed(2));
+	const notFree = Math.round(100 * (1 - os.freemem() / os.totalmem()));
+	const lines = [
+		`CPU samples (%, 1 s each, oldest first): ${samples.join(" ")}`,
+		`load average ${load.join(" ")} on ${os.availableParallelism()} CPUs; memory not free ${notFree}% (includes cache)`,
+	];
+	if (process.platform !== "win32") {
+		const ps = await run("ps", ["-A", "-o", "pcpu=", "-o", "comm="]);
+		lines.push(`busiest processes (ps %cpu): ${ps === null ? "not listed" : busiestProcesses(ps)}`);
+	}
+	if (process.platform === "darwin") {
+		const swap = await run("sysctl", ["-n", "vm.swapusage"]);
+		lines.push(`swap: ${swap === null ? "not listed" : swap.trim()}`);
+	}
+	return lines.join("\n");
 }
 
 export interface PluginDirs {
