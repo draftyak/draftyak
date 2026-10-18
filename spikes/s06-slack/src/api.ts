@@ -16,8 +16,8 @@ export interface MethodSpec {
 }
 
 // The poller and Socket Mode call the first five; M0.25 calls conversations.info for its rate-limit
-// headers. users.conversations lists only the owner's conversations, where plan §4's slack-v1
-// names conversations.list.
+// headers and the member count behind plan §3's pre-claim facts. users.conversations lists only the
+// owner's conversations, where plan §4's slack-v1 names conversations.list.
 export type Method =
 	| "apps.connections.open"
 	| "auth.test"
@@ -47,7 +47,12 @@ export const METHODS: Readonly<Record<Method, MethodSpec>> = {
 		token: "user",
 		params: ["channel", "ts", "oldest", "latest", "inclusive", "limit", "cursor"],
 	},
-	"conversations.info": { verb: "GET", tier: 3, token: "user", params: ["channel"] },
+	"conversations.info": {
+		verb: "GET",
+		tier: 3,
+		token: "user",
+		params: ["channel", "include_num_members"],
+	},
 };
 export type Params = Readonly<Record<string, string | number | boolean | undefined>>;
 
