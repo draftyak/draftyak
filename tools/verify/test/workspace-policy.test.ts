@@ -238,10 +238,16 @@ describe("workspace policy", () => {
 				holding.push(`${dir}/${file}`);
 			}
 		};
-		// Eight at a time, read-only: a repo can have a hundred worktrees, some of them in use.
-		for (let i = 0; i < worktrees.length; i += 8) {
-			await Promise.all(worktrees.slice(i, i + 8).map(scan));
-		}
+		// Sixteen at a time, read-only: the dev box has hundreds of worktrees, some of them in use.
+		let next = 0;
+		const worker = async (): Promise<void> => {
+			while (next < worktrees.length) {
+				const dir = worktrees[next];
+				next += 1;
+				if (dir !== undefined) await scan(dir);
+			}
+		};
+		await Promise.all(Array.from({ length: 16 }, worker));
 		expect(holding.toSorted()).toEqual([]);
-	}, 120_000);
+	}, 300_000);
 });
