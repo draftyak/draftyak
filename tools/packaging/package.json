@@ -1,0 +1,16 @@
+{
+  "name": "@draftyak/packaging",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "package:npm": "node src/npm.ts",
+    "release:manifest": "node src/manifest.ts",
+    "typecheck": "tsc -b",
+    "test": "vitest run --maxWorkers=1",
+    "test:heavy": "vitest run --mode heavy --maxWorkers=1"
+  },
+  "dependencies": {
+    "@draftyak/bundle-hub": "workspace:*",
+    "@draftyak/release-guard": "workspace:*"
+  }
+}

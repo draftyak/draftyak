@@ -1,0 +1,31 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docker/healthcheck.mjs",
+        "$TURBO_ROOT$/docker/draftyak",
+        "$TURBO_ROOT$/tools/bundle-hub/src/**",
+        "$TURBO_ROOT$/tools/release-guard/src/**",
+        "$TURBO_ROOT$/tools/fetch-node/fetch-node.mjs",
+        "$TURBO_ROOT$/tools/fetch-node/versions.json",
+        "$TURBO_ROOT$/tools/vendor-guard/src/rules.ts",
+        "$TURBO_ROOT$/tools/vendor-guard/rules/**",
+        "$TURBO_ROOT$/LICENSE",
+        "$TURBO_ROOT$/NOTICE"
+      ]
+    },
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docker/healthcheck.mjs",
+        "$TURBO_ROOT$/tools/bundle-hub/src/**",
+        "$TURBO_ROOT$/tools/release-guard/src/**",
+        "$TURBO_ROOT$/tools/fetch-node/fetch-node.mjs",
+        "$TURBO_ROOT$/tools/vendor-guard/src/rules.ts",
+        "$TURBO_ROOT$/tools/vendor-guard/rules/**"
+      ]
+    }
+  }
+}

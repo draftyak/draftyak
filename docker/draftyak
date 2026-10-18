@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /opt/draftyak/node --disable-sigusr1 /opt/draftyak/cli/draftyak.mjs "$@"
