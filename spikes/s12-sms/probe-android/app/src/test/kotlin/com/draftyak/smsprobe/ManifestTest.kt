@@ -86,6 +86,29 @@ class ManifestTest {
     }
 
     @Test
+    fun `components are the remoteMessaging service, the boot receiver and the SMS receiver`() {
+        fun named(tag: String) = manifest.children(tag).associateBy {
+            it.android("name").removePrefix("com.draftyak.smsprobe.")
+        }
+        val service = named("service").values.single()
+        assertEquals("ProbeService", service.android("name").substringAfterLast('.'))
+        val type = service.android("foregroundServiceType")
+        assertEquals("remoteMessaging" to "false", type to service.android("exported"))
+        val receivers = named("receiver")
+        assertEquals(setOf("ProbeReceiver", "SmsReceiver"), receivers.keys)
+        val boot = receivers.getValue("ProbeReceiver")
+        assertEquals("false", boot.android("exported"))
+        fun actions(component: Element) = component.children("action").map { it.android("name") }
+        assertEquals(listOf("android.intent.action.BOOT_COMPLETED"), actions(boot))
+        val sms = receivers.getValue("SmsReceiver")
+        assertEquals("android.permission.BROADCAST_SMS", sms.android("permission"))
+        assertEquals(listOf("android.provider.Telephony.SMS_RECEIVED"), actions(sms))
+        val others = manifest.children("provider") + manifest.children("activity-alias")
+        assertEquals(emptyList<Element>(), others)
+        assertEquals(listOf("MainActivity"), named("activity").keys.toList())
+    }
+
+    @Test
     fun `the application uses the network security config, no backup and the pinned SDK levels`() {
         val application = manifest.children("application").single()
         assertEquals("@xml/network_security_config", application.android("networkSecurityConfig"))
