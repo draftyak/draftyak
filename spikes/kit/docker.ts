@@ -150,6 +150,16 @@ export async function needDocker(ctx: SkipContext, options?: EnsureOptions): Pro
 	}
 }
 
+// Whether the engine is Docker Desktop's, on any OS. Its VM forwards host.docker.internal to the
+// host's loopback; other engines reach the host at the bridge gateway.
+export async function dockerDesktop(): Promise<boolean> {
+	const info = await exec(cli(), ["info", "--format", "{{.OperatingSystem}}"], {
+		timeoutMs: 20_000,
+	});
+	if (info.code !== 0) throw new DockerUnavailableError(`docker info failed: ${lastLine(info)}`);
+	return /\bDocker Desktop\b/.test(info.stdout);
+}
+
 export type DockerMount =
 	| { readonly source: string; readonly target: string }
 	| { readonly volume: string; readonly target: string };
@@ -197,6 +207,10 @@ function mountArg(mount: DockerMount): string {
 
 // Unnamed --rm containers in the sandbox; binds are always read-only; images are pinned.
 export function dockerRunArgs(spec: DockerRunSpec, cidfile: string): string[] {
+	return runArgs(spec, cidfile, []);
+}
+
+function runArgs(spec: DockerRunSpec, cidfile: string, extra: readonly string[]): string[] {
 	if (!PINNED_IMAGE.test(spec.image)) {
 		throw new Error(`pin the image by digest (name@sha256:<hex>) or image id: ${spec.image}`);
 	}
@@ -217,7 +231,138 @@ export function dockerRunArgs(spec: DockerRunSpec, cidfile: string): string[] {
 		args.push("--env", `${name}=${value}`);
 	}
 	for (const mount of spec.mounts ?? []) args.push("--mount", mountArg(mount));
-	return [...args, spec.image, ...spec.cmd];
+	return [...args, ...extra, spec.image, ...spec.cmd];
+}
+
+export interface DockerStartSpec extends Omit<DockerRunSpec, "timeoutMs"> {
+	// Container TCP ports to publish, each on a port Docker picks on the host's 127.0.0.1 only.
+	readonly publish?: readonly number[];
+	// Maps host.docker.internal to the host, as Docker Desktop already does and Linux engines don't.
+	readonly hostGateway?: boolean;
+	// The container ends itself this long after it starts, even when the process that started it is
+	// killed (default 10 minutes). cmd runs under the image's `timeout` (busybox or coreutils).
+	readonly lifetimeMs?: number;
+	// For `docker run --detach` itself, which pulls a missing image (default 120 s).
+	readonly startTimeoutMs?: number;
+}
+
+export const START_LIFETIME_MS = 600_000;
+
+// The sandboxed run of dockerRunArgs, detached; publishing and the host name need the bridge network.
+export function dockerStartArgs(spec: DockerStartSpec, cidfile: string): string[] {
+	const publish = spec.publish ?? [];
+	if (spec.network !== "bridge" && (publish.length > 0 || spec.hostGateway)) {
+		throw new Error("published ports and host.docker.internal need the bridge network");
+	}
+	const lifetime = spec.lifetimeMs ?? START_LIFETIME_MS;
+	if (!Number.isInteger(lifetime) || lifetime < 1_000) throw new Error(`bad lifetime: ${lifetime}`);
+	if (spec.cmd.length === 0) throw new Error("startInDocker needs a cmd to run for its lifetime");
+	// Docker's init is PID 1, so `timeout` can end cmd: PID 1 ignores a SIGKILL from its own namespace.
+	const extra = ["--detach", "--init"];
+	for (const port of publish) {
+		if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+			throw new Error(`bad container port: ${port}`);
+		}
+		extra.push("--publish", `127.0.0.1::${port}/tcp`);
+	}
+	if (spec.hostGateway) extra.push("--add-host", "host.docker.internal:host-gateway");
+	const cmd = ["timeout", "-s", "KILL", String(Math.ceil(lifetime / 1_000)), ...spec.cmd];
+	return runArgs({ ...spec, cmd }, cidfile, extra);
+}
+
+export interface StartedContainer extends AsyncDisposable {
+	readonly containerId: string;
+	// The host port on 127.0.0.1 that publishes a container port.
+	port(containerPort: number): number;
+	// What the container has written so far, stdout then stderr.
+	logs(): Promise<string>;
+	// `docker inspect --format`, such as the bridge address a server behind the container sees.
+	inspect(format: string): Promise<string>;
+	// Kills the container; --rm then removes it.
+	stop(): Promise<void>;
+}
+
+// A process that exits normally removes the containers it left running. One that is killed runs no
+// hook, so its containers end themselves when their lifetime runs out.
+const started = new Set<string>();
+let exitHook = false;
+
+function removeAtExit(docker: string, id: string): void {
+	started.add(id);
+	if (exitHook) return;
+	exitHook = true;
+	process.once("exit", () => {
+		for (const left of started) {
+			try {
+				execSync(docker, ["rm", "--force", left], { timeoutMs: 15_000 });
+			} catch {}
+		}
+	});
+}
+
+// A background container in the sandbox (unnamed, --rm, labelled, pinned image): for a server a
+// test talks to, such as a proxy. Stop it when done (await using); the exit hook and the lifetime
+// are last resorts.
+export async function startInDocker(spec: DockerStartSpec): Promise<StartedContainer> {
+	const docker = cli();
+	const cidfile = path.join(os.tmpdir(), `draftyak-cid-${randomBytes(6).toString("hex")}`);
+	const args = dockerStartArgs(spec, cidfile);
+	const readId = (): string =>
+		fs.existsSync(cidfile) ? fs.readFileSync(cidfile, "utf8").trim() : "";
+	let containerId = "";
+	const stop = async (): Promise<void> => {
+		if (!started.has(containerId)) return;
+		const removed = await exec(docker, ["rm", "--force", containerId], { timeoutMs: 60_000 });
+		if (removed.code !== 0 && !/no such container/i.test(removed.stderr)) {
+			throw new Error(`docker rm ${containerId.slice(0, 12)}: ${lastLine(removed)}`);
+		}
+		started.delete(containerId);
+	};
+	try {
+		const options = { timeoutMs: spec.startTimeoutMs ?? 120_000, signal: spec.signal };
+		const result = await exec(docker, args, options).finally(() => {
+			containerId = readId();
+			if (containerId !== "") removeAtExit(docker, containerId);
+		});
+		if (result.code !== 0 || !/^[0-9a-f]{64}$/.test(containerId)) {
+			const how = result.timedOut ? "timed out" : `exit code ${result.code}`;
+			throw new Error(`docker run failed (${how}): ${lastLine(result)}`);
+		}
+		const ports = new Map<number, number>();
+		for (const containerPort of spec.publish ?? []) {
+			const shown = await exec(docker, ["port", containerId, `${containerPort}/tcp`], {
+				timeoutMs: 30_000,
+			});
+			const hostPort = /^127\.0\.0\.1:(\d+)\s*$/m.exec(shown.stdout)?.[1];
+			if (shown.code !== 0 || hostPort === undefined) {
+				throw new Error(`docker port ${containerPort}: ${lastLine(shown)}`);
+			}
+			ports.set(containerPort, Number(hostPort));
+		}
+		const port = (containerPort: number): number => {
+			const hostPort = ports.get(containerPort);
+			if (hostPort === undefined)
+				throw new Error(`container port ${containerPort} isn't published`);
+			return hostPort;
+		};
+		const logs = async (): Promise<string> => {
+			const shown = await exec(docker, ["logs", containerId], { timeoutMs: 30_000 });
+			return `${shown.stdout}${shown.stderr}`;
+		};
+		const inspect = async (format: string): Promise<string> => {
+			const shown = await exec(docker, ["inspect", "--format", format, containerId], {
+				timeoutMs: 30_000,
+			});
+			if (shown.code !== 0) throw new Error(`docker inspect: ${lastLine(shown)}`);
+			return shown.stdout.trim();
+		};
+		return { containerId, port, logs, inspect, stop, [Symbol.asyncDispose]: stop };
+	} catch (error) {
+		await stop().catch(() => undefined);
+		throw error;
+	} finally {
+		fs.rmSync(cidfile, { force: true });
+	}
 }
 
 export interface DockerResult extends ExecResult {

@@ -1,0 +1,11 @@
+{
+  "synthetic": "a registration a CLI without a CIMD document might send in the DCR window; {port} is filled in at run time, and M0.20 records what Codex really sends",
+  "registration": {
+    "client_name": "Codex CLI (stand-in)",
+    "application_type": "native",
+    "redirect_uris": ["http://127.0.0.1:{port}/callback"],
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+    "token_endpoint_auth_method": "none"
+  }
+}

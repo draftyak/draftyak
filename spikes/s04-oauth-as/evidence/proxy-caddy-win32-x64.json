@@ -1,0 +1,60 @@
+{
+  "recordedAt": "2026-10-18T01:28:44.023Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "c73b238a0e25e11bbc37e49bd9c407474663cc82",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 98.1,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 65.2,
+      "concurrentBuilds": 1
+    }
+  },
+  "data": {
+    "proxy": {
+      "image": "caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f",
+      "command": "caddy reverse-proxy",
+      "trustedProxies": "none",
+      "engine": "docker-desktop"
+    },
+    "arrives": {
+      "forwardingHeaders": [
+        "via",
+        "x-forwarded-for",
+        "x-forwarded-host",
+        "x-forwarded-proto"
+      ],
+      "clientIpHeader": "x-forwarded-for",
+      "forwardedForEntries": 1,
+      "forwardedHostIsRequestHost": true,
+      "forwardedProtoIsListenerScheme": true
+    },
+    "clientSent": {
+      "x-forwarded-for": "replaced",
+      "x-forwarded-host": "replaced",
+      "x-forwarded-proto": "replaced",
+      "forwarded": "passed through",
+      "x-real-ip": "passed through"
+    },
+    "as": {
+      "trustedPeer": "configured proxy only",
+      "proxyPeer": "loopback",
+      "consentIpThroughProxy": "x-forwarded-for",
+      "consentIpDirect": "connection",
+      "directForwardedHostStatus": 421,
+      "connectionThroughProxy": "ok"
+    },
+    "readyMs": 5730
+  }
+}

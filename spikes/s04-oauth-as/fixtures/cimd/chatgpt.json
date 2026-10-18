@@ -1,0 +1,33 @@
+{
+  "source": "https://chatgpt.com/oauth/client.json",
+  "fetchedAt": "2026-10-18T00:05:02.191Z",
+  "response": {
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "cacheControl": "public, max-age=300"
+  },
+  "sha256": "5b62ad00a6d2562dda7b8e373611c41e09967518f5fc0824b243a8e1a29f915e",
+  "document": {
+    "client_id": "https://chatgpt.com/oauth/client.json",
+    "client_uri": "https://chatgpt.com/",
+    "redirect_uris": [
+      "https://chatgpt.com/connector_platform_oauth_redirect"
+    ],
+    "token_endpoint_auth_method": "private_key_jwt",
+    "token_endpoint_auth_methods_supported": [
+      "none",
+      "private_key_jwt"
+    ],
+    "grant_types": [
+      "authorization_code",
+      "refresh_token"
+    ],
+    "response_types": [
+      "code"
+    ],
+    "client_name": "ChatGPT",
+    "logo_uri": "https://persistent.oaistatic.com/sonic/misc/openai-logo.png",
+    "token_endpoint_auth_signing_alg": "RS256",
+    "jwks_uri": "https://chatgpt.com/oauth/jwks.json"
+  }
+}

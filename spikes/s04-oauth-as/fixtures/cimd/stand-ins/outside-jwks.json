@@ -1,0 +1,14 @@
+{
+  "synthetic": "an owner-added host's private_key_jwt client whose jwks_uri is on a host nobody allowlisted",
+  "url": "https://cimd.example/outside-jwks.json",
+  "document": {
+    "client_id": "https://cimd.example/outside-jwks.json",
+    "client_name": "Outside jwks_uri (stand-in)",
+    "redirect_uris": ["https://cimd.example/callback"],
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+    "token_endpoint_auth_method": "private_key_jwt",
+    "token_endpoint_auth_signing_alg": "RS256",
+    "jwks_uri": "https://keys.elsewhere.example/jwks.json"
+  }
+}

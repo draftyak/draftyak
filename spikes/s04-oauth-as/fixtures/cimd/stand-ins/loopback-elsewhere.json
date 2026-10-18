@@ -1,0 +1,12 @@
+{
+  "synthetic": "the remote Claude Code document's shape (all-loopback redirect URIs), on a host nobody allowlisted",
+  "url": "https://agent.example/client-metadata.json",
+  "document": {
+    "client_id": "https://agent.example/client-metadata.json",
+    "client_name": "Loopback agent (stand-in)",
+    "redirect_uris": ["http://localhost/callback", "http://127.0.0.1/callback"],
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+    "token_endpoint_auth_method": "none"
+  }
+}

@@ -7,6 +7,7 @@ import {
 	DockerUnavailableError,
 	dockerBuildArgs,
 	dockerRunArgs,
+	dockerStartArgs,
 	type EngineState,
 	ensure,
 	linuxContainers,
@@ -60,6 +61,54 @@ describe("dockerRunArgs", () => {
 		fs.mkdirSync(path.join(dir, "real", "inner"), { recursive: true });
 		fs.symlinkSync(path.join(dir, "real"), path.join(dir, "via-junction"), "junction");
 		expect(bind(path.join(dir, "via-junction", "inner"))).toThrow("runs through a link");
+	});
+});
+
+describe("dockerStartArgs", () => {
+	it("runs the same sandbox detached under Docker's init, publishing only on the host's loopback, and ends cmd after its lifetime", () => {
+		const spec = {
+			image,
+			network: "bridge",
+			cmd: ["caddy", "run"],
+			publish: [8080, 9090],
+		} as const;
+		const args = dockerStartArgs({ ...spec, hostGateway: true }, "cid");
+		const sandbox = dockerRunArgs(spec, "cid");
+		expect(args.slice(0, sandbox.indexOf(image))).toEqual(sandbox.slice(0, sandbox.indexOf(image)));
+		expect(args.slice(sandbox.indexOf(image))).toEqual([
+			...["--detach", "--init", "--publish", "127.0.0.1::8080/tcp"],
+			...["--publish", "127.0.0.1::9090/tcp", "--add-host", "host.docker.internal:host-gateway"],
+			...[image, "timeout", "-s", "KILL", "600", "caddy", "run"],
+		]);
+		const short = dockerStartArgs(
+			{ image, network: "none", cmd: ["true"], lifetimeMs: 2_500 },
+			"c",
+		);
+		expect(short.slice(short.indexOf(image))).toEqual([
+			image,
+			"timeout",
+			"-s",
+			"KILL",
+			"3",
+			"true",
+		]);
+		expect(short).toContain("--detach");
+	});
+
+	it("refuses ports and host.docker.internal off the bridge network, bad ports and lifetimes, and no cmd", () => {
+		const start = (change: object) => () =>
+			dockerStartArgs({ image, network: "bridge", cmd: ["true"], ...change }, "c");
+		expect(start({ network: "none", publish: [80] })).toThrow("need the bridge network");
+		expect(start({ network: "none", hostGateway: true })).toThrow("need the bridge network");
+		for (const port of [0, 65_536, 80.5, Number.NaN]) {
+			expect(start({ publish: [port] })).toThrow("bad container port");
+		}
+		for (const lifetimeMs of [0, 999, 1_500.5, Number.POSITIVE_INFINITY]) {
+			expect(start({ lifetimeMs })).toThrow("bad lifetime");
+		}
+		expect(start({ cmd: [] })).toThrow("needs a cmd");
+		expect(start({ image: "caddy:2" })).toThrow("pin the image by digest");
+		expect(start({ user: "0 --privileged" })).toThrow("bad user");
 	});
 });
 
