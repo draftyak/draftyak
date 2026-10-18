@@ -31,7 +31,17 @@ const TOPIC = "^[a-z0-9][a-z0-9-]{0,63}$";
 // Any kind's name, so tool_describe's entry stays the same when a kind is added.
 const KIND = "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$";
 
-export const IanaZone: z.ZodString = z.string().max(64).regex(new RegExp(ZONE));
+// The owner's settings use it too. Python's re lets `$` match before a final line feed, so its
+// JSON Schema also refuses one.
+export const IanaZone: z.ZodString = z
+	.string()
+	.max(64)
+	.regex(new RegExp(ZONE))
+	.meta({
+		id: "draftyak.tool-v1.IanaZone",
+		description: "An IANA time zone name, such as America/Chicago; Temporal checks that it exists.",
+		not: { pattern: "\\n" },
+	});
 export const Participant: z.ZodString = z.string().max(254).regex(new RegExp(PARTICIPANT));
 export const TopicId: z.ZodString = z.string().regex(new RegExp(TOPIC));
 
