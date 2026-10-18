@@ -18,22 +18,19 @@ export const wholeString = (schema: z.ZodString): z.ZodString =>
 export const patterned = (pattern: RegExp, max: number): z.ZodString =>
 	wholeString(z.string().max(max).regex(pattern));
 
-// Text in well-formed Unicode, bounded in code points: a lone surrogate never reaches a hash.
-export const wellFormedText = (maxCodePoints: number): z.ZodString =>
-	boundedText(maxCodePoints).refine((value) => value.isWellFormed(), {
-		message: "not well-formed Unicode",
-	});
+// boundedText under its earlier name: it refuses a lone surrogate itself.
+export { boundedText as wellFormedText } from "../scalars.ts";
 
 // A send snapshot refuses CR or LF in a subject or file name, so a draft holds them on one line.
 export const oneLine = (maxCodePoints: number): z.ZodString =>
-	wellFormedText(maxCodePoints)
+	boundedText(maxCodePoints)
 		.refine((value) => !/[\r\n]/.test(value), { message: "holds a line break" })
 		.meta({ not: { pattern: "[\\r\\n]" } });
 
 // A send snapshot takes a body only in NFC with LF line ends, so a draft stores it so. JSON Schema
 // refuses the CR; only code can check NFC.
 export const bodyText = (maxCodePoints: number): z.ZodString =>
-	wellFormedText(maxCodePoints)
+	boundedText(maxCodePoints)
 		.refine((value) => !value.includes("\r") && value.normalize("NFC") === value, {
 			message: "not NFC with LF line ends",
 		})
@@ -67,7 +64,7 @@ export const untrustedText = (maxCodePoints: number): UntrustedTextSchema =>
 	z
 		.strictObject({
 			untrusted: z.literal(true),
-			text: wellFormedText(maxCodePoints),
+			text: boundedText(maxCodePoints),
 			truncated: z.literal(true).optional(),
 		})
 		.meta({

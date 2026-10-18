@@ -245,6 +245,9 @@ describe("flagsHash", () => {
 				detail,
 			).toBe("FLAGS_INVALID");
 		}
+		expect(() => flagsHash([flag("DMARC_FAIL", "\ud800")])).toThrow(
+			"FLAGS_INVALID: 0.detail: lone surrogate",
+		);
 	});
 
 	it("says which member is wrong, counting unknown members rather than naming them", () => {

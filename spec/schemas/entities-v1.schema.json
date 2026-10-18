@@ -1252,9 +1252,7 @@
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
+          "$ref": "#/$defs/draftyak.pairing.DisplayName"
         },
         "spkiSha256": {
           "type": "string",
@@ -1308,6 +1306,12 @@
       ],
       "additionalProperties": false,
       "description": "A paired device. spkiSha256 pins its transport certificate's key; approvalKey verifies its statements. confirmedEpoch is the hub epoch at which an approver confirmed it, or null: a device confirmed before the current epoch counts as unconfirmed."
+    },
+    "draftyak.pairing.DisplayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "A display name: 1 to 64 code points under the rules of spec/pairing-v1.md section 2: no hidden code point, no blank first or last, and at least one code point that is neither a blank nor a joiner. JSON Schema can't state the rules, only the length."
     },
     "draftyak.entities.PublicKeySpki": {
       "type": "string",

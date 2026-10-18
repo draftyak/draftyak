@@ -1,6 +1,6 @@
 import * as z from "zod";
+import { DisplayName } from "../pairing.ts";
 import { Sha256Hex, Ulid, UtcMs } from "../scalars.ts";
-import { wellFormedText } from "./common.ts";
 import { uniqueItems } from "./fields.ts";
 
 // biome-ignore format: one value per line, so the SMS contract adds host:sms by one line
@@ -75,7 +75,7 @@ export const Device: z.ZodObject<
 	.strictObject({
 		id: Ulid,
 		userId: Ulid,
-		name: wellFormedText(64).min(1),
+		name: DisplayName,
 		spkiSha256: Sha256Hex,
 		approvalKey: PublicKeySpki,
 		keyClass: KeyClass,

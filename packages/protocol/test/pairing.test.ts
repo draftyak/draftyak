@@ -343,6 +343,33 @@ describe("the pairing payload", () => {
 		}
 		expect(named("\u{200d}a")).toBe(true);
 	});
+
+	// Whichever rule a name breaks, and however many, the refusal is one problem in one sentence.
+	it("refuses a bad name with one sentence, never repeating the name", () => {
+		const rule = "name: 1 to 64 code points, visible, without hidden ones or a blank first or last";
+		const refusal = (refuse: () => unknown): string => {
+			try {
+				refuse();
+			} catch (error) {
+				return (error as Error).message;
+			}
+			return "accepted";
+		};
+		const forged = "Office\r\n2026-10-18T00:00:00Z INFO pairing confirmed";
+		const text = `${PAIRING_PREFIX}${toBase64Url(utf8(canonicalize({ ...base, name: forged })))}`;
+		const body = canonicalize({ ...makePairingClaim(window, device, ekm), name: forged });
+		expect(refusal(() => decodePairingPayload(text, now))).toBe(`PAIR_PAYLOAD_INVALID: ${rule}`);
+		expect(refusal(() => readPairingClaim(body))).toBe(`PAIR_CLAIM_INVALID: ${rule}`);
+		const tooLong = "a".repeat(65);
+		const longAndHidden = `${"a".repeat(64)}\u{200b}`;
+		for (const name of ["", tooLong, longAndHidden, "Desk \ud800PC", "\ud800\u{202e}", "   "]) {
+			const claim = () => makePairingClaim(window, { ...device, name }, ekm);
+			expect(refusal(() => encodePairingPayload({ ...base, name }))).toBe(
+				`PAIR_PAYLOAD_INVALID: ${rule}`,
+			);
+			expect(refusal(claim)).toBe(`PAIR_INVALID_INPUT: ${rule}`);
+		}
+	});
 });
 
 describe("the proof and the SAS", () => {

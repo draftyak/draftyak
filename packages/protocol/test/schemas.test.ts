@@ -6,7 +6,10 @@ import { describe, expect, it } from "vitest";
 import * as z from "zod";
 import { jsonSchemaOf } from "../scripts/export-spec.ts";
 import { DataClass, HubDataClass, PluginDataClass } from "../src/data-class.ts";
+import * as entityCommon from "../src/entities/common.ts";
+import * as entities from "../src/entities.ts";
 import { HubErrorCode, PluginErrorCode, PluginErrorResult } from "../src/errors.ts";
+import * as extension from "../src/extension.ts";
 import {
 	Alias,
 	Base64Url,
@@ -160,6 +163,26 @@ describe("scalars", () => {
 			["abcd", "\u{1f600}\u{1f600}ab"],
 		);
 	});
+
+	// So does every schema built on it; the exported schema can't state it and accepts them.
+	it("boundedText refuses a lone surrogate, which no hash or canonical form takes", () => {
+		const text = boundedText(3);
+		const validator = new Validator(exported(text), "2020-12", false);
+		for (const lone of ["\ud800", "a\udc00", "\udc00\ud800"]) {
+			const issues = text.safeParse(lone).error?.issues ?? [];
+			expect(issues.map((issue) => issue.message)).toEqual(["lone surrogate"]);
+			expect(validator.validate(lone).valid).toBe(true);
+		}
+		expect(text.safeParse("a😀").success).toBe(true);
+	});
+
+	// Other packages still import the earlier names, so each stays the very same object.
+	it("keeps wellFormedText and PluginError as boundedText and PluginErrorResult", () => {
+		for (const exporter of [extension, entityCommon, entities]) {
+			expect(exporter.wellFormedText).toBe(boundedText);
+		}
+		expect(extension.PluginError).toBe(PluginErrorResult);
+	});
 });
 
 describe("errors", () => {
@@ -212,6 +235,12 @@ describe("errors", () => {
 				{ code: "TRANSIENT", detail: 7 },
 			],
 		);
+	});
+
+	it("PluginErrorResult refuses a detail holding a lone surrogate", () => {
+		for (const detail of ["\ud800", "DYTEST \udfff"]) {
+			expect(PluginErrorResult.safeParse({ code: "TRANSIENT", detail }).success).toBe(false);
+		}
 	});
 });
 
