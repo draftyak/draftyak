@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T08:26:54.624Z",
+  "recordedAt": "2026-10-18T18:22:02.385Z",
   "fingerprint": {
     "os": {
       "platform": "darwin",
@@ -11,13 +11,13 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "8ea05941a5473d95f0face5376b862418402d8d0",
+    "commit": "1235580a40b2a44a2dbccf433892092d989a2ff1",
     "dirty": false,
     "load": {
-      "cpuPercent": 80.1,
+      "cpuPercent": 1.7,
       "cpuCount": 3,
       "cpuModel": "Apple M1 (Virtual)",
-      "memoryUsedPercent": 93.1,
+      "memoryUsedPercent": 95.5,
       "concurrentBuilds": 0
     }
   },

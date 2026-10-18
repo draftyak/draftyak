@@ -4,9 +4,7 @@
 // non-zero, which is how runHubProbe judges survival. The control-* probes use Node's own stdio
 // 'ipc' parent side instead, to show why the hub doesn't.
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { once } from "node:events";
 import fs from "node:fs";
-import type net from "node:net";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { type FifoStdio, openFifoStdio } from "../src/fifo-stdio.ts";
@@ -16,6 +14,11 @@ import {
 	attachTaggedStdio,
 	channelOver,
 	type Fallback1RoundTripResult,
+	FIFO_WAIT_MS,
+	type FifoEnding,
+	type FifoHeldResult,
+	type FifoLane,
+	type FifoOutputEnd,
 	type FifoResult,
 	fifoMode,
 	type StdioRoundTrip,
@@ -323,30 +326,231 @@ function textOf(stream: NodeJS.ReadableStream): () => string {
 	return () => text;
 }
 
-// Waits for the plugin's exit and for every FIFO it writes to close (end-of-file, or the hub's own
-// close on a violation), else SIGKILLs it and settles on its exit with closed false.
-function fifoEnded(
-	child: ChildProcess,
-	outputs: readonly net.Socket[],
-	timeoutMs: number,
-): Promise<PluginEnd> {
-	const exited =
-		child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : once(child, "exit");
-	const closed = Promise.all(
-		outputs.map((socket) => (socket.closed ? Promise.resolve() : once(socket, "close"))),
-	);
-	return new Promise((resolve) => {
-		const finish = (all: boolean): void =>
-			resolve({ code: child.exitCode, signal: child.signalCode, closed: all });
-		const timer = setTimeout(() => {
-			child.kill("SIGKILL");
-			exited.then(() => finish(false));
-		}, timeoutMs);
-		Promise.all([exited, closed]).then(() => {
-			clearTimeout(timer);
-			finish(true);
+export interface FifoId {
+	readonly dev: bigint;
+	readonly ino: bigint;
+}
+
+export interface FifoHolders {
+	// Per FIFO, every descriptor on it among the processes of the hub's user ("hub fd 15 r",
+	// "pid 812 (node) fd 4 w"); null when those processes couldn't be listed.
+	readonly holders: (string[] | null)[];
+	// lsof's own lines for the hub's descriptors in `show` (macOS; "" in Linux), at most 200
+	// characters, so a list that matched nothing can still be read.
+	readonly raw: string;
+}
+
+// Who holds each FIFO, in every process the hub's user runs, so an inherited or passed copy shows
+// up too: /proc in Linux, matched by device and inode; lsof elsewhere, matched by inode, because
+// macOS's lsof prints no device for a FIFO (one it does print and that differs is noted).
+export function fifoHolders(fifos: readonly FifoId[], show: readonly number[] = []): FifoHolders {
+	if (process.platform === "linux") return { holders: procHolders(fifos), raw: "" };
+	return lsofHolders(fifos, show);
+}
+
+const holderName = (pid: number, command: string): string => {
+	if (pid === process.pid) return "hub";
+	return `pid ${pid} (${command.replace(/[^\w.-]/g, "").slice(0, 24) || "?"})`;
+};
+
+function procAccess(pid: string, fd: string): string {
+	try {
+		const info = fs.readFileSync(`/proc/${pid}/fdinfo/${fd}`, "utf8");
+		const flags = /^flags:\s*([0-7]+)/m.exec(info)?.[1];
+		return flags === undefined ? "?" : (["r", "w", "u"][Number.parseInt(flags, 8) & 3] ?? "?");
+	} catch {
+		return "?";
+	}
+}
+
+function procCommand(pid: string): string {
+	try {
+		return fs.readFileSync(`/proc/${pid}/comm`, "utf8").trim();
+	} catch {
+		return "?";
+	}
+}
+
+function procHolders(fifos: readonly FifoId[]): string[][] {
+	const found = fifos.map((): string[] => []);
+	for (const pid of fs.readdirSync("/proc").filter((name) => /^\d+$/.test(name))) {
+		let fds: string[];
+		try {
+			fds = fs.readdirSync(`/proc/${pid}/fd`);
+		} catch {
+			continue;
+		}
+		for (const fd of fds) {
+			let stats: fs.BigIntStats;
+			try {
+				stats = fs.statSync(`/proc/${pid}/fd/${fd}`, { bigint: true });
+			} catch {
+				continue;
+			}
+			const i = fifos.findIndex((id) => id.dev === stats.dev && id.ino === stats.ino);
+			if (i === -1 || !stats.isFIFO()) continue;
+			const who = holderName(Number(pid), procCommand(pid));
+			found[i]?.push(`${who} fd ${fd} ${procAccess(pid, fd)}`);
+		}
+	}
+	return found;
+}
+
+// `lsof -u <uid> -F pcfatDi`: per process a p and a c (command) line, then per file its f, a
+// (access), t (type), D (device, which macOS's lsof leaves out for a FIFO) and i (inode) lines.
+function lsofHolders(fifos: readonly FifoId[], show: readonly number[]): FifoHolders {
+	const uid = String(process.getuid?.() ?? "");
+	let output = "";
+	try {
+		output = execFileSync("lsof", ["-n", "-P", "-w", "-u", uid, "-F", "pcfatDi"], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+			timeout: 30_000,
+			maxBuffer: 64 << 20,
 		});
+	} catch (error) {
+		output = String((error as { stdout?: unknown }).stdout ?? "");
+	}
+	if (output.trim() === "") return { holders: fifos.map(() => null), raw: "" };
+	const found = fifos.map((): string[] => []);
+	const shown: string[] = [];
+	let pid = -1;
+	let command = "?";
+	let file: Record<string, string> | null = null;
+	let lines: string[] = [];
+	const flush = (): void => {
+		const listed = file;
+		file = null;
+		if (listed === null) return;
+		if (pid === process.pid && show.includes(Number(listed.f))) shown.push(lines.join(" "));
+		if (listed.t !== "FIFO") return;
+		const i = fifos.findIndex((id) => listed.i === String(id.ino));
+		if (i === -1) return;
+		let device = "";
+		try {
+			if (listed.D !== undefined && BigInt(listed.D) !== fifos[i]?.dev)
+				device = " (device differs)";
+		} catch {
+			device = " (device unread)";
+		}
+		const access = listed.a?.trim() || "?";
+		found[i]?.push(`${holderName(pid, command)} fd ${listed.f} ${access}${device}`);
+	};
+	for (const line of output.split(/\r?\n/)) {
+		const tag = line.slice(0, 1);
+		if (tag === "p") {
+			flush();
+			pid = Number(line.slice(1));
+			command = "?";
+		} else if (tag === "c" && file === null) command = line.slice(1);
+		else if (tag === "f") {
+			flush();
+			file = { f: line.slice(1) };
+			lines = [line];
+		} else if (file !== null && tag !== "") {
+			file[tag] = line.slice(1);
+			lines.push(line);
+		}
+	}
+	flush();
+	const raw = shown.join(" ").slice(0, 200);
+	const noted = found.map((holders) =>
+		holders.length > 0 ? holders : [`none matched (lsof: ${raw || "nothing for the hub"})`],
+	);
+	return { holders: noted, raw };
+}
+
+// From the plugin's exit, each FIFO it writes gets this long to end through libuv. Linux reports
+// the last writer's close; macOS, read from its source, doesn't (src/fifo-stdio.ts), and there
+// the drain ends them.
+const EOF_GRACE_MS = 1_000;
+
+interface FifoWatch {
+	readonly child: ChildProcess;
+	readonly fifo: FifoStdio;
+	readonly ids: readonly FifoId[];
+	// When each output closed (performance.now()), or null while it is open.
+	readonly closedAt: (number | null)[];
+	readonly closed: readonly Promise<void>[];
+	// Settles with the time of the plugin's exit.
+	readonly exited: Promise<number>;
+}
+
+// Call as soon as spawn returns: notes each output FIFO's device and inode while every descriptor
+// is open, and watches the plugin's exit and each output's close from then on.
+function watchFifoEnds(child: ChildProcess, fifo: FifoStdio): FifoWatch {
+	const ids = fifo.hubFds.slice(1).map((fd) => fs.fstatSync(fd, { bigint: true }));
+	const closedAt: (number | null)[] = fifo.outputs.map(() => null);
+	const closed = fifo.outputs.map(
+		(output, i) =>
+			new Promise<void>((resolve) => {
+				output.once("close", () => {
+					closedAt[i] = performance.now();
+					resolve();
+				});
+			}),
+	);
+	const exited = new Promise<number>((resolve) => {
+		child.once("exit", () => resolve(performance.now()));
 	});
+	return { child, fifo, ids, closedAt, closed, exited };
+}
+
+// The FIFO helper's ending of an output, as the evidence names it.
+function endedBy(ending: string | null): FifoEnding {
+	if (ending === null) return "open";
+	if (ending === "eof" || ending === "drain") return ending;
+	return ending === "closed" ? "hub" : "error";
+}
+
+// Waits for the plugin's exit (a SIGKILL after FIFO_WAIT_MS); returns when it exited.
+async function pluginExit(watch: FifoWatch): Promise<{ exitAt: number; killed: boolean }> {
+	const exitAt = await within<number | null>(watch.exited, FIFO_WAIT_MS, null);
+	if (exitAt !== null) return { exitAt, killed: false };
+	watch.child.kill("SIGKILL");
+	return { exitAt: await watch.exited, killed: true };
+}
+
+interface FifoEndings {
+	readonly end: PluginEnd;
+	readonly exitAt: number;
+	readonly killedAtTimeout: boolean;
+	readonly outputs: FifoOutputEnd[];
+}
+
+// Waits for the plugin's exit, then until EOF_GRACE_MS after it for each FIFO it writes to end
+// through libuv; then the drain ends what no writer holds. For a FIFO that a writer still held at
+// the drain, it lists every holder. Records how each one ended.
+async function fifoEndings(watch: FifoWatch, lanes: readonly FifoLane[]): Promise<FifoEndings> {
+	const { child, fifo, ids, closedAt } = watch;
+	const allClosed = (): Promise<unknown> => Promise.all(watch.closed);
+	const { exitAt, killed } = await pluginExit(watch);
+	await within(allClosed(), Math.max(0, exitAt + EOF_GRACE_MS - performance.now()), undefined);
+	const drains = fifo.drain();
+	const held = drains.map(({ result }) => result === "EAGAIN" || result === "limit");
+	const listed = held.some(Boolean) ? fifoHolders(ids, fifo.hubFds.slice(1)).holders : [];
+	await within(allClosed(), 2_000, undefined);
+	const endings = fifo.endings();
+	const outputs = lanes.map((lane, i): FifoOutputEnd => {
+		const ending = endings[i] ?? null;
+		const at = closedAt[i] ?? null;
+		const by = endedBy(ending);
+		return {
+			fifo: lane,
+			endedBy: by,
+			error: by === "error" ? ending : null,
+			afterExitMs: at === null ? null : Math.round(at - exitAt),
+			holders: held[i] ? (listed[i] ?? null) : null,
+			drain: drains[i] ?? { bytes: 0, result: "missing" },
+		};
+	});
+	const closed = outputs.every((output) => output.endedBy !== "open");
+	return {
+		end: { code: child.exitCode, signal: child.signalCode, closed },
+		exitAt,
+		killedAtTimeout: killed,
+		outputs,
+	};
 }
 
 // Counts the bytes a stream delivers, whatever its encoding.
@@ -428,7 +632,7 @@ async function fallback1RoundTripProbe(config: HubConfig): Promise<Fallback1Roun
 // Before the spawn, every end the hub and the plugin hold must be a FIFO with no name left (nlink
 // 0), and the folder the FIFOs were made in must be gone.
 function unlinkedBeforeSpawn(fifo: FifoStdio): FifoResult["beforeSpawn"] {
-	const ends = [...fifo.pluginFds, ...[fifo.input, ...fifo.outputs].map((socket) => fdOf(socket))];
+	const ends = [...fifo.pluginFds, ...fifo.hubFds];
 	const unlinked = ends.filter((fd) => {
 		try {
 			const stats = fs.fstatSync(fd);
@@ -478,13 +682,13 @@ async function fifoProbe(config: HubConfig): Promise<FifoResult> {
 		throw error;
 	}
 	fifo.releasePluginEnds();
-	const [stdout, stderr, fd3] = fifo.outputs as [net.Socket, net.Socket, net.Socket | undefined];
-	const labels = new Map<number, string>([
-		[fdOf(fifo.input), "the hub's end of the plugin's stdin FIFO"],
-		[fdOf(stdout), "the hub's end of the plugin's stdout FIFO"],
-		[fdOf(stderr), "the hub's end of the plugin's stderr FIFO"],
-	]);
-	if (fd3 !== undefined) labels.set(fdOf(fd3), "the hub's end of the fd-3 FIFO");
+	const watch = watchFifoEnds(child, fifo);
+	const [stdout, stderr, fd3] = fifo.outputs as [Readable, Readable, Readable | undefined];
+	const lanes: FifoLane[] = fd3 === undefined ? ["stdout", "stderr"] : ["stdout", "stderr", "fd3"];
+	const names = ["stdin", ...lanes];
+	const labels = new Map(
+		fifo.hubFds.map((fd, i) => [fd, `the hub's end of the plugin's ${names[i]} FIFO`]),
+	);
 	const read = {
 		stdout: bytesOf(stdout),
 		stderr: bytesOf(stderr),
@@ -504,10 +708,9 @@ async function fifoProbe(config: HubConfig): Promise<FifoResult> {
 		violations = () => hub.io.violations.map(({ kind, detail }) => ({ kind, detail }));
 		if (benign) roundTrip = await stdioRoundTrip(hub.io, hub.fetched);
 	}
-	const end = await fifoEnded(child, fifo.outputs, 10_000);
-	const exitMs = Math.round(performance.now() - started);
-	const closing = [fifo.input, ...fifo.outputs].map((socket) =>
-		socket.closed ? Promise.resolve() : once(socket, "close"),
+	const ending = await fifoEndings(watch, lanes);
+	const closing = [fifo.input, ...fifo.outputs].map((stream) =>
+		stream.closed ? Promise.resolve() : new Promise((resolve) => stream.once("close", resolve)),
 	);
 	fifo.destroy();
 	await within(Promise.all(closing), 2_000, undefined);
@@ -516,12 +719,71 @@ async function fifoProbe(config: HubConfig): Promise<FifoResult> {
 		layout,
 		beforeSpawn,
 		violations: violations(),
-		pluginEnded: end,
-		exitMs,
+		pluginEnded: ending.end,
+		exitMs: Math.round(ending.exitAt - started),
+		killedAtTimeout: ending.killedAtTimeout,
+		outputs: ending.outputs,
 		fds: before === null ? null : fdChange(before, await fdTable(), labels),
 		bytesRead: { stdout: read.stdout(), stderr: read.stderr(), fd3: read.fd3() },
 		plugin: [...tagged(reports()), ...notes],
 		roundTrip,
+	};
+}
+
+// The "fifo-held" control (fifoHeldProblem in fifo.ts): a benign plugin on FIFO stdio, and a second
+// write end of its stdout FIFO that the hub opens through /proc or /dev/fd (the same FIFO) and keeps
+// past the plugin's exit, as an inherited copy would be kept.
+async function fifoHeldProbe(config: HubConfig): Promise<FifoHeldResult> {
+	const fifo = await openFifoStdio(2);
+	const started = performance.now();
+	const fdDir = process.platform === "linux" ? "/proc/self/fd" : "/dev/fd";
+	let child: ChildProcess | undefined;
+	let writer: number;
+	try {
+		child = spawnFixture({
+			nodeBin: process.execPath,
+			pluginDir: config.pluginDir,
+			dataDir: config.dataDir,
+			grantData: true,
+			entry: path.join(config.pluginDir, "ipc-plugin.mjs"),
+			entryArgs: ["ready"],
+			stdio: fifo.pluginFds,
+			channel: false,
+		});
+		const { O_WRONLY, O_NONBLOCK } = fs.constants;
+		writer = fs.openSync(`${fdDir}/${fifo.pluginFds[1]}`, O_WRONLY | O_NONBLOCK);
+	} catch (error) {
+		child?.kill("SIGKILL");
+		fifo.destroy();
+		throw error;
+	}
+	fifo.releasePluginEnds();
+	const watch = watchFifoEnds(child, fifo);
+	const [stdout, stderr] = fifo.outputs as [Readable, Readable];
+	const [stdoutClosed, stderrClosed] = watch.closed as [Promise<void>, Promise<void>];
+	const read = bytesOf(stdout);
+	stderr.resume();
+	const { exitAt, killed } = await pluginExit(watch);
+	const reader = fifo.hubFds[1] ?? -1;
+	await within(stderrClosed, Math.max(0, exitAt + EOF_GRACE_MS - performance.now()), undefined);
+	const [held] = fifo.drain();
+	const [holders = null] = fifoHolders(watch.ids.slice(0, 1), [reader, writer]).holders;
+	fs.closeSync(writer);
+	const [released] = fifo.drain();
+	await within(stdoutClosed, 2_000, undefined);
+	const [ending = null] = fifo.endings();
+	fifo.destroy();
+	const missing = { bytes: 0, result: "missing" };
+	return {
+		reader,
+		writer,
+		exitMs: Math.round(exitAt - started),
+		killedAtTimeout: killed,
+		held: held ?? missing,
+		holders,
+		released: released ?? missing,
+		endedBy: endedBy(ending),
+		bytesRead: read(),
 	};
 }
 
@@ -592,6 +854,7 @@ const probes: Record<string, (config: HubConfig) => Promise<unknown>> = {
 	fallback1: fallback1Probe,
 	"fallback1-round-trip": fallback1RoundTripProbe,
 	fifo: fifoProbe,
+	"fifo-held": fifoHeldProbe,
 	"late-reply": lateReplyProbe,
 	"send-after-exit": sendAfterExitProbe,
 	"control-malformed": (config) => controlProbe(config, "raw-malformed"),
