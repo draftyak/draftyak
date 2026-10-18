@@ -277,6 +277,15 @@ importers:
 
   tools/fetch-node: {}
 
+  tools/packaging:
+    dependencies:
+      '@draftyak/bundle-hub':
+        specifier: workspace:*
+        version: link:../bundle-hub
+      '@draftyak/release-guard':
+        specifier: workspace:*
+        version: link:../release-guard
+
   tools/release-guard:
     dependencies:
       '@draftyak/bundle-hub':
