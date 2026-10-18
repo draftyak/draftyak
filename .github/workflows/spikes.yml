@@ -23,6 +23,10 @@ on:
         default: both
         type: choice
         options: [both, minimum, bundled]
+      tests:
+        description: With one spike only, heavy test files relative to its folder, comma-separated (test/escape.heavy.test.ts); empty runs them all
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -55,6 +59,7 @@ jobs:
           RUN_SPIKES: ${{ inputs.spikes }}
           RUN_OS: ${{ inputs.os }}
           RUN_NODE: ${{ inputs.node }}
+          RUN_TESTS: ${{ inputs.tests }}
         run: node tools/ci-checks/src/spikes-run.ts --plan
 
   run:
@@ -182,13 +187,18 @@ jobs:
         with:
           path: .cache/draftyak/node
           key: ${{ steps.nodes.outputs.cache-primary-key }}
+      # TESTS lists a partial run's test files, which plan checked; spikes/kit/run.ts hands them to
+      # Vitest as file filters. Without them, the command runs the spike's whole heavy tier.
       - name: test:heavy
         id: heavy
         env:
           SPIKE: ${{ matrix.spike }}
           XVFB: ${{ matrix.tauriLinux }}
+          TESTS: ${{ matrix.tests }}
         run: |
           heavy=(pnpm --filter "./spikes/$SPIKE" --fail-if-no-match run test:heavy)
+          read -r -a tests <<< "$TESTS"
+          if [ "${#tests[@]}" -gt 0 ]; then heavy+=(-- "${tests[@]}"); fi
           if [ "$XVFB" = true ]; then heavy=(xvfb-run --auto-servernum "${heavy[@]}"); fi
           "${heavy[@]}"
       - name: Save Pyodide wheels

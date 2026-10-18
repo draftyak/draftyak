@@ -91,11 +91,10 @@ describe("workflow policy", () => {
 		expect(Object.keys(spikes)).toEqual(["push", "workflow_dispatch"]);
 		expect(spikes.push).toEqual({ branches: ["spikes-run/**"] });
 		expect(Object.keys(spikes.workflow_dispatch as object)).toEqual(["inputs"]);
-		expect(Object.keys((spikes.workflow_dispatch as { inputs: object }).inputs)).toEqual([
-			"spikes",
-			"os",
-			"node",
-		]);
+		const inputs = (spikes.workflow_dispatch as { inputs: Record<string, unknown> }).inputs;
+		expect(Object.keys(inputs)).toEqual(["spikes", "os", "node", "tests"]);
+		// Dispatch matches a pushed spikes/run.json, where tests is optional too.
+		expect(inputs.tests).toMatchObject({ required: false, type: "string" });
 	});
 
 	it("allows push to spikes-run/**, evidence uploads, read-only jobs and github.sha in run", () => {
