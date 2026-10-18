@@ -26,6 +26,7 @@ import {
 } from "../src/elicit.ts";
 import { createHub, GUIDE_URI, type Hub, sessionKey } from "../src/resources.ts";
 import { createApp, surfaceFactory } from "../src/server.ts";
+import { codeFingerprint, recording } from "./evidence.ts";
 import { type Fetcher, legacy, modern, type Served, serve } from "./harness.ts";
 
 const ulid = (n: number): string => `01J${String(n).padStart(23, "0")}`;
@@ -117,13 +118,6 @@ const textOf = (response: Served): string => response.body.result.messages[0].co
 
 // Evidence: every planned case's outcome, written only when asked (DRAFTYAK_RECORD_EVIDENCE=1) or in
 // CI, and only when every test in this file ran and passed (never from a filtered or failing run).
-function recording(env: NodeJS.ProcessEnv = process.env): boolean {
-	const value = env.DRAFTYAK_RECORD_EVIDENCE ?? "";
-	if (!["", "0", "1"].includes(value)) {
-		throw new Error(`DRAFTYAK_RECORD_EVIDENCE is 1 or 0, not "${value}"`);
-	}
-	return value === "1" || (value === "" && !!env.CI);
-}
 const NEGATIVE = [
 	"tampered-payload",
 	"tampered-mac",
@@ -197,7 +191,7 @@ afterAll(async () => {
 			"utf8",
 		),
 	).version;
-	const written = await writeEvidence(new URL("../evidence/mrtr.json", import.meta.url), {
+	const data = {
 		serverSdkVersion: sdk,
 		codec: {
 			mac: "HMAC-SHA256 (createRequestStateCodec), canonical base64url MAC only",
@@ -212,7 +206,9 @@ afterAll(async () => {
 		openPendingPerPrincipal: MAX_OPEN_PER_PRINCIPAL,
 		negativeCases: Object.fromEntries(NEGATIVE.map((name) => [name, observed.get(name)])),
 		flows: Object.fromEntries(FLOWS.map((name) => [name, observed.get(name)])),
-	});
+	};
+	const file = new URL("../evidence/mrtr.json", import.meta.url);
+	const written = await writeEvidence(file, data, { fingerprint: await codeFingerprint() });
 	console.log(`evidence: ${written}`);
 });
 

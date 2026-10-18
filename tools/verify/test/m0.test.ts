@@ -13,7 +13,7 @@ import {
 	nodeTargets,
 	prefetch,
 } from "../prefetch.ts";
-import { checkPrerequisites, profile } from "../profiles/m0.ts";
+import { browsersDir, checkPrerequisites, profile } from "../profiles/m0.ts";
 
 const here = path.resolve(import.meta.dirname, "..");
 const tmp = mkdtempSync(path.join(tmpdir(), "draftyak-m0-"));
@@ -191,10 +191,12 @@ describe("verify:m0", () => {
 		expect(performance.now() - started).toBeLessThan(10_000);
 	});
 
-	it("requires the Playwright browsers of each package that uses Playwright", async () => {
+	// A workspace whose spike uses @playwright/test, with playwright-core's browser list.
+	const name = "@draftyak/spike-s03-mcp-sdk";
+	const absent = ["chromium-1248", "chromium_headless_shell-1248", "webkit-2370"];
+	function playwrightRoot(): { root: string; core: string } {
 		const spike = "spikes/s03-mcp-sdk";
 		const modules = `${spike}/node_modules`;
-		const name = "@draftyak/spike-s03-mcp-sdk";
 		const manifest = { name, devDependencies: { "@playwright/test": "1.64.1" } };
 		const files: Record<string, string> = { [`${spike}/package.json`]: JSON.stringify(manifest) };
 		for (const pkg of ["@playwright/test", "playwright", "playwright-core"]) {
@@ -207,17 +209,49 @@ describe("verify:m0", () => {
 		}));
 		files[`${modules}/playwright-core/browsers.json`] = JSON.stringify({ browsers });
 		const root = fakeRoot(files);
+		return { root, core: path.join(root, modules, "playwright-core") };
+	}
+	const browserRow = async (root: string, env: NodeJS.ProcessEnv) => {
+		const checks = await quietly(() => checkPrerequisites(root, fakeExec().exec, env));
+		return checks.result.find((c) => c.name === "browsers");
+	};
+	const detail = `${name}: ${absent.join(", ")}; pnpm m0:prefetch installs them (about 3 min)`;
+
+	it("requires the Playwright browsers of each package that uses Playwright", async () => {
+		const { root } = playwrightRoot();
 		const registry = path.join(tmp, "ms-playwright");
-		const check = async () => {
-			const env = { PLAYWRIGHT_BROWSERS_PATH: registry };
-			const checks = await quietly(() => checkPrerequisites(root, fakeExec().exec, env));
-			return checks.result.find((c) => c.name === "browsers");
-		};
-		const absent = ["chromium-1248", "chromium_headless_shell-1248", "webkit-2370"];
-		const detail = `${name}: ${absent.join(", ")}; pnpm m0:prefetch installs them (about 3 min)`;
-		expect(await check()).toMatchObject({ state: "missing", detail });
+		const env = { PLAYWRIGHT_BROWSERS_PATH: registry };
+		expect(await browserRow(root, env)).toMatchObject({ state: "missing", detail });
 		for (const dir of absent) write(path.join(registry, dir, "INSTALLATION_COMPLETE"));
-		expect(await check()).toMatchObject({ state: "ok" });
+		expect(await browserRow(root, env)).toMatchObject({ state: "ok" });
+	});
+
+	it("looks in <DRAFTYAK_CACHE_DIR>/playwright, where m0:prefetch installs them, unless PLAYWRIGHT_BROWSERS_PATH is set", async () => {
+		const { root, core } = playwrightRoot();
+		const cache = path.join(tmp, "cache-dir");
+		// The user profile's ms-playwright has them, and doesn't count.
+		const profileCache = path.join(tmp, "profile-cache");
+		for (const dir of absent) {
+			write(path.join(profileCache, "ms-playwright", dir, "INSTALLATION_COMPLETE"));
+		}
+		const env = {
+			DRAFTYAK_CACHE_DIR: cache,
+			LOCALAPPDATA: profileCache,
+			XDG_CACHE_HOME: profileCache,
+		};
+		expect(browsersDir(core, env)).toBe(path.join(cache, "playwright"));
+		expect(await browserRow(root, env)).toMatchObject({ state: "missing", detail });
+		for (const dir of absent) write(path.join(cache, "playwright", dir, "INSTALLATION_COMPLETE"));
+		expect(await browserRow(root, env)).toMatchObject({ state: "ok" });
+
+		const inCore = { ...env, PLAYWRIGHT_BROWSERS_PATH: "0" };
+		expect(browsersDir(core, inCore)).toBe(path.join(core, ".local-browsers"));
+		expect(await browserRow(root, inCore)).toMatchObject({ state: "missing", detail });
+		expect(await browserRow(root, { ...env, PLAYWRIGHT_BROWSERS_PATH: "browsers" })).toEqual({
+			name: "browsers",
+			state: "missing",
+			detail: "PLAYWRIGHT_BROWSERS_PATH must be absolute or 0, not browsers",
+		});
 	});
 });
 
