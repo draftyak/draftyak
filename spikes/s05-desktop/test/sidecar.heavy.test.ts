@@ -1,11 +1,14 @@
-// M0.22. On any OS: stage-sidecar, then the supervisor's Rust tests, rustfmt and clippy without the
-// app feature, which need none of Tauri's system libraries. On Windows, the app itself: clippy with
-// the app feature; the stub hub alone; the app with no hooks; then the app with a plugin,
-// NODE_OPTIONS=--inspect and a hub that ignores stdin EOF and broken pipes: the ready frame, the
-// addon loaded from resources, Temporal, the plugin inside the hub's Job Object, a killed hub back
-// within 60 s, nothing of this build left once the app is killed, and no second launch on its store.
-// Evidence (sidecar-<platform>-<arch>.json) is written only when asked (DRAFTYAK_RECORD_EVIDENCE=1)
-// or in CI, after every case this host can run passed.
+// M0.22. On any OS: stage-sidecar, then the supervisor's and keep-awake's Rust tests, rustfmt and
+// clippy without the app feature, which need none of Tauri's system libraries. On Windows, the app
+// itself: clippy with the app feature; the stub hub alone; the app with no hooks; then the app with
+// a plugin, NODE_OPTIONS=--inspect and a hub that ignores stdin EOF and broken pipes: the ready
+// frame, the addon loaded from resources, Temporal, the plugin inside the hub's Job Object, a killed
+// hub back within 60 s, nothing of this build left once the app is killed, and no second launch on
+// its store. On macOS and Linux (M0.23b, run B1 and xvfb): the same app checks, where the hub's
+// process group stands in for the Job Object, and what a hub that ignores stdin EOF does there; on
+// Linux also clippy with the app feature, and clippy for aarch64-apple-darwin without it, so the
+// macOS code builds once before run B1. Evidence (sidecar-<platform>-<arch>.json) is written only
+// when asked (DRAFTYAK_RECORD_EVIDENCE=1) or in CI, after every case this host can run passed.
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
@@ -19,11 +22,27 @@ import { skipOrFail, writeEvidence } from "@draftyak/spike-kit";
 import { buildArgv, buildExecArgv, flagName } from "@draftyak/spike-s02-plugin-sandbox/src/argv.ts";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import { type Staged, stageSidecar, tauriDir } from "../tauri-app/scripts/stage-sidecar.ts";
+import {
+	codeFingerprint,
+	hubNode,
+	killAll,
+	App as PosixApp,
+	goneWithin as posixGoneWithin,
+	processes as posixProcesses,
+	stillOurs,
+} from "./app.ts";
 
 const windows = process.platform === "win32";
+const linux = process.platform === "linux";
+// ci.json's ubuntu run installs this target's standard library, for the clippy before run B1.
+const MACOS_TARGET = "aarch64-apple-darwin";
 const spikeDir = path.resolve(import.meta.dirname, "..");
 const targetDir = path.join(tauriDir, "target");
 const appExe = path.join(targetDir, "debug", "draftyak-spike-desktop.exe");
+// The macOS and Linux cases need a desktop session (Linux: an X or Wayland display, as xvfb gives).
+const posixDesktop =
+	process.platform === "darwin" ||
+	(process.platform === "linux" && !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY));
 const hubScript = path.join(tauriDir, "resources", "hub.mjs");
 const LONG = 1_800_000;
 // Would open an inspector in any Node that it reached.
@@ -39,7 +58,13 @@ const ON_WINDOWS = [
 	"appEnded",
 	"reuseRefused",
 ] as const;
-type Case = (typeof ANY_OS)[number] | (typeof ON_WINDOWS)[number];
+const ON_POSIX = ["posixApp", "posixRestart", "posixAppEnded", "posixIgnoredEof"] as const;
+const ON_LINUX = ["clippyApp", "macosClippy"] as const;
+type Case =
+	| (typeof ANY_OS)[number]
+	| (typeof ON_WINDOWS)[number]
+	| (typeof ON_POSIX)[number]
+	| (typeof ON_LINUX)[number];
 
 // Windows flag values, named for the evidence.
 const CREATION_FLAGS = { CREATE_SUSPENDED: 0x4, CREATE_NO_WINDOW: 0x0800_0000 };
@@ -365,14 +390,18 @@ function launch(env: NodeJS.ProcessEnv): App {
 
 afterAll(async () => {
 	if (!staged || !recording()) return;
-	const planned: readonly Case[] = [...ANY_OS, ...(windows ? ON_WINDOWS : [])];
+	const posix = linux ? [...ON_POSIX, ...ON_LINUX] : ON_POSIX;
+	const host = windows ? ON_WINDOWS : posixDesktop ? posix : [];
+	const planned: readonly Case[] = [...ANY_OS, ...host];
 	const missing = planned.filter((name) => !(name in results));
 	if (missing.length > 0) {
 		console.warn(`evidence not recorded: ${missing.join(", ")} didn't pass`);
 		return;
 	}
 	const file = path.join(spikeDir, "evidence", `sidecar-${staged.prebuild.target}.json`);
-	const written = await writeEvidence(file, evidence(staged));
+	const written = await writeEvidence(file, evidence(staged), {
+		fingerprint: await codeFingerprint(),
+	});
 	console.log(`evidence: ${path.relative(spikeDir, written)}`);
 }, 120_000);
 
@@ -395,7 +424,7 @@ describe("S5b supervisor on any OS, without the app feature", () => {
 		results.clippy = { clean: true, features: "none", allTargets: true, ms: clippy.ms };
 	});
 
-	it("cargo test passes (frames, policy, health probe, environment, restarts, Job Object)", {
+	it("cargo test passes (frames, policy, health probe, environment, restarts, Job Object, keep-awake)", {
 		timeout: LONG,
 	}, async (ctx) => {
 		await stage(ctx);
@@ -404,7 +433,7 @@ describe("S5b supervisor on any OS, without the app feature", () => {
 		expect(tests.code, tests.output).toBe(0);
 		const { passed, failed } = testCounts(tests.output);
 		expect(failed).toBe(0);
-		expect(passed).toBeGreaterThanOrEqual(windows ? 14 : 12);
+		expect(passed).toBeGreaterThanOrEqual(windows ? 23 : 21);
 		results.cargoTest = { passed, features: "none", nodeOptionsSet: true, ms: tests.ms };
 	});
 });
@@ -651,6 +680,197 @@ describe("S5b app on Windows", { tags: ["requires:windows"] }, () => {
 		expect(again.stderr.join("")).toMatch(/holds a store from an earlier launch/);
 		expect(again.events.filter((event) => event.event === "spawned")).toEqual([]);
 		results.reuseRefused = { exitCode: code, hubsSpawned: 0 };
+	});
+});
+
+// The same checks where there is no Job Object: the hub leads its own process group, which a
+// restart and Quit kill, and a hub that sees stdin EOF ends its plugin itself.
+describe("S5b app on macOS and Linux", {
+	tags: ["requires:posix", "requires:tauri-desktop"],
+}, () => {
+	const launched: PosixApp[] = [];
+	let posixRoot = "";
+	let first: PosixApp | undefined;
+
+	function start(env: Readonly<Record<string, string>>): PosixApp {
+		const store = fs.mkdtempSync(path.join(posixRoot, "store-"));
+		const started = new PosixApp([], {
+			...process.env,
+			DRAFTYAK_DATA_DIR: store,
+			DRAFTYAK_SPIKE_PLUGIN_ARGV: JSON.stringify(pluginArgv),
+			NODE_OPTIONS,
+			...env,
+		});
+		launched.push(started);
+		return started;
+	}
+
+	// Ours: each hub and plugin a launch reported.
+	const ours = (app: PosixApp): number[] =>
+		app.events.flatMap((event) => {
+			if (event.event !== "ready") return [];
+			const plugin = app.report(Number(event.generation)).plugin as { pid?: number } | null;
+			return [Number(event.pid), ...(plugin?.pid ? [plugin.pid] : [])];
+		});
+
+	// This build's draftyak-node processes, by the path they run from.
+	const thisBuildsHubs = async (): Promise<number[]> =>
+		[...(await posixProcesses())].flatMap(([pid, args]) => (args.startsWith(hubNode) ? [pid] : []));
+
+	beforeAll(() => {
+		if (windows) return;
+		// A real path: macOS's /var/folders runs through a link, which the plugin's read grant
+		// wouldn't cover (ADR 0003).
+		posixRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dy-s05-posix-")));
+		pluginDir = path.join(posixRoot, "plugin");
+		pluginData = path.join(posixRoot, "plugin-data");
+		fs.mkdirSync(pluginDir);
+		fs.mkdirSync(pluginData);
+		const entry = path.join(pluginDir, "plugin.mjs");
+		fs.writeFileSync(entry, PLUGIN);
+		pluginArgv = buildArgv({ pluginDir, dataDir: pluginData }, entry);
+	});
+
+	afterAll(async () => {
+		for (const app of launched) await app.end();
+		killAll(await stillOurs(launched.flatMap(ours)));
+		if (posixRoot) fs.rmSync(posixRoot, { recursive: true, force: true, maxRetries: 10 });
+	}, 120_000);
+
+	// The xvfb runner has Tauri's Linux packages; CI's full job, without a display, has none.
+	it("cargo clippy --all-targets -- -D warnings is clean with the app feature", {
+		tags: ["requires:linux"],
+		timeout: LONG,
+	}, async (ctx) => {
+		await built(ctx);
+		const clippy = await cargo(["clippy", "--locked", "--all-targets", "--", "-D", "warnings"]);
+		expect(clippy.code, clippy.output).toBe(0);
+		expect(clippy.output).not.toMatch(/^(?:warning|error)/m);
+		results.clippyApp = { clean: true, features: "app", allTargets: true, ms: clippy.ms };
+	});
+
+	// Run B1 bills macOS minutes tenfold, so the code without the app feature (the supervisor and
+	// keep-awake with its macOS layer) is first linted for macOS here. Tauri's macOS crates need
+	// Apple's SDK, so the app feature first builds for macOS in run B1.
+	it(`cargo clippy --no-default-features --all-targets for ${MACOS_TARGET} is clean`, {
+		tags: ["requires:linux"],
+		timeout: LONG,
+	}, async (ctx) => {
+		await stage(ctx);
+		const libdir = await run("rustc", ["--print", "target-libdir", "--target", MACOS_TARGET], {});
+		const dir = libdir.output.trim().split(/\r?\n/).at(-1) ?? "";
+		if (libdir.code !== 0 || dir === "" || !fs.existsSync(dir)) {
+			skipOrFail(ctx, `Rust's ${MACOS_TARGET} standard library isn't installed (ci.json adds it)`);
+		}
+		const args = ["clippy", "--locked", "--no-default-features", "--all-targets"];
+		const clippy = await cargo([...args, "--target", MACOS_TARGET, "--", "-D", "warnings"]);
+		expect(clippy.code, clippy.output).toBe(0);
+		expect(clippy.output).not.toMatch(/^(?:warning|error)/m);
+		results.macosClippy = {
+			clean: true,
+			target: MACOS_TARGET,
+			features: "none",
+			allTargets: true,
+			ms: clippy.ms,
+		};
+	});
+
+	it("the app sends ready; the addon loads from resources; Temporal; the plugin runs; no NODE_OPTIONS in the hub", async (ctx) => {
+		await built(ctx);
+		first = start({});
+		const ready = await first.ready(1);
+		const report = first.report(1) as unknown as HubReport;
+		expect(ready.hubId).toMatch(/^DYK(-[0-9A-Z]{4}){4}$/);
+		expect(report.temporal).toBe("object");
+		expect(report.temporalNow).toBe("function");
+		expect(report.execArgv).toEqual(["--disable-sigusr1"]);
+		expect([report.nodeOptions, report.inspector]).toEqual([null, null]);
+		expect(report.env.filter((name) => /^(?:NODE_|PATH$)/.test(name))).toEqual([]);
+		const target = staged?.prebuild.target;
+		expect(report.addon).toMatchObject({ target, fromResources: true, encrypted: true });
+		const loaded = path.join(targetDir, "debug", "resources", "prebuilds", `${target}.node`);
+		expect(sha256(loaded)).toBe(staged?.prebuild.sha256);
+		expect(report.plugin?.execArgv).toEqual(buildExecArgv({ pluginDir, dataDir: pluginData }));
+		const running = await posixProcesses();
+		expect(running.get(Number(ready.pid))?.startsWith(hubNode)).toBe(true);
+		expect(running.get(report.plugin?.pid ?? 0)?.startsWith(hubNode)).toBe(true);
+		results.posixApp = {
+			readyMs: ready.afterMs,
+			processGroup: "the hub leads its own (process_group(0))",
+			temporal: report.temporal,
+			temporalNowInstant: report.temporalNow,
+			hubExecArgv: report.execArgv,
+			hubEnv: report.env,
+			hubNodeOptions: report.nodeOptions,
+			hubInspector: report.inspector,
+			addon: { ...report.addon, sameBytesAsPackage: true },
+			pluginExecArgvIsBuildArgv: true,
+		};
+	});
+
+	it("a killed hub is back within 60 s with the same hubId, and its plugin ends", {
+		timeout: 120_000,
+	}, async (ctx) => {
+		await built(ctx);
+		if (!first) throw new Error("the app didn't start");
+		const ready = await first.ready(1);
+		const plugin = (first.report(1).plugin as { pid: number }).pid;
+		const killed = Date.now();
+		killAll([Number(ready.pid)]);
+		const exited = await first.next((e) => e.event === "exited" && e.generation === 1, 30_000);
+		const restarting = await first.next((event) => event.event === "restarting", 30_000);
+		const again = await first.ready(2);
+		const backMs = Date.now() - killed;
+		expect(backMs).toBeLessThan(60_000);
+		expect(restarting.delayMs).toBe(1000);
+		expect(again.hubId).toBe(ready.hubId);
+		const pluginGoneMs = await posixGoneWithin([plugin], 10_000);
+		expect(pluginGoneMs).not.toBeNull();
+		results.posixRestart = {
+			killedHubExit: exited.code ?? "signal",
+			delayMs: restarting.delayMs,
+			backMs,
+			hubIdStable: true,
+			firstPluginGoneMs: pluginGoneMs,
+		};
+	});
+
+	it("killing the app ends its hub on stdin EOF, and the hub ends its plugin; nothing of this build is left", async (ctx) => {
+		await built(ctx);
+		if (!first) throw new Error("the app didn't start");
+		await first.ready(2);
+		const pids = ours(first);
+		await first.end();
+		const goneMs = await posixGoneWithin(pids, 10_000);
+		expect(goneMs).not.toBeNull();
+		expect(await thisBuildsHubs()).toEqual([]);
+		results.posixAppEnded = {
+			how: "SIGKILL",
+			hubEndedOn: "stdin EOF",
+			goneMs,
+			ourProcessesLeft: 0,
+			draftyakNodeOfThisBuildLeft: 0,
+		};
+	});
+
+	// Recorded for ADR 0007, not a pass condition: nothing outside the hub ends it when the app dies.
+	it("a hub that ignores stdin EOF and broken pipes outlives a killed app here", async (ctx) => {
+		await built(ctx);
+		const stubborn = start({ DRAFTYAK_SPIKE_IGNORE_EOF: "1" });
+		await stubborn.ready(1);
+		const pids = ours(stubborn);
+		await stubborn.end();
+		await sleep(3000);
+		const left = await stillOurs(pids);
+		killAll(left);
+		expect(await posixGoneWithin(pids, 10_000)).not.toBeNull();
+		expect(await thisBuildsHubs()).toEqual([]);
+		results.posixIgnoredEof = {
+			how: "SIGKILL of the app, then 3 s",
+			hubOutlivedApp: left.includes(pids[0] ?? -1),
+			pluginOutlivedApp: pids.slice(1).some((pid) => left.includes(pid)),
+			endedAfterwardsBy: "the test",
+		};
 	});
 });
 

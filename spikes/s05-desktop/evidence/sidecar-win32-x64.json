@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T00:26:16.496Z",
+  "recordedAt": "2026-10-18T08:28:48.919Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,13 +11,13 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "81ecba90d3832b556d6b9b697c17884982e01ffe",
+    "commit": "435c7420e13eea2b2c780bc312ffcd0325b1ae47",
     "dirty": false,
     "load": {
-      "cpuPercent": 8.3,
+      "cpuPercent": 9.7,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 57.5,
+      "memoryUsedPercent": 73.5,
       "concurrentBuilds": 0
     }
   },
@@ -36,22 +36,22 @@
       "clean": true,
       "features": "none",
       "allTargets": true,
-      "ms": 2455
+      "ms": 378
     },
     "cargoTest": {
-      "passed": 14,
+      "passed": 23,
       "features": "none",
       "nodeOptionsSet": true,
-      "ms": 8371
+      "ms": 8617
     },
     "build": {
-      "ms": 45944
+      "ms": 403
     },
     "clippyApp": {
       "clean": true,
       "features": "app",
       "allTargets": true,
-      "ms": 21594
+      "ms": 899
     },
     "hub": {
       "frames": [
@@ -64,12 +64,12 @@
       "eofExitMs": 8
     },
     "plainApp": {
-      "readyMs": 260,
+      "readyMs": 149,
       "storeFolders": 1,
       "hooks": 0
     },
     "app": {
-      "readyMs": 191,
+      "readyMs": 218,
       "policy": {
         "backoffMaxMs": 60000,
         "backoffMinMs": 1000,
@@ -142,6 +142,7 @@
         "--no-experimental-sqlite",
         "--disable-sigusr1",
         "--disallow-code-generation-from-strings",
+        "--freeze-flags-after-init",
         "--max-old-space-size"
       ],
       "pluginExecArgvIsBuildArgv": true
@@ -149,14 +150,14 @@
     "restart": {
       "killedHubExitCode": 1,
       "delayMs": 1000,
-      "backMs": 1322,
+      "backMs": 1370,
       "hubIdStable": true,
-      "firstGenerationGoneMs": 274
+      "firstGenerationGoneMs": 484
     },
     "appEnded": {
       "how": "TerminateProcess",
       "hubIgnoredStdinEofAndBrokenPipes": true,
-      "goneMs": 248,
+      "goneMs": 456,
       "ourProcessesLeft": 0,
       "draftyakNodeOfThisBuildLeft": 0
     },
