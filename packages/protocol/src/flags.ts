@@ -53,10 +53,8 @@ export function flagSeverity(code: FlagCode): FlagSeverity {
 	return Object.hasOwn(lighter, code) ? lighter[code as keyof typeof lighter] : "ack";
 }
 
-// Unicode scalar values, as Rust's strings hold: a lone surrogate is refused.
-const FlagDetail = boundedText(1000)
-	.min(1)
-	.refine((detail) => detail.isWellFormed(), { message: "not well-formed Unicode" });
+// Unicode scalar values, as Rust's strings hold: boundedText refuses a lone surrogate.
+const FlagDetail = boundedText(1000).min(1);
 
 type FlagOf<C extends FlagCode, S extends FlagSeverity> = z.ZodObject<
 	{

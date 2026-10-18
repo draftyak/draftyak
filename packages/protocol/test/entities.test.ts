@@ -469,7 +469,8 @@ describe("definitions shared with the channel and tool contracts", () => {
 		const foreign = Object.keys(document.$defs).filter(
 			(id) => !id.startsWith("draftyak.entities."),
 		);
-		expect(foreign.toSorted()).toEqual(["draftyak.flags.Flag", ...ids].toSorted());
+		const used = ["draftyak.flags.Flag", "draftyak.pairing.DisplayName"];
+		expect(foreign.toSorted()).toEqual([...used, ...ids].toSorted());
 		// A copy of a shared pattern or value list anywhere else would be a second definition.
 		const found = (key: string) => valuesOf(document, key).map((value) => JSON.stringify(value));
 		for (const id of ids) {
@@ -651,6 +652,26 @@ describe("devices", () => {
 				`N${approvalKey.slice(1)}`,
 			]),
 		);
+	});
+
+	// display-name.test.ts runs the shared cases through Device.name and the pairing names.
+	it("take pairing's display name, whose exported schema keeps only its bounds", () => {
+		const { device } = fixtures;
+		agree(
+			"Device",
+			each(device, "name", ["\u{1f3e0}".repeat(64)]),
+			each(device, "name", ["\u{1f3e0}".repeat(65)]),
+		);
+		expect(document.$defs["draftyak.pairing.DisplayName"]).toMatchObject({
+			type: "string",
+			minLength: 1,
+			maxLength: 64,
+		});
+		const validator = definition("Device");
+		for (const sample of each(device, "name", ["Desk \u{202e}CP", "Desk\u{200b}PC", "   "])) {
+			expect(entities.Device.safeParse(sample).success, sample.name).toBe(false);
+			expect(validator.validate(sample).valid, sample.name).toBe(true);
+		}
 	});
 
 	it("record the confirming epoch, or none", () => {

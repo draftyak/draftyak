@@ -52,14 +52,17 @@ export const Iso8601Utc: z.ZodString = z
 	.meta({ format: "date-time", description: "An instant as YYYY-MM-DDTHH:mm:ss.sssZ." });
 export type Iso8601Utc = z.infer<typeof Iso8601Utc>;
 
-// JSON Schema's maxLength counts code points while zod's max() counts UTF-16 units, so text limits
-// count code points here too, and every language enforces the same bound.
+// Text limits count code points, as JSON Schema's maxLength does, so every language enforces the
+// same bound. The text is well-formed too: a lone surrogate has no UTF-8 form, so JCS and every
+// hash refuse it. Rust's strings can't hold one, but Python's and Kotlin's can, and JSON Schema
+// can't state the rule, so their code checks it as this refine does.
 export function boundedText(maxCodePoints: number): z.ZodString {
 	return z
 		.string()
 		.refine((text) => [...text].length <= maxCodePoints, {
 			message: `at most ${maxCodePoints} characters`,
 		})
+		.refine((text) => text.isWellFormed(), { message: "lone surrogate" })
 		.meta({ maxLength: maxCodePoints });
 }
 

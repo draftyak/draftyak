@@ -144,16 +144,29 @@ const joiner = among([
 	[0xfe00, 0xfe0f],
 	[0xe0100, 0xe01ef],
 ]);
-const DisplayName: z.ZodString = z.string().refine(
-	(text) => {
-		const points = [...text].map((char) => char.codePointAt(0) ?? 0);
-		const ends = [points[0] ?? 0x20, points.at(-1) ?? 0x20];
-		const visible = points.some((point) => !blank(point) && !joiner(point));
-		const clean = !points.some(hidden) && !ends.some(blank);
-		return text.isWellFormed() && points.length <= 64 && visible && clean;
-	},
-	{ message: "1 to 64 code points, visible, without hidden ones or a blank first or last" },
-);
+// The hub's name in a payload, and a device's in its claim and in the hub's record (Device.name).
+// One check, so a bad name is one problem; the bounds reach JSON Schema as boundedText's do.
+export const DisplayName: z.ZodString = z
+	.string()
+	.refine(
+		(text) => {
+			const points = [...text].map((char) => char.codePointAt(0) ?? 0);
+			const ends = [points[0] ?? 0x20, points.at(-1) ?? 0x20];
+			const visible = points.some((point) => !blank(point) && !joiner(point));
+			const clean = !points.some(hidden) && !ends.some(blank);
+			return text.isWellFormed() && points.length <= 64 && visible && clean;
+		},
+		{ message: "1 to 64 code points, visible, without hidden ones or a blank first or last" },
+	)
+	.meta({
+		id: "draftyak.pairing.DisplayName",
+		minLength: 1,
+		maxLength: 64,
+		description:
+			"A display name: 1 to 64 code points under the rules of spec/pairing-v1.md section 2: no " +
+			"hidden code point, no blank first or last, and at least one code point that is neither " +
+			"a blank nor a joiner. JSON Schema can't state the rules, only the length.",
+	});
 
 export const PairingPayload: z.ZodObject<
 	{

@@ -6,16 +6,11 @@ import { boundedText, Sha256Hex } from "./scalars.ts";
 // MCP Apps' extension; plugins never declare it, and no tool of theirs carries `_meta.ui` (§4).
 export const UI_EXTENSION = "io.modelcontextprotocol/ui";
 
-// Text that is also well-formed: a lone surrogate has no UTF-8 form, so JCS, every hash and the
-// strict parsers of other languages refuse it.
-export const wellFormedText = (maxCodePoints: number): z.ZodString =>
-	boundedText(maxCodePoints).refine((text) => text.isWellFormed(), { message: "lone surrogate" });
+// boundedText, which refuses a lone surrogate itself, under the name the contract modules import.
+export { boundedText as wellFormedText } from "./scalars.ts";
 
-// PluginErrorResult, its detail well-formed too: what every tool's isError result carries.
-export const PluginError: z.ZodType<PluginErrorResult> = PluginErrorResult.refine(
-	(error) => error.detail?.isWellFormed() !== false,
-	{ path: ["detail"], message: "lone surrogate" },
-);
+// What every tool's isError result carries.
+export const PluginError: z.ZodType<PluginErrorResult> = PluginErrorResult;
 
 export interface ToolContract<Input = unknown, Output = unknown> {
 	readonly description: string;
@@ -47,7 +42,7 @@ export interface ProbeResult {
 }
 export const ProbeResult: z.ZodType<ProbeResult> = z.strictObject({
 	status: z.enum(["ok", "degraded"]),
-	detail: wellFormedText(200).optional(),
+	detail: boundedText(200).optional(),
 });
 
 export interface ExtensionDeclaration {

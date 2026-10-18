@@ -52,6 +52,8 @@ A **display name** (the hub's `name` here, the device's in the claim) is 1 to 64
 
 The joiners (zero-width non-joiner and joiner, and the variation selectors) stay allowed inside a name, because emoji and several scripts need them. Together, the first list and the joiners cover every default-ignorable code point of Unicode 17.0; the list also holds controls, the line and paragraph separators and the interlinear annotation characters. The lists are explicit rather than Unicode properties, so every implementation refuses the same names whatever its Unicode tables; a test checks them against Node's Unicode data.
 
+`pairing.ts` exports these rules as `DisplayName`, which the hub's record of a device (`Device.name`) takes too. Its JSON Schema, `draftyak.pairing.DisplayName` in `schemas/entities-v1.schema.json`, states only the length; the lists need code.
+
 **Decoding.** A device checks a pairing code in this order and refuses it at the first check that fails, with that check's code:
 
 | Code | Refused |
