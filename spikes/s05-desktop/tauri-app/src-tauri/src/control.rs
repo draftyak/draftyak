@@ -12,8 +12,9 @@
 //!   runs the elevation refusal; `{"cmd":"npm-autostart"}`, the state as the main window reads it
 //!   through @tauri-apps/plugin-autostart.
 //! - `{"cmd":"approval"}`: [`approval_checks`].
-//!
-//! M0.23b adds its keep-awake and resume commands here.
+//! - `{"cmd":"power"}`: keep-awake's state and the resume listener ([`Power::status`]).
+//! - `{"cmd":"wake"}`: a suspend and resume, delivered as far as the app can without sleeping
+//!   ([`Power::simulate_wake`]); the hub then gets `{power: "resumed"}`.
 
 use std::io::{self, BufRead};
 use std::sync::mpsc;
@@ -24,6 +25,7 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use crate::app::emit;
+use crate::power::Power;
 use crate::shell::{self, Autostart};
 use crate::{approval, sidecar};
 
@@ -56,6 +58,8 @@ pub fn start(app: AppHandle) -> io::Result<()> {
                 }
                 "npm-autostart" => npm_autostart(&app),
                 "approval" => approval_checks(&app),
+                "power" => Ok(app.state::<Power>().status()),
+                "wake" => app.state::<Power>().simulate_wake().map(|sent| json!({ "sent": sent })),
                 _ => Err(format!("unknown command {line}")),
             };
             let mut reply = reply.unwrap_or_else(|error| json!({ "error": error }));

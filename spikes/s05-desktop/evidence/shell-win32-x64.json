@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T02:38:35.588Z",
+  "recordedAt": "2026-10-18T08:29:03.647Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,14 +11,14 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "9f8e71ab351280384199e7e5f7cf8761ab8999e7",
+    "commit": "435c7420e13eea2b2c780bc312ffcd0325b1ae47",
     "dirty": false,
     "load": {
-      "cpuPercent": 13.4,
+      "cpuPercent": 13.3,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 78.3,
-      "concurrentBuilds": 1
+      "memoryUsedPercent": 74.6,
+      "concurrentBuilds": 0
     }
   },
   "data": {
@@ -175,7 +175,7 @@
       ],
       "pickedVia": "tray menu WM_COMMAND",
       "appExitCode": 0,
-      "exitMs": 312,
+      "exitMs": 309,
       "storeLeft": false,
       "webviewProcessesLeft": 0
     }

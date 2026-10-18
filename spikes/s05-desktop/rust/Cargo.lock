@@ -1111,6 +1111,7 @@ dependencies = [
  "keyring",
  "keyring-core",
  "ring",
+ "security-framework",
  "windows-native-keyring-store",
  "zbus-secret-service-keyring-store",
 ]

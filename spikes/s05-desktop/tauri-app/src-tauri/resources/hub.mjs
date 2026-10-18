@@ -6,7 +6,9 @@
 // prebuild; the hub then listens on a loopback L2 port, which echoes the supervisor's health
 // probe, starts the plugin whose argv DRAFTYAK_SPIKE_PLUGIN_ARGV gives (M0.11's flags) and sends
 // {ready, l2Port, hubId}. With DRAFTYAK_SPIKE_IGNORE_EOF=1 it ignores stdin EOF and broken stdout
-// and stderr pipes, so that only the Job Object ends it when the app dies.
+// and stderr pipes, so that only the Job Object ends it when the app dies. With
+// DRAFTYAK_SPIKE_KEEP_AWAKE=1, a "keep-awake <untilMs|null>" line on the L2 port stands in for the
+// scheduler: the hub sends {keepAwake: untilMs|null} and answers "ok".
 import { spawn } from "node:child_process";
 import { createHash, hkdfSync, randomBytes } from "node:crypto";
 import { closeSync, openSync, readSync, realpathSync } from "node:fs";
@@ -19,6 +21,7 @@ const MAX_FRAME = 1 << 20;
 const PLUGIN_REPORT_MS = 10_000;
 const PROBE_IDLE_MS = 5_000;
 const ignoreEof = process.env.DRAFTYAK_SPIKE_IGNORE_EOF === "1";
+const keepAwakeHook = process.env.DRAFTYAK_SPIKE_KEEP_AWAKE === "1";
 const state = { db: null, l2: null, plugin: null, started: false, stopping: false };
 
 const writeFrame = process.stdout.write.bind(process.stdout);
@@ -83,7 +86,7 @@ async function start(masterKey) {
 	state.l2 = net.createServer((socket) => {
 		socket.on("error", () => {});
 		socket.setTimeout(PROBE_IDLE_MS, () => socket.destroy());
-		socket.once("data", (probe) => socket.end(probe));
+		socket.once("data", (probe) => socket.end((keepAwakeHook && keepAwake(probe)) || probe));
 	});
 	await new Promise((resolve, reject) => {
 		state.l2.once("error", reject).listen(0, "127.0.0.1", resolve);
@@ -160,6 +163,13 @@ function header(file) {
 	} finally {
 		closeSync(fd);
 	}
+}
+
+function keepAwake(line) {
+	const until = /^keep-awake (\d{1,15}|null)\n$/.exec(String(line))?.[1];
+	if (until === undefined) return null;
+	send({ keepAwake: until === "null" ? null : Number(until) });
+	return "ok\n";
 }
 
 function startPlugin() {

@@ -1,18 +1,28 @@
 // S5a: the Rust workspace's tests, fmt and clippy; rustls's pairing EKM against Node's
 // exportKeyingMaterial in both directions; the master key's stores (the platform keyring here;
 // in Linux Docker, the store the app picks in five Secret Service states, with the
-// passphrase-wrapped fallback); and the aws-lc-rs trial. Evidence is written only by a run asked
-// to record (DRAFTYAK_RECORD_EVIDENCE=1, or CI), and only when every case this host can run passed.
+// passphrase-wrapped fallback; on macOS, in M0.23b's run B1, the keychain with prompts off and a
+// re-signed binary's access, for keyring-macos.json); and the aws-lc-rs trial with aws-lc-sys's
+// builder. Evidence is written only by a run asked to record (DRAFTYAK_RECORD_EVIDENCE=1, or CI),
+// and only when every case this host can run passed, except the macOS keychain case: its own
+// file, keyring-macos.json, is written when that case finished, and the others without it.
 import { spawn } from "node:child_process";
 import { createHash, generateKeyPairSync, type KeyObject, randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	copyFileSync,
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { connect, createServer, type TLSSocket } from "node:tls";
 import {
 	docker,
-	fingerprint,
 	needDocker,
 	runInDocker,
 	skipOrFail,
@@ -20,6 +30,7 @@ import {
 	writeEvidence,
 } from "@draftyak/spike-kit";
 import { afterAll, describe, expect, it, type TestContext } from "vitest";
+import { codeFingerprint } from "./app.ts";
 
 // Plan section 7, pairing step 6; M0.36's hub stand-in pins the same literals.
 const LABEL = "EXPERIMENTAL-draftyak-pair-v1";
@@ -516,23 +527,138 @@ describe("the pairing EKM equals Node's exportKeyingMaterial", () => {
 });
 
 describe("the master key's stores", () => {
-	const stores = [
-		["Windows Credential Manager", "requires:windows", "windows-native"],
-		["macOS login keychain", "requires:macos", "keychain"],
-	] as const;
-	for (const [name, tag, store] of stores) {
-		it(`the ${name} round-trips a key under the spike's service, then deletes it`, {
-			tags: [tag],
-		}, async (ctx) => {
-			const { keyring } = await workspace(ctx);
+	it("the Windows Credential Manager round-trips a key under the spike's service, then deletes it", {
+		tags: ["requires:windows"],
+	}, async (ctx) => {
+		const { keyring } = await workspace(ctx);
+		const ran = await run(keyring, ["native"], { signal: ctx.signal });
+		expect(ran.code, ran.stderr).toBe(0);
+		const native = check(ran.stdout, "native");
+		expect(native).toMatchObject({ store: "windows-native", readBack: true, removed: true });
+		expect(native).toMatchObject({ persistence: "Local" });
+		parts.native = native;
+	});
+
+	// Run B1 (M0.23b). The store uses the user's default keychain (login), and spike-keyring turns
+	// keychain prompts off, so a step that needs one fails with its OS code instead of waiting. If
+	// the default keychain can't be used that way (locked, or missing), the round trip runs again in
+	// a temporary keychain made the user's default, and the old default is restored; only CI does
+	// this, since a run killed before the restore would leave a developer's default keychain on a
+	// deleted file. Then one item is set by the binary cargo built (ad-hoc signed by the linker) and
+	// read and deleted by a copy re-signed ad hoc under another identifier, as an update's new code
+	// identity would be. A refusal, with its error and OS code, is a result for keyring-macos.json;
+	// only security, codesign or spike-keyring itself failing fails the case.
+	it("the macOS keychain round-trips a key; a re-signed binary's access to it is recorded", {
+		tags: ["requires:macos"],
+		timeout: 600_000,
+	}, async (ctx) => {
+		const { keyring } = await workspace(ctx);
+		const security = (...args: string[]): Promise<Ran> =>
+			run("/usr/bin/security", args, { signal: ctx.signal });
+		const unquote = (text: string): string => text.trim().replace(/^"|"$/g, "");
+		// The round trip's line, which spike-keyring prints whether the store refused or not.
+		const roundTrip = async (): Promise<{ ok: boolean; line: Record<string, unknown> }> => {
 			const ran = await run(keyring, ["native"], { signal: ctx.signal });
-			expect(ran.code, ran.stderr).toBe(0);
-			const native = check(ran.stdout, "native");
-			expect(native).toMatchObject({ store, readBack: true, removed: true });
-			if (store === "windows-native") expect(native).toMatchObject({ persistence: "Local" });
-			parts.native = native;
-		});
-	}
+			const line = check(ran.stdout, "native");
+			expect(line, `spike-keyring native printed no result:\n${ran.stderr}`).toBeDefined();
+			return { ok: ran.code === 0, line: line ?? {} };
+		};
+		const before = await security("default-keychain", "-d", "user");
+		const original = before.code === 0 ? unquote(before.stdout) : "";
+		const first = await roundTrip();
+		const keychain: Record<string, unknown> = {
+			userDefault: original ? path.basename(original) : null,
+			firstTry: first.line,
+			used: "user default",
+		};
+		const temporary = path.join(mkdtempSync(path.join(temp, "keychain-")), "s05.keychain-db");
+		let made = false;
+		let native = first;
+		const user = `probe-${randomBytes(4).toString("hex")}`;
+		try {
+			if (!first.ok) {
+				if (!process.env.CI && !process.env.GITHUB_ACTIONS) {
+					const refused = `${String(first.line.error)} ${String(first.line.code)}`;
+					skipOrFail(ctx, `the login keychain refused (${refused}); only CI tries a temporary one`);
+				}
+				const password = randomBytes(16).toString("hex");
+				made = true;
+				for (const args of [
+					["create-keychain", "-p", password, temporary],
+					["set-keychain-settings", temporary],
+					["unlock-keychain", "-p", password, temporary],
+					["default-keychain", "-d", "user", "-s", temporary],
+				]) {
+					const done = await security(...args);
+					expect(done.code, `security ${args[0]}: ${done.stderr}`).toBe(0);
+				}
+				keychain.used = "temporary (security create-keychain), made the user default";
+				native = await roundTrip();
+			}
+			if (native.ok) parts.native = native.line;
+
+			const resigned = path.join(temp, "spike-keyring-resigned");
+			copyFileSync(keyring, resigned);
+			const identifier = "com.draftyak.spike.s05.update";
+			const sign = await run("/usr/bin/codesign", [
+				"--force",
+				"--sign",
+				"-",
+				"--identifier",
+				identifier,
+				resigned,
+			]);
+			expect(sign.code, sign.stderr).toBe(0);
+			const signature = async (binary: string): Promise<Record<string, string | undefined>> => {
+				const shown = await run("/usr/bin/codesign", ["-dv", "--verbose=4", binary]);
+				return {
+					signature: /^Signature=(.+)$/m.exec(shown.stderr)?.[1],
+					flags: /^CodeDirectory .*flags=0x[0-9a-f]+\(([^)]*)\)/m.exec(shown.stderr)?.[1],
+					cdhash: /^CDHash=([0-9a-f]+)$/m.exec(shown.stderr)?.[1],
+				};
+			};
+			const [built, update] = [await signature(keyring), await signature(resigned)];
+			const input = `${randomBytes(32).toString("hex")}\n`;
+			// Each step prints its result, a refusal included, and exits 0.
+			const step = async (binary: string, name: string): Promise<Record<string, unknown>> => {
+				const done = await run(binary, ["step", name, user], { input, signal: ctx.signal });
+				expect(done.code, done.stderr).toBe(0);
+				const result = check(done.stdout, "step");
+				expect(result, done.stdout).toBeDefined();
+				return { binary: binary === keyring ? "built" : "re-signed", ...result };
+			};
+			const steps = [
+				await step(keyring, "set"),
+				await step(keyring, "get"),
+				await step(resigned, "get"),
+				await step(resigned, "delete"),
+				await step(keyring, "delete"),
+				await step(keyring, "get"),
+			];
+			const ok = (at: number): boolean => steps[at]?.ok === true;
+			parts.keychainMacos = {
+				keychain,
+				roundTrip: { ok: native.ok, ...native.line },
+				builtBinary: { setAndRead: ok(0) && ok(1) && steps[1]?.matches === true },
+				reSignedCopy: { read: ok(2), deleted: ok(3) },
+				goneAtEnd: steps[5]?.error === "NoEntry",
+				prompts:
+					"off: SecKeychainSetUserInteractionAllowed(false); a prompt fails as errSecInteractionNotAllowed (-25308)",
+				binaries: {
+					built: { signature: built.signature, flags: built.flags },
+					reSigned: { signature: update.signature, flags: update.flags, identifier },
+					sameCdhash: built.cdhash === update.cdhash,
+				},
+				steps,
+			};
+		} finally {
+			await run(keyring, ["step", "delete", user]).catch(() => undefined);
+			if (made) {
+				if (original) await security("default-keychain", "-d", "user", "-s", original);
+				await security("delete-keychain", temporary);
+			}
+		}
+	});
 
 	it("the passphrase-wrapped fallback round-trips on this host", async (ctx) => {
 		const { keyring } = await workspace(ctx);
@@ -687,6 +813,19 @@ function assembly(stdout: string): Record<string, unknown> {
 	return { source, nasmObjects: objects.length, prebuiltCopies: copies };
 }
 
+// aws-lc-sys says which builder it took ("Building with: CC", or CMake when it fell back to cmake);
+// cargo shows a registry crate's warnings only when its script fails, so this reads the script's
+// output file. ADR 0012 counts only CC.
+function builder(stdout: string): string {
+	const outDir = lines<CargoMessage>(stdout).find(
+		({ reason, package_id }) =>
+			reason === "build-script-executed" && /#aws-lc-sys@/.test(package_id ?? ""),
+	)?.out_dir;
+	const output = outDir === undefined ? "" : path.join(path.dirname(outDir), "output");
+	const text = output !== "" && existsSync(output) ? readFileSync(output, "utf8") : "";
+	return /cargo:warning=Building with: (\w+)/.exec(text)?.[1] ?? "unknown";
+}
+
 // aws-lc-rs everywhere (ADR 0012) needs it to build and match: here on Windows, and in M0.23b's
 // macOS run B1. A failed build is recorded as the trial's result; a build that runs must match.
 // It covers spike-ekm only: spike-keyring's fallback still uses ring.
@@ -718,6 +857,7 @@ describe("the aws-lc-rs trial", () => {
 				buildCrates: compiled(build.stderr),
 				jobs: Number(jobs),
 				ringInGraph: /^ring v/m.test(tree.stdout),
+				builder: builder(build.stdout),
 				cmakeOnPath: onPath("cmake"),
 				nasmOnPath: onPath("nasm"),
 				assembly: assembly(build.stdout),
@@ -760,7 +900,9 @@ afterAll(async () => {
 		cargo: parts.cargo,
 		ekm: parts.ekm,
 		fallback: parts.fallback,
-		...(trialHost ? { native: parts.native, trial: trials[trialHost] } : {}),
+		...(trialHost ? { trial: trials[trialHost] } : {}),
+		// The macOS keychain case writes keyring-macos.json below, when it finished.
+		...(process.platform === "win32" ? { native: parts.native } : {}),
 		...(docker.linuxContainers() ? { docker: parts.docker } : {}),
 	};
 	const missing = Object.keys(expected).filter((key) => expected[key] === undefined);
@@ -779,9 +921,8 @@ afterAll(async () => {
 	]);
 	const { cargo, ekm, native, fallback, docker: linux } = parts;
 	const keyring = { ...(native ? { native } : {}), fallback, ...(linux ? { docker: linux } : {}) };
-	// One fingerprint for both files, taken before either is written: the second write would
-	// otherwise see the first file changed and record a dirty tree.
-	const print = await fingerprint({ cwd: spikeDir });
+	// Evidence the other files of the run wrote isn't a code change (S1's rule).
+	const print = await codeFingerprint();
 	const record = async (name: string, data: Record<string, unknown>): Promise<void> => {
 		const file = path.join(evidenceDir, name);
 		console.log(`evidence: ${await writeEvidence(file, data, { fingerprint: print })}`);
@@ -797,6 +938,16 @@ afterAll(async () => {
 		await record(`aws-lc-rs-${trialHost}.json`, {
 			toolchain,
 			...(trials[trialHost] as Record<string, unknown>),
+		});
+	}
+	if (process.platform === "darwin" && parts.keychainMacos === undefined) {
+		console.log("evidence not recorded: keyring-macos.json (the keychain case didn't finish)");
+	} else if (process.platform === "darwin") {
+		const stores = ["keyring", "keyring-core", "apple-native-keyring-store", "security-framework"];
+		await record("keyring-macos.json", {
+			toolchain,
+			crates: lockedVersions(stores),
+			...(parts.keychainMacos as Record<string, unknown>),
 		});
 	}
 });

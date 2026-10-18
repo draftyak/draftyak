@@ -5,10 +5,12 @@
 // Task Manager entry the plugin leaves behind), and enabling while elevated is refused; the
 // Rust-driven approval-window checks pass; Quit stops the hub and the app, and nothing of the
 // approval origin reaches the disk; on a normal launch, Quit closes the windows at once and removes
-// the launch's store. On macOS and Linux, the autostart case checks the LaunchAgents plist and the
-// autostart .desktop file; it first runs in M0.23b's cross-OS runs, which add the other cases there.
-// Evidence (shell-<platform>-<arch>.json) is written only when asked (DRAFTYAK_RECORD_EVIDENCE=1)
-// or in CI, after every case this host plans passed.
+// the launch's store. On macOS and Linux (M0.23b's run B1 and xvfb run): the tray with Open and
+// Quit in Tauri's menu (the native menu belongs to the OS), Open's main window on the app's own
+// origin, closing it keeping the hub running, Quit stopping the hub, and autostart's LaunchAgents
+// plist or autostart .desktop file. The approval window's checks and the store's removal at Quit
+// run on WebView2 only. Evidence (shell-<platform>-<arch>.json) is written only when asked
+// (DRAFTYAK_RECORD_EVIDENCE=1) or in CI, after every case this host plans passed.
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
@@ -27,6 +29,7 @@ import {
 } from "@draftyak/spike-kit";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import { type Staged, stageSidecar, tauriDir } from "../tauri-app/scripts/stage-sidecar.ts";
+import { goneWithin, App as Launched, stillOurs } from "./app.ts";
 
 const spikeDir = path.resolve(import.meta.dirname, "..");
 const targetDir = path.join(tauriDir, "target");
@@ -44,8 +47,10 @@ const CASES = [
 	"quitRemovesStore",
 ] as const;
 type Case = (typeof CASES)[number];
-// macOS and Linux run only the autostart case so far (M0.23b adds the rest).
-const PLANNED: readonly Case[] = windows ? CASES : ["autostart"];
+// The approval checks and the store's removal run on WebView2 only.
+const PLANNED: readonly Case[] = windows
+	? CASES
+	: ["tray", "mainWindow", "closeKeepsHub", "autostart", "quit"];
 // A Quit that leaves WebView2 holding the store waits out the store removal's 5 s deadline.
 const QUIT_WITHIN_MS = 4000;
 
@@ -772,9 +777,120 @@ describe("S5c tray, autostart and approval window on Windows", {
 	});
 });
 
-describe("S5c autostart on macOS and Linux (first run in M0.23b's cross-OS runs)", {
+describe("S5c tray, Open and Quit on macOS and Linux", {
 	tags: ["requires:posix", "requires:tauri-desktop"],
 }, () => {
+	let posix: Launched | undefined;
+	let home = "";
+	const windowsOf = async (app?: Launched): Promise<Record<string, unknown>[]> =>
+		app ? ((await app.call({ cmd: "windows" })).windows as Record<string, unknown>[]) : [];
+
+	beforeAll(() => {
+		if (windows) return;
+		home = fs.mkdtempSync(path.join(os.tmpdir(), "dy-s05-tray-"));
+	});
+
+	afterAll(async () => {
+		await posix?.end();
+		if (home) fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+	}, 120_000);
+
+	it("starts in the tray, as autostart starts it, with Open and Quit", {
+		timeout: LONG,
+	}, async (ctx) => {
+		await built(ctx);
+		posix = new Launched(["--minimized", "--spike-control"], {
+			...process.env,
+			DRAFTYAK_DATA_DIR: path.join(home, "app-data"),
+		});
+		await posix.next((event) => event.event === "ready", 60_000);
+		expect(await windowsOf(posix)).toEqual([]);
+		const tray = await posix.call({ cmd: "tray" });
+		expect(tray).toMatchObject({
+			id: "draftyak",
+			items: [
+				{ id: "open", text: "Open" },
+				{ id: "quit", text: "Quit" },
+			],
+			native: null,
+			shellHoldsIcon: null,
+		});
+		results.tray = {
+			startedWithWindows: 0,
+			items: ["Open", "Quit"],
+			rectReported: tray.rect,
+		};
+	});
+
+	it("Open shows the main window on the app's own origin", async (ctx) => {
+		await built(ctx);
+		if (!posix) throw new Error("the app didn't start");
+		const click = await posix.call({ cmd: "click", item: "open" });
+		expect(click.via).toBe("handler");
+		const opened = await until(
+			() => windowsOf(posix),
+			(found) => found.some((window) => window.label === "main" && window.visible === true),
+			30_000,
+		);
+		// tauri://localhost has no path of its own, so the path is whatever the webview reports.
+		expect(opened).toHaveLength(1);
+		expect(opened[0]).toMatchObject({ label: "main", visible: true, origin: "tauri://localhost" });
+		const version = (await posix.call({ cmd: "windows" })).webviewVersion;
+		results.mainWindow = {
+			openedVia: "tray menu handler",
+			origin: "tauri://localhost",
+			path: opened[0]?.path,
+			webviewVersion: version,
+		};
+	});
+
+	it("closing the main window keeps the app and the hub running; Open brings it back", async (ctx) => {
+		await built(ctx);
+		if (!posix) throw new Error("the app didn't start");
+		const ready = await posix.next((event) => event.event === "ready", 1000);
+		const from = posix.events.length;
+		await posix.call({ cmd: "close", label: "main" });
+		expect(await windowsOf(posix)).toEqual([]);
+		await sleep(2000);
+		expect(posix.child.exitCode).toBeNull();
+		expect(await stillOurs([Number(ready.pid)])).toEqual([Number(ready.pid)]);
+		const ended = posix.events
+			.slice(from)
+			.filter((event) => /^(exited|restarting|stopped)$/.test(event.event));
+		expect(ended).toEqual([]);
+		await posix.call({ cmd: "click", item: "open" });
+		const back = await until(
+			() => windowsOf(posix),
+			(found) => found.some((window) => window.label === "main" && window.visible === true),
+			30_000,
+		);
+		expect(back.map((window) => window.label)).toEqual(["main"]);
+		results.closeKeepsHub = { appRunning: true, hubGenerationUnchanged: true, reopened: true };
+	});
+
+	it("Quit stops the hub and exits", async (ctx) => {
+		await built(ctx);
+		if (!posix) throw new Error("the app didn't start");
+		const ready = await posix.next((event) => event.event === "ready", 1000);
+		await posix.call({ cmd: "click", item: "quit" });
+		expect(await posix.exit(60_000)).toBe(0);
+		const exited = await posix.next((event) => event.event === "exited", 1000);
+		expect(exited).toMatchObject({ generation: 1, code: 0 });
+		await posix.next((event) => event.event === "stopped", 1000);
+		const stopping = posix.events.some(
+			(event) => event.event === "log" && event.line === "hub: stopping (shutdown frame)",
+		);
+		expect(stopping).toBe(true);
+		expect(await goneWithin([Number(ready.pid)], 10_000)).not.toBeNull();
+		results.quit = {
+			pickedVia: "tray menu handler",
+			appExitCode: 0,
+			hubExitCode: exited.code,
+			hubStoppedOnShutdownFrame: true,
+			draftyakNodeLeft: 0,
+		};
+	});
+
 	// auto-launch 0.6.0 writes below $HOME, so a temporary HOME keeps the user's own LaunchAgents and
 	// autostart folders out of reach.
 	it("enabling autostart writes the plist or .desktop file named after the identifier; disabling removes it", {
