@@ -58,6 +58,7 @@ async function matrix(node: RunnerNode) {
 		label: node.label,
 		channel: await hub("channel"),
 		fuzz,
+		fallback1: await hub("fallback1"),
 		lateReply: await hub("late-reply"),
 		sendAfterExit: await hub("send-after-exit"),
 		controls: {
