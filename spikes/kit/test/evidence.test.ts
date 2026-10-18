@@ -134,7 +134,9 @@ describe("writeEvidence", () => {
 			commit: expect.stringMatching(/^[0-9a-f]{40}$/),
 		});
 		expect(print.load.cpuPercent).toBeGreaterThanOrEqual(0);
-		expect(print.load.concurrentBuilds).toBeGreaterThanOrEqual(0);
+		// null when the process listing fails or passes its 15 s limit, as on a busy machine
+		const builds = print.load.concurrentBuilds;
+		expect(builds === null || (Number.isInteger(builds) && builds >= 0)).toBe(true);
 		const file = path.join(dir, "spike", "evidence", "run.json");
 		await writeEvidence(file, { p50Ms: 12.5, when: new Date(0) }, { fingerprint: print });
 		const text = readFileSync(file, "utf8");
