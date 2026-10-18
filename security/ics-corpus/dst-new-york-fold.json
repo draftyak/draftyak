@@ -1,0 +1,17 @@
+{
+  "feed": "fixtures/dst-new-york.ics",
+  "window": {
+    "start": "2026-11-01T00:00:00.000Z",
+    "end": "2026-11-02T00:00:00.000Z"
+  },
+  "timeZone": "America/New_York",
+  "expected": {
+    "busy": [
+      {
+        "start": 1793511000000,
+        "end": 1793518200000,
+        "status": "busy"
+      }
+    ]
+  }
+}

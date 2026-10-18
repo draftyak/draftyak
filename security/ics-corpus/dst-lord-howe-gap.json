@@ -1,0 +1,17 @@
+{
+  "feed": "fixtures/dst-lord-howe.ics",
+  "window": {
+    "start": "2026-10-03T00:00:00.000Z",
+    "end": "2026-10-04T00:00:00.000Z"
+  },
+  "timeZone": "Australia/Lord_Howe",
+  "expected": {
+    "busy": [
+      {
+        "start": 1791042300000,
+        "end": 1791044100000,
+        "status": "busy"
+      }
+    ]
+  }
+}

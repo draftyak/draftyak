@@ -1,0 +1,6 @@
+{
+  "feed": "fixtures/alias-gmt-feed.ics",
+  "window": { "start": "2026-01-02T00:00:00Z", "end": "2026-01-03T00:00:00Z" },
+  "timeZone": "UTC",
+  "expected": { "busy": [{ "start": 1767340800000, "end": 1767344400000, "status": "busy" }] }
+}

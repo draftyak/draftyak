@@ -1,0 +1,17 @@
+{
+  "feed": "fixtures/provider-outlook.ics",
+  "window": {
+    "start": "2026-10-12T00:00:00.000Z",
+    "end": "2026-10-13T00:00:00.000Z"
+  },
+  "timeZone": "America/New_York",
+  "expected": {
+    "busy": [
+      {
+        "start": 1791788400000,
+        "end": 1791795600000,
+        "status": "busy"
+      }
+    ]
+  }
+}

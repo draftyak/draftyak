@@ -1,0 +1,518 @@
+[
+  {
+    "id": "secondly-unsorted",
+    "start": "20260101T000000Z",
+    "rule": "FREQ=SECONDLY;INTERVAL=30;BYSECOND=45,0,30,15;COUNT=3",
+    "times": [
+      "2026-01-01T00:00:00Z",
+      "2026-01-01T00:00:30Z",
+      "2026-01-01T00:01:00Z"
+    ]
+  },
+  {
+    "id": "minutely-nondivisor",
+    "start": "20260101T001537Z",
+    "rule": "FREQ=MINUTELY;INTERVAL=90;BYMINUTE=45,15;COUNT=3",
+    "times": [
+      "2026-01-01T00:15:37Z",
+      "2026-01-01T01:45:37Z",
+      "2026-01-01T03:15:37Z"
+    ]
+  },
+  {
+    "id": "hourly-replay",
+    "start": "20260101T070000Z",
+    "rule": "FREQ=HOURLY;BYHOUR=0,7,9;BYMINUTE=0,30;COUNT=3",
+    "times": [
+      "2026-01-01T07:00:00Z",
+      "2026-01-01T07:30:00Z",
+      "2026-01-01T09:00:00Z"
+    ]
+  },
+  {
+    "id": "daily-numeric-order",
+    "start": "20260101T090000Z",
+    "rule": "FREQ=DAILY;BYHOUR=10,9,9;COUNT=3",
+    "times": [
+      "2026-01-01T09:00:00Z",
+      "2026-01-01T10:00:00Z",
+      "2026-01-02T09:00:00Z"
+    ]
+  },
+  {
+    "id": "weekly-week-start",
+    "start": "20260105T090000Z",
+    "rule": "FREQ=WEEKLY;BYDAY=WE,MO;COUNT=4",
+    "times": [
+      "2026-01-05T09:00:00Z",
+      "2026-01-07T09:00:00Z",
+      "2026-01-12T09:00:00Z",
+      "2026-01-14T09:00:00Z"
+    ]
+  },
+  {
+    "id": "monthly-hours",
+    "start": "20260115T090000Z",
+    "rule": "FREQ=MONTHLY;BYHOUR=10,9,9;COUNT=4",
+    "times": [
+      "2026-01-15T09:00:00Z",
+      "2026-01-15T10:00:00Z",
+      "2026-02-15T09:00:00Z",
+      "2026-02-15T10:00:00Z"
+    ]
+  },
+  {
+    "id": "monthly-negative-day",
+    "start": "20260115T090000Z",
+    "rule": "FREQ=MONTHLY;BYMONTHDAY=-1,15;COUNT=4",
+    "times": [
+      "2026-01-15T09:00:00Z",
+      "2026-01-31T09:00:00Z",
+      "2026-02-15T09:00:00Z",
+      "2026-02-28T09:00:00Z"
+    ]
+  },
+  {
+    "id": "monthly-last-weekday",
+    "start": "20260130T090000Z",
+    "rule": "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=3",
+    "times": [
+      "2026-01-30T09:00:00Z",
+      "2026-02-27T09:00:00Z",
+      "2026-03-31T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-hours",
+    "start": "20260115T090000Z",
+    "rule": "FREQ=YEARLY;BYHOUR=10,9;COUNT=3",
+    "times": [
+      "2026-01-15T09:00:00Z",
+      "2026-01-15T10:00:00Z",
+      "2027-01-15T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-month-order",
+    "start": "20260115T090000Z",
+    "rule": "FREQ=YEARLY;BYMONTH=3,1;BYMONTHDAY=15;COUNT=4",
+    "times": [
+      "2026-01-15T09:00:00Z",
+      "2026-03-15T09:00:00Z",
+      "2027-01-15T09:00:00Z",
+      "2027-03-15T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-position-with-month",
+    "start": "20260105T090000Z",
+    "rule": "FREQ=YEARLY;BYMONTH=1;BYDAY=MO;BYSETPOS=1;COUNT=3",
+    "times": [
+      "2026-01-05T09:00:00Z",
+      "2027-01-04T09:00:00Z",
+      "2028-01-03T09:00:00Z"
+    ]
+  },
+  {
+    "id": "monthly-interval-skip-short-month",
+    "start": "20260131T090000Z",
+    "rule": "FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=31;COUNT=3",
+    "times": [
+      "2026-01-31T09:00:00Z",
+      "2026-03-31T09:00:00Z",
+      "2026-05-31T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-leap",
+    "start": "20240229T090000Z",
+    "rule": "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29;COUNT=3",
+    "times": [
+      "2024-02-29T09:00:00Z",
+      "2028-02-29T09:00:00Z",
+      "2032-02-29T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-ordinal-weekday",
+    "start": "20261030T090000Z",
+    "rule": "FREQ=YEARLY;BYMONTH=10;BYDAY=-1FR;COUNT=3",
+    "times": [
+      "2026-10-30T09:00:00Z",
+      "2027-10-29T09:00:00Z",
+      "2028-10-27T09:00:00Z"
+    ]
+  },
+  {
+    "id": "daily-position",
+    "start": "20260101T100000Z",
+    "rule": "FREQ=DAILY;BYHOUR=10,9;BYSETPOS=-1;COUNT=3",
+    "times": [
+      "2026-01-01T10:00:00Z",
+      "2026-01-02T10:00:00Z",
+      "2026-01-03T10:00:00Z"
+    ]
+  },
+  {
+    "id": "weekly-position",
+    "start": "20260102T090000Z",
+    "rule": "FREQ=WEEKLY;BYDAY=MO,WE,FR;BYSETPOS=-1;COUNT=3",
+    "times": [
+      "2026-01-02T09:00:00Z",
+      "2026-01-09T09:00:00Z",
+      "2026-01-16T09:00:00Z"
+    ]
+  },
+  {
+    "id": "unsupported-yearly-monthday-without-month",
+    "start": "20260115T090000Z",
+    "rule": "FREQ=YEARLY;BYMONTHDAY=15;COUNT=3",
+    "unsupported": true,
+    "times": [
+      "2026-01-15T09:00:00Z",
+      "2026-02-15T09:00:00Z",
+      "2026-03-15T09:00:00Z"
+    ]
+  },
+  {
+    "id": "unsupported-yearly-multimonth-position",
+    "start": "20260105T090000Z",
+    "rule": "FREQ=YEARLY;BYMONTH=1,3;BYDAY=MO;BYSETPOS=1;COUNT=3",
+    "unsupported": true,
+    "times": [
+      "2026-01-05T09:00:00Z",
+      "2027-01-04T09:00:00Z",
+      "2028-01-03T09:00:00Z"
+    ]
+  },
+  {
+    "id": "unsupported-yearly-monthday-position",
+    "start": "20260101T090000Z",
+    "rule": "FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=1,15;BYSETPOS=1;COUNT=3",
+    "unsupported": true,
+    "times": [
+      "2026-01-01T09:00:00Z",
+      "2027-01-01T09:00:00Z",
+      "2028-01-01T09:00:00Z"
+    ]
+  },
+  {
+    "id": "unsupported-monthly-monthday-position",
+    "start": "20260101T090000Z",
+    "rule": "FREQ=MONTHLY;BYMONTHDAY=1,15;BYSETPOS=1;COUNT=3",
+    "unsupported": true,
+    "times": [
+      "2026-01-01T09:00:00Z",
+      "2026-02-01T09:00:00Z",
+      "2026-03-01T09:00:00Z"
+    ]
+  },
+  {
+    "id": "review-monthly-ordinal-hours",
+    "start": "20260105T090000Z",
+    "rule": "FREQ=MONTHLY;BYDAY=1MO;BYHOUR=9,10;COUNT=4",
+    "times": [
+      "2026-01-05T09:00:00Z",
+      "2026-01-05T10:00:00Z",
+      "2026-02-02T09:00:00Z",
+      "2026-02-02T10:00:00Z"
+    ]
+  },
+  {
+    "id": "review-monthly-interval-month",
+    "start": "20260105T090000Z",
+    "rule": "FREQ=MONTHLY;INTERVAL=2;BYMONTH=1,2;BYDAY=1MO;COUNT=3",
+    "times": [
+      "2026-01-05T09:00:00Z",
+      "2027-01-04T09:00:00Z",
+      "2028-01-03T09:00:00Z"
+    ]
+  },
+  {
+    "id": "review-yearly-week-number",
+    "start": "20260105T090000Z",
+    "rule": "FREQ=YEARLY;BYWEEKNO=2;BYDAY=MO;COUNT=3",
+    "times": [
+      "2026-01-05T09:00:00Z",
+      "2027-01-11T09:00:00Z",
+      "2028-01-10T09:00:00Z"
+    ]
+  },
+  {
+    "id": "review-yearly-invalid-date-count",
+    "start": "20240229T090000Z",
+    "rule": "FREQ=YEARLY;BYMONTH=2,3;BYMONTHDAY=29;COUNT=4",
+    "times": [
+      "2024-02-29T09:00:00Z",
+      "2024-03-29T09:00:00Z",
+      "2025-03-29T09:00:00Z",
+      "2026-03-29T09:00:00Z"
+    ]
+  },
+  {
+    "id": "review-yearly-negative-monthday",
+    "start": "20260131T090000Z",
+    "rule": "FREQ=YEARLY;BYMONTH=1,2;BYMONTHDAY=-1;COUNT=4",
+    "times": [
+      "2026-01-31T09:00:00Z",
+      "2026-02-28T09:00:00Z",
+      "2027-01-31T09:00:00Z",
+      "2027-02-28T09:00:00Z"
+    ]
+  },
+  {
+    "id": "monthly-negative-ordinal",
+    "start": "20260126T090000Z",
+    "rule": "FREQ=MONTHLY;BYDAY=-1MO;COUNT=5",
+    "times": [
+      "2026-01-26T09:00:00Z",
+      "2026-02-23T09:00:00Z",
+      "2026-03-30T09:00:00Z",
+      "2026-04-27T09:00:00Z",
+      "2026-05-25T09:00:00Z"
+    ]
+  },
+  {
+    "id": "monthly-mixed-ordinals",
+    "start": "20260105T090000Z",
+    "rule": "FREQ=MONTHLY;BYDAY=1MO,-1FR;COUNT=6",
+    "times": [
+      "2026-01-05T09:00:00Z",
+      "2026-01-30T09:00:00Z",
+      "2026-02-02T09:00:00Z",
+      "2026-02-27T09:00:00Z",
+      "2026-03-02T09:00:00Z",
+      "2026-03-27T09:00:00Z"
+    ]
+  },
+  {
+    "id": "monthly-intersecting-selectors",
+    "start": "20260105T090000Z",
+    "rule": "FREQ=MONTHLY;BYDAY=MO;BYMONTHDAY=1,2,3,4,5,6,7;COUNT=5",
+    "times": [
+      "2026-01-05T09:00:00Z",
+      "2026-02-02T09:00:00Z",
+      "2026-03-02T09:00:00Z",
+      "2026-04-06T09:00:00Z",
+      "2026-05-04T09:00:00Z"
+    ]
+  },
+  {
+    "id": "monthly-negative-intersection",
+    "start": "20260130T090000Z",
+    "rule": "FREQ=MONTHLY;BYDAY=FR;BYMONTHDAY=-1,-2,-3;COUNT=5",
+    "times": [
+      "2026-01-30T09:00:00Z",
+      "2026-02-27T09:00:00Z",
+      "2026-05-29T09:00:00Z",
+      "2026-07-31T09:00:00Z",
+      "2026-10-30T09:00:00Z"
+    ]
+  },
+  {
+    "id": "monthly-numeric-duplicates-cartesian",
+    "start": "20260105T091000Z",
+    "rule": "FREQ=MONTHLY;BYDAY=1MO;BYHOUR=17,9,9;BYMINUTE=40,10,10;BYSECOND=30,0,0;COUNT=10",
+    "times": [
+      "2026-01-05T09:10:00Z",
+      "2026-01-05T09:10:30Z",
+      "2026-01-05T09:40:00Z",
+      "2026-01-05T09:40:30Z",
+      "2026-01-05T17:10:00Z",
+      "2026-01-05T17:10:30Z",
+      "2026-01-05T17:40:00Z",
+      "2026-01-05T17:40:30Z",
+      "2026-02-02T09:10:00Z",
+      "2026-02-02T09:10:30Z"
+    ]
+  },
+  {
+    "id": "yearly-numeric-duplicates-cartesian",
+    "start": "20260202T091000Z",
+    "rule": "FREQ=YEARLY;BYMONTH=10,2,2;BYDAY=+1MO;BYHOUR=17,9;BYMINUTE=40,10;COUNT=8",
+    "times": [
+      "2026-02-02T09:10:00Z",
+      "2026-02-02T09:40:00Z",
+      "2026-02-02T17:10:00Z",
+      "2026-02-02T17:40:00Z",
+      "2026-10-05T09:10:00Z",
+      "2026-10-05T09:40:00Z",
+      "2026-10-05T17:10:00Z",
+      "2026-10-05T17:40:00Z"
+    ]
+  },
+  {
+    "id": "yearly-ordinal-scoped-to-year",
+    "start": "20260105T090000Z",
+    "rule": "FREQ=YEARLY;BYDAY=1MO;COUNT=4",
+    "times": [
+      "2026-01-05T09:00:00Z",
+      "2027-01-04T09:00:00Z",
+      "2028-01-03T09:00:00Z",
+      "2029-01-01T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-ordinal-scoped-to-month",
+    "start": "20260105T090000Z",
+    "rule": "FREQ=YEARLY;BYMONTH=1,4;BYDAY=1MO;COUNT=6",
+    "times": [
+      "2026-01-05T09:00:00Z",
+      "2026-04-06T09:00:00Z",
+      "2027-01-04T09:00:00Z",
+      "2027-04-05T09:00:00Z",
+      "2028-01-03T09:00:00Z",
+      "2028-04-03T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-negative-ordinal-scoped-to-year",
+    "start": "20261225T090000Z",
+    "rule": "FREQ=YEARLY;BYDAY=-1FR;COUNT=4",
+    "times": [
+      "2026-12-25T09:00:00Z",
+      "2027-12-31T09:00:00Z",
+      "2028-12-29T09:00:00Z",
+      "2029-12-28T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-week-one-monday-boundary",
+    "start": "20181231T090000Z",
+    "rule": "FREQ=YEARLY;BYWEEKNO=1;BYDAY=MO;WKST=MO;COUNT=7",
+    "times": [
+      "2018-12-31T09:00:00Z",
+      "2019-12-30T09:00:00Z",
+      "2021-01-04T09:00:00Z",
+      "2022-01-03T09:00:00Z",
+      "2023-01-02T09:00:00Z",
+      "2024-01-01T09:00:00Z",
+      "2024-12-30T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-negative-week-sunday-boundary",
+    "start": "20191229T090000Z",
+    "rule": "FREQ=YEARLY;BYWEEKNO=-1;BYDAY=SU;WKST=MO;COUNT=6",
+    "times": [
+      "2019-12-29T09:00:00Z",
+      "2021-01-03T09:00:00Z",
+      "2022-01-02T09:00:00Z",
+      "2023-01-01T09:00:00Z",
+      "2023-12-31T09:00:00Z",
+      "2024-12-29T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-week-one-sunday-start",
+    "start": "20210103T090000Z",
+    "rule": "FREQ=YEARLY;BYWEEKNO=1;BYDAY=SU;WKST=SU;COUNT=6",
+    "times": [
+      "2021-01-03T09:00:00Z",
+      "2022-01-02T09:00:00Z",
+      "2023-01-01T09:00:00Z",
+      "2023-12-31T09:00:00Z",
+      "2024-12-29T09:00:00Z",
+      "2026-01-04T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-negative-week-wednesday-start",
+    "start": "20201218T090000Z",
+    "rule": "FREQ=YEARLY;BYWEEKNO=-2;BYDAY=FR;WKST=WE;COUNT=5",
+    "times": [
+      "2020-12-18T09:00:00Z",
+      "2021-12-17T09:00:00Z",
+      "2022-12-23T09:00:00Z",
+      "2023-12-22T09:00:00Z",
+      "2024-12-20T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-week-without-weekday",
+    "start": "20260105T090000Z",
+    "rule": "FREQ=YEARLY;BYWEEKNO=2;WKST=MO;COUNT=10",
+    "times": [
+      "2026-01-05T09:00:00Z",
+      "2026-01-06T09:00:00Z",
+      "2026-01-07T09:00:00Z",
+      "2026-01-08T09:00:00Z",
+      "2026-01-09T09:00:00Z",
+      "2026-01-10T09:00:00Z",
+      "2026-01-11T09:00:00Z",
+      "2027-01-11T09:00:00Z",
+      "2027-01-12T09:00:00Z",
+      "2027-01-13T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-negative-year-day",
+    "start": "20241231T090000Z",
+    "rule": "FREQ=YEARLY;BYYEARDAY=-1;COUNT=4",
+    "times": [
+      "2024-12-31T09:00:00Z",
+      "2025-12-31T09:00:00Z",
+      "2026-12-31T09:00:00Z",
+      "2027-12-31T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-leap-year-day",
+    "start": "20240229T090000Z",
+    "rule": "FREQ=YEARLY;BYYEARDAY=60;COUNT=4",
+    "times": [
+      "2024-02-29T09:00:00Z",
+      "2025-03-01T09:00:00Z",
+      "2026-03-01T09:00:00Z",
+      "2027-03-01T09:00:00Z"
+    ]
+  },
+  {
+    "id": "monthly-interval-inclusive-until",
+    "start": "20260130T090000Z",
+    "rule": "FREQ=MONTHLY;INTERVAL=3;BYDAY=-1FR;UNTIL=20270129T090000Z",
+    "times": [
+      "2026-01-30T09:00:00Z",
+      "2026-04-24T09:00:00Z",
+      "2026-07-31T09:00:00Z",
+      "2026-10-30T09:00:00Z",
+      "2027-01-29T09:00:00Z"
+    ]
+  },
+  {
+    "id": "yearly-interval-leap-and-months",
+    "start": "20240229T090000Z",
+    "rule": "FREQ=YEARLY;INTERVAL=2;BYMONTH=2,3;BYMONTHDAY=29;COUNT=5",
+    "times": [
+      "2024-02-29T09:00:00Z",
+      "2024-03-29T09:00:00Z",
+      "2026-03-29T09:00:00Z",
+      "2028-02-29T09:00:00Z",
+      "2028-03-29T09:00:00Z"
+    ]
+  },
+  {
+    "id": "date-monthly-last-weekday-whole-period",
+    "start": "20260130",
+    "rule": "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=4",
+    "times": [
+      "2026-01-30T00:00:00Z",
+      "2026-02-27T00:00:00Z",
+      "2026-03-31T00:00:00Z",
+      "2026-04-30T00:00:00Z"
+    ],
+    "date": true
+  },
+  {
+    "id": "date-monthly-first-weekday-whole-period",
+    "start": "20260101",
+    "rule": "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;COUNT=4",
+    "times": [
+      "2026-01-01T00:00:00Z",
+      "2026-02-02T00:00:00Z",
+      "2026-03-02T00:00:00Z",
+      "2026-04-01T00:00:00Z"
+    ],
+    "date": true
+  }
+]
