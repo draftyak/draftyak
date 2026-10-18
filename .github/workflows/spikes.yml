@@ -88,6 +88,11 @@ jobs:
         run: |
           git ls-files -z -- 'spikes/*/evidence/*' | git update-index -z --skip-worktree --stdin
           rm -rf spikes/*/evidence
+      # Spotlight indexes the install and the Node downloads; in S2's run 39111041411 its workers
+      # kept a 3-CPU macOS runner above the bench lock's idle threshold for 4 minutes.
+      - name: Turn off Spotlight indexing (macOS)
+        if: runner.os == 'macOS'
+        run: sudo mdutil -a -i off || echo "::warning::mdutil couldn't turn off Spotlight indexing"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
