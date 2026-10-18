@@ -3,6 +3,12 @@ import { canonicalAddress, resolvePublic } from "./addresses.ts";
 import { copyMetadataBytes, MetadataCache } from "./cache.ts";
 import { getPinnedMetadata, type MetadataBytes } from "./https.ts";
 import {
+	METADATA_MAX_BYTES,
+	METADATA_TIMEOUT_MS,
+	metadataMaxBytes,
+	metadataTimeoutMs,
+} from "./limits.ts";
+import {
 	configData,
 	type MetadataDestinationRule,
 	MetadataDestinations,
@@ -40,10 +46,10 @@ export class ClientMetadataFetcher {
 			value.deniedAddresses.length > 256 ||
 			!Number.isSafeInteger(value.maxBytes) ||
 			(value.maxBytes as number) < 1 ||
-			(value.maxBytes as number) > 1048576 ||
+			(value.maxBytes as number) > METADATA_MAX_BYTES ||
 			!Number.isSafeInteger(value.timeoutMs) ||
 			(value.timeoutMs as number) < 1 ||
-			(value.timeoutMs as number) > 10000
+			(value.timeoutMs as number) > METADATA_TIMEOUT_MS
 		)
 			throw refused();
 		this.#destinations = new MetadataDestinations(
@@ -77,11 +83,21 @@ export class ClientMetadataFetcher {
 			const now = this.#now();
 			signal.throwIfAborted();
 			const destination = this.#destinations.check(url, kind);
+			const maxBytes = metadataMaxBytes(kind, this.#maxBytes),
+				deadline = now + metadataTimeoutMs(kind, this.#timeoutMs);
+			const checkedNow = () => {
+				const current = this.#now();
+				if (current >= deadline) {
+					cancelled.abort();
+					throw refused();
+				}
+				return current;
+			};
 			key = createHash("sha256").update(`${kind}\n${destination.url}`).digest("hex");
-			const cached = this.#cache.get(key, kind, this.#maxBytes, now);
+			const cached = this.#cache.get(key, kind, maxBytes, now);
 			if (cached !== undefined) {
 				signal.throwIfAborted();
-				if (this.#now() < cached.expiresAt) return cached.value;
+				if (checkedNow() < cached.expiresAt) return cached.value;
 			}
 			if (
 				this.#failures.has(key) ||
@@ -92,27 +108,23 @@ export class ClientMetadataFetcher {
 			this.#inFlight.add(key);
 			started = true;
 			const stopped = AbortSignal.any([signal, cancelled.signal, this.#closed.signal]);
-			timer = setTimeout(() => cancelled.abort(), this.#timeoutMs);
+			timer = setTimeout(() => cancelled.abort(), deadline - checkedNow());
 			const address = await resolvePublic(destination.host, this.#denied, stopped);
 			stopped.throwIfAborted();
-			this.#now();
+			checkedNow();
 			const result = await getPinnedMetadata({
 				destination,
 				address,
-				maxBytes: this.#maxBytes,
+				maxBytes,
 				signal: stopped,
 			});
 			stopped.throwIfAborted();
-			const completed = this.#now();
-			this.#cache.put(
-				key,
-				kind,
-				result,
-				result.cacheExpiresAt - completed,
-				this.#maxBytes,
-				completed,
-			);
-			return copyMetadataBytes(result);
+			const completed = checkedNow();
+			this.#cache.put(key, kind, result, result.cacheExpiresAt - completed, maxBytes, completed);
+			const copied = copyMetadataBytes(result);
+			checkedNow();
+			stopped.throwIfAborted();
+			return copied;
 		} catch {
 			if (key && started && !signal.aborted && !this.#closed.signal.aborted) {
 				const now = this.#now();

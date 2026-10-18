@@ -1,5 +1,7 @@
+import { types } from "node:util";
 import { parseStrict } from "@draftyak/protocol/jcs";
 import type { MetadataBytes } from "./https.ts";
+import { metadataMaxBytes } from "./limits.ts";
 import type { MetadataKind } from "./policy.ts";
 
 export const METADATA_CACHE_MAX_ENTRIES = 128;
@@ -20,6 +22,14 @@ const safeHeaders = new Set([
 	"transfer-encoding",
 	"x-content-type-options",
 ]);
+const byteLength = Object.getOwnPropertyDescriptor(
+	Object.getPrototypeOf(Uint8Array.prototype),
+	"byteLength",
+)?.get as (this: Uint8Array) => number;
+function bodyLength(body: Uint8Array): number {
+	if (!types.isUint8Array(body)) throw new TypeError();
+	return byteLength.call(body);
+}
 function instant(value: string | undefined): number | undefined {
 	if (value === undefined) return undefined;
 	const date = Date.parse(value);
@@ -79,23 +89,25 @@ export function validMetadataBytes(
 	maxBytes: number,
 ): boolean {
 	try {
+		const limit = metadataMaxBytes(kind, maxBytes);
 		if (
-			!(value.body instanceof Uint8Array) ||
-			value.body.byteLength > maxBytes ||
+			bodyLength(value.body) > limit ||
 			!/^application\/(?:json|jwk-set\+json)(?:;[ \t]*charset=(?:utf-8|"utf-8"))?$/i.test(
 				value.contentType,
 			) ||
 			(kind !== "jwks" && value.contentType.split(";", 1)[0]?.toLowerCase() !== "application/json")
 		)
 			return false;
-		const parsed = parseStrict(value.body);
+		const parsed = parseStrict(copyMetadataBytes(value).body);
 		return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed);
 	} catch {
 		return false;
 	}
 }
 export function copyMetadataBytes(value: MetadataBytes): MetadataBytes {
-	return Object.freeze({ body: new Uint8Array(value.body), contentType: value.contentType });
+	const body = new Uint8Array(bodyLength(value.body));
+	Uint8Array.prototype.set.call(body, value.body);
+	return Object.freeze({ body, contentType: value.contentType });
 }
 interface Entry {
 	readonly kind: MetadataKind;
@@ -144,13 +156,13 @@ export class MetadataCache {
 			!/^[0-9a-f]{64}$/.test(key) ||
 			!Number.isFinite(ttlMs) ||
 			ttlMs <= 0 ||
-			!validMetadataBytes(value, kind, maxBytes) ||
-			value.body.byteLength > METADATA_CACHE_MAX_BYTES
+			!validMetadataBytes(value, kind, maxBytes)
 		)
 			return;
+		const size = bodyLength(value.body);
 		while (
 			this.#entries.size >= METADATA_CACHE_MAX_ENTRIES ||
-			this.#bytes + value.body.byteLength > METADATA_CACHE_MAX_BYTES
+			this.#bytes + size > METADATA_CACHE_MAX_BYTES
 		) {
 			const oldest = this.#entries.keys().next().value;
 			if (oldest === undefined) return;

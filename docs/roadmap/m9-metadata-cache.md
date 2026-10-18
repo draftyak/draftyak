@@ -4,9 +4,8 @@ The native `ClientMetadataFetcher` now has one successful-byte cache per immutab
 fetcher instance. Its public `fetch(url, kind, signal)` result still contains only
 bounded untrusted bytes and their accepted media type. This is neither client
 registration nor client authentication, and it does not accept CIMD or JWK fields.
-The independent port at `m9-04r-reviewed-metadata` keeps the cache and its tests
-unchanged from `4059414`, on the reviewed `origin/m9` base `5fbaf89`. It needs no
-native store or later unmerged contract to run its focused checks.
+The independent port starts on the reviewed `origin/m9` base `5fbaf89`. It needs
+no native store or later unmerged contract to run its focused checks.
 
 Each cache key hashes the requested purpose (`cimd` or `jwks`) and the exact
 canonical HTTPS URL already accepted by the configured destination rules. Every
@@ -15,6 +14,13 @@ revalidates MIME/size and strict UTF-8 JSON-object structure, and returns a fres
 byte copy. Insertion also copies bytes. A caller cannot modify a later result by
 changing an earlier returned buffer. Structural JSON validation supplies no
 document, signing-key or OAuth authority.
+
+Both insertion and reuse enforce the effective purpose limit independently:
+CIMD never exceeds 5 KiB (5,120 bytes), and a stricter configured cap still wins.
+JWKS retains its configurable 1 MiB ceiling. Actual typed-array storage length
+is checked and copied through native intrinsics; a supplied `byteLength` getter
+cannot conceal oversized bytes. A larger cached JWKS result cannot become a
+CIMD result through a different purpose or a larger configured limit.
 
 Reuse requires explicit `Cache-Control: public,max-age=N` and a canonical HTTP
 `Date`. The hard ceiling is five minutes, without sliding on hits. Optional `Age`

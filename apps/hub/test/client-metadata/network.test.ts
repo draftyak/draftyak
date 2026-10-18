@@ -2,10 +2,18 @@ import { EventEmitter } from "node:events";
 import type { RequestOptions } from "node:https";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resolvePublic } from "../../src/mcp/client-metadata/addresses.ts";
+import { MetadataCache } from "../../src/mcp/client-metadata/cache.ts";
+import { getPinnedMetadata } from "../../src/mcp/client-metadata/https.ts";
 import {
 	ClientMetadataFetcher,
 	type ClientMetadataOptions,
 } from "../../src/mcp/client-metadata/index.ts";
+import {
+	CIMD_MAX_BYTES,
+	CIMD_TIMEOUT_MS,
+	METADATA_MAX_BYTES,
+} from "../../src/mcp/client-metadata/limits.ts";
+import { metadataUrl } from "../../src/mcp/client-metadata/policy.ts";
 
 const fake = vi.hoisted(() => ({
 	request: vi.fn(),
@@ -131,6 +139,7 @@ beforeEach(() => {
 });
 afterEach(() => {
 	fetcher.close();
+	vi.useRealTimers();
 	vi.restoreAllMocks();
 });
 
@@ -527,7 +536,7 @@ it("close aborts an eligible fill and prevents late responses from repopulating 
 	expect(fake.request).toHaveBeenCalledTimes(2);
 });
 it("anchors freshness to response completion rather than later processing of an awaited response", async () => {
-	cacheHeaders();
+	cacheHeaders("public,max-age=1");
 	let now = 100;
 	vi.spyOn(performance, "now").mockImplementation(() => now);
 	shape.hold = true;
@@ -535,7 +544,7 @@ it("anchors freshness to response completion rather than later processing of an 
 	while (!requests[0]?.req.ended) await new Promise((resolve) => setImmediate(resolve));
 	const response = requests[0]?.req.response;
 	response?.once("end", () => {
-		now = 100_000;
+		now = 1500;
 	});
 	response?.emit("data", Buffer.from('{"self_declared":true}'));
 	response?.emit("end");
@@ -544,6 +553,232 @@ it("anchors freshness to response completion rather than later processing of an 
 	await fetcher.fetch(CLIENT, "cimd", signal());
 	expect(fake.request).toHaveBeenCalledTimes(2);
 });
+
+function metadataBody(size: number): Buffer {
+	return Buffer.from(JSON.stringify({ text: "x".repeat(size - 11) }));
+}
+it.each(["declared", "streamed"] as const)(
+	"caps %s CIMD bytes at 5 KiB even with the largest configuration",
+	async (mode) => {
+		fetcher.close();
+		fetcher = new ClientMetadataFetcher({
+			...options,
+			maxBytes: METADATA_MAX_BYTES,
+			timeoutMs: 10000,
+		});
+		const body = metadataBody(CIMD_MAX_BYTES + 1);
+		shape.chunks = [body.subarray(0, CIMD_MAX_BYTES), body.subarray(CIMD_MAX_BYTES)];
+		if (mode === "declared") shape.headers.push("Content-Length", String(body.byteLength));
+		await expect(fetcher.fetch(CLIENT, "cimd", signal())).rejects.toThrow(
+			/^Client metadata refused$/,
+		);
+		expect(requests[0]?.req.destroyed).toBe(true);
+		expect(requests[0]?.req.response?.destroyed).toBe(true);
+	},
+);
+
+it("accepts exactly 5 KiB CIMD and preserves larger JWKS bytes without cross-purpose cache reuse", async () => {
+	cacheHeaders();
+	fetcher.close();
+	fetcher = new ClientMetadataFetcher({
+		...options,
+		maxBytes: METADATA_MAX_BYTES,
+		timeoutMs: 10000,
+		destinations: [
+			{ kind: "cimd", host: "client.example", paths: [{ exact: "/client.json" }] },
+			{ kind: "jwks", host: "client.example", paths: [{ exact: "/client.json" }] },
+		],
+	});
+	shape.chunks = [metadataBody(CIMD_MAX_BYTES)];
+	expect((await fetcher.fetch(CLIENT, "cimd", signal())).body.byteLength).toBe(CIMD_MAX_BYTES);
+	await fetcher.fetch(CLIENT, "cimd", signal());
+	expect(fake.request).toHaveBeenCalledTimes(1);
+	shape.chunks = [metadataBody(CIMD_MAX_BYTES + 1)];
+	expect((await fetcher.fetch(CLIENT, "jwks", signal())).body.byteLength).toBe(CIMD_MAX_BYTES + 1);
+	await fetcher.fetch(CLIENT, "jwks", signal());
+	expect(fake.request).toHaveBeenCalledTimes(2);
+	fetcher.close();
+	fetcher = new ClientMetadataFetcher({ ...options, maxBytes: 64 });
+	shape.chunks = [metadataBody(65)];
+	await expect(fetcher.fetch(CLIENT, "cimd", signal())).rejects.toThrow();
+});
+
+it.each([10000, 125])(
+	"never relaxes the effective CIMD deadline with configured %s ms",
+	async (configured) => {
+		vi.useFakeTimers();
+		shape.hold = true;
+		fetcher.close();
+		fetcher = new ClientMetadataFetcher({ ...options, timeoutMs: configured });
+		let settled = false;
+		const result = fetcher.fetch(CLIENT, "cimd", signal()).then(
+			() => "success",
+			(error: Error) => {
+				settled = true;
+				return error.message;
+			},
+		);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(requests[0]?.req.ended).toBe(true);
+		await vi.advanceTimersByTimeAsync(Math.min(configured, CIMD_TIMEOUT_MS) - 1);
+		expect(settled).toBe(false);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(await result).toBe("Client metadata refused");
+		expect(requests[0]?.req.destroyed).toBe(true);
+	},
+);
+
+it("retains the configured 10-second JWKS deadline", async () => {
+	vi.useFakeTimers();
+	shape.hold = true;
+	fetcher.close();
+	fetcher = new ClientMetadataFetcher({ ...options, timeoutMs: 10000 });
+	let settled = false;
+	const result = fetcher.fetch("https://keys.example/keys.json", "jwks", signal()).then(
+		() => "success",
+		(error: Error) => {
+			settled = true;
+			return error.message;
+		},
+	);
+	await vi.advanceTimersByTimeAsync(0);
+	await vi.advanceTimersByTimeAsync(9999);
+	expect(settled).toBe(false);
+	await vi.advanceTimersByTimeAsync(1);
+	expect(await result).toBe("Client metadata refused");
+	expect(requests[0]?.req.destroyed).toBe(true);
+});
+
+it("does not restart the CIMD budget after DNS completes", async () => {
+	vi.useFakeTimers();
+	shape.hold = true;
+	fetcher.close();
+	fetcher = new ClientMetadataFetcher({ ...options, timeoutMs: 10000 });
+	let completeDns: ((addresses: string[]) => void) | undefined,
+		settled = false;
+	fake.resolve4.mockImplementation(
+		() =>
+			new Promise((resolve) => {
+				completeDns = resolve;
+			}),
+	);
+	fake.resolve6.mockResolvedValue([]);
+	const result = fetcher.fetch(CLIENT, "cimd", signal()).catch((error: Error) => {
+		settled = true;
+		return error.message;
+	});
+	await vi.advanceTimersByTimeAsync(1500);
+	completeDns?.(["8.8.8.8"]);
+	await vi.advanceTimersByTimeAsync(0);
+	expect(requests[0]?.req.ended).toBe(true);
+	await vi.advanceTimersByTimeAsync(999);
+	expect(settled).toBe(false);
+	await vi.advanceTimersByTimeAsync(1);
+	expect(await result).toBe("Client metadata refused");
+	expect(requests[0]?.req.destroyed).toBe(true);
+});
+
+it("retains the JWKS generic byte cap and a stricter configured JWKS byte limit", async () => {
+	fetcher.close();
+	fetcher = new ClientMetadataFetcher({ ...options, maxBytes: METADATA_MAX_BYTES });
+	shape.chunks = [metadataBody(METADATA_MAX_BYTES)];
+	expect(
+		(await fetcher.fetch("https://keys.example/keys.json", "jwks", signal())).body.byteLength,
+	).toBe(METADATA_MAX_BYTES);
+	fetcher.close();
+	fetcher = new ClientMetadataFetcher({ ...options, maxBytes: METADATA_MAX_BYTES });
+	shape.chunks = [metadataBody(METADATA_MAX_BYTES + 1)];
+	await expect(fetcher.fetch("https://keys.example/keys.json", "jwks", signal())).rejects.toThrow();
+	fetcher.close();
+	fetcher = new ClientMetadataFetcher({ ...options, maxBytes: 64 });
+	shape.chunks = [metadataBody(65)];
+	await expect(fetcher.fetch("https://keys.example/keys.json", "jwks", signal())).rejects.toThrow();
+});
+
+it("bounds the whole CIMD DNS/TLS/body operation and cancels native DNS at 2.5 seconds", async () => {
+	vi.useFakeTimers();
+	fetcher.close();
+	fetcher = new ClientMetadataFetcher({ ...options, timeoutMs: 10000 });
+	let rejectDns: ((error: Error) => void) | undefined;
+	fake.resolve4.mockImplementation(
+		() =>
+			new Promise((_, reject) => {
+				rejectDns = reject;
+			}),
+	);
+	fake.resolve6.mockResolvedValue([]);
+	fake.cancel.mockImplementation(() => rejectDns?.(new Error("DNS_PRIVATE_CANARY")));
+	const result = fetcher.fetch(CLIENT, "cimd", signal()).catch((error: Error) => error.message);
+	await vi.advanceTimersByTimeAsync(CIMD_TIMEOUT_MS);
+	expect(await result).toBe("Client metadata refused");
+	expect(fake.cancel).toHaveBeenCalled();
+	expect(fake.request).not.toHaveBeenCalled();
+});
+
+it("independently caps the pinned helper's CIMD body and deadline without an outer fetcher", async () => {
+	const input = {
+		destination: metadataUrl(CLIENT, "cimd"),
+		address: { address: "8.8.8.8", family: 4 as const },
+		maxBytes: METADATA_MAX_BYTES,
+		signal: signal(),
+	};
+	shape.chunks = [metadataBody(CIMD_MAX_BYTES + 1)];
+	await expect(getPinnedMetadata(input)).rejects.toThrow(/^Client metadata refused$/);
+	vi.useFakeTimers();
+	shape.hold = true;
+	const result = getPinnedMetadata(input).catch((error: Error) => error.message);
+	await vi.advanceTimersByTimeAsync(0);
+	await vi.advanceTimersByTimeAsync(CIMD_TIMEOUT_MS);
+	expect(await result).toBe("Client metadata refused");
+	expect(requests[1]?.req.destroyed).toBe(true);
+});
+
+it.each(["body", "await continuation"] as const)(
+	"refuses a late CIMD %s even before its timeout callback runs",
+	async (phase) => {
+		let now = 100;
+		vi.spyOn(performance, "now").mockImplementation(() => now);
+		shape.hold = true;
+		fetcher.close();
+		fetcher = new ClientMetadataFetcher({ ...options, timeoutMs: 10000 });
+		const result = fetcher.fetch(CLIENT, "cimd", signal()).catch((error: Error) => error.message);
+		while (!requests[0]?.req.ended) await new Promise((resolve) => setImmediate(resolve));
+		if (phase === "body") now += CIMD_TIMEOUT_MS;
+		else
+			requests[0]?.req.response?.once("end", () => {
+				now += CIMD_TIMEOUT_MS;
+			});
+		requests[0]?.req.response?.emit("data", Buffer.from("{}"));
+		requests[0]?.req.response?.emit("end");
+		expect(await result).toBe("Client metadata refused");
+		expect(requests[0]?.req.destroyed).toBe(true);
+	},
+);
+it.each(["deadline", "cancellation"] as const)(
+	"refuses CIMD after local cache processing crosses its %s boundary",
+	async (phase) => {
+		cacheHeaders();
+		let now = 100;
+		vi.spyOn(performance, "now").mockImplementation(() => now);
+		fetcher.close();
+		fetcher = new ClientMetadataFetcher({ ...options, timeoutMs: 10000 });
+		const controller = new AbortController(),
+			put = MetadataCache.prototype.put;
+		const processed = vi.spyOn(MetadataCache.prototype, "put").mockImplementation(function (
+			this: MetadataCache,
+			...args
+		) {
+			put.call(this, ...args);
+			if (phase === "deadline") now += CIMD_TIMEOUT_MS;
+			else controller.abort();
+		});
+		await expect(fetcher.fetch(CLIENT, "cimd", controller.signal)).rejects.toThrow(
+			/^Client metadata refused$/,
+		);
+		expect(processed).toHaveBeenCalledTimes(1);
+		expect(fake.request).toHaveBeenCalledTimes(1);
+	},
+);
 it("permanently closes cached data on a monotonic rollback", async () => {
 	cacheHeaders();
 	let now = 100;

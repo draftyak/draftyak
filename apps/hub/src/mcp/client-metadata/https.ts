@@ -3,6 +3,7 @@ import { isIP } from "node:net";
 import type { TLSSocket } from "node:tls";
 import { canonicalAddress, type PinnedAddress, publicAddress } from "./addresses.ts";
 import { metadataCacheTtl } from "./cache.ts";
+import { CIMD_TIMEOUT_MS, metadataMaxBytes } from "./limits.ts";
 import { type MetadataDestination, metadataUrl, refused } from "./policy.ts";
 
 export interface MetadataBytes {
@@ -24,16 +25,24 @@ export async function getPinnedMetadata(
 ): Promise<PinnedMetadataBytes> {
 	const started = performance.now();
 	const destination = metadataUrl(input.destination.url, input.destination.kind);
+	const maxBytes = metadataMaxBytes(destination.kind, input.maxBytes);
 	if (
 		destination.host !== input.destination.host ||
 		destination.path !== input.destination.path ||
 		!publicAddress(input.address.address) ||
 		isIP(input.address.address) !== input.address.family ||
-		!Number.isSafeInteger(input.maxBytes) ||
-		input.maxBytes < 1 ||
-		input.maxBytes > 1048576
+		!Number.isFinite(started) ||
+		started < 0
 	)
 		throw refused();
+	const timeout = new AbortController(),
+		signal = AbortSignal.any([input.signal, timeout.signal]),
+		deadline = destination.kind === "cimd" ? started + CIMD_TIMEOUT_MS : Infinity;
+	const expired = () => signal.aborted || performance.now() >= deadline;
+	const timer =
+		destination.kind === "cimd"
+			? setTimeout(() => timeout.abort(), Math.max(0, deadline - performance.now()))
+			: undefined;
 	const agent = new Agent({ keepAlive: false, maxSockets: 1, maxCachedSessions: 0, proxyEnv: {} });
 	try {
 		return await new Promise<PinnedMetadataBytes>((resolve, reject) => {
@@ -104,7 +113,7 @@ export async function getPinnedMetadata(
 					if (rawLength !== undefined) {
 						if (!/^(0|[1-9][0-9]{0,9})$/.test(rawLength)) throw refused();
 						length = Number(rawLength);
-						if (length > input.maxBytes) throw refused();
+						if (length > maxBytes) throw refused();
 					}
 				} catch {
 					stop();
@@ -112,23 +121,26 @@ export async function getPinnedMetadata(
 				}
 				response.on("data", (chunk: Buffer) => {
 					bytes += chunk.byteLength;
-					if (bytes > input.maxBytes) stop();
+					if (bytes > maxBytes || expired()) stop();
 					else if (!settled) chunks.push(Buffer.from(chunk));
 				});
 				response.once("error", fail);
 				response.once("aborted", fail);
 				response.once("end", () => {
 					if (settled) return;
+					const finished = performance.now();
 					if (
 						!response.complete ||
-						input.signal.aborted ||
+						signal.aborted ||
+						!Number.isFinite(finished) ||
+						finished < started ||
+						finished >= deadline ||
 						(length !== undefined && length !== bytes)
 					) {
 						stop();
 						return;
 					}
 					settled = true;
-					const finished = performance.now();
 					resolve(
 						Object.freeze({
 							body: Buffer.concat(chunks, bytes),
@@ -143,10 +155,10 @@ export async function getPinnedMetadata(
 				fail();
 				req.destroy();
 			};
-			input.signal.addEventListener("abort", abort, { once: true });
+			signal.addEventListener("abort", abort, { once: true });
 			req.once("error", fail);
 			req.once("close", () => {
-				input.signal.removeEventListener("abort", abort);
+				signal.removeEventListener("abort", abort);
 				// A successful response ends before request close; every earlier close must settle too.
 				fail();
 			});
@@ -155,7 +167,7 @@ export async function getPinnedMetadata(
 				tls.once("secureConnect", () => {
 					try {
 						if (
-							input.signal.aborted ||
+							expired() ||
 							!tls.authorized ||
 							tls.remoteAddress === undefined ||
 							canonicalAddress(tls.remoteAddress) !== canonicalAddress(input.address.address)
@@ -167,11 +179,12 @@ export async function getPinnedMetadata(
 					}
 				});
 			});
-			if (input.signal.aborted) abort();
+			if (expired()) abort();
 		});
 	} catch {
 		throw refused();
 	} finally {
+		clearTimeout(timer);
 		agent.destroy();
 	}
 }

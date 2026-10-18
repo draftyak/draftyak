@@ -7,6 +7,7 @@ import {
 	MetadataCache,
 	metadataCacheTtl,
 } from "../../src/mcp/client-metadata/cache.ts";
+import { CIMD_MAX_BYTES, METADATA_MAX_BYTES } from "../../src/mcp/client-metadata/limits.ts";
 
 const wall = Date.UTC(2026, 9, 18, 12);
 const date = new Date(wall).toUTCString();
@@ -146,8 +147,33 @@ describe("instance-local bounded metadata bytes", () => {
 		const source = bytes(`{"text":"${"x".repeat(1_048_576 - 11)}"}`);
 		expect(source.body.byteLength).toBe(1_048_576);
 		for (let index = 0; index <= count; index++)
-			cache.put(key(String(index)), "cimd", source, 1000, 1_048_576, 100);
-		expect(cache.get(key("0"), "cimd", 1_048_576, 100)).toBeUndefined();
-		expect(cache.get(key(String(count)), "cimd", 1_048_576, 100)).toBeDefined();
+			cache.put(key(String(index)), "jwks", source, 1000, 1_048_576, 100);
+		expect(cache.get(key("0"), "jwks", 1_048_576, 100)).toBeUndefined();
+		expect(cache.get(key(String(count)), "jwks", 1_048_576, 100)).toBeDefined();
+	});
+	it("enforces CIMD purpose limits on insertion and hits using the real byte length", () => {
+		const cache = new MetadataCache(),
+			exact = bytes(JSON.stringify({ text: "x".repeat(CIMD_MAX_BYTES - 11) })),
+			large = bytes(JSON.stringify({ text: "x".repeat(CIMD_MAX_BYTES - 10) }));
+		expect(exact.body.byteLength).toBe(CIMD_MAX_BYTES);
+		expect(large.body.byteLength).toBe(CIMD_MAX_BYTES + 1);
+		cache.put(key("exact"), "cimd", exact, 1000, METADATA_MAX_BYTES, 100);
+		expect(cache.get(key("exact"), "cimd", METADATA_MAX_BYTES, 100)).toBeDefined();
+		expect(cache.get(key("exact"), "cimd", CIMD_MAX_BYTES - 1, 100)).toBeUndefined();
+		cache.put(key("large"), "cimd", large, 1000, METADATA_MAX_BYTES, 100);
+		expect(cache.get(key("large"), "cimd", METADATA_MAX_BYTES, 100)).toBeUndefined();
+		cache.put(key("large"), "jwks", large, 1000, METADATA_MAX_BYTES, 100);
+		expect(cache.get(key("large"), "jwks", METADATA_MAX_BYTES, 100)).toBeDefined();
+		expect(cache.get(key("large"), "cimd", METADATA_MAX_BYTES, 100)).toBeUndefined();
+		let reads = 0;
+		Object.defineProperty(large.body, "byteLength", {
+			get() {
+				reads++;
+				return 1;
+			},
+		});
+		cache.put(key("hidden"), "cimd", large, 1000, METADATA_MAX_BYTES, 100);
+		expect(cache.get(key("hidden"), "cimd", METADATA_MAX_BYTES, 100)).toBeUndefined();
+		expect(reads).toBe(0);
 	});
 });
