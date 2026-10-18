@@ -82,9 +82,12 @@ describe("writeRuntimeLock", () => {
 		await writeRuntimeLock([], file);
 		expect(fs.readFileSync(file, "utf8")).toBe(fs.readFileSync(LOCK_FILE, "utf8"));
 		const before = readRuntimeLock(file);
-		const after = await writeRuntimeLock(["Orjson"], file);
-		expect(after.packages).toEqual([...before.packages, "orjson"].toSorted());
-		expect(Object.keys(after.wheels)).toEqual([...Object.keys(before.wheels), "orjson"].toSorted());
+		expect(before.packages).not.toContain("packaging");
+		const after = await writeRuntimeLock(["Packaging"], file);
+		expect(after.packages).toEqual([...before.packages, "packaging"].toSorted());
+		expect(Object.keys(after.wheels)).toEqual(
+			[...Object.keys(before.wheels), "packaging"].toSorted(),
+		);
 	});
 });
 
