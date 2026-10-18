@@ -1,3 +1,4 @@
+export * from "./connector-client.ts";
 export * from "./faults.ts";
 export * from "./hello.ts";
 export * from "./recorder.ts";

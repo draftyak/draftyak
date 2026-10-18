@@ -102,3 +102,55 @@ Every feed answer also carries `Set-Cookie` and `X-Upstream-Trace` (and `Date`),
 2. Build a Hono app for the service's routes. Let errors throw (`app.onError((error) => { throw error; })`), so an aborted request rejects as `fetch` would. Match raw paths or queries with `rawTarget(c.req.raw)`, since Hono's own path is decoded.
 3. Return `createFake(app, {host, faults: createFaults({clock}), recorder})`, plus whatever controls the tests need. Take the clock from the options, and reuse the fault script for 429s, 5xx, latency and drops rather than adding routes for them. Check delay and size options when the fake is created (`checkDelay`).
 4. Keep fixtures synthetic, and test the fake in `test/<name>.test.ts`.
+
+## Synthetic connector client
+
+`ConnectorClient` is an offline client fixture, with explicit `profile`, `issuer`,
+`resource`, `clientId`, `redirectUri` and `transport` options. The transport must
+be an explicitly supplied `Fake`; the client captures its `fetch` method and
+uses only canonical HTTPS URLs under `.example`, with no credentials, ports,
+queries or fragments in its configured or advertised destinations, including
+bare `?` and `#` delimiters. It never calls global
+fetch, resolves a host, starts a listener, registers a client or issues a token.
+The profiles `cimd-public` and `issuer-resource` describe synthetic checks, with
+no claim about a vendor's current client-authentication behavior.
+
+`discover()` follows the protected resource's challenge to same-issuer resource
+metadata and RFC 8414 metadata. It requires the exact configured resource and
+issuer, S256, public `none` authentication and authorization-response issuer
+support. `cimd-public` additionally requires CIMD support. Endpoints stay on that
+issuer. `clientMetadata()` returns a frozen synthetic document for a test to
+serve itself; returning it does not register or approve that client.
+
+`beginAuthorization()` creates one pending state and S256 verifier, returning
+the authorization URL. The test must drive a real external authorization and
+consent implementation separately and pass its received redirect to
+`acceptCallback()`. This client has no consent callback or approval stub.
+Callbacks require the exact redirect spelling, unique known parameters, exact
+state and exact issuer on both success and error. A literal `#` delimiter is
+refused, including an empty fragment; percent-encoded `?` and `#` in parameter
+values remain supported. Invalid callbacks leave the
+pending state available; an accepted callback consumes it once. `kind: exchange`
+returns the observed token endpoint reply, including a possible error, without
+asserting that a token was granted. Code and refresh forms bind `resource` and
+`client_id` explicitly and contain no client secret or assertion.
+
+`refresh()` and `revoke()` return observed status and JSON fields.
+`callResource()` sends a bare authenticated POST and returns its status; it is
+not an MCP protocol or read-session acceptance test. `observeReuse()` submits a
+retired and current refresh token and probes the previous and current access
+tokens. Its booleans report `400 invalid_grant` observations only. A scripted
+reply is not evidence of real refresh rotation, grant revocation or audience
+enforcement. Those require the actual authorization server and native resource
+integration; the owner-run remote connector gate remains separate.
+
+Responses are capped at 64 KiB, JSON at depth 16 and 2,048 values, callbacks at
+8,192 characters, and each operation at ten seconds including parsing. Duplicate
+JSON members, invalid UTF-8, BOMs and lone surrogates are refused. Received
+native Buffer and Uint8Array views are copied using their intrinsic byte
+bounds; proxy, subclass and shared-buffer chunks are refused. Only one operation
+runs at a time; an expired client refuses future operations so a held
+transport cannot accumulate work through that instance. Parsed values are
+frozen, and errors contain only `Connector fixture refused`. Returned token
+fields and recorder bodies are intentionally visible to the test: use synthetic
+values only and never print them as diagnostic evidence.
