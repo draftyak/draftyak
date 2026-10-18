@@ -21,41 +21,79 @@ export class ClientMetadataError extends Error {
 }
 export const refused = (): ClientMetadataError => new ClientMetadataError();
 
-/** Copy configuration data without invoking getters, proxy traps or serialization hooks. */
-export function configData(raw: unknown, depth = 0, budget = { left: 20000 }): unknown {
-	if (--budget.left < 0 || depth > 16) throw refused();
-	if (
-		raw === null ||
-		typeof raw === "string" ||
-		typeof raw === "boolean" ||
-		typeof raw === "number"
-	)
-		return raw;
-	if (typeof raw !== "object" || isProxy(raw)) throw refused();
-	const array = Array.isArray(raw),
-		proto: unknown = Object.getPrototypeOf(raw);
-	if (proto !== (array ? Array.prototype : Object.prototype) && (array || proto !== null))
-		throw refused();
-	if (Object.getOwnPropertySymbols(raw).length) throw refused();
-	const target: unknown[] | Record<string, unknown> = array ? [] : Object.create(null);
-	let members = 0;
-	for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(raw))) {
-		if (array && key === "length") continue;
-		if (
-			!descriptor.enumerable ||
-			!Object.hasOwn(descriptor, "value") ||
-			(array && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= (raw as unknown[]).length))
-		)
+// Smallest whole-MiB envelope above all current valid configuration maxima (8,495,307 bytes).
+export const MAX_METADATA_CONFIG_BYTES: number = 9 * 1024 * 1024;
+/** Detached immutable JSON data; bound strings/keys before scans or escaped serialization. */
+export function configData(raw: unknown): unknown {
+	let nodes = 20000,
+		remaining = MAX_METADATA_CONFIG_BYTES;
+	const spend = (bytes: number): void => {
+		remaining -= bytes;
+		if (remaining < 0) throw refused();
+	};
+	const text = (value: string): void => {
+		if (value.length > remaining || !value.isWellFormed()) throw refused();
+		spend(2);
+		for (let at = 0; at < value.length; at++) {
+			const unit = value.charCodeAt(at);
+			if (unit < 32) spend([8, 9, 10, 12, 13].includes(unit) ? 2 : 6);
+			else if (unit === 34 || unit === 92) spend(2);
+			else if (unit < 128) spend(1);
+			else if (unit < 2048) spend(2);
+			else if (unit >= 0xd800 && unit <= 0xdbff) {
+				spend(4);
+				at++;
+			} else spend(3);
+		}
+	};
+	const copy = (value: unknown, depth: number): unknown => {
+		if (--nodes < 0 || depth > 16 || isProxy(value)) throw refused();
+		if (typeof value === "string") {
+			text(value);
+			return value;
+		}
+		if (value === null || typeof value === "boolean" || typeof value === "number") {
+			if (typeof value === "number" && !Number.isFinite(value)) throw refused();
+			spend(JSON.stringify(value).length);
+			return value;
+		}
+		if (typeof value !== "object") throw refused();
+		const array = Array.isArray(value),
+			proto: unknown = Object.getPrototypeOf(value);
+		if (proto !== (array ? Array.prototype : Object.prototype) && (array || proto !== null))
 			throw refused();
-		Object.defineProperty(target, key, {
-			enumerable: true,
-			value: configData(descriptor.value, depth + 1, budget),
-		});
-		members++;
-	}
-	if (array && (members !== (raw as unknown[]).length || (target as unknown[]).length !== members))
+		const length = array ? Object.getOwnPropertyDescriptor(value, "length")?.value : 0;
+		if (array && (!Number.isSafeInteger(length) || length > 256)) throw refused();
+		const keys = Reflect.ownKeys(value);
+		if (array ? keys.length !== length + 1 : keys.length > 256) throw refused();
+		spend(2 + Math.max(0, (array ? length : keys.length) - 1));
+		const target: unknown[] | Record<string, unknown> = array ? [] : Object.create(null);
+		for (const key of keys) {
+			if (array && key === "length") continue;
+			if (
+				typeof key !== "string" ||
+				(array && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= length))
+			)
+				throw refused();
+			if (!array) {
+				text(key);
+				spend(1);
+			}
+			const descriptor = Object.getOwnPropertyDescriptor(value, key);
+			if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value")) throw refused();
+			Object.defineProperty(target, key, {
+				enumerable: true,
+				value: copy(descriptor.value, depth + 1),
+			});
+		}
+		if (array && (target as unknown[]).length !== length) throw refused();
+		return Object.freeze(target);
+	};
+	try {
+		return copy(raw, 0);
+	} catch {
 		throw refused();
-	return target;
+	}
 }
 export function record(raw: unknown, keys: readonly string[]): raw is Record<string, unknown> {
 	return (
