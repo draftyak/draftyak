@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T08:29:17.971Z",
+  "recordedAt": "2026-10-18T15:14:26.091Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,13 +11,13 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "435c7420e13eea2b2c780bc312ffcd0325b1ae47",
+    "commit": "c51abce7daa47300768dcf609dbf52db5e0c8697",
     "dirty": false,
     "load": {
-      "cpuPercent": 12.8,
+      "cpuPercent": 30.5,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 78.6,
+      "memoryUsedPercent": 74,
       "concurrentBuilds": 0
     }
   },
@@ -39,7 +39,7 @@
     },
     "cargo": {
       "build": {
-        "seconds": 0.3,
+        "seconds": 0.1,
         "crates": 0,
         "jobs": 6
       },
@@ -50,7 +50,7 @@
       "fmt": "clean",
       "clippy": {
         "result": "clean",
-        "seconds": 0.2,
+        "seconds": 0.3,
         "crates": 0
       }
     },
@@ -97,7 +97,7 @@
         "readBack": true,
         "persistence": "Local",
         "removed": true,
-        "ms": 13
+        "ms": 36
       },
       "fallback": {
         "kdf": "pbkdf2-hmac-sha256",
@@ -108,7 +108,7 @@
         "readBack": true,
         "wrongPassphraseRefused": true,
         "tamperRefused": true,
-        "unwrapMs": 80
+        "unwrapMs": 85
       },
       "docker": {
         "image": "rust:1.95.0-bookworm@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1",
@@ -136,7 +136,7 @@
               "readBack": true,
               "wrongPassphraseRefused": true,
               "tamperRefused": true,
-              "unwrapMs": 83
+              "unwrapMs": 85
             }
           },
           "noSecretService": {
@@ -154,7 +154,7 @@
               "readBack": true,
               "wrongPassphraseRefused": true,
               "tamperRefused": true,
-              "unwrapMs": 81
+              "unwrapMs": 83
             }
           },
           "noKeyring": {
@@ -172,7 +172,7 @@
               "readBack": true,
               "wrongPassphraseRefused": true,
               "tamperRefused": true,
-              "unwrapMs": 82
+              "unwrapMs": 83
             }
           },
           "unlocked": {
@@ -185,7 +185,7 @@
               "readBack": true,
               "persistence": null,
               "removed": true,
-              "ms": 10
+              "ms": 11
             }
           },
           "locked": {
@@ -203,14 +203,14 @@
               "readBack": true,
               "wrongPassphraseRefused": true,
               "tamperRefused": true,
-              "unwrapMs": 80
+              "unwrapMs": 83
             }
           }
         },
         "seconds": {
-          "build": 2.6,
-          "fetch": 1.1,
-          "test": 4.2
+          "build": 1.7,
+          "fetch": 1.2,
+          "test": 4.6
         },
         "crates": 2
       }

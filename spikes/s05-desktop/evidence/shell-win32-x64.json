@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T08:29:03.647Z",
+  "recordedAt": "2026-10-18T15:13:55.453Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,13 +11,13 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "435c7420e13eea2b2c780bc312ffcd0325b1ae47",
+    "commit": "c51abce7daa47300768dcf609dbf52db5e0c8697",
     "dirty": false,
     "load": {
-      "cpuPercent": 13.3,
+      "cpuPercent": 19.7,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 74.6,
+      "memoryUsedPercent": 73.9,
       "concurrentBuilds": 0
     }
   },
@@ -48,7 +48,7 @@
       "openedVia": "tray menu WM_COMMAND",
       "origin": "http://tauri.localhost",
       "webviewDataInLaunchStore": true,
-      "webviewVersion": "155.0.4283.60"
+      "webviewVersion": "155.0.4283.62"
     },
     "closeKeepsHub": {
       "appRunning": true,

@@ -1,0 +1,118 @@
+{
+  "recordedAt": "2026-10-18T08:59:18.115Z",
+  "fingerprint": {
+    "os": {
+      "platform": "darwin",
+      "arch": "arm64",
+      "osName": "Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:34 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_VMAPPLE",
+      "osVersion": "24.6.0"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "e961e3a6bd7d269e1322b06fc678ac6b136bf897",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 3,
+      "cpuCount": 3,
+      "cpuModel": "Apple M1 (Virtual)",
+      "memoryUsedPercent": 90.2,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "toolchain": {
+      "rustcVersion": "1.95.0",
+      "host": "aarch64-apple-darwin"
+    },
+    "crates": {
+      "keyring": "4.2.0",
+      "keyring-core": "1.0.1",
+      "apple-native-keyring-store": "1.0.2",
+      "security-framework": "3.7.0"
+    },
+    "keychain": {
+      "userDefault": "login.keychain-db",
+      "firstTry": {
+        "store": "keychain",
+        "readBack": true,
+        "persistence": null,
+        "removed": true,
+        "ms": 20
+      },
+      "used": "user default"
+    },
+    "roundTrip": {
+      "ok": true,
+      "store": "keychain",
+      "readBack": true,
+      "persistence": null,
+      "removed": true,
+      "ms": 20
+    },
+    "builtBinary": {
+      "setAndRead": true
+    },
+    "reSignedCopy": {
+      "read": false,
+      "deleted": false
+    },
+    "goneAtEnd": true,
+    "prompts": "off: SecKeychainSetUserInteractionAllowed(false); a prompt fails as errSecInteractionNotAllowed (-25308)",
+    "binaries": {
+      "built": {
+        "signature": "adhoc",
+        "flags": "adhoc,linker-signed"
+      },
+      "reSigned": {
+        "signature": "adhoc",
+        "flags": "adhoc",
+        "identifier": "com.draftyak.spike.s05.update"
+      },
+      "sameCdhash": false
+    },
+    "steps": [
+      {
+        "binary": "built",
+        "step": "set",
+        "ok": true
+      },
+      {
+        "binary": "built",
+        "step": "get",
+        "ok": true,
+        "matches": true
+      },
+      {
+        "binary": "re-signed",
+        "step": "get",
+        "ok": false,
+        "error": "PlatformFailure",
+        "code": -25293,
+        "message": "Platform failure: The user name or passphrase you entered is not correct."
+      },
+      {
+        "binary": "re-signed",
+        "step": "delete",
+        "ok": false,
+        "error": "NoStorageAccess",
+        "code": -25244,
+        "message": "Couldn't access platform storage: Invalid attempt to change the owner of this item."
+      },
+      {
+        "binary": "built",
+        "step": "delete",
+        "ok": true
+      },
+      {
+        "binary": "built",
+        "step": "get",
+        "ok": false,
+        "error": "NoEntry",
+        "code": null,
+        "message": "No matching credential found"
+      }
+    ]
+  }
+}

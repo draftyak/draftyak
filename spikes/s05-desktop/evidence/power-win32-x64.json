@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T08:28:30.549Z",
+  "recordedAt": "2026-10-18T15:14:37.825Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,14 +11,14 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "435c7420e13eea2b2c780bc312ffcd0325b1ae47",
+    "commit": "c51abce7daa47300768dcf609dbf52db5e0c8697",
     "dirty": false,
     "load": {
-      "cpuPercent": 14.6,
+      "cpuPercent": 31.5,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 74.4,
-      "concurrentBuilds": 1
+      "memoryUsedPercent": 73.9,
+      "concurrentBuilds": 5
     }
   },
   "data": {
@@ -50,12 +50,12 @@
         "after": 0
       },
       "systemRequiredAdded": true,
-      "waitedForOtherHoldersMs": 64,
+      "waitedForOtherHoldersMs": 50,
       "releasedBy": "null frame"
     },
     "deadline": {
       "untilMsFromNow": 3000,
-      "releasedAfterMs": 3074,
+      "releasedAfterMs": 3034,
       "releasedBy": "deadline",
       "shownBy": "CallNtPowerInformation(SystemExecutionState), ES_SYSTEM_REQUIRED",
       "shownBefore": false,
@@ -67,7 +67,7 @@
         "after": 0
       },
       "systemRequiredAdded": true,
-      "waitedForOtherHoldersMs": 51
+      "waitedForOtherHoldersMs": 63
     },
     "hubExit": {
       "releasedBy": "hub exited",
@@ -81,8 +81,8 @@
         "after": 0
       },
       "systemRequiredAdded": true,
-      "waitedForOtherHoldersMs": 60,
-      "hubBackMs": 1328,
+      "waitedForOtherHoldersMs": 64,
+      "hubBackMs": 1279,
       "sameHubId": true
     },
     "wake": {
