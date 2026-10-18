@@ -1,0 +1,206 @@
+{
+  "recordedAt": "2026-10-18T01:06:00.710Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "5a1fc3e7205d65510123cd99ebb2f4dcc4c08894",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 5.7,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 57.8,
+      "concurrentBuilds": 1
+    }
+  },
+  "data": {
+    "target": "win32-x64",
+    "nodeSelection": "both",
+    "from": "2026-01-01T00:00:00.000Z",
+    "to": "2028-01-01T00:00:00.000Z",
+    "nodes": [
+      {
+        "role": "minimum",
+        "version": "26.5.1",
+        "icuVersion": "78.3",
+        "tzVersion": "2026b",
+        "temporal": "object",
+        "rejectError": "RangeError: Temporal error: Rejecting ambiguous time zones.",
+        "zones": [
+          {
+            "zone": "America/New_York",
+            "transitions": 4,
+            "shiftsMinutes": [
+              60,
+              -60,
+              60,
+              -60
+            ],
+            "gapWallsRejected": 6,
+            "foldWallsRejected": 6,
+            "uniqueWallsResolved": 12
+          },
+          {
+            "zone": "Europe/London",
+            "transitions": 4,
+            "shiftsMinutes": [
+              60,
+              -60,
+              60,
+              -60
+            ],
+            "gapWallsRejected": 6,
+            "foldWallsRejected": 6,
+            "uniqueWallsResolved": 12
+          },
+          {
+            "zone": "Australia/Lord_Howe",
+            "transitions": 4,
+            "shiftsMinutes": [
+              -30,
+              30,
+              -30,
+              30
+            ],
+            "gapWallsRejected": 6,
+            "foldWallsRejected": 6,
+            "uniqueWallsResolved": 12
+          }
+        ],
+        "timers": [
+          {
+            "api": "setTimeout",
+            "delayMs": 2147483648,
+            "firedMs": 5,
+            "overflowWarning": true
+          },
+          {
+            "api": "setInterval",
+            "delayMs": 2147483648,
+            "firedMs": 16,
+            "overflowWarning": true
+          },
+          {
+            "api": "timers/promises setTimeout",
+            "delayMs": 2147483648,
+            "firedMs": 16,
+            "overflowWarning": true
+          },
+          {
+            "api": "timers/promises scheduler.wait",
+            "delayMs": 2147483648,
+            "firedMs": 0,
+            "overflowWarning": true
+          },
+          {
+            "api": "AbortSignal.timeout",
+            "delayMs": 2147483648,
+            "firedMs": 5,
+            "overflowWarning": true
+          },
+          {
+            "api": "setTimeout",
+            "delayMs": 2147483647,
+            "firedMs": null,
+            "overflowWarning": false
+          }
+        ]
+      },
+      {
+        "role": "bundled",
+        "version": "26.12.0",
+        "icuVersion": "78.3",
+        "tzVersion": "2026e",
+        "temporal": "object",
+        "rejectError": "RangeError: Temporal error: Rejecting ambiguous time zones.",
+        "zones": [
+          {
+            "zone": "America/New_York",
+            "transitions": 4,
+            "shiftsMinutes": [
+              60,
+              -60,
+              60,
+              -60
+            ],
+            "gapWallsRejected": 6,
+            "foldWallsRejected": 6,
+            "uniqueWallsResolved": 12
+          },
+          {
+            "zone": "Europe/London",
+            "transitions": 4,
+            "shiftsMinutes": [
+              60,
+              -60,
+              60,
+              -60
+            ],
+            "gapWallsRejected": 6,
+            "foldWallsRejected": 6,
+            "uniqueWallsResolved": 12
+          },
+          {
+            "zone": "Australia/Lord_Howe",
+            "transitions": 4,
+            "shiftsMinutes": [
+              -30,
+              30,
+              -30,
+              30
+            ],
+            "gapWallsRejected": 6,
+            "foldWallsRejected": 6,
+            "uniqueWallsResolved": 12
+          }
+        ],
+        "timers": [
+          {
+            "api": "setTimeout",
+            "delayMs": 2147483648,
+            "firedMs": 16,
+            "overflowWarning": true
+          },
+          {
+            "api": "setInterval",
+            "delayMs": 2147483648,
+            "firedMs": 15,
+            "overflowWarning": true
+          },
+          {
+            "api": "timers/promises setTimeout",
+            "delayMs": 2147483648,
+            "firedMs": 2,
+            "overflowWarning": true
+          },
+          {
+            "api": "timers/promises scheduler.wait",
+            "delayMs": 2147483648,
+            "firedMs": 15,
+            "overflowWarning": true
+          },
+          {
+            "api": "AbortSignal.timeout",
+            "delayMs": 2147483648,
+            "firedMs": 2,
+            "overflowWarning": true
+          },
+          {
+            "api": "setTimeout",
+            "delayMs": 2147483647,
+            "firedMs": null,
+            "overflowWarning": false
+          }
+        ]
+      }
+    ]
+  }
+}

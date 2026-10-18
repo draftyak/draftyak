@@ -1,0 +1,44 @@
+[package]
+name = "draftyak-spike-desktop"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+license = "Apache-2.0"
+
+# Without the default `app` feature only the supervisor builds, with no Tauri and none of its
+# system libraries, so its tests also run on CI's plain Linux runners.
+[features]
+default = ["app"]
+app = ["dep:tauri", "dep:tauri-build"]
+
+[[bin]]
+name = "draftyak-spike-desktop"
+path = "src/main.rs"
+required-features = ["app"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.3", optional = true }
+
+[dependencies]
+getrandom = "=0.3.4"
+serde_json = "=1.0.154"
+tauri = { version = "=2.12.4", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+] }
+
+# No debug info for dependencies: faster builds on the shared dev box.
+[profile.dev.package."*"]
+debug = false
+
+[workspace]

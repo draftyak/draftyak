@@ -1,0 +1,1381 @@
+{
+  "recordedAt": "2026-10-18T01:05:54.290Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "5a1fc3e7205d65510123cd99ebb2f4dcc4c08894",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 5.7,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 57.8,
+      "concurrentBuilds": 1
+    }
+  },
+  "data": {
+    "target": "win32-x64",
+    "nodeSelection": "both",
+    "zones": [
+      "America/New_York",
+      "Europe/London",
+      "Australia/Lord_Howe"
+    ],
+    "from": "2026-01-01T00:00:00.000Z",
+    "to": "2028-01-01T00:00:00.000Z",
+    "latenessS": [
+      900,
+      3600,
+      14400,
+      86400
+    ],
+    "jiff": {
+      "jiffVersion": "0.2.38",
+      "jiffTzdbVersion": "0.1.9",
+      "tzdbVersion": "2026e",
+      "database": "bundled",
+      "defaultDatabase": "bundled"
+    },
+    "nodes": [
+      {
+        "role": "minimum",
+        "version": "26.5.1",
+        "icuVersion": "78.3",
+        "tzVersion": "2026b",
+        "sameTzdataAsJiff": false,
+        "differences": 0
+      },
+      {
+        "role": "bundled",
+        "version": "26.12.0",
+        "icuVersion": "78.3",
+        "tzVersion": "2026e",
+        "sameTzdataAsJiff": true,
+        "differences": 0
+      }
+    ],
+    "transitions": [
+      {
+        "zone": "America/New_York",
+        "epochMs": 1772953200000,
+        "offsetBefore": "-05:00",
+        "offsetAfter": "-04:00",
+        "shiftMinutes": 60
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1793512800000,
+        "offsetBefore": "-04:00",
+        "offsetAfter": "-05:00",
+        "shiftMinutes": -60
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1805007600000,
+        "offsetBefore": "-05:00",
+        "offsetAfter": "-04:00",
+        "shiftMinutes": 60
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1825567200000,
+        "offsetBefore": "-04:00",
+        "offsetAfter": "-05:00",
+        "shiftMinutes": -60
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1774746000000,
+        "offsetBefore": "+00:00",
+        "offsetAfter": "+01:00",
+        "shiftMinutes": 60
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1792890000000,
+        "offsetBefore": "+01:00",
+        "offsetAfter": "+00:00",
+        "shiftMinutes": -60
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1806195600000,
+        "offsetBefore": "+00:00",
+        "offsetAfter": "+01:00",
+        "shiftMinutes": 60
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1824944400000,
+        "offsetBefore": "+01:00",
+        "offsetAfter": "+00:00",
+        "shiftMinutes": -60
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1775314800000,
+        "offsetBefore": "+11:00",
+        "offsetAfter": "+10:30",
+        "shiftMinutes": -30
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1791041400000,
+        "offsetBefore": "+10:30",
+        "offsetAfter": "+11:00",
+        "shiftMinutes": 30
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1806764400000,
+        "offsetBefore": "+11:00",
+        "offsetAfter": "+10:30",
+        "shiftMinutes": -30
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1822491000000,
+        "offsetBefore": "+10:30",
+        "offsetAfter": "+11:00",
+        "shiftMinutes": 30
+      }
+    ],
+    "walls": [
+      {
+        "zone": "America/New_York",
+        "wall": "2026-03-08T01:59",
+        "kind": "unique",
+        "compatible": 1772953140000,
+        "earlier": 1772953140000,
+        "later": 1772953140000,
+        "reject": 1772953140000
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2026-03-08T02:00",
+        "kind": "gap",
+        "compatible": 1772953200000,
+        "earlier": 1772949600000,
+        "later": 1772953200000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2026-03-08T02:30",
+        "kind": "gap",
+        "compatible": 1772955000000,
+        "earlier": 1772951400000,
+        "later": 1772955000000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2026-03-08T02:59",
+        "kind": "gap",
+        "compatible": 1772956740000,
+        "earlier": 1772953140000,
+        "later": 1772956740000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2026-03-08T03:00",
+        "kind": "unique",
+        "compatible": 1772953200000,
+        "earlier": 1772953200000,
+        "later": 1772953200000,
+        "reject": 1772953200000
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2026-03-07T12:00",
+        "kind": "unique",
+        "compatible": 1772902800000,
+        "earlier": 1772902800000,
+        "later": 1772902800000,
+        "reject": 1772902800000
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2026-11-01T00:59",
+        "kind": "unique",
+        "compatible": 1793509140000,
+        "earlier": 1793509140000,
+        "later": 1793509140000,
+        "reject": 1793509140000
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2026-11-01T01:00",
+        "kind": "fold",
+        "compatible": 1793509200000,
+        "earlier": 1793509200000,
+        "later": 1793512800000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2026-11-01T01:30",
+        "kind": "fold",
+        "compatible": 1793511000000,
+        "earlier": 1793511000000,
+        "later": 1793514600000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2026-11-01T01:59",
+        "kind": "fold",
+        "compatible": 1793512740000,
+        "earlier": 1793512740000,
+        "later": 1793516340000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2026-11-01T02:00",
+        "kind": "unique",
+        "compatible": 1793516400000,
+        "earlier": 1793516400000,
+        "later": 1793516400000,
+        "reject": 1793516400000
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2026-10-31T12:00",
+        "kind": "unique",
+        "compatible": 1793462400000,
+        "earlier": 1793462400000,
+        "later": 1793462400000,
+        "reject": 1793462400000
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-03-14T01:59",
+        "kind": "unique",
+        "compatible": 1805007540000,
+        "earlier": 1805007540000,
+        "later": 1805007540000,
+        "reject": 1805007540000
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-03-14T02:00",
+        "kind": "gap",
+        "compatible": 1805007600000,
+        "earlier": 1805004000000,
+        "later": 1805007600000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-03-14T02:30",
+        "kind": "gap",
+        "compatible": 1805009400000,
+        "earlier": 1805005800000,
+        "later": 1805009400000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-03-14T02:59",
+        "kind": "gap",
+        "compatible": 1805011140000,
+        "earlier": 1805007540000,
+        "later": 1805011140000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-03-14T03:00",
+        "kind": "unique",
+        "compatible": 1805007600000,
+        "earlier": 1805007600000,
+        "later": 1805007600000,
+        "reject": 1805007600000
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-03-13T12:00",
+        "kind": "unique",
+        "compatible": 1804957200000,
+        "earlier": 1804957200000,
+        "later": 1804957200000,
+        "reject": 1804957200000
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-11-07T00:59",
+        "kind": "unique",
+        "compatible": 1825563540000,
+        "earlier": 1825563540000,
+        "later": 1825563540000,
+        "reject": 1825563540000
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-11-07T01:00",
+        "kind": "fold",
+        "compatible": 1825563600000,
+        "earlier": 1825563600000,
+        "later": 1825567200000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-11-07T01:30",
+        "kind": "fold",
+        "compatible": 1825565400000,
+        "earlier": 1825565400000,
+        "later": 1825569000000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-11-07T01:59",
+        "kind": "fold",
+        "compatible": 1825567140000,
+        "earlier": 1825567140000,
+        "later": 1825570740000,
+        "reject": null
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-11-07T02:00",
+        "kind": "unique",
+        "compatible": 1825570800000,
+        "earlier": 1825570800000,
+        "later": 1825570800000,
+        "reject": 1825570800000
+      },
+      {
+        "zone": "America/New_York",
+        "wall": "2027-11-06T12:00",
+        "kind": "unique",
+        "compatible": 1825516800000,
+        "earlier": 1825516800000,
+        "later": 1825516800000,
+        "reject": 1825516800000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-04-05T01:29",
+        "kind": "unique",
+        "compatible": 1775312940000,
+        "earlier": 1775312940000,
+        "later": 1775312940000,
+        "reject": 1775312940000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-04-05T01:30",
+        "kind": "fold",
+        "compatible": 1775313000000,
+        "earlier": 1775313000000,
+        "later": 1775314800000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-04-05T01:45",
+        "kind": "fold",
+        "compatible": 1775313900000,
+        "earlier": 1775313900000,
+        "later": 1775315700000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-04-05T01:59",
+        "kind": "fold",
+        "compatible": 1775314740000,
+        "earlier": 1775314740000,
+        "later": 1775316540000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-04-05T02:00",
+        "kind": "unique",
+        "compatible": 1775316600000,
+        "earlier": 1775316600000,
+        "later": 1775316600000,
+        "reject": 1775316600000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-04-04T12:00",
+        "kind": "unique",
+        "compatible": 1775264400000,
+        "earlier": 1775264400000,
+        "later": 1775264400000,
+        "reject": 1775264400000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-10-04T01:59",
+        "kind": "unique",
+        "compatible": 1791041340000,
+        "earlier": 1791041340000,
+        "later": 1791041340000,
+        "reject": 1791041340000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-10-04T02:00",
+        "kind": "gap",
+        "compatible": 1791041400000,
+        "earlier": 1791039600000,
+        "later": 1791041400000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-10-04T02:15",
+        "kind": "gap",
+        "compatible": 1791042300000,
+        "earlier": 1791040500000,
+        "later": 1791042300000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-10-04T02:29",
+        "kind": "gap",
+        "compatible": 1791043140000,
+        "earlier": 1791041340000,
+        "later": 1791043140000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-10-04T02:30",
+        "kind": "unique",
+        "compatible": 1791041400000,
+        "earlier": 1791041400000,
+        "later": 1791041400000,
+        "reject": 1791041400000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2026-10-03T12:00",
+        "kind": "unique",
+        "compatible": 1790991000000,
+        "earlier": 1790991000000,
+        "later": 1790991000000,
+        "reject": 1790991000000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-04-04T01:29",
+        "kind": "unique",
+        "compatible": 1806762540000,
+        "earlier": 1806762540000,
+        "later": 1806762540000,
+        "reject": 1806762540000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-04-04T01:30",
+        "kind": "fold",
+        "compatible": 1806762600000,
+        "earlier": 1806762600000,
+        "later": 1806764400000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-04-04T01:45",
+        "kind": "fold",
+        "compatible": 1806763500000,
+        "earlier": 1806763500000,
+        "later": 1806765300000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-04-04T01:59",
+        "kind": "fold",
+        "compatible": 1806764340000,
+        "earlier": 1806764340000,
+        "later": 1806766140000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-04-04T02:00",
+        "kind": "unique",
+        "compatible": 1806766200000,
+        "earlier": 1806766200000,
+        "later": 1806766200000,
+        "reject": 1806766200000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-04-03T12:00",
+        "kind": "unique",
+        "compatible": 1806714000000,
+        "earlier": 1806714000000,
+        "later": 1806714000000,
+        "reject": 1806714000000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-10-03T01:59",
+        "kind": "unique",
+        "compatible": 1822490940000,
+        "earlier": 1822490940000,
+        "later": 1822490940000,
+        "reject": 1822490940000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-10-03T02:00",
+        "kind": "gap",
+        "compatible": 1822491000000,
+        "earlier": 1822489200000,
+        "later": 1822491000000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-10-03T02:15",
+        "kind": "gap",
+        "compatible": 1822491900000,
+        "earlier": 1822490100000,
+        "later": 1822491900000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-10-03T02:29",
+        "kind": "gap",
+        "compatible": 1822492740000,
+        "earlier": 1822490940000,
+        "later": 1822492740000,
+        "reject": null
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-10-03T02:30",
+        "kind": "unique",
+        "compatible": 1822491000000,
+        "earlier": 1822491000000,
+        "later": 1822491000000,
+        "reject": 1822491000000
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "wall": "2027-10-02T12:00",
+        "kind": "unique",
+        "compatible": 1822440600000,
+        "earlier": 1822440600000,
+        "later": 1822440600000,
+        "reject": 1822440600000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-03-29T00:59",
+        "kind": "unique",
+        "compatible": 1774745940000,
+        "earlier": 1774745940000,
+        "later": 1774745940000,
+        "reject": 1774745940000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-03-29T01:00",
+        "kind": "gap",
+        "compatible": 1774746000000,
+        "earlier": 1774742400000,
+        "later": 1774746000000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-03-29T01:30",
+        "kind": "gap",
+        "compatible": 1774747800000,
+        "earlier": 1774744200000,
+        "later": 1774747800000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-03-29T01:59",
+        "kind": "gap",
+        "compatible": 1774749540000,
+        "earlier": 1774745940000,
+        "later": 1774749540000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-03-29T02:00",
+        "kind": "unique",
+        "compatible": 1774746000000,
+        "earlier": 1774746000000,
+        "later": 1774746000000,
+        "reject": 1774746000000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-03-28T12:00",
+        "kind": "unique",
+        "compatible": 1774699200000,
+        "earlier": 1774699200000,
+        "later": 1774699200000,
+        "reject": 1774699200000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-10-25T00:59",
+        "kind": "unique",
+        "compatible": 1792886340000,
+        "earlier": 1792886340000,
+        "later": 1792886340000,
+        "reject": 1792886340000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-10-25T01:00",
+        "kind": "fold",
+        "compatible": 1792886400000,
+        "earlier": 1792886400000,
+        "later": 1792890000000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-10-25T01:30",
+        "kind": "fold",
+        "compatible": 1792888200000,
+        "earlier": 1792888200000,
+        "later": 1792891800000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-10-25T01:59",
+        "kind": "fold",
+        "compatible": 1792889940000,
+        "earlier": 1792889940000,
+        "later": 1792893540000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-10-25T02:00",
+        "kind": "unique",
+        "compatible": 1792893600000,
+        "earlier": 1792893600000,
+        "later": 1792893600000,
+        "reject": 1792893600000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2026-10-24T12:00",
+        "kind": "unique",
+        "compatible": 1792839600000,
+        "earlier": 1792839600000,
+        "later": 1792839600000,
+        "reject": 1792839600000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-03-28T00:59",
+        "kind": "unique",
+        "compatible": 1806195540000,
+        "earlier": 1806195540000,
+        "later": 1806195540000,
+        "reject": 1806195540000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-03-28T01:00",
+        "kind": "gap",
+        "compatible": 1806195600000,
+        "earlier": 1806192000000,
+        "later": 1806195600000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-03-28T01:30",
+        "kind": "gap",
+        "compatible": 1806197400000,
+        "earlier": 1806193800000,
+        "later": 1806197400000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-03-28T01:59",
+        "kind": "gap",
+        "compatible": 1806199140000,
+        "earlier": 1806195540000,
+        "later": 1806199140000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-03-28T02:00",
+        "kind": "unique",
+        "compatible": 1806195600000,
+        "earlier": 1806195600000,
+        "later": 1806195600000,
+        "reject": 1806195600000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-03-27T12:00",
+        "kind": "unique",
+        "compatible": 1806148800000,
+        "earlier": 1806148800000,
+        "later": 1806148800000,
+        "reject": 1806148800000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-10-31T00:59",
+        "kind": "unique",
+        "compatible": 1824940740000,
+        "earlier": 1824940740000,
+        "later": 1824940740000,
+        "reject": 1824940740000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-10-31T01:00",
+        "kind": "fold",
+        "compatible": 1824940800000,
+        "earlier": 1824940800000,
+        "later": 1824944400000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-10-31T01:30",
+        "kind": "fold",
+        "compatible": 1824942600000,
+        "earlier": 1824942600000,
+        "later": 1824946200000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-10-31T01:59",
+        "kind": "fold",
+        "compatible": 1824944340000,
+        "earlier": 1824944340000,
+        "later": 1824947940000,
+        "reject": null
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-10-31T02:00",
+        "kind": "unique",
+        "compatible": 1824948000000,
+        "earlier": 1824948000000,
+        "later": 1824948000000,
+        "reject": 1824948000000
+      },
+      {
+        "zone": "Europe/London",
+        "wall": "2027-10-30T12:00",
+        "kind": "unique",
+        "compatible": 1824894000000,
+        "earlier": 1824894000000,
+        "later": 1824894000000,
+        "reject": 1824894000000
+      }
+    ],
+    "instants": [
+      {
+        "zone": "America/New_York",
+        "epochMs": 1772951400000,
+        "localWallTime": "2026-03-08T01:30-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1772953140000,
+        "localWallTime": "2026-03-08T01:59-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1772953200000,
+        "localWallTime": "2026-03-08T03:00-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1772953260000,
+        "localWallTime": "2026-03-08T03:01-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1772952300000,
+        "localWallTime": "2026-03-08T01:45-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1772955000000,
+        "localWallTime": "2026-03-08T03:30-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1772965800000,
+        "localWallTime": "2026-03-08T06:30-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1773037800000,
+        "localWallTime": "2026-03-09T02:30-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1793511000000,
+        "localWallTime": "2026-11-01T01:30-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1793512740000,
+        "localWallTime": "2026-11-01T01:59-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1793512800000,
+        "localWallTime": "2026-11-01T01:00-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1793512860000,
+        "localWallTime": "2026-11-01T01:01-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1793511900000,
+        "localWallTime": "2026-11-01T01:45-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1793514600000,
+        "localWallTime": "2026-11-01T01:30-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1793525400000,
+        "localWallTime": "2026-11-01T04:30-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1793597400000,
+        "localWallTime": "2026-11-02T00:30-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1805005800000,
+        "localWallTime": "2027-03-14T01:30-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1805007540000,
+        "localWallTime": "2027-03-14T01:59-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1805007600000,
+        "localWallTime": "2027-03-14T03:00-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1805007660000,
+        "localWallTime": "2027-03-14T03:01-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1805006700000,
+        "localWallTime": "2027-03-14T01:45-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1805009400000,
+        "localWallTime": "2027-03-14T03:30-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1805020200000,
+        "localWallTime": "2027-03-14T06:30-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1805092200000,
+        "localWallTime": "2027-03-15T02:30-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1825565400000,
+        "localWallTime": "2027-11-07T01:30-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1825567140000,
+        "localWallTime": "2027-11-07T01:59-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1825567200000,
+        "localWallTime": "2027-11-07T01:00-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1825567260000,
+        "localWallTime": "2027-11-07T01:01-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1825566300000,
+        "localWallTime": "2027-11-07T01:45-04:00",
+        "offset": "-04:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1825569000000,
+        "localWallTime": "2027-11-07T01:30-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1825579800000,
+        "localWallTime": "2027-11-07T04:30-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "America/New_York",
+        "epochMs": 1825651800000,
+        "localWallTime": "2027-11-08T00:30-05:00",
+        "offset": "-05:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1775313000000,
+        "localWallTime": "2026-04-05T01:30+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1775314740000,
+        "localWallTime": "2026-04-05T01:59+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1775314800000,
+        "localWallTime": "2026-04-05T01:30+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1775314860000,
+        "localWallTime": "2026-04-05T01:31+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1775313900000,
+        "localWallTime": "2026-04-05T01:45+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1775316600000,
+        "localWallTime": "2026-04-05T02:00+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1775327400000,
+        "localWallTime": "2026-04-05T05:00+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1775399400000,
+        "localWallTime": "2026-04-06T01:00+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1791039600000,
+        "localWallTime": "2026-10-04T01:30+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1791041340000,
+        "localWallTime": "2026-10-04T01:59+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1791041400000,
+        "localWallTime": "2026-10-04T02:30+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1791041460000,
+        "localWallTime": "2026-10-04T02:31+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1791040500000,
+        "localWallTime": "2026-10-04T01:45+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1791043200000,
+        "localWallTime": "2026-10-04T03:00+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1791054000000,
+        "localWallTime": "2026-10-04T06:00+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1791126000000,
+        "localWallTime": "2026-10-05T02:00+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1806762600000,
+        "localWallTime": "2027-04-04T01:30+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1806764340000,
+        "localWallTime": "2027-04-04T01:59+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1806764400000,
+        "localWallTime": "2027-04-04T01:30+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1806764460000,
+        "localWallTime": "2027-04-04T01:31+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1806763500000,
+        "localWallTime": "2027-04-04T01:45+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1806766200000,
+        "localWallTime": "2027-04-04T02:00+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1806777000000,
+        "localWallTime": "2027-04-04T05:00+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1806849000000,
+        "localWallTime": "2027-04-05T01:00+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1822489200000,
+        "localWallTime": "2027-10-03T01:30+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1822490940000,
+        "localWallTime": "2027-10-03T01:59+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1822491000000,
+        "localWallTime": "2027-10-03T02:30+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1822491060000,
+        "localWallTime": "2027-10-03T02:31+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1822490100000,
+        "localWallTime": "2027-10-03T01:45+10:30",
+        "offset": "+10:30"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1822492800000,
+        "localWallTime": "2027-10-03T03:00+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1822503600000,
+        "localWallTime": "2027-10-03T06:00+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Australia/Lord_Howe",
+        "epochMs": 1822575600000,
+        "localWallTime": "2027-10-04T02:00+11:00",
+        "offset": "+11:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1774744200000,
+        "localWallTime": "2026-03-29T00:30+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1774745940000,
+        "localWallTime": "2026-03-29T00:59+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1774746000000,
+        "localWallTime": "2026-03-29T02:00+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1774746060000,
+        "localWallTime": "2026-03-29T02:01+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1774745100000,
+        "localWallTime": "2026-03-29T00:45+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1774747800000,
+        "localWallTime": "2026-03-29T02:30+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1774758600000,
+        "localWallTime": "2026-03-29T05:30+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1774830600000,
+        "localWallTime": "2026-03-30T01:30+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1792888200000,
+        "localWallTime": "2026-10-25T01:30+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1792889940000,
+        "localWallTime": "2026-10-25T01:59+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1792890000000,
+        "localWallTime": "2026-10-25T01:00+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1792890060000,
+        "localWallTime": "2026-10-25T01:01+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1792889100000,
+        "localWallTime": "2026-10-25T01:45+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1792891800000,
+        "localWallTime": "2026-10-25T01:30+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1792902600000,
+        "localWallTime": "2026-10-25T04:30+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1792974600000,
+        "localWallTime": "2026-10-26T00:30+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1806193800000,
+        "localWallTime": "2027-03-28T00:30+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1806195540000,
+        "localWallTime": "2027-03-28T00:59+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1806195600000,
+        "localWallTime": "2027-03-28T02:00+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1806195660000,
+        "localWallTime": "2027-03-28T02:01+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1806194700000,
+        "localWallTime": "2027-03-28T00:45+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1806197400000,
+        "localWallTime": "2027-03-28T02:30+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1806208200000,
+        "localWallTime": "2027-03-28T05:30+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1806280200000,
+        "localWallTime": "2027-03-29T01:30+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1824942600000,
+        "localWallTime": "2027-10-31T01:30+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1824944340000,
+        "localWallTime": "2027-10-31T01:59+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1824944400000,
+        "localWallTime": "2027-10-31T01:00+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1824944460000,
+        "localWallTime": "2027-10-31T01:01+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1824943500000,
+        "localWallTime": "2027-10-31T01:45+01:00",
+        "offset": "+01:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1824946200000,
+        "localWallTime": "2027-10-31T01:30+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1824957000000,
+        "localWallTime": "2027-10-31T04:30+00:00",
+        "offset": "+00:00"
+      },
+      {
+        "zone": "Europe/London",
+        "epochMs": 1825029000000,
+        "localWallTime": "2027-11-01T00:30+00:00",
+        "offset": "+00:00"
+      }
+    ],
+    "differences": []
+  }
+}

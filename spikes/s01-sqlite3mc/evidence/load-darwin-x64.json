@@ -1,0 +1,65 @@
+{
+  "recordedAt": "2026-10-18T01:24:56.706Z",
+  "fingerprint": {
+    "os": {
+      "platform": "darwin",
+      "arch": "x64",
+      "osName": "Darwin Kernel Version 24.6.0: Tue Jul 21 20:50:07 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_X86_64",
+      "osVersion": "24.6.0"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "8697a2741e15d5fde101239cab46fcf0d4412f46",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 99,
+      "cpuCount": 4,
+      "cpuModel": "Intel(R) Core(TM) i7-8700B CPU @ 3.20GHz",
+      "memoryUsedPercent": 71.5,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "host": "darwin-x64",
+    "package": "better-sqlite3-multiple-ciphers@13.0.3",
+    "napiExpected": 10,
+    "runs": [
+      {
+        "loaded": true,
+        "target": "darwin-x64",
+        "nodeVersion": "26.5.1",
+        "napiVersion": 10,
+        "libc": null,
+        "sqliteVersion": "3.53.4",
+        "sqlite3mcVersion": "SQLite3 Multiple Ciphers 2.4.0",
+        "fromBundle": true,
+        "sha256": "4434dfa929e9b83fdc1ea34ee8739e764fcf09af8559ab039082b7b673b18805",
+        "openMs": 3.8,
+        "keyed": {
+          "ok": true
+        },
+        "via": "native",
+        "nodeFrom": "fetch-node"
+      },
+      {
+        "loaded": true,
+        "target": "darwin-x64",
+        "nodeVersion": "26.12.0",
+        "napiVersion": 10,
+        "libc": null,
+        "sqliteVersion": "3.53.4",
+        "sqlite3mcVersion": "SQLite3 Multiple Ciphers 2.4.0",
+        "fromBundle": true,
+        "sha256": "4434dfa929e9b83fdc1ea34ee8739e764fcf09af8559ab039082b7b673b18805",
+        "openMs": 4.5,
+        "keyed": {
+          "ok": true
+        },
+        "via": "native",
+        "nodeFrom": "fetch-node"
+      }
+    ]
+  }
+}

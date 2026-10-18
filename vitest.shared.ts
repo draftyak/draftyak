@@ -47,6 +47,9 @@ export function vitestConfig(env: ConfigEnv): ViteUserConfig {
 			// Many tests spawn git or a CLI, which can outlast Vitest's 5 s default on 2-core CI runners.
 			testTimeout: 30_000,
 			hookTimeout: 30_000,
+			// Vitest 5 shares this cache between processes at the workspace root by default; packages
+			// tested in parallel on Windows then fail with EPERM on each other's open cache files.
+			fsModuleCachePath: path.join(process.cwd(), "node_modules", ".vitest-cache"),
 		},
 	};
 }

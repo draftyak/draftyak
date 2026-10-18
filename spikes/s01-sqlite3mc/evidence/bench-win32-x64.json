@@ -1,0 +1,194 @@
+{
+  "recordedAt": "2026-10-17T21:38:34.865Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "5e8f49b0f7e67814468b6c0aca3057c31581cda3",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 9,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 61,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "win32-x64",
+    "package": "better-sqlite3-multiple-ciphers@13.0.3",
+    "rows": 10000,
+    "batch": 500,
+    "repeats": 3,
+    "bodyWords": 60,
+    "settings": {
+      "cipher": "chacha20",
+      "journalMode": "wal",
+      "synchronous": 2,
+      "busyTimeout": 5000,
+      "foreignKeys": 1,
+      "recursiveTriggers": 1,
+      "secureDelete": 1,
+      "trustedSchema": 0,
+      "tempStore": 2,
+      "autoVacuum": 2
+    },
+    "cases": [
+      {
+        "table": "plain",
+        "secureDelete": false,
+        "insertMs": 200.6,
+        "deleteMs": 38.8,
+        "walBytesAfterDelete": 5356032,
+        "dbBytesAfterInsert": 6279168,
+        "freedPages": 1521,
+        "vacuumMs": 2.7
+      },
+      {
+        "table": "plain",
+        "secureDelete": true,
+        "insertMs": 191,
+        "deleteMs": 46.7,
+        "walBytesAfterDelete": 7622032,
+        "dbBytesAfterInsert": 6279168,
+        "freedPages": 1521,
+        "vacuumMs": 2.3
+      },
+      {
+        "table": "fts",
+        "secureDelete": false,
+        "insertMs": 845.5,
+        "deleteMs": 182.1,
+        "walBytesAfterDelete": 10151712,
+        "dbBytesAfterInsert": 10412032,
+        "freedPages": 1179,
+        "vacuumMs": 12.5
+      },
+      {
+        "table": "fts",
+        "secureDelete": true,
+        "insertMs": 762.2,
+        "deleteMs": 186.8,
+        "walBytesAfterDelete": 13699032,
+        "dbBytesAfterInsert": 10412032,
+        "freedPages": 1179,
+        "vacuumMs": 11.5
+      },
+      {
+        "table": "fts-secure",
+        "secureDelete": false,
+        "insertMs": 788.9,
+        "deleteMs": 4165.6,
+        "walBytesAfterDelete": 31995952,
+        "dbBytesAfterInsert": 10412032,
+        "freedPages": 1715,
+        "vacuumMs": 13.5
+      },
+      {
+        "table": "fts-secure",
+        "secureDelete": true,
+        "insertMs": 670.5,
+        "deleteMs": 3549.5,
+        "walBytesAfterDelete": 35283712,
+        "dbBytesAfterInsert": 10412032,
+        "freedPages": 1715,
+        "vacuumMs": 12.9
+      }
+    ],
+    "secureDeleteOverhead": [
+      {
+        "table": "plain",
+        "insertPercent": -4.8,
+        "deletePercent": 20.4,
+        "walBytesPercent": 42.3
+      },
+      {
+        "table": "fts",
+        "insertPercent": -9.9,
+        "deletePercent": 2.6,
+        "walBytesPercent": 34.9
+      },
+      {
+        "table": "fts-secure",
+        "insertPercent": -15,
+        "deletePercent": -14.8,
+        "walBytesPercent": 10.3
+      }
+    ],
+    "ftsSecureDeleteOverhead": {
+      "insertPercent": -12,
+      "deletePercent": 1800.2,
+      "walBytesPercent": 157.6
+    },
+    "synchronousCost": {
+      "table": "plain",
+      "commits": 40,
+      "normal": {
+        "insertMs": 191.2,
+        "deleteMs": 53.2
+      },
+      "full": {
+        "insertMs": 191,
+        "deleteMs": 46.7
+      }
+    },
+    "openMs": 23,
+    "kdfIterations": 64007,
+    "sourceBytes": 10412032,
+    "rotations": [
+      {
+        "method": "vacuum-into",
+        "copyMs": 161.8,
+        "verifyMs": 171.9,
+        "bytes": 10227712
+      },
+      {
+        "method": "attach-copy",
+        "copyMs": 253.2,
+        "verifyMs": 153.9,
+        "bytes": 10891264
+      }
+    ],
+    "scaling": [
+      {
+        "rows": 10000,
+        "deleted": 5000,
+        "insertMs": 737.4,
+        "deleteMs": 2063.6,
+        "walBytesAfterDelete": 19788392,
+        "perMessageMs": 0.413
+      },
+      {
+        "rows": 50000,
+        "deleted": 5000,
+        "insertMs": 4243,
+        "deleteMs": 3062.5,
+        "walBytesAfterDelete": 58190912,
+        "perMessageMs": 0.613
+      }
+    ],
+    "lock": {
+      "waitedMs": 0,
+      "idle": {
+        "samples": [
+          19.7,
+          15.8,
+          19.2,
+          18.9,
+          17.1
+        ],
+        "maxCpuPercent": 19.7,
+        "thresholdPercent": 20,
+        "waitedMs": 23259,
+        "concurrentBuilds": 0
+      }
+    }
+  }
+}

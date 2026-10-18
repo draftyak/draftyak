@@ -1,0 +1,8 @@
+package: com.example.defaultsms
+uses-permission: name='android.permission.INTERNET'
+uses-permission: name='android.permission.READ_CONTACTS'
+uses-permission: name='android.permission.READ_SMS' maxSdkVersion='28'
+uses-permission: name='android.permission.SEND_RESPOND_VIA_MESSAGE'
+uses-permission-sdk-23: name='android.permission.RECEIVE_MMS'
+uses-permission: name='android.permission.RECEIVE_SENSITIVE_NOTIFICATIONS'
+uses-permission: name='android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND'

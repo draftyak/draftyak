@@ -1,0 +1,168 @@
+{
+  "recordedAt": "2026-10-18T00:26:16.496Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "81ecba90d3832b556d6b9b697c17884982e01ffe",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 8.3,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 57.5,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "win32-x64",
+    "triple": "x86_64-pc-windows-msvc",
+    "versions": {
+      "nodeVersion": "26.12.0",
+      "tauriVersion": "2.12.4",
+      "tauriBuildVersion": "2.7.3"
+    },
+    "rustfmt": {
+      "clean": true
+    },
+    "clippy": {
+      "clean": true,
+      "features": "none",
+      "allTargets": true,
+      "ms": 2455
+    },
+    "cargoTest": {
+      "passed": 14,
+      "features": "none",
+      "nodeOptionsSet": true,
+      "ms": 8371
+    },
+    "build": {
+      "ms": 45944
+    },
+    "clippyApp": {
+      "clean": true,
+      "features": "app",
+      "allTargets": true,
+      "ms": 21594
+    },
+    "hub": {
+      "frames": [
+        "ready",
+        "l2Port",
+        "hubId"
+      ],
+      "strayStdoutBytes": 0,
+      "exitCode": 0,
+      "eofExitMs": 8
+    },
+    "plainApp": {
+      "readyMs": 260,
+      "storeFolders": 1,
+      "hooks": 0
+    },
+    "app": {
+      "readyMs": 191,
+      "policy": {
+        "backoffMaxMs": 60000,
+        "backoffMinMs": 1000,
+        "healthEveryMs": 10000,
+        "healthTimeoutMs": 2000,
+        "maxRestarts": 5,
+        "readyWithinMs": 30000,
+        "restartWindowMs": 300000,
+        "stableAfterMs": 60000,
+        "unhealthyAfter": 3
+      },
+      "spawn": {
+        "creationFlags": [
+          "CREATE_SUSPENDED",
+          "CREATE_NO_WINDOW"
+        ],
+        "jobLimitFlags": [
+          "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE"
+        ],
+        "breakawayAllowed": false
+      },
+      "resume": {
+        "method": "Toolhelp32 thread snapshot, then ResumeThread",
+        "why": "ChildExt::main_thread_handle is unstable in Rust 1.95 (rust-lang/rust#96723)",
+        "threads": 1,
+        "previousSuspendCount": 1
+      },
+      "contained": [
+        "conhost.exe",
+        "conhost.exe",
+        "draftyak-node.exe",
+        "draftyak-node.exe"
+      ],
+      "temporal": "object",
+      "temporalNowInstant": "function",
+      "hubExecArgv": [
+        "--disable-sigusr1"
+      ],
+      "hubEnv": [
+        "APPDATA",
+        "DRAFTYAK_DATA_DIR",
+        "DRAFTYAK_SPIKE_IGNORE_EOF",
+        "DRAFTYAK_SPIKE_PLUGIN_ARGV",
+        "HOME",
+        "LOCALAPPDATA",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "USERPROFILE"
+      ],
+      "appNodeOptionsFlags": [
+        "--inspect"
+      ],
+      "hubNodeOptions": null,
+      "hubInspector": null,
+      "addon": {
+        "target": "win32-x64",
+        "fromResources": true,
+        "napiVersion": 10,
+        "sqliteVersion": "3.53.4",
+        "sqlite3mcVersion": "SQLite3 Multiple Ciphers 2.4.0",
+        "encrypted": true,
+        "sameBytesAsPackage": true
+      },
+      "pluginExecArgvFlags": [
+        "--permission",
+        "--allow-fs-read",
+        "--allow-fs-read",
+        "--allow-fs-write",
+        "--no-experimental-sqlite",
+        "--disable-sigusr1",
+        "--disallow-code-generation-from-strings",
+        "--max-old-space-size"
+      ],
+      "pluginExecArgvIsBuildArgv": true
+    },
+    "restart": {
+      "killedHubExitCode": 1,
+      "delayMs": 1000,
+      "backMs": 1322,
+      "hubIdStable": true,
+      "firstGenerationGoneMs": 274
+    },
+    "appEnded": {
+      "how": "TerminateProcess",
+      "hubIgnoredStdinEofAndBrokenPipes": true,
+      "goneMs": 248,
+      "ourProcessesLeft": 0,
+      "draftyakNodeOfThisBuildLeft": 0
+    },
+    "reuseRefused": {
+      "exitCode": 101,
+      "hubsSpawned": 0
+    }
+  }
+}

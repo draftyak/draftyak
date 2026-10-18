@@ -9,6 +9,7 @@ import { type SkipContext, skipOrFail } from "./skip.ts";
 
 export const DESKTOP_EXE = "C:/Program Files/Docker/Docker/Docker Desktop.exe";
 export const LABEL = "org.draftyak.spike-kit=1";
+const BUILD_LABEL = "org.draftyak.spike-kit.build";
 // name[:tag]@sha256:<digest>, or a bare image id: never a tag that can move.
 export const PINNED_IMAGE: RegExp = /^(?:([a-z0-9][\w./-]*(?::[\w.-]+)?)@)?sha256:[0-9a-f]{64}$/;
 
@@ -149,6 +150,16 @@ export async function needDocker(ctx: SkipContext, options?: EnsureOptions): Pro
 	}
 }
 
+// Whether the engine is Docker Desktop's, on any OS. Its VM forwards host.docker.internal to the
+// host's loopback; other engines reach the host at the bridge gateway.
+export async function dockerDesktop(): Promise<boolean> {
+	const info = await exec(cli(), ["info", "--format", "{{.OperatingSystem}}"], {
+		timeoutMs: 20_000,
+	});
+	if (info.code !== 0) throw new DockerUnavailableError(`docker info failed: ${lastLine(info)}`);
+	return /\bDocker Desktop\b/.test(info.stdout);
+}
+
 export type DockerMount =
 	| { readonly source: string; readonly target: string }
 	| { readonly volume: string; readonly target: string };
@@ -196,6 +207,10 @@ function mountArg(mount: DockerMount): string {
 
 // Unnamed --rm containers in the sandbox; binds are always read-only; images are pinned.
 export function dockerRunArgs(spec: DockerRunSpec, cidfile: string): string[] {
+	return runArgs(spec, cidfile, []);
+}
+
+function runArgs(spec: DockerRunSpec, cidfile: string, extra: readonly string[]): string[] {
 	if (!PINNED_IMAGE.test(spec.image)) {
 		throw new Error(`pin the image by digest (name@sha256:<hex>) or image id: ${spec.image}`);
 	}
@@ -216,7 +231,138 @@ export function dockerRunArgs(spec: DockerRunSpec, cidfile: string): string[] {
 		args.push("--env", `${name}=${value}`);
 	}
 	for (const mount of spec.mounts ?? []) args.push("--mount", mountArg(mount));
-	return [...args, spec.image, ...spec.cmd];
+	return [...args, ...extra, spec.image, ...spec.cmd];
+}
+
+export interface DockerStartSpec extends Omit<DockerRunSpec, "timeoutMs"> {
+	// Container TCP ports to publish, each on a port Docker picks on the host's 127.0.0.1 only.
+	readonly publish?: readonly number[];
+	// Maps host.docker.internal to the host, as Docker Desktop already does and Linux engines don't.
+	readonly hostGateway?: boolean;
+	// The container ends itself this long after it starts, even when the process that started it is
+	// killed (default 10 minutes). cmd runs under the image's `timeout` (busybox or coreutils).
+	readonly lifetimeMs?: number;
+	// For `docker run --detach` itself, which pulls a missing image (default 120 s).
+	readonly startTimeoutMs?: number;
+}
+
+export const START_LIFETIME_MS = 600_000;
+
+// The sandboxed run of dockerRunArgs, detached; publishing and the host name need the bridge network.
+export function dockerStartArgs(spec: DockerStartSpec, cidfile: string): string[] {
+	const publish = spec.publish ?? [];
+	if (spec.network !== "bridge" && (publish.length > 0 || spec.hostGateway)) {
+		throw new Error("published ports and host.docker.internal need the bridge network");
+	}
+	const lifetime = spec.lifetimeMs ?? START_LIFETIME_MS;
+	if (!Number.isInteger(lifetime) || lifetime < 1_000) throw new Error(`bad lifetime: ${lifetime}`);
+	if (spec.cmd.length === 0) throw new Error("startInDocker needs a cmd to run for its lifetime");
+	// Docker's init is PID 1, so `timeout` can end cmd: PID 1 ignores a SIGKILL from its own namespace.
+	const extra = ["--detach", "--init"];
+	for (const port of publish) {
+		if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+			throw new Error(`bad container port: ${port}`);
+		}
+		extra.push("--publish", `127.0.0.1::${port}/tcp`);
+	}
+	if (spec.hostGateway) extra.push("--add-host", "host.docker.internal:host-gateway");
+	const cmd = ["timeout", "-s", "KILL", String(Math.ceil(lifetime / 1_000)), ...spec.cmd];
+	return runArgs({ ...spec, cmd }, cidfile, extra);
+}
+
+export interface StartedContainer extends AsyncDisposable {
+	readonly containerId: string;
+	// The host port on 127.0.0.1 that publishes a container port.
+	port(containerPort: number): number;
+	// What the container has written so far, stdout then stderr.
+	logs(): Promise<string>;
+	// `docker inspect --format`, such as the bridge address a server behind the container sees.
+	inspect(format: string): Promise<string>;
+	// Kills the container; --rm then removes it.
+	stop(): Promise<void>;
+}
+
+// A process that exits normally removes the containers it left running. One that is killed runs no
+// hook, so its containers end themselves when their lifetime runs out.
+const started = new Set<string>();
+let exitHook = false;
+
+function removeAtExit(docker: string, id: string): void {
+	started.add(id);
+	if (exitHook) return;
+	exitHook = true;
+	process.once("exit", () => {
+		for (const left of started) {
+			try {
+				execSync(docker, ["rm", "--force", left], { timeoutMs: 15_000 });
+			} catch {}
+		}
+	});
+}
+
+// A background container in the sandbox (unnamed, --rm, labelled, pinned image): for a server a
+// test talks to, such as a proxy. Stop it when done (await using); the exit hook and the lifetime
+// are last resorts.
+export async function startInDocker(spec: DockerStartSpec): Promise<StartedContainer> {
+	const docker = cli();
+	const cidfile = path.join(os.tmpdir(), `draftyak-cid-${randomBytes(6).toString("hex")}`);
+	const args = dockerStartArgs(spec, cidfile);
+	const readId = (): string =>
+		fs.existsSync(cidfile) ? fs.readFileSync(cidfile, "utf8").trim() : "";
+	let containerId = "";
+	const stop = async (): Promise<void> => {
+		if (!started.has(containerId)) return;
+		const removed = await exec(docker, ["rm", "--force", containerId], { timeoutMs: 60_000 });
+		if (removed.code !== 0 && !/no such container/i.test(removed.stderr)) {
+			throw new Error(`docker rm ${containerId.slice(0, 12)}: ${lastLine(removed)}`);
+		}
+		started.delete(containerId);
+	};
+	try {
+		const options = { timeoutMs: spec.startTimeoutMs ?? 120_000, signal: spec.signal };
+		const result = await exec(docker, args, options).finally(() => {
+			containerId = readId();
+			if (containerId !== "") removeAtExit(docker, containerId);
+		});
+		if (result.code !== 0 || !/^[0-9a-f]{64}$/.test(containerId)) {
+			const how = result.timedOut ? "timed out" : `exit code ${result.code}`;
+			throw new Error(`docker run failed (${how}): ${lastLine(result)}`);
+		}
+		const ports = new Map<number, number>();
+		for (const containerPort of spec.publish ?? []) {
+			const shown = await exec(docker, ["port", containerId, `${containerPort}/tcp`], {
+				timeoutMs: 30_000,
+			});
+			const hostPort = /^127\.0\.0\.1:(\d+)\s*$/m.exec(shown.stdout)?.[1];
+			if (shown.code !== 0 || hostPort === undefined) {
+				throw new Error(`docker port ${containerPort}: ${lastLine(shown)}`);
+			}
+			ports.set(containerPort, Number(hostPort));
+		}
+		const port = (containerPort: number): number => {
+			const hostPort = ports.get(containerPort);
+			if (hostPort === undefined)
+				throw new Error(`container port ${containerPort} isn't published`);
+			return hostPort;
+		};
+		const logs = async (): Promise<string> => {
+			const shown = await exec(docker, ["logs", containerId], { timeoutMs: 30_000 });
+			return `${shown.stdout}${shown.stderr}`;
+		};
+		const inspect = async (format: string): Promise<string> => {
+			const shown = await exec(docker, ["inspect", "--format", format, containerId], {
+				timeoutMs: 30_000,
+			});
+			if (shown.code !== 0) throw new Error(`docker inspect: ${lastLine(shown)}`);
+			return shown.stdout.trim();
+		};
+		return { containerId, port, logs, inspect, stop, [Symbol.asyncDispose]: stop };
+	} catch (error) {
+		await stop().catch(() => undefined);
+		throw error;
+	} finally {
+		fs.rmSync(cidfile, { force: true });
+	}
 }
 
 export interface DockerResult extends ExecResult {
@@ -243,6 +389,156 @@ export async function runInDocker(spec: DockerRunSpec): Promise<DockerResult> {
 		}
 		fs.rmSync(cidfile, { force: true });
 	}
+}
+
+export interface BuildSpec {
+	// The Dockerfile's text; the build sends no other context.
+	readonly dockerfile: string;
+	// The network RUN steps get: bridge (Docker's default build network) or none.
+	readonly network: "none" | "bridge";
+	readonly platform?: string;
+	readonly timeoutMs?: number;
+	readonly signal?: AbortSignal;
+}
+
+export interface BuiltImage extends AsyncDisposable {
+	// sha256:<hex>, which runInDocker takes as a pinned image.
+	readonly id: string;
+	remove(): Promise<void>;
+}
+
+// Every FROM names a digest-pinned image or an earlier stage, and so does a syntax directive (its
+// frontend is an image too). With no context, ADD and COPY have nothing to read, and RUN --mount
+// would read one or pull an image (from=). An escape directive would change which lines are
+// instructions, so it is refused too.
+export function checkDockerfile(dockerfile: string): void {
+	const stages = new Set<string>();
+	let bases = 0;
+	for (const line of dockerfile.replace(/\\\r?\n/g, " ").split(/\r?\n/)) {
+		if (/^\s*#\s*escape\s*=/i.test(line)) throw new Error("buildImage takes no escape directive");
+		const directive = /^\s*#\s*syntax\s*=\s*(\S+)/i.exec(line)?.[1];
+		if (directive !== undefined && !PINNED_IMAGE.test(directive)) {
+			throw new Error(`pin the syntax directive by digest: ${directive}`);
+		}
+		if (/^\s*RUN\s+(?:--\S+\s+)*--mount\b/i.test(line)) {
+			throw new Error("RUN --mount reads a build context or an image; buildImage allows neither");
+		}
+		const [instruction = "", ...words] = line.trim().split(/\s+/);
+		const keyword = instruction.toUpperCase();
+		if (keyword === "ADD" || keyword === "COPY") {
+			throw new Error(`${keyword} needs a build context, and buildImage sends none`);
+		}
+		if (keyword !== "FROM") continue;
+		const [image = "", as, stage] = words.filter((word) => !word.startsWith("--"));
+		if (!PINNED_IMAGE.test(image) && !stages.has(image.toLowerCase())) {
+			throw new Error(`pin the image by digest (name@sha256:<hex>): FROM ${image}`);
+		}
+		if (as?.toUpperCase() === "AS" && stage) stages.add(stage.toLowerCase());
+		bases++;
+	}
+	if (bases === 0) throw new Error("the Dockerfile has no FROM");
+}
+
+// An unnamed image (no tag) carrying the kit's label, with BuildKit's plain log for errors. The
+// build's own label gives each build its own image, which shares the cached layers: a rebuild of the
+// same Dockerfile would otherwise return the same image, and removing it would break other users.
+export function dockerBuildArgs(
+	spec: BuildSpec,
+	context: string,
+	metadataFile: string,
+	build: string,
+): string[] {
+	checkDockerfile(spec.dockerfile);
+	if (spec.network !== "none" && spec.network !== "bridge") {
+		throw new Error(`network is none or bridge, not ${spec.network}`);
+	}
+	if (!/^[0-9a-f]{12}$/.test(build)) throw new Error(`a build id is 12 hex digits, not ${build}`);
+	const network = spec.network === "bridge" ? "default" : "none";
+	const args = ["build", "--metadata-file", metadataFile, "--label", LABEL];
+	args.push("--label", `${BUILD_LABEL}=${build}`, "--network", network);
+	args.push("--provenance=false", "--progress=plain");
+	if (spec.platform) args.push("--platform", spec.platform);
+	return [...args, context];
+}
+
+const lastLine = (result: ExecResult): string =>
+	(result.stderr || result.stdout).trim().split(/\r?\n/).at(-1)?.trim() ?? "";
+
+// --rm removes a stopped container a moment after `docker run` returns, and until then the
+// container holds its image and volumes, so removal retries for up to 10 s.
+async function removeWhenFree(docker: string, args: readonly string[], gone: RegExp) {
+	for (let tries = 1; ; tries++) {
+		const removed = await exec(docker, args, { timeoutMs: 60_000 });
+		if (removed.code === 0 || gone.test(removed.stderr)) return;
+		if (tries === 40) throw new Error(`docker ${args.join(" ")}: ${lastLine(removed)}`);
+		await sleep(250);
+	}
+}
+
+// The containerd image store names an image by its manifest digest, the classic store by its
+// config digest; build metadata has both, and the store answers for one of them.
+async function builtImageId(docker: string, metadataFile: string): Promise<string | undefined> {
+	const metadata = JSON.parse(fs.readFileSync(metadataFile, "utf8")) as Record<string, unknown>;
+	for (const key of ["containerimage.digest", "containerimage.config.digest"]) {
+		const digest = metadata[key];
+		if (typeof digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(digest)) continue;
+		const found = await exec(docker, ["image", "inspect", "--format", "{{.Id}}", digest], {
+			timeoutMs: 60_000,
+		});
+		const id = found.stdout.trim();
+		if (found.code === 0 && /^sha256:[0-9a-f]{64}$/.test(id)) return id;
+	}
+	return undefined;
+}
+
+// Builds from a context folder holding only the Dockerfile. Remove the image when done (await
+// using): BuildKit's layer cache keeps a rebuild quick.
+export async function buildImage(spec: BuildSpec): Promise<BuiltImage> {
+	const docker = cli();
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "draftyak-build-"));
+	try {
+		const context = path.join(dir, "context");
+		const metadataFile = path.join(dir, "metadata.json");
+		fs.mkdirSync(context);
+		fs.writeFileSync(path.join(context, "Dockerfile"), spec.dockerfile);
+		const build = randomBytes(6).toString("hex");
+		const args = dockerBuildArgs(spec, context, metadataFile, build);
+		const options = { timeoutMs: spec.timeoutMs ?? 600_000, signal: spec.signal };
+		const result = await exec(docker, args, options);
+		const how = result.timedOut ? "timed out" : `exit code ${result.code}`;
+		if (result.code !== 0) throw new Error(`docker build failed (${how}): ${lastLine(result)}`);
+		const id = await builtImageId(docker, metadataFile);
+		if (id === undefined) throw new Error("docker build: the built image isn't in the store");
+		const remove = () => removeWhenFree(docker, ["image", "rm", id], /no such image/i);
+		return { id, remove, [Symbol.asyncDispose]: remove };
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+export interface DockerVolume {
+	readonly name: string;
+	remove(): Promise<void>;
+}
+
+// draftyak-<suffix>, a volume carrying the kit's label that outlives the run (a cache such as
+// CARGO_HOME): created when missing, reused when the kit created it, refused otherwise.
+export async function namedVolume(suffix: string): Promise<DockerVolume> {
+	if (!/^[a-z0-9][a-z0-9-]*$/.test(suffix)) throw new Error("volume names are kebab-case");
+	const docker = cli();
+	const name = `draftyak-${suffix}`;
+	const created = await exec(docker, ["volume", "create", "--label", LABEL, name], {
+		timeoutMs: 60_000,
+	});
+	if (created.code !== 0) throw new Error(`docker volume create: ${lastLine(created)}`);
+	const [key, value] = LABEL.split("=");
+	const format = `{{index .Labels "${key}"}}`;
+	const label = await exec(docker, ["volume", "inspect", "--format", format, name], {
+		timeoutMs: 60_000,
+	});
+	if (label.stdout.trim() !== value) throw new Error(`${name} exists without the kit's label`);
+	const remove = () => removeWhenFree(docker, ["volume", "rm", name], /no such volume/i);
+	return { name, remove };
 }
 
 export interface StageSpec {

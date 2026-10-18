@@ -7,6 +7,7 @@ import { freePort, writeEvidence } from "@draftyak/spike-kit";
 import { expect, it } from "vitest";
 import { createApp, listen, type ServerFactory } from "../src/server.ts";
 import { conformanceFactory, NOT_SERVED } from "./conformance-fixtures.ts";
+import { codeFingerprint, recording } from "./evidence.ts";
 import { modern, serve } from "./harness.ts";
 
 type Era = "2025-11-25" | "2026-07-28";
@@ -233,7 +234,9 @@ it("passes MCP conformance in both eras apart from the reviewed baseline", {
 			names.filter((name) => !base[kind]?.includes(name)),
 		]),
 	);
-	await writeEvidence(new URL("../evidence/conformance.json", import.meta.url), {
+	// Written only when asked (DRAFTYAK_RECORD_EVIDENCE=1) or in CI, after every check above passed.
+	if (!recording()) return;
+	const data = {
 		conformanceVersion: versionOf("@modelcontextprotocol/conformance"),
 		serverSdkVersion: versionOf("@modelcontextprotocol/server"),
 		honoVersion: versionOf("hono"),
@@ -242,5 +245,8 @@ it("passes MCP conformance in both eras apart from the reviewed baseline", {
 		eras,
 		fixtureNames,
 		fixtureNamesNotServed: NOT_SERVED,
-	});
+	};
+	const file = new URL("../evidence/conformance.json", import.meta.url);
+	const written = await writeEvidence(file, data, { fingerprint: await codeFingerprint() });
+	console.log(`evidence: ${written}`);
 });

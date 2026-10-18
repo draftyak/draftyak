@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:views": "node views/build.ts",
     "typecheck": "tsc -b",
     "test": "node ../kit/run.ts",
     "test:heavy": "node ../kit/run.ts --heavy"
@@ -15,6 +16,12 @@
   },
   "devDependencies": {
     "@draftyak/spike-kit": "workspace:*",
-    "@modelcontextprotocol/conformance": "0.2.0-alpha.12"
+    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/conformance": "0.2.0-alpha.12",
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@playwright/test": "1.64.1",
+    "fast-check": "4.10.2",
+    "vite": "8.3.4",
+    "vite-plugin-singlefile": "2.3.3"
   }
 }

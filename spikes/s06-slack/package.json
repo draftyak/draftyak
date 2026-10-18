@@ -1,0 +1,15 @@
+{
+  "name": "@draftyak/spike-s06-slack",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "node ../kit/run.ts",
+    "test:heavy": "node ../kit/run.ts --heavy",
+    "test:live": "node ../kit/run.ts --live"
+  },
+  "devDependencies": {
+    "@draftyak/spike-kit": "workspace:*",
+    "ws": "8.22.0"
+  }
+}

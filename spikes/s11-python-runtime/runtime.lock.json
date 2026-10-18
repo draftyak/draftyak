@@ -1,0 +1,122 @@
+{
+  "pyodide": "314.0.7",
+  "ws": "8.22.0",
+  "index": "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/",
+  "abi": "pyemscripten_2026_0",
+  "info": {
+    "abi_version": "2026_0",
+    "arch": "wasm32",
+    "platform": "emscripten_5_0_3",
+    "python": "3.14.2"
+  },
+  "lockSha256": "5dc2fc119108bc148c7457dc86e7675b5c87e1cafd420b9c34c1eaef7b36c010",
+  "packages": [
+    "requests",
+    "typing-extensions"
+  ],
+  "files": {
+    "node_modules/ws/LICENSE": "2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef",
+    "node_modules/ws/README.md": "bb979132f3cbff08ce47f36d041e18071f8f534d01f591c0b129ba7abf1e480e",
+    "node_modules/ws/browser.js": "010da44addea1d88b2b732540c3f1fd0cbcb28926b96623d4c64222e0ead2d0e",
+    "node_modules/ws/index.js": "924564d5be26d59b9682c4263f68320e48dde7240bd2d1ad17ec305537429dd2",
+    "node_modules/ws/lib/buffer-util.js": "8b0a45739132f82e25ea13163780abf547ccfe989267f3eb7abb475beec92da3",
+    "node_modules/ws/lib/constants.js": "391e823142b8b370e55a2fd32b022deaf03b8415c56000009674ebc86a0b4f86",
+    "node_modules/ws/lib/event-target.js": "c45d3c6e12d170c860c0c3f1a050aa0f864d9806632b609a1e607d675aba128c",
+    "node_modules/ws/lib/extension.js": "852564f0f6b460287043803eae732666fb5610f676874354fc89f06aa4e986ed",
+    "node_modules/ws/lib/limiter.js": "e0469d4b83f6ba764b15f80e1766b75c136fbff68f048f4c050f0b1c7f065f69",
+    "node_modules/ws/lib/permessage-deflate.js": "16a91536988a53c23047ee5882392068728a839a244178c3b09b8c54982f58b0",
+    "node_modules/ws/lib/receiver.js": "a6ada33c9a2d54eaf595824b821ea89ca2c6395f89aa06755c52142148274884",
+    "node_modules/ws/lib/sender.js": "d0791d30c3defd44dcabbddb879a901c757993fea2c00a7ffea01d53b23b4b77",
+    "node_modules/ws/lib/stream.js": "a56fcb6e2b152097ee820b6f5410b1f71e59819b45d08d9f8bda588fe39070ec",
+    "node_modules/ws/lib/subprotocol.js": "be3f6323d6f549568577dcba9004c1479d95c65a7abb0fe0c582875b9fac0b7c",
+    "node_modules/ws/lib/validation.js": "41ce8e83d0d434132e1704895fedb91f6703a701b42d91c80954ab29b2845593",
+    "node_modules/ws/lib/websocket-server.js": "6d8dd89a841748c80445fd5fcdb5ba8005369b53cc3525135e11304c8b9c55e5",
+    "node_modules/ws/lib/websocket.js": "7ccf305925f0cdb74e06b75b4c84de134b1bd771a220ef409b24520def08128f",
+    "node_modules/ws/package.json": "c1ef91ca04eb4754c011c5f0e7638b5078ff71104fada400c44ac761cf93e0b1",
+    "node_modules/ws/wrapper.mjs": "fe154662301fd558f935f9c217fccbe7a7dac02ff39e648a000589403ff27c7f",
+    "pyodide.asm.mjs": "f7cdc8ece80678ceb712f8e65ebe6d3a83203a180c399865f49612a051693635",
+    "pyodide.asm.wasm": "cc36e3cab04fdfc9a63ff13eb52eae2b911bf46c025cc7b281f394bd3de1d5e6",
+    "pyodide.mjs": "6f1d60f7bf529beb300f0f47983c921d3982363640ba20af0e38efdddbc66109",
+    "python_stdlib.zip": "fa1957e5777068fc4f7437f96d860ae2fbe9c19732ba06c84e004ec16dd7dd7a",
+    "shim.mjs": "5312fa65ed371c9e70048482f2b207b39d4f3f540897b702ec80896da000b62e"
+  },
+  "wheels": {
+    "certifi": {
+      "name": "certifi",
+      "version": "2026.4.22",
+      "file_name": "certifi-2026.4.22-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "c2c0091986db798df5fd84582d289496f31244a898ec032b7015278c2d82c80c",
+      "package_type": "package",
+      "imports": [
+        "certifi"
+      ],
+      "depends": []
+    },
+    "charset-normalizer": {
+      "name": "charset-normalizer",
+      "version": "3.4.7",
+      "file_name": "charset_normalizer-3.4.7-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "9e437ef92fa51f06eedeb1ef092c0a887bd24fe0d40b1e900191117ce1653121",
+      "package_type": "package",
+      "imports": [
+        "charset_normalizer"
+      ],
+      "depends": []
+    },
+    "idna": {
+      "name": "idna",
+      "version": "3.11",
+      "file_name": "idna-3.11-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "1619419bc899f07c7a608a12e8238e5e0bc15bb25fec90cfe20a86bb849ba0d8",
+      "package_type": "package",
+      "imports": [
+        "idna"
+      ],
+      "depends": []
+    },
+    "requests": {
+      "name": "requests",
+      "version": "2.33.1",
+      "file_name": "requests-2.33.1-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "6d62c51c4e7707386bfc2ef54845c16cdaeb99606c064357cccfe4d621285175",
+      "package_type": "package",
+      "imports": [
+        "requests"
+      ],
+      "depends": [
+        "charset-normalizer",
+        "idna",
+        "urllib3",
+        "certifi"
+      ]
+    },
+    "typing-extensions": {
+      "name": "typing-extensions",
+      "version": "4.15.0",
+      "file_name": "typing_extensions-4.15.0-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "4fec68770a05408e668a4fa53d6bf4f0f684b9dacf820c7c5d6e97d3ad225e29",
+      "package_type": "package",
+      "imports": [
+        "typing_extensions"
+      ],
+      "depends": []
+    },
+    "urllib3": {
+      "name": "urllib3",
+      "version": "2.6.3",
+      "file_name": "urllib3-2.6.3-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "86b7c1af060597b115bcde5e36798039ca50b221afe14aa03d3437ac09b02a75",
+      "package_type": "package",
+      "imports": [
+        "urllib3"
+      ],
+      "depends": []
+    }
+  }
+}

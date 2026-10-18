@@ -1,0 +1,4 @@
+package: com.draftyak.client
+uses-permission: name='android.permission.INTERNET'
+permission: com.draftyak.client.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+uses-permission: name='com.draftyak.client.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'

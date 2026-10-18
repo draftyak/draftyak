@@ -1,0 +1,27 @@
+{
+  "source": "https://claude.ai/oauth/claude-code-client-metadata",
+  "fetchedAt": "2026-10-18T00:05:02.414Z",
+  "response": {
+    "status": 200,
+    "contentType": "application/json",
+    "cacheControl": "public, max-age=300"
+  },
+  "sha256": "844b69e632732c325e3bae21ab324fa3d5353ba2e15890a384e8885e9837e5a4",
+  "document": {
+    "client_id": "https://claude.ai/oauth/claude-code-client-metadata",
+    "client_name": "Claude Code",
+    "client_uri": "https://claude.ai",
+    "redirect_uris": [
+      "http://localhost/callback",
+      "http://127.0.0.1/callback"
+    ],
+    "grant_types": [
+      "authorization_code",
+      "refresh_token"
+    ],
+    "response_types": [
+      "code"
+    ],
+    "token_endpoint_auth_method": "none"
+  }
+}

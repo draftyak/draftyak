@@ -1,0 +1,665 @@
+{
+  "recordedAt": "2026-10-18T01:35:22.081Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "725197fbc88cb2e92a0e68a16d42c4dafa5cc4f7",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 21,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 60.6,
+      "concurrentBuilds": 3
+    }
+  },
+  "data": {
+    "extAppsVersion": "2.0.3",
+    "playwrightVersion": "1.64.1",
+    "viteVersion": "8.3.4",
+    "singlefileVersion": "2.3.3",
+    "serverSdkVersion": "2.3.1",
+    "basicHostCommit": "82221c0c8ce7661efa6771c9d461511b1650495f",
+    "corpusPayloads": 32,
+    "view": {
+      "uri": "ui://draftyak/draft-v1",
+      "bytes": 236011,
+      "capBytes": 262144,
+      "sha256": "fa2cd3bf86797d3854aa98430b2e93a48a6b42e9df6c660794abaeffff852492",
+      "scriptSha256": "DAJQZLEV4nKvBK60HmG1C/Y+M/5nAZl7UNTXqxuhgZ8=",
+      "cspDirectives": [
+        "default-src 'none'",
+        "script-src 'sha256-…'",
+        "style-src 'unsafe-inline'",
+        "img-src data:",
+        "connect-src 'none'",
+        "base-uri 'none'",
+        "form-action 'none'"
+      ],
+      "inlineScripts": 1,
+      "reproducible": true
+    },
+    "metaUi": {
+      "legacy": {
+        "withUi": [
+          "accounts_list",
+          "message_get",
+          "draft_get"
+        ],
+        "linked": [
+          "draft_get"
+        ]
+      },
+      "modernDeclared": {
+        "withUi": [
+          "accounts_list",
+          "message_get",
+          "draft_get"
+        ],
+        "linked": [
+          "draft_get"
+        ]
+      },
+      "modernUndeclared": {
+        "withUi": [],
+        "linked": []
+      },
+      "modernUndeclaredAppsHostName": {
+        "withUi": [],
+        "linked": []
+      }
+    },
+    "browsers": {
+      "chromium": {
+        "browserVersion": "156.0.8078.4",
+        "render": {
+          "sandbox": {
+            "quietMs": 2500,
+            "watchedMs": 2561,
+            "cases": {
+              "plain": {
+                "rendered": true,
+                "bodyChars": 29,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/sandbox-proxy-ready": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 9,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "corpus": {
+                "rendered": true,
+                "bodyChars": 1776,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/sandbox-proxy-ready": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 9,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "bidi": {
+                "rendered": true,
+                "bodyChars": 595,
+                "markers": 52,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/sandbox-proxy-ready": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 9,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "large": {
+                "rendered": true,
+                "bodyChars": 1000000,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/sandbox-proxy-ready": 1,
+                  "ui/notifications/size-changed": 2
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 9,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "proto": {
+                "rendered": true,
+                "bodyChars": 14,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/sandbox-proxy-ready": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 9,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0,
+                "ownProtoKeyReachedView": true
+              }
+            }
+          },
+          "direct": {
+            "quietMs": 2500,
+            "watchedMs": 2589,
+            "cases": {
+              "plain": {
+                "rendered": true,
+                "bodyChars": 29,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 8,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "corpus": {
+                "rendered": true,
+                "bodyChars": 1776,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 8,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "bidi": {
+                "rendered": true,
+                "bodyChars": 595,
+                "markers": 52,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 8,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "large": {
+                "rendered": true,
+                "bodyChars": 1000000,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 8,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "proto": {
+                "rendered": true,
+                "bodyChars": 14,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 8,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0,
+                "ownProtoKeyReachedView": true
+              }
+            }
+          }
+        },
+        "metaUiWithoutResourceUri": {
+          "toolsListed": 3,
+          "withoutResourceUri": [
+            "accounts_list",
+            "message_get"
+          ],
+          "calledWithoutView": true,
+          "framesCreated": 0
+        },
+        "appToolCall": {
+          "tool": "accounts_list",
+          "visibility": [
+            "model"
+          ],
+          "forwardedToServer": true,
+          "answeredToView": true
+        },
+        "control": {
+          "sandbox": {
+            "evalBlocked": true,
+            "functionBlocked": true,
+            "fetchBlocked": true,
+            "ran": false,
+            "directivesReported": [
+              "connect-src",
+              "img-src",
+              "script-src",
+              "script-src-attr",
+              "script-src-elem"
+            ],
+            "codeFromStringsCounted": {
+              "function": 1,
+              "eval": 1,
+              "stringTimer": 0
+            },
+            "canaryHits": 0
+          },
+          "direct": {
+            "evalBlocked": true,
+            "functionBlocked": true,
+            "fetchBlocked": true,
+            "ran": false,
+            "directivesReported": [
+              "connect-src",
+              "img-src",
+              "script-src",
+              "script-src-attr",
+              "script-src-elem"
+            ],
+            "codeFromStringsCounted": {
+              "function": 1,
+              "eval": 1,
+              "stringTimer": 0
+            },
+            "canaryHits": 0
+          },
+          "top": {
+            "evalBlocked": true,
+            "functionBlocked": true,
+            "fetchBlocked": true,
+            "ran": false,
+            "directivesReported": [
+              "connect-src",
+              "img-src",
+              "script-src",
+              "script-src-attr",
+              "script-src-elem"
+            ],
+            "codeFromStringsCounted": {
+              "function": 1,
+              "eval": 1,
+              "stringTimer": 0
+            },
+            "canaryHits": 0
+          }
+        },
+        "jitless": {
+          "srcdoc": {
+            "view": {
+              "evalViolations": 0,
+              "codeFromStrings": 0
+            },
+            "lateJitless": {
+              "evalViolations": 1,
+              "codeFromStrings": 1
+            }
+          },
+          "top": {
+            "view": {
+              "evalViolations": 0,
+              "codeFromStrings": 0
+            },
+            "lateJitless": {
+              "evalViolations": 1,
+              "codeFromStrings": 1
+            }
+          }
+        }
+      },
+      "webkit": {
+        "browserVersion": "27.2",
+        "render": {
+          "sandbox": {
+            "quietMs": 2500,
+            "watchedMs": 2534,
+            "cases": {
+              "plain": {
+                "rendered": true,
+                "bodyChars": 29,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/sandbox-proxy-ready": 1,
+                  "ui/notifications/size-changed": 2
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 9,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "corpus": {
+                "rendered": true,
+                "bodyChars": 1776,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/sandbox-proxy-ready": 1,
+                  "ui/notifications/size-changed": 2
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 9,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "bidi": {
+                "rendered": true,
+                "bodyChars": 595,
+                "markers": 52,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/sandbox-proxy-ready": 1,
+                  "ui/notifications/size-changed": 2
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 9,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "large": {
+                "rendered": true,
+                "bodyChars": 1000000,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/sandbox-proxy-ready": 1,
+                  "ui/notifications/size-changed": 2
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 9,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "proto": {
+                "rendered": true,
+                "bodyChars": 14,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/sandbox-proxy-ready": 1,
+                  "ui/notifications/size-changed": 2
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 9,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0,
+                "ownProtoKeyReachedView": true
+              }
+            }
+          },
+          "direct": {
+            "quietMs": 2500,
+            "watchedMs": 2565,
+            "cases": {
+              "plain": {
+                "rendered": true,
+                "bodyChars": 29,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 8,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "corpus": {
+                "rendered": true,
+                "bodyChars": 1776,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 8,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "bidi": {
+                "rendered": true,
+                "bodyChars": 595,
+                "markers": 52,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 8,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "large": {
+                "rendered": true,
+                "bodyChars": 1000000,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 8,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0
+              },
+              "proto": {
+                "rendered": true,
+                "bodyChars": 14,
+                "markers": 0,
+                "messages": {
+                  "ui/initialize": 1,
+                  "ui/notifications/initialized": 1,
+                  "ui/notifications/size-changed": 1
+                },
+                "violations": 0,
+                "codeFromStrings": 0,
+                "viewRequests": 0,
+                "hostRequests": 8,
+                "canaryHits": 0,
+                "dialogs": 0,
+                "pageErrors": 0,
+                "ownProtoKeyReachedView": true
+              }
+            }
+          }
+        },
+        "metaUiWithoutResourceUri": {
+          "toolsListed": 3,
+          "withoutResourceUri": [
+            "accounts_list",
+            "message_get"
+          ],
+          "calledWithoutView": true,
+          "framesCreated": 0
+        },
+        "appToolCall": {
+          "tool": "accounts_list",
+          "visibility": [
+            "model"
+          ],
+          "forwardedToServer": true,
+          "answeredToView": true
+        },
+        "control": {
+          "sandbox": {
+            "evalBlocked": true,
+            "functionBlocked": true,
+            "fetchBlocked": true,
+            "ran": false,
+            "directivesReported": [
+              "connect-src",
+              "img-src",
+              "script-src-attr",
+              "script-src-elem"
+            ],
+            "codeFromStringsCounted": {
+              "function": 1,
+              "eval": 1,
+              "stringTimer": 0
+            },
+            "canaryHits": 0
+          },
+          "direct": {
+            "evalBlocked": true,
+            "functionBlocked": true,
+            "fetchBlocked": true,
+            "ran": false,
+            "directivesReported": [
+              "connect-src",
+              "img-src",
+              "script-src-attr",
+              "script-src-elem"
+            ],
+            "codeFromStringsCounted": {
+              "function": 1,
+              "eval": 1,
+              "stringTimer": 0
+            },
+            "canaryHits": 0
+          },
+          "top": {
+            "evalBlocked": true,
+            "functionBlocked": true,
+            "fetchBlocked": true,
+            "ran": false,
+            "directivesReported": [
+              "connect-src",
+              "img-src",
+              "script-src",
+              "script-src-attr",
+              "script-src-elem"
+            ],
+            "codeFromStringsCounted": {
+              "function": 1,
+              "eval": 1,
+              "stringTimer": 0
+            },
+            "canaryHits": 0
+          }
+        },
+        "jitless": {
+          "srcdoc": {
+            "view": {
+              "evalViolations": 0,
+              "codeFromStrings": 0
+            },
+            "lateJitless": {
+              "evalViolations": 0,
+              "codeFromStrings": 1
+            }
+          },
+          "top": {
+            "view": {
+              "evalViolations": 0,
+              "codeFromStrings": 0
+            },
+            "lateJitless": {
+              "evalViolations": 1,
+              "codeFromStrings": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

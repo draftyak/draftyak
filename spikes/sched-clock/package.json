@@ -1,0 +1,15 @@
+{
+  "name": "@draftyak/spike-sched-clock",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "node ../kit/run.ts",
+    "test:heavy": "node ../kit/run.ts --heavy"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@draftyak/spike-kit": "workspace:*",
+    "fast-check": "4.10.2"
+  }
+}

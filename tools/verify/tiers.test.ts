@@ -31,6 +31,12 @@ describe("test tiers", () => {
 		);
 	});
 
+	it("keeps Vitest's module cache inside the package, never at the workspace root", () => {
+		expect(config("test").test?.fsModuleCachePath).toBe(
+			path.join(process.cwd(), "node_modules", ".vitest-cache"),
+		);
+	});
+
 	it.each<Tier>(["heavy", "live", "device"])(
 		"--mode %s runs only that tier, passing with none",
 		(tier) => {

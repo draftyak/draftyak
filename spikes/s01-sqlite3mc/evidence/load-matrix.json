@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-17T17:25:38.306Z",
+  "recordedAt": "2026-10-18T01:25:31.211Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,14 +11,14 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "78b9f543fa6a36881927889a788e2dc9d5a30646",
-    "dirty": true,
+    "commit": "8697a2741e15d5fde101239cab46fcf0d4412f46",
+    "dirty": false,
     "load": {
-      "cpuPercent": 15.7,
+      "cpuPercent": 53.6,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 70.2,
-      "concurrentBuilds": 0
+      "memoryUsedPercent": 58.1,
+      "concurrentBuilds": 1
     }
   },
   "data": {
@@ -39,49 +39,79 @@
       "win32-x64": "d4f29082cde7efd5c1e85e794ba532efeef4f2f968c58cc54fe97c2095270262"
     },
     "hosts": [
+      "darwin-arm64",
+      "darwin-x64",
+      "linux-arm64",
+      "win32-arm64",
       "win32-x64"
     ],
-    "complete": false,
+    "complete": true,
     "targets": {
       "darwin-arm64": {
         "26.5.1": {
-          "status": "not run",
-          "napiVersions": [],
-          "ranOn": [],
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "darwin-arm64 native"
+          ],
           "problems": []
         },
         "26.12.0": {
-          "status": "not run",
-          "napiVersions": [],
-          "ranOn": [],
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "darwin-arm64 native"
+          ],
           "problems": []
         }
       },
       "darwin-x64": {
         "26.5.1": {
-          "status": "not run",
-          "napiVersions": [],
-          "ranOn": [],
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "darwin-x64 native"
+          ],
           "problems": []
         },
         "26.12.0": {
-          "status": "not run",
-          "napiVersions": [],
-          "ranOn": [],
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "darwin-x64 native"
+          ],
           "problems": []
         }
       },
       "linux-arm64": {
         "26.5.1": {
-          "status": "not run",
-          "napiVersions": [],
-          "ranOn": [],
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "linux-arm64 native",
+            "linux-arm64 docker"
+          ],
           "problems": []
         },
         "26.12.0": {
-          "status": "not run",
-          "napiVersions": [],
-          "ranOn": [],
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "linux-arm64 native",
+            "linux-arm64 docker"
+          ],
           "problems": []
         }
       },
@@ -109,15 +139,23 @@
       },
       "linuxmusl-arm64": {
         "26.5.1": {
-          "status": "not run",
-          "napiVersions": [],
-          "ranOn": [],
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "linux-arm64 docker"
+          ],
           "problems": []
         },
         "26.12.0": {
-          "status": "not run",
-          "napiVersions": [],
-          "ranOn": [],
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "linux-arm64 docker"
+          ],
           "problems": []
         }
       },
@@ -145,15 +183,23 @@
       },
       "win32-arm64": {
         "26.5.1": {
-          "status": "not run",
-          "napiVersions": [],
-          "ranOn": [],
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "win32-arm64 native"
+          ],
           "problems": []
         },
         "26.12.0": {
-          "status": "not run",
-          "napiVersions": [],
-          "ranOn": [],
+          "status": "loaded",
+          "napiVersions": [
+            10
+          ],
+          "ranOn": [
+            "win32-arm64 native"
+          ],
           "problems": []
         }
       },

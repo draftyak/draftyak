@@ -1,0 +1,11 @@
+[package]
+name = "jiff-check"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+jiff = { version = "=0.2.38", features = ["tzdb-bundle-always"] }
+jiff-tzdb = "=0.1.9"
+
+[workspace]

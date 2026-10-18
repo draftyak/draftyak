@@ -1,0 +1,32 @@
+The ext-apps basic host, vendored unmodified for the S3c Apps spike (M0.16).
+
+Repository: https://github.com/modelcontextprotocol/ext-apps
+Commit: 82221c0c8ce7661efa6771c9d461511b1650495f
+  (the gitHead npm records for @modelcontextprotocol/ext-apps 2.0.3, the version the spike pins)
+Path: examples/basic-host
+Archive: https://codeload.github.com/modelcontextprotocol/ext-apps/tar.gz/82221c0c8ce7661efa6771c9d461511b1650495f
+Fetched: 2026-10-17
+LICENSE: the repository's root LICENSE at that commit (Apache-2.0, MIT for contributions not yet
+  relicensed, CC-BY-4.0 for documentation)
+
+The spike's Apps test builds src/implementation.ts, src/sandbox.ts and sandbox.html at test time and
+substitutes the sandbox URL during that build; the files here stay as upstream has them.
+
+Files (SHA-256):
+790e3169bc19b046fe55ba1da6d13b976c28363c8c00462a2195fe5faf260910  .gitignore
+0382b0057770ca05e9c350a50aa3b1c1fea84da0bc81d723bf00b9aa841be58a  LICENSE
+22d0215c6758755c523da989a28014b3165a3ba8890324e0b3b9c179d972b712  README.md
+faee06cd429c0c174377ced31ffc8aa588846d74febd9cbe553cd8094ae6b686  index.html
+76948d6e2de82f4b80801e6028ce19cadd774c104ef3508fd4e1290694090d9c  package.json
+97c0b4a0e9097d5a01d5d1c63b48f27bd6f8e636ddc5bd5052cc7e1a934ea87a  sandbox.html
+f011ddcd56a33022e2c6c5a173fb03eb59ebbb81310f0cc4a6fd57cbd6ff2629  serve.ts
+35a5bb58d27b12e1ac8538bf73d10c85f6fb6083151d2192ebd02d90c973d1bc  src/global.css
+0947b9c66c05daa6b02f5ac1586ca46cd08c568c98b39b5ba889af8c58724ab8  src/host-styles.ts
+02cf4551885418515181bee74062ff79c8fd8ea47e99d177a9d23bb0dd6f6a72  src/implementation.ts
+761d58cc11e098c7a2ee170beb60eda45209c370c7dfa8557b8ed8f51c4e0c1e  src/index.module.css
+e5bf6da102c86cc927c80a1ea209a2340ac7d20abff21b4fbf1e332f80861330  src/index.tsx
+41badf3e939ff62e952d30ebe3a5731d7f8c54f2f6021f47ef759ea857d0d88a  src/sandbox.ts
+1cef99e72e5f4cc2631d847a2e4228b8399a5ecaa03083d01080b112bdb3114a  src/theme.ts
+65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5  src/vite-env.d.ts
+175c91206ea5b953eb81b568e93ee53a577c4ebc96113af55152e9859bdc109c  tsconfig.json
+a11bf5148a34f4c42e90b63b8809a98fe605c998e81d5f59f8ab590984da5ea1  vite.config.ts

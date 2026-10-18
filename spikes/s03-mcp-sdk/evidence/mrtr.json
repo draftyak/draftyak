@@ -1,0 +1,244 @@
+{
+  "recordedAt": "2026-10-17T21:14:14.736Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "bc40eff2a29f94930b7be5beed6410c13412c0e9",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 14.9,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 64,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "serverSdkVersion": "2.3.1",
+    "codec": {
+      "mac": "HMAC-SHA256 (createRequestStateCodec), canonical base64url MAC only",
+      "keyDerivation": "HKDF-SHA256 over the master key, info draftyak/v1/mcp-state",
+      "ttlSeconds": 600,
+      "bind": [
+        "principal",
+        "method",
+        "epoch"
+      ],
+      "payloadFields": [
+        "v",
+        "epoch",
+        "principal",
+        "method",
+        "digest",
+        "pendingId",
+        "exp"
+      ],
+      "principal": "the grant or agent token id (grant:<id> or token:<id>), never the OAuth client",
+      "digest": "SHA-256 of JCS(params as sent) without _meta, requestState and inputResponses",
+      "checkedIn": "ServerOptions.requestState.verify, before any handler, for every MRTR method"
+    },
+    "openPendingPerPrincipal": 5,
+    "negativeCases": {
+      "tampered-payload": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "tampered-mac": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "non-canonical-mac": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "malformed": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "forged-key": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "replayed": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "expired": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "cross-principal": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "params-swapped": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "method-swapped": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "other-prompt": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "other-resource": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "tool-call": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "legacy-retry": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      },
+      "wrong-epoch": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": -32602,
+        "errorMessage": "Invalid or expired requestState",
+        "reason": "invalid_request_state",
+        "contentReturned": false
+      }
+    },
+    "flows": {
+      "account-form": {
+        "httpStatus": 200,
+        "resultType": "input_required",
+        "errorCode": null,
+        "errorMessage": null,
+        "reason": null,
+        "contentReturned": false
+      },
+      "account-form-answered": {
+        "httpStatus": 200,
+        "resultType": "complete",
+        "errorCode": null,
+        "errorMessage": null,
+        "reason": null,
+        "contentReturned": true
+      },
+      "session-url": {
+        "httpStatus": 200,
+        "resultType": "input_required",
+        "errorCode": null,
+        "errorMessage": null,
+        "reason": null,
+        "contentReturned": false
+      },
+      "auto-accept": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": 1001,
+        "errorMessage": "Approve an agent session for gmail-1 (read) on your paired desktop (DraftYak › AI apps › Sessions), then retry.",
+        "reason": "AGENT_SESSION_REQUIRED",
+        "contentReturned": false
+      },
+      "approved-between-rounds": {
+        "httpStatus": 200,
+        "resultType": "complete",
+        "errorCode": null,
+        "errorMessage": null,
+        "reason": null,
+        "contentReturned": true
+      },
+      "undeclared-mode": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": 1001,
+        "errorMessage": "Approve an agent session for gmail-1 (read) on your paired desktop (DraftYak › AI apps › Sessions), then retry.",
+        "reason": "AGENT_SESSION_REQUIRED",
+        "contentReturned": false
+      },
+      "pending-limit": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": 1001,
+        "errorMessage": "Approve an agent session for gmail-1 (read) on your paired desktop (DraftYak › AI apps › Sessions), then retry.",
+        "reason": "AGENT_SESSION_REQUIRED",
+        "contentReturned": false
+      },
+      "legacy-era": {
+        "httpStatus": 200,
+        "resultType": null,
+        "errorCode": 1001,
+        "errorMessage": "Approve an agent session for gmail-1 (read) on your paired desktop (DraftYak › AI apps › Sessions), then retry.",
+        "reason": "AGENT_SESSION_REQUIRED",
+        "contentReturned": false
+      },
+      "capability-check": {
+        "runs": 120,
+        "inputRequired": 40,
+        "fallbacks": 80,
+        "missingCapabilityErrors": 0
+      }
+    }
+  }
+}

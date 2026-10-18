@@ -5,7 +5,12 @@
   "scripts": {
     "typecheck": "tsc -b",
     "test": "node ../kit/run.ts",
-    "test:heavy": "node ../kit/run.ts --heavy"
+    "test:heavy": "node ../kit/run.ts --heavy",
+    "record": "node test/record.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@draftyak/spike-kit": "workspace:*"

@@ -4,6 +4,9 @@
   "tasks": {
     "test": {
       "cache": false
+    },
+    "typecheck": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/spikes/kit/**"]
     }
   }
 }
