@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { RequestOptions } from "node:https";
+import { mock } from "node:test";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resolvePublic } from "../../src/mcp/client-metadata/addresses.ts";
 import { MetadataCache } from "../../src/mcp/client-metadata/cache.ts";
@@ -11,6 +12,7 @@ import {
 import {
 	CIMD_MAX_BYTES,
 	CIMD_TIMEOUT_MS,
+	JWKS_TIMEOUT_MS,
 	METADATA_MAX_BYTES,
 } from "../../src/mcp/client-metadata/limits.ts";
 import { metadataUrl } from "../../src/mcp/client-metadata/policy.ts";
@@ -318,7 +320,7 @@ it("bounds the failed-lookup cache and stores neither response bodies nor URL st
 	expect(JSON.stringify(fetcher)).toBe("{}");
 });
 
-it("cancels native DNS work and refuses parallel duplicate and excess requests", async () => {
+it("shares duplicate DNS work, cancels abandoned callers and bounds distinct requests", async () => {
 	const rejectors: ((reason: unknown) => void)[] = [];
 	fake.resolve4.mockImplementation(() => new Promise((_, reject) => rejectors.push(reject)));
 	fake.resolve6.mockResolvedValue([]);
@@ -329,13 +331,11 @@ it("cancels native DNS work and refuses parallel duplicate and excess requests",
 	const pending = Array.from({ length: 8 }, (_, i) =>
 		fetcher.fetch(`https://client.example/clients/${i}`, "cimd", controller.signal),
 	);
-	await expect(
-		fetcher.fetch("https://client.example/clients/0", "cimd", signal()),
-	).rejects.toThrow();
+	pending.push(fetcher.fetch("https://client.example/clients/0", "cimd", controller.signal));
 	await expect(
 		fetcher.fetch("https://client.example/clients/8", "cimd", signal()),
 	).rejects.toThrow();
-	expect(fake.resolve4).toHaveBeenCalledTimes(8);
+	await vi.waitFor(() => expect(fake.resolve4).toHaveBeenCalledTimes(8));
 	controller.abort();
 	expect((await Promise.allSettled(pending)).every((result) => result.status === "rejected")).toBe(
 		true,
@@ -802,25 +802,197 @@ it.each([10000, 125])(
 	},
 );
 
-it("retains the configured 10-second JWKS deadline", async () => {
-	vi.useFakeTimers();
+it.each([10000, 125])(
+	"caps the whole JWKS fetch at 5 seconds with configured %s ms",
+	async (configured) => {
+		vi.useFakeTimers();
+		shape.hold = true;
+		fetcher.close();
+		fetcher = new ClientMetadataFetcher({ ...options, timeoutMs: configured });
+		let settled = false;
+		const result = fetcher.fetch("https://keys.example/keys.json", "jwks", signal()).then(
+			() => "success",
+			(error: Error) => {
+				settled = true;
+				return error.message;
+			},
+		);
+		await vi.advanceTimersByTimeAsync(0);
+		await vi.advanceTimersByTimeAsync(Math.min(configured, JWKS_TIMEOUT_MS) - 1);
+		expect(settled).toBe(false);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(await result).toBe("Client metadata refused");
+		expect(requests[0]?.req.destroyed).toBe(true);
+	},
+);
+
+it("shares one uncached native response with independently mutable caller bodies", async () => {
 	shape.hold = true;
-	fetcher.close();
-	fetcher = new ClientMetadataFetcher({ ...options, timeoutMs: 10000 });
-	let settled = false;
-	const result = fetcher.fetch("https://keys.example/keys.json", "jwks", signal()).then(
-		() => "success",
-		(error: Error) => {
-			settled = true;
-			return error.message;
-		},
+	const first = fetcher.fetch(CLIENT, "cimd", signal());
+	const second = fetcher.fetch(CLIENT, "cimd", signal());
+	await vi.waitFor(() => expect(requests[0]?.req.ended).toBe(true));
+	expect(fake.resolve4).toHaveBeenCalledTimes(1);
+	expect(requests).toHaveLength(1);
+	requests[0]?.req.response?.emit("data", shape.chunks[0]);
+	requests[0]?.req.response?.emit("end");
+	const [left, right] = await Promise.all([first, second]);
+	expect(left).not.toBe(right);
+	expect(left.body).not.toBe(right.body);
+	left.body.fill(0);
+	expect(Buffer.from(right.body).toString()).toBe('{"self_declared":true}');
+	expect(right.contentType).toBe("application/json");
+	expect(Object.keys(right).sort()).toEqual(["body", "contentType"]);
+	shape.hold = false;
+	await fetcher.fetch(CLIENT, "cimd", signal());
+	expect(requests).toHaveLength(2);
+});
+
+it("one caller abort neither cancels another waiter nor poisons its cache fill", async () => {
+	cacheHeaders("public,max-age=60", ["cf-ray", "DYTEST-ray", "cf-cache-status", "DYNAMIC"]);
+	shape.hold = true;
+	const controller = new AbortController();
+	const first = fetcher
+		.fetch(CLIENT, "cimd", controller.signal)
+		.catch((error: Error) => error.message);
+	const second = fetcher.fetch(CLIENT, "cimd", signal());
+	await vi.waitFor(() => expect(requests[0]?.req.ended).toBe(true));
+	controller.abort();
+	expect(await first).toBe("Client metadata refused");
+	expect(requests[0]?.req.destroyed).toBe(false);
+	requests[0]?.req.response?.emit("data", shape.chunks[0]);
+	requests[0]?.req.response?.emit("end");
+	expect(Buffer.from((await second).body).toString()).toBe('{"self_declared":true}');
+	await fetcher.fetch(CLIENT, "cimd", signal());
+	expect(requests).toHaveLength(1);
+});
+
+it("bounds pending shared callers at 128 and releases one caller's capacity independently", async () => {
+	shape.hold = true;
+	const cancelled = new AbortController();
+	const first = fetcher
+		.fetch(CLIENT, "cimd", cancelled.signal)
+		.catch((error: Error) => error.message);
+	const pending = Array.from({ length: 127 }, () => fetcher.fetch(CLIENT, "cimd", signal()));
+	await vi.waitFor(() => expect(requests[0]?.req.ended).toBe(true));
+	await expect(fetcher.fetch(CLIENT, "cimd", signal())).rejects.toThrow(
+		/^Client metadata refused$/,
 	);
-	await vi.advanceTimersByTimeAsync(0);
-	await vi.advanceTimersByTimeAsync(9999);
-	expect(settled).toBe(false);
-	await vi.advanceTimersByTimeAsync(1);
-	expect(await result).toBe("Client metadata refused");
-	expect(requests[0]?.req.destroyed).toBe(true);
+	await expect(
+		fetcher.fetch("https://client.example/clients/extra", "cimd", signal()),
+	).rejects.toThrow();
+	cancelled.abort();
+	expect(await first).toBe("Client metadata refused");
+	pending.push(fetcher.fetch(CLIENT, "cimd", signal()));
+	expect(requests[0]?.req.destroyed).toBe(false);
+	requests[0]?.req.response?.emit("data", shape.chunks[0]);
+	requests[0]?.req.response?.emit("end");
+	const results = await Promise.all(pending);
+	expect(results).toHaveLength(128);
+	expect(new Set(results.map((result) => result.body)).size).toBe(128);
+	expect(fake.resolve4).toHaveBeenCalledTimes(1);
+	shape.hold = false;
+	await fetcher.fetch("https://client.example/clients/extra", "cimd", signal());
+	expect(fake.resolve4).toHaveBeenCalledTimes(2);
+});
+
+it("keeps abandoned native DNS reservations until their actual callbacks settle", async () => {
+	const complete: ((addresses: string[]) => void)[] = [];
+	fake.resolve4.mockImplementation(() => new Promise((resolve) => complete.push(resolve)));
+	fake.resolve6.mockResolvedValue([]);
+	// A resolver that has not completed cancellation must still occupy its native slot.
+	fake.cancel.mockImplementation(() => {});
+	const controller = new AbortController();
+	const pending = Array.from({ length: 8 }, (_, index) =>
+		fetcher
+			.fetch(`https://client.example/clients/${index}`, "cimd", controller.signal)
+			.catch((error: Error) => error.message),
+	);
+	await vi.waitFor(() => expect(complete).toHaveLength(8));
+	controller.abort();
+	expect(await Promise.all(pending)).toEqual(Array(8).fill("Client metadata refused"));
+	await expect(
+		fetcher.fetch("https://client.example/clients/0", "cimd", signal()),
+	).rejects.toThrow();
+	await expect(
+		fetcher.fetch("https://client.example/clients/next", "cimd", signal()),
+	).rejects.toThrow();
+	expect(fake.resolve4).toHaveBeenCalledTimes(8);
+	for (const resolve of complete) resolve(["8.8.8.8"]);
+	await new Promise((resolve) => setImmediate(resolve));
+	expect(fake.request).not.toHaveBeenCalled();
+	fake.resolve4.mockResolvedValue(["8.8.8.8"]);
+	await fetcher.fetch("https://client.example/clients/next", "cimd", signal());
+	expect(fake.resolve4).toHaveBeenCalledTimes(9);
+});
+
+it("removes cancelled shared waiters instead of retaining promise reactions behind one anchor", async () => {
+	shape.hold = true;
+	const anchor = fetcher.fetch(CLIENT, "cimd", signal());
+	void anchor.catch(() => {});
+	await vi.waitFor(() => expect(requests[0]?.req.ended).toBe(true));
+	const original = Promise.prototype.then;
+	const reactions = new Map<unknown, number>();
+	const tracker = mock.method(
+		Promise.prototype,
+		"then",
+		new Proxy(original, {
+			apply(target, receiver, args) {
+				reactions.set(receiver, (reactions.get(receiver) ?? 0) + 1);
+				return Reflect.apply(target, receiver, args);
+			},
+		}),
+	);
+	try {
+		for (let index = 0; index < 256; index++) {
+			const controller = new AbortController();
+			const pending = fetcher.fetch(CLIENT, "cimd", controller.signal);
+			let settled = false;
+			const outcome = pending.then(
+				() => {
+					settled = true;
+					return "success";
+				},
+				(error: Error) => {
+					settled = true;
+					return error.message;
+				},
+			);
+			await Promise.resolve();
+			expect(settled).toBe(false);
+			controller.abort();
+			expect(await outcome).toBe("Client metadata refused");
+		}
+		// Reattaching to one pending promise retains each closure even after caller abort.
+		expect(Math.max(0, ...reactions.values())).toBeLessThanOrEqual(1);
+		expect(requests).toHaveLength(1);
+		expect(requests[0]?.req.destroyed).toBe(false);
+	} finally {
+		tracker.mock.restore();
+	}
+	requests[0]?.req.response?.emit("data", shape.chunks[0]);
+	requests[0]?.req.response?.emit("end");
+	expect(Buffer.from((await anchor).body).toString()).toBe('{"self_declared":true}');
+	shape.hold = false;
+	await fetcher.fetch("https://client.example/clients/after", "cimd", signal());
+	expect(requests).toHaveLength(2);
+});
+
+it("shares one native failure and applies failure backoff once for subsequent callers", async () => {
+	shape.hold = true;
+	const pending = [
+		fetcher.fetch(CLIENT, "cimd", signal()),
+		fetcher.fetch(CLIENT, "cimd", signal()),
+	].map((promise) => promise.catch((error: Error) => error.message));
+	await vi.waitFor(() => expect(requests[0]?.req.ended).toBe(true));
+	requests[0]?.req.emit("error", new Error("PRIVATE_TRANSPORT_CANARY"));
+	expect(await Promise.all(pending)).toEqual([
+		"Client metadata refused",
+		"Client metadata refused",
+	]);
+	await expect(fetcher.fetch(CLIENT, "cimd", signal())).rejects.toThrow(
+		/^Client metadata refused$/,
+	);
+	expect(requests).toHaveLength(1);
 });
 
 it("does not restart the CIMD budget after DNS completes", async () => {

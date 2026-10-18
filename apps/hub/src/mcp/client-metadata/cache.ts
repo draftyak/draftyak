@@ -7,20 +7,18 @@ import type { MetadataKind } from "./policy.ts";
 export const METADATA_CACHE_MAX_ENTRIES = 128;
 export const METADATA_CACHE_MAX_BYTES: number = 8 * 1024 * 1024;
 export const METADATA_CACHE_MAX_TTL_MS = 300_000;
-const safeHeaders = new Set([
-	"age",
-	"cache-control",
-	"connection",
-	"content-length",
-	"content-type",
-	"date",
-	"etag",
-	"expires",
-	"last-modified",
-	"server",
-	"strict-transport-security",
-	"transfer-encoding",
-	"x-content-type-options",
+const freshnessHeaders = new Set(["age", "cache-control", "date", "expires"]);
+const privateHeaders = new Set([
+	"vary",
+	"set-cookie",
+	"set-cookie2",
+	"authorization",
+	"proxy-authorization",
+	"www-authenticate",
+	"proxy-authenticate",
+	"authentication-info",
+	"proxy-authentication-info",
+	"x-private-token",
 ]);
 const byteLength = Object.getOwnPropertyDescriptor(
 	Object.getPrototypeOf(Uint8Array.prototype),
@@ -35,7 +33,7 @@ function instant(value: string | undefined): number | undefined {
 	const date = Date.parse(value);
 	return Number.isFinite(date) && new Date(date).toUTCString() === value ? date : undefined;
 }
-/** Conservative reuse hints only; unrecognized/ambiguous headers never enable caching. */
+/** Explicit public freshness only. Incidental headers neither enable nor disable reuse. */
 export function metadataCacheTtl(
 	raw: readonly string[],
 	nowWall: number,
@@ -53,8 +51,9 @@ export function metadataCacheTtl(
 	for (let index = 0; index < raw.length; index += 2) {
 		const name = raw[index]?.toLowerCase(),
 			value = raw[index + 1];
-		if (name === undefined || value === undefined || !safeHeaders.has(name) || headers.has(name))
-			return 0;
+		if (name === undefined || value === undefined || privateHeaders.has(name)) return 0;
+		if (!freshnessHeaders.has(name)) continue;
+		if (headers.has(name)) return 0;
 		headers.set(name, value);
 	}
 	const directives = new Set<string>();

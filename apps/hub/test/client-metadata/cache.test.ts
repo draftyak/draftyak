@@ -27,6 +27,23 @@ const bytes = (text = '{"self_declared":true}', contentType = "application/json"
 });
 
 describe("conservative metadata freshness", () => {
+	it("ignores incidental Cloudflare/trace headers without treating them as freshness authority", () => {
+		const extra = [
+			"CF-Ray",
+			"DYTEST-ray",
+			"CF-Cache-Status",
+			"DYNAMIC",
+			"Server-Timing",
+			"edge;dur=1",
+			"Link",
+			"</one>",
+			"Link",
+			"</two>",
+		];
+		expect(metadataCacheTtl(headers(undefined, extra), wall, 0)).toBe(60_000);
+		expect(metadataCacheTtl(["Date", date, ...extra], wall, 0)).toBe(0);
+		expect(metadataCacheTtl(headers("private,max-age=60", extra), wall, 0)).toBe(0);
+	});
 	it("deducts age and response time and obeys an earlier Expires and the hard ceiling", () => {
 		expect(metadataCacheTtl(headers(), wall + 2000, 100)).toBe(57_900);
 		expect(metadataCacheTtl(headers(undefined, ["Age", "10"]), wall, 100)).toBe(49_900);
@@ -63,6 +80,8 @@ describe("conservative metadata freshness", () => {
 		["WWW-Authenticate", "SECRET_CANARY"],
 		["Authentication-Info", "SECRET_CANARY"],
 		["Proxy-Authenticate", "SECRET_CANARY"],
+		["Proxy-Authorization", "SECRET_CANARY"],
+		["Proxy-Authentication-Info", "SECRET_CANARY"],
 		["X-Private-Token", "SECRET_CANARY"],
 		["Vary", "Accept-Encoding"],
 		["Date", date],
