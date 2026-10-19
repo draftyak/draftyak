@@ -93,6 +93,24 @@ describe("recorder", () => {
 		expect(recorder.takeRequests()).toEqual([]);
 	});
 
+	it("rejects non-byte stream chunks without leaving an invalid record", async () => {
+		const recorder = createRecorder();
+		const body = new ReadableStream<Uint8Array>({
+			start(stream) {
+				stream.enqueue("not bytes" as unknown as Uint8Array);
+				stream.close();
+			},
+		});
+		const request = new Request(`https://${HOST}/invalid`, {
+			method: "POST",
+			body,
+			duplex: "half",
+		} as RequestInit);
+		await expect(recorder.record(request)).rejects.toThrow(TypeError);
+		await recorder.record(new Request(`https://${HOST}/valid`));
+		expect(recorder.takeRequests().map((entry) => entry.path)).toEqual(["/valid"]);
+	});
+
 	it("records an empty body for GET and HEAD", async () => {
 		const recorder = createRecorder();
 		const fake = createFake(bodyApp().app, { host: HOST, recorder });
