@@ -52,6 +52,8 @@ A statement's `typ` names its type and major version, such as `approval.send.v1`
 
 The SHA-256 of the canonical JSON of the header list `[[name, value], …]`, with names lower-cased and the pairs sorted by name and then by value, comparing UTF-16 code units as JCS sorts names, never by a locale's collation or ignoring case. A repeated name keeps every value as its own pair. Names must be RFC 9110 tokens and values visible ASCII with spaces or tabs only between characters; anything else is refused (`HEADERS_INVALID_NAME`, `HEADERS_INVALID_VALUE`), so lower-casing and sorting mean the same in every language.
 
+Each row is exactly two strings; this hash helper adds no pair-count or aggregate-byte cap.
+
 The hash binds the pairs, not their order: the same pairs in any order hash alike, even when the values of a repeated name change places, which RFC 9110 §5.3 makes significant. Whoever renders the headers fixes that order; the hash doesn't.
 
 ## Naming
