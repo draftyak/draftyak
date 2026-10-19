@@ -189,6 +189,17 @@ jobs:
           toolchain: 1.95.0
           components: clippy, rustfmt
       - run: pnpm install --frozen-lockfile
+      # Warm the hosted runner's engine before parallel test capability probes.
+      - name: Initialize the Windows container service
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          Start-Service -Name docker -ErrorAction Stop
+          (Get-Service -Name docker).WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+          $dockerOs = docker version --format '{{.Server.Os}}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($dockerOs -notin @('windows', 'linux')) { throw 'Docker engine did not report its platform' }
+          Write-Output "Docker engine platform: $dockerOs"
       - run: pnpm verify
 
   required:
