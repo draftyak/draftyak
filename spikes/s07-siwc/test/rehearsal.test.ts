@@ -21,8 +21,15 @@ import {
 	vi,
 } from "vitest";
 import { discover, newHostId, signIn } from "../src/auth.ts";
-import { type Reply, structured } from "./fake-responses.ts";
-import { answer } from "./harness.ts";
+import {
+	MODELS,
+	type Received,
+	type Reply,
+	requestId,
+	structured,
+	toolEvents,
+} from "./fake-responses.ts";
+import { answer, MODEL, SAMPLE_DRAFT } from "./harness.ts";
 import { type ChildRunner, gate, type PortHold, runTransferChild } from "./live-session.ts";
 import { keyModels, type Rehearsal, type RehearsalOptions, rehearsal } from "./rehearse.ts";
 import { API_KEY, main, OPT_IN, SAVED } from "./session-env.ts";
@@ -150,6 +157,13 @@ describe.concurrent("a whole session", REHEARSAL, () => {
 				format: "jwt",
 				alg: "RS256",
 				claims: ["aud", "email", "exp", "iat", "iss", "nonce", "sub"],
+				facts: {
+					audHasClientId: true,
+					audHasDynamicAgentClient: false,
+					audHasResource: false,
+					azpIsClientId: false,
+					issIsIssuer: true,
+				},
 			},
 		});
 		expect(data.discovery.endpoints.revocation_endpoint).toMatchObject({
@@ -162,6 +176,7 @@ describe.concurrent("a whole session", REHEARSAL, () => {
 			shape: "models",
 			count: 2,
 			listed: 1,
+			listedSlugs: ["gpt-fake-plan"],
 			chosen: "gpt-fake-plan",
 		});
 		const drafts = data.drafts.map((d: Data) => [d.structure, d.outcome, d.toolChoice]);
@@ -170,6 +185,14 @@ describe.concurrent("a whole session", REHEARSAL, () => {
 			["tool-namespace", "draft", "required"],
 			["tool-item", "draft", "required"],
 			["tool-top-level", "error", "function:submit_draft"],
+		]);
+		const calls = data.drafts.map((d: Data) => d.events.completed?.functionCalls);
+		const fields = ["arguments", "call_id", "id", "name", "status", "type"];
+		expect(calls).toEqual([
+			[],
+			[{ name: "submit_draft", namespace: "draftyak", fields: [...fields, "namespace"].sort() }],
+			[{ name: "submit_draft", namespace: "absent", fields }],
+			undefined,
 		]);
 		expect(data.drafts[3].error).toMatchObject({
 			code: "UNSUPPORTED_CAPABILITY",
@@ -251,6 +274,9 @@ describe.concurrent("a whole session", REHEARSAL, () => {
 		expect(said).toContain("copy the consent screen's wording");
 		expect(said).toContain(`open this address: ${item.auth.url}/api/accounts/authorize?`);
 		expect(said).toContain("Model: gpt-fake-plan (models).");
+		const listedAt = item.said.indexOf("Listed models, in the server's order: gpt-fake-plan");
+		expect(listedAt).toBeGreaterThan(-1);
+		expect(listedAt).toBeLessThan(item.said.indexOf("Drafting with text-format."));
 		expect(result.details).toEqual([
 			"chatgpt.tokens.use.direct: granted; model gpt-fake-plan",
 			"desktop drafts: text-format ok; tool-namespace ok; tool-item ok; tool-top-level unsupported (UNSUPPORTED_CAPABILITY:tools[0])",
@@ -387,6 +413,66 @@ describe.concurrent("drafts the route refuses", REHEARSAL, () => {
 			);
 		},
 	);
+
+	it("a namespaced call that comes back under another name reads fails(invalid), and the evidence names it", async (ctx) => {
+		const args = JSON.stringify(SAMPLE_DRAFT);
+		const inNamespace = (request: Received): boolean =>
+			Array.isArray(request.body.tools) &&
+			request.body.tools.some((tool) => (tool as { type?: unknown }).type === "namespace");
+		const qualified = toolEvents(MODEL, args, undefined, "draftyak.submit_draft");
+		const item = await setUp(ctx, {
+			script: (request) =>
+				inNamespace(request) ? { kind: "events", events: qualified } : answer(request),
+		});
+		const result = await item.run({ fingerprint: print });
+		expect(result.lines).toEqual(ALL_OK);
+		expect(result.details[1]).toBe(
+			"desktop drafts: text-format ok; tool-namespace fails(invalid); tool-item ok; tool-top-level unsupported (UNSUPPORTED_CAPABILITY:tools[0])",
+		);
+		const namespaced = evidenceOf(item).drafts[1];
+		expect(namespaced).toMatchObject({
+			structure: "tool-namespace",
+			outcome: "invalid",
+			problems: ["output: unexpected tool call"],
+		});
+		expect(namespaced.events.completed.functionCalls).toEqual([
+			{
+				name: "draftyak.submit_draft",
+				namespace: "absent",
+				fields: ["arguments", "call_id", "id", "name", "status", "type"],
+			},
+		]);
+		expectContentFree(item);
+	});
+
+	it("a refused model: the run prints the plan's listed models in the server's order before drafting, and records them", async (ctx) => {
+		const retired = { slug: "gpt-fake-retired", display_name: "Retired", visibility: "list" };
+		let lists = 0;
+		const item = await setUp(ctx, {
+			intercept: ({ url }) =>
+				url.pathname === "/v1/models" && ++lists === 1
+					? Response.json(
+							{ models: [retired, ...MODELS] },
+							{ headers: { "x-request-id": requestId() } },
+						)
+					: undefined,
+		});
+		const result = await item.run({ fingerprint: print });
+		expect(result.lines.slice(1, 3)).toEqual([
+			"text.format: fails(UNSUPPORTED_CAPABILITY:model)",
+			"submit_draft: fails(UNSUPPORTED_CAPABILITY:model)",
+		]);
+		const line = "Listed models, in the server's order: gpt-fake-retired, gpt-fake-plan";
+		expect(item.said.indexOf(line)).toBeGreaterThan(-1);
+		expect(item.said.indexOf(line)).toBeLessThan(item.said.indexOf("Drafting with text-format."));
+		expect(item.said).toContain("Model: gpt-fake-retired (models).");
+		expect(evidenceOf(item).models).toMatchObject({
+			count: 3,
+			listed: 2,
+			listedSlugs: ["gpt-fake-retired", "gpt-fake-plan"],
+			chosen: "gpt-fake-retired",
+		});
+	});
 });
 
 describe.concurrent("sessions that end short", REHEARSAL, () => {
@@ -472,14 +558,77 @@ describe.concurrent("sessions that end short", REHEARSAL, () => {
 		]);
 		const [issued] = [...item.auth.refresh.values()];
 		expect(issued?.family.revoked).toBe(true);
-		expect(evidenceOf(item).revocation.orphan).toEqual({
+		const data = evidenceOf(item);
+		expect(data.revocation.orphan).toEqual({
 			revoked: true,
 			probe: { accepted: false, code: "REAUTH_REQUIRED", status: 400, apiCode: "invalid_grant" },
 			verdict: "yes",
 		});
+		expect(data.signIn.token.idToken.facts).toEqual({
+			audHasClientId: false,
+			audHasDynamicAgentClient: false,
+			audHasResource: false,
+			azpIsClientId: false,
+			issIsIssuer: true,
+		});
 		expect(result.details).toContain("the code exchange's tokens: revoked yes");
 		expectContentFree(item);
 	});
+
+	it.for<
+		[
+			string,
+			(claims: Record<string, unknown>) => Record<string, unknown>,
+			string,
+			Record<string, boolean>,
+		]
+	>([
+		[
+			"two audiences and no azp",
+			(claims) => ({ ...claims, aud: [claims.aud, "https://api.openai.com/v1"] }),
+			"authorized party",
+			{
+				audHasClientId: true,
+				audHasDynamicAgentClient: false,
+				audHasResource: true,
+				azpIsClientId: false,
+				issIsIssuer: true,
+			},
+		],
+		[
+			"dynamic_agent_client as its audience",
+			(claims) => ({ ...claims, aud: "dynamic_agent_client", azp: claims.aud }),
+			"audience",
+			{
+				audHasClientId: false,
+				audHasDynamicAgentClient: true,
+				audHasResource: false,
+				azpIsClientId: true,
+				issIsIssuer: true,
+			},
+		],
+		[
+			"another issuer",
+			(claims) => ({ ...claims, iss: "https://elsewhere.invalid" }),
+			"issuer",
+			{
+				audHasClientId: true,
+				audHasDynamicAgentClient: false,
+				audHasResource: false,
+				azpIsClientId: false,
+				issIsIssuer: false,
+			},
+		],
+	])(
+		"an ID token with %s is refused, and the evidence says why in yes/no facts",
+		async ([, idClaims, reason, facts], ctx) => {
+			const item = await setUp(ctx, { auth: { idClaims } });
+			const result = await item.run({ fingerprint: print });
+			expect(result.lines[0]).toBe(`signin: blocked(ID_TOKEN_INVALID:${reason})`);
+			expect(evidenceOf(item).signIn.token.idToken.facts).toEqual(facts);
+			expectContentFree(item);
+		},
+	);
 
 	it("tokens an earlier run left in .env.live are revoked and checked before the sign-in", async (ctx) => {
 		const item = await setUp(ctx);
