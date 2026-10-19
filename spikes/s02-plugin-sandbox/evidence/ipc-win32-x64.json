@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T16:25:38.064Z",
+  "recordedAt": "2026-10-19T02:51:07.601Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,14 +11,14 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "888d1a9d15f3c3dcab7e64d3af9535c5a08cbd2a",
+    "commit": "6046ad90a74694f9fccb5ef1a6a460b8bac814d2",
     "dirty": false,
     "load": {
-      "cpuPercent": 93.6,
+      "cpuPercent": 64.1,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 84.6,
-      "concurrentBuilds": 8
+      "memoryUsedPercent": 76.9,
+      "concurrentBuilds": 0
     }
   },
   "data": {
@@ -206,7 +206,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 193,
+              "exitMs": 58,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -238,7 +238,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 80,
+              "exitMs": 51,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -270,7 +270,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 62,
+              "exitMs": 55,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -302,7 +302,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 59,
+              "exitMs": 55,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -338,7 +338,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 83,
+              "exitMs": 58,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -370,7 +370,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 100,
+              "exitMs": 57,
               "auditCount": 0,
               "fds": null,
               "plugin": []
@@ -392,7 +392,7 @@
                 "signal": null,
                 "closed": true
               },
-              "exitMs": 3200,
+              "exitMs": 3066,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -442,7 +442,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 284,
+              "exitMs": 99,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -474,7 +474,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 126,
+              "exitMs": 104,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -506,7 +506,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 157,
+              "exitMs": 111,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -765,7 +765,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 143,
+              "exitMs": 154,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -797,7 +797,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 122,
+              "exitMs": 81,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -829,7 +829,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 171,
+              "exitMs": 106,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -861,7 +861,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 238,
+              "exitMs": 89,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -897,7 +897,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 241,
+              "exitMs": 68,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -929,7 +929,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 348,
+              "exitMs": 59,
               "auditCount": 0,
               "fds": null,
               "plugin": []
@@ -951,7 +951,7 @@
                 "signal": null,
                 "closed": true
               },
-              "exitMs": 3258,
+              "exitMs": 3224,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -1001,7 +1001,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 117,
+              "exitMs": 256,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -1033,7 +1033,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 222,
+              "exitMs": 124,
               "auditCount": 0,
               "fds": null,
               "plugin": [
@@ -1065,7 +1065,7 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 138,
+              "exitMs": 183,
               "auditCount": 0,
               "fds": null,
               "plugin": [

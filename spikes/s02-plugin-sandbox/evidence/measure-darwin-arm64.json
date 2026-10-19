@@ -1,0 +1,259 @@
+{
+  "recordedAt": "2026-10-18T18:18:36.252Z",
+  "fingerprint": {
+    "os": {
+      "platform": "darwin",
+      "arch": "arm64",
+      "osName": "Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:34 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_VMAPPLE",
+      "osVersion": "24.6.0"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "1235580a40b2a44a2dbccf433892092d989a2ff1",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 35,
+      "cpuCount": 3,
+      "cpuModel": "Apple M1 (Virtual)",
+      "memoryUsedPercent": 76.2,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "darwin-arm64",
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "rssLimitMiB": 512,
+    "intervals": {
+      "fastMs": 150,
+      "planMs": 5000
+    },
+    "killSampler": "ps-rss",
+    "kills": [
+      {
+        "mode": "arraybuffer",
+        "node": "26.5.1",
+        "method": "ps-rss",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 565,
+        "overshootMiB": 53,
+        "timeToKillMs": 790,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "wasm",
+        "node": "26.5.1",
+        "method": "ps-rss",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 628,
+        "overshootMiB": 116,
+        "timeToKillMs": 630,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "arraybuffer",
+        "node": "26.12.0",
+        "method": "ps-rss",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 566,
+        "overshootMiB": 54,
+        "timeToKillMs": 628,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "wasm",
+        "node": "26.12.0",
+        "method": "ps-rss",
+        "intervalMs": 150,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 629,
+        "overshootMiB": 117,
+        "timeToKillMs": 626,
+        "growerCeilingMiB": null,
+        "growerCeilingMs": null
+      },
+      {
+        "mode": "arraybuffer-fast",
+        "node": "26.5.1",
+        "method": "ps-rss",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1590,
+        "overshootMiB": 1078,
+        "timeToKillMs": 5018,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 621
+      },
+      {
+        "mode": "wasm-fast",
+        "node": "26.5.1",
+        "method": "ps-rss",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1588,
+        "overshootMiB": 1076,
+        "timeToKillMs": 5020,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 127
+      },
+      {
+        "mode": "arraybuffer-fast",
+        "node": "26.12.0",
+        "method": "ps-rss",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1590,
+        "overshootMiB": 1078,
+        "timeToKillMs": 5022,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 116
+      },
+      {
+        "mode": "wasm-fast",
+        "node": "26.12.0",
+        "method": "ps-rss",
+        "intervalMs": 5000,
+        "killedByWatchdog": true,
+        "killSignal": "SIGKILL",
+        "peakMiB": 1589,
+        "overshootMiB": 1077,
+        "timeToKillMs": 5024,
+        "growerCeilingMiB": 1536,
+        "growerCeilingMs": 116
+      }
+    ],
+    "observations": {
+      "planIntervalMaxOvershootMiB": 1078,
+      "fastestGrowthMiBPerSecond": 13241,
+      "projectedMiBPerPlanInterval": 66207
+    },
+    "untouched": [
+      {
+        "node": "26.5.1",
+        "allocatedMiB": 768,
+        "readings": [
+          {
+            "method": "ps-rss",
+            "metric": "resident",
+            "mib": 52
+          }
+        ]
+      },
+      {
+        "node": "26.12.0",
+        "allocatedMiB": 768,
+        "readings": [
+          {
+            "method": "ps-rss",
+            "metric": "resident",
+            "mib": 53
+          }
+        ]
+      }
+    ],
+    "benchmarks": {
+      "lock": {
+        "waitedMs": 0,
+        "idle": {
+          "samples": [
+            1.7,
+            2,
+            2,
+            2.6,
+            1.3
+          ],
+          "maxCpuPercent": 2.6,
+          "thresholdPercent": 20,
+          "waitedMs": 5034,
+          "concurrentBuilds": 0
+        }
+      },
+      "samplingCost": [
+        {
+          "method": "ps-rss",
+          "metric": "resident",
+          "available": true,
+          "firstMs": 14.326,
+          "reads": 25,
+          "medianMs": 2.885,
+          "minMs": 2.397,
+          "maxMs": 8.55,
+          "lastMiB": 53
+        }
+      ],
+      "rehash": [
+        {
+          "label": "synthetic-2MiB",
+          "files": 16,
+          "bytes": 2097152,
+          "runs": 7,
+          "medianMs": 1.42,
+          "minMs": 1.38
+        },
+        {
+          "label": "synthetic-16MiB",
+          "files": 16,
+          "bytes": 16777216,
+          "runs": 7,
+          "medianMs": 9.84,
+          "minMs": 9.39
+        },
+        {
+          "label": "template-bundle",
+          "files": 948,
+          "bytes": 13956673,
+          "runs": 7,
+          "medianMs": 28.08,
+          "minMs": 26.68
+        }
+      ],
+      "spawnCost": {
+        "runs": 9,
+        "node": "26.12.0",
+        "socketpair": {
+          "readyMs": {
+            "medianMs": 31.01,
+            "minMs": 30.1,
+            "maxMs": 41.01
+          }
+        },
+        "fifo": {
+          "setupMs": {
+            "medianMs": 2.39,
+            "minMs": 2.28,
+            "maxMs": 4.71
+          },
+          "readyMs": {
+            "medianMs": 35.17,
+            "minMs": 32.14,
+            "maxMs": 43.2
+          }
+        }
+      }
+    },
+    "findings": {
+      "watchdogSigkillsAboveTheLimit": true,
+      "arrayBufferAndWasmEscapeTheHeapCap": true,
+      "planIntervalLetsGrowthPassTheLimit": true,
+      "untouchedAllocationJudged": true,
+      "killSamplerCostMeasured": true
+    }
+  }
+}

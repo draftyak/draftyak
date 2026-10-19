@@ -1,0 +1,528 @@
+{
+  "recordedAt": "2026-10-18T17:16:18.633Z",
+  "fingerprint": {
+    "os": {
+      "platform": "linux",
+      "arch": "x64",
+      "osName": "#22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026",
+      "osVersion": "6.17.0-1022-azure"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "50ff9e88ccc3a16ff1d9310471050c2190138095",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 5,
+      "cpuCount": 2,
+      "cpuModel": "AMD EPYC 7763 64-Core Processor",
+      "memoryUsedPercent": 16.7,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "linux-x64",
+    "runtime": {
+      "pyodide": "314.0.7",
+      "abi": "pyemscripten_2026_0",
+      "python": "3.14.2",
+      "shimSha256": "5312fa65ed371c9e70048482f2b207b39d4f3f540897b702ec80896da000b62e",
+      "kernelVersion": "6.17.0-1022-azure"
+    },
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "auditFlag": {
+      "name": "--permission-audit",
+      "present": true,
+      "note": "present on 26.5.1 and 26.12.0; on 26.5.1 it also enforces, on 26.12.0 it observes only"
+    },
+    "escapes": 0,
+    "attacks": [
+      {
+        "name": "os_system",
+        "node": "26.5.1",
+        "outcome": "error",
+        "code": null,
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": true,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "subprocess",
+        "node": "26.5.1",
+        "outcome": "denied",
+        "code": "OSError",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "socket",
+        "node": "26.5.1",
+        "outcome": "no-result",
+        "code": null,
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": true,
+        "netConnected": false
+      },
+      {
+        "name": "off_profile_request",
+        "node": "26.5.1",
+        "outcome": "denied",
+        "code": "status",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "open_canaries",
+        "node": "26.5.1",
+        "outcome": "denied",
+        "code": "JsException",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "js_require_child_process",
+        "node": "26.5.1",
+        "outcome": "denied",
+        "code": "AttributeError",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "process_binding_fs",
+        "node": "26.5.1",
+        "outcome": "denied",
+        "code": "AttributeError",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "run_js",
+        "node": "26.5.1",
+        "outcome": "denied",
+        "code": "ImportError",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "codegen",
+        "node": "26.5.1",
+        "outcome": "denied",
+        "code": "JsException",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "write_plugin_dir",
+        "node": "26.5.1",
+        "outcome": "denied",
+        "code": "JsException",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "write_runtime_dir",
+        "node": "26.5.1",
+        "outcome": "denied",
+        "code": "JsException",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "os_system",
+        "node": "26.12.0",
+        "outcome": "error",
+        "code": null,
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": true,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "subprocess",
+        "node": "26.12.0",
+        "outcome": "denied",
+        "code": "OSError",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "socket",
+        "node": "26.12.0",
+        "outcome": "no-result",
+        "code": null,
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": true,
+        "netConnected": false
+      },
+      {
+        "name": "off_profile_request",
+        "node": "26.12.0",
+        "outcome": "denied",
+        "code": "status",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "open_canaries",
+        "node": "26.12.0",
+        "outcome": "denied",
+        "code": "JsException",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "js_require_child_process",
+        "node": "26.12.0",
+        "outcome": "denied",
+        "code": "AttributeError",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "process_binding_fs",
+        "node": "26.12.0",
+        "outcome": "denied",
+        "code": "AttributeError",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "run_js",
+        "node": "26.12.0",
+        "outcome": "denied",
+        "code": "ImportError",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "codegen",
+        "node": "26.12.0",
+        "outcome": "denied",
+        "code": "JsException",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "write_plugin_dir",
+        "node": "26.12.0",
+        "outcome": "denied",
+        "code": "JsException",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      },
+      {
+        "name": "write_runtime_dir",
+        "node": "26.12.0",
+        "outcome": "denied",
+        "code": "JsException",
+        "escaped": false,
+        "denied": true,
+        "permissionDenied": false,
+        "canaryLeak": false,
+        "hostFileCreated": false,
+        "netTested": false,
+        "netConnected": false
+      }
+    ],
+    "contract": [
+      {
+        "node": "26.5.1",
+        "toolsCount": 14,
+        "supportedVersions": [
+          "2026-07-28"
+        ],
+        "pingOk": true,
+        "legacyRejected": true,
+        "readAfterDrop": false
+      },
+      {
+        "node": "26.12.0",
+        "toolsCount": 14,
+        "supportedVersions": [
+          "2026-07-28"
+        ],
+        "pingOk": true,
+        "legacyRejected": true,
+        "readAfterDrop": false
+      }
+    ],
+    "prints": [
+      {
+        "node": "26.5.1",
+        "printed": 10000,
+        "stdoutFrameLines": 4,
+        "nonFrameStdoutLines": 0,
+        "forgedIdOnFd1": false,
+        "forgedTextOnFd1": false,
+        "contractIntactAfter": true
+      },
+      {
+        "node": "26.12.0",
+        "printed": 10000,
+        "stdoutFrameLines": 4,
+        "nonFrameStdoutLines": 0,
+        "forgedIdOnFd1": false,
+        "forgedTextOnFd1": false,
+        "contractIntactAfter": true
+      }
+    ],
+    "timeout": [
+      {
+        "node": "26.5.1",
+        "callTimeoutMs": 2000,
+        "graceMs": 5000,
+        "answered": false,
+        "timedOut": true,
+        "aliveBeforeKill": true,
+        "killed": true,
+        "killSignal": "SIGKILL",
+        "timeToKillMs": 7011,
+        "restarted": true
+      },
+      {
+        "node": "26.12.0",
+        "callTimeoutMs": 2000,
+        "graceMs": 5000,
+        "answered": false,
+        "timedOut": true,
+        "aliveBeforeKill": true,
+        "killed": true,
+        "killSignal": "SIGKILL",
+        "timeToKillMs": 7011,
+        "restarted": true
+      }
+    ],
+    "audit": [
+      {
+        "node": "26.5.1",
+        "forbiddenEvents": 0,
+        "fsWriteEvents": 0,
+        "fsReadEvents": 8,
+        "counts": {
+          "fs": 8,
+          "net": 0,
+          "child": 0,
+          "worker": 0,
+          "wasi": 0,
+          "addon": 0,
+          "ffi": 0,
+          "inspector": 0,
+          "openssl-store": 0
+        },
+        "brokerRequestCount": 7,
+        "offBrokerRequest": false,
+        "tcpConnections": null,
+        "complete": true
+      },
+      {
+        "node": "26.12.0",
+        "forbiddenEvents": 0,
+        "fsWriteEvents": 0,
+        "fsReadEvents": 24,
+        "counts": {
+          "fs": 24,
+          "net": 0,
+          "child": 0,
+          "worker": 0,
+          "wasi": 0,
+          "addon": 0,
+          "ffi": 0,
+          "inspector": 0,
+          "openssl-store": 0
+        },
+        "brokerRequestCount": 7,
+        "offBrokerRequest": false,
+        "tcpConnections": null,
+        "complete": true
+      }
+    ],
+    "netControl": [
+      {
+        "node": "26.5.1",
+        "netEvents": 1,
+        "complete": true
+      },
+      {
+        "node": "26.12.0",
+        "netEvents": 1,
+        "complete": true
+      }
+    ],
+    "tamper": [
+      {
+        "kind": "extra",
+        "node": "26.5.1",
+        "refused": true,
+        "code": "DY_REFUSED_SPAWN",
+        "findingKind": "extra"
+      },
+      {
+        "kind": "modified",
+        "node": "26.5.1",
+        "refused": true,
+        "code": "DY_REFUSED_SPAWN",
+        "findingKind": "modified"
+      },
+      {
+        "kind": "hardlink",
+        "node": "26.5.1",
+        "refused": true,
+        "code": "DY_REFUSED_SPAWN",
+        "findingKind": "hardlink"
+      },
+      {
+        "kind": "hardlink-samecontent",
+        "node": "26.5.1",
+        "refused": true,
+        "code": "DY_REFUSED_SPAWN",
+        "findingKind": "hardlink"
+      },
+      {
+        "kind": "extra",
+        "node": "26.12.0",
+        "refused": true,
+        "code": "DY_REFUSED_SPAWN",
+        "findingKind": "extra"
+      },
+      {
+        "kind": "modified",
+        "node": "26.12.0",
+        "refused": true,
+        "code": "DY_REFUSED_SPAWN",
+        "findingKind": "modified"
+      },
+      {
+        "kind": "hardlink",
+        "node": "26.12.0",
+        "refused": true,
+        "code": "DY_REFUSED_SPAWN",
+        "findingKind": "hardlink"
+      },
+      {
+        "kind": "hardlink-samecontent",
+        "node": "26.12.0",
+        "refused": true,
+        "code": "DY_REFUSED_SPAWN",
+        "findingKind": "hardlink"
+      },
+      {
+        "kind": "symlink",
+        "node": "26.5.1",
+        "refused": true,
+        "code": "DY_REFUSED_SPAWN",
+        "findingKind": "symlink"
+      },
+      {
+        "kind": "symlink-samecontent",
+        "node": "26.5.1",
+        "refused": true,
+        "code": "DY_REFUSED_SPAWN",
+        "findingKind": "symlink"
+      }
+    ]
+  }
+}

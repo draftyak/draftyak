@@ -11,17 +11,23 @@ import {
 	stageForDocker,
 } from "@draftyak/spike-kit";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
+import { openFifoStdio } from "../src/fifo-stdio.ts";
 import { MAX_MESSAGE_BYTES } from "../src/host-channel.ts";
 import { PLUGIN_CHANNEL_ENV, PLUGIN_STDIO } from "../src/spawn.ts";
 import {
+	endingCounts,
 	type Fallback1RoundTripResult,
 	FIFO_MODES,
+	type FifoHeldResult,
 	type FifoResult,
 	fallback1RoundTripProblem,
-	fifoProblem,
+	fifoHeldProblem,
+	fifoHeldSummary,
+	fifoProblems,
+	fifoSummary,
 	HOST_FRAME_TAG,
 } from "./fifo.ts";
-import { describeFds, fdOf } from "./hub-probes.ts";
+import { describeFds, fdOf, fifoHolders } from "./hub-probes.ts";
 import { evidenceFile, missing, recordEvidence, unmet } from "./record.ts";
 import {
 	bundleTemplatePlugin,
@@ -133,15 +139,19 @@ const FIFO_LAYOUT = {
 	maxMessageBytes: MAX_MESSAGE_BYTES,
 	handleSends:
 		"ten per mode, each ending ENOTSOCK in the plugin, with no byte read by the hub from the FIFO they went over",
+	endOfFile:
+		"each FIFO the plugin writes ends at end-of-file, through libuv or at its exit through a non-blocking drain until read returns 0, or the hub closes it at a violation",
 	modes: FIFO_MODES,
 };
 
 // Remedy (f) holds on a target when every FIFO mode and the template plugin pass on every Node;
-// written to its own file whatever the fuzz and Fallback-1 findings (which fail on macOS).
+// written to its own file whatever the fuzz and Fallback-1 findings (which fail on macOS). The
+// held-writer control is recorded beside each Node's runs, but no finding depends on it.
 function fifoEvidence(
 	target: string,
 	runs: ReadonlyMap<string, FifoNode>,
 	nodes: readonly string[],
+	held: ReadonlyMap<string, HubRun<FifoHeldResult>> = new Map(),
 ) {
 	const every = (test: (node: FifoNode) => boolean): boolean =>
 		nodes.every((v) => {
@@ -153,7 +163,7 @@ function fifoEvidence(
 		(node: FifoNode): boolean =>
 			modes.every((mode) => {
 				const run = node.modes.get(mode);
-				return run !== undefined && fifoProblem(mode, run) === null;
+				return run !== undefined && fifoProblems(mode, run).length === 0;
 			});
 	const findings = {
 		roundTripsOnFifoStdio: every(hold("round-trip")),
@@ -182,8 +192,10 @@ function fifoEvidence(
 			layout: FIFO_LAYOUT,
 			runs: nodes.map((node) => ({
 				node,
+				endings: endingCounts(runs.get(node)?.modes.values() ?? []),
 				modes: [...(runs.get(node)?.modes ?? new Map())].map(([mode, run]) => ({ mode, ...run })),
 				template: runs.get(node)?.template ?? null,
+				heldWriter: held.get(node) ?? null,
 			})),
 			findings,
 		},
@@ -312,6 +324,7 @@ function hostSuite(
 		);
 		const fallback1 = new Map<string, Fallback1Node>();
 		const fifo = new Map<string, FifoNode>();
+		const held = new Map<string, HubRun<FifoHeldResult>>();
 		const at = (v: string): NodeRuns => runs.get(v) as NodeRuns;
 		const f1 = (v: string): Fallback1Node => {
 			const node = fallback1.get(v) ?? {};
@@ -342,7 +355,7 @@ function hostSuite(
 			const fb = fallback1Evidence(target, fallback1, NODES);
 			await recordEvidence(evidenceFile("fallback1", target), fb.problems, fb.data);
 			if (platform === "win32") return;
-			const f = fifoEvidence(target, fifo, NODES);
+			const f = fifoEvidence(target, fifo, NODES, held);
 			await recordEvidence(evidenceFile("fifo", target), f.problems, f.data);
 		});
 
@@ -453,13 +466,33 @@ function hostSuite(
 				for (const mode of FIFO_MODE_NAMES) {
 					const run = await hub<FifoResult>(v, "fifo", mode);
 					modes.set(mode, run);
-					const problem = fifoProblem(mode, run);
-					if (problem !== null) problems.push(`${v} ${mode}: ${problem}`);
+					for (const problem of fifoProblems(mode, run)) problems.push(`${v} ${mode}: ${problem}`);
 				}
+				console.log(fifoSummary(v, modes));
 				const template = await runTemplatePlugin(bins[v] as string, bundleDir, dataDir(), "fifo");
 				fifo.set(v, { modes, template });
 				const problem = templateProblem(template);
 				if (problem !== null) problems.push(`${v} template on FIFO stdio: ${problem}`);
+			}
+			expect(problems).toEqual([]);
+		});
+
+		// The FIFO diagnostics themselves, end to end: a writer the hub keeps past the plugin's exit
+		// must leave the drain with EAGAIN, show among the FIFO's holders, and once closed let the
+		// drain end the FIFO. Its own test, so it never decides whether the FIFO control's file is
+		// written.
+		it(platform === "win32"
+			? "CONTROL: the FIFO diagnostics are not run on Windows: it has no FIFOs"
+			: "CONTROL: a FIFO writer that outlives the plugin is found by the drain and named among the holders", {
+			tags: [`requires:${capTag}`, "requires:posix"],
+		}, async () => {
+			const problems: string[] = [];
+			for (const v of NODES) {
+				const run = await hub<FifoHeldResult>(v, "fifo-held");
+				held.set(v, run);
+				console.log(fifoHeldSummary(v, run));
+				const problem = fifoHeldProblem(run);
+				if (problem !== null) problems.push(`${v}: ${problem}`);
 			}
 			expect(problems).toEqual([]);
 		});
@@ -554,6 +587,30 @@ describe("macOS lsof descriptor diagnostics (self-check)", () => {
 			accepted?.destroy();
 			server.close();
 			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	// The FIFO control lists who holds a FIFO that a writer still holds at the drain (fifoHolders);
+	// here the hub holds both ends of one, and lsof must list exactly those two, with their access,
+	// matched by inode (macOS's lsof prints no device for a FIFO). On a miss, lsof's own lines for
+	// the two descriptors show why.
+	it("lists both ends of a FIFO the hub holds, by inode", {
+		tags: ["requires:macos"],
+		timeout: 60_000,
+	}, async () => {
+		const fifo = await openFifoStdio(1);
+		try {
+			const reader = fifo.hubFds[1] ?? -1;
+			const writer = fifo.pluginFds[1] ?? -1;
+			const { dev, ino } = fs.fstatSync(reader, { bigint: true });
+			const { holders, raw } = fifoHolders([{ dev, ino }], [reader, writer]);
+			const [found] = holders;
+			const shown = `${found?.join(" | ") ?? "not listed"}; lsof: ${raw || "nothing"}`;
+			expect(found?.toSorted(), shown).toEqual(
+				[`hub fd ${reader} r`, `hub fd ${writer} w`].toSorted(),
+			);
+		} finally {
+			fifo.destroy();
 		}
 	});
 });
@@ -713,11 +770,13 @@ describe("Linux Docker S2b matrix", () => {
 });
 
 // Remedy (f) in Linux Docker on both Nodes: every FIFO mode, then the template plugin on FIFO
-// stdio. Writes fifo-docker-linux-<arch>.json whenever it holds.
+// stdio, then the held-writer control. Writes fifo-docker-linux-<arch>.json whenever the modes and
+// the template plugin hold; the control is checked after it, apart from the file.
 interface DockerFifoNode {
 	readonly label: string;
 	readonly modes: { readonly mode: string; readonly run: HubRun<FifoResult> }[];
 	readonly template: TemplateResult;
+	readonly held: HubRun<FifoHeldResult>;
 }
 
 describe("Linux Docker FIFO stdio (remedy (f))", () => {
@@ -728,22 +787,28 @@ describe("Linux Docker FIFO stdio (remedy (f))", () => {
 		await needDocker(ctx);
 		const { image, nodes } = await s2bInDocker<DockerFifoNode>(ctx, "fifo");
 		const runs = new Map<string, FifoNode>();
+		const held = new Map<string, HubRun<FifoHeldResult>>();
 		const problems: string[] = [];
+		const control: string[] = [];
 		for (const n of nodes) {
-			for (const { mode, run } of n.modes) {
-				const problem = fifoProblem(mode, run);
-				if (problem !== null) problems.push(`${n.label} ${mode}: ${problem}`);
+			const modes = new Map(n.modes.map(({ mode, run }) => [mode, run]));
+			for (const [mode, run] of modes) {
+				for (const problem of fifoProblems(mode, run))
+					problems.push(`${n.label} ${mode}: ${problem}`);
 			}
+			console.log(fifoSummary(n.label, modes));
 			const problem = templateProblem(n.template);
 			if (problem !== null) problems.push(`${n.label} template on FIFO stdio: ${problem}`);
-			runs.set(n.label, {
-				modes: new Map(n.modes.map(({ mode, run }) => [mode, run])),
-				template: n.template,
-			});
+			runs.set(n.label, { modes, template: n.template });
+			held.set(n.label, n.held);
+			console.log(fifoHeldSummary(n.label, n.held));
+			const missed = fifoHeldProblem(n.held);
+			if (missed !== null) control.push(`${n.label} held-writer control: ${missed}`);
 		}
 		const target = `docker-linux-${arch}`;
-		const f = fifoEvidence(target, runs, NODES);
+		const f = fifoEvidence(target, runs, NODES, held);
 		await recordEvidence(evidenceFile("fifo", target), f.problems, { ...f.data, image });
 		expect(problems).toEqual([]);
+		expect(control).toEqual([]);
 	});
 });

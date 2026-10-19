@@ -114,7 +114,8 @@ async function samplerCost(node: RunnerNode) {
 	return { label: node.label, costs, spawnCost };
 }
 
-// Remedy (f): every FIFO mode in a stand-in hub, then the template plugin on FIFO stdio.
+// Remedy (f): every FIFO mode in a stand-in hub, then the template plugin on FIFO stdio, then the
+// held-writer control for the FIFO diagnostics.
 async function fifo(node: RunnerNode) {
 	const modes = [];
 	for (const mode of Object.keys(FIFO_MODES)) {
@@ -124,7 +125,8 @@ async function fifo(node: RunnerNode) {
 		});
 	}
 	const template = await runTemplatePlugin(node.bin, config.bundleDir ?? "", dataDir(), "fifo");
-	return { label: node.label, modes, template };
+	const held = await runHubProbe(node.bin, "fifo-held", { pluginDir, dataDir: dataDir() });
+	return { label: node.label, modes, template, held };
 }
 
 const runs = { matrix, memory, "sampler-cost": samplerCost, fifo } as const;
