@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { type ParseArgsOptionsConfig, parseArgs } from "node:util";
@@ -22,6 +22,19 @@ export function exec(command: string, args: readonly string[], cwd?: string): st
 		throw new Error(`${command} ${args.join(" ")}: ${detail}`);
 	}
 	return result.stdout;
+}
+
+// exec without blocking, so that several gh calls can run at once.
+export function execAsync(command: string, args: readonly string[]): Promise<string> {
+	const options = { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, windowsHide: true } as const;
+	return new Promise((resolve, reject) => {
+		execFile(command, [...args], options, (error, stdout, stderr) => {
+			if (!error) return resolve(stdout);
+			if (typeof error.code !== "number") return reject(error);
+			const detail = stderr.trim() || `exit code ${error.code}`;
+			reject(new Error(`${command} ${args.join(" ")}: ${detail}`));
+		});
+	});
 }
 
 export function git(args: readonly string[], cwd?: string): string {
