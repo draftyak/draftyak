@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { tempRepo } from "../test/temp-repo.ts";
+import { UsageError } from "./lib.ts";
 import {
 	buildReceipt,
 	jobNames,
@@ -38,7 +39,15 @@ const job = (platform = "linux"): TestJob => ({
 	outputs: { source: JSON.stringify(source({ platform })) },
 });
 const needs = (docsOnly = false): Needs => ({
-	changes: { ...job(), outputs: { ...job().outputs, "docs-only": String(docsOnly) } },
+	changes: {
+		...job(),
+		outputs: {
+			...job().outputs,
+			"docs-only": String(docsOnly),
+			areas: JSON.stringify(docsOnly ? ["docs-only"] : ["ts"]),
+			"template-smoke": "false",
+		},
+	},
 	cheap: job(),
 	full: job(),
 	windows: job("win32"),
@@ -73,6 +82,25 @@ describe("CI verification receipts", () => {
 		expect(receipt.passed).toBe(true);
 		expect(receipt.problems).toEqual([]);
 		expect(receipt.source).toEqual({ headSha, baseSha, testedSha: mergeSha });
+		expect(receipt.selection).toEqual({
+			areas: ["ts"],
+			rust: [],
+			spikes: [],
+			heavy: [],
+			templateSmoke: false,
+		});
+		expect(Object.keys(receipt).sort()).toEqual(
+			[
+				"version",
+				"run",
+				"source",
+				"coverage",
+				"selection",
+				"jobResults",
+				"passed",
+				"problems",
+			].sort(),
+		);
 		expect(receipt.run).toEqual({
 			url: "https://github.com/example/project/actions/runs/123/attempts/2",
 			id: "123",
@@ -146,6 +174,7 @@ describe("CI verification receipts", () => {
 			expect(receipt.passed, `${name}: ${result}`).toBe(false);
 			expect(receipt.jobResults[name].result).toBe(result);
 			expect(receipt.problems).toContain(`${name}: ${result}`);
+			if (name === "changes") expect(receipt.selection).toBeNull();
 		}
 	});
 
@@ -255,11 +284,13 @@ describe("CI verification receipts", () => {
 	it("does not copy unrecognized metadata into its JSON or Markdown", () => {
 		const jobs = needs();
 		jobs.cheap.outputs.unrelated = "unrelated-output-marker";
+		jobs.changes.outputs.unrelated = "unrelated-classifier-marker";
 		changeSource(jobs, "cheap", { unrelated: "unrelated-source-marker" });
 		const receipt = buildReceipt(input({}, jobs));
 		expect(receipt.passed).toBe(true);
 		for (const serialized of [JSON.stringify(receipt), renderSummary(receipt)]) {
 			expect(serialized).not.toContain("unrelated-output-marker");
+			expect(serialized).not.toContain("unrelated-classifier-marker");
 			expect(serialized).not.toContain("unrelated-source-marker");
 		}
 	});
@@ -279,6 +310,296 @@ describe("CI verification receipts", () => {
 			"Other workflows, live/device checks and owner acceptance remain separate.",
 		);
 		expect(summary).not.toMatch(/all (?:checks|tests) passed/i);
+	});
+});
+
+describe("verification receipt selection metadata", () => {
+	const selected = (outputs: Record<string, unknown>) => {
+		const jobs = needs();
+		Object.assign(jobs.changes.outputs, outputs);
+		return buildReceipt(input({}, jobs));
+	};
+
+	it.each([undefined, ""])(
+		"records explicitly empty selection when optional list outputs are %s",
+		(value) => {
+			const receipt = selected({ areas: "[]", rust: value, spikes: value, heavy: value });
+			expect(receipt.passed).toBe(true);
+			expect(receipt.selection).toEqual({
+				areas: [],
+				rust: [],
+				spikes: [],
+				heavy: [],
+				templateSmoke: false,
+			});
+		},
+	);
+
+	it("preserves full Rust, spike, dependent-heavy and template-smoke selection in its JSON and summary", () => {
+		const selection = {
+			areas: [
+				"ts",
+				"workflows",
+				"rust:crates",
+				"rust:spikes/s05-desktop/rust",
+				"spikes/s01-sqlite3mc",
+				"heavy:./packages/protocol",
+				"heavy:...{./packages/protocol}",
+				"heavy:./plugins/calendar",
+				"heavy:...{./plugins/calendar}",
+				"heavy:./tools/verify",
+				"template-smoke",
+			],
+			rust: ["crates", "spikes/s05-desktop/rust"],
+			spikes: ["spikes/s01-sqlite3mc", "spikes/s11-python-runtime"],
+			heavy: [
+				"./packages/protocol",
+				"...{./packages/protocol}",
+				"./plugins/calendar",
+				"...{./plugins/calendar}",
+				"./tools/verify",
+			],
+			templateSmoke: true,
+		};
+		const receipt = selected({
+			areas: JSON.stringify(selection.areas),
+			rust: selection.rust.join("\n"),
+			spikes: selection.spikes.join("\n"),
+			heavy: selection.heavy.join("\n"),
+			"template-smoke": "true",
+		});
+		expect(receipt.passed).toBe(true);
+		expect(receipt.selection).toEqual(selection);
+		expect(JSON.parse(JSON.stringify(receipt)).selection).toEqual(selection);
+		const summary = renderSummary(receipt);
+		for (const value of [
+			...selection.areas,
+			...selection.rust,
+			...selection.spikes,
+			...selection.heavy,
+		]) {
+			expect(summary).toContain(value);
+		}
+		expect(summary).toMatch(/template.smoke[^\n]*(?:yes|true|selected)/i);
+	});
+
+	it("states none for each unselected suite and no for template smoke", () => {
+		const summary = renderSummary(selected({ areas: "[]" }));
+		for (const label of ["Areas", "Rust workspaces", "Spike suites", "Heavy filters"]) {
+			expect(summary).toMatch(new RegExp(`${label}[^\\n]*none`, "i"));
+		}
+		expect(summary).toMatch(/template.smoke[^\n]*(?:no|false|none)/i);
+	});
+
+	it.each(["failure", "cancelled", "skipped"])(
+		"does not claim selection from a %s classifier, including malformed outputs",
+		(result) => {
+			const jobs = needs();
+			jobs.changes = {
+				result,
+				outputs: {
+					areas: "not-json-untrusted-marker",
+					rust: ["crates"],
+					spikes: "../not-a-spike",
+					heavy: "./packages/not-a-package\n# injected",
+					"template-smoke": true,
+				},
+			};
+			const receipt = buildReceipt(input({}, jobs));
+			expect(receipt.passed).toBe(false);
+			expect(receipt.selection).toBeNull();
+			const summary = renderSummary(receipt);
+			expect(summary).toMatch(/selection[^\n]*(?:unavailable|not available|not recorded)/i);
+			expect(summary).not.toContain("not-json-untrusted-marker");
+		},
+	);
+
+	it.each([
+		undefined,
+		null,
+		false,
+		[],
+		{},
+		"",
+		"{",
+		"null",
+		"{}",
+		'"ts"',
+		"true",
+		"[1]",
+		"[null]",
+		'["ts", "ts"]',
+		'["TS"]',
+		'["unknown"]',
+		'["ts\\nworkflows"]',
+		'["ts\\n"]',
+		'["heavy:./packages/protocol\\n"]',
+		'["heavy:...{./tools/verify}"]',
+		'["rust:crates/../outside"]',
+		'["spikes/s01-sqlite3mc/extra"]',
+	])("refuses malformed, non-string, duplicate or unallowlisted areas %#", (areas) => {
+		expect(() => selected({ areas })).toThrow(UsageError);
+	});
+
+	it.each([undefined, null, true, false, 0, "", "TRUE", "False", "yes", "true\n", "true\nfalse"])(
+		"requires the classifier's exact string template-smoke decision %#",
+		(value) => {
+			expect(() => selected({ "template-smoke": value })).toThrow(UsageError);
+		},
+	);
+
+	it.each(["rust", "spikes", "heavy"])("rejects non-string %s output types", (name) => {
+		for (const value of [null, false, true, 0, [], {}, ["crates"]]) {
+			expect(() => selected({ [name]: value })).toThrow(UsageError);
+		}
+	});
+
+	it.each([
+		["rust", "crates/../outside"],
+		["rust", "crates//member"],
+		["rust", "crates/./member"],
+		["rust", "crates/"],
+		["rust", "/crates"],
+		["rust", "crates\\member"],
+		["rust", "Crates/member"],
+		["rust", "packages/protocol"],
+		["rust", "spikes"],
+		["rust", "crates\n\ncrates/member"],
+		["rust", "crates\n"],
+		["rust", "crates\ncrates"],
+		["rust", '["crates"]'],
+		["spikes", "spikes/s01-sqlite3mc/extra"],
+		["spikes", "spikes/../outside"],
+		["spikes", "spikes//s01"],
+		["spikes", "spikes/S01"],
+		["spikes", "spikes/s01\nspikes/s01"],
+		["spikes", '["spikes/s01"]'],
+		["heavy", "./apps/hub"],
+		["heavy", "./tools/ci-checks"],
+		["heavy", "...{./tools/verify}"],
+		["heavy", "./packages/protocol/extra"],
+		["heavy", "./packages/../protocol"],
+		["heavy", "./packages//protocol"],
+		["heavy", "./packages/Protocol"],
+		["heavy", "{./packages/protocol}"],
+		["heavy", "...{./packages/protocol}..."],
+		["heavy", "./packages/protocol\n./packages/protocol"],
+		["heavy", '["./packages/protocol"]'],
+	])("rejects unsafe, malformed or duplicate %s selection %#", (name, value) => {
+		expect(() => selected({ [name as string]: value })).toThrow(UsageError);
+	});
+
+	it("accepts CRLF-separated lists without retaining carriage returns", () => {
+		expect(
+			selected({
+				rust: "crates\r\nspikes/s05-desktop/rust",
+				spikes: "spikes/s01-sqlite3mc\r\nspikes/s11-python-runtime",
+				heavy: "./packages/protocol\r\n...{./plugins/calendar}",
+			}).selection,
+		).toEqual({
+			areas: ["ts"],
+			rust: ["crates", "spikes/s05-desktop/rust"],
+			spikes: ["spikes/s01-sqlite3mc", "spikes/s11-python-runtime"],
+			heavy: ["./packages/protocol", "...{./plugins/calendar}"],
+			templateSmoke: false,
+		});
+	});
+
+	it("allows underscores in bounded workspace, spike and package names", () => {
+		const receipt = selected({
+			areas: JSON.stringify([
+				"rust:crates/draftyak_protocol",
+				"spikes/s05_desktop",
+				"heavy:...{./packages/protocol_v1}",
+			]),
+			rust: "crates/draftyak_protocol\nspikes/s05_desktop/rust_control",
+			spikes: "spikes/s05_desktop",
+			heavy: "...{./packages/protocol_v1}",
+		});
+		expect(receipt.passed).toBe(true);
+		expect(receipt.selection?.rust).toEqual([
+			"crates/draftyak_protocol",
+			"spikes/s05_desktop/rust_control",
+		]);
+		expect(receipt.selection?.spikes).toEqual(["spikes/s05_desktop"]);
+		expect(receipt.selection?.heavy).toEqual(["...{./packages/protocol_v1}"]);
+	});
+
+	it.each([
+		["rust", "crates/member-"],
+		["spikes", "spikes/spike-"],
+		["heavy", "./packages/package-"],
+	] as const)(
+		"bounds %s raw output independently of item count and item length",
+		(name, prefix) => {
+			const values = Array.from({ length: 100 }, (_, index) => {
+				const item = `${prefix}${index}-`;
+				return item + "a".repeat((index === 99 ? 148 : 163) - item.length);
+			});
+			const encoded = values.join("\n");
+			expect(encoded.length).toBe(16 * 1024);
+			expect(selected({ [name]: encoded }).selection?.[name]).toEqual(values);
+			expect(() => selected({ [name]: `${encoded}a` })).toThrow(UsageError);
+		},
+	);
+
+	it.each([
+		["rust", (index: number) => `crates/member-${index}`],
+		["spikes", (index: number) => `spikes/spike-${index}`],
+		["heavy", (index: number) => `./packages/package-${index}`],
+	] as const)("accepts 100 unique %s items and refuses 101", (name, item) => {
+		const values = Array.from({ length: 100 }, (_, index) => item(index));
+		expect(selected({ [name]: values.join("\n") }).selection?.[name]).toEqual(values);
+		expect(() => selected({ [name]: [...values, item(100)].join("\n") })).toThrow(UsageError);
+	});
+
+	it.each([
+		["rust", "crates/"],
+		["spikes", "spikes/"],
+		["heavy", "./packages/"],
+	] as const)("accepts a 200-character %s item and refuses 201", (name, prefix) => {
+		const value = prefix + "a".repeat(200 - prefix.length);
+		expect(selected({ [name]: value }).selection?.[name]).toEqual([value]);
+		expect(() => selected({ [name]: `${value}a` })).toThrow(UsageError);
+	});
+
+	it("accepts 300 unique areas and refuses 301", () => {
+		const values = Array.from({ length: 300 }, (_, index) => `rust:crates/member-${index}`);
+		expect(selected({ areas: JSON.stringify(values) }).selection?.areas).toEqual(values);
+		expect(() =>
+			selected({ areas: JSON.stringify([...values, "rust:crates/member-300"]) }),
+		).toThrow(UsageError);
+	});
+
+	it("accepts a 240-character area and refuses 241", () => {
+		const prefix = "rust:crates/";
+		const value = prefix + "a".repeat(240 - prefix.length);
+		expect(selected({ areas: JSON.stringify([value]) }).selection?.areas).toEqual([value]);
+		expect(() => selected({ areas: JSON.stringify([`${value}a`]) })).toThrow(UsageError);
+	});
+
+	it("bounds areas JSON independently of its item count and item length", () => {
+		const values = Array.from({ length: 200 }, (_, index) => {
+			const item = `rust:crates/member-${index}-`;
+			return item + "a".repeat((index === 199 ? 128 : 161) - item.length);
+		});
+		const encoded = JSON.stringify(values);
+		expect(encoded.length).toBe(32 * 1024);
+		expect(values.every((value) => value.length <= 240)).toBe(true);
+		expect(selected({ areas: encoded }).selection?.areas).toEqual(values);
+		values[199] += "a";
+		expect(() => selected({ areas: JSON.stringify(values) })).toThrow(UsageError);
+	});
+
+	it("does not echo untrusted selection contents through a validation error", () => {
+		const marker = "untrusted-value-marker";
+		try {
+			selected({ heavy: `./packages/protocol\n# ${marker}` });
+			throw new Error("invalid selection was accepted");
+		} catch (error) {
+			expect(error).toBeInstanceOf(UsageError);
+			expect(String(error)).not.toContain(marker);
+		}
 	});
 });
 
@@ -343,6 +664,13 @@ describe("verification receipt CLI", () => {
 			const receipt = JSON.parse(readFileSync(artifact, "utf8"));
 			expect(receipt.passed).toBe(true);
 			expect(receipt.source).toEqual({ headSha, baseSha, testedSha: commit });
+			expect(receipt.selection).toEqual({
+				areas: ["ts"],
+				rust: [],
+				spikes: [],
+				heavy: [],
+				templateSmoke: false,
+			});
 			expect(readFileSync(summary, "utf8")).toContain("CI verification: passed");
 
 			const failedRunner = path.join(repo.dir, "failed-runner");

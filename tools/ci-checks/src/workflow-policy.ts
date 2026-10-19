@@ -52,6 +52,22 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 		problems.push(`${file}${scalar ? `:${scalar.line}` : ""}: ${message}`);
 	};
 	const workflow = asMap(doc.value);
+	if (file === ".github/workflows/ci.yml") {
+		const checkFailurePolicy = (value: Yaml, at: YamlPath): void => {
+			if (Array.isArray(value)) {
+				for (const [index, entry] of value.entries()) checkFailurePolicy(entry, [...at, index]);
+			} else if (isMap(value)) {
+				for (const [key, entry] of Object.entries(value)) {
+					const child = [...at, key];
+					if (key === "continue-on-error") {
+						report(child, "ci.yml must not contain continue-on-error");
+					}
+					checkFailurePolicy(entry, child);
+				}
+			}
+		};
+		checkFailurePolicy(doc.value, []);
+	}
 
 	if (!readOnly(workflow.permissions)) {
 		report(["permissions"], "top-level permissions must be exactly `contents: read`");
