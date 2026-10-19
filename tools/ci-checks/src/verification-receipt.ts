@@ -106,11 +106,15 @@ function parseSource(value: unknown): Source | null {
 	};
 }
 
-const segment = "[a-z0-9][a-z0-9_-]*";
-const workspacePattern = new RegExp(`^(?:crates|spikes/${segment})(?:/${segment})*$`);
-const spikePattern = new RegExp(`^spikes/${segment}$`);
-const heavyPattern = new RegExp(
-	`^(?:\\./(?:(?:packages|plugins)/${segment}|tools/verify)|\\.\\.\\.\\{\\./(?:packages|plugins)/${segment}\\})$`,
+// Record bounded repository paths, rather than a copy of the classifier's current vocabulary.
+// The closing brace also ends a segment inside a dependent-package filter.
+const segment = "(?!\\.{1,2}(?:/|\\}|$))[a-z0-9._-]+";
+const repositoryPath = `${segment}(?:/${segment})*`;
+const pathPattern = new RegExp(`^${repositoryPath}$`);
+const heavyFilter = `(?:\\./${repositoryPath}|\\.\\.\\.\\{\\./${repositoryPath}\\})`;
+const heavyPattern = new RegExp(`^${heavyFilter}$`);
+const areaPattern = new RegExp(
+	`^(?:${repositoryPath}|[a-z0-9][a-z0-9_-]*:(?:${repositoryPath}|${heavyFilter}))$`,
 );
 
 function selectionList(value: unknown, name: string, pattern: RegExp): readonly string[] {
@@ -155,16 +159,14 @@ function parseSelection(outputs: Record<string, unknown>): Selection {
 	const areas = selectionItems(
 		parseJson(outputs.areas, "areas selection"),
 		"areas",
-		new RegExp(
-			`^(?:docs-only|ts|workflows|template-smoke|rust:(?:crates|spikes/${segment})(?:/${segment})*|spikes/${segment}|heavy:(?:\\./(?:(?:packages|plugins)/${segment}|tools/verify)|\\.\\.\\.\\{\\./(?:packages|plugins)/${segment}\\}))$`,
-		),
+		areaPattern,
 		300,
 		240,
 	);
 	return {
 		areas,
-		rust: selectionList(outputs.rust, "rust", workspacePattern),
-		spikes: selectionList(outputs.spikes, "spikes", spikePattern),
+		rust: selectionList(outputs.rust, "rust", pathPattern),
+		spikes: selectionList(outputs.spikes, "spikes", pathPattern),
 		heavy: selectionList(outputs.heavy, "heavy", heavyPattern),
 		templateSmoke:
 			text(outputs["template-smoke"], /^(true|false)$/, "template-smoke output") === "true",

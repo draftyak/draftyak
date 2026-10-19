@@ -92,7 +92,10 @@ describe("workflow policy", () => {
 		expect(ci.windows?.if).toBe(
 			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft))",
 		);
-		expect(ci.windows?.steps.at(-1)?.run).toBe("pnpm verify");
+		expect(ci.windows?.steps.at(-1)).toEqual({
+			run: "pnpm verify",
+			env: { TURBO_CONCURRENCY: "1" },
+		});
 		for (const name of ["changes", "cheap", "full", "windows"]) {
 			const job = ci[name];
 			expect(job?.outputs?.source, name).toBe(`\${{ steps.source.outputs.source }}`);
