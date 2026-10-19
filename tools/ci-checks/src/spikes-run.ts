@@ -13,14 +13,27 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
-import { type Job, monthRange, prChecksOnlyFrom, rates, runnerOs, tally } from "./ci-minutes.ts";
+import {
+	type Gh,
+	type Job,
+	jobQuery,
+	jsonLines,
+	monthBounds,
+	monthJobs,
+	prChecksOnlyFrom,
+	rates,
+	runnerOs,
+	tally,
+	type Visibility,
+	visibilityOf,
+} from "./ci-minutes.ts";
 import { appendSummary, runCli, setOutputs, UsageError } from "./lib.ts";
 
-// pnpm spikes:run checks gh and this month's billed minutes, pushes HEAD plus spikes/run.json, as a
-// throwaway commit, to spikes-run/<branch>-<UTC stamp>, follows the spikes.yml run there, writes
-// its evidence into spikes/<id>/evidence/ after showing the diff and always deletes the branch.
-// spikes.yml runs this file with --plan (the job matrix) and --check-evidence (what may be
-// uploaded).
+// pnpm spikes:run checks gh and, unless its runners are free on a public repository, this month's
+// billed minutes, pushes HEAD plus spikes/run.json, as a throwaway commit, to
+// spikes-run/<branch>-<UTC stamp>, follows the spikes.yml run there, writes its evidence into
+// spikes/<id>/evidence/ after showing the diff and always deletes the branch. spikes.yml runs this
+// file with --plan (the job matrix) and --check-evidence (what may be uploaded).
 
 export const runners: readonly string[] = [
 	"ubuntu-24.04",
@@ -30,6 +43,10 @@ export const runners: readonly string[] = [
 	"macos-15",
 	"macos-15-intel",
 ];
+// GitHub-hosted standard runners, arm64 and Intel variants included, are free on a public
+// repository; larger and self-hosted runners bill.
+const standardLabel = /^(?:ubuntu|windows|macos)-(?:latest|\d+(?:\.\d+)?)(?:-arm|-intel)?$/;
+export const standardRunner = (label: string): boolean => standardLabel.test(label);
 export const nodeChoices: readonly string[] = ["both", "minimum", "bundled"];
 const runFile = "spikes/run.json";
 const workflowFile = ".github/workflows/spikes.yml";
@@ -47,7 +64,6 @@ const valid = {
 };
 const usage =
 	"usage: pnpm spikes:run --spikes 'kit,s01' --os ubuntu-24.04 [--node both|minimum|bundled] [--tests 'test/a.heavy.test.ts,test/b.heavy.test.ts'] [--dry-run] [--yes]";
-const jobQuery = ".jobs[] | {labels, status, conclusion, started_at, completed_at}";
 
 export interface Proc {
 	readonly code: number;
@@ -394,9 +410,10 @@ export function planRun(request: unknown, tree: Tree): Plan {
 	return { spikes, os: labels, node, tests, entries };
 }
 
-// Each job's timeout times its runner's rate, plus a minute for plan.
-export function worstCase(plan: Plan): number {
-	return plan.entries.reduce((sum, job) => sum + job.timeout * job.rate, 1);
+// Each job's timeout times its runner's rate, plus a minute for plan; a free run's minutes aren't
+// multiplied.
+export function worstCase(plan: Plan, free = false): number {
+	return plan.entries.reduce((sum, job) => sum + job.timeout * (free ? 1 : job.rate), 1);
 }
 
 function setupOf(job: Entry): string {
@@ -414,13 +431,16 @@ function setupOf(job: Entry): string {
 const onlyTests = (plan: Plan, separator: string): string =>
 	plan.tests.length > 0 ? `${separator}only ${plan.tests.join(", ")}` : "";
 
-export function describePlan(plan: Plan): string[] {
+export function describePlan(plan: Plan, free = false): string[] {
 	const jobs = plan.entries.length;
+	const estimate = free
+		? `${worstCase(plan, true)} runner minutes (timeouts, plus 1 for plan)`
+		: `${worstCase(plan)} billed minutes (timeouts x runner rates, plus 1 for plan)`;
 	return [
-		`spikes-run: ${jobs} job${jobs === 1 ? "" : "s"}, node ${plan.node}, at most ${worstCase(plan)} billed minutes (timeouts x runner rates, plus 1 for plan)${onlyTests(plan, "; ")}`,
+		`spikes-run: ${jobs} job${jobs === 1 ? "" : "s"}, node ${plan.node}, at most ${estimate}${onlyTests(plan, "; ")}`,
 		...plan.entries.map(
 			(job) =>
-				`  ${job.spike} on ${job.os}: up to ${job.timeout} min x ${job.rate}; ${setupOf(job)}`,
+				`  ${job.spike} on ${job.os}: up to ${job.timeout} min${free ? "" : ` x ${job.rate}`}; ${setupOf(job)}`,
 		),
 	];
 }
@@ -795,36 +815,43 @@ function collectEvidence(deps: Deps, repo: string, runId: string, plan: Plan): b
 	}
 }
 
-const jsonLines = <T>(text: string): T[] =>
-	text
-		.split("\n")
-		.filter((line) => line.trim() !== "")
-		.map((line) => JSON.parse(line) as T);
-
-function billedMinutes(gh: Run, repo: string, runId: string): string {
+function runMinutes(gh: Run, repo: string, runId: string, free: boolean): string {
 	const endpoint = `repos/${repo}/actions/runs/${runId}/jobs?per_page=100&filter=latest`;
 	const result = gh(["api", "--paginate", endpoint, "--jq", jobQuery]);
-	if (result.code !== 0) return `spikes-run: billed minutes unknown (${lastLine(result.stderr)})`;
+	const kind = free ? "runner" : "billed";
+	if (result.code !== 0) return `spikes-run: ${kind} minutes unknown (${lastLine(result.stderr)})`;
 	const { minutes, billed } = tally(jsonLines<Job>(result.stdout));
-	return `spikes-run: ${billed} billed minutes (linux ${minutes.linux}, windows ${minutes.windows} x2, macos ${minutes.macos} x10); pnpm ci:minutes has the month`;
+	const { linux, windows, macos } = minutes;
+	const counted = free
+		? `${linux + windows + macos} runner minutes (linux ${linux}, windows ${windows}, macos ${macos})`
+		: `${billed} billed minutes (linux ${linux}, windows ${windows} x2, macos ${macos} x10)`;
+	return `spikes-run: ${counted}; pnpm ci:minutes has the month`;
 }
 
-// This month's billed minutes, counted as pnpm ci:minutes counts them (M0.3), eight runs at a time.
+// This month's billed minutes, counted as pnpm ci:minutes counts them.
 async function billedThisMonth(deps: Deps, repo: string): Promise<number> {
-	const created = monthRange(deps.now().toISOString().slice(0, 7));
-	const runs = `repos/${repo}/actions/runs?per_page=100&created=${created}`;
-	const listed = await deps.ghAsync(["api", "--paginate", runs, "--jq", ".workflow_runs[].id"]);
-	const ids = split(ok(listed, "gh api runs"));
-	const jobs: Job[] = [];
-	const worker = async (): Promise<void> => {
-		for (let id = ids.pop(); id !== undefined; id = ids.pop()) {
-			const endpoint = `repos/${repo}/actions/runs/${id}/jobs?per_page=100&filter=all`;
-			const result = await deps.ghAsync(["api", "--paginate", endpoint, "--jq", jobQuery]);
-			jobs.push(...jsonLines<Job>(ok(result, "gh api jobs")));
-		}
-	};
-	await Promise.all(Array.from({ length: 8 }, worker));
-	return tally(jobs).billed;
+	const gh: Gh = async (args) => ok(await deps.ghAsync(args), "gh api");
+	const month = monthBounds(deps.now().toISOString().slice(0, 7));
+	return tally((await monthJobs(repo, month, gh)).jobs).billed;
+}
+
+export interface MonthCheck {
+	readonly free: boolean;
+	readonly note?: string;
+}
+
+// A public repository's standard runners are free, so its run skips the month's minutes check. The
+// check stays otherwise, and when the visibility is unknown, which the note explains.
+export function monthCheck(plan: Plan, visibility: Visibility): MonthCheck {
+	if (visibility.value === "public" && plan.entries.every((job) => standardRunner(job.os))) {
+		const note =
+			"spikes-run: standard runners are free on a public repository, so the month's billed minutes don't limit this run";
+		return { free: true, note };
+	}
+	const { unknown } = visibility;
+	if (unknown === undefined) return { free: false };
+	const note = `spikes-run: the repository's visibility is unknown (${unknown}), so the month's billed minutes still limit this run`;
+	return { free: false, note };
 }
 
 // At prChecksOnlyFrom billed minutes a month, spikes runs wait for the next month or the owner's OK
@@ -849,18 +876,36 @@ async function withinBudget(deps: Deps, repo: string, plan: Plan, yes: boolean):
 	return yes;
 }
 
-// Before anything is pushed: gh must be installed, signed in and able to read the repository.
-function checkGh(gh: Run, repo: string): void {
+interface GitHub {
+	readonly repo?: string;
+	// Why a run can't go ahead; a dry run only reports it.
+	readonly problem?: string;
+	readonly visibility: Visibility;
+}
+
+// origin's repository and its visibility. The one gh call also shows, before anything is pushed,
+// that gh is installed, signed in and able to read the repository.
+function readGitHub(git: Run, gh: Run): GitHub {
+	const unusable = (problem: string): GitHub => ({ problem, visibility: { unknown: problem } });
+	const url = git(["config", "--get", "remote.origin.url"]);
+	if (url.code !== 0) return unusable("this repository has no origin remote");
+	let repo: string;
+	try {
+		repo = githubRepo(url.stdout);
+	} catch (error) {
+		return unusable(message(error));
+	}
 	let result: Proc;
 	try {
-		result = gh(["api", `repos/${repo}`, "--jq", ".full_name"]);
+		result = gh(["api", `repos/${repo}`, "--jq", ".visibility"]);
 	} catch (error) {
-		throw new Error(`gh isn't available (${message(error)}): install it and run gh auth login`);
+		return unusable(`gh isn't available (${message(error)}): install it and run gh auth login`);
 	}
 	if (result.code !== 0) {
 		const why = lastLine(result.stderr) || `exit code ${result.code}`;
-		throw new Error(`gh can't read ${repo} (${why}): run gh auth login with access to it`);
+		return unusable(`gh can't read ${repo} (${why}): run gh auth login with access to it`);
 	}
+	return { repo, visibility: visibilityOf(result.stdout) };
 }
 
 // What the pushed run leaves out: uncommitted and untracked files, except evidence.
@@ -925,9 +970,9 @@ function deleteBranch(git: Run, ref: string, log: (line: string) => void): boole
 	return false;
 }
 
-// The local CLI: validate, check gh and the month's minutes, push the throwaway commit, follow the
-// run, collect the evidence, and delete the branch whatever happens. A run that nobody follows any
-// more, after a signal or an error, is cancelled.
+// The local CLI: validate, check gh and, for a billed run, the month's minutes, push the throwaway
+// commit, follow the run, collect the evidence, and delete the branch whatever happens. A run that
+// nobody follows any more, after a signal or an error, is cancelled.
 export async function runOnGitHub(cli: Cli, deps: Deps): Promise<number> {
 	const { git, gh, log } = deps;
 	const tree = gitTree(git, "HEAD");
@@ -940,7 +985,9 @@ export async function runOnGitHub(cli: Cli, deps: Deps): Promise<number> {
 		for (const problem of error.problems) log(`spikes-run: ${problem}`);
 		return 1;
 	}
-	for (const line of describePlan(plan)) log(line);
+	const github = readGitHub(git, gh);
+	const check = monthCheck(plan, github.visibility);
+	for (const line of describePlan(plan, check.free)) log(line);
 	if (tree.read(workflowFile) === undefined) {
 		throw new Error(`HEAD has no ${workflowFile}: rebase onto m0 first`);
 	}
@@ -953,14 +1000,14 @@ export async function runOnGitHub(cli: Cli, deps: Deps): Promise<number> {
 	const runFields = plan.tests.length > 0 ? { ...request, tests: plan.tests } : request;
 	const runJson = `${JSON.stringify(runFields, null, 2)}\n`;
 	if (cli.dryRun) {
+		if (check.note) log(check.note);
 		log(`spikes-run: dry run; would push HEAD plus this ${runFile} to ${ref}:\n${runJson}`);
 		return 0;
 	}
-	const url = git(["config", "--get", "remote.origin.url"]);
-	if (url.code !== 0) throw new Error("this repository has no origin remote");
-	const repo = githubRepo(url.stdout);
-	checkGh(gh, repo);
-	if (!(await withinBudget(deps, repo, plan, cli.yes))) return 1;
+	const { repo, problem } = github;
+	if (problem !== undefined || repo === undefined) throw new Error(problem);
+	if (check.note) log(check.note);
+	if (!check.free && !(await withinBudget(deps, repo, plan, cli.yes))) return 1;
 	warnUncommitted(git, log);
 	const title = `ci(spikes-run): ${plan.spikes.join(", ")} on ${plan.os.join(", ")}, node ${plan.node}${onlyTests(plan, ", ")}`;
 	const commit = throwawayCommit(git, head, runJson, title);
@@ -1018,7 +1065,7 @@ export async function runOnGitHub(cli: Cli, deps: Deps): Promise<number> {
 				`spikes-run: it ran ${onlyTests(plan, "")}; the spike's other evidence files stay as they are`,
 			);
 		}
-		log(billedMinutes(gh, repo, id));
+		log(runMinutes(gh, repo, id, check.free));
 		pushed = !deleteBranch(git, ref, log);
 		const written = collectEvidence(deps, repo, id, plan);
 		outcome = run.conclusion === "success" && written && !pushed ? 0 : 1;

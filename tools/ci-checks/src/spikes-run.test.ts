@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
+import type { Visibility } from "./ci-minutes.ts";
 import {
 	artifactName,
 	type Cli,
@@ -21,6 +22,7 @@ import {
 	describePlan,
 	type Entry,
 	githubRepo,
+	monthCheck,
 	type Plan,
 	PlanError,
 	type Proc,
@@ -33,6 +35,7 @@ import {
 	runOnGitHub,
 	type Signals,
 	stamp,
+	standardRunner,
 	type Tree,
 	worstCase,
 } from "./spikes-run.ts";
@@ -278,6 +281,88 @@ describe("planRun", () => {
 		expect(describePlan(plan({ spikes: ["s10"], os: ["ubuntu-24.04"], node: "both" }))[1]).toBe(
 			"  s10-mobile on ubuntu-24.04: up to 45 min x 1; JDK 21; Android SDK via sdkmanager (platforms;android-37 build-tools;37.0.0); Rust 1.95.0 + aarch64-linux-android",
 		);
+	});
+});
+
+const freeNote =
+	"spikes-run: standard runners are free on a public repository, so the month's billed minutes don't limit this run";
+
+describe("the month's minutes check", () => {
+	const s01 = plan({
+		spikes: ["s01"],
+		os: ["macos-15", "windows-11-arm", "ubuntu-24.04-arm"],
+		node: "both",
+	});
+	const larger = { ...s01, entries: [...s01.entries, job({ os: "macos-15-xlarge", rate: 10 })] };
+	const billed = (minutes: number, jobs = 3): string =>
+		`spikes-run: ${jobs} jobs, node both, at most ${minutes} billed minutes (timeouts x runner rates, plus 1 for plan)`;
+
+	it("takes every runner spikes.yml offers as standard, and no larger or self-hosted one", () => {
+		expect(runners.filter(standardRunner)).toEqual(runners);
+		expect(
+			["ubuntu-latest", "ubuntu-22.04-arm", "windows-2022", "macos-26"].every(standardRunner),
+		).toBe(true);
+		for (const label of [
+			"macos-15-xlarge",
+			"macos-15-large",
+			"macos-latest-xlarge",
+			"ubuntu-24.04-16core",
+			"windows-2025-8-cores",
+			"self-hosted",
+			"linux",
+		]) {
+			expect(standardRunner(label), label).toBe(false);
+		}
+	});
+
+	const unknown = 'gh gave ""';
+	it.each<[string, Plan, Visibility, boolean, string | undefined, string]>([
+		[
+			"skips it for a public repository on standard runners",
+			s01,
+			{ value: "public" },
+			true,
+			freeNote,
+			"spikes-run: 3 jobs, node both, at most 46 runner minutes (timeouts, plus 1 for plan)",
+		],
+		["keeps it for a private repository", s01, { value: "private" }, false, undefined, billed(196)],
+		[
+			"keeps it for an internal repository",
+			s01,
+			{ value: "internal" },
+			false,
+			undefined,
+			billed(196),
+		],
+		[
+			"keeps it for a larger runner on a public repository",
+			larger,
+			{ value: "public" },
+			false,
+			undefined,
+			billed(296, 4),
+		],
+		[
+			"keeps it, saying why, when the visibility is unknown",
+			s01,
+			{ unknown },
+			false,
+			`spikes-run: the repository's visibility is unknown (${unknown}), so the month's billed minutes still limit this run`,
+			billed(196),
+		],
+	])("%s, and words the plan line to match", (_, planned, visibility, skips, note, line) => {
+		const check = monthCheck(planned, visibility);
+		expect(check).toEqual(note === undefined ? { free: skips } : { free: skips, note });
+		expect(describePlan(planned, check.free)[0]).toBe(line);
+	});
+
+	it("gives a free run's jobs in runner minutes, without the rates", () => {
+		expect(worstCase(s01, true)).toBe(15 * 3 + 1);
+		expect(describePlan(s01, true).slice(1)).toEqual([
+			"  s01-sqlite3mc on macos-15: up to 15 min; none",
+			"  s01-sqlite3mc on windows-11-arm: up to 15 min; none",
+			"  s01-sqlite3mc on ubuntu-24.04-arm: up to 15 min; docker",
+		]);
 	});
 });
 
@@ -941,6 +1026,8 @@ interface FakeGh {
 	readonly inProgress?: number;
 	// This month's billed minutes before the run.
 	readonly billed?: number;
+	// What gh prints for the repository's visibility; private by default.
+	readonly visibility?: string;
 	readonly noAccess?: boolean;
 	readonly missing?: boolean;
 }
@@ -962,6 +1049,13 @@ const jobs = [
 		completed_at: "2026-10-17T12:04:10Z",
 	},
 ];
+// Newest first: this month's runs 8 and 7, then September's 6, where the listing stops.
+const listedRuns = [
+	{ id: 8, created_at: "2026-10-02T00:00:00Z" },
+	{ id: 7, created_at: "2026-10-01T00:00:00Z" },
+	{ id: 6, created_at: "2026-09-30T23:59:59Z" },
+];
+const visibilityCall = ["api", "repos/draftyak/draftyak", "--jq", ".visibility"];
 const now = new Date("2026-10-17T12:00:00.123Z");
 const ref = "spikes-run/m0-08-spikes-run-20261017T120000Z";
 const evidence = (value: number): string => `${JSON.stringify({ data: { value } }, null, 2)}\n`;
@@ -1074,11 +1168,12 @@ describe("runOnGitHub, the local CLI", () => {
 			const endpoint = group === "api" ? (args.find((arg) => arg.startsWith("repos/")) ?? "") : "";
 			if (endpoint === "repos/draftyak/draftyak") {
 				if (fake.noAccess) return reply("", 1, "gh: Not Found (HTTP 404)");
-				return reply("draftyak/draftyak\n");
+				expect(args).toEqual(visibilityCall);
+				return reply(`${fake.visibility ?? "private"}\n`);
 			}
 			if (endpoint.startsWith("repos/draftyak/draftyak/actions/runs?")) {
-				expect(endpoint).toContain("&created=2026-10-01..2026-10-31");
-				return reply("7\n8\n");
+				expect(endpoint).toBe("repos/draftyak/draftyak/actions/runs?per_page=100&page=1");
+				return reply(listedRuns.map((listed) => JSON.stringify(listed)).join("\n"));
 			}
 			if (/\/runs\/[78]\/jobs\?.*filter=all$/.test(endpoint)) {
 				const end = Date.parse("2026-10-02T00:00:00Z") + ((fake.billed ?? 0) / 2) * 60_000;
@@ -1237,17 +1332,20 @@ describe("runOnGitHub, the local CLI", () => {
 			.map(({ args }) => args.at(-1));
 		expect(pushes).toEqual([`${commit}:refs/heads/${ref}`, `refs/heads/${ref}`]);
 
-		// gh is checked, and the month's minutes counted, before anything else reaches GitHub.
+		// gh is checked, and the month's minutes counted, before anything else reaches GitHub; the
+		// listing has no created filter, and September's run counts nothing.
 		expect(run.ghCalls.slice(0, 2)).toEqual([
-			["api", "repos/draftyak/draftyak", "--jq", ".full_name"],
+			visibilityCall,
 			[
 				"api",
-				"--paginate",
-				"repos/draftyak/draftyak/actions/runs?per_page=100&created=2026-10-01..2026-10-31",
+				"--method",
+				"GET",
+				"repos/draftyak/draftyak/actions/runs?per_page=100&page=1",
 				"--jq",
-				".workflow_runs[].id",
+				".workflow_runs[] | {id, created_at}",
 			],
 		]);
+		expect(run.ghCalls.filter((args) => args.some((arg) => /\/runs\/6\//.test(arg)))).toEqual([]);
 		expect(run.watchCalls).toEqual([
 			[
 				"run",
@@ -1304,9 +1402,16 @@ describe("runOnGitHub, the local CLI", () => {
 	});
 
 	it("waits for the owner's OK once the month would reach 1,500 billed minutes", async () => {
-		const run = setup({ billed: 1490 });
+		const run = setup({ billed: 1490, visibility: "private" });
 		expect(await runOnGitHub(cli(), run.deps)).toBe(1);
 		expect(run.gitCalls.some(({ args }) => args[0] === "commit-tree")).toBe(false);
+		expect(run.logs[0]).toBe(
+			"spikes-run: 1 job, node both, at most 11 billed minutes (timeouts x runner rates, plus 1 for plan)",
+		);
+		expect(run.logs[1]).toBe("  kit on ubuntu-24.04: up to 10 min x 1; none");
+		expect(run.logs[2]).toBe(
+			"spikes-run: counting this month's billed minutes, as pnpm ci:minutes does",
+		);
 		expect(run.logs).toContain(
 			"spikes-run: 1490 billed minutes this month; at most 1501 after this run",
 		);
@@ -1319,6 +1424,40 @@ describe("runOnGitHub, the local CLI", () => {
 		expect(ok.logs.join("\n")).toContain("the owner's OK; going ahead with it (--yes)");
 		const below = setup({ billed: 1488 });
 		expect(await runOnGitHub(cli(), below.deps)).toBe(0);
+	});
+
+	it("skips the month's minutes on a public repository whose jobs all use standard runners", async () => {
+		const run = setup({ billed: 1490, visibility: "public", artifacts: {} });
+		expect(await runOnGitHub(cli(), run.deps)).toBe(0);
+		expect(run.pushedCommit()).not.toBe("");
+		expect(run.logs.slice(0, 3)).toEqual([
+			"spikes-run: 1 job, node both, at most 11 runner minutes (timeouts, plus 1 for plan)",
+			"  kit on ubuntu-24.04: up to 10 min; none",
+			freeNote,
+		]);
+		expect(run.ghCalls[0]).toEqual(visibilityCall);
+		expect(
+			run.ghCalls.filter((args) => args.some((arg) => arg.includes("/actions/runs?"))),
+		).toEqual([]);
+		const log = run.logs.join("\n");
+		expect(log).not.toContain("this month");
+		expect(log).toContain(
+			"spikes-run: 5 runner minutes (linux 5, windows 0, macos 0); pnpm ci:minutes has the month",
+		);
+	});
+
+	it("keeps the month's minutes, and says why, when gh gives no visibility it knows", async () => {
+		const run = setup({ billed: 1490, visibility: "null" });
+		expect(await runOnGitHub(cli(), run.deps)).toBe(1);
+		expect(run.logs.slice(0, 3)).toEqual([
+			"spikes-run: 1 job, node both, at most 11 billed minutes (timeouts x runner rates, plus 1 for plan)",
+			"  kit on ubuntu-24.04: up to 10 min x 1; none",
+			`spikes-run: the repository's visibility is unknown (gh gave "null"), so the month's billed minutes still limit this run`,
+		]);
+		expect(run.logs).toContain(
+			"spikes-run: 1490 billed minutes this month; at most 1501 after this run",
+		);
+		expect(run.gitCalls.some(({ args }) => args[0] === "commit-tree")).toBe(false);
 	});
 
 	it("says which uncommitted and untracked files the run leaves out, but not evidence", async () => {
@@ -1439,11 +1578,42 @@ describe("runOnGitHub, the local CLI", () => {
 				["push", "commit-tree", "hash-object"].includes(args[0] ?? ""),
 			),
 		).toBe(false);
-		expect(run.ghCalls).toEqual([]);
+		expect(run.ghCalls).toEqual([visibilityCall]);
 		const log = run.logs.join("\n");
 		expect(log).toContain("spikes-run: 2 jobs, node minimum, at most 111 billed minutes");
 		expect(log).toContain(`to spikes-run/detached-${run.head.slice(0, 8)}-20261017T120000Z:`);
 		expect(log).toContain('"os": [\n    "macos-15",\n    "ubuntu-24.04"\n  ],');
+	});
+
+	it("says on a dry run that a public repository's standard runners are free", async () => {
+		const run = setup({ visibility: "public" });
+		const request = cli({ dryRun: true, os: ["macos-15", "ubuntu-24.04"] });
+		expect(await runOnGitHub(request, run.deps)).toBe(0);
+		expect(run.ghCalls).toEqual([visibilityCall]);
+		expect(run.logs.slice(0, 4)).toEqual([
+			"spikes-run: 2 jobs, node both, at most 21 runner minutes (timeouts, plus 1 for plan)",
+			"  kit on macos-15: up to 10 min; none",
+			"  kit on ubuntu-24.04: up to 10 min; none",
+			freeNote,
+		]);
+		expect(run.logs[4]).toMatch(
+			/^spikes-run: dry run; would push HEAD plus this spikes\/run\.json/,
+		);
+	});
+
+	it("says on a dry run why the visibility is unknown, and keeps the billed estimate", async () => {
+		for (const fake of [{ noAccess: true }, { missing: true }]) {
+			const run = setup(fake);
+			expect(await runOnGitHub(cli({ dryRun: true }), run.deps)).toBe(0);
+			const why = fake.missing
+				? "gh isn't available (spawnSync gh ENOENT): install it and run gh auth login"
+				: "gh can't read draftyak/draftyak (gh: Not Found (HTTP 404)): run gh auth login with access to it";
+			expect(run.logs.slice(0, 3)).toEqual([
+				"spikes-run: 1 job, node both, at most 11 billed minutes (timeouts x runner rates, plus 1 for plan)",
+				"  kit on ubuntu-24.04: up to 10 min x 1; none",
+				`spikes-run: the repository's visibility is unknown (${why}), so the month's billed minutes still limit this run`,
+			]);
+		}
 	});
 
 	const pair = ["test/env.heavy.test.ts", "test/docker.heavy.test.ts"];
@@ -1488,7 +1658,7 @@ describe("runOnGitHub, the local CLI", () => {
 		expect(await runOnGitHub(request, run.deps)).toBe(0);
 		const written = ["push", "commit-tree", "hash-object"];
 		expect(run.gitCalls.some(({ args }) => written.includes(args[0] ?? ""))).toBe(false);
-		expect(run.ghCalls).toEqual([]);
+		expect(run.ghCalls).toEqual([visibilityCall]);
 		const log = run.logs.join("\n");
 		expect(log).toContain(
 			"spikes-run: 1 job, node both, at most 101 billed minutes (timeouts x runner rates, plus 1 for plan); only test/env.heavy.test.ts, test/docker.heavy.test.ts",

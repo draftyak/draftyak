@@ -1,6 +1,6 @@
 # Contributing to DraftYak
 
-DraftYak is in its first milestone, M0 (workspace bootstrap and spikes), and the repository stays private until launch. This guide covers what exists today and names the milestone for anything still to come. [AGENTS.md](AGENTS.md) has the repository map, every command and the full work rules.
+DraftYak is in its first milestone, M0 (workspace bootstrap and spikes). The repository is public, but nothing is released before launch. This guide covers what exists today and names the milestone for anything still to come. [AGENTS.md](AGENTS.md) has the repository map, every command and the full work rules.
 
 ## Licence and sign-off
 
