@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod agent_session;
 pub mod common;
 pub mod hub_key_rotate;
 pub mod login;
@@ -29,6 +30,7 @@ register_statements! {
     login::Login(LoginStatement) => "login.v1",
     admin::Admin(AdminStatement) => "admin.v1",
     hub_key_rotate::Rotate(HubKeyRotateStatement) => "hub-key-rotate.v1",
+    agent_session::Agent(AgentSessionStatement) => "agent-session.v1",
 }
 pub fn open_typed_statement(
     typ: &str,
