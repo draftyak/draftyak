@@ -51,6 +51,32 @@ describe("changed areas", () => {
 		expect(untestedRust(classify(files, root, () => manifests))).toEqual(["tools/x"]);
 	});
 
+	it("names Rust that no Cargo.toml builds: stray sources and locks, and renamed manifests", () => {
+		const files: Record<string, string> = {
+			"tools/y/oracle.toml": "[workspace]\nmembers = ['.']\n",
+			"tools/y/src/main.rs": "fn main() {}\n",
+			"tools/y/Cargo.lock": "version = 4\n",
+			"spikes/s05/rust/ekm/extra.toml": "[package]  # built by hand\nname = 'extra'\n",
+			"tools/y/pyproject.toml": "[project]\nname = 'y'\n[tool.uv.workspace]\nmembers = []\n",
+			"tools/y/poetry.toml": "[[package]]\nname = 'z'\n",
+		};
+		for (const [file, content] of Object.entries(files)) {
+			mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+			writeFileSync(path.join(root, file), content);
+		}
+		const changed = [
+			...Object.keys(files),
+			"spikes/s05/rust/ekm/src/lib.rs",
+			"tools/gone/src/lib.rs",
+		];
+		expect(classify(changed, root, () => manifests).strayRust).toEqual([
+			"spikes/s05/rust/ekm/extra.toml",
+			"tools/y/Cargo.lock",
+			"tools/y/oracle.toml",
+			"tools/y/src/main.rs",
+		]);
+	});
+
 	it("writes step outputs, with every area when there's no base", () => {
 		const output = path.join(root, "github-output");
 		const outputs = (base: string): string => {
@@ -197,7 +223,7 @@ describe("heavy selection for full", () => {
 		expect(untestedRust(areas)).toEqual(["tools/x"]);
 	});
 
-	it("exits 0 with crates/ selected, and 1 for a Cargo workspace at tools/x/", () => {
+	it("exits 0 with crates/ selected, and 1 for a Cargo workspace at tools/x/ or a renamed manifest", () => {
 		const repo = tempRepo();
 		try {
 			for (const [file, content] of Object.entries(m1Tree)) repo.write(file, content);
@@ -207,6 +233,9 @@ describe("heavy selection for full", () => {
 			repo.write("tools/x/Cargo.toml", "[workspace]\n");
 			repo.write("tools/x/src/lib.rs", "");
 			const tools = repo.commit("feat: add a workspace under tools/");
+			repo.write("tools/y/oracle.toml", "[workspace]\n");
+			repo.write("tools/y/src/main.rs", "fn main() {}\n");
+			const renamed = repo.commit("feat: add a workspace whose manifest isn't Cargo.toml");
 			const output = path.join(repo.dir, "..", "github-output");
 			const config = path.join(repo.dir, "..", "child-gitconfig");
 			writeFileSync(config, "[maintenance]\n\tauto = false\n");
@@ -241,6 +270,12 @@ describe("heavy selection for full", () => {
 			expect(second.code).toBe(1);
 			expect(second.stdout).toContain("no spike package's test:heavy or crates/ runs tools/x");
 			expect(second.outputs).toBe("");
+			const third = run(tools, renamed);
+			expect(third.code).toBe(1);
+			expect(third.stdout).toContain(
+				"no Cargo.toml builds tools/y/oracle.toml, tools/y/src/main.rs, so nothing tests it",
+			);
+			expect(third.outputs).toBe("");
 		} finally {
 			repo.remove();
 		}
