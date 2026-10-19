@@ -11,6 +11,9 @@ export interface Areas {
 	// Turbo filters for the product packages whose test:heavy `full` runs.
 	readonly heavy: readonly string[];
 	readonly templateSmoke: boolean;
+	// Rust that no Cargo.toml builds: sources and lock files outside every workspace, and Cargo
+	// manifests under another name.
+	readonly strayRust: readonly string[];
 }
 
 const communityFiles = new Set(["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES"]);
@@ -52,6 +55,18 @@ export function rustWorkspace(root: string, file: string): string | undefined {
 	return nearest;
 }
 
+// cargo reads only manifests named Cargo.toml, so a [package] or [workspace] table in any other
+// TOML file is a manifest that no rust step would ever build.
+const cargoTable = /^[ \t]*\[(?:package|workspace)\][ \t]*(?:#.*)?$/m;
+function strayRustFile(root: string, file: string, inWorkspace: boolean): boolean {
+	const full = path.join(root, file);
+	if (!existsSync(full)) return false;
+	const base = path.posix.basename(file);
+	if (file.endsWith(".toml") && base !== "Cargo.toml")
+		return cargoTable.test(readFileSync(full, "utf8"));
+	return !inWorkspace && (file.endsWith(".rs") || base === "Cargo.lock");
+}
+
 function tracked(root: string): string[] {
 	return git(["ls-files", "-z"], root).split("\0").filter(Boolean);
 }
@@ -90,6 +105,7 @@ export function classify(
 	const rust = new Set<string>();
 	const spikes = new Set<string>();
 	const alone = new Set<string>();
+	const strayRust = new Set<string>();
 	const withDependents = new Set<string>();
 	let manifests: readonly string[] | undefined;
 	const allManifests = (): readonly string[] =>
@@ -118,7 +134,11 @@ export function classify(
 		else if (toolchainFiles.has(file)) {
 			for (const manifest of allManifests()) addWorkspace(manifest);
 			alone.add(protocol);
-		} else if (!addWorkspace(file)) ts = true;
+		} else {
+			const inWorkspace = addWorkspace(file);
+			if (!inWorkspace) ts = true;
+			if (strayRustFile(root, file, inWorkspace)) strayRust.add(file);
+		}
 		if (globalFiles.has(file) || (file === "pnpm-lock.yaml" && noPackageJson)) global = true;
 		const pkg = /^(?:packages|plugins)\/[^/]+(?=\/)/.exec(file)?.[0];
 		if (pkg !== undefined && isPackage(root, pkg)) withDependents.add(pkg);
@@ -154,6 +174,7 @@ export function classify(
 		spikes: [...spikes].sort(),
 		heavy: heavy.sort(),
 		templateSmoke,
+		strayRust: [...strayRust].sort(),
 	};
 }
 
@@ -204,6 +225,11 @@ function main(argv: readonly string[]): number {
 	const untested = untestedRust(areas);
 	if (untested.length > 0) {
 		console.log(`changes: no spike package's test:heavy or crates/ runs ${untested.join(", ")}`);
+		return 1;
+	}
+	if (areas.strayRust.length > 0) {
+		const stray = areas.strayRust.join(", ");
+		console.log(`changes: no Cargo.toml builds ${stray}, so nothing tests it`);
 		return 1;
 	}
 	setOutputs({
