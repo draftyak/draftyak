@@ -46,6 +46,37 @@ describe("spec/", () => {
 		}
 	});
 
+	it("keeps registered definition IDs owned and identical across schema files", async () => {
+		const seen = new Map<string, { file: string; definition: unknown }>();
+		const visit = (value: unknown, file: string): void => {
+			if (value === null || typeof value !== "object") return;
+			if (Array.isArray(value)) {
+				for (const child of value) visit(child, file);
+				return;
+			}
+			const object = value as Record<string, unknown>;
+			if (object.$defs !== undefined) {
+				expect(object.$defs, file).not.toBeNull();
+				expect(typeof object.$defs, file).toBe("object");
+				expect(Array.isArray(object.$defs), file).toBe(false);
+				for (const [id, definition] of Object.entries(object.$defs as Record<string, unknown>)) {
+					expect(id, file).toMatch(/^draftyak\.[a-z0-9-]+\.[A-Z][A-Za-z0-9]*$/);
+					const previous = seen.get(id);
+					if (previous) {
+						expect(definition, `${id}: ${previous.file} and ${file}`).toStrictEqual(
+							previous.definition,
+						);
+					} else seen.set(id, { file, definition });
+				}
+			}
+			for (const child of Object.values(object)) visit(child, file);
+		};
+		for (const { path: file, text } of await exportSpec()) {
+			if (file !== "schemas/tool-v1.schema.json") visit(JSON.parse(text), file);
+		}
+		expect(seen.has("draftyak.normalized-change.ProviderId")).toBe(true);
+	});
+
 	it("holds every vector file as generated, recorded signatures included", async () => {
 		expect(await syncVectors(true)).toEqual([]);
 	});

@@ -67,9 +67,27 @@ The hash binds the pairs, not their order: the same pairs in any order hash alik
 - `pnpm --filter @draftyak/protocol vectors` writes `vectors/` the same way, and `vectors --check` checks it; `vectors/README.md` describes the files.
 - `pnpm test` runs both checks, so a schema changed without re-exporting fails it. After a rebase, generated files are regenerated, never merged by hand.
 - Exported schemas hold only what JSON Schema can express. Rules beyond that, such as the canonical forms above, live in the protocol's validators and in this prose.
+- A definition the protocol registers with an ID uses the `$defs` key `draftyak.<module>.<Export>`, where `<module>` is the `@draftyak/protocol/<module>` entry point that defines it. An ID is never renamed or reused. Re-exporting a definition keeps its owner's ID. Each schema includes shared definitions under those IDs, so a key can appear in several files, not necessarily the file named after its module: `draftyak.tool-v1.IanaZone` is in `schemas/entities-v1.schema.json`, not `schemas/tool-v1.schema.json`. The root `anyOf` of `entities-v1.schema.json` lists only `draftyak.entities.*` definitions.
+- `schemas/tool-v1.schema.json` is the exception: it is tool-v1's literal document, and its hash is the declaration's `schemaDigest`. Its `$defs` keep the names specified by [tool-v1](extensions/tool-v1.md); changing those names changes the digest every tool plugin declares.
 - A schema describes a document as it arrives, before any default is filled in: a field with a default may be left out, and an object that drops unknown members accepts them.
 - Patterns are ECMA-262 regular expressions with explicit ASCII classes, never `\d`, `\w`, `\s` or `\b`, whose meaning other engines widen to Unicode. `^` and `$` anchor the whole string; where `$` also matches before a final line feed, as in Python's `re`, a validator checks the whole string instead. Fixed-length strings, such as ULIDs, hashes and instants, also carry `minLength` and `maxLength`.
 
 ## Index
 
-The index of these files arrives with the M1 gate.
+These checked-in contracts remain draft until the M1 gate. A dash means the contract has no file of that kind. The [vector format and regeneration guide](vectors/README.md) applies to every vector directory below. Under M1's append-only shared-file rule, each contract item adds its index row in the same PR as its prose, schema or vector directory. The protocol coverage test enforces that every checked-in contract has its links here.
+
+| Contract | Prose | JSON Schema | Vectors |
+|---|---|---|---|
+| Canonical JSON, signatures and header hashes | [Encodings](#encodings) | — | [JCS](vectors/jcs/), [ES256](vectors/sign/), [header hashes](vectors/hash/) |
+| Flags, severities and acknowledgement | [Flags v1](flags-v1.md) | [Flags v1](schemas/flags-v1.schema.json) | [Flags](vectors/flags/) |
+| Stored and displayed entities | — | [Entities v1](schemas/entities-v1.schema.json) | — |
+| Pairing and confirmation | [Pairing v1](pairing-v1.md) | — | [Pairing](vectors/pairing/) |
+| Broker send tickets | [Channel v1](extensions/channel-v1.md) | [Broker ticket v1](schemas/broker-ticket-v1.schema.json) | [Send tickets](vectors/send-ticket/) |
+| Channel extension | [Channel v1](extensions/channel-v1.md) | [Channel v1](schemas/channel-v1.schema.json) | — |
+| Normalized channel changes | [Channel v1](extensions/channel-v1.md) | [Normalized change v1](schemas/normalized-change-v1.schema.json) | — |
+| Lookup tool extension | [Tool v1](extensions/tool-v1.md) | [Tool v1](schemas/tool-v1.schema.json) | [Tool lists](vectors/tool-v1/) |
+| AI provider extension | [AI provider v1](extensions/ai-provider-v1.md) | [AI provider v1](schemas/ai-provider-v1.schema.json) | — |
+| Draft output | [AI provider v1](extensions/ai-provider-v1.md) | [Draft output v1](schemas/draft-output-v1.schema.json) | — |
+| Plugin errors | [Channel v1](extensions/channel-v1.md), [Tool v1](extensions/tool-v1.md), [AI provider v1](extensions/ai-provider-v1.md) | [Plugin error v1](schemas/plugin-error-v1.schema.json) | — |
+| Send snapshots | [Approval v1: snapshot](approval-v1.md#snapshot) | [Snapshot v1](schemas/snapshot-v1.schema.json) | [Snapshots](vectors/snapshot/) |
+| Approval and identity statements | [Approval v1: statements](approval-v1.md#statements) | — | [Statements](vectors/statements/) |
