@@ -8,6 +8,7 @@ import org.junit.Test
 // Synthetic provider rows; thread ids are NANP fiction-range numbers, so a leak would show.
 class InventoryTest {
     private val now = 1_792_252_800_000L
+    private val installed = now - 86_400_000
     private val alone = 15_555_550_123L
     private val group = 15_555_550_142L
     private val old = 15_555_550_187L
@@ -88,20 +89,73 @@ class InventoryTest {
     }
 
     @Test
-    fun `DYTEST- rows are picked case-sensitively, and the probe's own send texts aren't kept`() {
+    fun `DYTEST- rows are picked case-sensitively, and only the probe's own sends are left out`() {
         assertEquals("body GLOB 'DYTEST-*'", dytest("body"))
-        val bodies = TestFiles.vectors.map { it.body }
+        val store = MapStore()
         val phone = ReferenceSms { it.expected[0] }
-        for (vector in TestFiles.vectors.filter { it.send }) {
-            assertTrue(ownSend(vector.body, bodies))
-            assertTrue(ownSend(phone.divideMessage(vector.body)[0], bodies))
+        val sent = TestFiles.vectors.filter { it.send }.take(3)
+        val clock = generateSequence(now) { it + 5_000 }.iterator()
+        SendProbe(store, phone).sendAll(Reports.secondNumber, "+15555550100", sent, clock::next)
+        val own = ownSends(store, TestFiles.vectors, phone, installed)
+        // Texts that only start like the probe's, and the vectors it hasn't sent, are kept.
+        val others = listOf("DYTEST-ok", "DYTEST-A", "DYTEST-café", "DYTEST-ж") +
+            (TestFiles.vectors - sent.toSet()).map { it.body } +
+            listOf("DYTEST-hello from the second number", "DYTEST-RCS test 2")
+        for (text in others) assertFalse(text, ownSend(text, now + 60_000, own))
+        for ((n, vector) in sent.withIndex()) {
+            for (body in phone.divideMessage(vector.body) + vector.body) {
+                assertTrue(vector.id.wire, ownSend(body, now + n * 5_000, own))
+                assertFalse(vector.id.wire, ownSend(body, now - 1, own))
+            }
         }
         // The UCS-2 send texts pass DytestBody, so only ownSend keeps them out of testMessages.
         val passing = TestFiles.vectors.filter { it.send && DytestBody.of(it.body) != null }
         assertEquals(5, passing.size)
-        for (text in listOf("DYTEST-hello from the second number", "DYTEST-RCS test 2")) {
-            assertFalse(ownSend(text, bodies))
+    }
+
+    @Test
+    fun `a send's rows are its text as this phone divides and joins it, a translated one too`() {
+        val emoji = TestFiles.vectors.single { it.id == VectorId.UCS2_EMOJI_RUN }
+        val translated = ReferenceSms { vector ->
+            vector.expected.firstOrNull { it.match == VectorMatch.FORCE7BIT } ?: vector.expected[0]
         }
+        // The same translation in parts of 44: the emoji run's sent row holds its two, joined.
+        val twoParts = object : SmsApi by translated {
+            override fun divideMessage(text: String) =
+                translated.divideMessage(text).joinToString("").chunked(44)
+        }
+        for (phone in listOf(translated, twoParts)) {
+            val store = MapStore()
+            SendProbe(store, phone).send(Reports.secondNumber, "+15555550100", emoji, now)
+            val own = ownSends(store, TestFiles.vectors, phone, installed)
+            val parts = phone.divideMessage(emoji.body)
+            val stored = parts.joinToString("")
+            assertFalse(emoji.body.startsWith(stored))
+            for (body in parts + stored) {
+                assertTrue(ownSend(body, now + 2_000, own))
+                assertFalse(ownSend(body, now - 1, own))
+            }
+        }
+        // Only the joined form matches that row: it's neither the text as given nor a part.
+        val parts = twoParts.divideMessage(emoji.body)
+        assertEquals(2, parts.size)
+        assertFalse(parts.joinToString("") in parts + emoji.body)
+    }
+
+    @Test
+    fun `after a reinstall, the earlier install's sends are still the probe's own`() {
+        val phone = ReferenceSms { it.expected[0] }
+        // A new install's store: the send log went with the earlier install.
+        val own = ownSends(MapStore(), TestFiles.vectors, phone, installed)
+        for (vector in TestFiles.vectors.filter { it.send }) {
+            for (body in phone.divideMessage(vector.body) + vector.body) {
+                assertTrue(vector.id.wire, ownSend(body, installed - 1, own))
+                assertFalse(vector.id.wire, ownSend(body, installed, own))
+            }
+        }
+        val others = listOf("DYTEST-ok", "DYTEST-A", "DYTEST-café", "DYTEST-ж") +
+            TestFiles.vectors.filter { !it.send }.map { it.body }
+        for (text in others) assertFalse(text, ownSend(text, installed - 1, own))
     }
 
     @Test

@@ -3,6 +3,7 @@ import type { ResponseStreamEvent } from "openai/resources/responses/responses";
 import {
 	type Credential,
 	type Endpoints,
+	REGISTRATION_CLIENT,
 	RESOURCE,
 	type TokenResponse,
 	type Tokens,
@@ -74,8 +75,30 @@ function decodePart(part: string | undefined): Record<string, unknown> | undefin
 	}
 }
 
-// A token's format and length; for a JWT, its header fields and claim names, never their values.
-export function tokenFormat(value: unknown): Record<string, unknown> | undefined {
+// What src/id-token.ts checks an ID token's claims against.
+export interface ClaimCheck {
+	readonly issuer: string;
+	readonly clientId: string;
+}
+
+// Yes or no for each claim an issuer, audience or authorized-party refusal turns on; never a value.
+function claimFacts(claims: Record<string, unknown>, check: ClaimCheck): Record<string, boolean> {
+	const audience: unknown[] = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+	return {
+		audHasClientId: audience.includes(check.clientId),
+		audHasDynamicAgentClient: audience.includes(REGISTRATION_CLIENT),
+		audHasResource: audience.includes(RESOURCE),
+		azpIsClientId: claims.azp === check.clientId,
+		issIsIssuer: claims.iss === check.issuer,
+	};
+}
+
+// A token's format and length; for a JWT, its header fields and claim names, never their values,
+// and with a check, an ID token's facts.
+export function tokenFormat(
+	value: unknown,
+	check?: ClaimCheck,
+): Record<string, unknown> | undefined {
 	if (typeof value !== "string") return undefined;
 	const parts = value.split(".");
 	const header = parts.length === 3 ? decodePart(parts[0]) : undefined;
@@ -89,6 +112,7 @@ export function tokenFormat(value: unknown): Record<string, unknown> | undefined
 		kid: typeof header.kid === "string",
 		claims: keysOf(claims).map(name),
 		...("aud" in claims && { audType: kind(claims.aud) }),
+		...(check && { facts: claimFacts(claims, check) }),
 	};
 }
 
@@ -106,8 +130,12 @@ function refreshAt(value: unknown, now: number): Record<string, unknown> {
 	};
 }
 
-// A token endpoint answer, success or error.
-export function tokenShape(body: unknown, now: number = Date.now()): Record<string, unknown> {
+// A token endpoint answer, success or error; an ID token in it is checked against `check`.
+export function tokenShape(
+	body: unknown,
+	now: number = Date.now(),
+	check?: ClaimCheck,
+): Record<string, unknown> {
 	if (!isRecord(body)) return { json: false };
 	const fields = keysOf(body);
 	const shape: Record<string, unknown> = {
@@ -127,7 +155,7 @@ export function tokenShape(body: unknown, now: number = Date.now()): Record<stri
 		["refresh_token", "refreshToken"],
 		["id_token", "idToken"],
 	] as const) {
-		const format = tokenFormat(body[field]);
+		const format = tokenFormat(body[field], field === "id_token" ? check : undefined);
 		if (format) shape[key] = format;
 	}
 	const error = body.error;
@@ -201,8 +229,7 @@ export interface AuthCall {
 const requestIdOf = (headers: Headers): string | undefined =>
 	headers.get("x-request-id") ?? headers.get("openai-request-id") ?? undefined;
 
-function authKind(method: string, url: URL, body: unknown): AuthKind {
-	const form = typeof body === "string" ? new URLSearchParams(body) : undefined;
+function authKind(method: string, url: URL, form: URLSearchParams | undefined): AuthKind {
 	if (method === "GET") {
 		return url.pathname.endsWith("/.well-known/openid-configuration") ? "discovery" : "jwks";
 	}
@@ -216,8 +243,12 @@ const urlOf = (input: RequestInfo | URL): URL =>
 	new URL(input instanceof Request ? input.url : String(input));
 
 // The fetch for discovery, sign-in, refresh and revocation: each answer's shape, read from a clone
-// before the caller sees the response.
-export function authRecorder(base: typeof fetch = fetch): {
+// before the caller sees the response. Given the issuer, an ID token gets its facts against it and
+// the client ID its request named.
+export function authRecorder(
+	base: typeof fetch = fetch,
+	issuer?: string,
+): {
 	readonly fetch: typeof fetch;
 	readonly calls: AuthCall[];
 } {
@@ -227,7 +258,8 @@ export function authRecorder(base: typeof fetch = fetch): {
 		const method = (
 			init?.method ?? (input instanceof Request ? input.method : "GET")
 		).toUpperCase();
-		const call: AuthCall = { kind: authKind(method, url, init?.body), status: 0, ms: 0 };
+		const form = typeof init?.body === "string" ? new URLSearchParams(init.body) : undefined;
+		const call: AuthCall = { kind: authKind(method, url, form), status: 0, ms: 0 };
 		calls.push(call);
 		const started = performance.now();
 		const response = await base(input, init);
@@ -241,13 +273,14 @@ export function authRecorder(base: typeof fetch = fetch): {
 			call.shape = { bytes: bytes.byteLength };
 		} else {
 			const json: unknown = await copy.json().catch(() => undefined);
-			const issuer = url.href.replace(/\/\.well-known\/openid-configuration$/, "");
+			const clientId = form?.get("client_id");
+			const check = issuer !== undefined && clientId ? { issuer, clientId } : undefined;
 			call.shape =
 				call.kind === "discovery"
-					? discoveryShape(json, issuer)
+					? discoveryShape(json, url.href.replace(/\/\.well-known\/openid-configuration$/, ""))
 					: call.kind === "jwks"
 						? jwksShape(json)
-						: tokenShape(json);
+						: tokenShape(json, Date.now(), check);
 		}
 		call.ms = Math.round(performance.now() - started);
 		return response;
@@ -386,11 +419,21 @@ export interface EventSummary {
 	readonly deltaChars: number;
 	readonly firstDeltaMs: number | null;
 	readonly model: string | null;
-	// response.completed: whether its output repeats what was streamed (store: false), and usage.
+	// response.completed: whether its output repeats what was streamed (store: false), its function
+	// calls' names and usage.
 	readonly completed: Readonly<Record<string, unknown>> | null;
 	// An error inside the stream (`error`, `response.failed`): its field names.
 	readonly failure: Readonly<Record<string, unknown>> | null;
 }
+
+// A function_call output item: its name, its namespace ("absent" without one) and its field names,
+// never its arguments.
+const callShape = (item: Record<string, unknown>): Record<string, unknown> => ({
+	name: name(item.name),
+	namespace:
+		item.namespace === undefined ? "absent" : item.namespace === null ? null : name(item.namespace),
+	fields: keysOf(item).map(name),
+});
 
 function completedShape(response: unknown): Record<string, unknown> {
 	const record = isRecord(response) ? response : {};
@@ -408,6 +451,7 @@ function completedShape(response: unknown): Record<string, unknown> {
 	return {
 		status: name(record.status),
 		outputTypes: output.map((item) => name(item.type)),
+		functionCalls: output.filter((item) => item.type === "function_call").map(callShape),
 		repeatsOutput: chars > 0,
 		outputChars: chars,
 		fields: keysOf(record).map(name),

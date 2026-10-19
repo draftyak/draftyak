@@ -43,6 +43,7 @@ class SendProbeTest {
     fun `the send probe refuses every destination but the second number and sends nothing`() {
         val corpus = listOf("numbers", "senders", "emails", "names")
             .flatMap(TestFiles::corpusStrings)
+        // The second number's national form too: the probe sends only to the number as saved.
         val near = listOf("+15555550101", "5555550100", "15555550100", "+1555555010")
             .plus("+155555501000")
         val others = corpus + near + listOf("", "*#06#")
@@ -98,6 +99,27 @@ class SendProbeTest {
         threads.forEach(Thread::join)
         assertEquals((0 until MAX_SENDS).toList(), sms.sends.map { it.third }.sorted())
         assertEquals(MAX_SENDS, shared.int("send.count"))
+    }
+
+    @Test
+    fun `once the probe has sent a text, a different second number can't be saved`() {
+        assertEquals(SaveOutcome.INVALID, saveSecondNumber(store, "555"))
+        assertEquals(SaveOutcome.SAVED, saveSecondNumber(store, "5555550100"))
+        assertEquals(SaveOutcome.SAVED, saveSecondNumber(store, "+1 555 555 0100"))
+        // A refused send sends nothing, so the number can still change.
+        assertEquals(listOf(SendOutcome.REFUSED), sendAll("+15555550101"))
+        assertEquals(SaveOutcome.SAVED, saveSecondNumber(store, "+15555550101"))
+        assertEquals(SaveOutcome.SAVED, saveSecondNumber(store, "+1 555 555 0100"))
+        assertEquals(listOf(SendOutcome.SENT), sendAll("+15555550100", only = 1))
+        for (other in listOf("5555550100", "+1 555 555 0101", "15555550100", "+447700900100")) {
+            assertEquals(other, SaveOutcome.PINNED, saveSecondNumber(store, other))
+        }
+        assertEquals(SaveOutcome.INVALID, saveSecondNumber(store, "555"))
+        assertEquals("+1 555 555 0100", store[SECOND_NUMBER])
+        // The same number in another layout: the sent-row check still looks where the texts went.
+        assertEquals(SaveOutcome.SAVED, saveSecondNumber(store, "+1 (555) 555-0100"))
+        assertEquals("+1 (555) 555-0100", store[SECOND_NUMBER])
+        assertEquals(sms.sends.single().first, SecondNumber.of(store[SECOND_NUMBER]!!)!!.number)
     }
 
     @Test

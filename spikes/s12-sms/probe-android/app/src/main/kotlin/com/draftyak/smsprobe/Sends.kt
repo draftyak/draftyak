@@ -12,13 +12,26 @@ private const val MAX_PARTS = 16
 
 enum class SendOutcome { SENT, REFUSED, LIMIT }
 
+enum class SaveOutcome { SAVED, INVALID, PINNED }
+
+// Once the send probe has sent a text, the second number can be saved again only as the same
+// number: the sent-row check looks for the probe's texts under the number as saved.
+fun saveSecondNumber(store: Store, entered: String): SaveOutcome {
+    val number = SecondNumber.of(entered)?.number ?: return SaveOutcome.INVALID
+    val saved = SecondNumber.of(store[SECOND_NUMBER].orEmpty())?.number
+    if (store.int("send.count") > 0 && number != saved) return SaveOutcome.PINNED
+    store[SECOND_NUMBER] = entered
+    return SaveOutcome.SAVED
+}
+
 // Each send vector in one sendMultipartTextMessage call, only to the owner-entered second number
-// (checked here); at most MAX_SENDS per install, counted before each send under one lock.
+// as saved, never its national form (checked here); at most MAX_SENDS per install, counted before
+// each send under one lock.
 class SendProbe(private val store: Store, private val sms: SmsApi) {
     fun send(second: SecondNumber?, to: String, vector: SegmentVector, now: Long): SendOutcome =
         synchronized(SendProbe::class.java) {
             require(vector.send && vector.body.startsWith(DytestBody.PREFIX)) { "not a send" }
-            if (second == null || !second.matches(to)) {
+            if (second == null || SecondNumber.of(to)?.number != second.number) {
                 store["send.refused"] = "${store.int("send.refused") + 1}"
                 return SendOutcome.REFUSED
             }
@@ -160,4 +173,30 @@ fun sendsOf(store: Store, vectors: List<SegmentVector>, sms: SmsApi, rows: List<
         )
     }
     return Sends(count, results, refused)
+}
+
+// A text the send probe sent: the dates its rows can have, and the bodies they can hold, the text
+// as given or as this phone divides and joins it, whole or by part.
+class OwnSend(val dates: LongRange, val bodies: Set<String>)
+
+// The send log's texts, each from its send's start. An uninstall takes the log with it, so rows
+// from before `installed` (this install's first install time) holding a send text are an earlier
+// install's sends.
+fun ownSends(
+    store: Store,
+    vectors: List<SegmentVector>,
+    sms: SmsApi,
+    installed: Long,
+): List<OwnSend> {
+    val texts = vectors.filter { it.send }.associate { vector ->
+        val parts = sms.divideMessage(vector.body)
+        vector.id.name to setOf(vector.body, parts.joinToString("")) + parts
+    }
+    val logged = (0 until store.int("send.count").coerceAtMost(MAX_SENDS)).mapNotNull { n ->
+        val entry = store["send.$n"]?.split(',') ?: return@mapNotNull null
+        val bodies = texts[entry[0]] ?: return@mapNotNull null
+        val start = entry.getOrNull(1)?.toLongOrNull() ?: return@mapNotNull null
+        OwnSend(start..Long.MAX_VALUE, bodies)
+    }
+    return logged + texts.values.map { OwnSend(Long.MIN_VALUE until installed, it) }
 }
