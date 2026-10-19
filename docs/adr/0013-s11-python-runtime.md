@@ -115,10 +115,10 @@ Under the kit's bench lock on the dev box, after its idle check (the five sample
 ### Network blocking per target
 | Target | Plugin runs (escape, allowlist, budgets) | The `--permission-audit` run |
 |---|---|---|
-| Windows x64 | no `--allow-net`: the permission model denies sockets on both Nodes | 26.5.1's audit mode also enforces; 26.12.0's only observes, so the run relies on the diagnostics-channel net count (0, with a positive control that counts a real attempt) and a fail-closed `Get-NetTCPConnection -OwningProcess` watcher (0 connections) |
+| Windows x64 | no `--allow-net`: the permission model denies sockets on both Nodes | 26.5.1's audit mode also enforces; 26.12.0's only observes, so the run relies on the diagnostics-channel net count (0, with a positive control that counts a real attempt) and a fail-closed `Get-NetTCPConnection -OwningProcess` watcher, which reads as inconclusive unless `Get-Process` still finds the plugin after the count (M0.34's evidence, recorded before that check, shows 0 connections) |
 | Linux x64 and arm64, Docker | no `--allow-net`, inside `--network none` | `--network none` blocks the network whatever the Node does; the net count runs too |
 | Linux x64 and arm64, native | no `--allow-net` | the net count only (26.12.0 doesn't enforce, and there is no host watcher); the Docker leg on the same runner is the enforced one |
-| macOS arm64 | no `--allow-net` | the net count and a fail-closed `lsof -p` watcher |
+| macOS arm64 | no `--allow-net` | the net count and a fail-closed watcher that counts the plugin's TCP sockets in any state, LISTEN included, in `lsof -nP -w -p <pid> -F ftP` (the plugin's own files only), and reads as inconclusive unless that listing shows the plugin, its descriptors 0, 1 and 2, and a type for each of its files that can be a socket (lsof leaves out the type of a file it couldn't read) |
 
 So host-native network blocking during the audit is enforced only in the Docker `--network none` leg; on 26.12.0 `--permission-audit` observes rather than enforces.
 

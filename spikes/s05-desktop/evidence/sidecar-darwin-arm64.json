@@ -1,0 +1,101 @@
+{
+  "recordedAt": "2026-10-18T16:20:30.513Z",
+  "fingerprint": {
+    "os": {
+      "platform": "darwin",
+      "arch": "arm64",
+      "osName": "Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:34 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_VMAPPLE",
+      "osVersion": "24.6.0"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "d983de9812f6a98a1d34194a08dcc515107057d9",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 10.7,
+      "cpuCount": 3,
+      "cpuModel": "Apple M1 (Virtual)",
+      "memoryUsedPercent": 93.6,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "darwin-arm64",
+    "triple": "aarch64-apple-darwin",
+    "versions": {
+      "nodeVersion": "26.12.0",
+      "tauriVersion": "2.12.4",
+      "tauriBuildVersion": "2.7.3"
+    },
+    "rustfmt": {
+      "clean": true
+    },
+    "clippy": {
+      "clean": true,
+      "features": "none",
+      "allTargets": true,
+      "ms": 3230
+    },
+    "cargoTest": {
+      "passed": 21,
+      "features": "none",
+      "nodeOptionsSet": true,
+      "ms": 10502
+    },
+    "build": {
+      "ms": 6212
+    },
+    "posixApp": {
+      "readyMs": 309,
+      "processGroup": "the hub leads its own (process_group(0))",
+      "temporal": "object",
+      "temporalNowInstant": "function",
+      "hubExecArgv": [
+        "--disable-sigusr1"
+      ],
+      "hubEnv": [
+        "DRAFTYAK_DATA_DIR",
+        "DRAFTYAK_SPIKE_PLUGIN_ARGV",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "TMPDIR",
+        "__CF_USER_TEXT_ENCODING"
+      ],
+      "hubNodeOptions": null,
+      "hubInspector": null,
+      "addon": {
+        "target": "darwin-arm64",
+        "fromResources": true,
+        "napiVersion": 10,
+        "sqliteVersion": "3.53.4",
+        "sqlite3mcVersion": "SQLite3 Multiple Ciphers 2.4.0",
+        "encrypted": true,
+        "sameBytesAsPackage": true
+      },
+      "pluginExecArgvIsBuildArgv": true
+    },
+    "posixRestart": {
+      "killedHubExit": "signal",
+      "delayMs": 1000,
+      "backMs": 1219,
+      "hubIdStable": true,
+      "firstPluginGoneMs": 25
+    },
+    "posixAppEnded": {
+      "how": "SIGKILL",
+      "hubEndedOn": "stdin EOF",
+      "goneMs": 29,
+      "ourProcessesLeft": 0,
+      "draftyakNodeOfThisBuildLeft": 0
+    },
+    "posixIgnoredEof": {
+      "how": "SIGKILL of the app, then 3 s",
+      "hubOutlivedApp": true,
+      "pluginOutlivedApp": true,
+      "endedAfterwardsBy": "the test"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T08:59:18.115Z",
+  "recordedAt": "2026-10-18T16:20:02.855Z",
   "fingerprint": {
     "os": {
       "platform": "darwin",
@@ -11,13 +11,13 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "e961e3a6bd7d269e1322b06fc678ac6b136bf897",
+    "commit": "d983de9812f6a98a1d34194a08dcc515107057d9",
     "dirty": false,
     "load": {
-      "cpuPercent": 3,
+      "cpuPercent": 9,
       "cpuCount": 3,
       "cpuModel": "Apple M1 (Virtual)",
-      "memoryUsedPercent": 90.2,
+      "memoryUsedPercent": 94.5,
       "concurrentBuilds": 0
     }
   },
@@ -39,7 +39,7 @@
         "readBack": true,
         "persistence": null,
         "removed": true,
-        "ms": 20
+        "ms": 12
       },
       "used": "user default"
     },
@@ -49,7 +49,7 @@
       "readBack": true,
       "persistence": null,
       "removed": true,
-      "ms": 20
+      "ms": 12
     },
     "builtBinary": {
       "setAndRead": true
@@ -58,8 +58,61 @@
       "read": false,
       "deleted": false
     },
+    "itemAccess": {
+      "read": true,
+      "entries": [
+        {
+          "authorizations": [
+            "encrypt"
+          ],
+          "requirePassword": false,
+          "form": "anyApp"
+        },
+        {
+          "authorizations": [
+            "decrypt",
+            "derive",
+            "export_clear",
+            "export_wrapped",
+            "mac",
+            "sign"
+          ],
+          "requirePassword": false,
+          "form": "appList",
+          "apps": [
+            "cdhash"
+          ]
+        },
+        {
+          "authorizations": [
+            "integrity"
+          ],
+          "requirePassword": false,
+          "form": "integrity"
+        },
+        {
+          "authorizations": [
+            "partition_id"
+          ],
+          "requirePassword": false,
+          "form": "partitionIds",
+          "partitionIds": [
+            "cdhash"
+          ]
+        },
+        {
+          "authorizations": [
+            "change_acl"
+          ],
+          "requirePassword": false,
+          "form": "appList",
+          "apps": []
+        }
+      ],
+      "decryptPrompt": true
+    },
     "goneAtEnd": true,
-    "prompts": "off: SecKeychainSetUserInteractionAllowed(false); a prompt fails as errSecInteractionNotAllowed (-25308)",
+    "prompts": "off (SecKeychainSetUserInteractionAllowed false): a check only a prompt could pass fails as errSecAuthFailed (-25293); a step needing UI that can't be shown fails as errSecInteractionNotAllowed (-25308)",
     "binaries": {
       "built": {
         "signature": "adhoc",
