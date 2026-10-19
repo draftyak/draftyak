@@ -163,7 +163,7 @@ private fun isRealDate(year: String, month: String, day: String) =
 @JvmInline
 value class ProbeVersion private constructor(val text: String) {
     companion object {
-        val CURRENT = ProbeVersion("0.2.0")
+        val CURRENT = ProbeVersion("0.2.1")
     }
 }
 
@@ -292,15 +292,21 @@ value class DytestBody private constructor(val text: String) {
 
 // The owner-entered second number, kept on the phone: it never enters a report or a log. Only
 // spaces, dashes, dots, parentheses and slashes are dropped before comparing, so "+1 (555)
-// 555-0123" matches "+15555550123" but a national form never matches an international one.
-// `number` is that normalized form, the send probe's only destination.
+// 555-0123" matches "+15555550123". A number saved as +1 and 10 digits also matches its national
+// form, those 10 digits alone. No other national form is worked out: a number saved without the
+// + or with another country code matches only itself, and no shorter or longer run of digits
+// matches. `number` is the normalized form as saved, the send probe's only destination.
 class SecondNumber private constructor(val number: String) {
-    fun matches(address: String): Boolean = normalize(address) == number
+    private val national = NANP.matchEntire(number)?.groupValues?.get(1)
+
+    fun matches(address: String): Boolean =
+        normalize(address)?.let { it == number || it == national } == true
 
     override fun toString() = "SecondNumber"
 
     companion object {
         private val SHAPE = Regex("\\+?[0-9]{7,15}")
+        private val NANP = Regex("\\+1([0-9]{10})")
 
         private fun normalize(raw: String): String? =
             raw.filterNot { it in " -.()/\u00a0" }.takeIf(SHAPE::matches)

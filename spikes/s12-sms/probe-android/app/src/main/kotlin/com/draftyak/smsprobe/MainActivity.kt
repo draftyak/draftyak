@@ -41,21 +41,25 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         status = TextView(this)
         val number = EditText(this).apply {
             hint = "Second number, as +<country code><number>"
             inputType = InputType.TYPE_CLASS_PHONE
-            setText(prefs.getString(SECOND_NUMBER, ""))
+            setText(store[SECOND_NUMBER].orEmpty())
         }
         val save = Button(this).apply { text = "Save second number" }
         save.setOnClickListener {
-            val entered = number.text.toString()
-            val valid = SecondNumber.of(entered) != null
-            if (valid) prefs.edit().putString(SECOND_NUMBER, entered).apply()
-            status.text = if (valid) "Saved." else "Enter 7 to 15 digits, optionally after a +."
+            // Not while a run sends: its first send may not be counted yet.
+            val saved = if (sending.get()) null else saveSecondNumber(store, number.text.toString())
+            status.text = when (saved) {
+                SaveOutcome.SAVED -> "Saved."
+                SaveOutcome.INVALID -> "Enter 7 to 15 digits, optionally after a +."
+                SaveOutcome.PINNED -> "Not saved: texts were already sent to the saved number."
+                null -> "Still sending the last run."
+            }
             ProbeLog.log(
-                if (valid) ProbeEvent.SECOND_NUMBER_SAVED else ProbeEvent.SECOND_NUMBER_REFUSED,
+                if (saved == SaveOutcome.SAVED) ProbeEvent.SECOND_NUMBER_SAVED
+                else ProbeEvent.SECOND_NUMBER_REFUSED,
             )
         }
         val write = Button(this).apply { text = "Write report" }
@@ -270,8 +274,13 @@ fun buildReport(context: Context, store: Store, tls: Tls? = TlsStore.load(store)
     val now = System.currentTimeMillis()
     val second = SecondNumber.of(store[SECOND_NUMBER].orEmpty())
     val vectors = runCatching { SegmentVectors.load(context) }.getOrNull()
-    val bodies = vectors.orEmpty().map { it.body }
-    val inventory = runCatching { InventoryReader(context, second, bodies).read(now) }.getOrNull()
+    val installed = runCatching {
+        val flags = PackageManager.PackageInfoFlags.of(0)
+        context.packageManager.getPackageInfo(context.packageName, flags).firstInstallTime
+    }.getOrDefault(0L)
+    val own = runCatching { ownSends(store, vectors.orEmpty(), sms, installed) }
+        .getOrDefault(emptyList())
+    val inventory = runCatching { InventoryReader(context, second, own).read(now) }.getOrNull()
     val permission = when {
         context.checkSelfPermission(LOCAL_NETWORK) == GRANTED -> LocalNetworkPermission.GRANTED
         store["lan.asked"] != null -> LocalNetworkPermission.DENIED

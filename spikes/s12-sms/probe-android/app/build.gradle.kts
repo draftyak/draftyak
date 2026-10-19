@@ -17,8 +17,8 @@ android {
         applicationId = "com.draftyak.smsprobe"
         minSdk = 34
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
     }
 
     // A Play Store check that doesn't apply: the probe is installed over adb on a phone.

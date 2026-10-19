@@ -28,6 +28,7 @@ class OtpTest {
     @Test
     fun `only the second number's texts are read, and only OTP-shaped DYTEST ones are kept`() {
         assertEquals(body, OtpProbe.body(second, "+1 555 555 0100") { body })
+        assertEquals(body, OtpProbe.body(second, "(555) 555-0100") { body })
         val others = TestFiles.corpusStrings("numbers") + TestFiles.corpusStrings("senders") +
             "15555550100"
         for (address in others) assertNull(address, OtpProbe.body(second, address, ::unread))

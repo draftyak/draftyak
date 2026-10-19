@@ -97,8 +97,10 @@ class InventoryResult(
 // A case-sensitive DYTEST- prefix test for a provider column (SQLite's LIKE ignores case).
 fun dytest(column: String) = "$column GLOB '${DytestBody.PREFIX}*'"
 
-// The probe's own sends (a whole text, or a first part) aren't test messages.
-fun ownSend(body: String, sends: List<String>) = sends.any { it.startsWith(body) }
+// The probe's own sends aren't test messages: a row holding one of their texts, whole or a part,
+// stored in that send's time range. Any other text is one, even when it starts like them.
+fun ownSend(body: String, date: Long, sends: List<OwnSend>) =
+    sends.any { date in it.dates && body in it.bodies }
 
 // The report's 40 test messages: MMS and RCS rows first, keeping at least 20 when there are more
 // SMS rows, so SMS rows can't push out the RCS markers.
@@ -109,11 +111,11 @@ fun testMessageOrder(sms: List<TestMessage>, mms: List<TestMessage>): List<TestM
 
 // What READ_SMS sees, counted on the phone. Column names come only from Cursor.getColumnNames() of
 // queries that match no row, and counts from _id alone; only DYTEST- rows are read with their text,
-// and only TestMessage.of keeps one. `sends` are the bodies the send probe may have sent.
+// and only TestMessage.of keeps one. `sends` are the texts the send probe sent (ownSends).
 class InventoryReader(
     context: Context,
     private val second: SecondNumber?,
-    private val sends: List<String>,
+    private val sends: List<OwnSend>,
 ) {
     private val resolver = context.contentResolver
 
@@ -192,13 +194,13 @@ class InventoryReader(
     // only recipient of an outbound one, whose address is the second number.
     private fun testMessages(rows: List<MessageRow>, rule: Set<String>): List<TestMessage> {
         second ?: return emptyList()
-        val columns = arrayOf("address", "body", "type")
+        val columns = arrayOf("address", "body", "type", "date")
         val sms = query(Telephony.Sms.CONTENT_URI, columns, dytest("body")) { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
                     val direction = direction(cursor.getInt(2)) ?: continue
                     val body = cursor.getString(1).orEmpty()
-                    if (ownSend(body, sends)) continue
+                    if (ownSend(body, cursor.getLong(3), sends)) continue
                     val message = TestMessage.of(
                         second, cursor.getString(0).orEmpty(), body, Transport.SMS, direction,
                         ProviderTable.SMS,
