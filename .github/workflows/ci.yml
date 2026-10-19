@@ -201,6 +201,9 @@ jobs:
           if ($dockerOs -notin @('windows', 'linux')) { throw 'Docker engine did not report its platform' }
           Write-Output "Docker engine platform: $dockerOs"
       - run: pnpm verify
+        env:
+          # Package suites each start their own test workers on this runner.
+          TURBO_CONCURRENCY: '1'
 
   required:
     needs: [changes, cheap, full, windows]
