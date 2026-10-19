@@ -71,6 +71,9 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
 						for (;;) {
 							const { done, value } = await reader.read();
 							if (done) break;
+							if (!(value instanceof Uint8Array)) {
+								throw new TypeError("Received non-Uint8Array chunk");
+							}
 							hash.update(value);
 							bodyLength += value.byteLength;
 							const take = Math.min(value.byteLength, cap - kept);
