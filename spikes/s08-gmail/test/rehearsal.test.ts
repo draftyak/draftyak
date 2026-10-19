@@ -22,7 +22,14 @@ import {
 	startFakeOAuth,
 	TokenRegistry,
 } from "./fake-google-oauth.ts";
-import { concurrent429, errorResponse, userRateLimit403 } from "./google-errors.ts";
+import {
+	concurrent429,
+	dailyLimit403,
+	domainPolicy403,
+	errorResponse,
+	rateLimit403,
+	userRateLimit403,
+} from "./google-errors.ts";
 import { main as cli } from "./live-cli.ts";
 import {
 	type Burst,
@@ -786,6 +793,127 @@ describe("the S8b session rehearsed against FakeGmail and fake Google OAuth", ()
 			messages: [{ labels: ["SCHEDULED"], inScheduled: true }],
 		});
 		expect(results.sent).toMatchObject({ sameId: false, labels: ["SENT"], sentIn: true });
+	});
+
+	it("takes Gmail's concurrency limit only from a 429 or a 403 rate limit, and stops when a request fails without Gmail's answer", {
+		timeout: 60_000,
+	}, async () => {
+		const world = await setup({
+			gmail: "keeps",
+			scheduled: "scheduled",
+			concurrencyLimit: Number.POSITIVE_INFINITY,
+			bursts: SMALL_BURSTS,
+			record: false,
+		});
+		try {
+			const { session } = world;
+			const dir = world.dirs.session;
+			await runStep("connect", session);
+			// Gmail allows 5 requests at once and gives `limited()` beyond them. `nth` answers the step's
+			// n-th Gmail request itself: 0 is its first getProfile, 1–4 the first burst, 5–12 the second.
+			const concurrency = (
+				limited: () => Response,
+				nth?: { readonly n: number; readonly answer: () => Response },
+			): Promise<readonly string[]> => {
+				const gmail = network(world.fake.url, 5, limited);
+				let seen = 0;
+				return runStep("concurrency", {
+					...session,
+					fetch: async (input, init) =>
+						nth !== undefined && urlOf(input).startsWith(world.fake.url) && seen++ === nth.n
+							? nth.answer()
+							: gmail(input, init),
+				});
+			};
+			const bursts = (): unknown => readState(dir).steps.concurrency?.data.bursts;
+			const tooMany = (): Response => errorResponse(429, concurrent429);
+			const requestTimeout = (): Response => new Response(null, { status: 408 });
+
+			for (const [status, body, shape] of [
+				[
+					429,
+					concurrent429,
+					'429 RESOURCE_EXHAUSTED rateLimitExceeded (usageLimits) "Too many concurrent requests for user" -> retry(concurrent)',
+				],
+				[
+					403,
+					rateLimit403,
+					'403 PERMISSION_DENIED rateLimitExceeded (usageLimits) "Rate Limit Exceeded" -> retry(rate_limit)',
+				],
+				[
+					403,
+					userRateLimit403,
+					'403 PERMISSION_DENIED userRateLimitExceeded (usageLimits) "User Rate Limit Exceeded" -> retry(rate_limit)',
+				],
+			] as const) {
+				expect(await concurrency(() => errorResponse(status, body))).toEqual([
+					`429 concurrent: ${shape} at 8 parallel getProfile`,
+				]);
+			}
+
+			// Any other answer isn't the limit: the bursts go on.
+			for (const limited of [
+				() => errorResponse(403, dailyLimit403),
+				() => errorResponse(403, domainPolicy403),
+				requestTimeout,
+			]) {
+				expect(await concurrency(limited)).toEqual([
+					"429 concurrent: not provoked (18 bounded parallel reads, at most 8 at once)",
+				]);
+			}
+			expect(bursts()).toEqual([
+				{ call: "getProfile", parallel: 4, statuses: { 200: 4 } },
+				{ call: "getProfile", parallel: 8, statuses: { 200: 5, 408: 3 } },
+				{ call: "messages.list", parallel: 6, statuses: { 200: 5, 408: 1 } },
+			]);
+			expect(await concurrency(tooMany, { n: 2, answer: requestTimeout })).toEqual([
+				'429 concurrent: 429 RESOURCE_EXHAUSTED rateLimitExceeded (usageLimits) "Too many concurrent requests for user" -> retry(concurrent) at 8 parallel getProfile',
+			]);
+			expect(bursts()).toEqual([
+				{ call: "getProfile", parallel: 4, statuses: { 200: 3, 408: 1 } },
+				{ call: "getProfile", parallel: 8, statuses: { 200: 5, 429: 3 } },
+			]);
+
+			// A request that failed without Gmail's answer (a DNS failure, a timeout, a failed token
+			// refresh) stops the step, even beside Gmail's 429s, and the earlier result stands.
+			const kept = readState(dir).steps.concurrency;
+			const notFound = (): Response => {
+				const lookup = new Error("getaddrinfo ENOTFOUND gmail.googleapis.com");
+				throw new TypeError("fetch failed", {
+					cause: Object.assign(lookup, { code: "ENOTFOUND" }),
+				});
+			};
+			await expect(concurrency(tooMany, { n: 5, answer: notFound })).rejects.toThrow(
+				/^1 of 8 parallel getProfile requests failed without an answer from Gmail \(not_written\): not Gmail's limit, so nothing was recorded; rerun concurrency$/,
+			);
+			const timeoutError = (): Response => {
+				throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+			};
+			await expect(concurrency(tooMany, { n: 1, answer: timeoutError })).rejects.toThrow(
+				/^1 of 4 parallel getProfile requests failed without an answer from Gmail \(timeout\): /,
+			);
+			// The first access token lasts a minute, so the first burst refreshes it, and that refresh
+			// fails: none of the burst's requests went out.
+			const base = network(world.fake.url, 5, tooMany);
+			let refreshes = 0;
+			await expect(
+				runStep("concurrency", {
+					...session,
+					fetch: async (input, init) => {
+						if (urlOf(input) !== world.oauth.standard.endpoints.token) return base(input, init);
+						if (refreshes++ > 0) return json(400, { error: "invalid_grant" });
+						const answer = (await (await base(input, init)).json()) as Record<string, unknown>;
+						return json(200, { ...answer, expires_in: 60 });
+					},
+				}),
+			).rejects.toThrow(
+				/^4 of 4 parallel getProfile requests failed without an answer from Gmail \(token refresh: invalid_grant\): not Gmail's limit, so nothing was recorded; rerun concurrency$/,
+			);
+			expect(readState(dir).steps.concurrency).toEqual(kept);
+			expect(world.fake.violations).toEqual([]);
+		} finally {
+			await world.close();
+		}
 	});
 
 	it("records a scheduled mail that Gmail shows only as a draft", { timeout: 60_000 }, async () => {

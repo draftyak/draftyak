@@ -76,6 +76,60 @@ describe("token answers", () => {
 		expect(tokenFormat("opaque-token-value")).toEqual({ format: "opaque", length: 18 });
 	});
 
+	it("give an ID token yes/no facts about its issuer, audience and authorized party, never a value", () => {
+		const issuer = "https://auth.example.test";
+		const clientId = "oaiapp_client_not_recorded";
+		const header = part({ alg: "RS256", kid: "key-1", typ: "JWT" });
+		const jwt = (claims: object): string => [header, part(claims), "c2lnbmF0dXJl"].join(".");
+		const check = { issuer, clientId };
+		const facts = (claims: object): unknown => tokenFormat(jwt(claims), check)?.facts;
+		expect(facts({ iss: issuer, aud: clientId })).toEqual({
+			audHasClientId: true,
+			audHasDynamicAgentClient: false,
+			audHasResource: false,
+			azpIsClientId: false,
+			issIsIssuer: true,
+		});
+		const other = {
+			iss: "https://elsewhere.example.test",
+			aud: ["dynamic_agent_client", "https://api.openai.com/v1"],
+			azp: clientId,
+		};
+		expect(facts(other)).toEqual({
+			audHasClientId: false,
+			audHasDynamicAgentClient: true,
+			audHasResource: true,
+			azpIsClientId: true,
+			issIsIssuer: false,
+		});
+		expect(facts({ sub: "x" })).toEqual({
+			audHasClientId: false,
+			audHasDynamicAgentClient: false,
+			audHasResource: false,
+			azpIsClientId: false,
+			issIsIssuer: false,
+		});
+		expect(tokenFormat("opaque-token-value", check)).toEqual({ format: "opaque", length: 18 });
+
+		const body = {
+			access_token: jwt({ iss: issuer, aud: clientId }),
+			id_token: jwt({ iss: issuer, aud: [clientId, "https://api.openai.com/v1"], azp: clientId }),
+		};
+		const shape = tokenShape(body, Date.now(), check);
+		expect(shape.idToken).toMatchObject({
+			facts: {
+				audHasClientId: true,
+				audHasDynamicAgentClient: false,
+				audHasResource: true,
+				azpIsClientId: true,
+				issIsIssuer: true,
+			},
+		});
+		expect(shape.accessToken).not.toHaveProperty("facts");
+		expect(tokenShape(body).idToken).not.toHaveProperty("facts");
+		expect(JSON.stringify(shape)).not.toMatch(/client_not_recorded|example\.test|api\.openai/);
+	});
+
 	it("record fields, types, scopes and when earliest_refresh_at points, in each format", () => {
 		const now = Date.UTC(2026, 9, 18);
 		const shape = tokenShape(
@@ -271,6 +325,7 @@ it("stream events: counts, delta sizes, an error event's fields and usage, never
 		completed: {
 			status: "completed",
 			outputTypes: ["message"],
+			functionCalls: [],
 			repeatsOutput: true,
 			outputChars: 5,
 			usage: {
@@ -283,6 +338,37 @@ it("stream events: counts, delta sizes, an error event's fields and usage, never
 		},
 	});
 	expect(JSON.stringify(summary)).not.toMatch(/Hello|private words/);
+});
+
+it("function calls: each one's name, namespace and field names, never its arguments", () => {
+	const stats = eventStats();
+	const call = (extra: Record<string, unknown>) => ({
+		id: "fc_not_recorded",
+		type: "function_call",
+		status: "completed",
+		call_id: "call_not_recorded",
+		arguments: '{"body":"private words"}',
+		...extra,
+	});
+	const output = [
+		call({ name: "submit_draft", namespace: "draftyak" }),
+		call({ name: "draftyak.submit_draft" }),
+		call({ name: "submit_draft", namespace: null }),
+		call({ name: "two words", namespace: 7 }),
+		{ type: "message", content: [{ type: "output_text", text: "private words" }] },
+	];
+	stats.add(event({ type: "response.completed", response: { status: "completed", output } }));
+	const completed = stats.summary().completed;
+	const fields = ["arguments", "call_id", "id", "name", "status", "type"];
+	const withNamespace = ["arguments", "call_id", "id", "name", "namespace", "status", "type"];
+	expect(completed?.functionCalls).toEqual([
+		{ name: "submit_draft", namespace: "draftyak", fields: withNamespace },
+		{ name: "draftyak.submit_draft", namespace: "absent", fields },
+		{ name: "submit_draft", namespace: null, fields: withNamespace },
+		{ name: WITHHELD, namespace: WITHHELD, fields: withNamespace },
+	]);
+	expect(completed?.outputTypes).toEqual([...Array(4).fill("function_call"), "message"]);
+	expect(JSON.stringify(completed)).not.toMatch(/private words|not_recorded/);
 });
 
 it("the final check replaces content-shaped strings and keys, and counts them", () => {

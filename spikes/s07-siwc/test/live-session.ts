@@ -401,6 +401,8 @@ interface Models {
 	// Every usable slug, and the one a plan draft takes.
 	readonly slugs: readonly string[];
 	readonly chosen?: string;
+	// A plan's list only: the usable slugs it marks visibility "list", in the server's order.
+	readonly listed?: readonly string[];
 }
 
 const slugsOf = (values: readonly unknown[]): string[] =>
@@ -412,18 +414,20 @@ const slugsOf = (values: readonly unknown[]): string[] =>
 function pickModel(body: unknown): Models {
 	if (isRecord(body) && Array.isArray(body.models)) {
 		const models = body.models.filter(isRecord);
-		const listed = models.filter((model) => model.visibility === "list");
-		const [chosen] = slugsOf(listed.map((model) => model.slug));
+		const visible = models.filter((model) => model.visibility === "list");
+		const listed = slugsOf(visible.map((model) => model.slug));
+		const [chosen] = listed;
 		const record = {
 			shape: "models",
 			count: models.length,
-			listed: listed.length,
+			listed: visible.length,
+			listedSlugs: listed.map(name),
 			visibilities: sortedNames(models.map((model) => model.visibility)),
 			fields: sortedNames(models.flatMap((model) => Object.keys(model))),
 			chosen: chosen === undefined ? null : name(chosen),
 		};
 		const slugs = slugsOf(models.map((model) => model.slug));
-		return { record, slugs, ...(chosen !== undefined && { chosen }) };
+		return { record, slugs, listed, ...(chosen !== undefined && { chosen }) };
 	}
 	if (isRecord(body) && Array.isArray(body.data)) {
 		const items = body.data.filter(isRecord);
@@ -488,7 +492,7 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 	const hashed = (id: string): string => hashId(key, id);
 	const base = deps.fetch ?? fetch;
 	const issued = issuedTokens(base);
-	const auth = authRecorder(issued.fetch);
+	const auth = authRecorder(issued.fetch, deps.issuer);
 	const api = upstreamRecorder(base);
 	const envLive = deps.envLive ?? {};
 	const env = deps.env ?? process.env;
@@ -824,11 +828,14 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 		if (planOn && session) {
 			const owner = session;
 			const client = clientFor(() => owner.accessToken());
-			const listed = await listModels(client);
-			data.models = listed.record;
+			const list = await listModels(client);
+			data.models = list.record;
+			if (list.listed) {
+				say(`Listed models, in the server's order: ${list.listed.join(", ") || "none"}`);
+			}
 			const override = validSlug(env.DRAFTYAK_S7_MODEL);
-			model = override ?? listed.chosen ?? DOCS_MODEL;
-			modelSource = override ? "DRAFTYAK_S7_MODEL" : listed.chosen ? "models" : "docs example";
+			model = override ?? list.chosen ?? DOCS_MODEL;
+			modelSource = override ? "DRAFTYAK_S7_MODEL" : list.chosen ? "models" : "docs example";
 			say(`Model: ${model} (${modelSource}).`);
 			for (const structure of STRUCTURES) {
 				say(`Drafting with ${structure}.`);

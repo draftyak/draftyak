@@ -1491,8 +1491,27 @@ export function limitedLine(limited: Limited): string {
 	}) "${limited.message}" -> ${outcome} at ${limited.at.parallel} parallel ${limited.at.call}`;
 }
 
-// Procedure step 4: bursts of parallel reads, within BURSTS' bounds, until Gmail answers with a
-// limit: a 429, or anything else classify.ts retries, such as a 403 rate limit.
+// Gmail's answer to too many requests at once: a 429, or a 403 rate limit. A 408 or any other
+// failure is not its limit.
+const RATE_LIMIT_403 = new Set(["rateLimitExceeded", "userRateLimitExceeded"]);
+const isRateLimit = (error: GmailError): boolean =>
+	error.status === 429 ||
+	(error.status === 403 &&
+		parseGoogleError(error.body).reasons.some((reason) => RATE_LIMIT_403.has(reason)));
+
+// Why a request failed without Gmail's answer: classify.ts's reason for a network failure, the
+// code of a token refresh that failed before the request went out, or the error's name.
+const whyUnanswered = (error: unknown): string => {
+	if (error instanceof GmailError && "reason" in error.outcome) {
+		return cleanText(error.outcome.reason);
+	}
+	if (error instanceof OAuthError) return `token refresh: ${cleanText(error.code)}`;
+	return error instanceof Error ? cleanText(error.name) : "error";
+};
+
+// Procedure step 4: bursts of parallel reads, within BURSTS' bounds, until Gmail answers with its
+// limit. A request that failed without Gmail's answer (status 0: DNS, connection or timeout errors,
+// or a failed token refresh) stops the step unrecorded, since its burst can't show the limit.
 async function concurrencyStep(run: Run): Promise<Done> {
 	const { session } = run;
 	const { gmail, traffic } = mailbox(session);
@@ -1509,6 +1528,7 @@ async function concurrencyStep(run: Run): Promise<Done> {
 			),
 		);
 		const statuses: Record<string, number> = {};
+		const noAnswer: string[] = [];
 		for (const result of results) {
 			const status =
 				result.status === "fulfilled"
@@ -1517,13 +1537,20 @@ async function concurrencyStep(run: Run): Promise<Done> {
 						? result.reason.status
 						: 0;
 			statuses[String(status)] = (statuses[String(status)] ?? 0) + 1;
+			if (result.status === "rejected" && status === 0) noAnswer.push(whyUnanswered(result.reason));
+		}
+		if (noAnswer.length > 0) {
+			const why = [...new Set(noAnswer)].join(", ");
+			throw new Error(
+				`${noAnswer.length} of ${burst.parallel} parallel ${burst.call} requests failed without an answer from Gmail (${why}): not Gmail's limit, so nothing was recorded; rerun concurrency`,
+			);
 		}
 		rounds.push({ ...burst, statuses });
 		const refused = results.find(
 			(result): result is PromiseRejectedResult =>
 				result.status === "rejected" &&
 				result.reason instanceof GmailError &&
-				result.reason.outcome.kind === "retry",
+				isRateLimit(result.reason),
 		);
 		if (refused !== undefined) {
 			const error = refused.reason as GmailError;
