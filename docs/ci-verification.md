@@ -11,6 +11,10 @@ aggregation. A ready PR with non-doc changes runs the Windows default
 verification job as well as the applicable Linux jobs. Docs-only PRs use the
 docs profile; draft PRs skip the full and Windows jobs. The receipt records those
 skips explicitly, so a green aggregate does not turn a skipped job into a pass.
+Draft runs name the aggregate `required (draft)` and ready runs name it `required`.
+The milestone branches' merge rule requires `required`, `pr-title` and a `review`
+status that the integration owner sets on the reviewed head, so a draft run's
+result never lets a PR merge.
 
 The receipt covers jobs in this `ci` run. Other workflows, item-specific heavy
 checks not selected by it, live/device checks, platform acceptance and owner
