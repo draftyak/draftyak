@@ -1,0 +1,53 @@
+name: Tool plugin or tool kind proposal
+description: Propose a hub-planned lookup; a new tool kind requires an RFC.
+title: "feat(tools): "
+labels: ["type:proposal", "plugin:tool", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tools perform hub-planned lookups before drafting. Message content never reaches tool inputs.
+        Use public links and synthetic examples. Never include secret calendar links or credentials.
+  - type: dropdown
+    id: proposal_type
+    attributes:
+      label: Proposal type
+      options:
+        - Plugin for an existing tool kind
+        - New tool kind requiring an RFC
+    validations:
+      required: true
+  - type: input
+    id: kind
+    attributes:
+      label: Tool kind and proposed plugin name
+    validations:
+      required: true
+  - type: textarea
+    id: rfc
+    attributes:
+      label: RFC or existing kind
+      description: For a new kind, link its RFC discussion; an RFC is required before implementation. Otherwise name the existing kind and link its contract.
+    validations:
+      required: true
+  - type: textarea
+    id: inputs
+    attributes:
+      label: Inputs and binding sources
+      description: List each argument and its hub-verified metadata, owner setting, clock or constant source. SMS sender numbers and message content are never valid inputs.
+    validations:
+      required: true
+  - type: textarea
+    id: data_flow
+    attributes:
+      label: Data flow, consent and retention
+      description: List hosts, destination class, training posture, fields, probes and triggers, result classes and allowed AI destinations. Results stay in memory for at most 10 minutes, and only for that draft job when an argument is Slack-derived; they are never stored or backed up. Include provider policies.
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests and safety boundaries
+      description: Cover schema validation, input binding, denied egress, no send or approval powers and content-free fixtures.
+    validations:
+      required: true

@@ -1,0 +1,28 @@
+name: Documentation issue
+description: Report an unclear, missing or incorrect explanation.
+title: "docs: "
+labels: ["type:docs", "area:docs", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: Keep message content, credentials and personal information out of this public form.
+  - type: input
+    id: location
+    attributes:
+      label: Page or file
+      description: Link the page and section, or give the repository path and version.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is unclear or incorrect?
+    validations:
+      required: true
+  - type: textarea
+    id: correction
+    attributes:
+      label: Suggested correction
+      description: Include public sources if they help. If you do not know the correction, describe what you needed to learn.
+    validations:
+      required: true

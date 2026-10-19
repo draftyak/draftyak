@@ -1,0 +1,12 @@
+# GitHub form and chooser syntax (read 2026-10-17):
+# https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms
+# https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-githubs-form-schema
+# https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+blank_issues_enabled: false
+contact_links:
+  - name: Questions, ideas, RFCs and plugin showcase
+    url: https://github.com/draftyak/draftyak/discussions
+    about: Ask for help or discuss a proposal before filing an implementation request.
+  - name: Private security report
+    url: https://github.com/draftyak/draftyak/security/advisories/new
+    about: Report vulnerabilities privately; never post exploit details or private data in an issue.

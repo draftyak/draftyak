@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose a change to DraftYak's behavior.
+title: "feat: "
+labels: ["type:feature", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues and [Ideas](https://github.com/draftyak/draftyak/discussions) first.
+        Use synthetic examples and keep private information out of this public form.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and who it affects
+      description: Describe the task you cannot complete and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Include how the change preserves explicit approval and local-first data routing.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs
+    validations:
+      required: true
+  - type: input
+    id: discussion
+    attributes:
+      label: Related discussion or RFC
+      description: Link a discussion if one exists. Broad design changes should start as an RFC.

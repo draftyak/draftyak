@@ -1,0 +1,93 @@
+- name: good first issue
+  color: "7057ff"
+  description: A scoped task with enough guidance for a first contribution.
+- name: help wanted
+  color: "008672"
+  description: Maintainers welcome contributions on this task.
+- name: needs-changeset
+  color: "fbca04"
+  description: A publishable-package change needs a changeset.
+- name: security-sensitive
+  color: "b60205"
+  description: Changes cross a security-sensitive path or policy boundary.
+- name: breaking-change
+  color: "d93f0b"
+  description: Changes require users or plugin authors to migrate.
+- name: type:bug
+  color: "d73a4a"
+  description: Existing behavior does not match its intended behavior.
+- name: type:feature
+  color: "a2eeef"
+  description: A request for new or changed product behavior.
+- name: type:proposal
+  color: "d4c5f9"
+  description: A design or integration proposal awaiting review.
+- name: type:docs
+  color: "0075ca"
+  description: Documentation, examples or community guidance.
+- name: type:maintenance
+  color: "cfd3d7"
+  description: Maintenance, dependencies or repository housekeeping.
+- name: type:test
+  color: "bfdadc"
+  description: Test coverage, fixtures or verification tooling.
+- name: area:hub
+  color: "1d76db"
+  description: Hub state, scheduling and coordination.
+- name: area:desktop
+  color: "1d76db"
+  description: Desktop app, pairing and PIN approval.
+- name: area:mobile
+  color: "1d76db"
+  description: Mobile read, draft and organization clients.
+- name: area:sms-host
+  color: "1d76db"
+  description: Android SMS host and phone-to-hub protocol.
+- name: area:sdk
+  color: "1d76db"
+  description: Plugin SDKs, contracts and testkits.
+- name: area:python
+  color: "1d76db"
+  description: Python plugins, bundles and runtime.
+- name: area:mcp
+  color: "1d76db"
+  description: MCP tools and first-party read-only surfaces.
+- name: area:api
+  color: "1d76db"
+  description: Public API contracts and access control.
+- name: area:ai
+  color: "1d76db"
+  description: Drafting providers, prompts and routing.
+- name: area:channel
+  color: "1d76db"
+  description: Channel integrations and provider operations.
+- name: area:docs
+  color: "1d76db"
+  description: User, contributor and policy documentation.
+- name: area:ci
+  color: "1d76db"
+  description: CI, release gates and supply-chain checks.
+- name: plugin:channel
+  color: "5319e7"
+  description: A channel plugin or channel plugin contract.
+- name: plugin:ai
+  color: "5319e7"
+  description: A drafting-provider plugin or its contract.
+- name: plugin:tool
+  color: "5319e7"
+  description: A lookup tool plugin or tool kind.
+- name: status:triage
+  color: "ededed"
+  description: Awaiting initial maintainer review.
+- name: status:needs-info
+  color: "fbca04"
+  description: More information is needed before work can proceed.
+- name: status:accepted
+  color: "0e8a16"
+  description: The proposal or task has an agreed scope.
+- name: status:in-progress
+  color: "0052cc"
+  description: Someone is actively working on the task.
+- name: status:blocked
+  color: "b60205"
+  description: Work depends on an unresolved decision or prerequisite.
