@@ -1,4 +1,5 @@
 export * from "./admin.ts";
+export * from "./agent-session.ts";
 export * from "./hub-key-rotate.ts";
 export * from "./login.ts";
 export * from "./pair-confirm.ts";

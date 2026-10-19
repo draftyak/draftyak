@@ -118,7 +118,50 @@ example and extra vectors; Rust document discovery follows TYPES.
 
 ### Agent-session statement
 
-M1.19 defines agent-session.v1 and its exact fields and authority.
+`agent-session.v1` uses the common device fields and two-minute challenge lifetime.
+It additionally signs:
+
+- `session`: the ULID of the immutable pending session operation.
+- `principal`: `{kind:'grant'|'token', id:<ULID>}` for the exact agent credential.
+- `account`: the exact account ULID, with no wildcard or implicit account expansion.
+- `toolClass`: `read`, `draft` or `organize`.
+- `authorization`: either `{kind:'session', durationMs}` with exactly 900000,
+  3600000 or 28800000 milliseconds, or `{kind:'call', method, paramsDigest,
+  validForMs:600000, singleUse:true}`. Per-call methods are `tools/call` and
+  `resources/read`; a resource read requires class `read`. The digest is the
+  [MCP parameter digest](mcp-surface-v1.md), binding the exact target and arguments.
+
+The access lifetime starts when the hub accepts the statement, separately from
+the signing challenge's `exp`. Gmail and SMS default to fifteen minutes, other
+accounts to one hour; eight hours requires an explicit owner choice. A pending
+record must bind every field and display the selected method and target for
+per-call approval. Schemas and signatures cannot establish that review occurred.
+
+`AgentSessionReviewSubject` is the closed TS and Rust review shape: `principal`,
+`account`, `toolClass` and `authorization`. A session authorization contains the
+same `kind` and `durationMs` as the statement. A call authorization contains the
+statement's call fields plus `target`: a first-party tool name for `tools/call`,
+or one of the four canonical data-resource URIs for `resources/read`. The target
+must agree with the tool class. It never holds a subject, sender or other mailbox
+text. The hub derives it from the same immutable validated params whose digest
+the statement signs; the native window displays the method and target together.
+
+`matchesAgentSessionPending(statement, {session, subject})` in TS and
+`AgentSessionStatement::matches_pending(session, subject)` in Rust validate both
+inputs and compare the operation ID, principal kind and ID, account, tool class
+and every signed authorization field. The displayed target is review data, not
+an additional signed field: consumers must retain its binding to those immutable
+params. These helpers check neither a signature nor current authority, clocks or
+single-use consumption. M1.26 adds this subject and statement to its review and
+challenge unions when its device contract lands.
+
+Acceptance requires the real current device/PIN gate and atomic challenge
+consumption. The hub must re-read current principal, account, routing and device
+rights within the write transaction, match the immutable pending operation and
+store the grant with its wall/monotonic deadlines. Per-call authority is spent
+once, only on the bound method and digest, within ten minutes. Revocation,
+epoch changes and expiration invalidate access; retries and an accepted account
+form grant no authority. Agent sessions never approve a send or mint a ticket.
 
 ### Consent statement
 
