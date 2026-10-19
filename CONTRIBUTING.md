@@ -1,6 +1,6 @@
 # Contributing to DraftYak
 
-DraftYak is in its first milestone, M0 (workspace bootstrap and spikes), and the repository stays private until launch. This guide covers what exists today and names the milestone for anything still to come. [AGENTS.md](AGENTS.md) has the repository map, every command and the full work rules.
+DraftYak is in its first milestone, M0 (workspace bootstrap and spikes). The repository is public, but nothing is released before launch. This guide covers what exists today and names the milestone for anything still to come. [AGENTS.md](AGENTS.md) has the repository map, every command and the full work rules.
 
 ## Licence and sign-off
 
@@ -67,7 +67,7 @@ Changes to these paths get careful review, and code there needs tests in the sam
 - in M0: `.github/` and `tools/ci-checks/` (M0.3), `tools/vendor-guard/` (M0.4), `tools/fetch-node/` (M0.5), `spikes/kit/env-live.ts` and `spikes/kit/evidence.ts` (M0.6a), the S12 privacy gate (`spikes/s12-sms/schema/` and `spikes/s12-sms/src/receive-report.ts`, M0.36; the probe's report serializer and manifest, M0.37a) and the supply-chain settings in `pnpm-workspace.yaml` (M0.1);
 - from M1 on, as they arrive: `packages/{protocol,mime,extensions,runtime-python}/`, `crates/`, `security/`, the hub's security modules under `apps/hub/src/` (key manager, audit, identity, authz, policy, accounts, plugins, devicehost, tools, outbox, mcp, oauth-as, api), `apps/{mcp-apps,sms-host}/` and `tools/{release-guard,android-manifest-guard,egress-recorder,sign-sms-host}/`.
 
-CODEOWNERS and SECURITY.md arrive in M11. Until then, report a suspected vulnerability to the owner privately, never in an issue or PR.
+CODEOWNERS arrives in M11. To report a suspected vulnerability, follow [SECURITY.md](SECURITY.md): report it privately, never in an issue or PR.
 
 ## Adding a channel
 
