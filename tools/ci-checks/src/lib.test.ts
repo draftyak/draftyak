@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { cliArgs, revision, setOutputs, UsageError } from "./lib.ts";
+import { cliArgs, execAsync, revision, setOutputs, UsageError } from "./lib.ts";
 
 describe("ci-checks", () => {
 	it("imports only node: built-ins and relative files, so checks run before pnpm install", () => {
@@ -32,6 +32,16 @@ describe("ci-checks", () => {
 		for (const value of ["--output=x", "", undefined, "a b"]) {
 			expect(() => revision(value, "base")).toThrow(UsageError);
 		}
+	});
+
+	it("runs a command without blocking and rejects with its stderr or exit code", async () => {
+		const node = (code: string): Promise<string> => execAsync(process.execPath, ["-e", code]);
+		await expect(node("process.stdout.write('out')")).resolves.toBe("out");
+		await expect(node("process.stderr.write('no access\\n'); process.exit(3)")).rejects.toThrow(
+			/ -e .+: no access$/,
+		);
+		await expect(node("process.exit(4)")).rejects.toThrow(/: exit code 4$/);
+		await expect(execAsync("draftyak-missing-command", [])).rejects.toThrow("ENOENT");
 	});
 
 	const dir = mkdtempSync(path.join(tmpdir(), "draftyak-outputs-"));
