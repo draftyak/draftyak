@@ -13,7 +13,7 @@ class PrivacyTest {
     private val corpus = TestFiles.corpus
     private fun strings(key: String) = TestFiles.corpusStrings(key)
     private val otherAddresses = strings("numbers") + strings("senders") + strings("emails") +
-        strings("names") + listOf("", "+1555555010", "+155555501000", "15555550100", "5555550100")
+        strings("names") + listOf("", "+1555555010", "+155555501000", "15555550100", "5555550101")
     private val texts = strings("messages") + strings("otp") + strings("names") +
         strings("addresses") + strings("emails") + strings("threadIds")
     private val refused = listOf(
@@ -46,16 +46,40 @@ class PrivacyTest {
     }
 
     @Test
-    fun `the second number matches only itself, with visual separators ignored`() {
+    fun `the second number matches itself and its national form, with visual separators ignored`() {
         val second = Reports.secondNumber
         val forms = listOf("+15555550100", "+1 555 555 0100", "+1 (555) 555-0100")
-        for (same in forms + "+1.555.555.0100") {
+        val national = listOf("5555550100", "555 555 0100", "(555) 555-0100", "555/555-0100")
+        for (same in forms + "+1.555.555.0100" + national) {
             assertTrue(same, second.matches(same))
         }
-        for (other in otherAddresses + listOf("5555550100", "15555550100", "+15555550101")) {
+        val near = listOf(
+            "15555550100", "1 (555) 555-0100", "+15555550101", "5555550101", "555550100",
+            "55555501000", "555-0100", "+5555550100",
+        )
+        for (other in otherAddresses + near) {
             assertFalse(other, second.matches(other))
         }
         assertEquals("SecondNumber", second.toString())
+    }
+
+    @Test
+    fun `a national form matches only when worked out exactly from a number saved with +1`() {
+        // Saved without the +1, the number matches only those digits.
+        val national = SecondNumber.of("(555) 555-0100")!!
+        assertTrue(national.matches("5555550100"))
+        for (other in listOf("+15555550100", "15555550100", "+5555550100")) {
+            assertFalse(other, national.matches(other))
+        }
+        val otherCountry = SecondNumber.of("+44 7700 900100")!!
+        assertTrue(otherCountry.matches("+447700900100"))
+        for (other in listOf("07700900100", "7700900100", "447700900100")) {
+            assertFalse(other, otherCountry.matches(other))
+        }
+        for (notTen in listOf("+1555555010", "+155555501000")) {
+            assertFalse(notTen, SecondNumber.of(notTen)!!.matches(notTen.drop(2)))
+        }
+        assertNotNull(row("(555) 555-0100", "DYTEST-sms reply from second"))
     }
 
     @Test
