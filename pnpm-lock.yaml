@@ -303,6 +303,16 @@ importers:
 
   tools/fetch-node: {}
 
+  tools/mcpb:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+    devDependencies:
+      '@cfworker/json-schema':
+        specifier: 4.1.1
+        version: 4.1.1
+
   tools/vendor-guard: {}
 
   tools/verify: {}
