@@ -6,8 +6,8 @@ import { contentHash, fingerprint, SendSnapshotV1, sendWindow } from "../src/sna
 
 it("every declarative snapshot refusal is also refused by its full exported union", () => {
 	const validator = new Validator(jsonSchemaOf(SendSnapshotV1) as Schema, "2020-12", false);
-	// NFC and leap-calendar validity are semantic checks unavailable to this declarative shape.
-	const semantic = new Set(["nfd-body", "nfd-footer", "wall-2027-02-29T00:00+00:00"]);
+	// NFC normalization requires the implementation; calendar validity is in the shared pattern.
+	const semantic = new Set(["nfd-body", "nfd-footer"]);
 	for (const vector of snapshotVectors())
 		expect(validator.validate(vector.snapshot).valid, vector.id).toBe(
 			!vector.error || semantic.has(vector.id),

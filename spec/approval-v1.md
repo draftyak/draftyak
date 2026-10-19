@@ -38,8 +38,8 @@ or authorization value. The full content hash binds approval.
 IANA zone name, `YYYY-MM-DDTHH:mm±HH:MM` local display time, `latenessSec` in
 `{900,3600,14400,86400}` and `holdIfNewInbound`. The snapshot validator checks zone-name syntax,
 calendar date and offset syntax. Zone existence, DST and display-time/instant agreement are
-checked by schedule resolution before approval. JSON Schema covers the declarative shape;
-NFC and calendar validation additionally require the shared implementation.
+checked by schedule resolution before approval. JSON Schema covers calendar dates,
+offset syntax and the declarative shape; NFC additionally requires the shared implementation.
 
 `sendWindow(snapshot, iat)` returns `{deliverBy: iat + 900000}` for now, omitting `notBefore`.
 For scheduled sends it returns `{notBefore, deliverBy: notBefore + latenessSec * 1000}`.
@@ -71,9 +71,9 @@ not identify it, since more than one valid ECDSA signature can sign the same inp
 `outbox`, `candidate`, `login` and `op` are ULIDs; digests and transport pins are full
 lower-case SHA-256 hex. Login binds the native pending browser-login record's digest;
 admin binds the immutable pending operation's digest. Each digest is the lower-case
-SHA-256 of the exact JCS of its immutable pending record. M4.8 owns the browser-login
-record shape, M4.13 owns the admin-open record shape, and M2.3 owns their authorization
-handoff. Those owners must specify the complete reviewed record before implementing
+SHA-256 of the exact JCS of its immutable pending record. The record shapes follow
+the plan's §7 Browsers for login and §8 Commands for `admin_open`; their consuming
+verification follows §9.3 Verification. Those native flows must specify the complete reviewed record before implementing
 consumption; no caller-supplied opaque digest substitutes for re-hashing that record. The pair confirmation binds the
 candidate's actual canonical approval SPKI and the exact ordered capability array,
 which must be nonempty, unique and drawn from `read`, `draft`, `organize`, `approve`,
@@ -103,7 +103,7 @@ parsing or signature verification alone never replaces a pin.
 The PIN travels beside a device statement in its protected transport, never in the
 signed body, a log or stored statement. Unregistered statement types have no generic
 positive fallback. TypeScript registers one export line in statements/registry.ts;
-Rust registers one macro line in statements/mod.rs. Each type owns its generator
+Rust registers one plain `pub mod` line and one registration line in statements/mod.rs. Each type owns its generator
 example and extra vectors; Rust document discovery follows TYPES.
 
 ### Agent-session statement
@@ -190,14 +190,6 @@ access.exposure-enable covers changes to publicBaseUrl and trusted proxies as pa
 of the reviewed exposure configuration; it does not bypass their native policy.
 ADMIN_GROUPS has an empty SMS group so later contracts add each kind once.
 
-### S4 access kinds
-
-M1.20 adds ADR 0006's explicit kinds to the access group; consent is not a wildcard.
-
-### SMS admin kinds
-
-M1.23 adds the SMS group's explicit kinds; the current empty group accepts none.
-
 Desktop operations use `admin_open` to create an immutable pending operation, then
 the trusted window reviews it and signs `admin.v1` with the PIN. CLI admin operations
 use control-socket peer credentials plus the PIN and audit `actor=cli`, unsigned.
@@ -205,6 +197,14 @@ Restore is a pre-init recovery-code operation. Revocation, disable, quarantine,
 tightening, cancellation and the kill switch are never admin operations. They must
 remain available through their narrower authenticated authority without demanding
 an approval that the operation is intended to remove.
+
+### S4 access kinds
+
+M1.20 adds ADR 0006's explicit kinds to the access group; consent is not a wildcard.
+
+### SMS admin kinds
+
+M1.23 adds the SMS group's explicit kinds; the current empty group accepts none.
 
 ## Schedule and clock rule
 

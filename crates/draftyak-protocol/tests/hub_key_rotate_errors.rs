@@ -1,4 +1,4 @@
-﻿use draftyak_protocol::statements::hub_key_rotate::HubKeyRotateStatement;
+use draftyak_protocol::statements::hub_key_rotate::HubKeyRotateStatement;
 use serde_json::{Value, json};
 
 const ROTATE: &str = include_str!("../../../spec/vectors/statements/hub-key-rotate.v1.json");
