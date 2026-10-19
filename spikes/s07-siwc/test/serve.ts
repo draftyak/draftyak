@@ -9,7 +9,9 @@ export interface Served {
 }
 
 // A fetch-style handler on 127.0.0.1:<random>. Response bodies stream as they are produced, and a
-// body that errors drops the connection mid-response, as a failing upstream would.
+// body that errors drops the connection mid-response, as a failing upstream would. Every response
+// closes its connection: on a loaded machine a client could otherwise reuse a kept-alive socket just
+// as the server's 5 s keep-alive timeout closes it, and the request would fail.
 export async function serve(handler: Handler): Promise<Served> {
 	const server = createServer(async (incoming, outgoing) => {
 		const chunks: Buffer[] = [];
@@ -34,6 +36,7 @@ export async function serve(handler: Handler): Promise<Served> {
 		response.headers.forEach((value, name) => {
 			outgoing.setHeader(name, value);
 		});
+		outgoing.setHeader("connection", "close");
 		try {
 			for await (const chunk of response.body ?? []) {
 				await new Promise((resolve) => outgoing.write(chunk, resolve));
