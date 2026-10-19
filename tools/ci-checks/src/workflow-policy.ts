@@ -52,6 +52,22 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 		problems.push(`${file}${scalar ? `:${scalar.line}` : ""}: ${message}`);
 	};
 	const workflow = asMap(doc.value);
+	if (file === ".github/workflows/ci.yml") {
+		const checkFailurePolicy = (value: Yaml, at: YamlPath): void => {
+			if (Array.isArray(value)) {
+				for (const [index, entry] of value.entries()) checkFailurePolicy(entry, [...at, index]);
+			} else if (isMap(value)) {
+				for (const [key, entry] of Object.entries(value)) {
+					const child = [...at, key];
+					if (key === "continue-on-error") {
+						report(child, "ci.yml must not contain continue-on-error");
+					}
+					checkFailurePolicy(entry, child);
+				}
+			}
+		};
+		checkFailurePolicy(doc.value, []);
+	}
 
 	if (!readOnly(workflow.permissions)) {
 		report(["permissions"], "top-level permissions must be exactly `contents: read`");
@@ -115,13 +131,21 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				.split("\n")
 				.map((line) => line.trim())
 				.filter(Boolean);
+			const receipt =
+				file === ".github/workflows/ci.yml" &&
+				job === "required" &&
+				uploads.length === 1 &&
+				uploads[0] === `\${{ runner.temp }}/ci-verification.json` &&
+				inputs["retention-days"] === 7 &&
+				inputs["if-no-files-found"] === "error";
 			if (
 				action === "actions/upload-artifact" &&
+				!receipt &&
 				(uploads.length === 0 || uploads.some((p) => !evidence.test(p) || p.includes("..")))
 			) {
 				report(
 					at,
-					"upload-artifact may only upload spikes/*/evidence/, never an installable build",
+					"upload-artifact may only upload spikes/*/evidence/ or the fixed CI receipt, never an installable build",
 				);
 			}
 			for (const [expression, body = ""] of String(step.run ?? "").matchAll(expressions)) {
