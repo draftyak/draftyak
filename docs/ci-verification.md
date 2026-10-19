@@ -35,6 +35,8 @@ records the classifier selection: `areas`, `rust`, `spikes`, `heavy` and
 proof of execution: effective template-smoke selection also depends on the
 event/base, and the heavy step has its own condition. A successful `full` job
 does not establish that its conditional Rust, heavy or template-smoke steps ran.
+Branches without product-heavy or template-smoke steps report `heavy: []` and
+`templateSmoke: false`; their touched-spike heavy selection remains in `spikes`.
 Detailed output and step conclusions stay in GitHub's job records. A failure or
 cancellation remains visible even when the reporting step completes.
 
@@ -61,13 +63,14 @@ which jobs ran and how they ended; the receipt is their compact summary.
    gh pr diff <pr> --name-only
    ```
 
-   Review changes to any of the following first, then run the affected checks
-   locally instead of reusing the receipt:
+   Review changes to any tool, configuration or shared test helper a CI step
+   runs or reads from the PR checkout to decide what runs, skips or passes.
+   Run the affected checks locally instead of reusing the receipt. Examples:
 
-   - `.github/`, `tools/ci-checks/` or `tools/verify/`;
+   - `.github/`, `tools/{ci-checks,verify,vendor-guard,adr-check}/` or `spikes/kit/`;
    - root or package `package.json` scripts, or any `turbo.json`;
    - `vitest.shared.ts`, Vitest configs, `biome.json` or `tsconfig*`;
-   - `pnpm-workspace.yaml`, `.node-version` or `rust-toolchain.toml`.
+   - `pnpm-workspace.yaml`, `.node-version`, `rust-toolchain.toml` or `crates/deny.toml`.
 
    These files can change what runs or how a result is reported. A matching
    receipt or a green job cannot validate those changes on its own.

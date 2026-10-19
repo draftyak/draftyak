@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { tempRepo } from "../test/temp-repo.ts";
+import { areaNames, classify } from "./changes.ts";
 import { UsageError } from "./lib.ts";
 import {
 	buildReceipt,
@@ -430,14 +431,19 @@ describe("verification receipt selection metadata", () => {
 		"[null]",
 		'["ts", "ts"]',
 		'["TS"]',
-		'["unknown"]',
+		'["unknown area"]',
 		'["ts\\nworkflows"]',
 		'["ts\\n"]',
 		'["heavy:./packages/protocol\\n"]',
-		'["heavy:...{./tools/verify}"]',
+		'["heavy:...{./apps/../hub}"]',
 		'["rust:crates/../outside"]',
-		'["spikes/s01-sqlite3mc/extra"]',
-	])("refuses malformed, non-string, duplicate or unallowlisted areas %#", (areas) => {
+		'["python:./apps/./hub"]',
+		'["android-host:apps//hub"]',
+		'["heavy:...{./apps/..}"]',
+		'["heavy:...{./apps/.}"]',
+		'["rust:apps/Hub"]',
+		'["spikes/../outside"]',
+	])("refuses malformed, non-string, duplicate or unsafe areas %#", (areas) => {
 		expect(() => selected({ areas })).toThrow(UsageError);
 	});
 
@@ -462,22 +468,23 @@ describe("verification receipt selection metadata", () => {
 		["rust", "/crates"],
 		["rust", "crates\\member"],
 		["rust", "Crates/member"],
-		["rust", "packages/protocol"],
-		["rust", "spikes"],
+		["rust", "apps/hub/../native"],
+		["rust", "apps/Hub/native"],
 		["rust", "crates\n\ncrates/member"],
 		["rust", "crates\n"],
 		["rust", "crates\ncrates"],
 		["rust", '["crates"]'],
-		["spikes", "spikes/s01-sqlite3mc/extra"],
+		["spikes", "apps/hub/../probe"],
 		["spikes", "spikes/../outside"],
 		["spikes", "spikes//s01"],
 		["spikes", "spikes/S01"],
 		["spikes", "spikes/s01\nspikes/s01"],
 		["spikes", '["spikes/s01"]'],
-		["heavy", "./apps/hub"],
-		["heavy", "./tools/ci-checks"],
-		["heavy", "...{./tools/verify}"],
-		["heavy", "./packages/protocol/extra"],
+		["heavy", "./apps/Hub"],
+		["heavy", "./apps/./hub"],
+		["heavy", "...{./apps/../hub}"],
+		["heavy", "...{./apps/..}"],
+		["heavy", "...{./apps/.}"],
 		["heavy", "./packages/../protocol"],
 		["heavy", "./packages//protocol"],
 		["heavy", "./packages/Protocol"],
@@ -523,6 +530,76 @@ describe("verification receipt selection metadata", () => {
 		]);
 		expect(receipt.selection?.spikes).toEqual(["spikes/s05_desktop"]);
 		expect(receipt.selection?.heavy).toEqual(["...{./packages/protocol_v1}"]);
+	});
+
+	it("records new area names and repository paths without a classifier vocabulary update", () => {
+		const areas = [
+			"python",
+			"android-host",
+			"rust:apps/android-host/native",
+			"python:packages/runtime-python",
+			"android-host:apps/android-host",
+			"apps/android-host/probe",
+			"heavy:./apps/hub",
+			"heavy:...{./apps/android-host}",
+		];
+		const receipt = selected({
+			areas: JSON.stringify(areas),
+			rust: "apps/android-host/native\ntools/verification/native.workspace",
+			spikes: "apps/android-host/probe\nexperiments/python-runtime",
+			heavy: "./apps/hub\n...{./apps/android-host}\n./tools/ci-checks",
+		});
+		expect(receipt.selection).toEqual({
+			areas,
+			rust: ["apps/android-host/native", "tools/verification/native.workspace"],
+			spikes: ["apps/android-host/probe", "experiments/python-runtime"],
+			heavy: ["./apps/hub", "...{./apps/android-host}", "./tools/ci-checks"],
+			templateSmoke: false,
+		});
+	});
+
+	it("records the area names and suite selection produced by the actual classifier", () => {
+		const repo = tempRepo();
+		try {
+			const fixture = {
+				"apps/android-host/native/Cargo.toml": "[workspace]\nmembers = []\n",
+				"spikes/native-probe/package.json": "{}",
+				"spikes/native-probe/rust/Cargo.toml": "[workspace]\nmembers = []\n",
+				"packages/receipt-probe/package.json": '{"scripts":{"test:heavy":"test"}}',
+			};
+			for (const [file, content] of Object.entries(fixture)) repo.write(file, content);
+			const files = [
+				".github/workflows/check.yml",
+				"apps/android-host/native/src/lib.rs",
+				"spikes/native-probe/rust/src/lib.rs",
+				"packages/receipt-probe/src/index.ts",
+			];
+			const manifests = Object.keys(fixture).filter((file) => file.endsWith("Cargo.toml"));
+			const classified = classify(files, repo.dir, () => manifests);
+			const heavy =
+				"heavy" in classified && Array.isArray(classified.heavy) ? classified.heavy : [];
+			const templateSmoke = "templateSmoke" in classified && classified.templateSmoke === true;
+			const jobs = needs(classified.docsOnly);
+			Object.assign(jobs.changes.outputs, {
+				areas: JSON.stringify(areaNames(classified)),
+				rust: classified.rust.join("\n"),
+				spikes: classified.spikes.join("\n"),
+				heavy: heavy.join("\n"),
+				"template-smoke": String(templateSmoke),
+			});
+			const receipt = buildReceipt(input({}, jobs));
+			expect(receipt.passed).toBe(true);
+			expect(receipt.selection).toEqual({
+				areas: areaNames(classified),
+				rust: classified.rust,
+				spikes: classified.spikes,
+				heavy,
+				templateSmoke,
+			});
+			expect(receipt.selection?.areas).toContain("rust:apps/android-host/native");
+		} finally {
+			repo.remove();
+		}
 	});
 
 	it.each([
