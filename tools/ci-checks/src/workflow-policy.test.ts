@@ -76,6 +76,127 @@ describe("workflow policy", () => {
 		});
 	});
 
+	it("runs Windows on ready non-doc PRs and captures the tested source in every contributing job", () => {
+		const ci = (
+			parseYaml(read(".github/workflows/ci.yml")).value as {
+				jobs: Record<
+					string,
+					{
+						if?: string;
+						outputs?: Record<string, string>;
+						steps: Record<string, unknown>[];
+					}
+				>;
+			}
+		).jobs;
+		expect(ci.windows?.if).toBe(
+			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft))",
+		);
+		expect(ci.windows?.steps.at(-1)).toEqual({
+			run: "pnpm verify",
+			env: { TURBO_CONCURRENCY: "1" },
+		});
+		for (const name of ["changes", "cheap", "full", "windows"]) {
+			const job = ci[name];
+			expect(job?.outputs?.source, name).toBe(`\${{ steps.source.outputs.source }}`);
+			const steps = job?.steps ?? [];
+			expect(steps[0], name).toMatchObject({
+				with: { ref: `\${{ github.sha }}`, "persist-credentials": false },
+			});
+			const capture = steps.findIndex((step) => step.id === "source");
+			expect(capture, name).toBe(2);
+			expect(steps[capture], name).toEqual({
+				id: "source",
+				run: "node tools/ci-checks/src/verification-receipt.ts capture",
+			});
+		}
+		expect(ci.required?.steps.at(-2)).toMatchObject({
+			run: "node tools/ci-checks/src/verification-receipt.ts report",
+			env: {
+				CI_NEEDS: `\${{ toJSON(needs) }}`,
+				CI_HEAD_SHA: `\${{ github.event.pull_request.head.sha || github.sha }}`,
+				CI_BASE_SHA: `\${{ github.event.pull_request.base.sha || github.event.before }}`,
+				CI_PR_DRAFT: `\${{ github.event.pull_request.draft == true }}`,
+			},
+		});
+		expect(ci.required?.steps.at(-1)).toMatchObject({
+			if: "always()",
+			with: {
+				name: `ci-verification-\${{ github.run_id }}-\${{ github.run_attempt }}`,
+				path: `\${{ runner.temp }}/ci-verification.json`,
+				"if-no-files-found": "error",
+				"retention-days": 7,
+			},
+		});
+	});
+
+	it.each([
+		["another workflow", ".github/workflows/other.yml", (source: string) => source],
+		[
+			"another job",
+			".github/workflows/ci.yml",
+			(source: string) => source.replace("  required:\n", "  report:\n"),
+		],
+		[
+			"a directory",
+			".github/workflows/ci.yml",
+			(source: string) =>
+				source.replace(`\${{ runner.temp }}/ci-verification.json`, `\${{ runner.temp }}/`),
+		],
+		[
+			"a wildcard",
+			".github/workflows/ci.yml",
+			(source: string) =>
+				source.replace(`\${{ runner.temp }}/ci-verification.json`, `\${{ runner.temp }}/*.json`),
+		],
+		[
+			"a second upload path",
+			".github/workflows/ci.yml",
+			(source: string) =>
+				source.replace(
+					`          path: \${{ runner.temp }}/ci-verification.json`,
+					`          path: |\n            \${{ runner.temp }}/ci-verification.json\n            apps/app/src-tauri/target/release/bundle/`,
+				),
+		],
+		[
+			"longer retention",
+			".github/workflows/ci.yml",
+			(source: string) => source.replace("retention-days: 7", "retention-days: 8"),
+		],
+		[
+			"missing-file success",
+			".github/workflows/ci.yml",
+			(source: string) => source.replace("if-no-files-found: error", "if-no-files-found: warn"),
+		],
+	])("refuses receipt uploads with %s", (_, file, mutate) => {
+		const source = read(".github/workflows/ci.yml").replaceAll("\r\n", "\n");
+		expect(checkWorkflow(file, mutate(source), toolchain).join("\n")).toContain("fixed CI receipt");
+	});
+
+	it.each(["true", "false", `\${{ failure() }}`, "[]"])(
+		"refuses job and step continue-on-error: %s in ci.yml regardless of its value",
+		(value) => {
+			const job = workflow(pr).replace(
+				"    runs-on:",
+				`    continue-on-error: ${value}\n    runs-on:`,
+			);
+			const step = workflow(pr, [...checkout, `  continue-on-error: ${value}`]);
+			for (const source of [job, step]) {
+				expect(checkWorkflow(".github/workflows/ci.yml", source, toolchain).join("\n")).toContain(
+					"ci.yml must not contain continue-on-error",
+				);
+				expect(checkWorkflow(".github/workflows/spikes.yml", source, toolchain)).toEqual([]);
+			}
+		},
+	);
+
+	it("refuses continue-on-error outside jobs and steps in ci.yml too", () => {
+		const source = `${workflow(pr)}\ncontinue-on-error: false\n`;
+		expect(checkWorkflow(".github/workflows/ci.yml", source, toolchain).join("\n")).toContain(
+			"ci.yml must not contain continue-on-error",
+		);
+	});
+
 	it("runs spikes.yml on spikes-run/** pushes and dispatch only, and nothing else on those pushes", () => {
 		const triggers = Object.fromEntries(
 			files.map((file) => [
