@@ -38,6 +38,61 @@ describe("recorder", () => {
 		expect(() => createRecorder({ maxBodyBytes: 0 })).not.toThrow();
 	});
 
+	it.each([0, 1, 4, 8, 100])(
+		"keeps a %i-byte prefix across streamed binary chunks",
+		async (cap) => {
+			const recorder = createRecorder({ maxBodyBytes: cap });
+			const chunks = [
+				new Uint8Array([0xff, 0xfe]),
+				new Uint8Array(),
+				new Uint8Array([0x00, 0xc3, 0x28]),
+				new Uint8Array([0x0d, 0x0a, 0x80]),
+			];
+			const sent = new Uint8Array(chunks.flatMap((chunk) => [...chunk]));
+			const body = new ReadableStream<Uint8Array>({
+				start(stream) {
+					for (const chunk of chunks) stream.enqueue(chunk);
+					stream.close();
+				},
+			});
+			const request = new Request(`https://${HOST}/stream`, {
+				method: "POST",
+				body,
+				duplex: "half",
+			} as RequestInit);
+			await Promise.all([recorder.record(request), request.arrayBuffer()]);
+			const [recorded] = recorder.takeRequests();
+			expect(recorded?.body).toEqual(sent.slice(0, cap));
+			expect(recorded?.bodyLength).toBe(sent.byteLength);
+			expect(recorded?.bodySha256).toBe(sha256(sent));
+		},
+	);
+
+	it("drops a failed stream and releases later completed records in arrival order", async () => {
+		const recorder = createRecorder({ maxBodyBytes: 1 });
+		let fail = (): void => {};
+		const body = new ReadableStream<Uint8Array>({
+			start(stream) {
+				stream.enqueue(new Uint8Array([1, 2, 3]));
+				fail = () => stream.error(new Error("synthetic body failure"));
+			},
+		});
+		const first = new Request(`https://${HOST}/failed`, {
+			method: "POST",
+			body,
+			duplex: "half",
+		} as RequestInit);
+		const reading = recorder.record(first);
+		const rejected = expect(reading).rejects.toThrow("synthetic body failure");
+		await recorder.record(new Request(`https://${HOST}/second`));
+		await recorder.record(new Request(`https://${HOST}/third`));
+		expect(recorder.takeRequests()).toEqual([]);
+		fail();
+		await rejected;
+		expect(recorder.takeRequests().map((entry) => entry.path)).toEqual(["/second", "/third"]);
+		expect(recorder.takeRequests()).toEqual([]);
+	});
+
 	it("records an empty body for GET and HEAD", async () => {
 		const recorder = createRecorder();
 		const fake = createFake(bodyApp().app, { host: HOST, recorder });
