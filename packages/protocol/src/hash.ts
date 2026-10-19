@@ -31,15 +31,28 @@ const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const FIELD_VALUE = /^(?:[!-~](?:[\t -~]*[!-~])?)?$/;
 const compare = (a: string, b: string): number => (a < b ? -1 : Number(a > b));
 
+function invalidHeader(code: HeadersErrorCode): never {
+	throw new HeadersError(
+		code,
+		code === "HEADERS_INVALID_NAME"
+			? "a header name is an ASCII token"
+			: "a header value is visible ASCII",
+	);
+}
+
 // The SHA-256 of the JCS of [[name, value], …], names lower-cased, sorted by name and then
 // value (UTF-16 code units), so the order and case of the headers don't matter but every byte does.
 export function headersSha256(headers: HeaderList): string {
-	const pairs = headers.map(([name, value]): [string, string] => {
+	const pairs = headers.map((row: unknown): [string, string] => {
+		if (!Array.isArray(row)) invalidHeader("HEADERS_INVALID_NAME");
+		if (row.length !== 2)
+			invalidHeader(row.length === 1 ? "HEADERS_INVALID_VALUE" : "HEADERS_INVALID_NAME");
+		const [name, value] = row;
 		if (typeof name !== "string" || !TOKEN.test(name)) {
-			throw new HeadersError("HEADERS_INVALID_NAME", `${JSON.stringify(name)} isn't a header name`);
+			invalidHeader("HEADERS_INVALID_NAME");
 		}
 		if (typeof value !== "string" || !FIELD_VALUE.test(value)) {
-			throw new HeadersError("HEADERS_INVALID_VALUE", `the ${name} value isn't visible ASCII`);
+			invalidHeader("HEADERS_INVALID_VALUE");
 		}
 		return [name.toLowerCase(), value];
 	});

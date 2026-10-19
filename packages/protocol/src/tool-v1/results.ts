@@ -24,6 +24,10 @@ function terminator(frame: string | Uint8Array): number {
 // One message from a tool plugin, one line of its stdout: over 64 KiB without its line terminator it
 // is dropped unparsed; otherwise parsed strictly.
 export function parseToolFrame(frame: string | Uint8Array): ToolFrame {
+	// UTF-16 length is a lower bound on UTF-8 bytes; at most two terminator bytes are excluded.
+	if (typeof frame === "string" && frame.length > TOOL_FRAME_MAX_BYTES + 2) {
+		return { status: "dropped", reason: "TOOL_FRAME_TOO_LARGE" };
+	}
 	const bytes = typeof frame === "string" ? Buffer.byteLength(frame, "utf8") : frame.byteLength;
 	if (bytes - terminator(frame) > TOOL_FRAME_MAX_BYTES) {
 		return { status: "dropped", reason: "TOOL_FRAME_TOO_LARGE" };
