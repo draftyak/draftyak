@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T16:23:23.173Z",
+  "recordedAt": "2026-10-19T02:49:59.409Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,14 +11,14 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "888d1a9d15f3c3dcab7e64d3af9535c5a08cbd2a",
+    "commit": "6046ad90a74694f9fccb5ef1a6a460b8bac814d2",
     "dirty": false,
     "load": {
-      "cpuPercent": 20.9,
+      "cpuPercent": 10.7,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 74.8,
-      "concurrentBuilds": 1
+      "memoryUsedPercent": 75,
+      "concurrentBuilds": 0
     }
   },
   "data": {
@@ -43,9 +43,9 @@
         "intervalMs": 150,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 554,
-        "overshootMiB": 42,
-        "timeToKillMs": 912,
+        "peakMiB": 582,
+        "overshootMiB": 70,
+        "timeToKillMs": 909,
         "growerCeilingMiB": null,
         "growerCeilingMs": null
       },
@@ -56,9 +56,9 @@
         "intervalMs": 150,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 552,
-        "overshootMiB": 40,
-        "timeToKillMs": 604,
+        "peakMiB": 554,
+        "overshootMiB": 42,
+        "timeToKillMs": 605,
         "growerCeilingMiB": null,
         "growerCeilingMs": null
       },
@@ -69,11 +69,11 @@
         "intervalMs": 5000,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 1579,
-        "overshootMiB": 1067,
-        "timeToKillMs": 5004,
+        "peakMiB": 1578,
+        "overshootMiB": 1066,
+        "timeToKillMs": 5008,
         "growerCeilingMiB": 1536,
-        "growerCeilingMs": 605
+        "growerCeilingMs": 672
       },
       {
         "mode": "wasm-fast",
@@ -84,9 +84,9 @@
         "killSignal": "SIGKILL",
         "peakMiB": 1578,
         "overshootMiB": 1066,
-        "timeToKillMs": 5008,
+        "timeToKillMs": 5009,
         "growerCeilingMiB": 1536,
-        "growerCeilingMs": 419
+        "growerCeilingMs": 604
       },
       {
         "mode": "arraybuffer",
@@ -95,9 +95,9 @@
         "intervalMs": 150,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 528,
-        "overshootMiB": 16,
-        "timeToKillMs": 604,
+        "peakMiB": 539,
+        "overshootMiB": 27,
+        "timeToKillMs": 603,
         "growerCeilingMiB": null,
         "growerCeilingMs": null
       },
@@ -108,9 +108,9 @@
         "intervalMs": 150,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 530,
-        "overshootMiB": 18,
-        "timeToKillMs": 607,
+        "peakMiB": 554,
+        "overshootMiB": 42,
+        "timeToKillMs": 602,
         "growerCeilingMiB": null,
         "growerCeilingMs": null
       },
@@ -121,11 +121,11 @@
         "intervalMs": 5000,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 1579,
-        "overshootMiB": 1067,
+        "peakMiB": 1580,
+        "overshootMiB": 1068,
         "timeToKillMs": 5008,
         "growerCeilingMiB": 1536,
-        "growerCeilingMs": 601
+        "growerCeilingMs": 701
       },
       {
         "mode": "wasm-fast",
@@ -134,17 +134,17 @@
         "intervalMs": 5000,
         "killedByWatchdog": true,
         "killSignal": "SIGKILL",
-        "peakMiB": 1579,
-        "overshootMiB": 1067,
+        "peakMiB": 1580,
+        "overshootMiB": 1068,
         "timeToKillMs": 5007,
         "growerCeilingMiB": 1536,
-        "growerCeilingMs": 568
+        "growerCeilingMs": 1025
       }
     ],
     "observations": {
-      "planIntervalMaxOvershootMiB": 1067,
-      "fastestGrowthMiBPerSecond": 3666,
-      "projectedMiBPerPlanInterval": 18329
+      "planIntervalMaxOvershootMiB": 1068,
+      "fastestGrowthMiBPerSecond": 2543,
+      "projectedMiBPerPlanInterval": 12715
     },
     "untouched": [
       {
@@ -192,18 +192,18 @@
     ],
     "samplerCost": {
       "lock": {
-        "waitedMs": 29489,
+        "waitedMs": 0,
         "idle": {
           "samples": [
-            15,
-            12.1,
-            13.9,
-            10.9,
-            15.9
+            12.2,
+            6.4,
+            6.1,
+            8.1,
+            12.2
           ],
-          "maxCpuPercent": 15.9,
+          "maxCpuPercent": 12.2,
           "thresholdPercent": 20,
-          "waitedMs": 5049,
+          "waitedMs": 5044,
           "concurrentBuilds": 0
         }
       },
@@ -212,33 +212,33 @@
           "method": "proc-statm",
           "metric": "resident",
           "available": true,
-          "firstMs": 2.368,
+          "firstMs": 0.274,
           "reads": 25,
-          "medianMs": 0.035,
-          "minMs": 0.017,
-          "maxMs": 0.098,
+          "medianMs": 0.005,
+          "minMs": 0.004,
+          "maxMs": 0.039,
           "lastMiB": 43
         },
         {
           "method": "proc-status",
           "metric": "resident",
           "available": true,
-          "firstMs": 0.563,
+          "firstMs": 0.096,
           "reads": 25,
-          "medianMs": 0.019,
-          "minMs": 0.013,
-          "maxMs": 0.113,
+          "medianMs": 0.007,
+          "minMs": 0.005,
+          "maxMs": 0.022,
           "lastMiB": 43
         },
         {
           "method": "ps-rss",
           "metric": "resident",
           "available": false,
-          "firstMs": 3.668,
+          "firstMs": 2.881,
           "reads": 25,
-          "medianMs": 0.857,
-          "minMs": 0.701,
-          "maxMs": 1.717,
+          "medianMs": 0.928,
+          "minMs": 0.775,
+          "maxMs": 1.785,
           "lastMiB": null
         }
       ],
@@ -247,21 +247,21 @@
         "node": "26.12.0",
         "socketpair": {
           "readyMs": {
-            "medianMs": 28.12,
-            "minMs": 24.11,
-            "maxMs": 36.25
+            "medianMs": 26.93,
+            "minMs": 22.87,
+            "maxMs": 32.39
           }
         },
         "fifo": {
           "setupMs": {
-            "medianMs": 1.5,
-            "minMs": 1.43,
-            "maxMs": 4.1
+            "medianMs": 1.62,
+            "minMs": 1.35,
+            "maxMs": 2.48
           },
           "readyMs": {
-            "medianMs": 32,
-            "minMs": 26.38,
-            "maxMs": 34.5
+            "medianMs": 31.74,
+            "minMs": 25.25,
+            "maxMs": 58.74
           }
         }
       }

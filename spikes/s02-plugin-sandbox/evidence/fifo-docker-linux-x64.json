@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-18T16:28:18.435Z",
+  "recordedAt": "2026-10-19T02:52:52.281Z",
   "fingerprint": {
     "os": {
       "platform": "win32",
@@ -11,14 +11,14 @@
       "nodeVersion": "26.12.0",
       "v8Version": "14.6.202.34-node.39"
     },
-    "commit": "888d1a9d15f3c3dcab7e64d3af9535c5a08cbd2a",
+    "commit": "6046ad90a74694f9fccb5ef1a6a460b8bac814d2",
     "dirty": false,
     "load": {
-      "cpuPercent": 39,
+      "cpuPercent": 4.5,
       "cpuCount": 24,
       "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
-      "memoryUsedPercent": 69.7,
-      "concurrentBuilds": 4
+      "memoryUsedPercent": 67.7,
+      "concurrentBuilds": 0
     }
   },
   "data": {
@@ -35,6 +35,7 @@
       "hostFrameTag": "0x1e",
       "maxMessageBytes": 1048576,
       "handleSends": "ten per mode, each ending ENOTSOCK in the plugin, with no byte read by the hub from the FIFO they went over",
+      "endOfFile": "each FIFO the plugin writes ends at end-of-file, through libuv or at its exit through a non-blocking drain until read returns 0, or the hub closes it at a violation",
       "modes": {
         "round-trip": {
           "layout": "stdio",
@@ -71,6 +72,13 @@
     "runs": [
       {
         "node": "26.5.1",
+        "endings": {
+          "eof": 13,
+          "drain": 0,
+          "hub": 1,
+          "error": 0,
+          "open": 0
+        },
         "modes": [
           {
             "mode": "round-trip",
@@ -93,7 +101,32 @@
                 "signal": null,
                 "closed": true
               },
-              "exitMs": 546,
+              "exitMs": 545,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
               "fds": {
                 "before": 19,
                 "after": 19
@@ -214,7 +247,43 @@
                 "signal": null,
                 "closed": true
               },
-              "exitMs": 3054,
+              "exitMs": 3039,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "fd3",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
               "fds": {
                 "before": 19,
                 "after": 19
@@ -264,169 +333,6 @@
               "beforeSpawn": {
                 "ends": 8,
                 "unlinkedFifos": 8,
-                "folderGone": true
-              },
-              "violations": [
-                {
-                  "kind": "handle",
-                  "detail": "NODE_HANDLE"
-                }
-              ],
-              "pluginEnded": {
-                "code": null,
-                "signal": "SIGKILL",
-                "closed": true
-              },
-              "exitMs": 45,
-              "fds": {
-                "before": 19,
-                "after": 19
-              },
-              "bytesRead": {
-                "stdout": 50,
-                "stderr": 0,
-                "fd3": 214
-              },
-              "plugin": [
-                {
-                  "mode": "node-internal",
-                  "attacked": true
-                }
-              ],
-              "roundTrip": null
-            }
-          },
-          {
-            "mode": "reinstate-send",
-            "survived": true,
-            "exitCode": 0,
-            "signal": null,
-            "timedOut": false,
-            "crash": null,
-            "result": {
-              "mode": "reinstate-send",
-              "layout": "stdio",
-              "beforeSpawn": {
-                "ends": 6,
-                "unlinkedFifos": 6,
-                "folderGone": true
-              },
-              "violations": [],
-              "pluginEnded": {
-                "code": 0,
-                "signal": null,
-                "closed": true
-              },
-              "exitMs": 3047,
-              "fds": {
-                "before": 19,
-                "after": 19
-              },
-              "bytesRead": {
-                "stdout": 0,
-                "stderr": 267,
-                "fd3": null
-              },
-              "plugin": [
-                {
-                  "mode": "reinstate-send",
-                  "attacked": true
-                },
-                {
-                  "mode": "reinstate-send",
-                  "reinstated": true,
-                  "attempted": 10,
-                  "failed": 0,
-                  "code": null,
-                  "sendStatus": [
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK"
-                  ]
-                }
-              ],
-              "roundTrip": null
-            }
-          },
-          {
-            "mode": "reinstate-stderr",
-            "survived": true,
-            "exitCode": 0,
-            "signal": null,
-            "timedOut": false,
-            "crash": null,
-            "result": {
-              "mode": "reinstate-stderr",
-              "layout": "stdio",
-              "beforeSpawn": {
-                "ends": 6,
-                "unlinkedFifos": 6,
-                "folderGone": true
-              },
-              "violations": [],
-              "pluginEnded": {
-                "code": 0,
-                "signal": null,
-                "closed": true
-              },
-              "exitMs": 3045,
-              "fds": {
-                "before": 19,
-                "after": 19
-              },
-              "bytesRead": {
-                "stdout": 345,
-                "stderr": 0,
-                "fd3": null
-              },
-              "plugin": [
-                {
-                  "mode": "reinstate-stderr",
-                  "attacked": true
-                },
-                {
-                  "mode": "reinstate-stderr",
-                  "reinstated": true,
-                  "attempted": 10,
-                  "failed": 0,
-                  "code": null,
-                  "sendStatus": [
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK",
-                    "ENOTSOCK"
-                  ]
-                }
-              ],
-              "roundTrip": null
-            }
-          },
-          {
-            "mode": "reinstate-internal",
-            "survived": true,
-            "exitCode": 0,
-            "signal": null,
-            "timedOut": false,
-            "crash": null,
-            "result": {
-              "mode": "reinstate-internal",
-              "layout": "stdio",
-              "beforeSpawn": {
-                "ends": 6,
-                "unlinkedFifos": 6,
                 "folderGone": true
               },
               "violations": [
@@ -441,6 +347,280 @@
                 "closed": true
               },
               "exitMs": 42,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "fd3",
+                  "endedBy": "hub",
+                  "error": null,
+                  "afterExitMs": -1,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
+              "fds": {
+                "before": 19,
+                "after": 19
+              },
+              "bytesRead": {
+                "stdout": 50,
+                "stderr": 0,
+                "fd3": 214
+              },
+              "plugin": [
+                {
+                  "mode": "node-internal",
+                  "attacked": true
+                }
+              ],
+              "roundTrip": null
+            }
+          },
+          {
+            "mode": "reinstate-send",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "reinstate-send",
+              "layout": "stdio",
+              "beforeSpawn": {
+                "ends": 6,
+                "unlinkedFifos": 6,
+                "folderGone": true
+              },
+              "violations": [],
+              "pluginEnded": {
+                "code": 0,
+                "signal": null,
+                "closed": true
+              },
+              "exitMs": 3040,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
+              "fds": {
+                "before": 19,
+                "after": 19
+              },
+              "bytesRead": {
+                "stdout": 0,
+                "stderr": 267,
+                "fd3": null
+              },
+              "plugin": [
+                {
+                  "mode": "reinstate-send",
+                  "attacked": true
+                },
+                {
+                  "mode": "reinstate-send",
+                  "reinstated": true,
+                  "attempted": 10,
+                  "failed": 0,
+                  "code": null,
+                  "sendStatus": [
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK"
+                  ]
+                }
+              ],
+              "roundTrip": null
+            }
+          },
+          {
+            "mode": "reinstate-stderr",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "reinstate-stderr",
+              "layout": "stdio",
+              "beforeSpawn": {
+                "ends": 6,
+                "unlinkedFifos": 6,
+                "folderGone": true
+              },
+              "violations": [],
+              "pluginEnded": {
+                "code": 0,
+                "signal": null,
+                "closed": true
+              },
+              "exitMs": 3037,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
+              "fds": {
+                "before": 19,
+                "after": 19
+              },
+              "bytesRead": {
+                "stdout": 345,
+                "stderr": 0,
+                "fd3": null
+              },
+              "plugin": [
+                {
+                  "mode": "reinstate-stderr",
+                  "attacked": true
+                },
+                {
+                  "mode": "reinstate-stderr",
+                  "reinstated": true,
+                  "attempted": 10,
+                  "failed": 0,
+                  "code": null,
+                  "sendStatus": [
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK",
+                    "ENOTSOCK"
+                  ]
+                }
+              ],
+              "roundTrip": null
+            }
+          },
+          {
+            "mode": "reinstate-internal",
+            "survived": true,
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "crash": null,
+            "result": {
+              "mode": "reinstate-internal",
+              "layout": "stdio",
+              "beforeSpawn": {
+                "ends": 6,
+                "unlinkedFifos": 6,
+                "folderGone": true
+              },
+              "violations": [
+                {
+                  "kind": "handle",
+                  "detail": "NODE_HANDLE"
+                }
+              ],
+              "pluginEnded": {
+                "code": null,
+                "signal": "SIGKILL",
+                "closed": true
+              },
+              "exitMs": 41,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
               "fds": {
                 "before": 19,
                 "after": 19
@@ -478,10 +658,44 @@
             "valid": true,
             "invalidRefused": true
           }
+        },
+        "heldWriter": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "reader": 18,
+            "writer": 24,
+            "exitMs": 26,
+            "killedAtTimeout": false,
+            "held": {
+              "bytes": 0,
+              "result": "EAGAIN"
+            },
+            "holders": [
+              "hub fd 18 r",
+              "hub fd 24 w"
+            ],
+            "released": {
+              "bytes": 0,
+              "result": "eof"
+            },
+            "endedBy": "drain",
+            "bytesRead": 6
+          }
         }
       },
       {
         "node": "26.12.0",
+        "endings": {
+          "eof": 13,
+          "drain": 0,
+          "hub": 1,
+          "error": 0,
+          "open": 0
+        },
         "modes": [
           {
             "mode": "round-trip",
@@ -504,7 +718,32 @@
                 "signal": null,
                 "closed": true
               },
-              "exitMs": 561,
+              "exitMs": 539,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
               "fds": {
                 "before": 19,
                 "after": 19
@@ -625,7 +864,43 @@
                 "signal": null,
                 "closed": true
               },
-              "exitMs": 3048,
+              "exitMs": 3047,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "fd3",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
               "fds": {
                 "before": 19,
                 "after": 19
@@ -688,7 +963,43 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 44,
+              "exitMs": 39,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "fd3",
+                  "endedBy": "hub",
+                  "error": null,
+                  "afterExitMs": -1,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
               "fds": {
                 "before": 19,
                 "after": 19
@@ -696,7 +1007,7 @@
               "bytesRead": {
                 "stdout": 50,
                 "stderr": 0,
-                "fd3": 214
+                "fd3": 171
               },
               "plugin": [
                 {
@@ -728,7 +1039,32 @@
                 "signal": null,
                 "closed": true
               },
-              "exitMs": 3043,
+              "exitMs": 3039,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": -1,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": -1,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
               "fds": {
                 "before": 19,
                 "after": 19
@@ -787,7 +1123,32 @@
                 "signal": null,
                 "closed": true
               },
-              "exitMs": 3112,
+              "exitMs": 3044,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
               "fds": {
                 "before": 19,
                 "after": 19
@@ -851,7 +1212,32 @@
                 "signal": "SIGKILL",
                 "closed": true
               },
-              "exitMs": 53,
+              "exitMs": 39,
+              "killedAtTimeout": false,
+              "outputs": [
+                {
+                  "fifo": "stdout",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                },
+                {
+                  "fifo": "stderr",
+                  "endedBy": "eof",
+                  "error": null,
+                  "afterExitMs": 0,
+                  "holders": null,
+                  "drain": {
+                    "bytes": 0,
+                    "result": "closed"
+                  }
+                }
+              ],
               "fds": {
                 "before": 19,
                 "after": 19
@@ -888,6 +1274,33 @@
           "count": {
             "valid": true,
             "invalidRefused": true
+          }
+        },
+        "heldWriter": {
+          "survived": true,
+          "exitCode": 0,
+          "signal": null,
+          "timedOut": false,
+          "crash": null,
+          "result": {
+            "reader": 18,
+            "writer": 24,
+            "exitMs": 27,
+            "killedAtTimeout": false,
+            "held": {
+              "bytes": 0,
+              "result": "EAGAIN"
+            },
+            "holders": [
+              "hub fd 18 r",
+              "hub fd 24 w"
+            ],
+            "released": {
+              "bytes": 0,
+              "result": "eof"
+            },
+            "endedBy": "drain",
+            "bytesRead": 6
           }
         }
       }

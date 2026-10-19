@@ -1,0 +1,639 @@
+{
+  "recordedAt": "2026-10-18T17:16:18.694Z",
+  "fingerprint": {
+    "os": {
+      "platform": "linux",
+      "arch": "arm64",
+      "osName": "#22-Ubuntu SMP Mon Jul 27 17:12:01 UTC 2026",
+      "osVersion": "6.17.0-1022-azure"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "50ff9e88ccc3a16ff1d9310471050c2190138095",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 2,
+      "cpuCount": 2,
+      "cpuModel": "unknown",
+      "memoryUsedPercent": 15,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "target": "docker-linux-arm64",
+    "runtime": {
+      "pyodide": "314.0.7",
+      "abi": "pyemscripten_2026_0",
+      "python": "3.14.2",
+      "shimSha256": "5312fa65ed371c9e70048482f2b207b39d4f3f540897b702ec80896da000b62e",
+      "wheels": [
+        {
+          "name": "certifi",
+          "version": "2026.4.22",
+          "sha256": "c2c0091986db798df5fd84582d289496f31244a898ec032b7015278c2d82c80c"
+        },
+        {
+          "name": "cffi",
+          "version": "2.0.0",
+          "sha256": "9ae1a61096321cef7248e02293f42d000fa87b73a3e795705a2444290590459d"
+        },
+        {
+          "name": "charset-normalizer",
+          "version": "3.4.7",
+          "sha256": "9e437ef92fa51f06eedeb1ef092c0a887bd24fe0d40b1e900191117ce1653121"
+        },
+        {
+          "name": "cryptography",
+          "version": "47.0.0",
+          "sha256": "0b41491ced2cf85046559cac2502e875492cbef6d332addafa680e41be27f0ad"
+        },
+        {
+          "name": "idna",
+          "version": "3.11",
+          "sha256": "1619419bc899f07c7a608a12e8238e5e0bc15bb25fec90cfe20a86bb849ba0d8"
+        },
+        {
+          "name": "lxml",
+          "version": "6.1.3",
+          "sha256": "6a0b98f57a538cb6af4868c3499efec2bb52f7ed59fed94b7fbf195d6e40281f"
+        },
+        {
+          "name": "msgspec",
+          "version": "0.20.0",
+          "sha256": "2a4075cee8afc2c0424c63ae1a9b0655e727478df7fa2eb78f86f846fc5fb4bd"
+        },
+        {
+          "name": "numpy",
+          "version": "2.4.6",
+          "sha256": "a292c1f5d7d8a2208cd5e94fc467604c131cabcd2fc14fed6eefde121e7fabdf"
+        },
+        {
+          "name": "orjson",
+          "version": "3.11.8",
+          "sha256": "1dfad46c65f40626eee81b31e1808fa5c48bed1a604f9babe81688381b40fc43"
+        },
+        {
+          "name": "pycparser",
+          "version": "3.0",
+          "sha256": "0b4cbc12c42e25df55343342fb0da45b189181e4f360602f9721db2016fc3a4b"
+        },
+        {
+          "name": "pydantic_core",
+          "version": "2.41.5",
+          "sha256": "54703fa42a0d4d574283cfb8f08050ba7820c9a42b0a21bc1286407d9a9e54da"
+        },
+        {
+          "name": "pyyaml",
+          "version": "6.0.3",
+          "sha256": "a05d2a48c13ed72a8c60c73b30b753a25c3a591bb66c15428b7e95e69a9e806f"
+        },
+        {
+          "name": "regex",
+          "version": "2026.3.32",
+          "sha256": "872e5bbab799991b2c0570c30e20f30404d7b0fd979dadd4f161f91645a0c1ac"
+        },
+        {
+          "name": "requests",
+          "version": "2.33.1",
+          "sha256": "6d62c51c4e7707386bfc2ef54845c16cdaeb99606c064357cccfe4d621285175"
+        },
+        {
+          "name": "rpds-py",
+          "version": "0.30.0",
+          "sha256": "9997dcfaee4465d4e877397c0f95fb9ec1dddb0e9da6dac94e96ff9621cdcd05"
+        },
+        {
+          "name": "six",
+          "version": "1.17.0",
+          "sha256": "228c50f73aa7addf2c2ccf2979c256802a59ab69cad8152b31b9443cc8140f42"
+        },
+        {
+          "name": "typing-extensions",
+          "version": "4.15.0",
+          "sha256": "4fec68770a05408e668a4fa53d6bf4f0f684b9dacf820c7c5d6e97d3ad225e29"
+        },
+        {
+          "name": "urllib3",
+          "version": "2.6.3",
+          "sha256": "86b7c1af060597b115bcde5e36798039ca50b221afe14aa03d3437ac09b02a75"
+        }
+      ],
+      "platform": "linux",
+      "arch": "arm64",
+      "kernelVersion": "6.17.0-1022-azure",
+      "image": "node:26.12.0-bookworm-slim@sha256:298992629d69bbd5b2b03ad57094d8e4fcb3a8eeb7c4e25d29de656519568913"
+    },
+    "nodes": [
+      "26.5.1",
+      "26.12.0"
+    ],
+    "argv": [
+      "--permission",
+      "--allow-fs-read=<pluginDir>",
+      "--allow-fs-read=<runtimeDir>",
+      "--no-experimental-sqlite",
+      "--disable-sigusr1",
+      "--disallow-code-generation-from-strings",
+      "--freeze-flags-after-init",
+      "--max-old-space-size=256",
+      "--wasm-max-mem-pages=8192"
+    ],
+    "candidates": [
+      "pydantic-core",
+      "orjson",
+      "regex",
+      "pyyaml",
+      "rpds-py",
+      "msgspec",
+      "lxml",
+      "cryptography",
+      "numpy"
+    ],
+    "required": "pydantic-core",
+    "allowlist": [
+      "pydantic-core",
+      "orjson",
+      "regex",
+      "pyyaml",
+      "rpds-py",
+      "msgspec",
+      "lxml",
+      "numpy"
+    ],
+    "passing": [
+      "pydantic-core",
+      "orjson",
+      "regex",
+      "pyyaml",
+      "rpds-py",
+      "msgspec",
+      "lxml",
+      "cryptography",
+      "numpy"
+    ],
+    "notPassing": [],
+    "uncleanExits": [],
+    "runs": [
+      {
+        "candidate": "pydantic-core",
+        "node": "26.5.1",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "py-allowlist",
+          "pydantic-core",
+          "typing-extensions"
+        ],
+        "moduleVersion": "2.41.5",
+        "cExtension": null,
+        "bootMs": 2413,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "orjson",
+        "node": "26.5.1",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "orjson",
+          "py-allowlist"
+        ],
+        "moduleVersion": "3.11.8",
+        "cExtension": null,
+        "bootMs": 2269,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "regex",
+        "node": "26.5.1",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "py-allowlist",
+          "regex"
+        ],
+        "moduleVersion": "2026.3.32",
+        "cExtension": null,
+        "bootMs": 2332,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "pyyaml",
+        "node": "26.5.1",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "py-allowlist",
+          "pyyaml"
+        ],
+        "moduleVersion": "6.0.3",
+        "cExtension": true,
+        "bootMs": 2475,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "rpds-py",
+        "node": "26.5.1",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "py-allowlist",
+          "rpds-py"
+        ],
+        "moduleVersion": null,
+        "cExtension": null,
+        "bootMs": 2498,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "msgspec",
+        "node": "26.5.1",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "msgspec",
+          "py-allowlist"
+        ],
+        "moduleVersion": "0.20.0",
+        "cExtension": null,
+        "bootMs": 2447,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "lxml",
+        "node": "26.5.1",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "lxml",
+          "py-allowlist"
+        ],
+        "moduleVersion": "6.1.3",
+        "cExtension": null,
+        "bootMs": 2381,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "cryptography",
+        "node": "26.5.1",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "cffi",
+          "cryptography",
+          "py-allowlist",
+          "pycparser",
+          "six"
+        ],
+        "moduleVersion": "47.0.0",
+        "cExtension": null,
+        "bootMs": 2387,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "numpy",
+        "node": "26.5.1",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "numpy",
+          "py-allowlist"
+        ],
+        "moduleVersion": "2.4.6",
+        "cExtension": null,
+        "bootMs": 2691,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "pydantic-core",
+        "node": "26.12.0",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "py-allowlist",
+          "pydantic-core",
+          "typing-extensions"
+        ],
+        "moduleVersion": "2.41.5",
+        "cExtension": null,
+        "bootMs": 2437,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "orjson",
+        "node": "26.12.0",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "orjson",
+          "py-allowlist"
+        ],
+        "moduleVersion": "3.11.8",
+        "cExtension": null,
+        "bootMs": 2416,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "regex",
+        "node": "26.12.0",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "py-allowlist",
+          "regex"
+        ],
+        "moduleVersion": "2026.3.32",
+        "cExtension": null,
+        "bootMs": 2391,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "pyyaml",
+        "node": "26.12.0",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "py-allowlist",
+          "pyyaml"
+        ],
+        "moduleVersion": "6.0.3",
+        "cExtension": true,
+        "bootMs": 2337,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "rpds-py",
+        "node": "26.12.0",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "py-allowlist",
+          "rpds-py"
+        ],
+        "moduleVersion": null,
+        "cExtension": null,
+        "bootMs": 2236,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "msgspec",
+        "node": "26.12.0",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "msgspec",
+          "py-allowlist"
+        ],
+        "moduleVersion": "0.20.0",
+        "cExtension": null,
+        "bootMs": 2249,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "lxml",
+        "node": "26.12.0",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "lxml",
+          "py-allowlist"
+        ],
+        "moduleVersion": "6.1.3",
+        "cExtension": null,
+        "bootMs": 2452,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "cryptography",
+        "node": "26.12.0",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "cffi",
+          "cryptography",
+          "py-allowlist",
+          "pycparser",
+          "six"
+        ],
+        "moduleVersion": "47.0.0",
+        "cExtension": null,
+        "bootMs": 2339,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      },
+      {
+        "candidate": "numpy",
+        "node": "26.12.0",
+        "argv": "production",
+        "loads": true,
+        "imports": true,
+        "runs": true,
+        "failedAt": null,
+        "reason": null,
+        "packages": [
+          "numpy",
+          "py-allowlist"
+        ],
+        "moduleVersion": "2.4.6",
+        "cExtension": null,
+        "bootMs": 2541,
+        "exitCode": 0,
+        "cleanExit": true,
+        "exitReason": null,
+        "pauseMs": 0,
+        "withoutCodegenFlag": null,
+        "withLadderShim": null,
+        "unsandboxed": null,
+        "pausedStop": null
+      }
+    ]
+  }
+}
