@@ -1,0 +1,28 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/release-guard/src/integrity.ts",
+        "$TURBO_ROOT$/tools/fetch-node/fetch-node.mjs",
+        "$TURBO_ROOT$/tools/fetch-node/test/archives.ts",
+        "$TURBO_ROOT$/tools/vendor-guard/src/rules.ts",
+        "$TURBO_ROOT$/tools/vendor-guard/rules/secrets.ts"
+      ]
+    },
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/release-guard/src/integrity.ts",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/tools/fetch-node/fetch-node.mjs",
+        "$TURBO_ROOT$/tools/fetch-node/versions.json",
+        "$TURBO_ROOT$/tools/fetch-node/keys/**",
+        "$TURBO_ROOT$/tools/fetch-node/test/archives.ts",
+        "$TURBO_ROOT$/tools/vendor-guard/src/rules.ts",
+        "$TURBO_ROOT$/tools/vendor-guard/rules/secrets.ts"
+      ]
+    }
+  }
+}

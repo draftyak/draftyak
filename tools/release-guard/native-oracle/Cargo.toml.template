@@ -1,0 +1,15 @@
+[package]
+name = "draftyak-schedule-oracle"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[dependencies]
+draftyak-protocol = { path = "protocol" }
+jiff = { version = "=0.2.38", default-features = false, features = ["std", "tzdb-bundle-always"] }
+jiff-tzdb = "=0.1.9"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+
+[workspace]

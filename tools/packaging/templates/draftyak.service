@@ -1,0 +1,35 @@
+[Unit]
+Description=DraftYak hub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=draftyak
+Group=draftyak
+StateDirectory=draftyak
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/draftyak
+Environment=DRAFTYAK_DATA_DIR=/var/lib/draftyak
+Environment=DRAFTYAK_MASTER_KEY_FILE=%d/master-key
+LoadCredential=master-key:/etc/draftyak/master-key
+ExecStart=/opt/draftyak/node --disable-sigusr1 /opt/draftyak/cli/draftyak.mjs serve
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
