@@ -131,6 +131,28 @@ describe("optional bounded request intake", () => {
 		expect(fake.recorder.takeRequests()).toEqual([]);
 	});
 
+	it("cancels malformed uploads before rejecting their non-byte chunks", async () => {
+		const fake = createFake(echoApp().app, { host: HOST, maxRequestBodyBytes: 4 });
+		let cancelled: unknown;
+		const body = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue("not bytes" as unknown as Uint8Array);
+			},
+			cancel(reason) {
+				cancelled = reason;
+			},
+		});
+		await expect(
+			fake.fetch("/echo", {
+				method: "POST",
+				body,
+				duplex: "half",
+			} as RequestInit),
+		).rejects.toThrow(TypeError);
+		expect(cancelled).toBeInstanceOf(TypeError);
+		expect(fake.recorder.takeRequests()).toEqual([]);
+	});
+
 	it("applies the same cap over the loopback listener", async () => {
 		const { app, hits } = echoApp();
 		const fake = createFake(app, { host: HOST, maxRequestBodyBytes: 4 });
