@@ -14,10 +14,17 @@ Import from `@draftyak/fakes`, or from `@draftyak/fakes/<module>` for a file dir
 ## createFake
 
 ```ts
-const fake = createFake(app, { host: "hello.draftyak.example", recorder?, faults? });
+const fake = createFake(app, { host: "hello.draftyak.example", recorder?, faults?, maxRequestBodyBytes? });
 ```
 
 `app` is a Hono app, or anything with Hono's `fetch(request)`. The fake gets a fresh recorder and fault script unless you pass shared ones. It returns:
+
+`maxRequestBodyBytes` optionally limits uploads to a whole number of bytes from 1 to 64 MiB.
+Both in-memory and loopback requests finish this bounded intake before any redirect, recorder
+or application body clone. Oversized uploads are cancelled and return `413 request_body_too_large`
+before host routing; they create no record, consume no fault and never reach the app. Accepted
+requests retain their exact bytes and raw target. With a cap, arrival at the recorder and fault
+script follows completed intake, so a slow upload can be admitted after a later small one.
 
 | Member | What it does |
 |---|---|
@@ -49,7 +56,10 @@ A request's target is what it asks for: its path, query and any fragment. The re
 | `body` | The first `maxBodyBytes` bytes (65,536 by default). |
 | `bodyLength`, `bodySha256` | The whole body's length and the lowercase hex SHA-256 of its exact bytes, however long. |
 
-The recorder reads a copy, so the app still gets the body. Pass one recorder to several fakes to see all of their traffic in the order it arrived.
+The recorder hashes its copy incrementally and retains only the configured prefix, so the app
+still gets the body and the hash covers every byte. Its retention cap does not reject uploads;
+set `maxRequestBodyBytes` on the fake to bound intake before body cloning. Pass one recorder to
+several fakes to see their traffic in recorder admission order.
 
 ## Faults and the clock
 
