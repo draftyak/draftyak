@@ -10,7 +10,7 @@ DraftYak is in its first milestone, M0 (workspace bootstrap and spikes), and the
   - A new commit: `git commit -s`.
   - Commits already on your branch: `git rebase --signoff <base>`, for example `git rebase --signoff origin/m0`.
 - Git signs off with your `user.name` and `user.email`, so keep them equal to your commits' author: the `dco` check (M0.3) requires every commit to carry a sign-off that matches its author.
-- [NOTICE](NOTICE) carries the copyright and trademark notices: DraftYak™ is a trademark of Nick Savov, and the licence grants no trademark rights. The trademark policy, TRADEMARKS.md, follows in M11.
+- [NOTICE](NOTICE) carries the copyright and trademark notices: DraftYak™ is a trademark of Nick Savov, and the licence grants no trademark rights. The trademark policy is [TRADEMARKS.md](TRADEMARKS.md).
 
 ## You answer for your change
 
@@ -67,7 +67,7 @@ Changes to these paths get careful review, and code there needs tests in the sam
 - in M0: `.github/` and `tools/ci-checks/` (M0.3), `tools/vendor-guard/` (M0.4), `tools/fetch-node/` (M0.5), `spikes/kit/env-live.ts` and `spikes/kit/evidence.ts` (M0.6a), the S12 privacy gate (`spikes/s12-sms/schema/` and `spikes/s12-sms/src/receive-report.ts`, M0.36; the probe's report serializer and manifest, M0.37a) and the supply-chain settings in `pnpm-workspace.yaml` (M0.1);
 - from M1 on, as they arrive: `packages/{protocol,mime,extensions,runtime-python}/`, `crates/`, `security/`, the hub's security modules under `apps/hub/src/` (key manager, audit, identity, authz, policy, accounts, plugins, devicehost, tools, outbox, mcp, oauth-as, api), `apps/{mcp-apps,sms-host}/` and `tools/{release-guard,android-manifest-guard,egress-recorder,sign-sms-host}/`.
 
-CODEOWNERS and SECURITY.md arrive in M11. Until then, report a suspected vulnerability to the owner privately, never in an issue or PR.
+[CODEOWNERS](.github/CODEOWNERS) requests the owner's review for changes to these paths. Report a suspected vulnerability privately, as [SECURITY.md](SECURITY.md) describes, never in an issue or PR.
 
 ## Adding a channel
 
