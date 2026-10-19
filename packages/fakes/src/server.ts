@@ -98,6 +98,9 @@ async function limitedRequest(request: Request, cap: number): Promise<Request | 
 			}),
 			rawTarget(request),
 		);
+	} catch (error) {
+		cancel(error);
+		throw error;
 	} finally {
 		request.signal.removeEventListener("abort", abort);
 		reader.releaseLock();
