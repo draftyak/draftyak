@@ -30,6 +30,14 @@ export interface ReceiptInput {
 	readonly needs: string;
 }
 
+export interface Selection {
+	readonly areas: readonly string[];
+	readonly rust: readonly string[];
+	readonly spikes: readonly string[];
+	readonly heavy: readonly string[];
+	readonly templateSmoke: boolean;
+}
+
 export interface Receipt {
 	readonly version: 1;
 	readonly run: {
@@ -44,6 +52,7 @@ export interface Receipt {
 		readonly testedSha: string;
 	};
 	readonly coverage: "docs" | "draft" | "linux" | "linux-and-windows";
+	readonly selection: Selection | null;
 	readonly jobResults: Readonly<
 		Record<
 			JobName,
@@ -66,7 +75,7 @@ function object(value: unknown): Record<string, unknown> {
 }
 
 function text(value: unknown, pattern: RegExp, name: string): string {
-	if (typeof value !== "string" || !pattern.test(value)) {
+	if (typeof value !== "string" || pattern.exec(value)?.[0] !== value) {
 		throw new UsageError(`invalid ${name} in CI metadata`);
 	}
 	return value;
@@ -74,18 +83,91 @@ function text(value: unknown, pattern: RegExp, name: string): string {
 
 const sha = (value: unknown): string => text(value, /^[a-f0-9]{40}$/, "commit or tree SHA");
 
+function parseJson(value: string, name: string): unknown {
+	try {
+		return JSON.parse(value);
+	} catch {
+		throw new UsageError(`invalid ${name} JSON`);
+	}
+}
+
 function parseSource(value: unknown): Source | null {
 	if (value === undefined || value === "") return null;
 	if (typeof value !== "string" || value.length > 1024) {
 		throw new UsageError("invalid source metadata size");
 	}
-	const source = object(JSON.parse(value));
+	const source = object(parseJson(value, "source"));
 	return {
 		checkoutSha: sha(source.checkoutSha),
 		treeSha: sha(source.treeSha),
 		lockfileSha256: text(source.lockfileSha256, /^[a-f0-9]{64}$/, "lockfile hash"),
 		nodeVersion: text(source.nodeVersion, /^\d+\.\d+\.\d+$/, "Node version"),
 		platform: text(source.platform, /^(linux|win32)$/, "runner platform"),
+	};
+}
+
+const segment = "[a-z0-9][a-z0-9_-]*";
+const workspacePattern = new RegExp(`^(?:crates|spikes/${segment})(?:/${segment})*$`);
+const spikePattern = new RegExp(`^spikes/${segment}$`);
+const heavyPattern = new RegExp(
+	`^(?:\\./(?:(?:packages|plugins)/${segment}|tools/verify)|\\.\\.\\.\\{\\./(?:packages|plugins)/${segment}\\})$`,
+);
+
+function selectionList(value: unknown, name: string, pattern: RegExp): readonly string[] {
+	// Empty job outputs may be absent from GitHub's needs object.
+	if (value === undefined || value === "") return [];
+	if (typeof value !== "string" || value.length > 16 * 1024) {
+		throw new UsageError(`invalid ${name} selection size`);
+	}
+	return selectionItems(value.split(/\r?\n/), name, pattern, 100, 200);
+}
+
+function selectionItems(
+	value: unknown,
+	name: string,
+	pattern: RegExp,
+	maximumItems: number,
+	maximumLength: number,
+): readonly string[] {
+	if (!Array.isArray(value) || value.length > maximumItems) {
+		throw new UsageError(`invalid ${name} selection count`);
+	}
+	const items = value.map((entry: unknown) => {
+		if (
+			typeof entry !== "string" ||
+			entry.length > maximumLength ||
+			pattern.exec(entry)?.[0] !== entry
+		) {
+			throw new UsageError(`invalid ${name} selection item`);
+		}
+		return entry;
+	});
+	if (new Set(items).size !== items.length) {
+		throw new UsageError(`duplicate ${name} selection item`);
+	}
+	return items;
+}
+
+function parseSelection(outputs: Record<string, unknown>): Selection {
+	if (typeof outputs.areas !== "string" || outputs.areas.length > 32 * 1024) {
+		throw new UsageError("invalid areas selection size");
+	}
+	const areas = selectionItems(
+		parseJson(outputs.areas, "areas selection"),
+		"areas",
+		new RegExp(
+			`^(?:docs-only|ts|workflows|template-smoke|rust:(?:crates|spikes/${segment})(?:/${segment})*|spikes/${segment}|heavy:(?:\\./(?:(?:packages|plugins)/${segment}|tools/verify)|\\.\\.\\.\\{\\./(?:packages|plugins)/${segment}\\}))$`,
+		),
+		300,
+		240,
+	);
+	return {
+		areas,
+		rust: selectionList(outputs.rust, "rust", workspacePattern),
+		spikes: selectionList(outputs.spikes, "spikes", spikePattern),
+		heavy: selectionList(outputs.heavy, "heavy", heavyPattern),
+		templateSmoke:
+			text(outputs["template-smoke"], /^(true|false)$/, "template-smoke output") === "true",
 	};
 }
 
@@ -103,7 +185,7 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 	const attempt = text(input.runAttempt, /^[1-9]\d*$/, "run attempt");
 	const nodeVersion = text(input.nodeVersion, /^\d+\.\d+\.\d+$/, "Node pin");
 	if (input.needs.length > 64 * 1024) throw new UsageError("CI job metadata exceeds 64 KiB");
-	const needs = object(JSON.parse(input.needs));
+	const needs = object(parseJson(input.needs, "job metadata"));
 	const changes = object(needs.changes);
 	const changesOutputs = object(changes.outputs ?? {});
 	const docsOnly = changesOutputs["docs-only"] === "true";
@@ -113,6 +195,7 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 	) {
 		throw new UsageError("successful changes job needs its docs-only output");
 	}
+	const selection = changes.result === "success" ? parseSelection(changesOutputs) : null;
 	const full = !docsOnly && (event !== "pull_request" || !input.draft);
 	const windows =
 		!docsOnly && (input.ref === "refs/heads/main" || (event === "pull_request" && !input.draft));
@@ -163,6 +246,7 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 		},
 		source: { headSha, baseSha, testedSha },
 		coverage: docsOnly ? "docs" : !full ? "draft" : windows ? "linux-and-windows" : "linux",
+		selection,
 		jobResults,
 		passed: problems.length === 0,
 		problems,
@@ -170,6 +254,9 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 }
 
 export function renderSummary(receipt: Receipt): string {
+	const selection = receipt.selection;
+	const selected = (values: readonly string[]): string =>
+		values.length === 0 ? "none" : values.map((value) => `\`${value}\``).join(", ");
 	return [
 		`### CI verification: ${receipt.passed ? "passed" : "failed"} (${receipt.coverage})`,
 		"",
@@ -184,6 +271,21 @@ export function renderSummary(receipt: Receipt): string {
 			(name) =>
 				`| ${name} | ${receipt.jobResults[name].result} | ${receipt.jobResults[name].required ? "yes" : "no"} |`,
 		),
+		"",
+		...(selection === null
+			? ["Selection unavailable: changes job did not succeed."]
+			: [
+					"| Selection | Value |",
+					"| --- | --- |",
+					`| Areas | ${selected(selection.areas)} |`,
+					`| Rust workspaces | ${selected(selection.rust)} |`,
+					`| Spike suites | ${selected(selection.spikes)} |`,
+					`| Heavy filters | ${selected(selection.heavy)} |`,
+					`| Template-smoke output | ${selection.templateSmoke ? "yes" : "no"} |`,
+				]),
+		"",
+		"Selection is classifier output, not proof of execution. Compare GitHub's full-job step conclusions with the item's acceptance commands and run checks CI did not select.",
+		"GitHub job records are authoritative; this receipt cannot establish its own trustworthiness.",
 		"",
 		"This receipt covers these CI jobs. A successful job does not establish that every test ran. Other workflows, live/device checks and owner acceptance remain separate.",
 		...receipt.problems.map((problem) => `- ${problem}`),

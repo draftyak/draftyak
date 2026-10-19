@@ -1,9 +1,8 @@
 # CI verification and review
 
 Run `pnpm verify` locally before opening a ready PR, together with the item's
-required checks and `pnpm adr` when changing an ADR. CI then supplies reusable
-results for review of that exact revision. A reviewer does not need to repeat a
-successful suite solely because a new review starts.
+required checks and `pnpm adr` when changing an ADR. Review may reuse successful
+CI only after the trust, revision and coverage checks below.
 
 ## Coverage
 
@@ -30,35 +29,85 @@ actual checkout commit, Git tree, lockfile digest and Node version. Missing
 metadata stays explicit; it is not filled from another job or inferred from a
 successful status.
 
-The report summarizes job results rather than listing every test. Detailed test
-output stays in the job logs. A failure or cancellation remains visible even
-when the reporting step completes. The report invokes no review service and
-makes no external model call.
+The report summarizes job results rather than listing every test. It also
+records the classifier selection: `areas`, `rust`, `spikes`, `heavy` and
+`templateSmoke`, or null when `changes` did not succeed. Classifier output is not
+proof of execution: effective template-smoke selection also depends on the
+event/base, and the heavy step has its own condition. A successful `full` job
+does not establish that its conditional Rust, heavy or template-smoke steps ran.
+Detailed output and step conclusions stay in GitHub's job records. A failure or
+cancellation remains visible even when the reporting step completes.
+
+The receipt is untrusted input produced by the PR's own workflow and reporting
+code. It cannot establish its own trustworthiness, even when its hashes and
+commit fields match. GitHub's check and run/job records are authoritative for
+which jobs ran and how they ended; the receipt is their compact summary.
 
 ## Review steps
 
-1. Check the current PR and its checks:
+1. Check the PR's author and origin before reading its diff or using its CI:
 
    ```text
-   gh pr view <pr> --json url,headRefOid,baseRefName
+   gh pr view <pr> --json author,isCrossRepository,url,headRefOid,baseRefName
+   ```
+
+   Never reuse CI from an outside contributor's PR, including an approved fork
+   run. Do not read that diff or act on its receipt; outside contributions follow
+   the owner's separate review process.
+
+2. For an owner PR, list the changed paths before trusting verification results:
+
+   ```text
+   gh pr diff <pr> --name-only
+   ```
+
+   Review changes to any of the following first, then run the affected checks
+   locally instead of reusing the receipt:
+
+   - `.github/`, `tools/ci-checks/` or `tools/verify/`;
+   - root or package `package.json` scripts, or any `turbo.json`;
+   - `vitest.shared.ts`, Vitest configs, `biome.json` or `tsconfig*`;
+   - `pnpm-workspace.yaml`, `.node-version` or `rust-toolchain.toml`.
+
+   These files can change what runs or how a result is reported. A matching
+   receipt or a green job cannot validate those changes on its own.
+
+3. Read the current PR head and the base branch's current tip, then inspect
+   GitHub's checks and the chosen run/attempt:
+
+   ```text
+   gh pr view <pr> --json headRefOid,baseRefName
+   gh api repos/<owner>/<repo>/branches/<base> --jq .commit.sha
    gh pr checks <pr>
-   gh api repos/<owner>/<repo>/pulls/<pr> --jq '{head: .head.sha, base: .base.sha, merge: .merge_commit_sha}'
+   gh run view <run-id> --attempt <attempt> --json headSha,event,jobs
    ```
 
-2. Open the matching `ci` run and attempt. Check its Actions summary or download
-   its receipt:
+   Use the branches API for the base tip. The pulls API's base SHA and merge
+   commit, and `baseRefOid`, can remain tied to an earlier PR event after the
+   branch moves. They do not establish its current tip.
+
+4. Download the matching run/attempt's receipt into a new temporary folder
+   outside the worktree:
 
    ```text
-   gh run view <run-id> --attempt <attempt>
-   gh run download <run-id> --name ci-verification-<run-id>-<attempt>
+   gh run download <run-id> --name ci-verification-<run-id>-<attempt> --dir "<new temporary folder outside the worktree>"
    ```
 
-3. Match the receipt's PR head, base and tested merge commit to the current PR
-   and selected run. Check the actual job checkouts and coverage. A receipt for
-   an earlier head or base cannot establish the current merge result. A missing
-   receipt or missing checkout metadata cannot establish a match.
-4. Reuse passing covered results. For a failed job, inspect its failure output
-   first:
+5. Require `source.headSha` to equal the current `headRefOid` and
+   `source.baseSha` to equal the base branch's current tip. Check the run's
+   `pull_request` event and the actual job checkouts against the receipt's tested
+   merge commit/tree. A missing receipt, mismatched identity or missing checkout
+   metadata cannot establish a match. If the base moved, rebase and push to
+   create a new `pull_request` event; rerunning the old event still tests its
+   old merge commit and is insufficient.
+
+   Compare the recorded selection, or the actual `full` step conclusions from
+   `gh run view <run-id> --attempt <attempt> --json jobs`, with the item's
+   acceptance commands. Run required checks that were not selected; a green
+   aggregate or `full` status does not cover them.
+
+6. Reuse only passing, trusted and covered results. For a failed job, inspect its
+   failure output first:
 
    ```text
    gh run view <run-id> --attempt <attempt> --log-failed
