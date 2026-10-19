@@ -50,6 +50,7 @@ describe("workflow policy", () => {
 		expect(Object.keys(ci)).toEqual(["changes", "cheap", "full", "windows", "required"]);
 		expect(ci.required).toMatchObject({
 			if: "always()",
+			name: `\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`,
 			needs: ["changes", "cheap", "full", "windows"],
 		});
 		expect([jobs("dco.yml"), jobs("pr-title.yml")].map(Object.keys)).toEqual([
