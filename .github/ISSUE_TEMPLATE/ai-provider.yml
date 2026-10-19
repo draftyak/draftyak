@@ -1,0 +1,44 @@
+name: AI provider proposal
+description: Propose a drafting provider through a permitted interface.
+title: "feat(ai): "
+labels: ["type:proposal", "area:ai", "plugin:ai", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use public policy and API links. Do not paste keys, tokens or account information.
+        Provider and product marks must not become DraftYak package, application or service names.
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and proposed plugin name
+    validations:
+      required: true
+  - type: textarea
+    id: interface
+    attributes:
+      label: Official interface, authentication and billing
+      description: Link the public API documentation and explain owner-supplied credentials, explicit billing selection and streaming support.
+    validations:
+      required: true
+  - type: textarea
+    id: policy
+    attributes:
+      label: Training, retention and terms
+      description: Link current policy pages and identify defaults, opt-outs, storage controls and any consumer-plan restrictions.
+    validations:
+      required: true
+  - type: textarea
+    id: routing
+    attributes:
+      label: Routing and consent
+      description: State destination class, hosts, fields sent, per-account disclosure and support for Gmail, Slack and SMS restrictions.
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests and open questions
+      description: Explain egress tests, failures, reliability notices and policy questions needing review.
+    validations:
+      required: true

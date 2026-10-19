@@ -1,0 +1,51 @@
+# Owner review is required for community settings and security-sensitive paths.
+# Syntax (read 2026-10-17): https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+/.github/ @nicksavov
+/package.json @nicksavov
+/pnpm-workspace.yaml @nicksavov
+/tools/ci-checks/ @nicksavov
+/tools/verify/ @nicksavov
+/tools/vendor-guard/ @nicksavov
+/tools/fetch-node/ @nicksavov
+/tools/release-guard/ @nicksavov
+/tools/android-manifest-guard/ @nicksavov
+/tools/egress-recorder/ @nicksavov
+/tools/sign-sms-host/ @nicksavov
+
+# Live-session handling and the SMS probe privacy boundary.
+/spikes/kit/env-live.ts @nicksavov
+/spikes/kit/evidence.ts @nicksavov
+/spikes/s12-sms/schema/ @nicksavov
+/spikes/s12-sms/src/receive-report.ts @nicksavov
+/spikes/s12-sms/probe-android/ @nicksavov
+
+# Hub security modules: match a module file or directory.
+/apps/hub/src/key-manager* @nicksavov
+/apps/hub/src/kernel/ @nicksavov
+/apps/hub/src/store/ @nicksavov
+/apps/hub/src/audit* @nicksavov
+/apps/hub/src/credentials/ @nicksavov
+/apps/hub/src/recovery/ @nicksavov
+/apps/hub/src/extensions/ @nicksavov
+/apps/hub/src/identity* @nicksavov
+/apps/hub/src/auth* @nicksavov
+/apps/hub/src/authz* @nicksavov
+/apps/hub/src/policy* @nicksavov
+/apps/hub/src/accounts* @nicksavov
+/apps/hub/src/plugins* @nicksavov
+/apps/hub/src/devicehost/ @nicksavov
+/apps/hub/src/tools/ @nicksavov
+/apps/hub/src/outbox* @nicksavov
+/apps/hub/src/mcp/ @nicksavov
+/apps/hub/src/oauth-as* @nicksavov
+/apps/hub/src/api* @nicksavov
+
+# Device hosts, MCP views, protocols, parsers and sandbox boundaries.
+/apps/mcp-apps/ @nicksavov
+/apps/sms-host/ @nicksavov
+/packages/protocol/ @nicksavov
+/packages/mime/ @nicksavov
+/packages/extensions/ @nicksavov
+/packages/runtime-python/ @nicksavov
+/crates/ @nicksavov
+/security/ @nicksavov

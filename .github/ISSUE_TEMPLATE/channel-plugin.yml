@@ -1,0 +1,44 @@
+name: Channel plugin proposal
+description: Propose a channel integration using its official APIs.
+title: "feat(channel): "
+labels: ["type:proposal", "area:channel", "plugin:channel", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Provide public documentation links, never credentials or real messages.
+        A proposal does not approve an integration or a new send path.
+  - type: input
+    id: channel
+    attributes:
+      label: Channel and proposed plugin name
+    validations:
+      required: true
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case and supported operations
+      description: Distinguish reading, drafts, organization and sending; state what is excluded.
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: Official API, authentication and scopes
+      description: Link public API documentation, terms and policy pages. Describe scopes and rate limits.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Approval and data boundaries
+      description: Explain exact-content and send-window approval, broker rendering, retention, revocation and outbound destinations.
+    validations:
+      required: true
+  - type: textarea
+    id: testing
+    attributes:
+      label: Tests and policy questions
+      description: Describe synthetic fixtures, denied-send tests and unresolved permission or policy questions.
+    validations:
+      required: true
