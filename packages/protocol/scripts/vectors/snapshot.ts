@@ -1,5 +1,8 @@
+import { DraftAuthor } from "../../src/entities/draft.ts";
 import { headersSha256 } from "../../src/hash.ts";
 import { canonicalize } from "../../src/jcs.ts";
+import { CHAT_CHANNEL_TYPES } from "../../src/normalized-change.ts";
+import { SEND_METHODS } from "../../src/send-ticket.ts";
 import {
 	contentHash,
 	fingerprint,
@@ -241,6 +244,10 @@ export function snapshotVectors(): SnapshotVector[] {
 	const scheduled = scheduleAt(SNAPSHOT_IAT);
 	result.push(
 		accepted("shared-zone-alias", { ...base, schedule: scheduleAt(SNAPSHOT_IAT, "EST") }),
+		accepted("wall-leap-2028", {
+			...base,
+			schedule: scheduleAt(Date.parse("2028-02-29T00:00:00.000Z")),
+		}),
 	);
 	// Syntax-only: this 64-character zone is not claimed to exist in tzdata.
 	result.push(
@@ -292,6 +299,9 @@ export function snapshotVectors(): SnapshotVector[] {
 	for (const [id, path, value] of invalid) result.push(rejected(id, changed(path, value)));
 	for (const localWallTime of [
 		"2027-02-29T00:00+00:00",
+		"2028-04-31T00:00+00:00",
+		"2028-02-30T00:00+00:00",
+		"2100-02-29T00:00+00:00",
 		"2028-13-01T00:00+00:00",
 		"2028-01-01T24:00+00:00",
 		"2028-01-01T00:00-00:00",
@@ -304,6 +314,7 @@ export function snapshotVectors(): SnapshotVector[] {
 		result.push(rejected(`zone-${zone}`, { ...base, schedule: { ...scheduled, zone } }));
 	result.push(
 		rejected("lateness-1800", { ...base, schedule: { ...scheduled, latenessSec: 1800 } }),
+		rejected("not-before-unsafe", { ...base, schedule: { ...scheduled, notBefore: 2 ** 53 } }),
 	);
 	const render = {
 		method: "POST",
@@ -314,15 +325,42 @@ export function snapshotVectors(): SnapshotVector[] {
 	for (const [id, url] of Object.entries({
 		http: "http://hello.example/v1",
 		port: "https://hello.example:443/v1",
+		"port-65536": "https://hello.example:65536/v1",
 		upper: "https://HELLO.example/v1",
 		dot: "https://hello.example/a/../b",
 		escaped: "https://hello.example/%2e",
+		"escaped-unreserved": "https://hello.example/%2E",
+		"escaped-lowercase-hex": "https://hello.example/%3a",
 		query: "https://hello.example/v1?",
 		fragment: "https://hello.example/v1#x",
 		userinfo: "https://user@hello.example/v1",
 		quote: "https://hello.example/v1?q='",
 	}))
 		result.push(rejected(`render-${id}`, { ...base, render: { ...render, url } }));
+	const urlPrefix = "https://hello.example/";
+	result.push(
+		accepted("render-port-65535", {
+			...base,
+			render: { ...render, url: "https://hello.example:65535/v1" },
+		}),
+		accepted("render-url-8192", {
+			...base,
+			render: { ...render, url: urlPrefix + "x".repeat(8192 - urlPrefix.length) },
+		}),
+		rejected("render-url-8193", {
+			...base,
+			render: { ...render, url: urlPrefix + "x".repeat(8193 - urlPrefix.length) },
+		}),
+	);
+	for (const method of SEND_METHODS)
+		result.push(accepted(`render-method-${method}`, { ...base, render: { ...render, method } }));
+	for (const [field, value] of [
+		["headersSha256", "X".repeat(64)],
+		["bodySha256", "c".repeat(63)],
+	] as const)
+		result.push(
+			rejected(`render-${field}-invalid`, { ...base, render: { ...render, [field]: value } }),
+		);
 	result.push(
 		accepted("render-query-dot-data", {
 			...base,
@@ -337,6 +375,24 @@ export function snapshotVectors(): SnapshotVector[] {
 		}),
 	);
 	result.push(rejected("chat-null-conversation", { ...chat, conversation: null }));
+	result.push(
+		rejected("email-with-chat-block", { ...base, chat: chat.chat }),
+		rejected("chat-with-email-block", { ...chat, email: base.kind === "email" ? base.email : {} }),
+	);
+	for (const channelType of CHAT_CHANNEL_TYPES)
+		result.push(
+			accepted(`channel-type-${channelType}`, {
+				...chat,
+				chat: { ...(chat.chat as object), channelType },
+			}),
+		);
+	for (const kind of DraftAuthor.shape.kind.options)
+		result.push(
+			accepted(
+				`author-kind-${kind}`,
+				changed(["source", "authors"], [{ kind, id: SNAPSHOT_IDS.author }]),
+			),
+		);
 	result.push(
 		rejected("channel-name-257", {
 			...chat,
@@ -383,6 +439,14 @@ export function snapshotVectors(): SnapshotVector[] {
 			...chat,
 			chat: { ...(chat.chat as object), memberCount: -1 },
 		}),
+		rejected("chat-member-count-unsafe", {
+			...chat,
+			chat: { ...(chat.chat as object), memberCount: 2 ** 53 },
+		}),
+		accepted("chat-member-count-max-safe", {
+			...chat,
+			chat: { ...(chat.chat as object), memberCount: Number.MAX_SAFE_INTEGER },
+		}),
 	);
 	result.push(
 		rejected("chat-channel-id-empty", {
@@ -393,7 +457,9 @@ export function snapshotVectors(): SnapshotVector[] {
 	result.push(accepted("epoch-zero", { ...base, epoch: 0 }));
 	for (const [id, path, value] of [
 		["subject-2000", ["email", "subject"], "x".repeat(2000)],
+		["subject-2000-astral", ["email", "subject"], "\u{1f600}".repeat(2000)],
 		["body-100000", ["body", "text"], "x".repeat(100000)],
+		["body-100000-multibyte", ["body", "text"], "\u00e9".repeat(100000)],
 		["footer-10000", ["body", "footer"], "x".repeat(10000)],
 		[
 			"authors-100",
@@ -403,6 +469,26 @@ export function snapshotVectors(): SnapshotVector[] {
 		["references-100", ["email", "references"], Array.from({ length: 100 }, () => "ref")],
 	] as [string, string[], unknown][])
 		result.push(accepted(id, changed(path, value)));
+	result.push(
+		rejected("subject-2001-astral", changed(["email", "subject"], "\u{1f600}".repeat(2001))),
+	);
+	result.push(
+		rejected("body-100001-multibyte", changed(["body", "text"], "\u00e9".repeat(100001))),
+	);
+	const addressSuffix = "@example.test";
+	result.push(
+		accepted(
+			"address-254",
+			changed(["email", "to"], ["x".repeat(254 - addressSuffix.length) + addressSuffix]),
+		),
+		rejected(
+			"address-255",
+			changed(["email", "to"], ["x".repeat(255 - addressSuffix.length) + addressSuffix]),
+		),
+		accepted("address-label-63", changed(["email", "to"], [`a@${"x".repeat(63)}.test`])),
+		rejected("address-label-64", changed(["email", "to"], [`a@${"x".repeat(64)}.test`])),
+		rejected("address-single-label", changed(["email", "to"], ["a@localhost"])),
+	);
 	for (const name of ["to", "cc", "bcc"])
 		result.push(
 			accepted(

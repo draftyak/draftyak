@@ -2,7 +2,9 @@ use super::common::{MAX_SAFE, key, sha};
 use serde::{Deserialize, Deserializer, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum KeyUse { Identity }
+pub enum KeyUse {
+    Identity,
+}
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HubKeyRotateStatement {
@@ -25,7 +27,8 @@ struct Wire {
 }
 impl<'de> Deserialize<'de> for HubKeyRotateStatement {
     fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        let w = Wire::deserialize(decoder).map_err(|_| serde::de::Error::custom("STATEMENT_INVALID"))?;
+        let w = Wire::deserialize(decoder)
+            .map_err(|_| serde::de::Error::custom("STATEMENT_INVALID"))?;
         let s = Self {
             v: w.v,
             hub: w.hub,

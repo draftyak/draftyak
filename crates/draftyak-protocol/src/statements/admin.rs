@@ -1,4 +1,4 @@
-use super::common::{device_statement,id,sha};
+use super::common::{device_statement, id, sha};
 macro_rules! admin_groups {
  ($($group:ident => [$($kind:literal),* $(,)?]),* $(,)?) => {
   pub const ADMIN_GROUPS: &[(&str,&[&str])] = &[$((stringify!($group), &[$($kind),*])),*];

@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { CALENDAR_DATE_PATTERN } from "./date-pattern.ts";
 import {
 	ChatChannelType,
 	EmailAddress,
@@ -61,18 +62,9 @@ export interface ScheduleAt {
 export type Schedule = ScheduleNow | ScheduleAt;
 
 // Resolution, DST rejection and matching this display time to notBefore belong to M1.18.
-const WALL =
-	/^([0-9]{4})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):([0-5][0-9])([+-])([01][0-9]|2[0-3]):([0-5][0-9])$/;
-function wallTime(value: string): boolean {
-	const match = WALL.exec(value);
-	if (!match || value.endsWith("-00:00")) return false;
-	const year = Number(match[1]);
-	const month = Number(match[2]);
-	const day = Number(match[3]);
-	const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-	const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-	return month >= 1 && month <= 12 && day >= 1 && day <= (days[month - 1] ?? 0);
-}
+const WALL = new RegExp(
+	`^(?:${CALENDAR_DATE_PATTERN})T(?:[01][0-9]|2[0-3]):[0-5][0-9][+-](?:[01][0-9]|2[0-3]):[0-5][0-9]$`,
+);
 export const Schedule: z.ZodType<Schedule> = z
 	.discriminatedUnion("kind", [
 		z.strictObject({ kind: z.literal("now") }),
@@ -84,7 +76,7 @@ export const Schedule: z.ZodType<Schedule> = z
 				.string()
 				.length(22)
 				.regex(WALL)
-				.refine(wallTime)
+				.refine((value) => !value.endsWith("-00:00"))
 				.meta({ not: { pattern: "-00:00$" } }),
 			latenessSec: z.union([z.literal(900), z.literal(3600), z.literal(14400), z.literal(86400)]),
 			holdIfNewInbound: z.boolean(),
@@ -167,6 +159,12 @@ const fields = {
 			url: SendUrl.meta({
 				allOf: [
 					{ not: { pattern: "^https://[^/]+:443/" } },
+					{
+						not: {
+							pattern:
+								"^https://[^/]+:(?:6553[6-9]|655[4-9][0-9]|65[6-9][0-9]{2}|6[6-9][0-9]{3}|[7-9][0-9]{4})/",
+						},
+					},
 					{ not: { pattern: "^https://[^/]+/(?:[^?]*/)?[.]{1,2}(/|[?]|$)" } },
 				],
 			}),

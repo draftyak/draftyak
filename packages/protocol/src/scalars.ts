@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { CALENDAR_DATE_PATTERN } from "./date-pattern.ts";
 
 // Base64url (RFC 4648 §5) without padding, in its one canonical form: the unused low bits of the
 // last character are zero, so every byte string has exactly one encoding.
@@ -41,14 +42,14 @@ export type UtcMs = z.infer<typeof UtcMs>;
 
 // A real date, leap years included. zod's own datetime pattern writes \d, which Python's re and
 // Rust's regex read as any Unicode digit.
-const DATE =
-	"(?:[0-9]{2}(?:[2468][048]|[13579][26]|0[48])|(?:[02468][048]|[13579][26])00)-02-29" +
-	"|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])" +
-	"|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8]))";
 export const Iso8601Utc: z.ZodString = z
 	.string()
 	.length(24)
-	.regex(new RegExp(`^(?:${DATE})T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$`))
+	.regex(
+		new RegExp(
+			`^(?:${CALENDAR_DATE_PATTERN})T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$`,
+		),
+	)
 	.meta({ format: "date-time", description: "An instant as YYYY-MM-DDTHH:mm:ss.sssZ." });
 export type Iso8601Utc = z.infer<typeof Iso8601Utc>;
 

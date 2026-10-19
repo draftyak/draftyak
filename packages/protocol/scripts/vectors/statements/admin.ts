@@ -1,3 +1,4 @@
+import { ADMIN_KINDS } from "../../../src/statements/admin.ts";
 import type { VectorContext, VectorFile } from "../../vectors.ts";
 import { SNAPSHOT_IDS } from "../snapshot.ts";
 import { type SignVector, statementBase, typedVectors } from "./shared.ts";
@@ -12,6 +13,7 @@ export function example(): Record<string, unknown> {
 async function extra(base: Record<string, unknown>, signed: SignVector): Promise<void> {
 	await signed("unknown-admin-kind", { ...base, kind: "unregistered-test-operation" }, false);
 	await signed("advertised-addresses", { ...base, kind: "access.advertised-addresses-set" }, true);
+	for (const kind of ADMIN_KINDS) await signed(`kind-${kind}`, { ...base, kind }, true);
 }
 export const generate = (context: VectorContext): Promise<VectorFile[]> =>
 	typedVectors("admin.v1", context, example, extra);

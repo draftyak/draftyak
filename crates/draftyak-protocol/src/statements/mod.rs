@@ -1,4 +1,9 @@
+pub mod admin;
 pub mod common;
+pub mod hub_key_rotate;
+pub mod login;
+pub mod pair_confirm;
+pub mod send;
 use crate::{jcs::parse_strict, sign};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -7,7 +12,6 @@ fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Option<T> {
 }
 macro_rules! register_statements {
     ($($module:ident::$variant:ident($name:ident) => $typ:literal),* $(,)?) => {
-        $(pub mod $module;)*
         pub const TYPES: &[&str] = &[$($typ),*];
         #[derive(Debug, Clone, Serialize, Deserialize)]
         #[serde(untagged)]
@@ -18,7 +22,7 @@ macro_rules! register_statements {
         }
     }
 }
-// One registration line supplies the module, public variant and dispatch arm.
+// One plain module declaration and one registration line supply each type and dispatch arm.
 register_statements! {
     send::Send(SendStatement) => "approval.send.v1",
     pair_confirm::Pair(PairConfirmStatement) => "pair-confirm.v1",

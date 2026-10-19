@@ -43,7 +43,7 @@ describe("cross-language send snapshots", () => {
 		}
 	});
 
-	it("compares at least 200 actual mixed accept/refuse snapshots, including non-NFC", {
+	it("compares at least 200 accepted random snapshots and purpose-generated non-NFC refusals", {
 		tags: ["requires:cargo"],
 	}, async () => {
 		expect(process.versions.unicode).toBe(SNAPSHOT_UNICODE_VERSION);
@@ -65,9 +65,11 @@ describe("cross-language send snapshots", () => {
 		] as const;
 		let compared = 0,
 			accepted = 0,
-			refused = 0;
-		async function compare(value: unknown): Promise<void> {
+			refused = 0,
+			nonNfc = 0;
+		async function compare(value: unknown, valid: boolean): Promise<void> {
 			const parsed = SendSnapshotV1.safeParse(value);
+			expect(parsed.success).toBe(valid);
 			const answer = await checker.run("snapshot", {
 				snapshotJson: JSON.stringify(value),
 				iat: SNAPSHOT_IAT,
@@ -95,7 +97,10 @@ describe("cross-language send snapshots", () => {
 				fc.constantFrom(...invalid),
 				async (body, chat, revision, bad) => {
 					const value = structuredClone(exampleSnapshot()) as unknown as Record<string, unknown>;
-					value.body = { text: body, footer: "\nFrozen footer" };
+					value.body = {
+						text: body.replaceAll("\r", "\n").normalize("NFC"),
+						footer: "\nFrozen footer",
+					};
 					value.source = {
 						draft: SNAPSHOT_IDS.draft,
 						rev: revision,
@@ -115,15 +120,19 @@ describe("cross-language send snapshots", () => {
 						};
 					}
 					if (revision % 2 === 0) value.schedule = scheduleAt(SNAPSHOT_IAT + revision * 60000);
-					await compare(value);
-					await compare({ ...value, [bad.field]: bad.value });
-					await compare({ ...exampleSnapshot(), body: { text: "cafe\u0301", footer: "" } });
+					await compare(value, true);
+					await compare({ ...value, [bad.field]: bad.value }, false);
+					const decomposed = `${body.replaceAll("\r", "\n")}e\u0301`.normalize("NFD");
+					expect(decomposed.normalize("NFC")).not.toBe(decomposed);
+					await compare({ ...value, body: { text: decomposed, footer: "" } }, false);
+					nonNfc++;
 				},
 			),
 			{ numRuns: 220 },
 		);
 		expect(compared).toBeGreaterThanOrEqual(200);
-		expect(accepted).toBeGreaterThan(0);
+		expect(accepted).toBeGreaterThanOrEqual(200);
+		expect(nonNfc).toBeGreaterThanOrEqual(200);
 		expect(refused).toBeGreaterThan(0);
 	});
 });
