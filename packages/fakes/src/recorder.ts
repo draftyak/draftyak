@@ -61,8 +61,34 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
 				}
 				const headerNames = [...request.headers.keys()];
 				// Cloned before the app runs, so the app reads the other branch of the body.
-				const copy = request.body === null ? null : request.clone();
-				const bytes = copy === null ? new Uint8Array() : new Uint8Array(await copy.arrayBuffer());
+				const reader = request.body === null ? null : request.clone().body?.getReader();
+				const hash = createHash("sha256");
+				const chunks: Uint8Array[] = [];
+				let bodyLength = 0;
+				let kept = 0;
+				try {
+					if (reader) {
+						for (;;) {
+							const { done, value } = await reader.read();
+							if (done) break;
+							hash.update(value);
+							bodyLength += value.byteLength;
+							const take = Math.min(value.byteLength, cap - kept);
+							if (take > 0) {
+								chunks.push(value.slice(0, take));
+								kept += take;
+							}
+						}
+					}
+				} finally {
+					reader?.releaseLock();
+				}
+				const body = new Uint8Array(kept);
+				let offset = 0;
+				for (const chunk of chunks) {
+					body.set(chunk, offset);
+					offset += chunk.byteLength;
+				}
 				slot.entry = {
 					method: request.method,
 					host: new URL(request.url).host,
@@ -70,9 +96,9 @@ export function createRecorder(options: RecorderOptions = {}): Recorder {
 					...splitTarget(target),
 					headerNames,
 					headers,
-					body: bytes.slice(0, cap),
-					bodyLength: bytes.byteLength,
-					bodySha256: createHash("sha256").update(bytes).digest("hex"),
+					body,
+					bodyLength,
+					bodySha256: hash.digest("hex"),
 				};
 			} catch (error) {
 				slots.splice(slots.indexOf(slot), 1);
