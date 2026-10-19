@@ -1,0 +1,45 @@
+{
+  "schema": "draftyak.s12.probe-report.v1",
+  "encodingCheck": "é€👍",
+  "probeVersion": "0.2.0",
+  "createdAt": "2026-10-24T15:04:05.000Z",
+  "device": {
+    "manufacturer": "samsung",
+    "androidVersion": "16",
+    "sdkLevel": 36,
+    "messagesIsDefault": false
+  },
+  "inventory": {
+    "providers": [
+      { "table": "sms", "readable": false, "failure": "security" },
+      { "table": "mms", "readable": false, "failure": "security" }
+    ],
+    "rcs": { "idMethod": "unknown" }
+  },
+  "vectors": {
+    "format": "draftyak.s12.sms-segments.v1",
+    "results": [{ "id": "gsm7-single-160", "match": "none" }]
+  },
+  "sends": {
+    "attempted": 1,
+    "results": [
+      {
+        "id": "gsm7-ext-straddle",
+        "encoding": "gsm7",
+        "partsSent": 2,
+        "partsDelivered": 1,
+        "sentResults": [-1, -1],
+        "deliveryResults": ["delivered", "pending"],
+        "sentRows": 0,
+        "sentRowBodyEqual": false
+      }
+    ]
+  },
+  "tls": {
+    "result": "failed",
+    "attempts": [
+      { "keyClass": "strongbox", "keyDigests": ["SHA-256"], "result": "failed", "failure": "server-pin" }
+    ],
+    "serverPinMatched": false
+  }
+}

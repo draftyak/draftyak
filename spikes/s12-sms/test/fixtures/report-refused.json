@@ -1,0 +1,15 @@
+{
+  "schema": "draftyak.s12.probe-report.v1",
+  "encodingCheck": "é€👍",
+  "probeVersion": "0.2.0",
+  "createdAt": "2026-10-24T15:04:05.000Z",
+  "device": { "manufacturer": "Google", "androidVersion": "16", "sdkLevel": "36" },
+  "testMessages": [
+    {
+      "transport": "sms",
+      "direction": "inbound",
+      "addressIsSecondNumber": true,
+      "body": "see you at noon"
+    }
+  ]
+}
