@@ -115,13 +115,21 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				.split("\n")
 				.map((line) => line.trim())
 				.filter(Boolean);
+			const receipt =
+				file === ".github/workflows/ci.yml" &&
+				job === "required" &&
+				uploads.length === 1 &&
+				uploads[0] === `\${{ runner.temp }}/ci-verification.json` &&
+				inputs["retention-days"] === 7 &&
+				inputs["if-no-files-found"] === "error";
 			if (
 				action === "actions/upload-artifact" &&
+				!receipt &&
 				(uploads.length === 0 || uploads.some((p) => !evidence.test(p) || p.includes("..")))
 			) {
 				report(
 					at,
-					"upload-artifact may only upload spikes/*/evidence/, never an installable build",
+					"upload-artifact may only upload spikes/*/evidence/ or the fixed CI receipt, never an installable build",
 				);
 			}
 			for (const [expression, body = ""] of String(step.run ?? "").matchAll(expressions)) {
