@@ -44,9 +44,23 @@ The result is one outcome, read from the provider's stop reason before any outpu
 | `invalid` | `problems`: 1 to 20 | the model finished but its output isn't a valid draft |
 | `unexpected` | `stopReason`, possibly null | any other stop reason |
 
-Each of `problems` is a schema path and an issue, `<path>: <words>` of ASCII letters, digits and underscores (`^[A-Za-z0-9_]+(?:[.][A-Za-z0-9_]+)*: [A-Za-z0-9_]+(?: [A-Za-z0-9_]+)*$`, at most 200 characters), such as `output.body: at most 8000 characters` or `output: not JSON`, and never any content. The hub retries an `invalid` draft once with them, as its repair attempt. They are still plugin output: the hub writes them to no log or audit record. Anything outside this union is refused.
+Each of `problems` is a schema path and an issue, `<path>: <words>` of ASCII letters, digits and underscores (`^[A-Za-z0-9_]+(?:[.][A-Za-z0-9_]+)*: [A-Za-z0-9_]+(?: [A-Za-z0-9_]+)*$`, at most 200 characters), such as `output.body: at most 8000 characters` or `output: invalid_JSON`, and never any content. The hub retries an `invalid` draft once with them, as its repair attempt. They are still plugin output: the hub writes them to no log or audit record. Anything outside this union is refused.
 
 The hub reads a result with `checkDraftOutcome(result, contextIds)`, giving the job's own context ids: it applies `normalizeDraftOutput` to a draft's output first, so `contextRefs` never fail a draft and name only lookups that ran, and then checks the result as any other.
+
+Completed provider text uses the shared `parseDraftOutputText(text, contextIds)`
+from `@draftyak/protocol/draft-output-text`. It refuses text above 262,144 UTF-8
+bytes before parsing, uses the strict JCS parser for duplicate keys, excessive
+depth, invalid numbers and lone surrogates, then applies that same context
+normalization and `validateDraftOutput`. The text must be exactly one JSON value
+with only JSON whitespace around it. Prose, code fences and a byte-order mark are
+refused, never stripped. Byte overflow reports `output: too_big` and strict JSON
+failures report `output: invalid_JSON`; these fixed problems contain no model text.
+An invalid context catalogue or non-string text is a caller error and throws a
+content-free `TypeError`; unexpected errors other than `JcsError` propagate.
+Adapters map refusal, truncation and other stop reasons to their outcomes before
+calling this parser; the hub retains the single repair decision. Importing the
+helper changes no global validation setting.
 
 ## `DraftOutputV1`
 
