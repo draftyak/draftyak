@@ -10,6 +10,7 @@ import {
 	manualClock,
 	RESERVED_PORTS,
 } from "../src/index.ts";
+import { rawTarget } from "../src/target.ts";
 import { getWithHost, listeners, sha256, tryConnect } from "./helpers.ts";
 
 const HOST = "echo.draftyak.example";
@@ -32,6 +33,121 @@ const open = listeners();
 afterEach(async () => {
 	vi.restoreAllMocks();
 	await open.closeAll();
+});
+
+describe("optional bounded request intake", () => {
+	it("validates the intake cap", () => {
+		for (const maxRequestBodyBytes of [0, -1, 1.5, NaN, Infinity, 64 * 1024 * 1024 + 1]) {
+			expect(() => createFake(echoApp().app, { host: HOST, maxRequestBodyBytes })).toThrow(
+				RangeError,
+			);
+		}
+	});
+
+	it("keeps exact-cap bytes and raw targets through bounded intake", async () => {
+		const recorder = createRecorder();
+		let target = "";
+		const fake = createFake(
+			{
+				async fetch(request) {
+					target = rawTarget(request);
+					expect(request.redirect).toBe("manual");
+					return new Response(await request.arrayBuffer());
+				},
+			},
+			{ host: HOST, recorder, maxRequestBodyBytes: 4 },
+		);
+		const bytes = new Uint8Array([0xff, 0, 0x80, 0x41]);
+		const response = await fake.fetch("/a/../echo?", {
+			method: "POST",
+			body: bytes,
+			redirect: "manual",
+		});
+		expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
+		expect(target).toBe("/a/../echo?");
+		expect(recorder.takeRequests()[0]).toMatchObject({
+			target,
+			body: bytes,
+			bodyLength: bytes.length,
+			bodySha256: sha256(bytes),
+		});
+	});
+
+	it("cancels an oversized upload before any app, recorder or fault reads it", async () => {
+		const { app, hits } = echoApp();
+		const fake = createFake(app, { host: HOST, maxRequestBodyBytes: 4 });
+		fake.faults.add({ kind: "server-error" });
+		let cancelled = false;
+		const body = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				controller.enqueue(new Uint8Array([1, 2, 3]));
+			},
+			cancel() {
+				cancelled = true;
+			},
+		});
+		const response = await fake.fetch("/echo", {
+			method: "POST",
+			body,
+			duplex: "half",
+		} as RequestInit);
+		expect(response.status).toBe(413);
+		expect(cancelled).toBe(true);
+		expect(hits()).toBe(0);
+		expect(fake.recorder.takeRequests()).toEqual([]);
+		expect(fake.faults.pending()).toHaveLength(1);
+		expect((await fake.fetch("/echo", { method: "POST", body: "ok" })).status).toBe(503);
+		expect(fake.faults.pending()).toEqual([]);
+	});
+
+	it("aborts and cancels an unfinished upload before cloning or recording it", async () => {
+		const fake = createFake(echoApp().app, { host: HOST, maxRequestBodyBytes: 4 });
+		const abort = new AbortController();
+		const reason = new Error("DYTEST upload cancelled");
+		let started = (): void => {};
+		const reading = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		let cancelled: unknown;
+		const body = new ReadableStream<Uint8Array>({
+			pull() {
+				started();
+			},
+			cancel(value) {
+				cancelled = value;
+			},
+		});
+		const pending = fake.fetch("/echo", {
+			method: "POST",
+			body,
+			signal: abort.signal,
+			duplex: "half",
+		} as RequestInit);
+		const assertion = expect(pending).rejects.toBe(reason);
+		await reading;
+		abort.abort(reason);
+		await assertion;
+		expect(cancelled).toBe(reason);
+		expect(fake.recorder.takeRequests()).toEqual([]);
+	});
+
+	it("applies the same cap over the loopback listener", async () => {
+		const { app, hits } = echoApp();
+		const fake = createFake(app, { host: HOST, maxRequestBodyBytes: 4 });
+		const listener = await fake.listen();
+		try {
+			expect(
+				(await fetch(`${listener.origin}/echo`, { method: "POST", body: "12345" })).status,
+			).toBe(413);
+			expect(hits()).toBe(0);
+			expect(fake.recorder.takeRequests()).toEqual([]);
+			expect(
+				await (await fetch(`${listener.origin}/echo`, { method: "POST", body: "1234" })).text(),
+			).toBe("1234");
+		} finally {
+			await listener.close();
+		}
+	});
 });
 
 describe("createFake in memory", () => {

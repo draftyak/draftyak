@@ -4,7 +4,7 @@ import { createAdaptorServer, type Http2Bindings, type HttpBindings } from "@hon
 import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 import { createFaults, DroppedConnectionError, type Faults, httpDate } from "./faults.ts";
 import { createRecorder, type Recorder } from "./recorder.ts";
-import { targetOf, withTarget } from "./target.ts";
+import { rawTarget, targetOf, withTarget } from "./target.ts";
 
 /** The hub's listeners (47613–47615) and the Node inspector's port: a fake never takes them. */
 export const RESERVED_PORTS: ReadonlySet<number> = new Set([9229, 47613, 47614, 47615]);
@@ -23,6 +23,8 @@ export interface FakeOptions {
 	readonly host: string;
 	readonly recorder?: Recorder;
 	readonly faults?: Faults;
+	/** Optional intake cap, enforced before any recorder, redirect or application body clone. */
+	readonly maxRequestBodyBytes?: number;
 }
 
 export interface Listening {
@@ -47,6 +49,60 @@ export interface Fake {
 }
 
 const failed = (cause: unknown): TypeError => new TypeError("fetch failed", { cause });
+
+async function limitedRequest(request: Request, cap: number): Promise<Request | undefined> {
+	if (request.body === null) return request;
+	const reader = request.body.getReader();
+	let bytes = Buffer.alloc(0),
+		size = 0;
+	const cancel = (reason?: unknown): void => {
+		void reader.cancel(reason).catch(() => {});
+	};
+	const abort = (): void => cancel(request.signal.reason);
+	request.signal.addEventListener("abort", abort, { once: true });
+	try {
+		if (request.signal.aborted) abort();
+		request.signal.throwIfAborted();
+		for (;;) {
+			const item = await reader.read();
+			request.signal.throwIfAborted();
+			if (item.done) break;
+			if (!(item.value instanceof Uint8Array)) throw new TypeError("Invalid request body chunk");
+			if (item.value.byteLength > cap - size) {
+				cancel();
+				return;
+			}
+			const next = size + item.value.byteLength;
+			if (next > bytes.length) {
+				const grown = Buffer.alloc(Math.min(cap, Math.max(next, bytes.length * 2, 1024)));
+				bytes.copy(grown, 0, 0, size);
+				bytes = grown;
+			}
+			bytes.set(item.value, size);
+			size = next;
+		}
+		return withTarget(
+			new Request(request.url, {
+				method: request.method,
+				headers: request.headers,
+				body: bytes.subarray(0, size),
+				signal: request.signal,
+				redirect: request.redirect,
+				credentials: request.credentials,
+				cache: request.cache,
+				integrity: request.integrity,
+				keepalive: request.keepalive,
+				mode: request.mode,
+				referrer: request.referrer,
+				referrerPolicy: request.referrerPolicy,
+			}),
+			rawTarget(request),
+		);
+	} finally {
+		request.signal.removeEventListener("abort", abort);
+		reader.releaseLock();
+	}
+}
 
 // Settles with the promise, or rejects with the signal's reason as soon as it aborts.
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -84,12 +140,23 @@ async function redirected(
 }
 
 export function createFake(app: FetchApp, options: FakeOptions): Fake {
+	const cap = options.maxRequestBodyBytes;
+	if (cap !== undefined && (!Number.isSafeInteger(cap) || cap < 1 || cap > 64 * 1024 * 1024))
+		throw new RangeError("maxRequestBodyBytes must be whole bytes from 1 to 64 MiB");
 	const host = options.host.toLowerCase();
 	if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(host)) {
 		throw new TypeError(`a fake's host is a bare host name: ${options.host}`);
 	}
 	const recorder = options.recorder ?? createRecorder();
 	const faults = options.faults ?? createFaults();
+	const tooLarge = (): Response =>
+		Response.json(
+			{ error: "request_body_too_large" },
+			{
+				status: 413,
+				headers: { Date: httpDate(faults.clock.now()) },
+			},
+		);
 
 	const misdirected = async (authority: string): Promise<Response> => {
 		const headers = { Date: httpDate(faults.clock.now()) };
@@ -99,8 +166,8 @@ export function createFake(app: FetchApp, options: FakeOptions): Fake {
 		);
 	};
 
-	// Requests are recorded and take their faults in arrival order, and each record is complete
-	// before its answer goes out. A request for another host meets no fault and no app.
+	// Each record is complete before its answer goes out. Optional bounded intake finishes before
+	// a request reaches this recorder/fault ordering. Other hosts meet no fault and no app.
 	const handle = async (request: Request, names: readonly string[]): Promise<Response> => {
 		const recorded = recorder.record(request);
 		const authority = new URL(request.url).host;
@@ -117,6 +184,9 @@ export function createFake(app: FetchApp, options: FakeOptions): Fake {
 		let request = first;
 		for (let hops = 0; ; hops += 1) {
 			request.signal.throwIfAborted();
+			const limited = cap === undefined ? request : await limitedRequest(request, cap);
+			if (!limited) return tooLarge();
+			request = limited;
 			const follows = request.redirect === "follow";
 			const copy = follows && request.body !== null ? request.clone() : null;
 			const response = await handle(request, [host]);
@@ -134,7 +204,9 @@ export function createFake(app: FetchApp, options: FakeOptions): Fake {
 			overrideGlobalObjects: false,
 			fetch: async (request: Request, env: HttpBindings | Http2Bindings) => {
 				try {
-					return await handle(withTarget(request, targetOf(env.incoming.url ?? "/")), names());
+					const input = withTarget(request, targetOf(env.incoming.url ?? "/"));
+					const limited = cap === undefined ? input : await limitedRequest(input, cap);
+					return limited ? await handle(limited, names()) : tooLarge();
 				} catch (error) {
 					if (!(error instanceof DroppedConnectionError)) throw error;
 					env.incoming.socket.destroy();
