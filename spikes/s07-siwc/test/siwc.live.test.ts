@@ -34,7 +34,6 @@ it("S7b: Sign in with ChatGPT with the owner present", LIMIT, async (ctx) => {
 		say,
 		signal: ctx.signal,
 		holdPort: (signal) => acquireBenchLock({ label: "s07-siwc-live-1455", idle: false, signal }),
-		...(opened.deferredMinutes !== undefined && { deferredMinutes: opened.deferredMinutes }),
 	});
 	const shown = [...result.lines, ...result.details.map((detail) => `details: ${detail}`)];
 	process.stdout.write(
