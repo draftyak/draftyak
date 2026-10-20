@@ -15,7 +15,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -25,108 +25,227 @@
               "const": "host/fetch"
             },
             "params": {
-              "type": "object",
-              "properties": {
-                "method": {
-                  "type": "string",
-                  "enum": [
-                    "GET",
-                    "HEAD",
-                    "POST",
-                    "PUT",
-                    "PATCH",
-                    "DELETE",
-                    "OPTIONS"
-                  ]
-                },
-                "url": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 8192,
-                  "not": {
-                    "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
-                  }
-                },
-                "headers": {
-                  "maxItems": 64,
-                  "type": "array",
-                  "items": {
-                    "type": "array",
-                    "prefixItems": [
-                      {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128,
-                        "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$",
-                        "not": {
-                          "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
-                        }
-                      },
-                      {
-                        "type": "string",
-                        "maxLength": 8192,
-                        "pattern": "^(?:[!-~](?:[\\t -~]*[!-~])?)?$",
-                        "not": {
-                          "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
-                        }
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 8192,
+                      "not": {
+                        "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                       }
-                    ],
-                    "items": false,
-                    "minItems": 2,
-                    "maxItems": 2
-                  }
-                },
-                "body": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "ref": {
-                          "type": "string",
-                          "minLength": 26,
-                          "maxLength": 26,
-                          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
-                          "description": "A ULID: 26 upper-case Crockford base32 characters."
-                        }
-                      },
-                      "required": [
-                        "ref"
-                      ],
-                      "additionalProperties": false,
-                      "description": "Bytes the hub holds, such as a host/fetch response saved as a blob."
                     },
-                    {
+                    "headers": {
+                      "maxItems": 64,
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "prefixItems": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$(?![\\s\\S])",
+                            "not": {
+                              "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
+                            }
+                          },
+                          {
+                            "type": "string",
+                            "maxLength": 8192,
+                            "pattern": "^(?:[!-~](?:[\\t -~]*[!-~])?)?$(?![\\s\\S])",
+                            "not": {
+                              "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
+                            }
+                          }
+                        ],
+                        "items": false,
+                        "minItems": 2,
+                        "maxItems": 2
+                      }
+                    },
+                    "body": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string",
+                              "minLength": 26,
+                              "maxLength": 26,
+                              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                              "description": "A ULID: 26 upper-case Crockford base32 characters."
+                            }
+                          },
+                          "required": [
+                            "ref"
+                          ],
+                          "additionalProperties": false,
+                          "description": "Bytes the hub holds, such as a host/fetch response saved as a blob."
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "base64": {
+                              "type": "string",
+                              "maxLength": 87382,
+                              "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$(?![\\s\\S])",
+                              "description": "Bytes as unpadded, canonical base64url."
+                            }
+                          },
+                          "required": [
+                            "base64"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "sendTicket": {},
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "GET",
+                        "HEAD",
+                        "POST",
+                        "PUT",
+                        "PATCH",
+                        "DELETE",
+                        "OPTIONS"
+                      ]
+                    },
+                    "saveAs": {
+                      "type": "string",
+                      "const": "blob"
+                    },
+                    "stream": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "headers",
+                    "method"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 8192,
+                      "not": {
+                        "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
+                      }
+                    },
+                    "headers": {
+                      "maxItems": 64,
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "prefixItems": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$(?![\\s\\S])",
+                            "not": {
+                              "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
+                            }
+                          },
+                          {
+                            "type": "string",
+                            "maxLength": 8192,
+                            "pattern": "^(?:[!-~](?:[\\t -~]*[!-~])?)?$(?![\\s\\S])",
+                            "not": {
+                              "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
+                            }
+                          }
+                        ],
+                        "items": false,
+                        "minItems": 2,
+                        "maxItems": 2
+                      }
+                    },
+                    "body": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string",
+                              "minLength": 26,
+                              "maxLength": 26,
+                              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                              "description": "A ULID: 26 upper-case Crockford base32 characters."
+                            }
+                          },
+                          "required": [
+                            "ref"
+                          ],
+                          "additionalProperties": false,
+                          "description": "Bytes the hub holds, such as a host/fetch response saved as a blob."
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "base64": {
+                              "type": "string",
+                              "maxLength": 87382,
+                              "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$(?![\\s\\S])",
+                              "description": "Bytes as unpadded, canonical base64url."
+                            }
+                          },
+                          "required": [
+                            "base64"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "sendTicket": {},
+                    "method": {
+                      "type": "string",
+                      "const": "GET"
+                    },
+                    "saveAs": {
                       "type": "object",
                       "properties": {
-                        "base64": {
+                        "kind": {
                           "type": "string",
-                          "maxLength": 87382,
-                          "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$",
-                          "description": "Bytes as unpadded, canonical base64url."
+                          "const": "base64url-json-member"
+                        },
+                        "member": {
+                          "type": "string",
+                          "enum": [
+                            "raw",
+                            "data"
+                          ]
                         }
                       },
                       "required": [
-                        "base64"
+                        "kind",
+                        "member"
                       ],
                       "additionalProperties": false
+                    },
+                    "stream": {
+                      "type": "boolean",
+                      "const": false
                     }
-                  ]
-                },
-                "sendTicket": {},
-                "saveAs": {
-                  "type": "string",
-                  "const": "blob"
-                },
-                "stream": {
-                  "type": "boolean"
+                  },
+                  "required": [
+                    "url",
+                    "headers",
+                    "method",
+                    "saveAs"
+                  ],
+                  "additionalProperties": false
                 }
-              },
-              "required": [
-                "method",
-                "url",
-                "headers"
-              ],
-              "additionalProperties": false
+              ]
             }
           },
           "required": [
@@ -148,7 +267,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -194,7 +313,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -210,7 +329,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -219,7 +338,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -251,7 +370,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -267,7 +386,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -298,7 +417,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -314,7 +433,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -345,7 +464,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -361,7 +480,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -394,7 +513,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -410,7 +529,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -441,7 +560,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -483,7 +602,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -538,7 +657,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -556,7 +675,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 128,
-                      "pattern": "^[!-~]+$",
+                      "pattern": "^[!-~]+$(?![\\s\\S])",
                       "not": {
                         "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                       }
@@ -607,7 +726,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -632,7 +751,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -709,7 +828,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -722,7 +841,7 @@
                 "base64": {
                   "type": "string",
                   "maxLength": 87382,
-                  "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$",
+                  "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$(?![\\s\\S])",
                   "description": "Bytes as unpadded, canonical base64url."
                 },
                 "done": {
@@ -773,7 +892,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }

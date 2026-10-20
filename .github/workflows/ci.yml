@@ -145,6 +145,7 @@ jobs:
           SPIKES: ${{ needs.changes.outputs.spikes }}
           HEAVY: ${{ needs.changes.outputs.heavy }}
           SMOKE: ${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}
+          DRAFTYAK_STRICT_SKIPS: '1'
         run: |
           filters=()
           for dir in $SPIKES; do filters+=("--filter=./$dir"); done
