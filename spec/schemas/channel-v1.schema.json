@@ -1,0 +1,1909 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/schemas/channel-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "channel_describe": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "channel": {
+              "type": "string",
+              "enum": [
+                "email",
+                "chat"
+              ]
+            },
+            "mutations": {
+              "maxItems": 6,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "archive",
+                  "unarchive",
+                  "read",
+                  "unread",
+                  "label",
+                  "unlabel"
+                ]
+              }
+            },
+            "attachments": {
+              "type": "boolean"
+            },
+            "listen": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "channel",
+            "mutations",
+            "attachments",
+            "listen"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "channel_describe",
+      "description": "Which change kinds the channel reports and which optional tools it serves."
+    },
+    "channel_probe": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "degraded"
+              ]
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "channel_probe",
+      "description": "Checks the account's credentials and reach; returns status, never data."
+    },
+    "channel_sync": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "initial",
+                    "resync"
+                  ]
+                },
+                "since": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                },
+                "cursor": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^[!-~]+$",
+                  "description": "A plugin's sync position, opaque to the hub."
+                }
+              },
+              "required": [
+                "mode",
+                "since"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "const": "delta"
+                },
+                "cursor": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^[!-~]+$",
+                  "description": "A plugin's sync position, opaque to the hub."
+                }
+              },
+              "required": [
+                "mode",
+                "cursor"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "type": "object"
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "changes": {
+              "maxItems": 500,
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "email.message"
+                      },
+                      "providerId": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "threadId": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "internalDate": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                      },
+                      "labelIds": {
+                        "maxItems": 256,
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        }
+                      },
+                      "sizeBytes": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "raw": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "ref": {
+                                "type": "string",
+                                "minLength": 26,
+                                "maxLength": 26,
+                                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                                "description": "A ULID: 26 upper-case Crockford base32 characters."
+                              }
+                            },
+                            "required": [
+                              "ref"
+                            ],
+                            "additionalProperties": false,
+                            "description": "Bytes the hub holds, such as a host/fetch response saved as a blob."
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "base64": {
+                                "type": "string",
+                                "maxLength": 87382,
+                                "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$",
+                                "description": "Bytes as unpadded, canonical base64url."
+                              }
+                            },
+                            "required": [
+                              "base64"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "providerId",
+                      "threadId",
+                      "internalDate",
+                      "labelIds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "email.deleted"
+                      },
+                      "providerId": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "providerId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "email.labels"
+                      },
+                      "providerId": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "threadId": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "labelIds": {
+                        "maxItems": 256,
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "providerId",
+                      "threadId",
+                      "labelIds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "chat.message"
+                      },
+                      "channelId": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "ts": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "threadTs": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "sentAt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                      },
+                      "author": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "user",
+                              "bot"
+                            ]
+                          },
+                          "id": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "subtype": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[a-z][a-z0-9_]*$"
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 40000
+                      },
+                      "editedAt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                      },
+                      "files": {
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            },
+                            "name": {
+                              "type": "string",
+                              "maxLength": 255
+                            },
+                            "contentType": {
+                              "$ref": "#/$defs/draftyak.normalized-change.MediaType"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "contentType",
+                            "size"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "channelId",
+                      "ts",
+                      "sentAt",
+                      "author",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "chat.deleted"
+                      },
+                      "channelId": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "ts": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "channelId",
+                      "ts"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "chat.conversation"
+                      },
+                      "channelId": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "name": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "type": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ChatChannelType"
+                      },
+                      "external": {
+                        "type": "boolean"
+                      },
+                      "memberCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "archived": {
+                        "type": "boolean"
+                      },
+                      "member": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "channelId",
+                      "type",
+                      "external",
+                      "memberCount",
+                      "archived",
+                      "member"
+                    ],
+                    "additionalProperties": false
+                  }
+                ],
+                "title": "PluginChange"
+              }
+            },
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[!-~]+$",
+              "description": "A plugin's sync position, opaque to the hub."
+            },
+            "more": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "changes",
+            "cursor",
+            "more"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "channel_sync",
+      "description": "One page of changes. initial and resync start at `since`; delta continues from a cursor. While `more` is true, call again with the returned cursor and the same mode."
+    },
+    "channel_body_fetch": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "email"
+                    },
+                    "providerId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "providerId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "chat"
+                    },
+                    "channelId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "ts": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "channelId",
+                    "ts"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "email.message"
+                    },
+                    "providerId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "threadId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "internalDate": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                    },
+                    "labelIds": {
+                      "maxItems": 256,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      }
+                    },
+                    "sizeBytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "raw": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "ref": {
+                              "type": "string",
+                              "minLength": 26,
+                              "maxLength": 26,
+                              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                              "description": "A ULID: 26 upper-case Crockford base32 characters."
+                            }
+                          },
+                          "required": [
+                            "ref"
+                          ],
+                          "additionalProperties": false,
+                          "description": "Bytes the hub holds, such as a host/fetch response saved as a blob."
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "base64": {
+                              "type": "string",
+                              "maxLength": 87382,
+                              "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$",
+                              "description": "Bytes as unpadded, canonical base64url."
+                            }
+                          },
+                          "required": [
+                            "base64"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "providerId",
+                    "threadId",
+                    "internalDate",
+                    "labelIds",
+                    "raw"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "chat.message"
+                    },
+                    "channelId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "ts": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "threadTs": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "sentAt": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                    },
+                    "author": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "bot"
+                          ]
+                        },
+                        "id": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "subtype": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "pattern": "^[a-z][a-z0-9_]*$"
+                    },
+                    "text": {
+                      "type": "string",
+                      "maxLength": 40000
+                    },
+                    "editedAt": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                    },
+                    "files": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "name": {
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          "contentType": {
+                            "$ref": "#/$defs/draftyak.normalized-change.MediaType"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "contentType",
+                          "size"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "channelId",
+                    "ts",
+                    "sentAt",
+                    "author",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "channel_body_fetch",
+      "description": "One message with its body: an email's RFC 5322 bytes, a chat message's text."
+    },
+    "channel_attachment_fetch": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "email"
+                    },
+                    "providerId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "providerId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "chat"
+                    },
+                    "channelId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "ts": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "channelId",
+                    "ts"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "attachmentId": {
+              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+            }
+          },
+          "required": [
+            "message",
+            "attachmentId"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "contentType": {
+              "$ref": "#/$defs/draftyak.normalized-change.MediaType"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "content": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "string",
+                      "minLength": 26,
+                      "maxLength": 26,
+                      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                      "description": "A ULID: 26 upper-case Crockford base32 characters."
+                    }
+                  },
+                  "required": [
+                    "ref"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Bytes the hub holds, such as a host/fetch response saved as a blob."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "base64": {
+                      "type": "string",
+                      "maxLength": 87382,
+                      "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$",
+                      "description": "Bytes as unpadded, canonical base64url."
+                    }
+                  },
+                  "required": [
+                    "base64"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "contentType",
+            "size",
+            "content"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "channel_attachment_fetch",
+      "description": "An attachment's bytes, by the id its message listed."
+    },
+    "channel_mutate": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "archive",
+                    "unarchive",
+                    "read",
+                    "unread"
+                  ]
+                },
+                "messages": {
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "email"
+                          },
+                          "providerId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "providerId"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "chat"
+                          },
+                          "channelId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "ts": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "channelId",
+                          "ts"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "op",
+                "messages"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "label",
+                    "unlabel"
+                  ]
+                },
+                "messages": {
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "email"
+                          },
+                          "providerId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "providerId"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "chat"
+                          },
+                          "channelId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "ts": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "channelId",
+                          "ts"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "labelIds": {
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                  }
+                }
+              },
+              "required": [
+                "op",
+                "messages",
+                "labelIds"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "type": "object"
+        },
+        "output": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "channel_mutate",
+      "description": "Organizes messages at the provider, only as channel_describe lists."
+    },
+    "channel_send": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "enum": [
+                "POST",
+                "PUT",
+                "PATCH"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$",
+              "description": "A canonical https URL: a lower-case DNS host, no userinfo, no port 443, no dot segments, percent-encoding in upper-case hex and never of an unreserved character, and no fragment."
+            },
+            "contentType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~](?:[ -~]*[!-~])?$",
+              "description": "A Content-Type value: visible ASCII, spaces only between characters."
+            },
+            "body": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                }
+              },
+              "required": [
+                "ref"
+              ],
+              "additionalProperties": false,
+              "description": "Bytes the hub holds, such as a host/fetch response saved as a blob."
+            }
+          },
+          "required": [
+            "method",
+            "url",
+            "contentType",
+            "body"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "email"
+                    },
+                    "providerId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "providerId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "chat"
+                    },
+                    "channelId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "ts": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "channelId",
+                    "ts"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "io.github.draftyak/send-ticket": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "outboxId": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "instanceId": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "POST",
+                    "PUT",
+                    "PATCH"
+                  ]
+                },
+                "url": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$",
+                  "description": "A canonical https URL: a lower-case DNS host, no userinfo, no port 443, no dot segments, percent-encoding in upper-case hex and never of an unreserved character, and no fragment."
+                },
+                "headersSha256": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "contentType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-~](?:[ -~]*[!-~])?$",
+                  "description": "A Content-Type value: visible ASCII, spaces only between characters."
+                },
+                "bodySha256": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "exp": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                }
+              },
+              "required": [
+                "id",
+                "outboxId",
+                "instanceId",
+                "method",
+                "url",
+                "headersSha256",
+                "contentType",
+                "bodySha256",
+                "exp"
+              ],
+              "additionalProperties": false,
+              "title": "SendTicket",
+              "description": "A one-shot broker ticket for one hub-rendered send request."
+            }
+          },
+          "required": [
+            "io.github.draftyak/send-ticket"
+          ],
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "meta"
+      ],
+      "additionalProperties": false,
+      "title": "channel_send",
+      "description": "Executor only. Transports the hub-rendered request once, through ctx.fetch with its Content-Type, the body ref and the ticket from _meta, and returns the provider's id for the message."
+    },
+    "channel_send_reconcile": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "attemptAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "target": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "email"
+                    },
+                    "threadId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "rfc822MessageId": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^<[!-;=?-~]+>$"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "chat"
+                    },
+                    "channelId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "threadTs": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "channelId"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "attemptAt",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "candidates": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "email.message"
+                      },
+                      "providerId": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "threadId": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "internalDate": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                      },
+                      "labelIds": {
+                        "maxItems": 256,
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        }
+                      },
+                      "sizeBytes": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "raw": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "ref": {
+                                "type": "string",
+                                "minLength": 26,
+                                "maxLength": 26,
+                                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                                "description": "A ULID: 26 upper-case Crockford base32 characters."
+                              }
+                            },
+                            "required": [
+                              "ref"
+                            ],
+                            "additionalProperties": false,
+                            "description": "Bytes the hub holds, such as a host/fetch response saved as a blob."
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "base64": {
+                                "type": "string",
+                                "maxLength": 87382,
+                                "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$",
+                                "description": "Bytes as unpadded, canonical base64url."
+                              }
+                            },
+                            "required": [
+                              "base64"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "providerId",
+                      "threadId",
+                      "internalDate",
+                      "labelIds",
+                      "raw"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "chat.message"
+                      },
+                      "channelId": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "ts": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "threadTs": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      },
+                      "sentAt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                      },
+                      "author": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "user",
+                              "bot"
+                            ]
+                          },
+                          "id": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "subtype": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[a-z][a-z0-9_]*$"
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 40000
+                      },
+                      "editedAt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                      },
+                      "files": {
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            },
+                            "name": {
+                              "type": "string",
+                              "maxLength": 255
+                            },
+                            "contentType": {
+                              "$ref": "#/$defs/draftyak.normalized-change.MediaType"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "contentType",
+                            "size"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "channelId",
+                      "ts",
+                      "sentAt",
+                      "author",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "complete": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "candidates",
+            "complete"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "channel_send_reconcile",
+      "description": "Messages the account sent since the attempt, with their bodies, for the hub to match; `complete` is false when the scan stopped early."
+    },
+    "channel_listen": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "leaseMs": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 600000
+            }
+          },
+          "required": [
+            "leaseMs"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "leaseMs": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 600000
+            }
+          },
+          "required": [
+            "leaseMs"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_EXPIRED",
+                "AUTH_REVOKED",
+                "RATE_LIMITED",
+                "QUOTA_EXCEEDED",
+                "CURSOR_EXPIRED",
+                "NOT_FOUND",
+                "PERMISSION_DENIED",
+                "TRANSIENT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "SEND_REJECTED",
+                "SEND_UNCERTAIN"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "title": "PluginErrorResult",
+          "description": "A plugin tool's error result."
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false,
+      "title": "channel_listen",
+      "description": "Holds the provider's event connection for the lease and signals host/changed."
+    }
+  },
+  "required": [
+    "channel_describe",
+    "channel_probe",
+    "channel_sync",
+    "channel_body_fetch",
+    "channel_send",
+    "channel_send_reconcile"
+  ],
+  "additionalProperties": false,
+  "title": "io.github.draftyak/channel v1",
+  "description": "The tools of io.github.draftyak/channel version 1.",
+  "$defs": {
+    "draftyak.normalized-change.ProviderId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[!-~]+$",
+      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces.",
+      "not": {
+        "pattern": "\\n"
+      }
+    },
+    "draftyak.normalized-change.MediaType": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255,
+      "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$",
+      "description": "A lower-case type/subtype without parameters, such as image/png.",
+      "not": {
+        "pattern": "\\n"
+      }
+    },
+    "draftyak.normalized-change.ChatChannelType": {
+      "type": "string",
+      "enum": [
+        "dm",
+        "group_dm",
+        "public",
+        "private"
+      ],
+      "description": "A direct message, a group direct message, or a public or private channel."
+    }
+  }
+}

@@ -181,6 +181,8 @@ describe("workspace policy", () => {
 			"docs/a.md": ["auto", "lf"],
 			"mail/a.eml": ["unset"],
 			"spec/vectors/sms/a.json": ["unset"],
+			"spikes/s12-sms/vectors/a.json": ["unset"],
+			"packages/protocol/scripts/vectors/a.ts": ["auto", "lf"],
 			"security/injection-corpus/a.txt": ["unset"],
 			"spikes/s01-sqlite3mc/fixtures/a.json": ["unset"],
 			"probe-android/gradlew.bat": ["auto", "crlf"],

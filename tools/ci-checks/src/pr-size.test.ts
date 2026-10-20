@@ -31,6 +31,13 @@ describe("pr-size", () => {
 		["spikes/s03-mcp-sdk/vendor/basic-host/LICENSE", "vendored"],
 		["tools/fetch-node/test/fixtures/vendor/nodejs/v26.12.0/SHASUMS256.txt", "vendored"],
 		["spikes/s12-sms/vectors/gsm7.json", "vectors"],
+		["spec/vectors/jcs/rfc8785.json", "vectors"],
+		["packages/protocol/scripts/vectors/jcs.ts", "code"],
+		["packages/protocol/test/vectors.ts", "tests"],
+		["spec/plugin-manifest-v1.schema.json", "generated"],
+		["spec/schemas/plugin-error-v1.schema.json", "generated"],
+		["packages/protocol/test/fixtures/x.schema.json", "tests"],
+		["packages/protocol/scripts/spec/errors.ts", "code"],
 		["spikes/s01-sqlite3mc/evidence/load-matrix.json", "evidence"],
 	])("%s is %s", (file, expected) => {
 		expect(category(file)).toBe(expected);
@@ -57,6 +64,7 @@ describe("pr-size", () => {
 			"    generated wrapper files     0 lines",
 			"    vendored upstream files     0 lines",
 			"    generated vectors           0 lines",
+			"    generated schemas           0 lines",
 			"    evidence JSON               0 lines",
 			"  raw total                 1,882 lines",
 		]);
@@ -188,6 +196,7 @@ describe("pr-size", () => {
 				wrappers: 0,
 				vendored: 0,
 				vectors: 0,
+				generated: 0,
 				evidence: 3,
 			},
 			files: 7,

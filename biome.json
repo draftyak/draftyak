@@ -11,8 +11,10 @@
       "!**/fixtures",
       "!**/vendor",
       "!**/evidence",
-      "!**/vectors",
+      "!spec/vectors",
+      "!spikes/*/vectors",
       "!**/*.lock.json",
+      "!spec/**/*.schema.json",
       "!spikes/sched-clock/grit-check"
     ]
   },

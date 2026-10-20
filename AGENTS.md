@@ -17,7 +17,7 @@ DraftYak is a local-first, open, human-approved AI inbox: AI drafts replies, and
 | `docs/adr/` | Architecture decision records, `NNNN-<slug>.md` from `template.md`; the backlog fixes each number, and numbers never change | M0.6b |
 | `.github/workflows/` | `ci`, `dco`, `pr-title` and `zizmor` (M0.3); `spikes` for cross-OS spike runs (M0.8) | M0.3 |
 | `tools/ci-checks/` | CI checks that also run locally: changed areas, DCO, PR title and body, PR size, CI minutes, workflow policy | M0.3 |
-| `docs/ci-verification.md` | CI coverage, verification receipts and reuse during review | M0.3b |
+| `docs/ci-verification.md` | CI coverage, verification receipts and reuse during review | M1.1c |
 | `tools/vendor-guard/` | `pnpm guard`: vendor, secret, attribution and evidence rules | M0.4 |
 | `tools/fetch-node/` | `pnpm fetch-node`: official Node binaries, verified against Node's signed checksums | M0.5 |
 | `tools/adr-check/` | `pnpm adr`: ADR lint, index and report | M0.6b |

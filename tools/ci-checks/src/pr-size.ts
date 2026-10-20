@@ -17,6 +17,7 @@ export type Category =
 	| "wrappers"
 	| "vendored"
 	| "vectors"
+	| "generated"
 	| "evidence";
 
 const uncounted: Readonly<Record<Exclude<Category, "code">, string>> = {
@@ -26,6 +27,7 @@ const uncounted: Readonly<Record<Exclude<Category, "code">, string>> = {
 	wrappers: "generated wrapper files",
 	vendored: "vendored upstream files",
 	vectors: "generated vectors",
+	generated: "generated schemas",
 	evidence: "evidence JSON",
 };
 
@@ -40,7 +42,10 @@ export function category(file: string): Category {
 		return "wrappers";
 	}
 	if (/(?:^|\/)vendor\//.test(file)) return "vendored";
-	if (/(?:^|\/)vectors\//.test(file)) return "vectors";
+	// Generated vector data only; the generators under packages/protocol/scripts/vectors/ are code.
+	if (/^(?:spec|spikes\/[^/]+)\/vectors\//.test(file)) return "vectors";
+	// JSON Schemas that @draftyak/protocol exports to spec/; a drift test checks them.
+	if (/^spec\/(?:[^/]+\/)*[^/]+\.schema\.json$/.test(file)) return "generated";
 	if (/^spikes\/[^/]+\/evidence\//.test(file)) return "evidence";
 	if (/(?:^|\/)(?:test|tests|__tests__|fixtures)\//.test(file) || name.includes(".test.")) {
 		return "tests";
@@ -83,6 +88,7 @@ export function measure(stats: readonly FileStat[]): Size {
 		wrappers: 0,
 		vendored: 0,
 		vectors: 0,
+		generated: 0,
 		evidence: 0,
 	};
 	for (const stat of stats) byCategory[category(stat.file)] += stat.added + stat.deleted;

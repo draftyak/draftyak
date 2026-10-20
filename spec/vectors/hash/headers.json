@@ -1,0 +1,218 @@
+{
+  "format": "draftyak.vectors.hash.v1",
+  "description": "headersSha256: the SHA-256 of the JCS of [[name, value], ...] with names lower-cased and the pairs sorted by name, then value, comparing UTF-16 code units as JCS sorts member names (never a collation or a case-insensitive order). \"canonical\" is that JCS for \"headers\"; a case with \"error\" is refused with that code: names are RFC 9110 tokens, values visible ASCII with spaces or tabs only between characters.",
+  "cases": [
+    {
+      "id": "empty",
+      "headers": [],
+      "canonical": "[]",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "id": "json-post",
+      "headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "Idempotency-Key",
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RC"
+        ]
+      ],
+      "canonical": "[[\"content-type\",\"application/json\"],[\"idempotency-key\",\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\"]]",
+      "sha256": "a846ecef2a1a8736c113be071a3ff577a838be72a2d0278caed4fc606a10f860"
+    },
+    {
+      "id": "json-post-other-order-and-case",
+      "headers": [
+        [
+          "IDEMPOTENCY-KEY",
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RC"
+        ],
+        [
+          "content-TYPE",
+          "application/json"
+        ]
+      ],
+      "canonical": "[[\"content-type\",\"application/json\"],[\"idempotency-key\",\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\"]]",
+      "sha256": "a846ecef2a1a8736c113be071a3ff577a838be72a2d0278caed4fc606a10f860"
+    },
+    {
+      "id": "json-post-one-value-byte-changed",
+      "headers": [
+        [
+          "Content-Type",
+          "application/jsom"
+        ],
+        [
+          "Idempotency-Key",
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RC"
+        ]
+      ],
+      "canonical": "[[\"content-type\",\"application/jsom\"],[\"idempotency-key\",\"01JAZ3W3B6Q8M2V0G5T9K4X7RC\"]]",
+      "sha256": "219081c49f264e75b0dc46864b41295558206d135e99f980b862646d9e8adf42"
+    },
+    {
+      "id": "repeated-name",
+      "headers": [
+        [
+          "Accept",
+          "text/plain"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "accept",
+          "application/json"
+        ]
+      ],
+      "canonical": "[[\"accept\",\"application/json\"],[\"accept\",\"text/plain\"],[\"content-type\",\"application/json\"]]",
+      "sha256": "10f0318d58851be1e25858e47f0587b4639d811f9b312c3b5fc68c4fc4cd5e60"
+    },
+    {
+      "id": "repeated-name-other-order",
+      "headers": [
+        [
+          "ACCEPT",
+          "application/json"
+        ],
+        [
+          "Accept",
+          "text/plain"
+        ],
+        [
+          "content-type",
+          "application/json"
+        ]
+      ],
+      "canonical": "[[\"accept\",\"application/json\"],[\"accept\",\"text/plain\"],[\"content-type\",\"application/json\"]]",
+      "sha256": "10f0318d58851be1e25858e47f0587b4639d811f9b312c3b5fc68c4fc4cd5e60"
+    },
+    {
+      "id": "values-by-code-units",
+      "headers": [
+        [
+          "Accept",
+          "a"
+        ],
+        [
+          "Accept",
+          "B"
+        ]
+      ],
+      "canonical": "[[\"accept\",\"B\"],[\"accept\",\"a\"]]",
+      "sha256": "ab5d460ff38c33a34663037a6e20f54f293bbf69ab89435215dee1f0862c2a95"
+    },
+    {
+      "id": "names-by-code-units",
+      "headers": [
+        [
+          "X~a",
+          "1"
+        ],
+        [
+          "XA",
+          "2"
+        ],
+        [
+          "X_a",
+          "3"
+        ],
+        [
+          "X-Ab",
+          "4"
+        ]
+      ],
+      "canonical": "[[\"x-ab\",\"4\"],[\"x_a\",\"3\"],[\"xa\",\"2\"],[\"x~a\",\"1\"]]",
+      "sha256": "91a928a8fd27d1d4826c39e9a99e886350f38fd7e125109ead9a8d07f4baed21"
+    },
+    {
+      "id": "inner-space-and-empty-value",
+      "headers": [
+        [
+          "X-Note",
+          "a b\tc"
+        ],
+        [
+          "X-Empty",
+          ""
+        ]
+      ],
+      "canonical": "[[\"x-empty\",\"\"],[\"x-note\",\"a b\\tc\"]]",
+      "sha256": "7d651d06594ec2e2a2f44686a01593847ee451a7d83c5f6b7bd79ac3990fc469"
+    },
+    {
+      "id": "name-with-space",
+      "headers": [
+        [
+          "Content Type",
+          "application/json"
+        ]
+      ],
+      "error": "HEADERS_INVALID_NAME"
+    },
+    {
+      "id": "empty-name",
+      "headers": [
+        [
+          "",
+          "x"
+        ]
+      ],
+      "error": "HEADERS_INVALID_NAME"
+    },
+    {
+      "id": "name-not-ascii",
+      "headers": [
+        [
+          "X-É",
+          "x"
+        ]
+      ],
+      "error": "HEADERS_INVALID_NAME"
+    },
+    {
+      "id": "value-with-crlf",
+      "headers": [
+        [
+          "X-Note",
+          "a\r\nb"
+        ]
+      ],
+      "error": "HEADERS_INVALID_VALUE"
+    },
+    {
+      "id": "value-not-ascii",
+      "headers": [
+        [
+          "X-Note",
+          "café"
+        ]
+      ],
+      "error": "HEADERS_INVALID_VALUE"
+    },
+    {
+      "id": "value-leading-space",
+      "headers": [
+        [
+          "X-Note",
+          " a"
+        ]
+      ],
+      "error": "HEADERS_INVALID_VALUE"
+    },
+    {
+      "id": "value-trailing-tab",
+      "headers": [
+        [
+          "X-Note",
+          "a\t"
+        ]
+      ],
+      "error": "HEADERS_INVALID_VALUE"
+    }
+  ]
+}

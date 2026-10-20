@@ -31,8 +31,8 @@ jobs:
       docs-only: ${{ steps.areas.outputs.docs-only }}
       rust: ${{ steps.areas.outputs.rust }}
       spikes: ${{ steps.areas.outputs.spikes }}
-      heavy: ''
-      template-smoke: 'false'
+      heavy: ${{ steps.areas.outputs.heavy }}
+      template-smoke: ${{ steps.areas.outputs.template-smoke }}
       source: ${{ steps.source.outputs.source }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,13 +121,41 @@ jobs:
           workspaces: ${{ needs.changes.outputs.rust }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: test:heavy for the touched spikes
-        if: needs.changes.outputs.spikes != ''
+      # Also on workflow changes, so an edit to the pin or the download is tested on its own PR.
+      - name: cargo-deny 0.20.2, checked against its published SHA-256
+        if: contains(fromJSON(needs.changes.outputs.areas), 'rust:crates') || contains(fromJSON(needs.changes.outputs.areas), 'workflows')
+        env:
+          DENY_VERSION: 0.20.2
+          DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+        run: |
+          name="cargo-deny-$DENY_VERSION-x86_64-unknown-linux-musl"
+          dir="$RUNNER_TEMP/cargo-deny"
+          mkdir -p "$dir"
+          url="https://github.com/EmbarkStudios/cargo-deny/releases/download/$DENY_VERSION/$name.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 --proto '=https' --tlsv1.2 --output "$dir/$name.tar.gz" "$url"
+          echo "$DENY_SHA256  $dir/$name.tar.gz" | sha256sum --check --strict
+          tar -xzf "$dir/$name.tar.gz" -C "$dir" --strip-components=1 "$name/cargo-deny"
+          "$dir/cargo-deny" --version
+      - name: Rust checks for crates/ (fmt, cargo-deny, clippy, tests)
+        if: contains(fromJSON(needs.changes.outputs.areas), 'rust:crates')
+        run: DRAFTYAK_CARGO_DENY="$RUNNER_TEMP/cargo-deny/cargo-deny" node tools/verify/verify.ts --profile rust
+      - name: test:heavy for the touched spikes and the selected packages
+        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''
         env:
           SPIKES: ${{ needs.changes.outputs.spikes }}
+          HEAVY: ${{ needs.changes.outputs.heavy }}
+          SMOKE: ${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}
         run: |
           filters=()
           for dir in $SPIKES; do filters+=("--filter=./$dir"); done
+          while IFS= read -r filter; do
+            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi
+          done <<< "$HEAVY"
+          # The template smoke packs and installs, so it runs only for its own packages and global
+          # changes, on main and on PRs into main.
+          if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then
+            filters+=("--filter=!./packages/create-plugin")
+          fi
           node tools/verify/turbo.ts run test:heavy "${filters[@]}"
 
   windows:
@@ -155,6 +183,11 @@ jobs:
           path: .turbo/cache
           key: turbo-${{ runner.os }}-${{ github.job }}-${{ hashFiles('pnpm-lock.yaml', '.github/workflows/**', '**/*.ts', '**/*.json', '!**/node_modules/**') }}
           restore-keys: turbo-${{ runner.os }}-${{ github.job }}-
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master on 2026-10-16
+        if: hashFiles('crates/Cargo.toml') != ''
+        with:
+          toolchain: 1.95.0
+          components: clippy, rustfmt
       - run: pnpm install --frozen-lockfile
       # Warm the hosted runner's engine before parallel test capability probes.
       - name: Initialize the Windows container service

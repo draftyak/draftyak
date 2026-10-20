@@ -1,0 +1,27 @@
+# cargo-deny 0.20.2 policy for the crates/ workspace; `pnpm verify` and CI run `cargo-deny --locked check`.
+
+# Every RustSec advisory fails the check, for any crate in the graph, as does a yanked version.
+[advisories]
+unmaintained = "all"
+unsound = "all"
+yanked = "deny"
+ignore = []
+
+# Exactly the licences the locked crates resolve to, dev-dependencies included. A new crate's
+# licence is one more line here, listed in its PR for the owner.
+[licenses]
+include-dev = true
+allow = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "MIT",
+    # unicode-ident, through serde's and thiserror's derive macros.
+    "Unicode-3.0",
+]
+
+# crates.io only.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

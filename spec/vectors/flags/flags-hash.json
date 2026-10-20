@@ -1,0 +1,667 @@
+{
+  "format": "draftyak.vectors.flags.v1",
+  "description": "flagsHash. A case with \"flagsHash\" gives \"flags\" as listed and \"sorted\", the same flags ordered by code, then detail (a flag without one first), comparing UTF-16 code units as JCS sorts member names; \"canonicalHex\" is the UTF-8 of the JCS of \"sorted\", \"flagsHash\" its SHA-256, and \"ackRequired\" whether any flag is ack. A case with \"error\" is refused with that code: FLAGS_INVALID for anything but a list of catalogue flags with their own severity and an optional detail of 1 to 1,000 Unicode scalar values, FLAGS_DUPLICATE for two flags with the same code and detail.",
+  "cases": [
+    {
+      "id": "empty",
+      "flags": [],
+      "sorted": [],
+      "canonicalHex": "5b5d",
+      "flagsHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "ackRequired": false
+    },
+    {
+      "id": "one-ack",
+      "flags": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": "ana@example.com"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": "ana@example.com"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a224e45575f524543495049454e54222c2264657461696c223a22616e61406578616d706c652e636f6d222c227365766572697479223a2261636b227d5d",
+      "flagsHash": "94a3ae6be8ce2205cdb158d3cfb95122bb9a2796f22184eb83e74c487b6ed75c",
+      "ackRequired": true
+    },
+    {
+      "id": "one-detail-byte-changed",
+      "flags": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": "ana@example.con"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": "ana@example.con"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a224e45575f524543495049454e54222c2264657461696c223a22616e61406578616d706c652e636f6e222c227365766572697479223a2261636b227d5d",
+      "flagsHash": "98924c0bf803c8ead6d7b80d037777b1e390ad96cae15162dbcd3877226799a2",
+      "ackRequired": true
+    },
+    {
+      "id": "one-info",
+      "flags": [
+        {
+          "code": "TOOL_CONTEXT_USED",
+          "severity": "info",
+          "detail": "calendar.freebusy from calendar.example.com"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "TOOL_CONTEXT_USED",
+          "severity": "info",
+          "detail": "calendar.freebusy from calendar.example.com"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a22544f4f4c5f434f4e544558545f55534544222c2264657461696c223a2263616c656e6461722e66726565627573792066726f6d2063616c656e6461722e6578616d706c652e636f6d222c227365766572697479223a22696e666f227d5d",
+      "flagsHash": "123ce9ae040d6dd34e791a51e7bdca4a3a5de4f8cc9a2af6d1315d5758feea58",
+      "ackRequired": false
+    },
+    {
+      "id": "advisory-only",
+      "flags": [
+        {
+          "code": "TOOL_INSTRUCTIONS",
+          "severity": "advisory",
+          "detail": "kb.lookup"
+        },
+        {
+          "code": "SUSPECTED_INSTRUCTIONS",
+          "severity": "advisory"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "SUSPECTED_INSTRUCTIONS",
+          "severity": "advisory"
+        },
+        {
+          "code": "TOOL_INSTRUCTIONS",
+          "severity": "advisory",
+          "detail": "kb.lookup"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a225355535045435445445f494e535452554354494f4e53222c227365766572697479223a2261647669736f7279227d2c7b22636f6465223a22544f4f4c5f494e535452554354494f4e53222c2264657461696c223a226b622e6c6f6f6b7570222c227365766572697479223a2261647669736f7279227d5d",
+      "flagsHash": "c7454e9e3635f33fc6c8760ccf2811681637906ba4ca1e6a7b43234ce87c5c21",
+      "ackRequired": false
+    },
+    {
+      "id": "code-changed",
+      "flags": [
+        {
+          "code": "SUSPECTED_INSTRUCTIONS",
+          "severity": "advisory"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "SUSPECTED_INSTRUCTIONS",
+          "severity": "advisory"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a225355535045435445445f494e535452554354494f4e53222c227365766572697479223a2261647669736f7279227d5d",
+      "flagsHash": "942e6da6faa2788a408611d5019edd2c67bd0f5eec721f38cb89cdc16a1f2a26",
+      "ackRequired": false
+    },
+    {
+      "id": "code-changed-other",
+      "flags": [
+        {
+          "code": "TOOL_INSTRUCTIONS",
+          "severity": "advisory"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "TOOL_INSTRUCTIONS",
+          "severity": "advisory"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a22544f4f4c5f494e535452554354494f4e53222c227365766572697479223a2261647669736f7279227d5d",
+      "flagsHash": "00bf2dd8b068e8a0949024e43c90b0afb110047dc6f70b45626bc7b629540bee",
+      "ackRequired": false
+    },
+    {
+      "id": "mixed",
+      "flags": [
+        {
+          "code": "TOOL_CONTEXT_USED",
+          "severity": "info",
+          "detail": "calendar.freebusy from calendar.example.com"
+        },
+        {
+          "code": "AGENT_AUTHORED",
+          "severity": "ack"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "example.net"
+        },
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": "bo@example.org"
+        },
+        {
+          "code": "DMARC_FAIL",
+          "severity": "ack"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "AGENT_AUTHORED",
+          "severity": "ack"
+        },
+        {
+          "code": "DMARC_FAIL",
+          "severity": "ack"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "example.net"
+        },
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": "bo@example.org"
+        },
+        {
+          "code": "TOOL_CONTEXT_USED",
+          "severity": "info",
+          "detail": "calendar.freebusy from calendar.example.com"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a224147454e545f415554484f524544222c227365766572697479223a2261636b227d2c7b22636f6465223a22444d4152435f4641494c222c227365766572697479223a2261636b227d2c7b22636f6465223a2245585445524e414c5f4c494e4b222c2264657461696c223a226578616d706c652e6e6574222c227365766572697479223a2261636b227d2c7b22636f6465223a224e45575f524543495049454e54222c2264657461696c223a22626f406578616d706c652e6f7267222c227365766572697479223a2261636b227d2c7b22636f6465223a22544f4f4c5f434f4e544558545f55534544222c2264657461696c223a2263616c656e6461722e66726565627573792066726f6d2063616c656e6461722e6578616d706c652e636f6d222c227365766572697479223a22696e666f227d5d",
+      "flagsHash": "b92364fbfef659a95dd1b6d061489ce8ddd19361fb3026d69daca4eb5ce5c164",
+      "ackRequired": true
+    },
+    {
+      "id": "mixed-other-order",
+      "flags": [
+        {
+          "code": "DMARC_FAIL",
+          "severity": "ack"
+        },
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": "bo@example.org"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "example.net"
+        },
+        {
+          "code": "AGENT_AUTHORED",
+          "severity": "ack"
+        },
+        {
+          "code": "TOOL_CONTEXT_USED",
+          "severity": "info",
+          "detail": "calendar.freebusy from calendar.example.com"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "AGENT_AUTHORED",
+          "severity": "ack"
+        },
+        {
+          "code": "DMARC_FAIL",
+          "severity": "ack"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "example.net"
+        },
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": "bo@example.org"
+        },
+        {
+          "code": "TOOL_CONTEXT_USED",
+          "severity": "info",
+          "detail": "calendar.freebusy from calendar.example.com"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a224147454e545f415554484f524544222c227365766572697479223a2261636b227d2c7b22636f6465223a22444d4152435f4641494c222c227365766572697479223a2261636b227d2c7b22636f6465223a2245585445524e414c5f4c494e4b222c2264657461696c223a226578616d706c652e6e6574222c227365766572697479223a2261636b227d2c7b22636f6465223a224e45575f524543495049454e54222c2264657461696c223a22626f406578616d706c652e6f7267222c227365766572697479223a2261636b227d2c7b22636f6465223a22544f4f4c5f434f4e544558545f55534544222c2264657461696c223a2263616c656e6461722e66726565627573792066726f6d2063616c656e6461722e6578616d706c652e636f6d222c227365766572697479223a22696e666f227d5d",
+      "flagsHash": "b92364fbfef659a95dd1b6d061489ce8ddd19361fb3026d69daca4eb5ce5c164",
+      "ackRequired": true
+    },
+    {
+      "id": "same-code-by-detail",
+      "flags": [
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "b.example"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "a.example"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "B.example"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "B.example"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "a.example"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "b.example"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a2245585445524e414c5f4c494e4b222c227365766572697479223a2261636b227d2c7b22636f6465223a2245585445524e414c5f4c494e4b222c2264657461696c223a22422e6578616d706c65222c227365766572697479223a2261636b227d2c7b22636f6465223a2245585445524e414c5f4c494e4b222c2264657461696c223a22612e6578616d706c65222c227365766572697479223a2261636b227d2c7b22636f6465223a2245585445524e414c5f4c494e4b222c2264657461696c223a22622e6578616d706c65222c227365766572697479223a2261636b227d5d",
+      "flagsHash": "9413397de9d7190ce69c97a1c0fc55317d53998e7872275866e48482676d2ff1",
+      "ackRequired": true
+    },
+    {
+      "id": "detail-by-utf16-code-units",
+      "flags": [
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "｡"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "😀"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "é"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "é"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "😀"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "｡"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a2245585445524e414c5f4c494e4b222c2264657461696c223a22c3a9222c227365766572697479223a2261636b227d2c7b22636f6465223a2245585445524e414c5f4c494e4b222c2264657461696c223a22f09f9880222c227365766572697479223a2261636b227d2c7b22636f6465223a2245585445524e414c5f4c494e4b222c2264657461696c223a22efbda1222c227365766572697479223a2261636b227d5d",
+      "flagsHash": "38adbc927e362c1e0e9bc11a995a8b009504fdb6e999d61a1ba9f30c4f47c346",
+      "ackRequired": true
+    },
+    {
+      "id": "detail-escapes",
+      "flags": [
+        {
+          "code": "SECRET_PATTERN",
+          "severity": "ack",
+          "detail": "quote \" backslash \\ tab \t line\nfeed"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "SECRET_PATTERN",
+          "severity": "ack",
+          "detail": "quote \" backslash \\ tab \t line\nfeed"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a225345435245545f5041545445524e222c2264657461696c223a2271756f7465205c22206261636b736c617368205c5c20746162205c74206c696e655c6e66656564222c227365766572697479223a2261636b227d5d",
+      "flagsHash": "eef65a26c17a7f7670a828006dea012fda29a09643c6fa6db001427a7e5e3d0a",
+      "ackRequired": true
+    },
+    {
+      "id": "detail-1000-astral-code-points",
+      "flags": [
+        {
+          "code": "SECRET_PATTERN",
+          "severity": "ack",
+          "detail": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "SECRET_PATTERN",
+          "severity": "ack",
+          "detail": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a225345435245545f5041545445524e222c2264657461696c223a22f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880f09f9880222c227365766572697479223a2261636b227d5d",
+      "flagsHash": "5165c0ced37dd4968e00a029a56548c7f733b8759c2201d9f56c74cf6216a6f0",
+      "ackRequired": true
+    },
+    {
+      "id": "every-code",
+      "flags": [
+        {
+          "code": "TOOL_INSTRUCTIONS",
+          "severity": "advisory"
+        },
+        {
+          "code": "TOOL_CONTEXT_USED",
+          "severity": "info"
+        },
+        {
+          "code": "TOOL_DATA_IN_BODY",
+          "severity": "ack"
+        },
+        {
+          "code": "SUSPECTED_INSTRUCTIONS",
+          "severity": "advisory"
+        },
+        {
+          "code": "SECRET_PATTERN",
+          "severity": "ack"
+        },
+        {
+          "code": "CROSS_THREAD_DATA",
+          "severity": "ack"
+        },
+        {
+          "code": "MASS_MENTION",
+          "severity": "ack"
+        },
+        {
+          "code": "INVISIBLE_CHARS",
+          "severity": "ack"
+        },
+        {
+          "code": "ATTACHMENT_ADDED_BY_AGENT",
+          "severity": "ack"
+        },
+        {
+          "code": "AGENT_INSERTED_CONTACT",
+          "severity": "ack"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack"
+        },
+        {
+          "code": "DMARC_FAIL",
+          "severity": "ack"
+        },
+        {
+          "code": "AGENT_AUTHORED",
+          "severity": "ack"
+        },
+        {
+          "code": "REPLY_TO_REDIRECT",
+          "severity": "ack"
+        },
+        {
+          "code": "RECIPIENT_ADDED_BY_AGENT",
+          "severity": "ack"
+        },
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack"
+        }
+      ],
+      "sorted": [
+        {
+          "code": "AGENT_AUTHORED",
+          "severity": "ack"
+        },
+        {
+          "code": "AGENT_INSERTED_CONTACT",
+          "severity": "ack"
+        },
+        {
+          "code": "ATTACHMENT_ADDED_BY_AGENT",
+          "severity": "ack"
+        },
+        {
+          "code": "CROSS_THREAD_DATA",
+          "severity": "ack"
+        },
+        {
+          "code": "DMARC_FAIL",
+          "severity": "ack"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack"
+        },
+        {
+          "code": "INVISIBLE_CHARS",
+          "severity": "ack"
+        },
+        {
+          "code": "MASS_MENTION",
+          "severity": "ack"
+        },
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack"
+        },
+        {
+          "code": "RECIPIENT_ADDED_BY_AGENT",
+          "severity": "ack"
+        },
+        {
+          "code": "REPLY_TO_REDIRECT",
+          "severity": "ack"
+        },
+        {
+          "code": "SECRET_PATTERN",
+          "severity": "ack"
+        },
+        {
+          "code": "SUSPECTED_INSTRUCTIONS",
+          "severity": "advisory"
+        },
+        {
+          "code": "TOOL_CONTEXT_USED",
+          "severity": "info"
+        },
+        {
+          "code": "TOOL_DATA_IN_BODY",
+          "severity": "ack"
+        },
+        {
+          "code": "TOOL_INSTRUCTIONS",
+          "severity": "advisory"
+        }
+      ],
+      "canonicalHex": "5b7b22636f6465223a224147454e545f415554484f524544222c227365766572697479223a2261636b227d2c7b22636f6465223a224147454e545f494e5345525445445f434f4e54414354222c227365766572697479223a2261636b227d2c7b22636f6465223a224154544143484d454e545f41444445445f42595f4147454e54222c227365766572697479223a2261636b227d2c7b22636f6465223a2243524f53535f5448524541445f44415441222c227365766572697479223a2261636b227d2c7b22636f6465223a22444d4152435f4641494c222c227365766572697479223a2261636b227d2c7b22636f6465223a2245585445524e414c5f4c494e4b222c227365766572697479223a2261636b227d2c7b22636f6465223a22494e56495349424c455f4348415253222c227365766572697479223a2261636b227d2c7b22636f6465223a224d4153535f4d454e54494f4e222c227365766572697479223a2261636b227d2c7b22636f6465223a224e45575f524543495049454e54222c227365766572697479223a2261636b227d2c7b22636f6465223a22524543495049454e545f41444445445f42595f4147454e54222c227365766572697479223a2261636b227d2c7b22636f6465223a225245504c595f544f5f5245444952454354222c227365766572697479223a2261636b227d2c7b22636f6465223a225345435245545f5041545445524e222c227365766572697479223a2261636b227d2c7b22636f6465223a225355535045435445445f494e535452554354494f4e53222c227365766572697479223a2261647669736f7279227d2c7b22636f6465223a22544f4f4c5f434f4e544558545f55534544222c227365766572697479223a22696e666f227d2c7b22636f6465223a22544f4f4c5f444154415f494e5f424f4459222c227365766572697479223a2261636b227d2c7b22636f6465223a22544f4f4c5f494e535452554354494f4e53222c227365766572697479223a2261647669736f7279227d5d",
+      "flagsHash": "3e6f0d9fa8cfc9cc48500dd94f87f801a7e6d343ad3ac1970985751f395773a3",
+      "ackRequired": true
+    },
+    {
+      "id": "unknown-code",
+      "flags": [
+        {
+          "code": "NEW_SENDER",
+          "severity": "ack"
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "ack-code-as-info",
+      "flags": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "info"
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "advisory-code-as-ack",
+      "flags": [
+        {
+          "code": "SUSPECTED_INSTRUCTIONS",
+          "severity": "ack"
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "unknown-severity",
+      "flags": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "warn"
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "missing-severity",
+      "flags": [
+        {
+          "code": "NEW_RECIPIENT"
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "unknown-member",
+      "flags": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": "ana@example.com",
+          "note": "x"
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "empty-detail",
+      "flags": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": ""
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "null-detail",
+      "flags": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": null
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "detail-not-a-string",
+      "flags": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": 7
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "detail-1001-code-points",
+      "flags": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": "ack",
+          "detail": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "not-a-list",
+      "flags": {
+        "code": "NEW_RECIPIENT",
+        "severity": "ack",
+        "detail": "ana@example.com"
+      },
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "flag-not-an-object",
+      "flags": [
+        "NEW_RECIPIENT"
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "duplicate",
+      "flags": [
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "b.example"
+        },
+        {
+          "code": "EXTERNAL_LINK",
+          "severity": "ack",
+          "detail": "b.example"
+        }
+      ],
+      "error": "FLAGS_DUPLICATE"
+    },
+    {
+      "id": "duplicate-without-detail",
+      "flags": [
+        {
+          "code": "AGENT_AUTHORED",
+          "severity": "ack"
+        },
+        {
+          "code": "AGENT_AUTHORED",
+          "severity": "ack"
+        }
+      ],
+      "error": "FLAGS_DUPLICATE"
+    }
+  ]
+}
