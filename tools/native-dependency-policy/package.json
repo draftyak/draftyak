@@ -1,0 +1,10 @@
+{
+  "name": "@draftyak/native-dependency-policy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "check": "node src/cli.ts check"
+  }
+}
