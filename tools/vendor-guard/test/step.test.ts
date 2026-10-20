@@ -68,8 +68,15 @@ describe("the vendor-guard verify step", () => {
 		]);
 	});
 
-	it("checks the commit messages of an item branch against its base", async () => {
-		const repo = branch("m0-99-probe", "origin/m0");
+	it.each([
+		["m0-99-probe", "origin/m0"],
+		["m0-100-probe", "origin/m0"],
+		["m2-142-probe", "origin/m2"],
+		["m10-1000-probe", "origin/m10"],
+		["m1b-100a-probe", "origin/m1b"],
+	])("checks the commit messages of %s against %s", async (head, base) => {
+		expect(baseOf(head)).toBe(base);
+		const repo = branch(head, base);
 		const clean = repo.commit("feat: a");
 		expect(await run(repo)).toMatchObject({
 			outcome: { status: "passed" },
@@ -82,6 +89,36 @@ describe("the vendor-guard verify step", () => {
 		expect(out).not.toContain(clean);
 	});
 
+	it.each([
+		"m0-1-probe",
+		"m0-9a-probe",
+		"m0--probe",
+		"m0-+100-probe",
+		"m0-1_00-probe",
+		"m0-0x64-probe",
+		"m0-100ab-probe",
+		"m0-100A-probe",
+		"prefix-m0-100-probe",
+		"refs/heads/m0-100-probe",
+		" m0-100-probe",
+		"m0/100-probe",
+		"M0-100-probe",
+		"m-100-probe",
+		"m0bb-100-probe",
+		"mx-100-probe",
+		"m0-100-",
+		"m0-100--probe",
+		"m0-100-probe-",
+		"m0-100-probe--name",
+		"m0-100-Probe",
+		"m0-100-probe_name",
+		"m0-100-probe.name",
+		"m0-100-probe/extra",
+		"m0-100-probe ",
+	])("does not infer a commit base from malformed item branch %s", (head) => {
+		expect(baseOf(head)).toBeUndefined();
+	});
+
 	it("checks a milestone branch's commits against origin/main", async () => {
 		const repo = branch("m0", "origin/main");
 		const flagged = repo.commit(`feat: a\n\n${trailer}`);
@@ -89,13 +126,13 @@ describe("the vendor-guard verify step", () => {
 	});
 
 	it("checks only the files, and says so, when the base or the branch is unknown", async () => {
-		const missing = branch("m0-99-probe", undefined);
+		const missing = branch("m0-100-probe", undefined);
 		missing.commit(`feat: a\n\n${trailer}`);
 		expect(await run(missing)).toMatchObject({
 			outcome: { status: "passed" },
 			notes: ["vendor-guard: commit messages not checked (origin/m0 not found)"],
 		});
-		const detached = branch("m0-99-probe", "origin/m0");
+		const detached = branch("m0-100-probe", "origin/m0");
 		detached.commit(`feat: a\n\n${trailer}`);
 		detached.git("checkout", "-q", "--detach");
 		expect(await run(detached)).toMatchObject({
