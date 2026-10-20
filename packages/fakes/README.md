@@ -183,3 +183,63 @@ release their own waits. Exhaustion is a fixed `503`; strict shape refusal is a
 fixed content-free `400`. No automatic repair, native admission or billing switch
 is implemented. The public root and `@draftyak/fakes/responses-api` expose the same
 factories.
+
+## The Messages request fake
+
+`createMessagesApiFake({clock?, recorder?, steps?})` supplies finite synthetic
+JSON, SSE or raw response scripts at logical host `api.anthropic.com`. It accepts
+exact `POST /v1/messages` and `POST /v1/messages?beta=true`, in memory or through
+the shared numeric loopback listener. It never calls the logical host or global
+`fetch`. `createMessagesApiDraftFake` adds a closed synthetic draft-request shape;
+the generic factory deliberately accepts malformed request content within its
+intake cap. Both factories expose the shared `fetch` handler and recorder, without
+a separate authentication mode.
+
+Script steps are `{kind: "json", body}`, `{kind: "sse", events: [{event, data}]}`
+or `{kind: "raw", body, contentType?}`. Optional `status`, `headers`, `delayMs`,
+`chunkBytes` and `chunkDelayMs` control their wire output. Delays can be `Infinity`
+to wait for cancellation. The raw script permits deliberately malformed JSON,
+truncated SSE and consumer-oversize output. Scripts can express benign, obedient,
+schema-breaking, refusing, slow, auth, rate and quota responses; these are invented
+fixtures, not live provider behavior or a version/model oracle.
+
+`enqueue(...steps)` validates and detaches an entire batch atomically, stopping
+preparation when a limit is exceeded. `pending()` reports queued steps. There are
+at most 1,024 steps, 4,096 SSE events per step, 16 MiB of UTF-8 response body per
+step, and 64 MiB of response bodies across the queue. Stream chunks are 1–65,536
+bytes, with at most 65,536 chunks per response. Queued body bytes are released as
+soon as a matching request takes a step at app admission, before validation or a
+header delay. These are queued-body budgets; they exclude caller fixtures,
+preparation overhead, headers and active responses, and imply no global or
+concurrent memory bound.
+
+The event cap also counts actual iterator yields before reading excess event
+fields. Reentrant `enqueue` calls from fixture getters or serialization are
+refused before queue mutation; the outer batch stays atomic and preparation
+recovers after a failure.
+
+Both factories opt into shared 1 MiB request intake before redirect or app cloning.
+The shared recorder keeps its configured body prefix and hashes all received
+bytes, including the crossing chunk when intake returns `413 request_body_too_large`.
+It does not hash unread input. Partial failed, malformed-chunk or aborted uploads
+discard their incomplete record. Custom recorders must implement `begin`.
+Arrival faults are reserved independently and may replace the refusal response;
+before-faults can bypass app admission and after-faults can replace its result.
+Discarded scripted response streams are cancelled.
+
+Scripts are FIFO at app admission after successful intake, rather than request
+arrival: a later completed upload or a pre-app latency fault can change admission
+order. Intake refusal, upload failure, wrong routes and wrong methods take no
+step; a matching admitted strict request takes one even if its shape is refused.
+The recorder preserves arrival order. No bound is claimed on original empty
+upload chunks, upload duration or simultaneous uploads; the strict app's chunk
+check is only defensive after shared buffering.
+
+The strict shape requires nonempty `model`, string `system`, one string user
+message, `max_tokens` from 1 to 16,000, and `output_config` with a supported
+synthetic `effort` and `format: {type: "json_schema", schema: <object>}`. It permits
+only optional boolean `stream` and `fallbacks: "default"`. JSON media may specify
+UTF-8 charset; decoding is fatal and duplicate members follow `JSON.parse`'s
+last-member semantics. Schema contents are opaque. This fixture does not verify
+native pins, prompt hashes, credentials, request headers, model availability or
+provider policy, and establishes no native approval or streaming authority.
