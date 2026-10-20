@@ -50,15 +50,15 @@ Add the rest when your work needs it:
 ## Making a change
 
 - Start from the backlog: `docs/roadmap/mN.md` lists each item with the paths it owns and its acceptance commands. Change only those paths.
-- Branch from the milestone branch as `mN-<nn>-<slug>`, for example `m0-02-community`. Rebase onto `mN` daily and after every merge into it; resolve a `pnpm-lock.yaml` conflict by running `pnpm install` again.
-- Keep a PR to about 1,500 changed lines of code or fewer. Only source and configuration files count, not tests; AGENTS.md lists everything that doesn't.
+- Branch from the milestone integration branch as `mN-<number>-<slug>`, with at least two digits, for example `m0-02-community`. Fetch/rebase that item branch before an update; preserve frozen snapshots and divergent local branches instead of bulk rebasing. Resolve lockfile conflicts with the package manager.
+- Keep each PR within its backlog item's owned scope. The earlier approximately 1,500-line guideline is lifted; `pnpm pr-size` reports code and raw totals for review, without imposing a submission cap.
 - Never commit secrets. Live-session secrets live only in the main checkout's git-ignored `.env.live`; `.env.live.example` lists their names.
-- Run `pnpm verify` before you open the PR, and `pnpm adr` too if you added or changed an ADR; then open it ready for review, not as a draft. For a change to Markdown, community files or spike evidence only, `node tools/verify/verify.ts --profile docs` is enough: it runs the docs checks with no install, as CI does.
+- Before opening a ready PR, run the touched packages' tests, typecheck/build where applicable, changed-file lint, the item acceptance commands and `pnpm guard`; add `pnpm adr` for ADR changes. For documentation/community/evidence-only changes, use `node tools/verify/verify.ts --profile docs`. Exact-head CI supplies the applicable full Linux/Windows suites. Full local `pnpm verify` remains available and is required for integration updates without CI and milestone checks.
 - Write commit messages and PR titles as Conventional Commits, `<type>(<scope>): <summary>` with an optional scope and one of the types `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert` or `spike`. The `pr-title` check (M0.3) enforces it for titles.
 - Arguments after a script name reach the script, with two differences between shells. PowerShell's `pnpm.ps1` drops a leading `--`, which Git Bash and cmd pass through, so every repository CLI behind a root script must accept and ignore one; Biome doesn't, so give `pnpm lint` and `pnpm format` their flags without `--`. PowerShell also splits an unquoted comma into separate values, so single-quote such values, as in `pnpm spikes:run --spikes 's01,s02'`, which works in both shells.
 - Changesets start with the first publishable package; until then, no PR needs one.
 
-Item PRs are rebase-merged into the milestone branch `mN`. Only the owner merges into `main`, after reviewing the milestone branch at its gate and signing it off with `git rebase --signoff`, so `dco` may fail on item PRs until the gate.
+Item PRs require approval of the submitted commit and rebase auto-merge pinned to that commit. Every changed head needs review again. The integration owner verifies milestone-branch updates; only the owner signs off and merges a milestone into `main` at its gate, so `dco` may fail on item PRs until then.
 
 ## Security-sensitive paths
 
