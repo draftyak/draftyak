@@ -1,0 +1,42 @@
+{
+  "name": "@draftyak/lookup-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./calendar": "./src/public-calendar.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "./calendar": {
+        "types": "./dist/public-calendar.d.mts",
+        "default": "./dist/public-calendar.mjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run --maxWorkers=1",
+    "test:heavy": "vitest run --mode heavy --maxWorkers=1",
+    "build": "tsdown",
+    "prepack": "tsdown"
+  },
+  "dependencies": {
+    "@draftyak/protocol": "workspace:*",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "es-module-lexer": "2.3.2",
+    "fast-check": "4.10.2",
+    "rolldown": "1.2.14",
+    "tsdown": "0.23.1"
+  }
+}
