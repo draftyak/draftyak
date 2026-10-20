@@ -605,6 +605,8 @@ export class StopError extends Error {
 
 const RETRY = "run the same command again";
 const RETRY_LATER = `${RETRY} later`;
+const RETAIN_RESERVATIONS =
+	"preserve the ledger and its full reservations; any later retry requires owner approval and remaining request and reservation capacity";
 // What the SDK retries; still failing after its retry, they say nothing about the request.
 const retryable = (status: number): boolean =>
 	status === 408 || status === 409 || status === 429 || status >= 500;
@@ -624,7 +626,7 @@ function answerOf(label: string, error: unknown): Answer {
 		throw new StopError("interrupted", `${label}: interrupted`, { cause: error });
 	}
 	if (error instanceof APIConnectionError) {
-		const message = `${label}: no answer (${error.message}): ${RETRY_LATER}`;
+		const message = `${label}: no answer (${error.message}): ${RETAIN_RESERVATIONS}`;
 		throw new StopError("no answer", message, { cause: error });
 	}
 	if (!(error instanceof APIError) || error.status === undefined) throw error;
@@ -641,14 +643,15 @@ function answerOf(label: string, error: unknown): Answer {
 		throw stop("broker refused", `the broker refused the request (${detail})`);
 	}
 	if (usageLimited(error.status, error.error)) {
-		const fix = `raise the workspace's spend limit or add credits in the Claude Console, then ${RETRY}`;
+		const fix =
+			"keep the existing request and spend controls; preserve the ledger and its full reservations; any later recovery requires owner approval and remaining request and reservation capacity";
 		throw stop(`${error.status} usage limit`, `the account can't pay for it (${said}): ${fix}`);
 	}
 	if (error.status === 400) return { status: 400, errorType: type, detail };
 	if (error.status === 401)
 		throw stop(reason, `the API refused the key (${said}): check ${KEY_NAME}`);
 	if (retryable(error.status))
-		throw stop(reason, `the API didn't answer (${said}): ${RETRY_LATER}`);
+		throw stop(reason, `the API didn't answer (${said}): ${RETAIN_RESERVATIONS}`);
 	const access = `check the key's workspace and its access to ${DEFAULT_MODEL}`;
 	throw stop(reason, `the API refused the request (${said}): ${access}`);
 }
