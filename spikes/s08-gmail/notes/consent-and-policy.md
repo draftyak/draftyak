@@ -44,7 +44,7 @@ Reports of being blocked from publishing are out of date, even within that threa
 
 The plan's research concluded, as of late September 2026, that an owned, verified domain is needed for brand verification but not to press Publish on an unverified personal app. Such an app leaves Testing and its 7-day expiry. Google doesn't document this route, and it could close at any time.
 
-GitHub Pages isn't available while the repository is private, so the owner puts a placeholder homepage on draftyak.com, verified in Search Console (owner pre-task, 2026-10-22). M0.29 checks whether Google accepts it for External/Production and records `homepage: accepted|rejected|not checked(<owner reason>)`; the check is mandatory unless the owner declines it in session 1, with a reason. M0.29 also records whether Publish works without the homepage, so ADR 0010 doesn't rest on the undocumented route alone.
+The [homepage](https://draftyak.com/) and [privacy policy](https://draftyak.com/privacy/) are published from the separate public GitHub Pages repository, with HTTPS enforced. The owner verifies draftyak.com in Search Console before the check. M0.29 checks whether Google accepts it for External/Production and records `homepage: accepted|rejected|not checked(<owner reason>)`; the check is mandatory unless the owner declines it in session 1, with a reason. M0.29 also records whether Publish works without the homepage, so ADR 0010 doesn't rest on the undocumented route alone. Page availability and domain ownership do not establish that Google accepts the app's branding or publishing status.
 
 ## The five consent-review readings
 

@@ -962,7 +962,7 @@ describe("limits and stops", () => {
 		const settings = options(server);
 		const dropped = (nth: number) => (nth === 2 || nth === 3 ? "before" : null);
 		await expect(network(dropped, () => runLive(settings))).rejects.toThrow(
-			/^parse-effort: no answer \(Connection error\.\): run the same command again later \(3 of 6 requests used, US\$0\.\d{4} estimated, recorded in .+\)$/,
+			/^parse-effort: no answer \(Connection error\.\): preserve the ledger and its full reservations; any later retry requires owner approval and remaining request and reservation capacity \(3 of 6 requests used, US\$0\.\d{4} estimated, recorded in .+\)$/,
 		);
 		expect(server.received).toHaveLength(1);
 		expect(read(settings.file).data).toMatchObject({
@@ -993,6 +993,43 @@ describe("limits and stops", () => {
 				call: "fallbacks",
 				stop: "401 authentication_error",
 			},
+		]);
+	});
+
+	it("retains retryable-error reservations and requires owner approval and both capacities for a later retry", async () => {
+		// The first call settles normally. Two full reservations for this later plain call fit the
+		// unchanged gate; retrying the first fallback call would correctly be refused before send.
+		const server = await start((request) =>
+			"fallbacks" in request.body
+				? realistic(request)
+				: {
+						...errorReply(529, "overloaded_error", "synthetic unavailable"),
+						headers: { "retry-after-ms": "1" },
+					},
+		);
+		const settings = options(server);
+		let failure: unknown;
+		try {
+			await runLive(settings);
+		} catch (error) {
+			failure = error;
+		}
+		expect(failure).toBeInstanceOf(Error);
+		const message = (failure as Error).message;
+		expect(message).toContain(
+			"the API didn't answer (529 overloaded_error: synthetic unavailable)",
+		);
+		expect(message).toContain("preserve the ledger and its full reservations");
+		expect(message).toContain("owner approval and remaining request and reservation capacity");
+		expect(message).not.toMatch(/run the same command|raise.*limit|add credits/);
+		expect(server.received).toHaveLength(3);
+		const data = read(settings.file).data;
+		expect(data.session.calls).toBe(3);
+		const fullReservation = unanswered(server.received[1]?.raw ?? "");
+		expect(data.session.accountedUsd).toBeCloseTo(0.0108 + 2 * fullReservation, 10);
+		expect(data.acceptance).toEqual([]);
+		expect(data.stops).toMatchObject([
+			{ calls: 3, call: "parse-effort", stop: "529 overloaded_error" },
 		]);
 	});
 
@@ -1038,7 +1075,7 @@ describe("limits and stops", () => {
 			const status = reply.status ?? 200;
 			await expect(runLive(settings)).rejects.toThrow(
 				new RegExp(
-					`^fallbacks: the account can't pay for it \\(${status} \\w+: .+\\): raise the workspace's spend limit or add credits in the Claude Console, then run the same command again \\(1 of 6 requests used, US\\$0\\.\\d{4} estimated, recorded in .+\\)$`,
+					`^fallbacks: the account can't pay for it \\(${status} \\w+: .+\\): keep the existing request and spend controls; preserve the ledger and its full reservations; any later recovery requires owner approval and remaining request and reservation capacity \\(1 of 6 requests used, US\\$0\\.\\d{4} estimated, recorded in .+\\)$`,
 				),
 			);
 			expect(server.received).toHaveLength(1);
