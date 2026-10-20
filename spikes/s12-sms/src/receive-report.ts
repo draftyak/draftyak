@@ -1,11 +1,12 @@
 // The S12 privacy gate: a probe report leaves the phone only through here. Every report is checked
-// in memory against schema/probe-report.v1.json, then by the kit's content rules, before anything
+// in memory against schema/probe-report.v1.json, then by kit content and vendor file rules, before anything
 // is written; problems name JSON paths and rules, never values or unknown field names.
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertContentFree, redact, writeEvidence } from "@draftyak/spike-kit";
+import { fileHits } from "../../../tools/vendor-guard/src/scan.ts";
 
 // AGENTS.md's only allowed run-as: the report bytes straight from the probe's private files.
 export const ADB_ARGS: readonly string[] =
@@ -173,6 +174,18 @@ export type CheckResult =
 	| { readonly ok: true; readonly report: Json }
 	| { readonly ok: false; readonly problems: readonly Problem[] };
 
+// Apply file rules to report data under the S12 evidence policy, including private destinations.
+// The kit-generated envelope retains its own content gate; this is not an envelope equivalence.
+function reportFileProblems(report: Json, name = "check"): readonly Problem[] {
+	const hits = fileHits(`spikes/s12-sms/evidence/${name}.json`, {
+		text: JSON.stringify(report),
+		plain: true,
+	});
+	return [...new Set(hits.map(({ rule }) => rule.id))]
+		.slice(0, MAX_PROBLEMS)
+		.map((id) => ({ path: "$", rule: `vendor-file rule ${id}` }));
+}
+
 // Bytes to a validated report, all in memory. JSON.parse errors quote their input, so they are
 // replaced by a fixed rule. A byte order mark, UTF-16 or invalid UTF-8 means something re-encoded
 // the report, and a lossy re-encoding (a code page's "?", mojibake) breaks encodingCheck.
@@ -195,6 +208,8 @@ export function checkReport(bytes: Uint8Array, rule: Rule = reportRule()): Check
 		const rules = /content-shaped values at (.*)$/s.exec(String((error as Error).message))?.[1];
 		return refuse(`content-shaped values (${rules ?? "kit rules"})`);
 	}
+	const fileProblems = reportFileProblems(value as Json);
+	if (fileProblems.length > 0) return { ok: false, problems: fileProblems };
 	return { ok: true, report: value as Json };
 }
 
@@ -218,6 +233,8 @@ export async function receive(
 	if (!checked.ok) return checked;
 	if (options.name === undefined) return { ok: true, written: null };
 	if (!EVIDENCE_NAME.test(options.name)) throw new Error("bad evidence name");
+	const fileProblems = reportFileProblems(checked.report, options.name);
+	if (fileProblems.length > 0) return { ok: false, problems: fileProblems };
 	const file = path.join(options.evidenceDir ?? EVIDENCE_DIR, `${options.name}.json`);
 	if (writing.has(file) || (!options.replace && existsSync(file))) {
 		throw new Error(`evidence/${options.name}.json exists; --replace overwrites it`);
@@ -257,12 +274,31 @@ export function findAdb(env: NodeJS.ProcessEnv = process.env): string | undefine
 // all) would re-encode them. `adb` is the executable plus any leading arguments.
 export function readFromAdb(
 	adb: readonly [string, ...string[]],
-	options: { readonly env?: NodeJS.ProcessEnv; readonly timeoutMs?: number } = {},
+	options: {
+		readonly env?: NodeJS.ProcessEnv;
+		readonly timeoutMs?: number;
+		readonly serial?: string;
+	} = {},
 ): Promise<Uint8Array> {
+	const serial = options.serial;
+	if (serial !== undefined && !validSerial(serial)) {
+		throw new Error("bad adb serial");
+	}
 	const [command, ...lead] = adb;
 	if (/\.(?:bat|cmd|ps1)$/i.test(command)) throw new Error(`refusing to spawn ${command}`);
-	const child = spawn(command, [...lead, ...ADB_ARGS], {
-		env: options.env ?? process.env,
+	const env = options.env ?? process.env;
+	const selectedEnv =
+		serial === undefined
+			? env
+			: {
+					...Object.fromEntries(
+						Object.entries(env).filter(([key]) => key.toUpperCase() !== "ANDROID_SERIAL"),
+					),
+					ANDROID_SERIAL: serial,
+				};
+	const selector = serial === undefined ? [] : ["-s", serial];
+	const child = spawn(command, [...lead, ...selector, ...ADB_ARGS], {
+		env: selectedEnv,
 		stdio: ["ignore", "pipe", "pipe"],
 		windowsHide: true,
 	});
@@ -280,7 +316,8 @@ export function readFromAdb(
 		else chunks.push(chunk);
 	});
 	child.stderr.setEncoding("utf8").on("data", (text: string) => {
-		errors = (errors + text).slice(0, 2_000);
+		// Native diagnostics can abbreviate or encode a private selector.
+		if (serial === undefined) errors = (errors + text).slice(0, 2_000);
 	});
 	const timer = setTimeout(() => stop("adb timed out"), options.timeoutMs ?? 60_000);
 	return new Promise((resolve, reject) => {
@@ -291,7 +328,7 @@ export function readFromAdb(
 		child.once("close", (code) => {
 			clearTimeout(timer);
 			if (failure !== undefined) return reject(new Error(failure));
-			// adb's own errors (no device, unauthorized); the report itself never goes to stderr.
+			// Preserve no-selector diagnostics; explicit selection reports only fixed status.
 			const detail = redact(errors.trim().split(/\r?\n/).slice(-2).join(" / "));
 			// Windows reports adb's exit(-1) as 4294967295.
 			const status = code === null ? "a signal" : String(code | 0);
@@ -301,6 +338,9 @@ export function readFromAdb(
 		});
 	});
 }
+
+const validSerial = (serial: string): boolean =>
+	serial.trim().length > 0 && !serial.trim().startsWith("-") && !/[\0\r\n]/.test(serial);
 
 async function readAll(stream: NodeJS.ReadableStream): Promise<Uint8Array> {
 	const chunks: Buffer[] = [];
@@ -327,11 +367,20 @@ export function describeFields(rule: Rule = reportRule(), at = ""): string[] {
 }
 
 const USAGE = [
-	"usage: node src/receive-report.ts --from-adb [--adb <path>] (--name <name> [--replace] | --check)",
+	"usage: node src/receive-report.ts --from-adb [--adb <path>] [--serial <serial>] (--name <name> [--replace] | --check)",
 	"       node src/receive-report.ts --stdin (--name <name> [--replace] | --check)",
 	"       node src/receive-report.ts --fields",
 ].join("\n");
-const FLAGS = ["--from-adb", "--stdin", "--check", "--fields", "--replace", "--adb", "--name"];
+const FLAGS = [
+	"--from-adb",
+	"--stdin",
+	"--check",
+	"--fields",
+	"--replace",
+	"--adb",
+	"--name",
+	"--serial",
+];
 
 export interface Io {
 	readonly stdin: NodeJS.ReadableStream;
@@ -349,7 +398,7 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
 	const flags = new Map<string, string | true>();
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i] ?? "";
-		const value = arg === "--adb" || arg === "--name" ? args[++i] : true;
+		const value = arg === "--adb" || arg === "--name" || arg === "--serial" ? args[++i] : true;
 		if (!FLAGS.includes(arg)) {
 			io.err(`receive-report: unknown argument\n${USAGE}`);
 			return 2;
@@ -358,9 +407,17 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
 			io.err(`receive-report: ${arg} needs a value\n${USAGE}`);
 			return 2;
 		}
+		if (arg === "--serial" && (flags.has(arg) || value === true || !validSerial(value))) {
+			io.err(USAGE);
+			return 2;
+		}
 		flags.set(arg, value);
 	}
 	if (flags.has("--fields")) {
+		if (flags.has("--serial")) {
+			io.err(USAGE);
+			return 2;
+		}
 		for (const line of describeFields()) io.out(line);
 		return 0;
 	}
@@ -370,6 +427,7 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
 	const badName = typeof name === "string" && !EVIDENCE_NAME.test(name);
 	const stray =
 		(flags.has("--adb") && !flags.has("--from-adb")) ||
+		(flags.has("--serial") && !flags.has("--from-adb")) ||
 		(flags.has("--replace") && typeof name !== "string");
 	if (sources !== 1 || !target || badName || stray) {
 		io.err(USAGE);
@@ -385,7 +443,11 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
 			const file = typeof adb === "string" ? adb : findAdb(io.env);
 			const command = io.adb ?? (file === undefined ? undefined : ([file] as const));
 			if (command === undefined) throw new Error("adb not found on PATH or in the Android SDK");
-			bytes = await readFromAdb(command, io.env === undefined ? {} : { env: io.env });
+			const serial = flags.get("--serial");
+			bytes = await readFromAdb(command, {
+				...(io.env === undefined ? {} : { env: io.env }),
+				...(typeof serial === "string" ? { serial } : {}),
+			});
 		}
 		received = await receive(bytes, {
 			...(typeof name === "string" ? { name, replace: flags.has("--replace") } : {}),
