@@ -202,3 +202,69 @@ native/owner integration.
 2. Build a Hono app for the service's routes. Let errors throw (`app.onError((error) => { throw error; })`), so an aborted request rejects as `fetch` would. Match raw paths or queries with `rawTarget(c.req.raw)`, since Hono's own path is decoded.
 3. Return `createFake(app, {host, faults: createFaults({clock}), recorder})`, plus whatever controls the tests need. Take the clock from the options, and reuse the fault script for 429s, 5xx, latency and drops rather than adding routes for them. Check delay and size options when the fake is created (`checkDelay`).
 4. Keep fixtures synthetic, and test the fake in `test/<name>.test.ts`.
+
+## The Google OAuth fake
+
+`createGoogleOAuthFake({clock?, recorder?, clients?, codeTtlMs?,
+accessTtlSeconds?, refreshTtlSeconds?, rotateRefreshTokens?})` serves the synthetic
+`google-oauth.draftyak.example` host in memory or on the shared loopback listener.
+Import it from `@draftyak/fakes` or `@draftyak/fakes/google-oauth`. Constants
+`GOOGLE_OAUTH_HOST`, `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_REDIRECT_URI`
+provide an invented Desktop registration. No request calls Google or follows an
+outbound callback. Use `redirect: "manual"` to inspect the authorization response.
+
+| Request | Fixture behavior |
+|---|---|
+| `GET /o/oauth2/v2/auth` | Requires a registered client/exact callback, nonempty state/scope, `response_type=code` and a 43-character S256 challenge. Returns a 302 with echoed state and a single-use code, or a queued consent denial. |
+| `POST /token` | Accepts UTF-8 form data. Checks the registered client/secret, exact callback, 43–128-character verifier and S256 digest before code exchange. Refresh checks client binding, expiry, revocation and the configured rotation policy. |
+| `POST /revoke` | Accepts a form `token`. Revokes that client's current authorization, including earlier consents, rotated tokens and pending codes. Other clients remain independent. A fresh consent establishes a fresh authorization. |
+
+`endpoints` exposes the three synthetic URLs. `enqueueConsent(...steps)` accepts
+`{kind: "grant", scopes?}` for normal granular consent, `{kind: "deny"}`, or
+`{kind: "unexpected-grant", scopes}` to deliberately return unrequested grants
+for caller-refusal scenarios. Only that explicit hostile step can overgrant;
+ordinary consent stays within the requested scope set. `email` and `profile`
+have their Google URI aliases in responses; equivalent spellings compare equally
+for granular consent. The fixture can supply complete, missing, empty, companion,
+broad, settings and out-of-mode grants. It makes no decision about the caller's
+full/read-only scope admission.
+
+`enqueueTokenError(...steps)` scripts `invalid_grant`, `invalid_client` or
+`temporarily_unavailable`, optionally restricted to `authorization_code` or
+`refresh_token`. An error consumes no code or refresh token. Wrong code binding
+consumes that authenticated exchange attempt; a valid code exchanges only once,
+including concurrent attempts. Shared before-effect faults bypass the handler;
+after-effect lost replies leave its code consumption or refresh rotation intact.
+
+`accessGrant(accessToken)` returns a new frozen `{clientId, scopes, expiresAt}`
+with a frozen scope list, or `undefined`. `revoke(token)` is the fixture-side
+equivalent of a successful revoke request. Revoke requests are recorded so callers
+can distinguish confirmed/unconfirmed initial-grant cleanup from failed
+reconnect/mode-switch handling that makes no automatic whole-client revoke.
+These are synthetic grant facts and traces; native admission and persistence
+belong to the connection flow.
+
+Callbacks are exact canonical HTTP URLs with numeric `127.0.0.1` or `[::1]`,
+an explicit port and no query/fragment. No wildcard or hostname callback exists.
+There are at most 32 clients and 16 callbacks per client, 256 queued consent
+steps and 256 token errors, 4,096 pending codes and 4,096 token entries. Expired
+entries still count toward those finite budgets; create a fresh instance to reset.
+Scope requests allow at most 16 entries and 2,048 characters, with 256 characters
+per scope. Forms/authorization queries allow 32 unique parameters and 16 KiB;
+duplicate keys and malformed percent-encoded or raw UTF-8 are refused.
+
+The shared `maxRequestBodyBytes: 16384` intake runs before handler admission or
+body cloning. Oversize intake cancels and normally returns a dated 413. Its
+recorder entry is marked `request_body_too_large`; the length/hash cover all
+received bytes through the crossing chunk, not an unread remainder. Retention
+uses the recorder's configured prefix. Arrival faults are still reserved and
+consumed and can supply the response instead. Incomplete malformed/aborted
+streams reject and discard their recorder slots. A byte cap provides neither an
+upload deadline nor an original-ingress chunk-count bound. A custom recorder
+must provide `begin` as well as `record` and `takeRequests`.
+
+Default lifetimes are ten minutes for codes and one hour for access tokens;
+refresh tokens have no expiry unless configured. The injected clock determines
+expiry and `Date`. Refresh rotation defaults to true as declared fixture policy,
+not a claim about Google's behavior. The fake proves no native callback-state,
+identity, credential storage, disclosure, cleanup enforcement or live acceptance.
