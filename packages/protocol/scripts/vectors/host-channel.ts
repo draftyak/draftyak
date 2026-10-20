@@ -6,6 +6,85 @@ const mode = { kind: "base64url-json-member", member: "raw" };
 export function generate(): VectorFile[] {
 	return [
 		{
+			path: "host-channel/lookup-permit.json",
+			content: {
+				format: "draftyak.vectors.host-channel.v1",
+				description:
+					"Lookup permit structural validation; membership requires native parent admission.",
+				scalars: [
+					{ id: "zero-bytes", value: "A".repeat(43), valid: true },
+					{ id: "all-bits", value: "_".repeat(42) + "8", valid: true },
+					...[0, 1, 41, 42, 44, 45, 86].map((length) => ({
+						id: `length-${length}`,
+						value: "A".repeat(length),
+						valid: false,
+					})),
+					...[
+						"A".repeat(42) + "B",
+						"A".repeat(43) + "=",
+						"+" + "A".repeat(42),
+						"/" + "A".repeat(42),
+						"A".repeat(42) + "\n",
+						"A".repeat(42) + "\r",
+						"A".repeat(42) + "\u2028",
+						"A".repeat(42) + "\u2029",
+						" " + "A".repeat(43),
+						"A".repeat(43) + " ",
+						"A".repeat(42) + "\0",
+					].map((value, index) => ({ id: `encoding-${index}`, value, valid: false })),
+					...[null, 0, false, {}, []].map((value, index) => ({
+						id: `type-${index}`,
+						value,
+						valid: false,
+					})),
+				],
+				requests: [
+					{ id: "ordinary-unbound", params: base, valid: true },
+					{ id: "bound-get", params: { ...base, lookupPermit: "A".repeat(43) }, valid: true },
+					{
+						id: "bound-head",
+						params: { ...base, method: "HEAD", lookupPermit: "A".repeat(43) },
+						valid: true,
+					},
+					{ id: "decoded-unbound-unchanged", params: { ...base, saveAs: mode }, valid: true },
+					{
+						id: "decoded-bound-structural-only",
+						params: { ...base, saveAs: mode, lookupPermit: "A".repeat(43) },
+						valid: true,
+					},
+					{
+						id: "stream-bound-structural-only",
+						params: { ...base, stream: true, lookupPermit: "A".repeat(43) },
+						valid: true,
+					},
+					{ id: "null-permit", params: { ...base, lookupPermit: null }, valid: false },
+					{ id: "empty-permit", params: { ...base, lookupPermit: "" }, valid: false },
+					{
+						id: "nonzero-unused-bits",
+						params: { ...base, lookupPermit: "A".repeat(42) + "B" },
+						valid: false,
+					},
+					{
+						id: "terminal-line-feed",
+						params: { ...base, lookupPermit: "A".repeat(42) + "\n" },
+						valid: false,
+					},
+					{
+						id: "decoded-malformed-permit",
+						params: { ...base, saveAs: mode, lookupPermit: "A".repeat(42) + "B" },
+						valid: false,
+					},
+					{
+						id: "unknown-control",
+						params: { ...base, lookupPermit: "A".repeat(43), lookupAccount: "test" },
+						valid: false,
+					},
+				],
+				authority:
+					"A valid scalar or schema grants no egress. Only an active matching parent ledger entry can authorize a tool fetch; other extension kinds cannot present a permit.",
+			},
+		},
+		{
 			path: "host-channel/decoded-member.json",
 			content: {
 				format: "draftyak.vectors.host-channel.v1",

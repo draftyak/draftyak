@@ -41,7 +41,7 @@ acceptance. Synthetic child adapter tests do not replace process-mode acceptance
 
 | Method | Params | Result |
 |---|---|---|
-| `host/fetch` | `method`, `url`, `headers`; optional `body`, opaque `sendTicket`, `saveAs`, `stream` | HTTP `status`, `headers`, exactly one `body` or `streamId` |
+| `host/fetch` | `method`, `url`, `headers`; optional `body`, opaque `sendTicket`, `saveAs`, `stream`, `lookupPermit` | HTTP `status`, `headers`, exactly one `body` or `streamId` |
 | `host/ws.open` | `url` | `socketId` |
 | `host/ws.send` | `socketId`, `envelopeId` | null; acknowledgement only |
 | `host/ws.close` | `socketId` | null |
@@ -58,6 +58,120 @@ checks tickets, injects credentials, and caps size/time before transport. The SD
 does not fetch directly or interpret a send ticket. Blob body refs and tickets
 preserve their JSON value across the boundary. `saveAs` results remain body refs;
 the SDK exposes `Response.bodyRef` so callers cannot mistake them for fetched bytes.
+
+## Parent-granted lookup membership
+
+For the canonical `calendar.freebusy`, `contact.notes` and `kb.lookup` tools,
+the parent supplies `_meta["io.github.draftyak/lookup-permit"]` on each admitted
+MCP `tools/call`. The SDK captures that value for the call and echoes it as
+`host/fetch.params.lookupPermit`. `LookupPermit` is exactly 32 bytes encoded as
+43 canonical unpadded base64url characters, including zero unused terminal bits.
+Padding, whitespace, alternate alphabets, malformed values and coercion are
+refused. The request envelope remains exactly `jsonrpc`, `id`, `method`, `params`;
+its ID is reply correlation, not lookup authority. The optional fetch member is
+shared by both structural fetch variants; it grants no storage or method permission.
+
+A permit identifies a parent grant. Presenting active B's permit selects B's
+admitted native account, policy, four-attempt budget and deadline, regardless of
+which internal callback presents it. A delayed A continuation can present B's
+permit or retain B's fetch closure in the same hostile process. This contract
+does not establish causal origin, data origin, intent or cross-call/account
+memory isolation. Retired A's grant cannot be revived by calling while B is active.
+
+### Admission and accounting
+
+Parents implementing lookup membership must establish all of these boundaries:
+
+- Before sending a lookup to a ready, discovered instance, reserve a native
+  invocation/resource slot and validate the canonical kind, hub-bound arguments,
+  current account/instance generation, consent and routing. Merge MCP metadata,
+  replacing any caller value at the reserved key. A child-supplied label, ID,
+  argument, deadline or signal cannot create a grant.
+- Draw 32 fresh bytes from the OS CSPRNG. Check against every retained active and
+  retiring token, using at most four draws; entropy failure or repeated collision
+  refuses admission with `DENIED`. Never intentionally reuse a token. Disposed
+  tokens do not require unbounded tombstones. Fresh randomness gives a negligible
+  accidental-reuse assumption, not deterministic historical uniqueness: for n
+  draws the birthday bound is at most n(n-1)/2^257. An accidental disposed-token
+  collision could make old bytes identify a later grant in the same generation.
+- Keep trusted references to the actual attached transport/process generation,
+  instance, admitted account, native invocation, canonical kind/arguments, current
+  policy/consent, native cancellation signal, monotonic deadline and attempt count.
+  The actual consumer must supply its reviewed finite admission/resource bound.
+  Active plus retiring resources count until disposal finishes; no slot means no
+  issuance or dispatch, unlimited queue or deadline extension. The 16-active-host-
+  request ceiling is separate and does not select a 16-lookup admission policy.
+- Start the deadline at ready admission/send: 5,000 ms for `contact.notes` and
+  `kb.lookup`, 15,000 ms for `calendar.freebusy`. At the exact deadline the grant
+  is inactive. Child timeouts, rule timeouts, retries and first fetch never extend
+  or reset it; existing stricter limits continue to apply.
+- Before any asynchronous policy, DNS, secret or transport work, require the
+  active token's exact receiving transport/generation/instance and unchanged
+  native admission, then atomically reserve one of four attempts. A valid matching
+  attempt consumes a reservation even if later refused, failed or cancelled.
+  Internal retries need another reservation. There are no refunds. Missing,
+  unknown or foreign tokens never dispatch or allocate chargeable lookup state.
+- Apply all existing read-class, URL, canonical-address, header, credential,
+  response and consent rules using the captured grant. A grant is not permission
+  for an arbitrary URL, account or secret. An independently native account pin
+  must also match. Remove `lookupPermit` before constructing the upstream request;
+  never put it in HTTP headers, URLs, bodies, argv, environment, disk, logs or
+  error details. Non-tool instances cannot present lookup permits.
+- Bind work to that exact grant's signal and deadline. Recheck admission,
+  generation, cancellation and absolute monotonic deadline after each relevant
+  await, before dispatch, after headers/chunks and before positive output or blob
+  commit. Closures retain unique native invocation/resource identity, never a
+  reusable child ID or whichever lookup happens to be current.
+
+Retire once, before outward native completion, on success/error, cancellation,
+deadline, shutdown/exit or required authority invalidation. Remove the token from
+admission lookup, abort captured work and discard late output. Resource cleanup
+must survive throwing callbacks and remain bounded; retiring resources have no
+authority. Cancellation cannot undo bytes already sent upstream.
+
+A duplicate pending host request ID closes the ambiguous channel under existing
+`BAD_REQUEST` handling before another dispatch and retires its grants. Reusing an
+ID after terminal removal is a new chargeable attempt, not a replay or refund;
+late callbacks cannot reply into its replacement. Unknown/retired/foreign/missing
+grants and a fifth matching attempt are `DENIED`. Structurally malformed permits
+follow existing `BAD_REQUEST` handling. Known in-flight deadline expiry is
+`TIMEOUT`; cancellation/invalidation is `DENIED`. No new host error code is added.
+
+The five-second unanswered-call grace is process liveness, not extra grant
+lifetime. A whole-generation stop may end concurrent work in that generation;
+an old timer must never stop a replacement generation or an answered invocation.
+
+### SDK behavior and compatibility
+
+On a covered lookup, malformed present metadata becomes an `INVALID_INPUT`
+plugin-error result before the handler runs. Missing metadata permits computation
+without network I/O, but its `ctx.fetch` rejects with `DENIED` before any host
+request. Each call captures its own immutable scalar; no global current permit,
+public context permit field or fetch-init override is provided. The shared host
+channel/stream router remains the same object. Call cancellation and settlement
+retire the cooperative SDK scope. A raw hostile child can bypass SDK helpers;
+native parent enforcement remains mandatory.
+
+The optional scope parameters of `createPluginContext` and `hostFetch` are
+callable low-level serving plumbing, not authority. Child-supplied values remain
+subject to the parent ledger. The handler's existing third metadata argument and
+fourth request/progress context are preserved.
+
+Ordinary channel/provider calls do not inherit tool permits. This lookup contract
+does not select probe, setup or re-probe admission or a probe timeout. An unbound
+request must never be guessed to be a probe. Those paths and the actual finite
+native active-plus-retiring resource bound require reviewed consumer inputs before
+whole process activation.
+
+There is no negotiated host-feature handshake. A new parent refuses old SDK
+unbound tool egress; a new SDK requires a conforming parent for covered tool fetch.
+An old strict parent may refuse a manually supplied new field. Never strip it,
+retry unbound or downgrade after refusal. MCP version, manifest SDK semver,
+`tool-v1` version and schema digest do not prove parent support. Canonical tool
+entries, arguments, results and extension declarations remain unchanged. Deploying
+runtime/testkit consumers requires this host contract and actual conformance
+evidence. Structural schemas/vectors and SDK tests do not establish native ledger,
+process, cancellation, storage or platform enforcement.
 
 ## Decoded JSON-member blobs
 
