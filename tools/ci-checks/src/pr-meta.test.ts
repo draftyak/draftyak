@@ -50,6 +50,49 @@ describe("pr-meta", () => {
 	});
 
 	it.each([
+		["m1-99-plugin-stdio", "m1"],
+		["m1-100-plugin-stdio", "m1"],
+		["m2-142-device-auth", "m2"],
+		["m10-1000-boundary", "m10"],
+		["m1b-100a-transport", "m1b"],
+		["m11-1234567890-release", "m11"],
+	])("accepts two or more item-number digits in %s into %s", (head, base) => {
+		expect(prProblems({ ...ok, head, base })).toEqual([]);
+	});
+
+	it.each([
+		["m1-1-plugin-stdio", "m1"],
+		["m1-9a-plugin-stdio", "m1"],
+		["m1--plugin-stdio", "m1"],
+		["m1-+100-plugin-stdio", "m1"],
+		["m1-1_00-plugin-stdio", "m1"],
+		["m1-0x64-plugin-stdio", "m1"],
+		["m1-100ab-plugin-stdio", "m1"],
+		["m1-100A-plugin-stdio", "m1"],
+		["prefix-m1-100-plugin-stdio", "m1"],
+		["refs/heads/m1-100-plugin-stdio", "m1"],
+		[" m1-100-plugin-stdio", "m1"],
+		["m1/100-plugin-stdio", "m1"],
+		["M1-100-plugin-stdio", "m1"],
+		["m-100-plugin-stdio", "m1"],
+		["m1bb-100-plugin-stdio", "m1bb"],
+		["mx-100-plugin-stdio", "mx"],
+		["m1-100-", "m1"],
+		["m1-100--plugin-stdio", "m1"],
+		["m1-100-plugin-stdio-", "m1"],
+		["m1-100-plugin--stdio", "m1"],
+		["m1-100-Plugin-stdio", "m1"],
+		["m1-100-plugin_stdio", "m1"],
+		["m1-100-plugin.stdio", "m1"],
+		["m1-100-plugin-stdio/extra", "m1"],
+		["m1-100-plugin-stdio ", "m1"],
+		["m1-100-plugin-stdio", "m2"],
+		["m1-100-plugin-stdio", "main"],
+	])("keeps the item-branch boundary for %s into %s", (head, base) => {
+		expect(prProblems({ ...ok, head, base })).toEqual([expect.stringContaining("go into mN")]);
+	});
+
+	it.each([
 		`${coAuthored}: Someone <someone@example.com>`,
 		`  ${coAuthored.toUpperCase()}: Some One <one@example.com>`,
 		`${generated} a tool`,
@@ -81,6 +124,9 @@ describe("pr-meta", () => {
 				env: { ...process.env, ...pr, ...env },
 			}).status;
 		expect(status({})).toBe(0);
+		expect(status({ PR_HEAD_REF: "m1-100-plugin-stdio", PR_BASE_REF: "m1" })).toBe(0);
+		expect(status({ PR_HEAD_REF: "m2-142-device-auth", PR_BASE_REF: "m2" })).toBe(0);
+		expect(status({ PR_HEAD_REF: "m1-1-plugin-stdio", PR_BASE_REF: "m1" })).toBe(1);
 		expect(status({ PR_TITLE: "Update stuff" })).toBe(1);
 		expect(status({ PR_BODY: `x\n${coAuthored}: A <a@example.com>` })).toBe(1);
 		expect(status({ PR_BASE_REF: "" })).toBe(2);
