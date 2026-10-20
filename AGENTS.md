@@ -73,6 +73,7 @@ With `DRAFTYAK_STRICT_SKIPS=1`, which `verify:m0` and spike runs set, a heavy te
 
 - No attribution trailers or statements about how work was produced.
 - Tools never add `Signed-off-by`.
+- Branches pushed to this repository carry only the owner's identity, `Nick Savov <nicksavov@protonmail.com>`: the `pr-title` check refuses any other author or committer email there (M0.3c). Fork PRs keep their contributors' identities, so a gate PR (`mN` into `main`) checks committer emails only.
 - Security-critical modules need tests in the same PR.
 
 No attribution means no statements about how work was produced, anywhere: commits, PR titles and descriptions, code, comments or documents. The checks go by trailer syntax, whoever is named: every `Co-authored-by` trailer, and every line that starts with "Generated with", fails the `pr-title` check (M0.3) in a PR description and `pnpm guard` (M0.4) in a tracked file or, with `--commits`, a commit message. To credit a human co-author, name them in prose in the PR description.

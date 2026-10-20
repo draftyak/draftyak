@@ -50,6 +50,7 @@ describe("workflow policy", () => {
 		expect(Object.keys(ci)).toEqual(["changes", "cheap", "full", "windows", "required"]);
 		expect(ci.required).toMatchObject({
 			if: "always()",
+			name: `\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`,
 			needs: ["changes", "cheap", "full", "windows"],
 		});
 		expect([jobs("dco.yml"), jobs("pr-title.yml")].map(Object.keys)).toEqual([
@@ -63,8 +64,22 @@ describe("workflow policy", () => {
 					{},
 					{ run: "node tools/ci-checks/src/pr-meta.ts" },
 					{ run: 'node tools/vendor-guard/src/cli.ts --commits "$BASE_SHA..$HEAD_SHA"' },
+					{ run: "node tools/ci-checks/src/commit-identity.ts" },
 				],
 			},
+		});
+		// The whole step: an `if`, `continue-on-error` or a changed input would make it pass everywhere.
+		const prTitle = jobs("pr-title.yml")["pr-title"] as { steps: unknown[] };
+		expect(prTitle.steps.at(-1)).toEqual({
+			env: {
+				BASE_SHA: `\${{ github.event.pull_request.base.sha }}`,
+				HEAD_SHA: `\${{ github.event.pull_request.head.sha }}`,
+				BASE_REPO: `\${{ github.repository }}`,
+				HEAD_REPO: `\${{ github.event.pull_request.head.repo.full_name }}`,
+				BASE_REF: `\${{ github.event.pull_request.base.ref }}`,
+				HEAD_REF: `\${{ github.event.pull_request.head.ref }}`,
+			},
+			run: "node tools/ci-checks/src/commit-identity.ts",
 		});
 		expect(jobs("zizmor.yml")).toMatchObject({
 			zizmor: {

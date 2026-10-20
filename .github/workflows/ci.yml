@@ -173,6 +173,8 @@ jobs:
           TURBO_CONCURRENCY: '1'
 
   required:
+    # The merge rule requires `required`, so a draft run's cheap-only result reports under another name.
+    name: ${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}
     needs: [changes, cheap, full, windows]
     if: always()
     runs-on: ubuntu-24.04
