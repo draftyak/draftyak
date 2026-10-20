@@ -121,3 +121,66 @@ Every feed answer also carries `Set-Cookie` and `X-Upstream-Trace` (and `Date`),
 2. Build a Hono app for the service's routes. Let errors throw (`app.onError((error) => { throw error; })`), so an aborted request rejects as `fetch` would. Match raw paths or queries with `rawTarget(c.req.raw)`, since Hono's own path is decoded.
 3. Return `createFake(app, {host, faults: createFaults({clock}), recorder})`, plus whatever controls the tests need. Take the clock from the options, and reuse the fault script for 429s, 5xx, latency and drops rather than adding routes for them. Check delay and size options when the fake is created (`checkDelay`).
 4. Keep fixtures synthetic, and test the fake in `test/<name>.test.ts`.
+
+## The Slack read fake
+
+`createSlackReadFake({conversations, ownerId?, users?, scopes?, nowMs?, readBudget?})`
+serves synthetic reads at `slack.draftyak.example`, in memory or on its loopback
+listener. It has no authentication exchange, Socket Mode, send, scheduling or
+reconciliation implementation. Its responses establish no native approval,
+credential, freshness, purge or vendor-policy authority.
+
+`ownerId` is an invented Slack user ID, default `UDYTEST01`. Conversation
+`member` means membership of that connected owner. A request cannot select
+another owner. `users` contains detached `{id, name, displayName, realName}`
+profiles; without it, the fake supplies a synthetic owner profile. `scopes`
+defaults to the supported channel read/history scopes and `users:read`.
+
+| Request | Behavior |
+|---|---|
+| `GET /api/users.conversations` | The connected owner's conversations allowed by its read scopes. Accepts only `cursor`, `limit`, `types` and `exclude_archived`; a caller `user` selector is refused. |
+| `GET /api/users.info?user=<id>` | A validated user selector is required. `users:read` is required before looking up the profile; otherwise `missing_scope`, including for an unknown user. |
+| `GET /api/conversations.info?channel=<id>&include_num_members=true` | Current synthetic facts under the conversation type's read scope. The optional member count is emitted only when requested. |
+| `GET /api/conversations.history?channel=<id>` | Root messages, newest first, under that type's history scope. |
+| `GET /api/conversations.replies?channel=<id>&ts=<root>` | Root and replies, oldest first, under that type's history scope. |
+
+History and replies accept `cursor`, `limit`, `oldest`, `latest` and `inclusive`.
+Timestamp comparisons preserve up to nine fractional digits without floating
+point conversion. Unknown keys, duplicate keys, malformed raw paths and
+selectors are refused. Legacy `conversations.list`, `users.list` and all writes
+are denied. No request makes a provider call.
+
+Lists and message reads use pages of 1–200 rows (100 by default). Cursor tokens
+are opaque, instance/route/filter-bound snapshots; a repeat is stable, a token
+expires after 60,000 injected milliseconds, and moving the clock backwards
+invalidates cursors and rate windows. Provider filters run after each virtual
+page, so an empty page can still have a next cursor. Current owner membership
+and scopes still restrict every list page.
+
+Membership controls list visibility. Configured fixture info and message routes
+remain addressable under their type scopes after membership changes; this
+synthetic control does not model Slack's complete resource authorization rules.
+
+Fixture controls are `conversation(id)`, `changeConversation(id, patch)`,
+`addMessage(channel, message)`, the checked manual `clock`, and `revoke()`.
+They support rename, archive, sharing, membership, growth and new replies.
+`revoke()` makes every supported read return `token_revoked`; it does not
+purge fixture state or call a revoke endpoint. Create a new instance to reset
+state. Constructor values and returned facts are isolated from caller changes.
+
+Limits are 300 conversations, 1,024 user profiles and 1,024 messages. Message
+text is NFC and at most 4,096 UTF-8 bytes; conversation names and profile display
+names are at most 256 bytes, user names 64 bytes. Responses are capped at
+256 KiB, with separate 4 MiB budgets for message text, cursor snapshots and
+recorder accounting. At most 128 cursors and 1,024 pending recorder entries
+are kept. Raw targets are at most 2,048 characters; each record permits 64
+headers and 8,192 bytes of target/header accounting. Draining the recorder
+releases its budget. Header values are not retained. Unsupported request bodies
+are cancelled without cloning or collecting them.
+
+`readBudget: {calls, windowMs}` supplies a synthetic per-method fixed window
+(default 1,000 calls per 60,000 milliseconds). Exhaustion returns Slack-shaped
+`429 ratelimited` and a ceiling-rounded delay-seconds `Retry-After`. This is
+fixture policy, not a claim about Slack's actual tier or internal-app exemption.
+The shared `faults` script remains available for rate limits, errors, latency
+and drops, and stamps `Date` from the same injected clock.
