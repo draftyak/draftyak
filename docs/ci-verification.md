@@ -1,8 +1,11 @@
 # CI verification and review
 
-Run `pnpm verify` locally before opening a ready PR, together with the item's
-required checks and `pnpm adr` when changing an ADR. Review may reuse successful
-CI only after the trust, revision and coverage checks below.
+Before opening a ready PR, run the touched packages' checks, `pnpm guard` and
+the item's required checks, plus `pnpm adr` when changing an ADR. CI's full
+suites, including Windows, provide full PR verification; a local `pnpm verify`
+is not required before submission. Branch integration without CI still needs
+local full verification. Review may reuse successful CI only after the trust,
+revision and coverage checks below.
 
 ## Coverage
 
@@ -14,7 +17,9 @@ skips explicitly, so a green aggregate does not turn a skipped job into a pass.
 Draft runs name the aggregate `required (draft)` and ready runs name it `required`.
 The milestone branches' merge rule requires `required`, `pr-title` and a `review`
 status that the integration owner sets on the reviewed head, so a draft run's
-result never lets a PR merge.
+result never lets a PR merge. A failed or cancelled `required (draft)` can
+remain on the head after marking the PR ready cancels an unfinished draft run.
+It does not count toward the merge rule; assess the ready run's `required`.
 
 The receipt covers jobs in this `ci` run. Other workflows, item-specific heavy
 checks not selected by it, live/device checks, platform acceptance and owner
@@ -102,7 +107,7 @@ which jobs ran and how they ended; the receipt is their compact summary.
    ```text
    gh pr view <pr> --json headRefOid,baseRefName
    gh api repos/<owner>/<repo>/branches/<base> --jq .commit.sha
-   gh pr checks <pr>
+   gh pr checks <pr> --required
    gh run view <run-id> --attempt <attempt> --json headSha,event,jobs
    ```
 

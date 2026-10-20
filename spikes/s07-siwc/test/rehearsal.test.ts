@@ -1,8 +1,10 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { promisify } from "node:util";
 import {
 	type EnvLiveOptions,
 	type Fingerprint,
@@ -29,10 +31,27 @@ import {
 	structured,
 	toolEvents,
 } from "./fake-responses.ts";
-import { answer, MODEL, SAMPLE_DRAFT } from "./harness.ts";
-import { type ChildRunner, gate, type PortHold, runTransferChild } from "./live-session.ts";
+import {
+	answer,
+	endAfterForcedRefresh,
+	MODEL,
+	refreshAnswers,
+	SAMPLE_DRAFT,
+	shortLivedRefresh,
+} from "./harness.ts";
+import { DEFERRED_BUDGET_MS, DRAFT_TIMEOUT_MS, HUB_BUDGET_MS } from "./live-record.ts";
+import {
+	type ChildRunner,
+	childTimeoutMs,
+	deferredExtraMs,
+	deferredMinutes,
+	gate,
+	liveTimeoutMs,
+	type PortHold,
+	runTransferChild,
+} from "./live-session.ts";
 import { keyModels, type Rehearsal, type RehearsalOptions, rehearsal } from "./rehearse.ts";
-import { API_KEY, main, OPT_IN, SAVED } from "./session-env.ts";
+import { API_KEY, main, OPT_IN, readEntry, SAVED } from "./session-env.ts";
 
 // The live procedure (test/live-session.ts) against M0.26's fakes on OS-assigned ports, with a
 // temporary .env.live and evidence folder: the lines, the evidence's shape and content, the transfer
@@ -1003,6 +1022,471 @@ describe.concurrent("the transfer and the revocation check", REHEARSAL, () => {
 	);
 });
 
+// The step after expiry: the hub's forced refresh gets tokens that last 3 s, so its access token
+// expires within seconds (the refresh after expiry gets an hour again), and the hub drafts again
+// AFTER_EXPIRY_TEST_MS after that expiry (--after-expiry-ms, which only a test passes).
+const AFTER_EXPIRY_TEST_MS = 500;
+const shortLived =
+	(item: Rehearsal): ChildRunner =>
+	(args, input, signal) => {
+		shortLivedRefresh(item.auth, 3);
+		const shortened = [...args, "--after-expiry-ms", String(AFTER_EXPIRY_TEST_MS)];
+		return runTransferChild(shortened, input, signal);
+	};
+
+const exec = promisify(execFile);
+const GUARD = path.resolve(import.meta.dirname, "../../../tools/vendor-guard/src/cli.ts");
+// git acts on the throwaway repository, not on one a hook or `rebase -x` exported.
+const gitEnv = (): NodeJS.ProcessEnv =>
+	Object.fromEntries(
+		Object.entries(process.env).filter(
+			([key]) =>
+				!/^GIT_(?:DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY|PREFIX)$/i.test(key),
+		),
+	);
+
+// A throwaway repository for a rehearsal's evidence, as test/rehearsal.heavy.test.ts makes one, and
+// vendor-guard's answer on it as `pnpm guard` runs it.
+async function guarded(ctx: TestContext): Promise<{ root: string; guard(): Promise<unknown> }> {
+	const root = mkdtempSync(path.join(os.tmpdir(), "draftyak-s07-guard-"));
+	ctx.onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+	const env = gitEnv();
+	await exec("git", ["-c", "init.defaultBranch=main", "init", "-q", root], { env });
+	await exec("git", ["-C", root, "config", "maintenance.auto", "false"], { env });
+	const guard = async (): Promise<unknown> => {
+		const found = await exec(process.execPath, [GUARD, "--json"], { cwd: root, env }).catch(
+			(error: { stdout?: string }) => ({ stdout: error.stdout ?? "" }),
+		);
+		return JSON.parse(found.stdout);
+	};
+	return { root, guard };
+}
+
+describe.concurrent("the step after expiry (DRAFTYAK_S7_DEFERRED_MIN)", REHEARSAL, () => {
+	it("the hub refreshes on the product path only after its access token has expired, drafts and revokes; the evidence holds the step and no token", async (ctx) => {
+		const { root, guard } = await guarded(ctx);
+		const item = await setUp(ctx, { root });
+		// The hub waits without the machine-wide lock (and port 1455: test/port.heavy.test.ts).
+		let locked = false;
+		let lockedWhileHubRuns: boolean | undefined;
+		let saidBeforeHub: string[] = [];
+		const hub = shortLived(item);
+		// The limit the run sets just before it starts the hub. The spy's own calls won't do: Vitest
+		// clears them whenever another test starts.
+		let latest: number | undefined;
+		let hubLimit: number | undefined;
+		const timeout = AbortSignal.timeout.bind(AbortSignal);
+		const spy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+			latest = ms;
+			return timeout(ms);
+		});
+		ctx.onTestFinished(() => spy.mockRestore());
+		const result = await item.run({
+			holdPort: async () => {
+				locked = true;
+				return {
+					waitedMs: 0,
+					release: () => {
+						locked = false;
+					},
+				};
+			},
+			runChild: (args, input, signal) => {
+				hubLimit = latest;
+				lockedWhileHubRuns = locked;
+				saidBeforeHub = [...item.said];
+				return hub(args, input, signal);
+			},
+			fingerprint: print,
+			env: { DRAFTYAK_S7_DEFERRED_MIN: "70" },
+		});
+		expect(result.lines).toEqual(ALL_OK);
+		expect(lockedWhileHubRuns).toBe(false);
+		// The hub's limit grows by the cap and the step's own requests.
+		expect(hubLimit).toBe(childTimeoutMs(70));
+		const data = evidenceOf(item);
+		const step = data.transfer.deferred;
+		expect(step).toMatchObject({
+			ran: true,
+			refreshed: true,
+			rotated: true,
+			refresh: { status: 200, shape: { expiresIn: 3600, refreshToken: { format: "opaque" } } },
+			draft: { outcome: "draft", via: "text" },
+		});
+		expect(data.transfer.refresh).toMatchObject({ status: 200, shape: { expiresIn: 3 } });
+		expect(Object.keys(step).sort()).toEqual([
+			"draft",
+			"idleMs",
+			"msAfterExpiry",
+			"ran",
+			"refresh",
+			"refreshed",
+			"rotated",
+		]);
+		expect(step.msAfterExpiry).toBeGreaterThanOrEqual(AFTER_EXPIRY_TEST_MS);
+		expect(step.idleMs).toBeGreaterThanOrEqual(3_000 + AFTER_EXPIRY_TEST_MS);
+		expect(step.idleMs - step.msAfterExpiry).toBe(3_000);
+		// The desktop never refreshed; the hub did once when forced and once after expiry, then the
+		// revoked refresh token was tried again.
+		const grants = item.auth.tokenForms.map((form) => form.get("grant_type"));
+		expect(grants).toEqual([
+			"authorization_code",
+			"refresh_token",
+			"refresh_token",
+			"refresh_token",
+		]);
+		const seconds = Math.round(step.msAfterExpiry / 1000);
+		const after = `refreshed true (rotated true, ${seconds} s after expiry, idle 0 min), draft ok`;
+		expect(result.details.slice(2, 5)).toEqual([
+			"hub process: accepted true, draft ok, refreshed true, revoked true",
+			`after expiry: ${after}`,
+			"after revocation: the refresh token is refused (invalid_grant); the access token gets 401",
+		]);
+		// The expected wait is said before the hub starts, the outcome once it has ended.
+		expect(saidBeforeHub).toContain(
+			"After expiry: the hub process keeps the session until 3 minutes after its access token expires, about 63 minutes (the tokens last 60 minutes; the cap is 70), then drafts once more, refreshing first, and revokes it. Nothing to do meanwhile: keep this PC on mains power and awake.",
+		);
+		expect(item.said).toContain(`The hub process has ended. After expiry: ${after}.`);
+		expect(data.withheld).toBe(LOOPBACK_HOSTS);
+		expectContentFree(item);
+		expect(await guard()).toEqual({ findings: [], files: 1, commits: null });
+	});
+
+	it("tokens that outlast the cap: the step doesn't run, and the session ends as without it", async (ctx) => {
+		const item = await setUp(ctx);
+		// A wait of about 63 minutes against a 62-minute cap.
+		const result = await item.run({ fingerprint: print, deferredMinutes: 62 });
+		expect(result.lines).toEqual(ALL_OK);
+		const step = evidenceOf(item).transfer.deferred;
+		expect(step).toEqual({ ran: false, dueInMs: expect.any(Number) });
+		expect(step.dueInMs).toBeGreaterThan(62 * 60_000);
+		const grants = item.auth.tokenForms.map((form) => form.get("grant_type"));
+		expect(grants).toEqual(["authorization_code", "refresh_token", "refresh_token"]);
+		const skipped = "not run (due in 63 min, over the 62-minute cap)";
+		expect(result.details).toContain(`after expiry: ${skipped}`);
+		expect(item.said).toContain(
+			"After expiry: the tokens last 60 minutes, so the hub process would wait about 63 minutes, past the 62-minute cap. It most likely revokes the session without that step (it decides from its own refresh's tokens).",
+		);
+		expect(item.said).toContain(`The hub process has ended. After expiry: ${skipped}.`);
+		expectContentFree(item);
+	});
+
+	it("a refresh after expiry refused as unusable fails the transfer; the hub still revokes the newest tokens it holds", async (ctx) => {
+		const item = await setUp(ctx);
+		const hub = shortLived(item);
+		const runChild: ChildRunner = (args, input, signal) => {
+			endAfterForcedRefresh(item.auth);
+			return hub(args, input, signal);
+		};
+		const result = await item.run({ runChild, fingerprint: print, deferredMinutes: 70 });
+		expect(result.lines.slice(3)).toEqual([
+			"transfer: fails(deferred-refresh:REAUTH_REQUIRED)",
+			"revoked: yes",
+		]);
+		expect(evidenceOf(item).transfer).toMatchObject({
+			exitCode: 1,
+			refreshed: true,
+			code: null,
+			deferred: {
+				ran: true,
+				refreshed: false,
+				rotated: false,
+				code: "REAUTH_REQUIRED",
+				status: 400,
+				apiCode: "invalid_grant",
+				refresh: { status: 400, shape: { error: { code: "invalid_grant" } } },
+				draft: { outcome: "error", code: "REAUTH_REQUIRED" },
+			},
+			revoked: true,
+			revocation: [200],
+		});
+		const forced = [...item.auth.refresh.keys()].at(-1);
+		expect(item.auth.revocations.map((form) => form.get("token"))).toEqual([forced]);
+		expect(result.details).toContainEqual(
+			expect.stringMatching(
+				/^after expiry: refreshed false \(rotated false, \d+ s after expiry, idle 0 min\), draft REAUTH_REQUIRED$/,
+			),
+		);
+		expectContentFree(item);
+	});
+
+	it("a refused refresh after expiry is the transfer's verdict even when the hub's first draft failed", async (ctx) => {
+		let drafted = 0;
+		const item = await setUp(ctx, {
+			script: (request) =>
+				++drafted === 4
+					? structured(429, "subscription_sharing_usage_limit_exceeded")
+					: answer(request),
+		});
+		const hub = shortLived(item);
+		const runChild: ChildRunner = (args, input, signal) => {
+			endAfterForcedRefresh(item.auth);
+			return hub(args, input, signal);
+		};
+		const result = await item.run({ runChild, fingerprint: print, deferredMinutes: 70 });
+		expect(result.lines.slice(3)).toEqual([
+			"transfer: fails(deferred-refresh:REAUTH_REQUIRED)",
+			"revoked: yes",
+		]);
+		expect(evidenceOf(item).transfer).toMatchObject({
+			draft: { outcome: "error", code: "USAGE_LIMIT" },
+			deferred: { ran: true, refreshed: false, code: "REAUTH_REQUIRED" },
+		});
+		expectContentFree(item);
+	});
+
+	it("a refresh after expiry refused as reused: another holder refreshed first, so revocation is unconfirmed", async (ctx) => {
+		const item = await setUp(ctx);
+		const hub = shortLived(item);
+		const runChild: ChildRunner = (args, input, signal) => {
+			// Another holder uses the forced refresh's refresh token during the wait.
+			refreshAnswers(item.auth, (body, n) => {
+				const held = n === 1 ? item.auth.refresh.get(String(body.refresh_token)) : undefined;
+				if (held) held.used = true;
+				return body;
+			});
+			return hub(args, input, signal);
+		};
+		const result = await item.run({ runChild, fingerprint: print, deferredMinutes: 70 });
+		expect(result.lines.slice(3)).toEqual([
+			"transfer: fails(deferred-refresh:REAUTH_REQUIRED)",
+			"revoked: no(revocation unconfirmed: refresh_token_reused)",
+		]);
+		expect(evidenceOf(item).transfer).toMatchObject({
+			refreshed: true,
+			deferred: {
+				ran: true,
+				refreshed: false,
+				code: "REAUTH_REQUIRED",
+				status: 400,
+				apiCode: "refresh_token_reused",
+			},
+			revoked: true,
+			afterRevoke: { refresh: { accepted: false, apiCode: "invalid_grant" } },
+		});
+		expectContentFree(item);
+	});
+
+	it("a refresh after expiry answered 200 with tokens the hub can't keep: revocation unconfirmed", async (ctx) => {
+		const item = await setUp(ctx);
+		const hub = shortLived(item);
+		const runChild: ChildRunner = (args, input, signal) => {
+			// The answer after expiry lacks token_type, so the session refuses it as incomplete.
+			refreshAnswers(item.auth, (body, n) => {
+				if (n !== 2) return body;
+				const { token_type: _dropped, ...kept } = body;
+				return kept;
+			});
+			return hub(args, input, signal);
+		};
+		const result = await item.run({ runChild, fingerprint: print, deferredMinutes: 70 });
+		expect(result.lines.slice(3)).toEqual([
+			"transfer: fails(deferred-refresh:SIGN_IN_FAILED)",
+			"revoked: no(revocation unconfirmed: the hub's refresh after expiry was answered but not kept)",
+		]);
+		expect(evidenceOf(item).transfer).toMatchObject({
+			deferred: {
+				ran: true,
+				refreshed: false,
+				code: "SIGN_IN_FAILED",
+				detail: "token response incomplete",
+				refresh: { status: 200, shape: { refreshToken: { format: "opaque" } } },
+			},
+			revoked: true,
+		});
+		expectContentFree(item);
+	});
+
+	it("a refresh after expiry that got no answer: revocation unconfirmed", async (ctx) => {
+		const item = await setUp(ctx);
+		const hub = shortLived(item);
+		// The hub's record, edited as it reads when the refresh after expiry got no answer.
+		const runChild: ChildRunner = async (args, input, signal) => {
+			const run = await hub(args, input, signal);
+			Object.assign((run.output as Data).deferred, {
+				refreshed: false,
+				rotated: false,
+				refresh: { status: 0, ms: 0 },
+				draft: { outcome: "error", ms: 0, deltas: 0, code: "UNAVAILABLE" },
+				code: "UNAVAILABLE",
+				detail: "token endpoint unreachable",
+			});
+			return run;
+		};
+		const result = await item.run({ runChild, fingerprint: print, deferredMinutes: 70 });
+		expect(result.lines.slice(3)).toEqual([
+			"transfer: fails(deferred-refresh:UNAVAILABLE)",
+			"revoked: no(revocation unconfirmed: the hub's refresh after expiry got no answer)",
+		]);
+		expectContentFree(item);
+	});
+
+	it("a draft after expiry that fails while the hub's first worked fails the transfer", async (ctx) => {
+		let drafted = 0;
+		const item = await setUp(ctx, {
+			script: (request) =>
+				++drafted <= 4
+					? answer(request)
+					: structured(429, "subscription_sharing_usage_limit_exceeded"),
+		});
+		const result = await item.run({
+			runChild: shortLived(item),
+			fingerprint: print,
+			deferredMinutes: 70,
+		});
+		expect(result.lines.slice(3)).toEqual([
+			"transfer: fails(deferred-draft:USAGE_LIMIT)",
+			"revoked: yes",
+		]);
+		expect(evidenceOf(item).transfer.deferred).toMatchObject({
+			refreshed: true,
+			rotated: true,
+			draft: { outcome: "error", code: "USAGE_LIMIT" },
+		});
+		expect(result.details).toContainEqual(
+			expect.stringMatching(
+				/^after expiry: refreshed true \(rotated true, \d+ s after expiry, idle 0 min\), draft USAGE_LIMIT$/,
+			),
+		);
+		expectContentFree(item);
+	});
+
+	it("a draft after expiry that fails like the hub's first: the first draft's failure is the transfer's verdict", async (ctx) => {
+		let drafted = 0;
+		const item = await setUp(ctx, {
+			script: (request) =>
+				++drafted >= 4
+					? structured(429, "subscription_sharing_usage_limit_exceeded")
+					: answer(request),
+		});
+		const result = await item.run({
+			runChild: shortLived(item),
+			fingerprint: print,
+			deferredMinutes: 70,
+		});
+		expect(result.lines.slice(3)).toEqual(["transfer: fails(draft:USAGE_LIMIT)", "revoked: yes"]);
+		expect(evidenceOf(item).transfer).toMatchObject({
+			draft: { outcome: "error", code: "USAGE_LIMIT" },
+			deferred: {
+				ran: true,
+				refreshed: true,
+				draft: { outcome: "error", code: "USAGE_LIMIT" },
+			},
+		});
+		expectContentFree(item);
+	});
+
+	it("a hub whose forced refresh is refused never reaches the step: the lines are as without it", async (ctx) => {
+		const item = await setUp(ctx);
+		const runChild: ChildRunner = (args, input, signal) => {
+			// The handed-over refresh token reads as already used, so the hub's refresh is refused.
+			for (const held of item.auth.refresh.values()) held.used = true;
+			return runTransferChild(args, input, signal);
+		};
+		const result = await item.run({ runChild, fingerprint: print, deferredMinutes: 70 });
+		expect(result.lines.slice(3)).toEqual([
+			"transfer: fails(refresh:REAUTH_REQUIRED)",
+			"revoked: no(revocation unconfirmed: refresh_token_reused)",
+		]);
+		const transfer = evidenceOf(item).transfer;
+		expect(transfer).toMatchObject({
+			draft: { outcome: "draft" },
+			refreshed: false,
+			apiCode: "refresh_token_reused",
+			deferred: null,
+			revoked: true,
+		});
+		const ended = item.said.filter((line) => line.startsWith("The hub process has ended"));
+		expect(ended).toEqual(["The hub process has ended, with no record of the step after expiry."]);
+		expect(result.details.filter((line) => line.startsWith("after expiry"))).toEqual([]);
+		expectContentFree(item);
+	});
+
+	it("a run stopped while the hub waits, then failing, says the hub's tokens may still work", async (ctx) => {
+		const item = await setUp(ctx, { apiKey: true });
+		const stop = new AbortController();
+		const hub = shortLived(item);
+		const runChild: ChildRunner = (args, input, signal) => {
+			// The stop comes just after the hub's forced refresh, during its wait; the hub is killed.
+			refreshAnswers(item.auth, (body, n) => {
+				if (n === 1) setTimeout(() => stop.abort(new Error("the run was stopped")), 200);
+				return body;
+			});
+			return hub(args, input, signal);
+		};
+		// API-key mode then drafts with the stopped run's signal, and the run fails.
+		await expect(
+			item.run({
+				runChild,
+				fingerprint: print,
+				signal: stop.signal,
+				env: { DRAFTYAK_S7_DEFERRED_MIN: "70", DRAFTYAK_S7_API_MODEL: MODEL },
+			}),
+		).rejects.toThrow("the run was stopped");
+		expect(item.said).toContain(
+			"The hub process has ended, with no record of the step after expiry.",
+		);
+		expect(item.said.at(-1)).toBe(
+			"Tokens this run no longer holds may still work: remove DraftYak in ChatGPT's settings (Settings > Security and login > Sign in with ChatGPT).",
+		);
+		expect(existsSync(item.evidenceFile)).toBe(false);
+	});
+
+	it("a deferredMinutes or DRAFTYAK_S7_DEFERRED_MIN outside 1 to 120 stops the run before anything is sent", async (ctx) => {
+		const item = await setUp(ctx);
+		for (const deferredMinutes of [0, 121, 1.5]) {
+			await expect(item.run({ fingerprint: print, deferredMinutes })).rejects.toThrow(
+				/^refusing to start: deferredMinutes must be whole minutes from 1 to 120$/,
+			);
+		}
+		for (const overrides of [{}, { deferredMinutes: 70 }]) {
+			const env = { DRAFTYAK_S7_DEFERRED_MIN: "0" };
+			await expect(item.run({ fingerprint: print, env, ...overrides })).rejects.toThrow(
+				/^refusing to start: DRAFTYAK_S7_DEFERRED_MIN must be whole minutes from 1 to 120; unset it/,
+			);
+		}
+		expect([item.auth.authorizations, item.auth.tokenForms, item.said]).toEqual([[], [], []]);
+		expect(existsSync(item.evidenceFile)).toBe(false);
+	});
+
+	it("without the setting the hub gets no --deferred, and the evidence and what the run says are as before the step", async (ctx) => {
+		const item = await setUp(ctx);
+		let hubArgs: readonly string[] = [];
+		const runChild: ChildRunner = (args, input, signal) => {
+			hubArgs = args;
+			return runTransferChild(args, input, signal);
+		};
+		const result = await item.run({ runChild, fingerprint: print });
+		expect(result.lines).toEqual(ALL_OK);
+		expect(hubArgs).not.toContain("--deferred");
+		const data = evidenceOf(item);
+		expect(data.transfer).not.toHaveProperty("deferred");
+		expect(Object.keys(data.transfer)).toEqual([
+			"exitCode",
+			"result",
+			"desktopForgot",
+			"childStructure",
+			"accepted",
+			"refreshed",
+			"rotated",
+			"planUsage",
+			"code",
+			"detail",
+			"status",
+			"apiCode",
+			"draft",
+			"refresh",
+			"revoked",
+			"revocation",
+			"afterRevoke",
+		]);
+		const stepSaid = /^(?:After expiry|The hub process has ended)/;
+		expect(item.said.filter((line) => stepSaid.test(line))).toEqual([]);
+		expect(result.details.filter((line) => line.startsWith("after expiry"))).toEqual([]);
+		expectContentFree(item);
+	});
+});
+
 describe("before a live run starts (gate) and the session commands (session-env.ts)", () => {
 	let dir = "";
 	let options: EnvLiveOptions = {};
@@ -1049,6 +1533,40 @@ describe("before a live run starts (gate) and the session commands (session-env.
 			/^refusing to start: OPENAI_BASE_URL, openai_custom_headers set in this shell/,
 		);
 		expect(() => gate(evidence, options, env)).not.toThrow(/example\.invalid|x-a/);
+	});
+
+	it("takes DRAFTYAK_S7_DEFERRED_MIN as whole minutes from 1 to 120 and refuses anything else, keeping the opt-in", () => {
+		const withMinutes = (value: string) => ({ DRAFTYAK_S7_DEFERRED_MIN: value });
+		saveEnvLive(OPT_IN, "stop", options);
+		expect(gate(evidence, options, withMinutes("seventy"))).toMatchObject({ run: false });
+		saveEnvLive(OPT_IN, "yes", options);
+		for (const value of ["70", "1", "120"]) {
+			expect(gate(evidence, options, withMinutes(value))).toEqual({ run: true, again: false });
+			expect(deferredMinutes(withMinutes(value))).toBe(Number(value));
+		}
+		expect(deferredMinutes({})).toBeUndefined();
+		for (const value of ["0", "121", "70.5", "070", " 70", "1e2", "", "seventy"]) {
+			expect(() => gate(evidence, options, withMinutes(value))).toThrow(
+				/^refusing to start: DRAFTYAK_S7_DEFERRED_MIN must be whole minutes from 1 to 120; unset it/,
+			);
+		}
+		expect(readEntry(OPT_IN, options)).toBe("yes");
+		expect(gate(evidence, options, {})).toEqual({ run: true, again: false });
+	});
+
+	it("the step after expiry lengthens the hub process's and the live test's limits by its cap and one more refresh, draft and revocation", () => {
+		const extra = 70 * 60_000 + 30_000 + DRAFT_TIMEOUT_MS + (3 * 30_000 + 3_000);
+		expect([DEFERRED_BUDGET_MS, deferredExtraMs(70)]).toEqual([extra - 70 * 60_000, extra]);
+		expect(childTimeoutMs()).toBe(HUB_BUDGET_MS + 60_000);
+		expect(childTimeoutMs(70)).toBe(HUB_BUDGET_MS + 60_000 + extra);
+		expect(liveTimeoutMs({})).toBe(60 * 60_000);
+		expect(liveTimeoutMs({ DRAFTYAK_S7_DEFERRED_MIN: "70" })).toBe(60 * 60_000 + extra);
+		// gate() refuses a value it can't read, so the run never starts and needs no more time.
+		expect(liveTimeoutMs({ DRAFTYAK_S7_DEFERRED_MIN: "0" })).toBe(60 * 60_000);
+		// No offline tier loads the live test, so its limit is checked in its source.
+		const live = readFileSync(path.join(import.meta.dirname, "siwc.live.test.ts"), "utf8");
+		expect(live).toContain("const LIMIT = { timeout: liveTimeoutMs() };");
+		expect(live).toMatch(/^it\("S7b: [^"]+", LIMIT, async/m);
 	});
 
 	it("opt-in, stop, status and forget print names and states, never values", () => {

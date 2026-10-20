@@ -13,6 +13,7 @@ import {
 	tokenShape,
 	upstreamRecorder,
 	WITHHELD,
+	waitUntil,
 } from "./live-record.ts";
 import { draftVerdict, scrub, withheldIn } from "./live-session.ts";
 import { json, type Served, serve } from "./serve.ts";
@@ -474,6 +475,30 @@ it("a revocation counts only after a 200 and a refusal naming the refresh token 
 		"no(revocation unconfirmed: not tried again)",
 		`no(revocation unconfirmed: probe REAUTH_REQUIRED:${WITHHELD})`,
 	]);
+});
+
+it("the hub's wait after expiry ends on the clock: a minute per timer at most, and at once after a jump", async () => {
+	const due = 63 * 60_000 + 500;
+	let clock = 0;
+	let sleeps: number[] = [];
+	const now = (): number => clock;
+	// Each timer moves the clock on by `passed` of its milliseconds.
+	const timer = (passed: (ms: number) => number) => async (ms: number) => {
+		sleeps.push(ms);
+		clock += passed(ms);
+	};
+	const onTime = timer((ms) => ms);
+	await waitUntil(due, now, onTime);
+	expect([clock, sleeps]).toEqual([due, [...Array(63).fill(60_000), 500]]);
+	// The PC slept for two hours during the first timer.
+	const asleep = timer(() => 2 * 3600_000);
+	[clock, sleeps] = [0, []];
+	await waitUntil(due, now, asleep);
+	expect(sleeps).toEqual([60_000]);
+	// Already due: no timer.
+	[clock, sleeps] = [due, []];
+	await waitUntil(due, now, onTime);
+	expect(sleeps).toEqual([]);
 });
 
 it("the withheld count takes in what the recorders already withheld, keys included", () => {
