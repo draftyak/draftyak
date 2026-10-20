@@ -534,6 +534,53 @@ describe("ordinary live routing is held", () => {
 		expect(readFileSync(settings.file, "utf8")).toBe(before);
 	});
 
+	it.each([
+		{ name: "missing", value: undefined },
+		{ name: "old", value: 1 },
+		{ name: "future", value: 3 },
+		{ name: "null", value: null },
+		{ name: "string", value: "2" },
+		{ name: "array", value: [2] },
+		{ name: "object", value: { version: 2 } },
+		{ name: "boolean", value: true },
+		{ name: "fraction", value: 2.5 },
+	])(
+		"refuses accounting versions independently of valid raw accounting: $name",
+		async ({ value }) => {
+			const server = await start();
+			const settings = options(server);
+			await runLive(settings);
+			const recorded = read(settings.file);
+			expect(recorded.data.session).toMatchObject({
+				accountingVersion: 2,
+				calls: 3,
+				revoked: "no",
+			});
+			expect(recorded.data.session.accountedUsd).toBeGreaterThan(0);
+			expect(recorded.data.revocation).toBeNull();
+			if (value === undefined) delete recorded.data.session.accountingVersion;
+			else recorded.data.session.accountingVersion = value;
+			const before = Buffer.from(JSON.stringify(recorded));
+			writeFileSync(settings.file, before);
+			const sent = server.received.length;
+			let opened = 0;
+			const error = await failure(
+				ordinaryRunLive({
+					...settings,
+					openStub: async (pin) => {
+						opened++;
+						return stubs(server)(pin);
+					},
+				}),
+			);
+			expect(opened).toBe(0);
+			expect(server.received).toHaveLength(sent);
+			expect(readFileSync(settings.file)).toEqual(before);
+			expect(error).toBeInstanceOf(Error);
+			expect((error as Error).message).toContain("no durable reservation accounting");
+		},
+	);
+
 	it("retains raw accounted reservations when a resumed display amount was rounded down", async () => {
 		const server = await start();
 		const settings = options(server);
@@ -603,6 +650,82 @@ describe("ordinary live routing is held", () => {
 			open = undefined;
 		}
 	});
+
+	it.each([
+		{
+			name: "unknown final model",
+			model: "claude-unlisted",
+			serving: DEFAULT_MODEL,
+			type: "message",
+			retain: true,
+		},
+		{
+			name: "inconsistent serving model",
+			model: DEFAULT_MODEL,
+			serving: "claude-opus-4-8",
+			type: "message",
+			retain: true,
+		},
+		{
+			name: "non-serving iteration type",
+			model: DEFAULT_MODEL,
+			serving: DEFAULT_MODEL,
+			type: "advisor",
+			retain: true,
+		},
+		{
+			name: "consistent serving model",
+			model: DEFAULT_MODEL,
+			serving: DEFAULT_MODEL,
+			type: "message",
+			retain: false,
+		},
+	])(
+		"persists ordinary revocation accounting for ambiguous serving attribution: $name",
+		async ({ model, serving, type, retain }) => {
+			const server = await start();
+			const settings = options(server);
+			await runLive(settings);
+			let accounted = read(settings.file).data.session.accountedUsd as number;
+			const pending: number[] = [];
+			const reservations: number[] = [];
+			const body = message(model, {
+				content: [{ type: "text", text: JSON.stringify(draftOutput) }],
+				usage: {
+					input_tokens: 100,
+					output_tokens: 1,
+					iterations: [{ type, model: serving, input_tokens: 100, output_tokens: 1 }],
+				},
+			});
+			server.script = (request) => {
+				if (request.body.model !== CHECK_MODEL) return realistic(request);
+				pending.push(read(settings.file).data.session.accountedUsd);
+				const reservation = worstCase(request.body, Buffer.byteLength(request.raw));
+				if (reservation === undefined) throw new Error("plain revocation reservation missing");
+				reservations.push(reservation);
+				return { status: 200, body };
+			};
+			for (let index = 0; index < 2; index++) {
+				await expect(ordinaryRunLive(settings)).rejects.toThrow("the key still works (200)");
+				const reservation = reservations[index] ?? 0;
+				expect(reservation).toBeGreaterThan(0.00042);
+				expect(pending[index]).toBeCloseTo(accounted + reservation, 9);
+				accounted += retain ? reservation : 0.00042;
+				const recorded = read(settings.file).data;
+				expect(recorded.session.accountedUsd).toBeCloseTo(accounted, 9);
+				expect(recorded.session.costUsd).toBe(Math.round(accounted * 1e6) / 1e6);
+				expect(recorded.session).toMatchObject({ accountingVersion: 2, calls: 3, revoked: "no" });
+				expect(recorded.revocation).toMatchObject({ checks: index + 1, check: "200", deleted: [] });
+				expect(server.received).toHaveLength(4 + index);
+			}
+			expect(costOf(body)).toBe(retain ? undefined : 0.00042);
+			expect(await guard(repoOf(settings.file), AbortSignal.timeout(10_000))).toEqual([]);
+			const recorded = readFileSync(settings.file, "utf8");
+			expect(recorded).not.toContain(key.reveal());
+			expect(recorded).not.toContain(canary);
+			expect(held(settings.envLive, KEY_NAME)).toBe(key.reveal());
+		},
+	);
 });
 
 describe("limits and stops", () => {
