@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { type Flag, FlagCode, flagsHash } from "../flags.ts";
+import { Flag, FlagCode, FlagsError, flagsHash } from "../flags.ts";
 import { Sha256Hex, Ulid, UtcMs } from "../scalars.ts";
 import { type SendSnapshotV1, sendWindow } from "../snapshot.ts";
 import { baseFields, type DeviceStatementBase, withLifetime } from "./common.ts";
@@ -29,18 +29,33 @@ export const SendStatement: z.ZodType<SendStatement> = withLifetime(
 		deliverBy: UtcMs,
 	}),
 );
-export function requiredAckCodes(flags: readonly Flag[]): FlagCode[] {
-	flagsHash(flags);
+const flagList = z.array(Flag);
+function checkedFlags(flags: readonly Flag[]): Flag[] {
+	const parsed = flagList.safeParse(flags);
+	if (!parsed.success) {
+		// Preserve flag diagnostics without letting a diagnostic reread admit a failed projection.
+		flagsHash(flags);
+		throw new FlagsError("FLAGS_INVALID", "invalid flag set");
+	}
+	flagsHash(parsed.data);
+	return parsed.data;
+}
+function ackCodes(flags: readonly Flag[]): FlagCode[] {
 	return [
 		...new Set(flags.filter((flag) => flag.severity === "ack").map((flag) => flag.code)),
 	].sort();
 }
+export function requiredAckCodes(flags: readonly Flag[]): FlagCode[] {
+	return ackCodes(checkedFlags(flags));
+}
 export function checkFlagsAcked(statement: SendStatement, flags: readonly Flag[]): boolean {
 	try {
+		const parsed = SendStatement.safeParse(statement);
+		if (!parsed.success) return false;
+		const projectedFlags = checkedFlags(flags);
 		return (
-			SendStatement.safeParse(statement).success &&
-			statement.flagsHash === flagsHash(flags) &&
-			requiredAckCodes(flags).every((code) => statement.flagsAcked.includes(code))
+			parsed.data.flagsHash === flagsHash(projectedFlags) &&
+			ackCodes(projectedFlags).every((code) => parsed.data.flagsAcked.includes(code))
 		);
 	} catch {
 		return false;
@@ -48,10 +63,12 @@ export function checkFlagsAcked(statement: SendStatement, flags: readonly Flag[]
 }
 export function checkSendWindow(statement: SendStatement, snapshot: SendSnapshotV1): boolean {
 	try {
-		if (!SendStatement.safeParse(statement).success) return false;
-		const window = sendWindow(snapshot, statement.iat);
+		const parsed = SendStatement.safeParse(statement);
+		if (!parsed.success) return false;
+		const window = sendWindow(snapshot, parsed.data.iat);
 		return (
-			statement.notBefore === (window.notBefore ?? null) && statement.deliverBy === window.deliverBy
+			parsed.data.notBefore === (window.notBefore ?? null) &&
+			parsed.data.deliverBy === window.deliverBy
 		);
 	} catch {
 		return false;

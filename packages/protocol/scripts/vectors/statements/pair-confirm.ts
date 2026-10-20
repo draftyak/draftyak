@@ -12,6 +12,37 @@ export function example(_signer: string, other: string): Record<string, unknown>
 	};
 }
 async function extra(base: Record<string, unknown>, signed: SignVector): Promise<void> {
+	await signed(
+		"mobile-capabilities",
+		{ ...base, capabilities: ["read", "draft", "organize"] },
+		true,
+	);
+	await signed("cli-capabilities", { ...base, capabilities: ["read", "draft"] }, true);
+	await signed("canonical-subset", { ...base, capabilities: ["draft", "approve"] }, true);
+	await signed(
+		"reordered-desktop-capabilities",
+		{ ...base, capabilities: ["draft", "read", "organize", "approve", "admin"] },
+		false,
+	);
+	await signed("reordered-subset", { ...base, capabilities: ["draft", "read"] }, false);
+	await signed("preset-excluded", { ...base, preset: "desktop" }, false);
+	const order = ["read", "draft", "organize", "approve", "admin"];
+	for (let first = 0; first < order.length; first++) {
+		for (let second = first + 1; second < order.length; second++) {
+			await signed(
+				`ordered-${order[first]}-${order[second]}`,
+				{ ...base, capabilities: [order[first], order[second]] },
+				true,
+			);
+			await signed(
+				`reordered-${order[second]}-${order[first]}`,
+				{ ...base, capabilities: [order[second], order[first]] },
+				false,
+			);
+		}
+	}
+	await signed("host-role-refused", { ...base, role: "host:sms" }, false);
+	await signed("host-capability-refused", { ...base, capabilities: ["host:sms"] }, false);
 	await signed("unknown-role", { ...base, role: "unregistered-test-role" }, false);
 	await signed("duplicate-capability", { ...base, capabilities: ["read", "read"] }, false);
 	await signed(
