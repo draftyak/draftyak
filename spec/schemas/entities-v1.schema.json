@@ -36,6 +36,9 @@
       "$ref": "#/$defs/draftyak.entities.ChatMessage"
     },
     {
+      "$ref": "#/$defs/draftyak.entities.ConfirmationPreset"
+    },
+    {
       "$ref": "#/$defs/draftyak.entities.Contact"
     },
     {
@@ -1027,6 +1030,15 @@
       ],
       "additionalProperties": false,
       "description": "What delivered the content: a channel plugin instance or a device hosting the channel (sourceId), and when the hub took it in. Content they deliver is asserted, not verified."
+    },
+    "draftyak.entities.ConfirmationPreset": {
+      "type": "string",
+      "enum": [
+        "desktop",
+        "mobile",
+        "cli"
+      ],
+      "description": "A server-selected confirmation policy, never a signed statement field."
     },
     "draftyak.entities.Contact": {
       "type": "object",
