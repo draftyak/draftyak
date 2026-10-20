@@ -149,6 +149,8 @@ export function canaryOutcome(value: string | undefined, canary: string): string
 }
 
 const sorted = (values: Iterable<string>): string[] => [...new Set(values)].sort();
+const isObject = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
 const bump = (counts: Record<string, number>, key: string, by = 1): void => {
 	counts[key] = (counts[key] ?? 0) + by;
 };
@@ -1177,17 +1179,17 @@ export class Recorder {
 	}
 
 	#capabilities(facts: Facts, capabilities: unknown): void {
-		if (typeof capabilities !== "object" || capabilities === null) return;
-		const declared = capabilities as Record<string, unknown>;
-		for (const key of Object.keys(declared)) facts.mcp.capabilityKeys.add(safe(key, NAME));
-		const elicitation = declared.elicitation;
-		if (typeof elicitation === "object" && elicitation !== null) {
+		if (!isObject(capabilities)) return;
+		for (const key of Object.keys(capabilities)) facts.mcp.capabilityKeys.add(safe(key, NAME));
+		const elicitation = capabilities.elicitation;
+		if (isObject(elicitation)) {
 			const modes = Object.keys(elicitation).filter((mode) => mode === "form" || mode === "url");
 			for (const mode of modes.length > 0 ? modes : ["form"]) facts.mcp.elicitation.add(mode);
 		}
-		const extensions = declared.extensions as Record<string, unknown> | undefined;
-		const ui = extensions?.[UI_EXTENSION] as { mimeTypes?: unknown } | undefined;
-		if (ui !== undefined) {
+		const extensions = capabilities.extensions;
+		if (!isObject(extensions)) return;
+		const ui = extensions[UI_EXTENSION];
+		if (isObject(ui)) {
 			facts.mcp.uiDeclared = true;
 			for (const type of [ui.mimeTypes].flat()) {
 				if (typeof type === "string") facts.mcp.uiMimeTypes.add(safe(type, /^[\w./;=+-]{1,64}$/));
