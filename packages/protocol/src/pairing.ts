@@ -101,9 +101,12 @@ const among =
 	(ranges: readonly (readonly [number, number])[]) =>
 	(point: number): boolean =>
 		ranges.some(([first, last]) => point >= first && point <= last);
+type PointRanges = readonly (readonly [number, number])[];
+const frozenRanges = (ranges: PointRanges): PointRanges =>
+	Object.freeze(ranges.map(([first, last]) => Object.freeze([first, last] as const)));
 // Controls, separators, interlinear annotation and Unicode 17's default-ignorable code points
 // other than the joiners and variation selectors: what would hide or reorder a shown name.
-const hidden = among([
+export const DISPLAY_NAME_HIDDEN_RANGES: PointRanges = frozenRanges([
 	[0x00, 0x1f],
 	[0x7f, 0x9f],
 	[0xad, 0xad],
@@ -126,7 +129,7 @@ const hidden = among([
 	[0xe01f0, 0xe0fff],
 ]);
 // The white space left, and the braille blank: never first or last.
-const blank = among([
+export const DISPLAY_NAME_BLANK_RANGES: PointRanges = frozenRanges([
 	[0x20, 0x20],
 	[0xa0, 0xa0],
 	[0x1680, 0x1680],
@@ -137,13 +140,16 @@ const blank = among([
 	[0x3000, 0x3000],
 ]);
 // The joiners and variation selectors, which emoji and some scripts need, show nothing alone.
-const joiner = among([
+export const DISPLAY_NAME_JOINER_RANGES: PointRanges = frozenRanges([
 	[0x180b, 0x180d],
 	[0x180f, 0x180f],
 	[0x200c, 0x200d],
 	[0xfe00, 0xfe0f],
 	[0xe0100, 0xe01ef],
 ]);
+const hidden = among(DISPLAY_NAME_HIDDEN_RANGES);
+const blank = among(DISPLAY_NAME_BLANK_RANGES);
+const joiner = among(DISPLAY_NAME_JOINER_RANGES);
 // The hub's name in a payload, and a device's in its claim and in the hub's record (Device.name).
 // One check, so a bad name is one problem; the bounds reach JSON Schema as boundedText's do.
 export const DisplayName: z.ZodString = z
