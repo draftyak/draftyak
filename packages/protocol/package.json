@@ -67,6 +67,9 @@
     "./mcp/views": "./src/mcp/views.ts",
     "./normalized-change": "./src/normalized-change.ts",
     "./pairing": "./src/pairing.ts",
+    "./plugin-argv": {
+      "node": "./src/plugin-argv.ts"
+    },
     "./plugin-stdio": {
       "node": "./src/plugin-stdio.ts"
     },
@@ -344,6 +347,12 @@
       "./pairing": {
         "types": "./dist/pairing.d.mts",
         "default": "./dist/pairing.mjs"
+      },
+      "./plugin-argv": {
+        "node": {
+          "types": "./dist/plugin-argv.d.mts",
+          "default": "./dist/plugin-argv.mjs"
+        }
       },
       "./plugin-stdio": {
         "node": {
