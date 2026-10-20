@@ -26,7 +26,9 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 	expect(heavy?.if).toBe("needs.changes.outputs.spikes != ''");
 	expect(object(heavy?.env).SPIKES).toBe(`\${{ needs.changes.outputs.spikes }}`);
 	expect(heavy?.run).toContain('for dir in $SPIKES; do filters+=("--filter=./$dir"); done');
-	expect(heavy?.run).toContain(`node tools/verify/turbo.ts run test:heavy "\${filters[@]}"`);
+	expect(heavy?.run).toContain(
+		`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
+	);
 	const rust = steps.filter(
 		(step) =>
 			typeof step.uses === "string" &&
@@ -77,6 +79,8 @@ describe("heavy selection contract", () => {
 		"wrong Rust cache",
 		"strict skips",
 		"wrong condition",
+		"missing serial execution",
+		"concurrent heavy packages",
 	])("rejects %s in a synthetic workflow variant", (attack) => {
 		const changed = workflow();
 		const full = object(object(changed.jobs).full);
@@ -95,6 +99,10 @@ describe("heavy selection contract", () => {
 		}
 		if (attack === "strict skips") object(heavy.env).DRAFTYAK_STRICT_SKIPS = "1";
 		if (attack === "wrong condition") heavy.if = "true";
+		if (attack === "missing serial execution")
+			heavy.run = String(heavy.run).replace(" --concurrency=1", "");
+		if (attack === "concurrent heavy packages")
+			heavy.run = String(heavy.run).replace("--concurrency=1", "--concurrency=2");
 		expect(() => selectionContract(changed)).toThrow();
 	});
 });
