@@ -351,6 +351,8 @@ importers:
 
   tools/fetch-node: {}
 
+  tools/native-dependency-policy: {}
+
   tools/vendor-guard: {}
 
   tools/verify: {}
