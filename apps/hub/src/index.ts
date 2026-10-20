@@ -8,6 +8,14 @@ export {
 	type AuditExportPage,
 	type AuditInput,
 } from "./audit/chain.ts";
+export { HubIdentity } from "./identity/hub-key.ts";
+export {
+	PinError,
+	type PinInitialization,
+	type PinProof,
+	PinService,
+	type PinWallClock,
+} from "./identity/pin.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
 export {
 	type AddressFacts,

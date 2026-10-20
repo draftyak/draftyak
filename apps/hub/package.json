@@ -9,15 +9,17 @@
   "scripts": {
     "typecheck": "tsc -b",
     "test": "vitest run",
+    "test:heavy": "vitest run --mode heavy",
     "build": "tsdown"
   },
   "dependencies": {
     "@draftyak/protocol": "workspace:*",
+    "@peculiar/x509": "2.2.0",
     "better-sqlite3-multiple-ciphers": "13.0.3",
-    "kysely": "0.29.6"
+    "kysely": "0.29.6",
+    "reflect-metadata": "0.2.2"
   },
   "devDependencies": {
-    "@peculiar/x509": "2.2.0",
     "tsdown": "0.23.1"
   }
 }
