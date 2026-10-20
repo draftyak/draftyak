@@ -108,6 +108,7 @@ mod codec {
 }
 pub mod payload;
 pub mod tls;
+pub mod websocket;
 pub use codec::{CodecError, RefusalCode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
