@@ -14,7 +14,7 @@ Import from `@draftyak/fakes`, or from `@draftyak/fakes/<module>` for a file dir
 ## createFake
 
 ```ts
-const fake = createFake(app, { host: "hello.draftyak.example", recorder?, faults? });
+const fake = createFake(app, { host: "hello.draftyak.example", recorder?, faults?, maxRequestBodyBytes? });
 ```
 
 `app` is a Hono app, or anything with Hono's `fetch(request)`. The fake gets a fresh recorder and fault script unless you pass shared ones. It returns:
@@ -28,6 +28,16 @@ const fake = createFake(app, { host: "hello.draftyak.example", recorder?, faults
 | `faults` | The fault script and the clock, below. |
 
 Each request is recorded as it arrives. A request for another host then gets its 421; any other meets its scripted fault, if any, then the app. Requests are recorded and take their faults in arrival order, a request's record is complete before its answer goes out, and every answer gets a `Date` header from the fault script's clock.
+
+`maxRequestBodyBytes` optionally limits uploads to whole bytes from 1 to 64 MiB, inclusive.
+Both in-memory and loopback intake reserve the record and fault on arrival, then read under
+the cap before any redirect or application body clone. An oversized upload is cancelled and
+never reaches the app. It returns `413 {"error":"request_body_too_large"}` with the clock's
+`Date`, unless it targets another host (421) or a matching scripted fault supplies the answer.
+The record contains all bytes read through the chunk that crossed the cap, with only the
+configured prefix retained, and `refused: "request_body_too_large"`. Its hash and length cover
+those received bytes, not the unread remainder. A refused record cannot prove a byte-equal
+whole send. The hello fake and tool upstream leave intake uncapped.
 
 ## Request targets
 
@@ -48,8 +58,17 @@ A request's target is what it asks for: its path, query and any fragment. The re
 | `headers` | Values of the headers named in `headerValues` only; `{}` by default. |
 | `body` | The first `maxBodyBytes` bytes (65,536 by default). |
 | `bodyLength`, `bodySha256` | The whole body's length and the lowercase hex SHA-256 of its exact bytes, however long. |
+| `refused` | Absent for a complete body; `"request_body_too_large"` when bounded intake stopped. In that case the length and hash cover only the bytes received before refusal. |
 
-The recorder reads a copy, so the app still gets the body. Pass one recorder to several fakes to see all of their traffic in the order it arrived.
+The recorder hashes its copy incrementally and retains only the configured prefix, so the app
+still gets the body and the hash covers every byte. Its retention cap does not reject uploads;
+set `maxRequestBodyBytes` on the fake to bound intake before body cloning. Pass one recorder to
+several fakes to see their traffic in arrival order. `begin(request)` reserves a slot and returns
+`write(bytes)`, `finish(refused?)` and `discard()` for bounded intake; each slot must be finished
+or discarded once. `record(request)` streams a clone into the same writer for uncapped intake.
+Custom recorders that expose only `record` and `takeRequests` remain valid for uncapped fakes.
+A capped fake requires `begin` and refuses an incompatible recorder during construction,
+before any request is accepted. `createRecorder` returns a `StreamingRecorder` with `begin`.
 
 ## Faults and the clock
 
