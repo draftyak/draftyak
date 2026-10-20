@@ -45,6 +45,13 @@ changed, progress and log. It holds identifiers rather than credentials.
 send tickets, secret references and `saveAs: 'blob'`. Inline bodies use the
 protocol's canonical base64url encoding. A saved body is available as
 `response.bodyRef`; it is not silently converted to an empty inline body.
+For an authorized channel GET, `saveAs: {kind: 'base64url-json-member', member: 'raw' | 'data'}`
+requests bounded decoding of that top-level JSON string into a stored blob.
+The supporting host validates and commits it; the SDK only forwards the option.
+It cannot be combined with `stream: true`. Require a compatible host and never
+retry an unsupported mode as raw-response storage. Successful responses expose
+only `bodyRef`; non-2xx responses retain ordinary bounded inline error bytes.
+The original status and headers still describe the upstream JSON envelope.
 Stream responses check ordering, total bytes, cancellation and completion.
 Fetches share one stream subscription per host channel, with at most 16 total
 pending or established streams. Chunks for an established stream reach only its
