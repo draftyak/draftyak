@@ -99,3 +99,4 @@ These checked-in contracts remain draft until the M1 gate. A dash means the cont
 | MCP surface | [MCP surface v1](mcp-surface-v1.md) | [MCP surface v1](schemas/mcp-surface-v1.schema.json) | — |
 | Signed sessions | [Approval v1: session statement](approval-v1.md#agent-session-statement) | [Session v1](schemas/agent-session-v1.schema.json), [Session review v1](schemas/agent-session-review-v1.schema.json) | [Session statements](vectors/statements/agent-session.v1.json) |
 | Host channel | [Host channel v1](host-channel-v1.md) | [Host channel v1](schemas/host-channel-v1.schema.json) | - |
+| Decoded JSON-member blobs | [Host fetch storage](host-channel-v1.md#decoded-json-member-blobs) | [Host channel v1](schemas/host-channel-v1.schema.json) | [Host fetch](vectors/host-channel/) |

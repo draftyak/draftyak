@@ -8,6 +8,7 @@ import {
 	type HostErrorCode,
 	type HostFetchParams,
 	type HostNotification,
+	type HostSaveAs,
 	HostStreamChunk,
 } from "@draftyak/protocol/host-channel";
 import { MAX_INLINE_BYTES } from "@draftyak/protocol/normalized-change";
@@ -16,7 +17,7 @@ import { type HostChannel, HostError } from "./host.ts";
 export interface HostFetchInit extends Omit<RequestInit, "body"> {
 	readonly body?: BodyInit | Bytes | null;
 	readonly sendTicket?: unknown;
-	readonly saveAs?: "blob";
+	readonly saveAs?: HostSaveAs;
 	readonly stream?: boolean;
 }
 export interface HostResponse extends Response {
@@ -193,7 +194,7 @@ export function hostFetch(host: HostChannel, defaultSignal?: AbortSignal): HostF
 				? { body: reference }
 				: await boundedBody(request, signal).then((value) => (value ? { body: value } : {}))),
 			...(sendTicket === undefined ? {} : { sendTicket }),
-			...(saveAs ? { saveAs } : {}),
+			...(saveAs === undefined ? {} : { saveAs }),
 			...(stream === undefined ? {} : { stream }),
 		};
 		let streamId: string | undefined;
@@ -246,6 +247,15 @@ export function hostFetch(host: HostChannel, defaultSignal?: AbortSignal): HostF
 				signal: AbortSignal.any([signal, requestAbort.signal]),
 			});
 			if (finished) throw failure;
+			if (typeof saveAs === "object") {
+				const success = result.status >= 200 && result.status < 300;
+				if (
+					result.streamId ||
+					!result.body ||
+					(success ? !("ref" in result.body) : !("base64" in result.body))
+				)
+					throw new HostError("BAD_REQUEST");
+			}
 			let responseBody: BodyInit | null = null;
 			if (result.streamId) {
 				streamId = result.streamId;

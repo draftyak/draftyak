@@ -41,7 +41,7 @@ acceptance. Synthetic child adapter tests do not replace process-mode acceptance
 
 | Method | Params | Result |
 |---|---|---|
-| `host/fetch` | `method`, `url`, `headers`; optional `body`, opaque `sendTicket`, `saveAs: 'blob'`, `stream` | HTTP `status`, `headers`, exactly one `body` or `streamId` |
+| `host/fetch` | `method`, `url`, `headers`; optional `body`, opaque `sendTicket`, `saveAs`, `stream` | HTTP `status`, `headers`, exactly one `body` or `streamId` |
 | `host/ws.open` | `url` | `socketId` |
 | `host/ws.send` | `socketId`, `envelopeId` | null; acknowledgement only |
 | `host/ws.close` | `socketId` | null |
@@ -58,6 +58,65 @@ checks tickets, injects credentials, and caps size/time before transport. The SD
 does not fetch directly or interpret a send ticket. Blob body refs and tickets
 preserve their JSON value across the boundary. `saveAs` results remain body refs;
 the SDK exposes `Response.bodyRef` so callers cannot mistake them for fetched bytes.
+
+## Decoded JSON-member blobs
+
+`saveAs: 'blob'` continues to store the complete upstream response unchanged.
+The additive option `saveAs: {kind: 'base64url-json-member', member: 'raw' | 'data'}`
+selects exactly one case-sensitive, top-level JSON string and stores its decoded
+bytes. It is available only for an otherwise-authorized read-class channel GET.
+It grants no URL, redirect, credential, account, instance or network permission.
+Tool plugins cannot use it. The request schema rejects other methods and
+`stream: true`; omitted `stream` and `stream: false` are equivalent here.
+
+For a 2xx upstream response, the broker must validate strict UTF-8 and one complete
+JSON root object, with no trailing document or data. The selected member must
+occur exactly once and be a string. Duplicate keys anywhere, including escaped-key
+collisions, are refused. Other metadata is validated and skipped without becoming
+authority. JSON has at most 64 container levels (the root object is level one)
+and 65,536 value nodes (including the root, every object value and array element;
+object keys are not additional value nodes). Token/key bookkeeping must stay
+bounded within these limits and the entity limit.
+
+The selected string is base64url: only `A-Z`, `a-z`, `0-9`, `-`, `_` and exact
+terminal padding are accepted. Canonical unpadded strings and their exactly
+padded equivalents are valid; the empty string produces an empty blob. Whitespace,
+`+`, `/`, impossible lengths, interior/excess/incomplete padding and nonzero
+unused bits are refused. JSON string escapes are decoded before checking this
+alphabet. This input rule does not change the protocol's unpadded `Bytes` encoding.
+
+Compressed HTTP entity input and entity bytes after Content-Encoding are counted
+independently, each at most 50,331,648 bytes (48 MiB). Decoded output is at most
+33,554,432 bytes (32 MiB). At that output limit the canonical string has
+44,739,243 unpadded characters or 44,739,244 with proper padding. The broker must
+stream projection/decoding with actual input, encoded-character and decoded-byte
+counters, without materializing or copying the complete entity. Stricter route,
+account, storage, MIME-parser and broker limits win. In particular, the existing
+35 MiB general channel-rule ceiling is unchanged; these maxima do not promise
+32 MiB MIME parsing or support for every provider payload.
+
+Decoded bytes go through the hub-owned encrypted blob writer. Return the existing
+`body: {ref}` only after the whole document validates and storage commits. Preserve
+the existing caller/account/instance scope. Cancellation, timeout, malformed input,
+quota or persistence failure discards partial state and returns no reference.
+Content and secret-bearing input must never enter logs, argv or error detail.
+
+Preserve upstream status and headers; they describe the JSON envelope, not the
+decoded blob. A non-2xx response is not projected: return its ordinary inline
+error body, bounded to 65,536 bytes, or refuse an excess. Malformed successful
+UTF-8/JSON/member/encoding returns `BAD_REQUEST`; size or structural resource
+exhaustion returns `TOO_LARGE`. Cancellation and timeout keep the existing host
+errors. No error-body decoding or partial success is permitted.
+
+The SDK forwards the explicit option and exposes the existing `bodyRef`; it does
+not decode input or implement native persistence. A caller must require a host
+version supporting this option. An older strict host rejects it; no automatic
+retry as raw JSON, inline bytes or a stream is permitted, and no new handshake is
+defined. Native conformance must cover both members, empty/padded/unpadded data,
+all exact size/depth/node neighbors, malformed UTF-8/JSON and duplicates at any
+depth, encoding/padding/bit failures, and cancellation/timeout/storage cleanup
+before scoped-reference commit. Contract vectors define these outcomes separately
+from the request-schema cases exercised here.
 
 Hub notifications have no request ID. `host/ws.message` supplies `socketId` and
 `data`; `host/stream.chunk` supplies `streamId`, zero-based `sequence`, canonical
