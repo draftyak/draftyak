@@ -992,6 +992,138 @@ describe("authenticated MCP middleware refusals", () => {
 		expect(evidence).not.toContain("this is not JSON and must not reach the evidence");
 	});
 
+	test("hostile parsed resource URIs preserve each middleware 400 and exactly one diagnostic", async () => {
+		const uris: unknown[] = [{ toString: null }, { toString: {}, valueOf: null }, {}, [], null, 42];
+		const run = await rehearse([plan("claude-code")], async ({ origin, owner, secrets }) => {
+			await owner.step("claude-code");
+			const connector = claudeCode();
+			vendor.serveAll(connector.documents);
+			const signed = await signIn(
+				new ScriptedClient(connector, { origin, approve: owner.approve }),
+			);
+			secrets.push(signed.accessToken, signed.refreshToken);
+			for (const [id, uri] of uris.entries()) {
+				const response = await fetch(signed.mcp, {
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						"mcp-protocol-version": "2026-07-28",
+						authorization: `Bearer ${signed.accessToken}`,
+					},
+					body: JSON.stringify({
+						jsonrpc: "2.0",
+						id,
+						method: "resources/read",
+						params: { uri, _meta: { [PROTOCOL_VERSION_META_KEY]: "2026-07-28" } },
+					}),
+				});
+				expect(response.status).toBe(400);
+				expect(await response.json()).toMatchObject({ error: { code: -32020 } });
+			}
+			await owner.done("claude-code");
+		});
+		expect(rowOf(run.rows, "claude-code")).toMatchObject({
+			outcome: "blocked",
+			era: "2026",
+			mcp: {
+				requests: uris.length,
+				ok: 0,
+				statuses: { "400": uris.length },
+				refusals: { "header mismatch": uris.length },
+				methods: { "resources/read": uris.length },
+				handledMethods: {},
+				resourceReads: 0,
+				uiReads: 0,
+			},
+		});
+		for (const secret of run.secrets) expect(JSON.stringify(run.data)).not.toContain(secret);
+	});
+
+	test("refused surface and write attempts cannot claim handler use after legacy fallback", async () => {
+		const attempts = [
+			{ method: "prompts/get", params: { name: "draft_reply" } },
+			{ method: "resources/read", params: { uri: GUIDE_URI } },
+			{ method: "resources/read", params: { uri: DRAFT_VIEW } },
+			{ method: "completion/complete", params: {} },
+			{ method: "tools/call", params: { name: "triage_inbox", inputResponses: {} } },
+			{ method: "tools/call", params: { name: "draft_create", arguments: {} } },
+		];
+		const run = await rehearse([plan("chatgpt")], async ({ origin, owner, secrets }) => {
+			await owner.step("chatgpt");
+			const connector = chatgpt();
+			vendor.serveAll(connector.documents);
+			const signed = await signIn(
+				new ScriptedClient(connector, { origin, approve: owner.approve }),
+				{ scope: "inbox:read" },
+			);
+			secrets.push(signed.accessToken, signed.refreshToken);
+			for (const [id, attempt] of attempts.entries()) {
+				const refused = await fetch(signed.mcp, {
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						"mcp-protocol-version": "2026-07-28",
+						authorization: `Bearer ${signed.accessToken}`,
+					},
+					body: JSON.stringify({
+						jsonrpc: "2.0",
+						id,
+						...attempt,
+						params: { ...attempt.params, _meta: { [PROTOCOL_VERSION_META_KEY]: "2026-07-28" } },
+					}),
+				});
+				expect(refused.status).toBe(400);
+				await refused.body?.cancel();
+			}
+			const calls = new McpCalls(signed.mcp, signed.accessToken);
+			expect(
+				(
+					await calls.legacy("initialize", {
+						protocolVersion: "2025-11-25",
+						capabilities: {},
+						clientInfo: { name: "rehearsal", version: "1.0.0" },
+					})
+				).status,
+			).toBe(200);
+			const invalidWrite = await calls.legacy(
+				"tools/call",
+				{ name: "draft_create", arguments: {} },
+				"2025-11-25",
+			);
+			expect(invalidWrite.body.error ?? invalidWrite.body.result?.isError).toBeTruthy();
+			await owner.done("chatgpt", "not-tried");
+		});
+		const row = rowOf(run.rows, "chatgpt");
+		expect(row).toMatchObject({
+			outcome: "ok",
+			era: "both",
+			protocolVersions: ["2025-11-25", "2026-07-28"],
+			mcp: {
+				requests: 8,
+				ok: 2,
+				statuses: { "200": 2, "400": 6 },
+				refusals: { "header mismatch": 6 },
+				handledMethods: { initialize: 1 },
+				attemptedTools: { triage_inbox: 1, draft_create: 2 },
+				tools: {},
+				writeTool: { listed: 0, called: 0, refusedWithoutScope: 0 },
+				uiReads: 0,
+				resourceReads: 0,
+				elicitation: { inputRequired: 0, answered: 0 },
+			},
+		});
+		const none = {
+			prompts: false,
+			resources: false,
+			completion: false,
+			elicitation: false,
+			apps: false,
+		};
+		expect(row.surfaces).toStrictEqual(none);
+		expect(row.declaredOrListed).toStrictEqual(none);
+		for (const secret of run.secrets) expect(JSON.stringify(run.data)).not.toContain(secret);
+	});
+
 	test("a refused modern request followed by legacy fallback keeps both eras without double counting", async () => {
 		const run = await rehearse([plan("claude-code")], async ({ origin, owner }) => {
 			await owner.step("claude-code");
@@ -1013,8 +1145,13 @@ describe("authenticated MCP middleware refusals", () => {
 			await refused.body?.cancel();
 			const calls = new McpCalls(signed.mcp, signed.accessToken);
 			expect(
-				(await calls.legacy("initialize", { protocolVersion: "2025-06-18", capabilities: {} }))
-					.status,
+				(
+					await calls.legacy("initialize", {
+						protocolVersion: "2025-06-18",
+						capabilities: {},
+						clientInfo: { name: "rehearsal", version: "1.0.0" },
+					})
+				).status,
 			).toBe(200);
 			const get = await fetch(signed.mcp, {
 				headers: { authorization: `Bearer ${signed.accessToken}` },
