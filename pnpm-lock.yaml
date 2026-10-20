@@ -69,6 +69,28 @@ importers:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)
 
+  packages/lookup-core:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      es-module-lexer:
+        specifier: 2.3.2
+        version: 2.3.2
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
+      rolldown:
+        specifier: 1.2.14
+        version: 1.2.14
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
   packages/protocol:
     dependencies:
       zod:
