@@ -24,6 +24,8 @@ const OWNED_PINS: &[(&str, &str)] = &[
     ("ring", "0.17.14"),
     ("untrusted", "0.9.0"),
     ("rustls-webpki", "0.103.16"),
+    ("futures-util", "0.3.34"),
+    ("tokio-tungstenite", "0.30.0"),
 ];
 const RUST_CRYPTO: &[(&str, &str)] = &[
     ("base16ct", "1.0.0"),
