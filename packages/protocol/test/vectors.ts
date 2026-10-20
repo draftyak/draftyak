@@ -16,12 +16,16 @@ export function vectorFiles<T>(area: string): [string, T][] {
 export const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 export const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
 
-// Every `pattern` in a JSON Schema.
+// Ignore only the fixed portable end guard when inspecting the original grammar.
+export const patternBody = (pattern: string): string =>
+	pattern.replace(/\$\(\?!\[\\s\\S\]\)(?![?*+{])/g, "$");
+
+// Every `pattern` body in a JSON Schema, for the shorthand/lookaround portability checks.
 export function patterns(schema: unknown): string[] {
 	if (Array.isArray(schema)) return schema.flatMap(patterns);
 	if (schema === null || typeof schema !== "object") return [];
 	return Object.entries(schema).flatMap(([key, value]) =>
-		key === "pattern" && typeof value === "string" ? [value] : patterns(value),
+		key === "pattern" && typeof value === "string" ? [patternBody(value)] : patterns(value),
 	);
 }
 
