@@ -5,14 +5,21 @@ import { createMockHub, type MockHub } from "../src/index.ts";
 import { toolFixture } from "./fixtures/tool/plugin.ts";
 
 const epoch = 1_800_000_000_000;
+let monotonic = 0;
+function at(timestamp: number): void {
+	vi.setSystemTime(timestamp);
+	monotonic = timestamp - epoch;
+}
 const hubs: MockHub[] = [];
 afterEach(async () => {
 	await Promise.all(hubs.splice(0).map((hub) => hub.close()));
+	vi.restoreAllMocks();
 	vi.useRealTimers();
 });
 function clock(): void {
 	vi.useFakeTimers({ toFake: ["Date"] });
-	vi.setSystemTime(epoch);
+	at(epoch);
+	vi.spyOn(performance, "now").mockImplementation(() => monotonic);
 }
 function hubFor(fetch: () => Response): { hub: MockHub; calls: () => number } {
 	let calls = 0;
@@ -52,10 +59,10 @@ function expectTimedOut(result: Record<string, unknown>, hub: MockHub): void {
 it("refuses headers resolving at the exact fetch deadline without executing a timer callback", async () => {
 	clock();
 	for (const elapsed of [999, 1000]) {
-		vi.setSystemTime(epoch);
+		at(epoch);
 		let reads = 0;
 		const { hub, calls } = hubFor(() => {
-			vi.setSystemTime(epoch + elapsed);
+			at(epoch + elapsed);
 			return new Response(
 				new ReadableStream(
 					{
@@ -87,7 +94,7 @@ it("refuses bytes arriving at the fetch deadline before accepting a read chunk",
 					{
 						pull(controller) {
 							reads++;
-							vi.setSystemTime(epoch + 1000);
+							at(epoch + 1000);
 							if (reads === 1) controller.enqueue(new TextEncoder().encode("late"));
 							else controller.close();
 						},
@@ -108,7 +115,7 @@ it("refuses a body ending at the fetch deadline even when it has no bytes", asyn
 				new ReadableStream(
 					{
 						pull(controller) {
-							vi.setSystemTime(epoch + 1000);
+							at(epoch + 1000);
 							controller.close();
 						},
 					},
@@ -121,11 +128,11 @@ it("refuses a body ending at the fetch deadline even when it has no bytes", asyn
 it("refuses final lookup admission at its literal 5000 millisecond deadline without timers", async () => {
 	clock();
 	for (const elapsed of [4999, 5000]) {
-		vi.setSystemTime(epoch);
+		at(epoch);
 		const hub = createMockHub({
 			mode: "in-memory",
 			plugin: toolFixture(async () => {
-				vi.setSystemTime(epoch + elapsed);
+				at(epoch + elapsed);
 				return { entries: [] };
 			}),
 			upstreams: [],
@@ -151,7 +158,7 @@ it("refuses expired lookup authority before any upstream dispatch", async () => 
 	const hub = createMockHub({
 		mode: "in-memory",
 		plugin: toolFixture(async (_args, context) => {
-			vi.setSystemTime(epoch + 5000);
+			at(epoch + 5000);
 			await expect(context.fetch("secret://calendarUrl")).rejects.toMatchObject({
 				code: "TIMEOUT",
 			});

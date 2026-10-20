@@ -1,4 +1,4 @@
-import { jsonCopy } from "@draftyak/protocol/host-channel";
+import { jsonCopy, LOOKUP_PERMIT_META_KEY } from "@draftyak/protocol/host-channel";
 import { validateManifest } from "@draftyak/protocol/manifest";
 import {
 	type CanonicalToolName,
@@ -82,18 +82,29 @@ export function createMockHub(options: MockHubOptions): MockHub {
 			if (manifest.kind === "tool" && !kind && !["tool_describe", "tool_probe"].includes(name))
 				throw new MockHubError("TOOL_NAME_UNDECLARED");
 			const params = jsonCopy({ name, arguments: args, _meta: metadata });
-			return bridge.lookup(async (signal) => {
-				const result = await memory.request("tools/call", params, signal);
-				if (manifest.kind === "tool") {
-					const outcome = checkToolResult(
-						name as CanonicalToolName,
-						result,
-						kind ? { maxBytes: kind.output.maxBytes } : {},
-					);
-					if (outcome.status === "refused") throw new MockHubError(outcome.refusal);
-				}
-				return result;
-			}, kind?.kind);
+			return bridge.lookup(
+				async (signal, permit) => {
+					const admitted =
+						permit === undefined
+							? params
+							: {
+									...params,
+									_meta: { ...params._meta, [LOOKUP_PERMIT_META_KEY]: permit },
+								};
+					const result = await memory.request("tools/call", admitted, signal);
+					if (manifest.kind === "tool") {
+						const outcome = checkToolResult(
+							name as CanonicalToolName,
+							result,
+							kind ? { maxBytes: kind.output.maxBytes } : {},
+						);
+						if (outcome.status === "refused") throw new MockHubError(outcome.refusal);
+					}
+					return result;
+				},
+				kind?.kind,
+				params.arguments,
+			);
 		},
 		async close() {
 			if (closed) return;

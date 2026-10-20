@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
+import { observeStdioFixture, STDIO_FIXTURE_REQUEST_MS } from "./stdio-readiness.ts";
 
 it("emits real MCP progress for the requesting caller token alongside host progress", async () => {
 	const child = spawn(
@@ -12,36 +13,27 @@ it("emits real MCP progress for the requesting caller token alongside host progr
 		],
 		{ stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
 	);
-	const stopped = new Promise<void>((resolve, reject) => {
-		child.once("error", reject);
-		child.once("close", () => resolve());
-	});
+	const fixture = observeStdioFixture(child);
+	const stopped = fixture.stopped;
 	const lines = createInterface({ input: child.stdout });
 	const output = lines[Symbol.asyncIterator]();
 	const host: unknown[] = [],
 		notifications: unknown[] = [];
-	let stderr = "",
-		id = 0;
-	child.stderr.on("data", (chunk: Buffer) => {
-		stderr = (stderr + chunk.toString()).slice(0, 65_536);
-	});
+	let id = 0;
 	const ask = async (
 		method: string,
 		params: Record<string, unknown> = {},
 	): Promise<Record<string, unknown> | undefined> => {
 		const current = ++id;
+		const deadline = Date.now() + STDIO_FIXTURE_REQUEST_MS;
 		child.stdin.write(
 			`${JSON.stringify({ jsonrpc: "2.0", id: current, method, params: { ...params, _meta: { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}, ...(params._meta as object) } } })}\n`,
 		);
 		const response = async (): Promise<Record<string, unknown> | undefined> => {
 			while (true) {
-				const next = await output.next();
-				if (next.done) return undefined;
-				const tagged = next.value.startsWith("\u001e");
-				const frame = JSON.parse(tagged ? next.value.slice(1) : next.value) as Record<
-					string,
-					unknown
-				>;
+				const line = await fixture.nextLine(output, method, current, deadline);
+				const tagged = line.startsWith("\u001e");
+				const frame = JSON.parse(tagged ? line.slice(1) : line) as Record<string, unknown>;
 				if (tagged) {
 					host.push(frame);
 					child.stdin.write(
@@ -49,25 +41,17 @@ it("emits real MCP progress for the requesting caller token alongside host progr
 					);
 				} else if (frame.method) notifications.push(frame);
 				else {
+					fixture.checkId(frame.id, current, method);
 					expect(frame.id).toBe(current);
 					expect(frame.error).toBeUndefined();
 					return frame.result as Record<string, unknown>;
 				}
 			}
 		};
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		try {
-			return await Promise.race([
-				response(),
-				new Promise<undefined>((resolve) => {
-					timer = setTimeout(() => resolve(undefined), 3000);
-				}),
-			]);
-		} finally {
-			clearTimeout(timer);
-		}
+		return response();
 	};
 	try {
+		await fixture.ready();
 		expect((await ask("server/discover"))?.capabilities).toHaveProperty("tools");
 		expect(
 			(await ask("tools/call", { name: "ai_probe", arguments: {} }))?.structuredContent,
@@ -89,7 +73,7 @@ it("emits real MCP progress for the requesting caller token alongside host progr
 				params: expect.objectContaining({ progressToken: "caller-token", progress: 1, total: 2 }),
 			}),
 		]);
-		expect(stderr).toBe("");
+		expect(fixture.stderrText()).toBe("");
 	} finally {
 		lines.close();
 		child.stdin.end();
