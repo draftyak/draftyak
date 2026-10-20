@@ -20,3 +20,19 @@ pnpm --filter @draftyak/protocol vectors --check
 The first writes every file from its generator, `packages/protocol/scripts/vectors/<area>.ts` or `<area>/<part>.ts`, each of which writes only its own area. The second exits 1 and lists every file that differs, is missing, or has no generator; `pnpm test` runs the same check.
 
 `node:crypto` signs with a random nonce, so generators keep each recorded signature while it still verifies, and sign again only when what it covers or its key changes. Test keys are kept the same way.
+
+## Schedule and DST
+
+`schedule/dst.json` holds explicit wall/zone resolutions, including gaps and
+overlaps, instant/display pairs and scheduled snapshot bytes, hashes and windows.
+It covers America/New_York, Europe/London and Australia/Lord_Howe, including Lord
+Howe's half-hour shift, every allowed lateness and a fixed thirty-day interval.
+The original millisecond instant remains in the hash even when the display shows
+only minutes. TypeScript and Rust independently consume the same fixtures.
+
+The canonical producer is Node 26.12.0 with tzdata 2026e. Writing requires those
+actual runtime versions. Check mode recomputes every semantic case on the
+executing runtime and checks the complete canonical metadata. It preserves the
+producer record instead of relabelling it as the checking runtime. A consumer
+tzdata version difference does not skip semantic comparisons; changed, missing
+or extra metadata and changed answers remain drift errors.
