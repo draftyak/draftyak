@@ -219,6 +219,19 @@ describe("workflow policy", () => {
 	});
 
 	it.each([
+		["shell", "defaults:\n  run:\n    shell: echo {0}\n"],
+		["working directory", "defaults:\n  run:\n    working-directory: elsewhere\n"],
+		["unreviewed safe shell", "defaults:\n  run:\n    shell: bash\n"],
+		["null", "defaults: null\n"],
+	])("refuses inherited pr-title execution defaults: %s", (_, defaults) => {
+		const file = ".github/workflows/pr-title.yml";
+		const mutated = defaults + read(file);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"pr-title.yml must not define workflow execution defaults",
+		);
+	});
+
+	it.each([
 		["condition", (run: string) => `        if: false\n${run}`],
 		["soft failure", (run: string) => `        continue-on-error: true\n${run}`],
 		["shell", (run: string) => `        shell: echo {0}\n${run}`],
