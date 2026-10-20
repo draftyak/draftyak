@@ -1,0 +1,13 @@
+{
+  "name": "@draftyak/launch-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "metadata": "node src/metadata-cli.ts ../..",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "yaml": "2.9.1"
+  }
+}

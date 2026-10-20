@@ -8,7 +8,8 @@ List the checks you ran and their results. Explain any check that could not run.
 
 - [ ] I reviewed and understand the entire change and have the right to contribute it under Apache-2.0.
 - [ ] Tests cover the changed behavior, or I explain why tests do not apply.
-- [ ] `pnpm verify` passes (or the documented docs-only profile applies).
+- [ ] The touched-package and item acceptance checks plus `pnpm guard` pass (or the documented docs-only profile applies); I list commands, results and unrun checks above.
+- [ ] Any changed verification controls have local boundary tests and mutation proofs; current-head CI covers unrelated full and Windows suites.
 - [ ] A changeset covers a publishable-package change, or I explain why none is needed.
 - [ ] Documentation covers the behavior, API and configuration changes, or I explain why none is needed.
 - [ ] I read DCO 1.1 and personally apply the required sign-off as described in CONTRIBUTING.md; for an item PR, I identify the owner review gate where it will be applied.
