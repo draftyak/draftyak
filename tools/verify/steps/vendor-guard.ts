@@ -3,7 +3,7 @@ import { fromExitCode, type Step, type StepContext } from "../lib/registry.ts";
 
 // The branch an item or milestone branch merges into, by pr-meta's (M0.3) branch rules.
 export function baseOf(branch: string): string | undefined {
-	const item = /^m(\d+[a-z]?)-\d{2}[a-z]?-[a-z0-9]+(?:-[a-z0-9]+)*$/.exec(branch);
+	const item = /^m(\d+[a-z]?)-\d{2,}[a-z]?-[a-z0-9]+(?:-[a-z0-9]+)*$/.exec(branch);
 	if (item) return `origin/m${item[1]}`;
 	return /^m\d+[a-z]?$/.test(branch) ? "origin/main" : undefined;
 }
