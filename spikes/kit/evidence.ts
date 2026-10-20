@@ -25,6 +25,26 @@ export interface Fingerprint {
 
 const round1 = (value: number): number => Math.round(value * 10) / 10;
 
+// Include non-ignored untracked inputs, even outside cwd. A recorder may exempt only exact JSON
+// outputs it writes, never an evidence directory: that directory can also hold executable inputs.
+export function evidenceStatusArgs(
+	cwd: string,
+	generatedOutputs: readonly string[] = [],
+): string[] {
+	const exclusions = generatedOutputs.map((file) => {
+		const output = path.resolve(cwd, file);
+		if (path.basename(path.dirname(output)) !== "evidence" || path.extname(output) !== ".json") {
+			throw new Error("generated output must be an exact evidence/*.json file");
+		}
+		const relative = path.relative(cwd, output).split(path.sep).join("/");
+		if (relative.startsWith("../") || path.isAbsolute(relative)) {
+			throw new Error("generated output must be inside cwd");
+		}
+		return `:(exclude,literal)${relative}`;
+	});
+	return ["status", "--porcelain", "--untracked-files=all", "--", ":/", ...exclusions];
+}
+
 // Busy share of all cores over `ms` (os.loadavg() is always 0 on Windows).
 export async function sampleCpu(ms = 1000): Promise<number> {
 	const times = () => os.cpus().map(({ times: t }) => [t.idle, t.user + t.nice + t.sys + t.irq]);
@@ -73,7 +93,7 @@ export async function fingerprint(
 	const git = (...args: string[]) => exec("git", ["-C", cwd, ...args], { env: gitEnv() });
 	const [head, status] = await Promise.all([
 		git("rev-parse", "HEAD").catch(() => null),
-		git("status", "--porcelain", "--untracked-files=no").catch(() => null),
+		git(...evidenceStatusArgs(cwd)).catch(() => null),
 	]);
 	const sha = head?.code === 0 ? head.stdout.trim() : "";
 	return {
