@@ -203,6 +203,26 @@ describe("portable complete Cargo projection", () => {
 		);
 	});
 
+	it("binds ancestor edge predicates while package rows and membership stay fixed", () => {
+		const original = fixture();
+		const changed = fixture();
+		first(rows(first(rows(node(changed, "helper").deps)).dep_kinds)).target =
+			'cfg(target_os = "linux")';
+		expect(changed.metadata.packages).toEqual(original.metadata.packages);
+		expect(changed.paths).toEqual(original.paths);
+
+		const before = project(original);
+		const after = project(changed);
+		const beforeAncestor = first(before.ancestorDigests);
+		const afterAncestor = first(after.ancestorDigests);
+		expect(after.tuplePayload[3]).toEqual(before.tuplePayload[3]);
+		expect(beforeAncestor.packageCount).toBe(3);
+		expect(afterAncestor.packageCount).toBe(3);
+		expect(afterAncestor.tuplePayload.slice(0, 5)).toEqual(beforeAncestor.tuplePayload.slice(0, 5));
+		expect(after.digest).not.toBe(before.digest);
+		expect(afterAncestor.digest).not.toBe(beforeAncestor.digest);
+	});
+
 	const changes: { name: string; change: (f: Fixture) => void }[] = [
 		{
 			name: "resolved feature",
@@ -371,6 +391,27 @@ describe("portable complete Cargo projection", () => {
 		edge(f, "root", "copy");
 		f.affected = [];
 		expect(() => project(f)).toThrow(InputError);
+	});
+
+	it("refuses a registry source with its otherwise valid local workspace binding retained", () => {
+		const original = fixture();
+		const changed = fixture();
+		expect(project(original).packageCount).toBe(4);
+		pkg(changed, "root").source = registry;
+		expect(changed.paths).toEqual(original.paths);
+		expect(changed.metadata.workspace_members).toEqual(original.metadata.workspace_members);
+		expect(changed.metadata.workspace_default_members).toEqual(
+			original.metadata.workspace_default_members,
+		);
+
+		let failure: unknown;
+		try {
+			project(changed);
+		} catch (error) {
+			failure = error;
+		}
+		expect(failure).toBeInstanceOf(InputError);
+		expect(failure).toMatchObject({ code: "INVALID_INPUT" });
 	});
 
 	const refusals: { name: string; change: (f: Fixture) => void }[] = [
