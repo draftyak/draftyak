@@ -9,6 +9,7 @@
   "scripts": {
     "typecheck": "tsc -b",
     "test": "vitest run",
+    "test:heavy": "vitest run --mode heavy",
     "build": "tsdown"
   },
   "dependencies": {
