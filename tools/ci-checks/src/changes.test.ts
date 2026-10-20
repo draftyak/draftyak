@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { areaNames, classify, untestedRust } from "./changes.ts";
+import { areaNames, classify, rustWorkspace, untestedRust } from "./changes.ts";
 
 const root = mkdtempSync(path.join(tmpdir(), "draftyak-changes-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -22,6 +22,58 @@ for (const [file, content] of Object.entries(tree)) {
 const manifests = Object.keys(tree).filter((file) => file.endsWith("Cargo.toml"));
 
 describe("changed areas", () => {
+	it.each([
+		["spikes/s05/rust/ekm/src/lib.rs", "spikes/s05/rust"],
+		["spikes/s05/rust/ekm/Cargo.toml", "spikes/s05/rust"],
+		["spikes/clock/jiff/src/main.rs", "spikes/clock/jiff"],
+		["spikes/clock/jiff/Cargo.toml", "spikes/clock/jiff"],
+		["tools/ci-checks/src/dco.ts", undefined],
+		["Cargo.toml", undefined],
+	])("keeps relative Rust ancestor selection for %s", (file, expected) => {
+		expect(rustWorkspace(root, file)).toBe(expected);
+	});
+
+	it.each(["/synthetic/member/src/lib.rs", "/Cargo.toml", "/", "//synthetic/member/src/lib.rs"])(
+		"rejects POSIX absolute Rust paths before manifest probes: %s",
+		(file) => {
+			const script = `
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const { classify, rustWorkspace } = await import(${JSON.stringify(new URL("./changes.ts", import.meta.url).href)});
+let probes = 0;
+fs.existsSync = () => {
+	if (++probes > 32) throw new Error("Synthetic manifest-probe budget exhausted");
+	return false;
+};
+fs.readFileSync = () => { throw new Error("Unexpected manifest read"); };
+syncBuiltinESMExports();
+for (const check of [
+	() => rustWorkspace(process.argv[2], process.argv[1]),
+	() => classify([process.argv[1]], process.argv[2], () => []),
+]) {
+	assert.throws(check, /^Error: Rust workspace paths must be repository-relative$/,
+		"Absolute paths must be rejected before filesystem probes");
+}
+assert.equal(probes, 0, "Absolute paths must perform zero manifest probes");
+console.log("absolute paths rejected without manifest probes");
+`;
+			const result = spawnSync(
+				process.execPath,
+				["--input-type=module", "-e", script, file, root],
+				{
+					encoding: "utf8",
+					timeout: 5_000,
+					windowsHide: true,
+				},
+			);
+			expect(result.error, "The bounded child must complete without a timeout").toBeUndefined();
+			expect(result.signal).toBeNull();
+			expect(result.status, result.stderr).toBe(0);
+			expect(result.stdout.trim()).toBe("absolute paths rejected without manifest probes");
+		},
+	);
+
 	it.each([
 		[["README.md", "docs/x.md", "LICENSE", "NOTICE", "spikes/s01/evidence/a.json"], ["docs-only"]],
 		[["tools/ci-checks/src/dco.ts", "README.md"], ["ts"]],
