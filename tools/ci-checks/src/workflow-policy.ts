@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { parseYaml, type Yaml, type YamlDocument, type YamlPath } from "./yaml.ts";
 
 // The single source of truth for action pins: [SHA, version comment], each SHA checked against its
@@ -38,6 +39,54 @@ const readOnly = (permissions: Yaml | undefined): boolean => {
 	return Object.keys(map).join() === "contents" && map.contents === "read";
 };
 
+const labelsFile = ".github/workflows/labels.yml";
+// The sole write-permission exception pins the whole execution context, including every step.
+// A one-line condition retains the parser's refusal of folded and multiline scalars.
+const labelsContract: Yaml = {
+	name: "Sync approved labels",
+	on: { workflow_dispatch: null },
+	permissions: { contents: "read" },
+	env: { DO_NOT_TRACK: "1", TURBO_TELEMETRY_DISABLED: "1" },
+	jobs: {
+		"sync-labels": {
+			if: `\${{ github.event_name == 'workflow_dispatch' && github.repository == 'draftyak/draftyak' && github.actor == 'nicksavov' && github.triggering_actor == 'nicksavov' && github.ref == 'refs/heads/m11' }}`,
+			permissions: { contents: "read", issues: "write" },
+			"runs-on": "ubuntu-24.04",
+			steps: [
+				{
+					name: "Check out source",
+					uses: `actions/checkout@${actionPins["actions/checkout"]?.[0]}`,
+					with: { ref: `\${{ github.sha }}`, "persist-credentials": false },
+				},
+				{
+					name: "Set up pnpm",
+					uses: `pnpm/action-setup@${actionPins["pnpm/action-setup"]?.[0]}`,
+				},
+				{
+					name: "Set up Node",
+					uses: `actions/setup-node@${actionPins["actions/setup-node"]?.[0]}`,
+					with: { "node-version-file": ".node-version" },
+				},
+				{ name: "Install locked dependencies", run: "pnpm install --frozen-lockfile" },
+				{
+					name: "Validate metadata",
+					run: "pnpm --filter @draftyak/launch-checks --fail-if-no-match metadata",
+				},
+				{
+					name: "Validate issue drafts and labels",
+					run: "pnpm --filter @draftyak/launch-checks --fail-if-no-match issues",
+				},
+				{
+					name: "Synchronize approved labels",
+					id: "sync-approved-labels",
+					env: { GH_TOKEN: `\${{ github.token }}` },
+					run: "node tools/launch-checks/src/issues-cli.ts --sync-labels",
+				},
+			],
+		},
+	},
+};
+
 // Problems in one workflow file, as `file:line: message`.
 export function checkWorkflow(file: string, source: string, rustToolchain: string): string[] {
 	let doc: YamlDocument;
@@ -52,6 +101,10 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 		problems.push(`${file}${scalar ? `:${scalar.line}` : ""}: ${message}`);
 	};
 	const workflow = asMap(doc.value);
+	const reviewedLabels = file === labelsFile && isDeepStrictEqual(doc.value, labelsContract);
+	if (file === labelsFile && !reviewedLabels) {
+		report([], "labels.yml must exactly match the reviewed owner-only labels contract");
+	}
 	if (file === ".github/workflows/ci.yml") {
 		const checkFailurePolicy = (value: Yaml, at: YamlPath): void => {
 			if (Array.isArray(value)) {
@@ -112,7 +165,11 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 
 	for (const [job, definition] of Object.entries(asMap(workflow.jobs))) {
 		const jobMap = asMap(definition);
-		if (Object.hasOwn(jobMap, "permissions") && !readOnly(jobMap.permissions)) {
+		if (
+			Object.hasOwn(jobMap, "permissions") &&
+			!readOnly(jobMap.permissions) &&
+			!(reviewedLabels && job === "sync-labels")
+		) {
 			report(["jobs", job, "permissions"], "job permissions may only be `contents: read`");
 		}
 		for (const [index, value] of asList(jobMap.steps).entries()) {
