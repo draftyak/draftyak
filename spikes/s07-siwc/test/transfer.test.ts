@@ -11,7 +11,14 @@ import {
 	startFakeResponses,
 	structured,
 } from "./fake-responses.ts";
-import { answer, MODEL, memoryStore } from "./harness.ts";
+import {
+	answer,
+	endAfterForcedRefresh,
+	MODEL,
+	memoryStore,
+	refreshAnswers,
+	shortLivedRefresh,
+} from "./harness.ts";
 import { AFTER_EXPIRY_MS } from "./live-record.ts";
 
 // The documented transfer across two processes (plan §4 step 2; Self-hosted VMs): this test signs
@@ -95,9 +102,9 @@ it("a hub with another host ID refuses the credential and touches nothing", asyn
 });
 
 // The step after expiry (--deferred, M0.27): the desktop signs in with tokens that last an hour, as
-// live; from the handover on, the fake issues tokens that last EXPIRES_IN seconds, so the hub's
-// forced refresh gets an access token that expires within seconds. --after-expiry-ms, which only a
-// test passes, has the hub draft again AFTER_MS after that.
+// live; the hub's forced refresh gets tokens that last EXPIRES_IN seconds, so its access token
+// expires within seconds, and the refresh after expiry gets an hour again. --after-expiry-ms, which
+// only a test passes, has the hub draft again AFTER_MS after that expiry.
 const EXPIRES_IN = 3;
 const AFTER_MS = 300;
 const WAIT = { timeout: 120_000 };
@@ -127,7 +134,9 @@ async function handover(
 	const hostId = newHostId();
 	const endpoints = await discover(auth.url);
 	const credential = await signIn({ hostId, endpoints, port: 0, openBrowser: auth.browse });
-	Object.assign(auth.options, { expiresIn: EXPIRES_IN, ...options.after });
+	const { expiresIn = EXPIRES_IN, ...after } = options.after ?? {};
+	Object.assign(auth.options, after);
+	shortLivedRefresh(auth, expiresIn);
 	return { auth, api, hostId, text: transferText(credential) };
 }
 
@@ -150,15 +159,12 @@ const refreshForms = (auth: FakeAuth): (string | null)[] =>
 		.filter((form) => form.get("grant_type") === "refresh_token")
 		.map((form) => form.get("refresh_token"));
 
-// The session ends at the issuer once the hub's forced refresh is answered (the owner removes
-// DraftYak, say), so its next refresh is refused with invalid_grant.
-function endAfterForcedRefresh(auth: FakeAuth): void {
-	auth.options.tokenResponse = (body, grant) => {
-		const token = String(body.refresh_token);
-		const family = grant === "refresh_token" ? auth.refresh.get(token)?.family : undefined;
-		if (family) family.revoked = true;
-		return body;
-	};
+// No token or client ID the fake issued is in what the hub printed.
+function expectNoToken(hub: Handover, run: ChildRun): void {
+	const output = JSON.stringify(run);
+	const { access, refresh, clients } = hub.auth;
+	const issued = [...access.keys(), ...refresh.keys(), ...clients.keys()];
+	expect(issued.filter((value) => output.includes(value))).toEqual([]);
 }
 
 // A run the hub process refuses before it reads anything: its exit code and stderr.
@@ -183,11 +189,12 @@ describe.concurrent("the step after expiry (--deferred)", WAIT, () => {
 				draft: { outcome: "draft" },
 				refreshed: true,
 				rotated: true,
+				refresh: { status: 200, shape: { expiresIn: EXPIRES_IN } },
 				deferred: {
 					ran: true,
 					refreshed: true,
 					rotated: true,
-					refresh: { status: 200, shape: { expiresIn: EXPIRES_IN } },
+					refresh: { status: 200, shape: { expiresIn: 3600 } },
 					draft: { outcome: "draft", via: "text" },
 				},
 				revoked: true,
@@ -209,9 +216,8 @@ describe.concurrent("the step after expiry (--deferred)", WAIT, () => {
 		expect(hub.auth.revocations.map((form) => form.get("token"))).toEqual([issued[2]]);
 		// The fake issued the later tokens after the forced refresh's access token had expired.
 		const [, forced, later] = [...hub.auth.access.values()];
-		expect((later?.expiresAt ?? 0) - EXPIRES_IN * 1000).toBeGreaterThan(forced?.expiresAt ?? 0);
-		const output = JSON.stringify(run);
-		expect([...hub.auth.access.keys(), ...issued].filter((t) => output.includes(t))).toEqual([]);
+		expect((later?.expiresAt ?? 0) - 3600_000).toBeGreaterThan(forced?.expiresAt ?? 0);
+		expectNoToken(hub, run);
 	});
 
 	it("an earliest_refresh_at after expiry doesn't hold the refresh after expiry back", async (ctx) => {
@@ -229,6 +235,7 @@ describe.concurrent("the step after expiry (--deferred)", WAIT, () => {
 		const result = run.result as Data;
 		expect(result.refresh.shape.earliestRefreshAt.inS).toBeGreaterThan(3000);
 		expect(result.deferred.msAfterExpiry).toBeGreaterThanOrEqual(AFTER_MS);
+		expectNoToken(hub, run);
 	});
 
 	it("without --draft, the step still refreshes after expiry through Session.accessToken()", async (ctx) => {
@@ -249,6 +256,56 @@ describe.concurrent("the step after expiry (--deferred)", WAIT, () => {
 		});
 		expect(run.result).not.toHaveProperty("draft");
 		expect(hub.api.received.map((request) => request.path)).toEqual(["/v1/models"]);
+		expectNoToken(hub, run);
+	});
+
+	it("the token after expiry comes from Session.accessToken(): its plan check refuses a token without plan usage before any draft is sent", async (ctx) => {
+		const hub = await handover(ctx);
+		refreshAnswers(hub.auth, (body, n) =>
+			n === 2 ? { ...body, scope: "offline_access resource.invoke" } : body,
+		);
+		const run = await child(deferred(hub, ...DRAFTING), hub.text, ctx.signal);
+		expect(run).toMatchObject({
+			exitCode: 0,
+			result: {
+				draft: { outcome: "draft" },
+				planUsage: "enabled",
+				deferred: {
+					ran: true,
+					refreshed: true,
+					rotated: true,
+					code: "PLAN_USAGE_DISABLED",
+					draft: { outcome: "error", code: "PLAN_USAGE_DISABLED" },
+				},
+				revoked: true,
+			},
+		});
+		const drafts = hub.api.received.filter((request) => request.path === "/v1/responses");
+		expect(drafts).toHaveLength(1);
+		expectNoToken(hub, run);
+	});
+
+	it("a refresh after expiry answered without a new refresh token is recorded as not rotated, and the kept token revoked", async (ctx) => {
+		const hub = await handover(ctx);
+		refreshAnswers(hub.auth, (body, n) => {
+			if (n !== 2) return body;
+			const { refresh_token: _dropped, ...kept } = body;
+			return kept;
+		});
+		const run = await child(deferred(hub, ...DRAFTING), hub.text, ctx.signal);
+		expect(run).toMatchObject({
+			exitCode: 0,
+			result: {
+				rotated: true,
+				deferred: { ran: true, refreshed: true, rotated: false, draft: { outcome: "draft" } },
+				revoked: true,
+				afterRevoke: { refresh: { accepted: false, apiCode: "invalid_grant" } },
+			},
+		});
+		expect((run.result as Data).deferred).not.toHaveProperty("code");
+		const [, forced] = [...hub.auth.refresh.keys()];
+		expect(hub.auth.revocations.map((form) => form.get("token"))).toEqual([forced]);
+		expectNoToken(hub, run);
 	});
 
 	it("tokens that outlast the cap: the step doesn't run, and the hub revokes as without it", async (ctx) => {
@@ -268,6 +325,7 @@ describe.concurrent("the step after expiry (--deferred)", WAIT, () => {
 		expect(dueInMs).toBeGreaterThan(3600_000);
 		expect(dueInMs).toBeLessThanOrEqual(3600_000 + AFTER_EXPIRY_MS);
 		expect(refreshForms(hub.auth)).toHaveLength(2);
+		expectNoToken(hub, run);
 	});
 
 	it("a refresh after expiry refused as unusable is recorded, and the hub still revokes the newest refresh token it holds", async (ctx) => {
@@ -297,6 +355,7 @@ describe.concurrent("the step after expiry (--deferred)", WAIT, () => {
 		const [, forced] = [...hub.auth.refresh.keys()];
 		expect(hub.auth.refresh.size).toBe(2);
 		expect(hub.auth.revocations.map((form) => form.get("token"))).toEqual([forced]);
+		expectNoToken(hub, run);
 	});
 
 	it("a draft after expiry that fails is recorded, and the hub still revokes", async (ctx) => {
@@ -323,6 +382,7 @@ describe.concurrent("the step after expiry (--deferred)", WAIT, () => {
 			},
 		});
 		expect((run.result as Data).deferred).not.toHaveProperty("code");
+		expectNoToken(hub, run);
 	});
 
 	it("--deferred takes whole minutes from 1 to 120, only with --live and --revoke; --after-expiry-ms only with it", async () => {
