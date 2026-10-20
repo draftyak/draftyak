@@ -115,6 +115,87 @@ Message objects are `{id, conversationId, author, text, createdAt}`, with `creat
 
 Every feed answer also carries `Set-Cookie` and `X-Upstream-Trace` (and `Date`), headers outside the `tool-*` allowlist (`Content-Type`, `ETag`, `Last-Modified`, `Content-Length`) that the broker must strip. Other methods find no route and get `404`.
 
+## The Gmail fake
+
+`createGmailFake({accessGrant, clock?, recorder?, messages?, readBudget?, sendBudget?})`
+returns the shared `Fake` interface with Gmail fixture controls. Import it from
+`@draftyak/fakes/gmail` or the package root. `GMAIL_HOST` is the logical host
+`gmail.googleapis.com`, so an injected fetch can receive the exact approved
+provider URL. This fixture makes no outbound request; its optional listener is
+still loopback-only. Message addresses and content must remain synthetic.
+
+`accessGrant(token)` supplies `{scopes, expiresAt}` or `undefined` for a synthetic
+bearer. It can bind the Google OAuth fake's `accessGrant` without importing that
+fake or any production credential service. The expiry uses UTC milliseconds.
+Missing/expired grants return 401, and insufficient scopes return 403. Read-only
+can read raw mail but cannot mutate or send. Metadata-only grants cannot retrieve
+bodies or search. These fixtures do not authenticate or approve a real account.
+
+Seeds are `{id, threadId?, raw: Uint8Array, labelIds?, internalDate?}`. The fake
+copies raw bytes and returned state. `addMessage`, `deleteMessage` and `setLabels`
+record history; `historyId` exposes the current checkpoint and
+`expireHistory(before)` makes older checkpoints return 404 for rescan tests.
+`message(id)` returns a detached stored message. `queueSend(...steps)` accepts
+`{kind: "accept", date?, messageId?}` or
+`{kind: "mail-rate-limit" | "concurrent-rate-limit", retryAfterSeconds}`. A
+queued header rewrite models a possible provider outcome rather than an S8
+finding. A rate step returns 429 immediately with the complete Retry-After;
+tests advance their clock rather than waiting hours. The shared fault
+`{kind: "drop", after: true}` models an accepted send with a lost reply.
+
+Supported routes under `/gmail/v1/users/me` are profile, paginated messages and
+threads, message/thread projections, history, label modification/batch modification,
+and JSON `messages/send`. The approved
+`/upload/gmail/v1/users/me/messages/send?uploadType=multipart` route accepts a
+bounded multipart/related metadata part plus exact message/rfc822 bytes. Raw
+read-back preserves those bytes unless the fixture explicitly scripts a header
+rewrite. Metadata projections contain headers without body data. The `full`
+projection is a basic top-level header/body fixture, not a general MIME parser;
+use raw mail with the real content parser for MIME integration.
+
+Only the documented search subset is implemented; unsupported queries and wire
+fields fail rather than fabricate a match. A Gmail-UI scheduled seed carries
+`SCHEDULED`/`DRAFT`, not `SENT`; it can be read without establishing that a send
+happened. Native consumers must still enforce their own scheduled-mail exclusion,
+complete bounded scans, attempt identity, body/thread checks and uncertainty rules.
+
+Thread joins in this fixture require an exact Subject match plus References and
+In-Reply-To identifying a stored parent in the requested thread. A mismatch is a
+fixture refusal, not a prediction of how Gmail would assign a thread. Search
+supports AND combinations of `in:sent`, `in:inbox`, `in:scheduled`, `is:unread`,
+`after:<epoch-seconds>` and `rfc822msgid:<id>` only. Page tokens retain a bounded
+snapshot for 60 seconds and bind the bearer, route and filter set; changing those
+inputs refuses the token. Retrying a non-final token returns the same continuation
+without reserving another cursor. Expiring or evicting history advances its floor.
+
+Optional budgets are `{units, windowMs}`: one unit per admitted request, in
+independent send and non-send fixed windows. They are synthetic counters rather
+than Google's quota weights. Moving the fixture clock backward clears budget
+and page state. Storage is capped at 1,024 messages and 64 MiB of raw bytes,
+with at most 36,700,160 raw bytes per message, 2,048 retained history records,
+128 page tokens/4 MiB of retained page data, and 1,024 queued send steps.
+Shared intake caps request bodies at 50 MiB before application or redirect
+cloning. Oversize requests normally return the shared `413 request_body_too_large`
+response and are cancelled; a scripted fault retains its arrival-order response.
+The recorder retains its configured prefix and hashes received bytes, including
+the offending chunk, with a refusal marker rather than claiming to read the
+unreceived remainder. Custom recorders must implement the shared `begin` writer.
+App-side request and JSON response parsing retains its 50 MiB cap. The app reader
+also limits its forwarded body to 65,536 yielded chunks; shared intake buffers
+and replaces the body, so this is not a limit on original ingress chunk count.
+These are no global memory, concurrency or stream-duration bounds. Native
+transport limits remain separate.
+
+The independent test oracle reads the vendored Gmail discovery document
+(revision `20261012`, SHA-256
+`1eefc40da41cc5d19736d26b16f7f276a0300307c36b9abe33dc6c3ab12f414b`)
+and checks supported request and successful response shapes. Required fields
+follow that document; the fixture separately requires `startHistoryId` for history
+requests. Product modules import no spike code. Discovery conformance does not
+establish live Gmail behavior. Actual approval, broker scope/identity injection,
+exact MIME rendering, durable apply/outbox state and S8/ADR 0010 cases remain
+native/owner integration.
+
 ## Adding a fake
 
 1. Put the public part in `src/<name>.ts`, which `@draftyak/fakes/<name>` then exports, and anything larger in `src/<name>/`.
