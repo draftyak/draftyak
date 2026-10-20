@@ -15,6 +15,7 @@ import {
 	MODEL_SLUG,
 	name,
 	revokeRefreshToken,
+	waitUntil,
 } from "./live-record.ts";
 
 // The receiving side of the documented transfer as its own process (test/transfer.test.ts, M0.27):
@@ -213,10 +214,7 @@ async function afterExpiry(
 	const due = early.expiresAt + step.afterExpiryMs;
 	const dueInMs = due - Date.now();
 	if (dueInMs > step.minutes * 60_000) return { ran: false, dueInMs };
-	// A minute per timer at most, so a clock that jumped (a PC that slept) still ends the wait on time.
-	for (let left = dueInMs; left > 0; left = due - Date.now()) {
-		await new Promise((resolve) => setTimeout(resolve, Math.min(left, 60_000)));
-	}
+	await waitUntil(due);
 	const sentBefore = refreshesSent.length;
 	const callsBefore = recorder.calls.length;
 	const refused: unknown[] = [];

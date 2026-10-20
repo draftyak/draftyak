@@ -539,15 +539,15 @@ function hubVerdict(transfer: TransferRecord): Revoked {
 	return revocationVerdict(transfer.revoked === true, transfer.afterRevoke?.refresh);
 }
 
-// Before the hub process starts: what the step after expiry will do, from the lifetime of the tokens
-// handed over (the hub's forced refresh gets the same, presumably).
+// Before the hub process starts: what the step after expiry will most likely do, from the lifetime of
+// the tokens handed over. The hub decides from its own refresh's tokens.
 function deferredPlan(tokens: Tokens, cap: number): string {
 	const lifetime = tokens.expiresAt - tokens.savedAt;
 	const life = Math.round(lifetime / 60_000);
 	const wait = Math.ceil((lifetime + AFTER_EXPIRY_MS) / 60_000);
 	const after = AFTER_EXPIRY_MS / 60_000;
 	return wait > cap
-		? `After expiry: the tokens last ${life} minutes, so the hub process would wait about ${wait} minutes, past the ${cap}-minute cap. It revokes the session without that step.`
+		? `After expiry: the tokens last ${life} minutes, so the hub process would wait about ${wait} minutes, past the ${cap}-minute cap. It most likely revokes the session without that step (it decides from its own refresh's tokens).`
 		: `After expiry: the hub process keeps the session until ${after} minutes after its access token expires, about ${wait} minutes (the tokens last ${life} minutes; the cap is ${cap}), then drafts once more, refreshing first, and revokes it. Nothing to do meanwhile: keep this PC on mains power and awake.`;
 }
 
@@ -610,6 +610,9 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 	let blocked: string | undefined;
 	// The credential between its handover and the hub's answer, revoked here if the hub never kept it.
 	let handedOver: Credential | undefined;
+	// With the step after expiry, a hub process that ended without a result (stopped during its wait,
+	// say) may hold refreshed tokens that still work.
+	let hubLost = false;
 
 	const withHash = (error: ErrorRecord): ErrorRecord =>
 		error.requestId === undefined ? error : { ...error, requestId: hashed(error.requestId) };
@@ -713,6 +716,7 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 			if (verdict !== "yes" && item.kept) keep = true;
 			if (verdict !== "yes" && !item.kept) lost = true;
 		}
+		if (hubLost) lost = true;
 		if (keep) {
 			say(
 				`They stay in .env.live, and the next opted-in run revokes them first. If no run follows, ${IN_CHATGPT}, then run ${FORGET}.`,
@@ -1023,6 +1027,7 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 				fallback = await revokeHere(full);
 			}
 			handedOver = undefined;
+			hubLost = deferred !== undefined && !transfer.result;
 			transferVerdict = !transfer.result
 				? "no(hub process ended without a result)"
 				: fallback

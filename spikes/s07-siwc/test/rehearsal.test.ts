@@ -1125,6 +1125,7 @@ describe.concurrent("the step after expiry (DRAFTYAK_S7_DEFERRED_MIN)", REHEARSA
 		]);
 		expect(step.msAfterExpiry).toBeGreaterThanOrEqual(AFTER_EXPIRY_TEST_MS);
 		expect(step.idleMs).toBeGreaterThanOrEqual(3_000 + AFTER_EXPIRY_TEST_MS);
+		expect(step.idleMs - step.msAfterExpiry).toBe(3_000);
 		// The desktop never refreshed; the hub did once when forced and once after expiry, then the
 		// revoked refresh token was tried again.
 		const grants = item.auth.tokenForms.map((form) => form.get("grant_type"));
@@ -1153,17 +1154,18 @@ describe.concurrent("the step after expiry (DRAFTYAK_S7_DEFERRED_MIN)", REHEARSA
 
 	it("tokens that outlast the cap: the step doesn't run, and the session ends as without it", async (ctx) => {
 		const item = await setUp(ctx);
-		const result = await item.run({ fingerprint: print, deferredMinutes: 1 });
+		// A wait of about 63 minutes against a 62-minute cap.
+		const result = await item.run({ fingerprint: print, deferredMinutes: 62 });
 		expect(result.lines).toEqual(ALL_OK);
 		const step = evidenceOf(item).transfer.deferred;
 		expect(step).toEqual({ ran: false, dueInMs: expect.any(Number) });
 		expect(step.dueInMs).toBeGreaterThan(62 * 60_000);
 		const grants = item.auth.tokenForms.map((form) => form.get("grant_type"));
 		expect(grants).toEqual(["authorization_code", "refresh_token", "refresh_token"]);
-		const skipped = "not run (due in 63 min, over the 1-minute cap)";
+		const skipped = "not run (due in 63 min, over the 62-minute cap)";
 		expect(result.details).toContain(`after expiry: ${skipped}`);
 		expect(item.said).toContain(
-			"After expiry: the tokens last 60 minutes, so the hub process would wait about 63 minutes, past the 1-minute cap. It revokes the session without that step.",
+			"After expiry: the tokens last 60 minutes, so the hub process would wait about 63 minutes, past the 62-minute cap. It most likely revokes the session without that step (it decides from its own refresh's tokens).",
 		);
 		expect(item.said).toContain(`The hub process has ended. After expiry: ${skipped}.`);
 		expectContentFree(item);
@@ -1347,6 +1349,87 @@ describe.concurrent("the step after expiry (DRAFTYAK_S7_DEFERRED_MIN)", REHEARSA
 			),
 		);
 		expectContentFree(item);
+	});
+
+	it("a draft after expiry that fails like the hub's first: the first draft's failure is the transfer's verdict", async (ctx) => {
+		let drafted = 0;
+		const item = await setUp(ctx, {
+			script: (request) =>
+				++drafted >= 4
+					? structured(429, "subscription_sharing_usage_limit_exceeded")
+					: answer(request),
+		});
+		const result = await item.run({
+			runChild: shortLived(item),
+			fingerprint: print,
+			deferredMinutes: 70,
+		});
+		expect(result.lines.slice(3)).toEqual(["transfer: fails(draft:USAGE_LIMIT)", "revoked: yes"]);
+		expect(evidenceOf(item).transfer).toMatchObject({
+			draft: { outcome: "error", code: "USAGE_LIMIT" },
+			deferred: {
+				ran: true,
+				refreshed: true,
+				draft: { outcome: "error", code: "USAGE_LIMIT" },
+			},
+		});
+		expectContentFree(item);
+	});
+
+	it("a hub whose forced refresh is refused never reaches the step: the lines are as without it", async (ctx) => {
+		const item = await setUp(ctx);
+		const runChild: ChildRunner = (args, input, signal) => {
+			// The handed-over refresh token reads as already used, so the hub's refresh is refused.
+			for (const held of item.auth.refresh.values()) held.used = true;
+			return runTransferChild(args, input, signal);
+		};
+		const result = await item.run({ runChild, fingerprint: print, deferredMinutes: 70 });
+		expect(result.lines.slice(3)).toEqual([
+			"transfer: fails(refresh:REAUTH_REQUIRED)",
+			"revoked: no(revocation unconfirmed: refresh_token_reused)",
+		]);
+		const transfer = evidenceOf(item).transfer;
+		expect(transfer).toMatchObject({
+			draft: { outcome: "draft" },
+			refreshed: false,
+			apiCode: "refresh_token_reused",
+			deferred: null,
+			revoked: true,
+		});
+		const ended = item.said.filter((line) => line.startsWith("The hub process has ended"));
+		expect(ended).toEqual(["The hub process has ended, with no record of the step after expiry."]);
+		expect(result.details.filter((line) => line.startsWith("after expiry"))).toEqual([]);
+		expectContentFree(item);
+	});
+
+	it("a run stopped while the hub waits, then failing, says the hub's tokens may still work", async (ctx) => {
+		const item = await setUp(ctx, { apiKey: true });
+		const stop = new AbortController();
+		const hub = shortLived(item);
+		const runChild: ChildRunner = (args, input, signal) => {
+			// The stop comes just after the hub's forced refresh, during its wait; the hub is killed.
+			refreshAnswers(item.auth, (body, n) => {
+				if (n === 1) setTimeout(() => stop.abort(new Error("the run was stopped")), 200);
+				return body;
+			});
+			return hub(args, input, signal);
+		};
+		// API-key mode then drafts with the stopped run's signal, and the run fails.
+		await expect(
+			item.run({
+				runChild,
+				fingerprint: print,
+				signal: stop.signal,
+				env: { DRAFTYAK_S7_DEFERRED_MIN: "70", DRAFTYAK_S7_API_MODEL: MODEL },
+			}),
+		).rejects.toThrow("the run was stopped");
+		expect(item.said).toContain(
+			"The hub process has ended, with no record of the step after expiry.",
+		);
+		expect(item.said.at(-1)).toBe(
+			"Tokens this run no longer holds may still work: remove DraftYak in ChatGPT's settings (Settings > Security and login > Sign in with ChatGPT).",
+		);
+		expect(existsSync(item.evidenceFile)).toBe(false);
 	});
 
 	it("a deferredMinutes or DRAFTYAK_S7_DEFERRED_MIN outside 1 to 120 stops the run before anything is sent", async (ctx) => {
