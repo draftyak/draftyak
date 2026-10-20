@@ -170,7 +170,8 @@ export async function rehearsal(options: RehearsalOptions = {}): Promise<Rehears
 				env: {},
 				port: 0,
 				fetch: watched as typeof fetch,
-				signInTimeoutMs: 20_000,
+				// Under a full parallel verify the fake sign-in alone can pass 20 s; the test's own limit is higher.
+				signInTimeoutMs: 90_000,
 				pollMs: 250,
 				...overrides,
 			}),

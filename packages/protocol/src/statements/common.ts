@@ -21,7 +21,7 @@ export const baseFields: {
 	nonce: z.ZodString;
 	iat: typeof UtcMs;
 	exp: typeof UtcMs;
-} = {
+} = Object.freeze({
 	v: z.literal(1),
 	hub: Sha256Hex,
 	epoch: z.int().min(0),
@@ -32,7 +32,7 @@ export const baseFields: {
 		.refine((value) => fromBase64Url(value)?.length === 16, { message: "128-bit canonical nonce" }),
 	iat: UtcMs,
 	exp: UtcMs,
-};
+});
 export function withLifetime<T extends z.ZodObject>(schema: T): T {
 	return schema.refine(
 		(body) => {
@@ -54,11 +54,18 @@ export const SigningKey: z.ZodString = PublicKeySpki.refine(
 	{ message: "canonical P256 key" },
 );
 export function isFresh(statement: DeviceStatementBase, now: number): boolean {
-	return (
-		UtcMs.safeParse(now).success &&
-		now >= statement.iat &&
-		now <= statement.exp &&
-		statement.iat <= statement.exp &&
-		statement.exp - statement.iat <= STATEMENT_TTL_MS
-	);
+	try {
+		const { iat, exp } = statement;
+		return (
+			UtcMs.safeParse(now).success &&
+			UtcMs.safeParse(iat).success &&
+			UtcMs.safeParse(exp).success &&
+			now >= iat &&
+			now <= exp &&
+			iat <= exp &&
+			exp - iat <= STATEMENT_TTL_MS
+		);
+	} catch {
+		return false;
+	}
 }

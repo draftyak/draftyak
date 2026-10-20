@@ -17,22 +17,22 @@ export interface VectorFile {
 // Generators import only types from this module, which loads them while its top-level await
 // runs; keys and kept signatures come from lib.ts (testKey, keptSignature).
 export interface VectorContext {
+	readonly check?: boolean;
 	// The committed spec/vectors/<file>, parsed, so a generator can keep what it recorded.
 	previous(file: string): unknown;
 }
 
-const context: VectorContext = {
-	previous(file) {
-		try {
-			return JSON.parse(readFileSync(path.join(specDir, "vectors", file), "utf8"));
-		} catch {
-			return undefined;
-		}
-	},
-};
+function previous(file: string): unknown {
+	try {
+		return JSON.parse(readFileSync(path.join(specDir, "vectors", file), "utf8"));
+	} catch {
+		return undefined;
+	}
+}
 
 // Each scripts/vectors/<area>.ts and scripts/vectors/<area>/<part>.ts exports `generate`.
-export async function generateVectors(): Promise<Output[]> {
+export async function generateVectors(check = false): Promise<Output[]> {
+	const context: VectorContext = Object.freeze({ check, previous });
 	const outputs: Output[] = [];
 	for (const { file, area } of modulesIn(path.join(import.meta.dirname, "vectors"))) {
 		const module: { generate?: unknown } = await import(pathToFileURL(file).href);
@@ -53,6 +53,6 @@ export async function generateVectors(): Promise<Output[]> {
 }
 
 export const syncVectors = async (check: boolean): Promise<string[]> =>
-	sync(await generateVectors(), specFiles("vectors/**/*.json"), check);
+	sync(await generateVectors(check), specFiles("vectors/**/*.json"), check);
 
 if (import.meta.main) await cli("vectors", syncVectors);
