@@ -1,0 +1,1119 @@
+{
+  "format": "draftyak.vectors.pairing.v1",
+  "description": "Confirmation preset capability sets and canConfirm decisions. Caller capabilities are a set; only signed pair-confirm arrays require canonical order. Unknown preset or capability values are refused.",
+  "presets": {
+    "desktop": [
+      "read",
+      "draft",
+      "organize",
+      "approve",
+      "admin"
+    ],
+    "mobile": [
+      "read",
+      "draft",
+      "organize"
+    ],
+    "cli": [
+      "read",
+      "draft"
+    ]
+  },
+  "cases": [
+    {
+      "id": "desktop-caller-0",
+      "capabilities": [],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-0",
+      "capabilities": [],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-0",
+      "capabilities": [],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-1",
+      "capabilities": [
+        "read"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-1",
+      "capabilities": [
+        "read"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-1",
+      "capabilities": [
+        "read"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-2",
+      "capabilities": [
+        "draft"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-2",
+      "capabilities": [
+        "draft"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-2",
+      "capabilities": [
+        "draft"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-3",
+      "capabilities": [
+        "read",
+        "draft"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-3",
+      "capabilities": [
+        "read",
+        "draft"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-3",
+      "capabilities": [
+        "read",
+        "draft"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-4",
+      "capabilities": [
+        "organize"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-4",
+      "capabilities": [
+        "organize"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-4",
+      "capabilities": [
+        "organize"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-5",
+      "capabilities": [
+        "read",
+        "organize"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-5",
+      "capabilities": [
+        "read",
+        "organize"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-5",
+      "capabilities": [
+        "read",
+        "organize"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-6",
+      "capabilities": [
+        "draft",
+        "organize"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-6",
+      "capabilities": [
+        "draft",
+        "organize"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-6",
+      "capabilities": [
+        "draft",
+        "organize"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-7",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-7",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-7",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-8",
+      "capabilities": [
+        "approve"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-8",
+      "capabilities": [
+        "approve"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-8",
+      "capabilities": [
+        "approve"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-9",
+      "capabilities": [
+        "read",
+        "approve"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-9",
+      "capabilities": [
+        "read",
+        "approve"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-9",
+      "capabilities": [
+        "read",
+        "approve"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-10",
+      "capabilities": [
+        "draft",
+        "approve"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-10",
+      "capabilities": [
+        "draft",
+        "approve"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-10",
+      "capabilities": [
+        "draft",
+        "approve"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-11",
+      "capabilities": [
+        "read",
+        "draft",
+        "approve"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-11",
+      "capabilities": [
+        "read",
+        "draft",
+        "approve"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-11",
+      "capabilities": [
+        "read",
+        "draft",
+        "approve"
+      ],
+      "preset": "cli",
+      "valid": true
+    },
+    {
+      "id": "desktop-caller-12",
+      "capabilities": [
+        "organize",
+        "approve"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-12",
+      "capabilities": [
+        "organize",
+        "approve"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-12",
+      "capabilities": [
+        "organize",
+        "approve"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-13",
+      "capabilities": [
+        "read",
+        "organize",
+        "approve"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-13",
+      "capabilities": [
+        "read",
+        "organize",
+        "approve"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-13",
+      "capabilities": [
+        "read",
+        "organize",
+        "approve"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-14",
+      "capabilities": [
+        "draft",
+        "organize",
+        "approve"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-14",
+      "capabilities": [
+        "draft",
+        "organize",
+        "approve"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-14",
+      "capabilities": [
+        "draft",
+        "organize",
+        "approve"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-15",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-15",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve"
+      ],
+      "preset": "mobile",
+      "valid": true
+    },
+    {
+      "id": "cli-caller-15",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve"
+      ],
+      "preset": "cli",
+      "valid": true
+    },
+    {
+      "id": "desktop-caller-16",
+      "capabilities": [
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-16",
+      "capabilities": [
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-16",
+      "capabilities": [
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-17",
+      "capabilities": [
+        "read",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-17",
+      "capabilities": [
+        "read",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-17",
+      "capabilities": [
+        "read",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-18",
+      "capabilities": [
+        "draft",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-18",
+      "capabilities": [
+        "draft",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-18",
+      "capabilities": [
+        "draft",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-19",
+      "capabilities": [
+        "read",
+        "draft",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-19",
+      "capabilities": [
+        "read",
+        "draft",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-19",
+      "capabilities": [
+        "read",
+        "draft",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-20",
+      "capabilities": [
+        "organize",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-20",
+      "capabilities": [
+        "organize",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-20",
+      "capabilities": [
+        "organize",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-21",
+      "capabilities": [
+        "read",
+        "organize",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-21",
+      "capabilities": [
+        "read",
+        "organize",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-21",
+      "capabilities": [
+        "read",
+        "organize",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-22",
+      "capabilities": [
+        "draft",
+        "organize",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-22",
+      "capabilities": [
+        "draft",
+        "organize",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-22",
+      "capabilities": [
+        "draft",
+        "organize",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-23",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-23",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-23",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-24",
+      "capabilities": [
+        "approve",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-24",
+      "capabilities": [
+        "approve",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-24",
+      "capabilities": [
+        "approve",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-25",
+      "capabilities": [
+        "read",
+        "approve",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-25",
+      "capabilities": [
+        "read",
+        "approve",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-25",
+      "capabilities": [
+        "read",
+        "approve",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-26",
+      "capabilities": [
+        "draft",
+        "approve",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-26",
+      "capabilities": [
+        "draft",
+        "approve",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-26",
+      "capabilities": [
+        "draft",
+        "approve",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-27",
+      "capabilities": [
+        "read",
+        "draft",
+        "approve",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-27",
+      "capabilities": [
+        "read",
+        "draft",
+        "approve",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-27",
+      "capabilities": [
+        "read",
+        "draft",
+        "approve",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": true
+    },
+    {
+      "id": "desktop-caller-28",
+      "capabilities": [
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-28",
+      "capabilities": [
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-28",
+      "capabilities": [
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-29",
+      "capabilities": [
+        "read",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-29",
+      "capabilities": [
+        "read",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-29",
+      "capabilities": [
+        "read",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-30",
+      "capabilities": [
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-caller-30",
+      "capabilities": [
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-caller-30",
+      "capabilities": [
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "desktop-caller-31",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "desktop",
+      "valid": true
+    },
+    {
+      "id": "mobile-caller-31",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "mobile",
+      "valid": true
+    },
+    {
+      "id": "cli-caller-31",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "cli",
+      "valid": true
+    },
+    {
+      "id": "desktop-reordered-caller",
+      "capabilities": [
+        "admin",
+        "approve",
+        "organize",
+        "draft",
+        "read"
+      ],
+      "preset": "desktop",
+      "valid": true
+    },
+    {
+      "id": "desktop-duplicate-caller",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin",
+        "approve"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "desktop-unknown-capability",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin",
+        "unknown"
+      ],
+      "preset": "desktop",
+      "valid": false
+    },
+    {
+      "id": "mobile-reordered-caller",
+      "capabilities": [
+        "admin",
+        "approve",
+        "organize",
+        "draft",
+        "read"
+      ],
+      "preset": "mobile",
+      "valid": true
+    },
+    {
+      "id": "mobile-duplicate-caller",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin",
+        "approve"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "mobile-unknown-capability",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin",
+        "unknown"
+      ],
+      "preset": "mobile",
+      "valid": false
+    },
+    {
+      "id": "cli-reordered-caller",
+      "capabilities": [
+        "admin",
+        "approve",
+        "organize",
+        "draft",
+        "read"
+      ],
+      "preset": "cli",
+      "valid": true
+    },
+    {
+      "id": "cli-duplicate-caller",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin",
+        "approve"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "cli-unknown-capability",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin",
+        "unknown"
+      ],
+      "preset": "cli",
+      "valid": false
+    },
+    {
+      "id": "unknown-preset-105",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "unknown",
+      "valid": false
+    },
+    {
+      "id": "unknown-preset-106",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "__proto__",
+      "valid": false
+    },
+    {
+      "id": "unknown-preset-107",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "constructor",
+      "valid": false
+    },
+    {
+      "id": "unknown-preset-108",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "host",
+      "valid": false
+    },
+    {
+      "id": "unknown-preset-109",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "Desktop",
+      "valid": false
+    },
+    {
+      "id": "unknown-preset-110",
+      "capabilities": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "preset": "",
+      "valid": false
+    }
+  ]
+}

@@ -1,0 +1,1892 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/plugin-manifest-v1.schema.json",
+  "$ref": "#/$defs/draftyak.manifest.PluginManifestV1",
+  "$defs": {
+    "draftyak.manifest.PluginManifestV1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 214,
+              "pattern": "^(?:@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*$",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "version": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^(?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:[.](?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:[+][0-9A-Za-z-]+(?:[.][0-9A-Za-z-]+)*)?$",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "sdk": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^1[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:[.](?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:[+][0-9A-Za-z-]+(?:[.][0-9A-Za-z-]+)*)?$",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "runtime": {
+              "type": "string",
+              "const": "node"
+            },
+            "isolation": {
+              "type": "string",
+              "const": "standard"
+            },
+            "auth": {
+              "$ref": "#/$defs/draftyak.manifest.PluginAuth"
+            },
+            "credentials": {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "const": "brokered"
+                },
+                "urlSecrets": {
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "allOf": [
+                          {
+                            "pattern": "^[a-z][A-Za-z0-9]{0,31}$"
+                          },
+                          {
+                            "pattern": "^[a-z][A-Za-z0-9]{0,31}$"
+                          }
+                        ],
+                        "description": "The name a manifest gives a url-secret, such as calendarUrl.",
+                        "not": {
+                          "pattern": "\\n"
+                        }
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "not": {
+                          "pattern": "[\u0000-\u001f-­-­͏-͏؜-؜ᅟ-ᅠ឴-឵᠎-᠎​-​‎-‏ -‮⁠-⁯ㅤ-ㅤ﻿-﻿ﾠ-ﾠ￰-￻𛲠-𛲣𝅳-𝅺󠀀-󠃿󠇰-󠿿᠋-᠍᠏-᠏‌-‍︀-️󠄀-󠇯]"
+                        }
+                      },
+                      "help": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024,
+                        "not": {
+                          "pattern": "[\u0000-\u001f-­-­͏-͏؜-؜ᅟ-ᅠ឴-឵᠎-᠎​-​‎-‏ -‮⁠-⁯ㅤ-ㅤ﻿-﻿ﾠ-ﾠ￰-￻𛲠-𛲣𝅳-𝅺󠀀-󠃿󠇰-󠿿᠋-᠍᠏-᠏‌-‍︀-️󠄀-󠇯]"
+                        }
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "label",
+                      "help"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "mode",
+                "urlSecrets"
+              ],
+              "additionalProperties": false
+            },
+            "permissions": {
+              "type": "object",
+              "properties": {
+                "dataDir": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            },
+            "dataClasses": {
+              "minItems": 1,
+              "maxItems": 32,
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "gmail.metadata",
+                      "gmail.content",
+                      "slack.metadata",
+                      "slack.content",
+                      "tool.calendar.freebusy",
+                      "tool.contact.notes",
+                      "tool.kb.lookup",
+                      "credentials",
+                      "hub.state"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!(?:gmail|slack|sms|tool|hub|credentials)\\.)[a-z][a-z0-9-]{0,31}\\.(?:metadata|content)$"
+                  }
+                ],
+                "description": "The data class every account-derived row and tool result carries.",
+                "pattern": "^[a-z][a-z0-9.-]+$",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "allOf": [
+                  {
+                    "not": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "credentials",
+                            "hub.state"
+                          ]
+                        },
+                        {
+                          "pattern": "^sms\\."
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "uniqueItems": true
+            },
+            "sync": {
+              "type": "object",
+              "properties": {
+                "initialWindowDays": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 3650
+                },
+                "pollIntervalMs": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 86400000
+                }
+              },
+              "required": [
+                "initialWindowDays",
+                "pollIntervalMs"
+              ],
+              "additionalProperties": false
+            },
+            "rateLimits": {
+              "type": "object",
+              "properties": {
+                "requestsPerMinute": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 60000
+                },
+                "concurrency": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 16
+                }
+              },
+              "required": [
+                "requestsPerMinute",
+                "concurrency"
+              ],
+              "additionalProperties": false
+            },
+            "license": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "not": {
+                "pattern": "[\u0000-\u001f-­-­͏-͏؜-؜ᅟ-ᅠ឴-឵᠎-᠎​-​‎-‏ -‮⁠-⁯ㅤ-ㅤ﻿-﻿ﾠ-ﾠ￰-￻𛲠-𛲣𝅳-𝅺󠀀-󠃿󠇰-󠿿᠋-᠍᠏-᠏‌-‍︀-️󠄀-󠇯]"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "channel"
+            },
+            "contract": {
+              "type": "object",
+              "properties": {
+                "extension": {
+                  "type": "string",
+                  "const": "io.github.draftyak/channel"
+                },
+                "version": {
+                  "type": "number",
+                  "const": 1
+                }
+              },
+              "required": [
+                "extension",
+                "version"
+              ],
+              "additionalProperties": false
+            },
+            "egress": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "profile": {
+                      "type": "string",
+                      "enum": [
+                        "gmail-v1",
+                        "gmail-readonly-v1",
+                        "slack-v1"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "profile"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "rules": {
+                      "minItems": 1,
+                      "maxItems": 64,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/draftyak.manifest.EgressRule"
+                      }
+                    }
+                  },
+                  "required": [
+                    "rules"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "send": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "render": {
+                      "type": "string",
+                      "const": "gmail-rfc5322"
+                    }
+                  },
+                  "required": [
+                    "render"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "render": {
+                      "type": "string",
+                      "const": "slack-postmessage"
+                    }
+                  },
+                  "required": [
+                    "render"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "render": {
+                      "type": "string",
+                      "const": "json-template"
+                    },
+                    "constants": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+                        "not": {
+                          "pattern": "\\n"
+                        },
+                        "allOf": [
+                          {
+                            "not": {
+                              "enum": [
+                                "constructor",
+                                "prototype"
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 0,
+                            "maxLength": 4096,
+                            "not": {
+                              "pattern": "[\u0000-\u001f-­-­͏-͏؜-؜ᅟ-ᅠ឴-឵᠎-᠎​-​‎-‏ -‮⁠-⁯ㅤ-ㅤ﻿-﻿ﾠ-ﾠ￰-￻𛲠-𛲣𝅳-𝅺󠀀-󠃿󠇰-󠿿᠋-᠍᠏-᠏‌-‍︀-️󠄀-󠇯]"
+                            }
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "maxProperties": 32
+                    },
+                    "template": {
+                      "$ref": "#/$defs/draftyak.json-template.JsonTemplate"
+                    }
+                  },
+                  "required": [
+                    "render",
+                    "constants",
+                    "template"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "sdk",
+            "isolation",
+            "auth",
+            "credentials",
+            "permissions",
+            "dataClasses",
+            "license",
+            "kind",
+            "contract",
+            "egress"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 214,
+              "pattern": "^(?:@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*$",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "version": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^(?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:[.](?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:[+][0-9A-Za-z-]+(?:[.][0-9A-Za-z-]+)*)?$",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "sdk": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^1[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:[.](?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:[+][0-9A-Za-z-]+(?:[.][0-9A-Za-z-]+)*)?$",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "runtime": {
+              "type": "string",
+              "const": "node"
+            },
+            "isolation": {
+              "type": "string",
+              "const": "standard"
+            },
+            "auth": {
+              "$ref": "#/$defs/draftyak.manifest.PluginAuth"
+            },
+            "credentials": {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "const": "brokered"
+                },
+                "urlSecrets": {
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "allOf": [
+                          {
+                            "pattern": "^[a-z][A-Za-z0-9]{0,31}$"
+                          },
+                          {
+                            "pattern": "^[a-z][A-Za-z0-9]{0,31}$"
+                          }
+                        ],
+                        "description": "The name a manifest gives a url-secret, such as calendarUrl.",
+                        "not": {
+                          "pattern": "\\n"
+                        }
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "not": {
+                          "pattern": "[\u0000-\u001f-­-­͏-͏؜-؜ᅟ-ᅠ឴-឵᠎-᠎​-​‎-‏ -‮⁠-⁯ㅤ-ㅤ﻿-﻿ﾠ-ﾠ￰-￻𛲠-𛲣𝅳-𝅺󠀀-󠃿󠇰-󠿿᠋-᠍᠏-᠏‌-‍︀-️󠄀-󠇯]"
+                        }
+                      },
+                      "help": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024,
+                        "not": {
+                          "pattern": "[\u0000-\u001f-­-­͏-͏؜-؜ᅟ-ᅠ឴-឵᠎-᠎​-​‎-‏ -‮⁠-⁯ㅤ-ㅤ﻿-﻿ﾠ-ﾠ￰-￻𛲠-𛲣𝅳-𝅺󠀀-󠃿󠇰-󠿿᠋-᠍᠏-᠏‌-‍︀-️󠄀-󠇯]"
+                        }
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "label",
+                      "help"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "mode",
+                "urlSecrets"
+              ],
+              "additionalProperties": false
+            },
+            "permissions": {
+              "type": "object",
+              "properties": {
+                "dataDir": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            },
+            "dataClasses": {
+              "minItems": 1,
+              "maxItems": 32,
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "gmail.metadata",
+                      "gmail.content",
+                      "slack.metadata",
+                      "slack.content",
+                      "tool.calendar.freebusy",
+                      "tool.contact.notes",
+                      "tool.kb.lookup",
+                      "credentials",
+                      "hub.state"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!(?:gmail|slack|sms|tool|hub|credentials)\\.)[a-z][a-z0-9-]{0,31}\\.(?:metadata|content)$"
+                  }
+                ],
+                "description": "The data class every account-derived row and tool result carries.",
+                "pattern": "^[a-z][a-z0-9.-]+$",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "allOf": [
+                  {
+                    "not": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "credentials",
+                            "hub.state"
+                          ]
+                        },
+                        {
+                          "pattern": "^sms\\."
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "uniqueItems": true
+            },
+            "sync": {
+              "type": "object",
+              "properties": {
+                "initialWindowDays": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 3650
+                },
+                "pollIntervalMs": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 86400000
+                }
+              },
+              "required": [
+                "initialWindowDays",
+                "pollIntervalMs"
+              ],
+              "additionalProperties": false
+            },
+            "rateLimits": {
+              "type": "object",
+              "properties": {
+                "requestsPerMinute": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 60000
+                },
+                "concurrency": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 16
+                }
+              },
+              "required": [
+                "requestsPerMinute",
+                "concurrency"
+              ],
+              "additionalProperties": false
+            },
+            "license": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "not": {
+                "pattern": "[\u0000-\u001f-­-­͏-͏؜-؜ᅟ-ᅠ឴-឵᠎-᠎​-​‎-‏ -‮⁠-⁯ㅤ-ㅤ﻿-﻿ﾠ-ﾠ￰-￻𛲠-𛲣𝅳-𝅺󠀀-󠃿󠇰-󠿿᠋-᠍᠏-᠏‌-‍︀-️󠄀-󠇯]"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "ai-provider"
+            },
+            "contract": {
+              "type": "object",
+              "properties": {
+                "extension": {
+                  "type": "string",
+                  "const": "io.github.draftyak/ai-provider"
+                },
+                "version": {
+                  "type": "number",
+                  "const": 1
+                }
+              },
+              "required": [
+                "extension",
+                "version"
+              ],
+              "additionalProperties": false
+            },
+            "egress": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "enum": [
+                    "messages-api-v1",
+                    "responses-api-v1",
+                    "chat-completions-v1"
+                  ]
+                }
+              },
+              "required": [
+                "profile"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "sdk",
+            "isolation",
+            "auth",
+            "credentials",
+            "permissions",
+            "dataClasses",
+            "license",
+            "kind",
+            "contract",
+            "egress"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 214,
+              "pattern": "^(?:@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*$",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "version": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^(?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:[.](?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:[+][0-9A-Za-z-]+(?:[.][0-9A-Za-z-]+)*)?$",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "sdk": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^1[.](?:0|[1-9][0-9]*)[.](?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:[.](?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:[+][0-9A-Za-z-]+(?:[.][0-9A-Za-z-]+)*)?$",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "runtime": {
+              "type": "string",
+              "const": "node"
+            },
+            "isolation": {
+              "type": "string",
+              "const": "standard"
+            },
+            "auth": {
+              "$ref": "#/$defs/draftyak.manifest.PluginAuth"
+            },
+            "credentials": {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "const": "brokered"
+                },
+                "urlSecrets": {
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "allOf": [
+                          {
+                            "pattern": "^[a-z][A-Za-z0-9]{0,31}$"
+                          },
+                          {
+                            "pattern": "^[a-z][A-Za-z0-9]{0,31}$"
+                          }
+                        ],
+                        "description": "The name a manifest gives a url-secret, such as calendarUrl.",
+                        "not": {
+                          "pattern": "\\n"
+                        }
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "not": {
+                          "pattern": "[\u0000-\u001f-­-­͏-͏؜-؜ᅟ-ᅠ឴-឵᠎-᠎​-​‎-‏ -‮⁠-⁯ㅤ-ㅤ﻿-﻿ﾠ-ﾠ￰-￻𛲠-𛲣𝅳-𝅺󠀀-󠃿󠇰-󠿿᠋-᠍᠏-᠏‌-‍︀-️󠄀-󠇯]"
+                        }
+                      },
+                      "help": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024,
+                        "not": {
+                          "pattern": "[\u0000-\u001f-­-­͏-͏؜-؜ᅟ-ᅠ឴-឵᠎-᠎​-​‎-‏ -‮⁠-⁯ㅤ-ㅤ﻿-﻿ﾠ-ﾠ￰-￻𛲠-𛲣𝅳-𝅺󠀀-󠃿󠇰-󠿿᠋-᠍᠏-᠏‌-‍︀-️󠄀-󠇯]"
+                        }
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "label",
+                      "help"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "mode",
+                "urlSecrets"
+              ],
+              "additionalProperties": false
+            },
+            "permissions": {
+              "type": "object",
+              "properties": {
+                "dataDir": {
+                  "type": "boolean",
+                  "const": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "dataClasses": {
+              "minItems": 1,
+              "maxItems": 32,
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "gmail.metadata",
+                      "gmail.content",
+                      "slack.metadata",
+                      "slack.content",
+                      "tool.calendar.freebusy",
+                      "tool.contact.notes",
+                      "tool.kb.lookup",
+                      "credentials",
+                      "hub.state"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!(?:gmail|slack|sms|tool|hub|credentials)\\.)[a-z][a-z0-9-]{0,31}\\.(?:metadata|content)$"
+                  }
+                ],
+                "description": "The data class every account-derived row and tool result carries.",
+                "pattern": "^[a-z][a-z0-9.-]+$",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "allOf": [
+                  {
+                    "not": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "credentials",
+                            "hub.state"
+                          ]
+                        },
+                        {
+                          "pattern": "^sms\\."
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "uniqueItems": true
+            },
+            "sync": {
+              "not": {}
+            },
+            "rateLimits": {
+              "type": "object",
+              "properties": {
+                "requestsPerMinute": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 60000
+                },
+                "concurrency": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 16
+                }
+              },
+              "required": [
+                "requestsPerMinute",
+                "concurrency"
+              ],
+              "additionalProperties": false
+            },
+            "license": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "not": {
+                "pattern": "[\u0000-\u001f-­-­͏-͏؜-؜ᅟ-ᅠ឴-឵᠎-᠎​-​‎-‏ -‮⁠-⁯ㅤ-ㅤ﻿-﻿ﾠ-ﾠ￰-￻𛲠-𛲣𝅳-𝅺󠀀-󠃿󠇰-󠿿᠋-᠍᠏-᠏‌-‍︀-️󠄀-󠇯]"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "tool"
+            },
+            "contract": {
+              "type": "object",
+              "properties": {
+                "extension": {
+                  "type": "string",
+                  "const": "io.github.draftyak/tool"
+                },
+                "version": {
+                  "type": "number",
+                  "const": 1
+                }
+              },
+              "required": [
+                "extension",
+                "version"
+              ],
+              "additionalProperties": false
+            },
+            "egress": {
+              "type": "object",
+              "properties": {
+                "rules": {
+                  "maxItems": 64,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "class": {
+                            "type": "string",
+                            "const": "read"
+                          },
+                          "method": {
+                            "type": "string",
+                            "enum": [
+                              "GET",
+                              "HEAD"
+                            ]
+                          },
+                          "maxBytes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 33554432
+                          },
+                          "timeoutMs": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 15000
+                          },
+                          "host": {
+                            "type": "string",
+                            "maxLength": 253,
+                            "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                            "description": "A DNS host name in lower case, never an IP address."
+                          }
+                        },
+                        "required": [
+                          "class",
+                          "method",
+                          "maxBytes",
+                          "timeoutMs",
+                          "host"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "class": {
+                            "type": "string",
+                            "const": "read"
+                          },
+                          "method": {
+                            "type": "string",
+                            "enum": [
+                              "GET",
+                              "HEAD"
+                            ]
+                          },
+                          "maxBytes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 33554432
+                          },
+                          "timeoutMs": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 15000
+                          },
+                          "url": {
+                            "type": "string",
+                            "pattern": "^secret:[/][/][a-z][A-Za-z0-9]{0,31}$",
+                            "description": "secret://<name>, which the hub replaces with the owner-entered address."
+                          }
+                        },
+                        "required": [
+                          "class",
+                          "method",
+                          "maxBytes",
+                          "timeoutMs",
+                          "url"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ],
+                    "title": "ToolEgressRule",
+                    "description": "One egress rule of a tool plugin.",
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "host"
+                            ],
+                            "properties": {
+                              "host": {
+                                "pattern": "^[a-z0-9.-]+$",
+                                "not": {
+                                  "pattern": "\\n"
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "required": [
+                              "url"
+                            ],
+                            "properties": {
+                              "url": {
+                                "pattern": "^secret://[a-z][A-Za-z0-9]{0,31}$",
+                                "not": {
+                                  "pattern": "\\n"
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "rules"
+              ],
+              "additionalProperties": false
+            },
+            "tool": {
+              "$ref": "#/$defs/draftyak.manifest.ToolDeclaration"
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "sdk",
+            "isolation",
+            "auth",
+            "credentials",
+            "permissions",
+            "dataClasses",
+            "license",
+            "kind",
+            "contract",
+            "egress",
+            "tool"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "draftyak.manifest.PluginAuth": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "scopes": {
+              "maxItems": 128,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[!-~]+$",
+                "not": {
+                  "pattern": "\\n"
+                }
+              },
+              "uniqueItems": true
+            },
+            "requiredGrantedScopes": {
+              "maxItems": 128,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[!-~]+$",
+                "not": {
+                  "pattern": "\\n"
+                }
+              },
+              "uniqueItems": true
+            },
+            "modes": {
+              "type": "object",
+              "properties": {
+                "read_only": {
+                  "type": "object",
+                  "properties": {
+                    "scopes": {
+                      "maxItems": 128,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "pattern": "^[!-~]+$",
+                        "not": {
+                          "pattern": "\\n"
+                        }
+                      },
+                      "uniqueItems": true
+                    },
+                    "requiredGrantedScopes": {
+                      "maxItems": 128,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "pattern": "^[!-~]+$",
+                        "not": {
+                          "pattern": "\\n"
+                        }
+                      },
+                      "uniqueItems": true
+                    }
+                  },
+                  "required": [
+                    "scopes",
+                    "requiredGrantedScopes"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "read_only"
+              ],
+              "additionalProperties": false
+            },
+            "kind": {
+              "type": "string",
+              "const": "oauth2-pkce-loopback"
+            },
+            "endpoints": {
+              "type": "object",
+              "properties": {
+                "authorization": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$",
+                  "description": "A canonical https URL: a lower-case DNS host, no userinfo, no port 443, no dot segments, percent-encoding in upper-case hex and never of an unreserved character, and no fragment.",
+                  "not": {
+                    "pattern": "\\n"
+                  }
+                },
+                "token": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$",
+                  "description": "A canonical https URL: a lower-case DNS host, no userinfo, no port 443, no dot segments, percent-encoding in upper-case hex and never of an unreserved character, and no fragment.",
+                  "not": {
+                    "pattern": "\\n"
+                  }
+                },
+                "revocation": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$",
+                  "description": "A canonical https URL: a lower-case DNS host, no userinfo, no port 443, no dot segments, percent-encoding in upper-case hex and never of an unreserved character, and no fragment.",
+                  "not": {
+                    "pattern": "\\n"
+                  }
+                }
+              },
+              "required": [
+                "authorization",
+                "token"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "scopes",
+            "requiredGrantedScopes",
+            "kind",
+            "endpoints"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "scopes": {
+              "maxItems": 128,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[!-~]+$",
+                "not": {
+                  "pattern": "\\n"
+                }
+              },
+              "uniqueItems": true
+            },
+            "requiredGrantedScopes": {
+              "maxItems": 128,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[!-~]+$",
+                "not": {
+                  "pattern": "\\n"
+                }
+              },
+              "uniqueItems": true
+            },
+            "modes": {
+              "type": "object",
+              "properties": {
+                "read_only": {
+                  "type": "object",
+                  "properties": {
+                    "scopes": {
+                      "maxItems": 128,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "pattern": "^[!-~]+$",
+                        "not": {
+                          "pattern": "\\n"
+                        }
+                      },
+                      "uniqueItems": true
+                    },
+                    "requiredGrantedScopes": {
+                      "maxItems": 128,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "pattern": "^[!-~]+$",
+                        "not": {
+                          "pattern": "\\n"
+                        }
+                      },
+                      "uniqueItems": true
+                    }
+                  },
+                  "required": [
+                    "scopes",
+                    "requiredGrantedScopes"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "read_only"
+              ],
+              "additionalProperties": false
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "manifest-app",
+                "api-key",
+                "token-paste",
+                "url-secret",
+                "none"
+              ]
+            }
+          },
+          "required": [
+            "scopes",
+            "requiredGrantedScopes",
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "draftyak.manifest.EgressRule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string",
+              "maxLength": 253,
+              "allOf": [
+                {
+                  "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                },
+                {
+                  "pattern": "^[a-z0-9.-]+$"
+                }
+              ],
+              "description": "A DNS host name in lower case, never an IP address.",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 36700160
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000
+            },
+            "pathTemplate": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^\\/(?:(?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%(?:[01][0-9A-F]|2[0-9A-C]|3[A-F]|40|5[BDE]|60|7[BCDF]|[89A-F][0-9A-F]))+|\\{[A-Za-z][A-Za-z0-9_]{0,31}\\})(?:\\/(?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%(?:[01][0-9A-F]|2[0-9A-C]|3[A-F]|40|5[BDE]|60|7[BCDF]|[89A-F][0-9A-F]))+|\\{[A-Za-z][A-Za-z0-9_]{0,31}\\}))*)?$",
+              "not": {
+                "pattern": "\\n"
+              },
+              "allOf": [
+                {
+                  "not": {
+                    "pattern": "(?:^|/)[.]{1,2}(?:/|$)"
+                  }
+                }
+              ]
+            },
+            "query": {
+              "maxItems": 32,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "allOf": [
+                  {
+                    "not": {
+                      "enum": [
+                        "constructor",
+                        "prototype"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "uniqueItems": true
+            },
+            "class": {
+              "type": "string",
+              "const": "read"
+            },
+            "method": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "HEAD",
+                "POST"
+              ]
+            }
+          },
+          "required": [
+            "host",
+            "maxBytes",
+            "timeoutMs",
+            "pathTemplate",
+            "class",
+            "method"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string",
+              "maxLength": 253,
+              "allOf": [
+                {
+                  "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                },
+                {
+                  "pattern": "^[a-z0-9.-]+$"
+                }
+              ],
+              "description": "A DNS host name in lower case, never an IP address.",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 36700160
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000
+            },
+            "pathTemplate": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^\\/(?:(?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%(?:[01][0-9A-F]|2[0-9A-C]|3[A-F]|40|5[BDE]|60|7[BCDF]|[89A-F][0-9A-F]))+|\\{[A-Za-z][A-Za-z0-9_]{0,31}\\})(?:\\/(?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%(?:[01][0-9A-F]|2[0-9A-C]|3[A-F]|40|5[BDE]|60|7[BCDF]|[89A-F][0-9A-F]))+|\\{[A-Za-z][A-Za-z0-9_]{0,31}\\}))*)?$",
+              "not": {
+                "pattern": "\\n"
+              },
+              "allOf": [
+                {
+                  "not": {
+                    "pattern": "(?:^|/)[.]{1,2}(?:/|$)"
+                  }
+                }
+              ]
+            },
+            "query": {
+              "maxItems": 32,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "allOf": [
+                  {
+                    "not": {
+                      "enum": [
+                        "constructor",
+                        "prototype"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "uniqueItems": true
+            },
+            "class": {
+              "type": "string",
+              "const": "organize"
+            },
+            "method": {
+              "type": "string",
+              "enum": [
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ]
+            }
+          },
+          "required": [
+            "host",
+            "maxBytes",
+            "timeoutMs",
+            "pathTemplate",
+            "class",
+            "method"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string",
+              "maxLength": 253,
+              "allOf": [
+                {
+                  "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                },
+                {
+                  "pattern": "^[a-z0-9.-]+$"
+                }
+              ],
+              "description": "A DNS host name in lower case, never an IP address.",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 36700160
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000
+            },
+            "pathTemplate": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^\\/(?:(?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%(?:[01][0-9A-F]|2[0-9A-C]|3[A-F]|40|5[BDE]|60|7[BCDF]|[89A-F][0-9A-F]))+|\\{(?:chat[.](?:channelId|threadTs)|email[.](?:to|cc|bcc)|outbox[.]id)\\})(?:\\/(?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%(?:[01][0-9A-F]|2[0-9A-C]|3[A-F]|40|5[BDE]|60|7[BCDF]|[89A-F][0-9A-F]))+|\\{(?:chat[.](?:channelId|threadTs)|email[.](?:to|cc|bcc)|outbox[.]id)\\}))*)?$",
+              "not": {
+                "pattern": "\\n"
+              },
+              "allOf": [
+                {
+                  "not": {
+                    "pattern": "(?:^|/)[.]{1,2}(?:/|$)"
+                  }
+                }
+              ]
+            },
+            "query": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "allOf": [
+                  {
+                    "not": {
+                      "enum": [
+                        "constructor",
+                        "prototype"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "additionalProperties": {
+                "type": "string",
+                "enum": [
+                  "chat.channelId",
+                  "chat.threadTs",
+                  "email.to",
+                  "email.cc",
+                  "email.bcc",
+                  "outbox.id"
+                ]
+              }
+            },
+            "class": {
+              "type": "string",
+              "const": "send"
+            },
+            "method": {
+              "type": "string",
+              "enum": [
+                "POST",
+                "PUT",
+                "PATCH"
+              ]
+            }
+          },
+          "required": [
+            "host",
+            "maxBytes",
+            "timeoutMs",
+            "pathTemplate",
+            "class",
+            "method"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "draftyak.json-template.JsonTemplate": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 63
+        },
+        "path": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192,
+                "pattern": "^(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%(?:[01][0-9A-F]|2[0-9A-C]|3[A-F]|40|5[BDE]|60|7[BCDF]|[89A-F][0-9A-F]))+$",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "allOf": [
+                  {
+                    "not": {
+                      "enum": [
+                        ".",
+                        ".."
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "bind": {
+                    "type": "string",
+                    "enum": [
+                      "chat.channelId",
+                      "chat.threadTs",
+                      "email.to",
+                      "email.cc",
+                      "email.bcc",
+                      "outbox.id"
+                    ]
+                  }
+                },
+                "required": [
+                  "bind"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "query": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+            "not": {
+              "pattern": "\\n"
+            },
+            "allOf": [
+              {
+                "not": {
+                  "enum": [
+                    "constructor",
+                    "prototype"
+                  ]
+                }
+              }
+            ]
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "bind": {
+                "type": "string",
+                "enum": [
+                  "chat.channelId",
+                  "chat.threadTs",
+                  "email.to",
+                  "email.cc",
+                  "email.bcc",
+                  "outbox.id"
+                ]
+              }
+            },
+            "required": [
+              "bind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "headers": {
+          "type": "object",
+          "properties": {
+            "content-type": {
+              "type": "string",
+              "const": "application/json"
+            },
+            "accept": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[!-~](?:[ -~]*[!-~])?$",
+              "not": {
+                "pattern": "\\n"
+              }
+            }
+          },
+          "required": [
+            "content-type"
+          ],
+          "additionalProperties": false,
+          "propertyNames": {
+            "enum": [
+              "content-type",
+              "accept"
+            ]
+          }
+        },
+        "body": {
+          "$ref": "#/$defs/draftyak.json-template.TemplateBody"
+        }
+      },
+      "required": [
+        "rule",
+        "path",
+        "query",
+        "headers",
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.json-template.TemplateBody": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "bind": {
+              "type": "string",
+              "enum": [
+                "body.text",
+                "body.footer",
+                "body.textWithFooter"
+              ]
+            }
+          },
+          "required": [
+            "bind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "const": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+              "not": {
+                "pattern": "\\n"
+              },
+              "allOf": [
+                {
+                  "not": {
+                    "enum": [
+                      "constructor",
+                      "prototype"
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "const"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "maxItems": 256,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/draftyak.json-template.TemplateBody"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+            "not": {
+              "pattern": "\\n"
+            },
+            "allOf": [
+              {
+                "not": {
+                  "enum": [
+                    "constructor",
+                    "prototype"
+                  ]
+                }
+              }
+            ]
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/draftyak.json-template.TemplateBody"
+          }
+        }
+      ]
+    },
+    "draftyak.manifest.ToolDeclaration": {
+      "type": "object",
+      "properties": {
+        "kinds": {
+          "minItems": 1,
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "calendar.freebusy"
+                  },
+                  "inputs": {
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "window",
+                        "tz"
+                      ]
+                    },
+                    "uniqueItems": true
+                  },
+                  "output": {
+                    "type": "object",
+                    "properties": {
+                      "dataClass": {
+                        "type": "string",
+                        "const": "tool.calendar.freebusy"
+                      },
+                      "maxBytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20480
+                      }
+                    },
+                    "required": [
+                      "dataClass",
+                      "maxBytes"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "kind",
+                  "inputs",
+                  "output"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "contact.notes"
+                  },
+                  "inputs": {
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "participant"
+                      ]
+                    },
+                    "uniqueItems": true
+                  },
+                  "output": {
+                    "type": "object",
+                    "properties": {
+                      "dataClass": {
+                        "type": "string",
+                        "const": "tool.contact.notes"
+                      },
+                      "maxBytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 4096
+                      }
+                    },
+                    "required": [
+                      "dataClass",
+                      "maxBytes"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "kind",
+                  "inputs",
+                  "output"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "kb.lookup"
+                  },
+                  "inputs": {
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "topic"
+                      ]
+                    },
+                    "uniqueItems": true
+                  },
+                  "output": {
+                    "type": "object",
+                    "properties": {
+                      "dataClass": {
+                        "type": "string",
+                        "const": "tool.kb.lookup"
+                      },
+                      "maxBytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 4096
+                      }
+                    },
+                    "required": [
+                      "dataClass",
+                      "maxBytes"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "kind",
+                  "inputs",
+                  "output"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "kinds"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

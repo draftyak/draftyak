@@ -1,0 +1,1352 @@
+{
+  "format": "draftyak.vectors.manifests.v1",
+  "description": "Frozen snapshot binding projections and expected json-template rendering or refusal. Query names sort by UTF-16; repeated values retain recipient order. No renderer is provided here.",
+  "cases": [
+    {
+      "id": "email-repeated-query-in-field-order",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "messages"
+        ],
+        "query": {
+          "to": {
+            "bind": "email.to"
+          },
+          "cc": {
+            "bind": "email.cc"
+          },
+          "bcc": {
+            "bind": "email.bcc"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/messages",
+          "query": {
+            "to": "email.to",
+            "cc": "email.cc",
+            "bcc": "email.bcc"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [
+            "second@example.com",
+            "first@example.com"
+          ],
+          "cc": [
+            "copy@example.com"
+          ],
+          "bcc": [
+            "blind@example.com"
+          ]
+        }
+      },
+      "expected": {
+        "path": "/v1/messages",
+        "query": "bcc=blind%40example.com&cc=copy%40example.com&to=second%40example.com&to=first%40example.com",
+        "body": {
+          "text": "See you at 3\n\nSent with DraftYak"
+        }
+      }
+    },
+    {
+      "id": "email-empty-query-fields-omitted",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "messages"
+        ],
+        "query": {
+          "to": {
+            "bind": "email.to"
+          },
+          "cc": {
+            "bind": "email.cc"
+          },
+          "bcc": {
+            "bind": "email.bcc"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/messages",
+          "query": {
+            "to": "email.to",
+            "cc": "email.cc",
+            "bcc": "email.bcc"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [
+            "first@example.com"
+          ],
+          "cc": [],
+          "bcc": []
+        }
+      },
+      "expected": {
+        "path": "/v1/messages",
+        "query": "to=first%40example.com",
+        "body": {
+          "text": "See you at 3\n\nSent with DraftYak"
+        }
+      }
+    },
+    {
+      "id": "email-query-delimiters-encoded",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "messages"
+        ],
+        "query": {
+          "to": {
+            "bind": "email.to"
+          },
+          "cc": {
+            "bind": "email.cc"
+          },
+          "bcc": {
+            "bind": "email.bcc"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/messages",
+          "query": {
+            "to": "email.to",
+            "cc": "email.cc",
+            "bcc": "email.bcc"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [
+            "a+b&bcc=hidden@example.com",
+            "o'hara@example.com"
+          ],
+          "cc": [],
+          "bcc": []
+        }
+      },
+      "expected": {
+        "path": "/v1/messages",
+        "query": "to=a%2Bb%26bcc%3Dhidden%40example.com&to=o%27hara%40example.com",
+        "body": {
+          "text": "See you at 3\n\nSent with DraftYak"
+        }
+      }
+    },
+    {
+      "id": "email-to-single-path",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.to"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.to}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [
+            "a+b@example.com"
+          ],
+          "cc": [],
+          "bcc": []
+        }
+      },
+      "expected": {
+        "path": "/v1/recipients/a%2Bb%40example.com/messages",
+        "query": "",
+        "body": {
+          "text": "See you at 3\n\nSent with DraftYak"
+        }
+      }
+    },
+    {
+      "id": "email-to-path-empty-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.to"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.to}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [],
+          "cc": [],
+          "bcc": []
+        }
+      },
+      "expected": null,
+      "refusal": "path-recipient-count"
+    },
+    {
+      "id": "email-to-path-multiple-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.to"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.to}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [
+            "first@example.com",
+            "second@example.com"
+          ],
+          "cc": [],
+          "bcc": []
+        }
+      },
+      "expected": null,
+      "refusal": "path-recipient-count"
+    },
+    {
+      "id": "email-to-path-separator-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.to"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.to}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [
+            "a/b@example.com"
+          ],
+          "cc": [],
+          "bcc": []
+        }
+      },
+      "expected": null,
+      "refusal": "noncanonical-bound-segment"
+    },
+    {
+      "id": "email-unbound-to-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "messages"
+        ],
+        "query": {
+          "recipient": {
+            "bind": "email.cc"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/messages",
+          "query": {
+            "recipient": "email.cc"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [
+            "unbound@example.com"
+          ],
+          "cc": [
+            "bound@example.com"
+          ],
+          "bcc": []
+        }
+      },
+      "expected": null,
+      "refusal": "unbound-recipient-field"
+    },
+    {
+      "id": "email-cc-single-path",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.cc"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.cc}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [],
+          "cc": [
+            "a+b@example.com"
+          ],
+          "bcc": []
+        }
+      },
+      "expected": {
+        "path": "/v1/recipients/a%2Bb%40example.com/messages",
+        "query": "",
+        "body": {
+          "text": "See you at 3\n\nSent with DraftYak"
+        }
+      }
+    },
+    {
+      "id": "email-cc-path-empty-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.cc"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.cc}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [],
+          "cc": [],
+          "bcc": []
+        }
+      },
+      "expected": null,
+      "refusal": "path-recipient-count"
+    },
+    {
+      "id": "email-cc-path-multiple-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.cc"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.cc}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [],
+          "cc": [
+            "first@example.com",
+            "second@example.com"
+          ],
+          "bcc": []
+        }
+      },
+      "expected": null,
+      "refusal": "path-recipient-count"
+    },
+    {
+      "id": "email-cc-path-separator-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.cc"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.cc}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [],
+          "cc": [
+            "a/b@example.com"
+          ],
+          "bcc": []
+        }
+      },
+      "expected": null,
+      "refusal": "noncanonical-bound-segment"
+    },
+    {
+      "id": "email-unbound-cc-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "messages"
+        ],
+        "query": {
+          "recipient": {
+            "bind": "email.to"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/messages",
+          "query": {
+            "recipient": "email.to"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [
+            "bound@example.com"
+          ],
+          "cc": [
+            "unbound@example.com"
+          ],
+          "bcc": []
+        }
+      },
+      "expected": null,
+      "refusal": "unbound-recipient-field"
+    },
+    {
+      "id": "email-bcc-single-path",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.bcc"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.bcc}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [],
+          "cc": [],
+          "bcc": [
+            "a+b@example.com"
+          ]
+        }
+      },
+      "expected": {
+        "path": "/v1/recipients/a%2Bb%40example.com/messages",
+        "query": "",
+        "body": {
+          "text": "See you at 3\n\nSent with DraftYak"
+        }
+      }
+    },
+    {
+      "id": "email-bcc-path-empty-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.bcc"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.bcc}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [],
+          "cc": [],
+          "bcc": []
+        }
+      },
+      "expected": null,
+      "refusal": "path-recipient-count"
+    },
+    {
+      "id": "email-bcc-path-multiple-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.bcc"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.bcc}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [],
+          "cc": [],
+          "bcc": [
+            "first@example.com",
+            "second@example.com"
+          ]
+        }
+      },
+      "expected": null,
+      "refusal": "path-recipient-count"
+    },
+    {
+      "id": "email-bcc-path-separator-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "recipients",
+          {
+            "bind": "email.bcc"
+          },
+          "messages"
+        ],
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/recipients/{email.bcc}/messages",
+          "query": {},
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [],
+          "cc": [],
+          "bcc": [
+            "a/b@example.com"
+          ]
+        }
+      },
+      "expected": null,
+      "refusal": "noncanonical-bound-segment"
+    },
+    {
+      "id": "email-unbound-bcc-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "messages"
+        ],
+        "query": {
+          "recipient": {
+            "bind": "email.to"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/messages",
+          "query": {
+            "recipient": "email.to"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        },
+        "email": {
+          "to": [
+            "bound@example.com"
+          ],
+          "cc": [],
+          "bcc": [
+            "unbound@example.com"
+          ]
+        }
+      },
+      "expected": null,
+      "refusal": "unbound-recipient-field"
+    },
+    {
+      "id": "chat-bound-thread-query",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "conversations",
+          {
+            "bind": "chat.channelId"
+          },
+          "messages"
+        ],
+        "query": {
+          "idempotency_key": {
+            "bind": "outbox.id"
+          },
+          "thread_ts": {
+            "bind": "chat.threadTs"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/conversations/{chat.channelId}/messages",
+          "query": {
+            "idempotency_key": "outbox.id",
+            "thread_ts": "chat.threadTs"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "chat": {
+          "channelId": "room-1",
+          "threadTs": "1792000000.000001"
+        },
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        }
+      },
+      "expected": {
+        "path": "/v1/conversations/room-1/messages",
+        "query": "idempotency_key=01ARZ3NDEKTSV4RRFFQ69G5FAV&thread_ts=1792000000.000001",
+        "body": {
+          "text": "See you at 3\n\nSent with DraftYak"
+        }
+      }
+    },
+    {
+      "id": "chat-absent-thread-query-omitted",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "conversations",
+          {
+            "bind": "chat.channelId"
+          },
+          "messages"
+        ],
+        "query": {
+          "idempotency_key": {
+            "bind": "outbox.id"
+          },
+          "thread_ts": {
+            "bind": "chat.threadTs"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/conversations/{chat.channelId}/messages",
+          "query": {
+            "idempotency_key": "outbox.id",
+            "thread_ts": "chat.threadTs"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "chat": {
+          "channelId": "room-1"
+        },
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        }
+      },
+      "expected": {
+        "path": "/v1/conversations/room-1/messages",
+        "query": "idempotency_key=01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3\n\nSent with DraftYak"
+        }
+      }
+    },
+    {
+      "id": "chat-present-unbound-thread-refused",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "conversations",
+          {
+            "bind": "chat.channelId"
+          },
+          "messages"
+        ],
+        "query": {
+          "idempotency_key": {
+            "bind": "outbox.id"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/conversations/{chat.channelId}/messages",
+          "query": {
+            "idempotency_key": "outbox.id"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "chat": {
+          "channelId": "room-1",
+          "threadTs": "1792000000.000001"
+        },
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        }
+      },
+      "expected": null,
+      "refusal": "unbound-thread-field"
+    },
+    {
+      "id": "hello-footer",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "conversations",
+          {
+            "bind": "chat.channelId"
+          },
+          "messages"
+        ],
+        "query": {
+          "idempotency_key": {
+            "bind": "outbox.id"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/conversations/{chat.channelId}/messages",
+          "query": {
+            "idempotency_key": "outbox.id"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "chat": {
+          "channelId": "room-1"
+        },
+        "body": {
+          "text": "See you at 3",
+          "footer": "Sent with DraftYak"
+        }
+      },
+      "expected": {
+        "path": "/v1/conversations/room-1/messages",
+        "query": "idempotency_key=01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3\n\nSent with DraftYak"
+        }
+      }
+    },
+    {
+      "id": "hello-empty-footer",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "conversations",
+          {
+            "bind": "chat.channelId"
+          },
+          "messages"
+        ],
+        "query": {
+          "idempotency_key": {
+            "bind": "outbox.id"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/conversations/{chat.channelId}/messages",
+          "query": {
+            "idempotency_key": "outbox.id"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "chat": {
+          "channelId": "room-1"
+        },
+        "body": {
+          "text": "See you at 3",
+          "footer": ""
+        }
+      },
+      "expected": {
+        "path": "/v1/conversations/room-1/messages",
+        "query": "idempotency_key=01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3"
+        }
+      }
+    },
+    {
+      "id": "hello-retained-lf",
+      "template": {
+        "rule": 0,
+        "path": [
+          "v1",
+          "conversations",
+          {
+            "bind": "chat.channelId"
+          },
+          "messages"
+        ],
+        "query": {
+          "idempotency_key": {
+            "bind": "outbox.id"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "text": {
+            "bind": "body.textWithFooter"
+          }
+        }
+      },
+      "rules": [
+        {
+          "class": "send",
+          "method": "POST",
+          "host": "chat.example.com",
+          "pathTemplate": "/v1/conversations/{chat.channelId}/messages",
+          "query": {
+            "idempotency_key": "outbox.id"
+          },
+          "maxBytes": 32768,
+          "timeoutMs": 10000
+        }
+      ],
+      "constants": {},
+      "snapshot": {
+        "outbox": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "chat": {
+          "channelId": "room-1"
+        },
+        "body": {
+          "text": "See you at 3",
+          "footer": "\nDisclosure"
+        }
+      },
+      "expected": {
+        "path": "/v1/conversations/room-1/messages",
+        "query": "idempotency_key=01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "body": {
+          "text": "See you at 3\n\n\nDisclosure"
+        }
+      }
+    }
+  ]
+}

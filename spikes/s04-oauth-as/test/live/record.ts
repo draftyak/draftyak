@@ -149,6 +149,8 @@ export function canaryOutcome(value: string | undefined, canary: string): string
 }
 
 const sorted = (values: Iterable<string>): string[] => [...new Set(values)].sort();
+const isObject = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
 const bump = (counts: Record<string, number>, key: string, by = 1): void => {
 	counts[key] = (counts[key] ?? 0) + by;
 };
@@ -380,8 +382,11 @@ class Facts {
 		requests: 0,
 		ok: 0,
 		statuses: {} as Record<string, number>,
+		refusals: {} as Record<string, number>,
 		httpMethods: {} as Record<string, number>,
 		methods: {} as Record<string, number>,
+		handledMethods: {} as Record<string, number>,
+		attemptedTools: {} as Record<string, number>,
 		tools: {} as Record<string, number>,
 		writeTool: { listed: 0, called: 0, refusedWithoutScope: 0 },
 		tokenScopes: new Set<string>(),
@@ -425,8 +430,18 @@ export interface McpRequestFacts {
 	readonly headers: IncomingHttpHeaders;
 }
 
+export type McpRefusal =
+	| "unsupported media type"
+	| "body too large"
+	| "parse error"
+	| "header mismatch"
+	| "unsupported protocol version";
+
 export interface McpAnswer {
 	readonly status: number;
+	// A successful JSON-RPC result, rather than a pre-handler or protocol refusal.
+	readonly handled: boolean;
+	readonly refusal?: McpRefusal | undefined;
 	readonly inputRequired: boolean;
 	// Whether a tools/list result named the write tool.
 	readonly listedWriteTool: boolean;
@@ -1090,6 +1105,15 @@ export class Recorder {
 		bump(this.#step().unattributed, "MCP request without a valid token");
 	}
 
+	// Called by the fake write handler only after its input validation reaches the scope check.
+	mcpWriteScope(clientId: string, allowed: boolean): void {
+		const name = this.nameOf(clientId);
+		if (name === undefined) return;
+		const { writeTool } = this.#of(name).mcp;
+		writeTool.called += 1;
+		if (!allowed) writeTool.refusedWithoutScope += 1;
+	}
+
 	// One authenticated MCP request, by the token's client and grant, and how it was answered.
 	mcp(
 		clientId: string,
@@ -1111,6 +1135,7 @@ export class Recorder {
 		this.#requester(facts, incoming);
 		mcp.requests += 1;
 		bump(mcp.statuses, String(response.status));
+		if (response.refusal !== undefined) bump(mcp.refusals, response.refusal);
 		bump(mcp.httpMethods, safe(request.httpMethod, /^[A-Z]{1,16}$/));
 		const ok = response.status >= 200 && response.status < 300;
 		if (ok) {
@@ -1133,15 +1158,16 @@ export class Recorder {
 				`MCP ${safe(request.httpMethod, /^[A-Z]{1,16}$/)} answered ${response.status}`,
 			);
 		}
-		for (const tool of request.tools) bump(mcp.tools, safe(tool, NAME));
-		const writes = request.tools.filter((tool) => tool === WRITE_TOOL).length;
-		mcp.writeTool.called += writes;
-		if (!scopes.includes(WRITE_SCOPE)) mcp.writeTool.refusedWithoutScope += writes;
-		if (response.listedWriteTool) mcp.writeTool.listed += 1;
-		mcp.uiReads += request.reads.ui;
-		mcp.otherReads += request.reads.other;
-		if (request.inputAnswered) mcp.inputAnswered += 1;
-		if (response.inputRequired) mcp.inputRequired += 1;
+		for (const tool of request.tools) bump(mcp.attemptedTools, safe(tool, NAME));
+		if (response.handled) {
+			for (const method of request.methods) bump(mcp.handledMethods, safe(method, NAME));
+			for (const tool of request.tools) bump(mcp.tools, safe(tool, NAME));
+			if (response.listedWriteTool) mcp.writeTool.listed += 1;
+			mcp.uiReads += request.reads.ui;
+			mcp.otherReads += request.reads.other;
+			if (request.inputAnswered) mcp.inputAnswered += 1;
+			if (response.inputRequired) mcp.inputRequired += 1;
+		}
 		this.#capabilities(facts, request.capabilities);
 		const info = request.clientInfo as { name?: unknown; version?: unknown } | undefined;
 		if (typeof info?.name === "string") {
@@ -1153,17 +1179,17 @@ export class Recorder {
 	}
 
 	#capabilities(facts: Facts, capabilities: unknown): void {
-		if (typeof capabilities !== "object" || capabilities === null) return;
-		const declared = capabilities as Record<string, unknown>;
-		for (const key of Object.keys(declared)) facts.mcp.capabilityKeys.add(safe(key, NAME));
-		const elicitation = declared.elicitation;
-		if (typeof elicitation === "object" && elicitation !== null) {
+		if (!isObject(capabilities)) return;
+		for (const key of Object.keys(capabilities)) facts.mcp.capabilityKeys.add(safe(key, NAME));
+		const elicitation = capabilities.elicitation;
+		if (isObject(elicitation)) {
 			const modes = Object.keys(elicitation).filter((mode) => mode === "form" || mode === "url");
 			for (const mode of modes.length > 0 ? modes : ["form"]) facts.mcp.elicitation.add(mode);
 		}
-		const extensions = declared.extensions as Record<string, unknown> | undefined;
-		const ui = extensions?.[UI_EXTENSION] as { mimeTypes?: unknown } | undefined;
-		if (ui !== undefined) {
+		const extensions = capabilities.extensions;
+		if (!isObject(extensions)) return;
+		const ui = extensions[UI_EXTENSION];
+		if (isObject(ui)) {
 			facts.mcp.uiDeclared = true;
 			for (const type of [ui.mimeTypes].flat()) {
 				if (typeof type === "string") facts.mcp.uiMimeTypes.add(safe(type, /^[\w./;=+-]{1,64}$/));
@@ -1228,7 +1254,7 @@ export class Recorder {
 			const facts = this.#of(client);
 			const { outcome, reason } = this.#outcome(facts);
 			const { mcp } = facts;
-			const methods = Object.keys(mcp.methods);
+			const methods = Object.keys(mcp.handledMethods);
 			const eras = [...mcp.eras];
 			const decision = facts.decision;
 			const used: Record<SurfaceName, boolean> = {
@@ -1305,8 +1331,11 @@ export class Recorder {
 					ok: mcp.ok,
 					grants: facts.grants.size,
 					statuses: { ...mcp.statuses },
+					refusals: { ...mcp.refusals },
 					httpMethods: { ...mcp.httpMethods },
 					methods: { ...mcp.methods },
+					handledMethods: { ...mcp.handledMethods },
+					attemptedTools: { ...mcp.attemptedTools },
 					tools: { ...mcp.tools },
 					writeTool: { ...mcp.writeTool },
 					tokenScopes: sorted(mcp.tokenScopes),
