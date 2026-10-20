@@ -9,4 +9,23 @@ export {
 	type AuditInput,
 } from "./audit/chain.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
+export {
+	type AddressFacts,
+	type AddressLocality,
+	addressFacts,
+	BLOCKED_LOOPBACK_PORTS,
+	canonicalAddress,
+	captureEgressPolicy,
+	createPinnedHttpsConnection,
+	type EgressPolicy,
+	egressHost,
+	egressPort,
+	HUB_DENIED_PORTS,
+	type PinnedAddress,
+	type PinnedHttpsConnection,
+	publicAddress,
+	resolveEgress,
+	resolveEgressAnswers,
+	validateEgressAnswers,
+} from "./plugins/broker/network/index.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";
