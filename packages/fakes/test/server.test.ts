@@ -196,6 +196,35 @@ describe("optional bounded request intake", () => {
 		expect(fake.recorder.takeRequests()).toEqual([]);
 	});
 
+	it("rejects a disturbed unlocked upload and discards its reservation", async () => {
+		const { app, hits } = echoApp();
+		const fake = createFake(app, { host: HOST, maxRequestBodyBytes: 4 });
+		const body = new ReadableStream<Uint8Array>({
+			start(stream) {
+				stream.enqueue(new TextEncoder().encode("12"));
+				stream.enqueue(new TextEncoder().encode("34"));
+				stream.close();
+			},
+		});
+		const request = new Request(`https://${HOST}/echo`, {
+			method: "POST",
+			body,
+			duplex: "half",
+		} as RequestInit);
+		const reader = request.body?.getReader();
+		expect((await reader?.read())?.value).toEqual(new TextEncoder().encode("12"));
+		reader?.releaseLock();
+		expect(request.bodyUsed).toBe(true);
+		expect(request.body?.locked).toBe(false);
+		await expect(fake.fetch(request)).rejects.toThrow(TypeError);
+		expect(hits()).toBe(0);
+		expect(fake.recorder.takeRequests()).toEqual([]);
+		expect((await fake.fetch("/echo", { method: "POST", body: "ok" })).status).toBe(200);
+		expect(fake.recorder.takeRequests()).toMatchObject([
+			{ path: "/echo", bodyLength: 2, bodySha256: sha256("ok") },
+		]);
+	});
+
 	it("discards the reservation when an upload body is already locked", async () => {
 		const fake = createFake(echoApp().app, { host: HOST, maxRequestBodyBytes: 4 });
 		const request = new Request(`https://${HOST}/echo`, { method: "POST", body: "ok" });

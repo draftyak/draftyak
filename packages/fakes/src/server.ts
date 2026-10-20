@@ -68,6 +68,7 @@ async function limitedRequest(
 	const abort = (): void => cancel(request.signal.reason);
 	request.signal.addEventListener("abort", abort, { once: true });
 	try {
+		if (request.bodyUsed) throw new TypeError("Request body has already been used");
 		reader = request.body.getReader();
 		if (request.signal.aborted) abort();
 		request.signal.throwIfAborted();
