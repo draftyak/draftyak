@@ -108,9 +108,19 @@ export function costOf(body: unknown): number | undefined {
 	)
 		return undefined;
 	const model = typeof body.model === "string" ? body.model : "";
+	if (!PRICES.has(model)) return undefined;
 	const { iterations } = body.usage;
 	if (iterations !== undefined && iterations !== null && !Array.isArray(iterations))
 		return undefined;
+	if (Array.isArray(iterations) && iterations.length > 0) {
+		const serving = iterations.at(-1);
+		if (
+			!isRecord(serving) ||
+			serving.model !== model ||
+			(serving.type !== "message" && serving.type !== "fallback_message")
+		)
+			return undefined;
+	}
 	const entries = Array.isArray(iterations) && iterations.length > 0 ? iterations : [body.usage];
 	const handoffs = body.content.filter(
 		(block) => isRecord(block) && block.type === "fallback",
