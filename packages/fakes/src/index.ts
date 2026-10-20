@@ -1,5 +1,6 @@
 export * from "./faults.ts";
 export * from "./hello.ts";
+export * from "./messages-api.ts";
 export * from "./recorder.ts";
 export * from "./responses-api.ts";
 export * from "./server.ts";
