@@ -121,7 +121,10 @@ const WRITE = {
 // s03's surfaces plus one fake write tool, for ChatGPT's write access on the owner's plan. It
 // stores and sends nothing, its arguments are never recorded, and like §6's draft_create it needs
 // drafts:write: a token without it gets an isError result.
-export function liveFactory(hub: Hub): ServerFactory {
+export function liveFactory(
+	hub: Hub,
+	onWrite?: (clientId: string, allowed: boolean) => void,
+): ServerFactory {
 	const surfaces = surfaceFactory(hub);
 	return async (ctx) => {
 		const server = await surfaces(ctx);
@@ -139,6 +142,7 @@ export function liveFactory(hub: Hub): ServerFactory {
 				annotations: WRITE,
 			},
 			() => {
+				if (ctx.authInfo?.clientId) onWrite?.(ctx.authInfo.clientId, writes);
 				if (!writes) {
 					return {
 						isError: true,
@@ -193,8 +197,8 @@ export function requestFacts(
 		capabilities ??= meta[CLIENT_CAPABILITIES_META_KEY];
 		clientInfo ??= meta[CLIENT_INFO_META_KEY];
 		if (message.method === "tools/call" && typeof params.name === "string") tools.push(params.name);
-		if (message.method === "resources/read") {
-			reads = String(params.uri).startsWith("ui://")
+		if (message.method === "resources/read" && typeof params.uri === "string") {
+			reads = params.uri.startsWith("ui://")
 				? { ...reads, ui: reads.ui + 1 }
 				: { ...reads, other: reads.other + 1 };
 		}
@@ -229,6 +233,7 @@ function refusalOf(status: number, body: unknown): McpRefusal | undefined {
 async function answerOf(response: Response): Promise<McpAnswer> {
 	const answer = {
 		status: response.status,
+		handled: false,
 		inputRequired: false,
 		listedWriteTool: false,
 		refusal: refusalOf(response.status, undefined),
@@ -241,6 +246,12 @@ async function answerOf(response: Response): Promise<McpAnswer> {
 			.filter((result) => result !== undefined);
 		return {
 			...answer,
+			// A parsed attempt alone never establishes surface use or a scope check. A partial
+			// batch also fails closed: no method is credited unless every reply has a result.
+			handled:
+				response.ok &&
+				results.length > 0 &&
+				results.length === (Array.isArray(body) ? body.length : 1),
 			refusal: refusalOf(response.status, body),
 			inputRequired: results.some((result) => result.resultType === "input_required"),
 			listedWriteTool: results.some(
@@ -265,7 +276,9 @@ export interface McpOptions {
 export function liveMcp(options: McpOptions): Hono<McpEnv> {
 	const { provider, publicOrigin, recorder } = options;
 	const { hub, admit } = liveHub(options.views);
-	const factory = liveFactory(hub);
+	const factory = liveFactory(hub, (clientId, allowed) =>
+		recorder.mcpWriteScope(clientId, allowed),
+	);
 	const onerror = options.onerror;
 	const modern = createMcpHandler(factory, {
 		legacy: "reject",
@@ -382,7 +395,7 @@ export function liveMcp(options: McpOptions): Hono<McpEnv> {
 			c.get("grant"),
 			c.get("scopes"),
 			facts,
-			{ status: 405, inputRequired: false, listedWriteTool: false },
+			{ status: 405, handled: false, inputRequired: false, listedWriteTool: false },
 			c.env.incoming,
 		);
 		c.set("mcpRecorded", true);
