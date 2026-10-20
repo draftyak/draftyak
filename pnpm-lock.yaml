@@ -349,6 +349,12 @@ importers:
 
   tools/ci-checks: {}
 
+  tools/doctor:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+
   tools/fetch-node: {}
 
   tools/vendor-guard: {}

@@ -1,0 +1,14 @@
+{
+  "name": "@draftyak/doctor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "doctor": "node --disable-sigusr1 doctor.ts",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:heavy": "vitest run --mode heavy"
+  },
+  "dependencies": {
+    "@draftyak/protocol": "workspace:*"
+  }
+}
