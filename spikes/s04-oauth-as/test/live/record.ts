@@ -380,6 +380,7 @@ class Facts {
 		requests: 0,
 		ok: 0,
 		statuses: {} as Record<string, number>,
+		refusals: {} as Record<string, number>,
 		httpMethods: {} as Record<string, number>,
 		methods: {} as Record<string, number>,
 		tools: {} as Record<string, number>,
@@ -425,8 +426,16 @@ export interface McpRequestFacts {
 	readonly headers: IncomingHttpHeaders;
 }
 
+export type McpRefusal =
+	| "unsupported media type"
+	| "body too large"
+	| "parse error"
+	| "header mismatch"
+	| "unsupported protocol version";
+
 export interface McpAnswer {
 	readonly status: number;
+	readonly refusal?: McpRefusal | undefined;
 	readonly inputRequired: boolean;
 	// Whether a tools/list result named the write tool.
 	readonly listedWriteTool: boolean;
@@ -1111,6 +1120,7 @@ export class Recorder {
 		this.#requester(facts, incoming);
 		mcp.requests += 1;
 		bump(mcp.statuses, String(response.status));
+		if (response.refusal !== undefined) bump(mcp.refusals, response.refusal);
 		bump(mcp.httpMethods, safe(request.httpMethod, /^[A-Z]{1,16}$/));
 		const ok = response.status >= 200 && response.status < 300;
 		if (ok) {
@@ -1305,6 +1315,7 @@ export class Recorder {
 					ok: mcp.ok,
 					grants: facts.grants.size,
 					statuses: { ...mcp.statuses },
+					refusals: { ...mcp.refusals },
 					httpMethods: { ...mcp.httpMethods },
 					methods: { ...mcp.methods },
 					tools: { ...mcp.tools },

@@ -894,6 +894,150 @@ describe("the live session, rehearsed through a loopback stand-in for Funnel", (
 	});
 });
 
+describe("authenticated MCP middleware refusals", () => {
+	const modern = JSON.stringify({
+		jsonrpc: "2.0",
+		id: 1,
+		method: "server/discover",
+		params: { _meta: { [PROTOCOL_VERSION_META_KEY]: "2026-07-28" } },
+	});
+	test.each([
+		{
+			refusal: "unsupported media type",
+			contentType: "text/plain",
+			body: modern,
+			status: 415,
+			code: -32000,
+			version: "2026-07-28",
+			era: "none",
+		},
+		{
+			refusal: "body too large",
+			contentType: "application/json",
+			body: JSON.stringify({ padding: "x".repeat(1024 * 1024) }),
+			status: 413,
+			code: -32000,
+			version: "2026-07-28",
+			era: "none",
+		},
+		{
+			refusal: "parse error",
+			contentType: "application/json",
+			body: "this is not JSON and must not reach the evidence",
+			status: 400,
+			code: -32700,
+			version: "2026-07-28",
+			era: "none",
+		},
+		{
+			refusal: "header mismatch",
+			contentType: "application/json",
+			body: modern,
+			status: 400,
+			code: -32020,
+			version: "2026-07-28",
+			era: "2026",
+		},
+		{
+			refusal: "unsupported protocol version",
+			contentType: "application/json",
+			body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+			status: 400,
+			code: -32022,
+			version: "2024-11-05",
+			era: "2025",
+		},
+	])("$refusal reaches only the authenticated client's row", async (refused) => {
+		const run = await rehearse([plan("claude-code")], async ({ origin, owner, secrets }) => {
+			await owner.step("claude-code");
+			const connector = claudeCode();
+			vendor.serveAll(connector.documents);
+			const signed = await signIn(
+				new ScriptedClient(connector, { origin, approve: owner.approve }),
+			);
+			secrets.push(signed.accessToken, signed.refreshToken);
+			const send = (token: string) =>
+				fetch(signed.mcp, {
+					method: "POST",
+					headers: {
+						"content-type": refused.contentType,
+						"mcp-protocol-version": refused.version,
+						authorization: `Bearer ${token}`,
+					},
+					body: refused.body,
+				});
+			const unauthenticated = await send("invalid");
+			expect(unauthenticated.status).toBe(401);
+			await unauthenticated.body?.cancel();
+			const response = await send(signed.accessToken);
+			expect(response.status).toBe(refused.status);
+			expect(await response.json()).toMatchObject({ error: { code: refused.code } });
+			await owner.done("claude-code");
+		});
+		expect(rowOf(run.rows, "claude-code")).toMatchObject({
+			outcome: "blocked",
+			reason: `MCP requests failed (HTTP ${refused.status})`,
+			era: refused.era,
+			protocolVersions: [refused.version],
+			mcp: {
+				requests: 1,
+				ok: 0,
+				statuses: { [refused.status]: 1 },
+				refusals: { [refused.refusal]: 1 },
+				httpMethods: { POST: 1 },
+			},
+		});
+		const evidence = JSON.stringify(run.data);
+		for (const secret of run.secrets) expect(evidence).not.toContain(secret);
+		expect(evidence).not.toContain("this is not JSON and must not reach the evidence");
+	});
+
+	test("a refused modern request followed by legacy fallback keeps both eras without double counting", async () => {
+		const run = await rehearse([plan("claude-code")], async ({ origin, owner }) => {
+			await owner.step("claude-code");
+			const connector = claudeCode();
+			vendor.serveAll(connector.documents);
+			const signed = await signIn(
+				new ScriptedClient(connector, { origin, approve: owner.approve }),
+			);
+			const refused = await fetch(signed.mcp, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"mcp-protocol-version": "2026-07-28",
+					authorization: `Bearer ${signed.accessToken}`,
+				},
+				body: modern,
+			});
+			expect(refused.status).toBe(400);
+			await refused.body?.cancel();
+			const calls = new McpCalls(signed.mcp, signed.accessToken);
+			expect(
+				(await calls.legacy("initialize", { protocolVersion: "2025-06-18", capabilities: {} }))
+					.status,
+			).toBe(200);
+			const get = await fetch(signed.mcp, {
+				headers: { authorization: `Bearer ${signed.accessToken}` },
+			});
+			expect(get.status).toBe(405);
+			await get.body?.cancel();
+			await owner.done("claude-code");
+		});
+		expect(rowOf(run.rows, "claude-code")).toMatchObject({
+			outcome: "ok",
+			era: "both",
+			protocolVersions: ["2025-06-18", "2026-07-28"],
+			mcp: {
+				requests: 3,
+				ok: 1,
+				statuses: { "200": 1, "400": 1, "405": 1 },
+				refusals: { "header mismatch": 1 },
+				httpMethods: { GET: 1, POST: 2 },
+			},
+		});
+	});
+});
+
 describe("blocked clients get a row and a reason too", () => {
 	let blocked: Rehearsal;
 	beforeAll(async () => {
