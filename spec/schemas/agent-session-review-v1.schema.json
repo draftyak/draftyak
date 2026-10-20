@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/schemas/agent-session-review-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "principal": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "grant",
+            "token"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "account": {
+      "type": "string",
+      "minLength": 26,
+      "maxLength": 26,
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+      "description": "A ULID: 26 upper-case Crockford base32 characters."
+    },
+    "toolClass": {
+      "type": "string",
+      "enum": [
+        "read",
+        "draft",
+        "organize"
+      ]
+    },
+    "authorization": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "session"
+            },
+            "durationMs": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "const": 900000
+                },
+                {
+                  "type": "number",
+                  "const": 3600000
+                },
+                {
+                  "type": "number",
+                  "const": 28800000
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "durationMs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "call"
+            },
+            "paramsDigest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "validForMs": {
+              "type": "number",
+              "const": 600000
+            },
+            "singleUse": {
+              "type": "boolean",
+              "const": true
+            },
+            "method": {
+              "type": "string",
+              "const": "tools/call"
+            },
+            "target": {
+              "type": "string",
+              "enum": [
+                "accounts_list",
+                "contacts_search",
+                "conversation_get",
+                "conversations_list",
+                "draft_get",
+                "drafts_list",
+                "message_get",
+                "messages_search",
+                "conversation_archive",
+                "conversation_label",
+                "conversation_mark_read",
+                "draft_create",
+                "draft_update",
+                "draft_discard",
+                "send_request_create",
+                "send_request_cancel",
+                "send_request_status"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "paramsDigest",
+            "validForMs",
+            "singleUse",
+            "method",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "call"
+            },
+            "paramsDigest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "validForMs": {
+              "type": "number",
+              "const": 600000
+            },
+            "singleUse": {
+              "type": "boolean",
+              "const": true
+            },
+            "method": {
+              "type": "string",
+              "const": "resources/read"
+            },
+            "target": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "draftyak://guide/agents"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "ui://draftyak/draft-v1",
+                    "ui://draftyak/send-status-v1"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "minLength": 50,
+                  "maxLength": 50,
+                  "pattern": "^draftyak:\\/\\/conversation\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                },
+                {
+                  "type": "string",
+                  "minLength": 45,
+                  "maxLength": 45,
+                  "pattern": "^draftyak:\\/\\/message\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                },
+                {
+                  "type": "string",
+                  "minLength": 43,
+                  "maxLength": 43,
+                  "pattern": "^draftyak:\\/\\/draft\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                },
+                {
+                  "type": "string",
+                  "minLength": 50,
+                  "maxLength": 50,
+                  "pattern": "^draftyak:\\/\\/send-request\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "paramsDigest",
+            "validForMs",
+            "singleUse",
+            "method",
+            "target"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "principal",
+    "account",
+    "toolClass",
+    "authorization"
+  ],
+  "additionalProperties": false
+}

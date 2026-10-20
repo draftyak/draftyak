@@ -34,6 +34,36 @@ export const DeviceCapabilities: z.ZodArray<typeof DeviceCapability> = capabilit
 		"one holds nothing else.",
 });
 
+const confirmationPresets = ["desktop", "mobile", "cli"] as const;
+export type ConfirmationPreset = (typeof confirmationPresets)[number];
+export const ConfirmationPreset: z.ZodEnum<z.core.util.ToEnum<ConfirmationPreset>> = z
+	.enum(confirmationPresets)
+	.meta({
+		id: "draftyak.entities.ConfirmationPreset",
+		description: "A server-selected confirmation policy, never a signed statement field.",
+	});
+
+export const CONFIRMATION_PRESETS: Readonly<
+	Record<ConfirmationPreset, readonly DeviceCapability[]>
+> = Object.freeze({
+	desktop: Object.freeze(["read", "draft", "organize", "approve", "admin"] as const),
+	mobile: Object.freeze(["read", "draft", "organize"] as const),
+	cli: Object.freeze(["read", "draft"] as const),
+});
+
+// Confirmation cannot grant capabilities the approver does not hold.
+export function canConfirm(
+	capabilities: readonly DeviceCapability[],
+	preset: ConfirmationPreset,
+): boolean {
+	return (
+		ConfirmationPreset.safeParse(preset).success &&
+		DeviceCapabilities.safeParse(capabilities).success &&
+		capabilities.includes("approve") &&
+		CONFIRMATION_PRESETS[preset].every((capability) => capabilities.includes(capability))
+	);
+}
+
 // biome-ignore format: one line per entry, so the SMS contract adds its hosts' classes by one line
 const keyClasses = [
 	"keyring",
