@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { Server } from "node:net";
+import { connect, Server } from "node:net";
 import { networkInterfaces } from "node:os";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +9,7 @@ import {
 	createRecorder,
 	manualClock,
 	RESERVED_PORTS,
+	type Recorder,
 } from "../src/index.ts";
 import { rawTarget } from "../src/target.ts";
 import { getWithHost, listeners, sha256, tryConnect } from "./helpers.ts";
@@ -36,11 +37,44 @@ afterEach(async () => {
 });
 
 describe("optional bounded request intake", () => {
+	it("keeps uncapped custom recorders compatible and refuses a missing capped writer at setup", async () => {
+		const delegate = createRecorder();
+		const record = vi.fn((request: Request) => delegate.record(request));
+		const recorder: Recorder = { record, takeRequests: () => delegate.takeRequests() };
+		expect(() =>
+			createFake(echoApp().app, { host: HOST, recorder, maxRequestBodyBytes: 4 }),
+		).toThrow("requires recorder.begin");
+		expect(record).not.toHaveBeenCalled();
+		const fake = createFake(echoApp().app, { host: HOST, recorder });
+		expect(await (await fake.fetch("/echo", { method: "POST", body: "ok" })).text()).toBe("ok");
+		expect(recorder.takeRequests()).toMatchObject([
+			{ path: "/echo", bodyLength: 2, bodySha256: sha256("ok") },
+		]);
+	});
+
+	it("preserves the custom writer receiver during capped intake", async () => {
+		const delegate = createRecorder();
+		const recorder: Recorder = {
+			begin(request) {
+				expect(this).toBe(recorder);
+				return delegate.begin(request);
+			},
+			record: (request) => delegate.record(request),
+			takeRequests: () => delegate.takeRequests(),
+		};
+		const fake = createFake(echoApp().app, { host: HOST, recorder, maxRequestBodyBytes: 4 });
+		expect(await (await fake.fetch("/echo", { method: "POST", body: "ok" })).text()).toBe("ok");
+		expect(recorder.takeRequests()).toMatchObject([{ path: "/echo", bodyLength: 2 }]);
+	});
+
 	it("validates the intake cap", () => {
 		for (const maxRequestBodyBytes of [0, -1, 1.5, NaN, Infinity, 64 * 1024 * 1024 + 1]) {
 			expect(() => createFake(echoApp().app, { host: HOST, maxRequestBodyBytes })).toThrow(
 				RangeError,
 			);
+		}
+		for (const maxRequestBodyBytes of [1, 64 * 1024 * 1024]) {
+			expect(() => createFake(echoApp().app, { host: HOST, maxRequestBodyBytes })).not.toThrow();
 		}
 	});
 
@@ -73,7 +107,7 @@ describe("optional bounded request intake", () => {
 		});
 	});
 
-	it("cancels an oversized upload before any app, recorder or fault reads it", async () => {
+	it("records refused bytes and consumes its arrival fault without running the app", async () => {
 		const { app, hits } = echoApp();
 		const fake = createFake(app, { host: HOST, maxRequestBodyBytes: 4 });
 		fake.faults.add({ kind: "server-error" });
@@ -91,16 +125,25 @@ describe("optional bounded request intake", () => {
 			body,
 			duplex: "half",
 		} as RequestInit);
-		expect(response.status).toBe(413);
+		expect(response.status).toBe(503);
 		expect(cancelled).toBe(true);
 		expect(hits()).toBe(0);
-		expect(fake.recorder.takeRequests()).toEqual([]);
-		expect(fake.faults.pending()).toHaveLength(1);
-		expect((await fake.fetch("/echo", { method: "POST", body: "ok" })).status).toBe(503);
+		expect(fake.recorder.takeRequests()).toMatchObject([
+			{
+				method: "POST",
+				host: HOST,
+				target: "/echo",
+				bodyLength: 6,
+				body: new Uint8Array([1, 2, 3, 1, 2, 3]),
+				bodySha256: sha256(new Uint8Array([1, 2, 3, 1, 2, 3])),
+				refused: "request_body_too_large",
+			},
+		]);
+		expect((await fake.fetch("/echo", { method: "POST", body: "ok" })).status).toBe(200);
 		expect(fake.faults.pending()).toEqual([]);
 	});
 
-	it("aborts and cancels an unfinished upload before cloning or recording it", async () => {
+	it("aborts an unfinished upload and discards its reserved record", async () => {
 		const fake = createFake(echoApp().app, { host: HOST, maxRequestBodyBytes: 4 });
 		const abort = new AbortController();
 		const reason = new Error("DYTEST upload cancelled");
@@ -153,6 +196,50 @@ describe("optional bounded request intake", () => {
 		expect(fake.recorder.takeRequests()).toEqual([]);
 	});
 
+	it("discards the reservation when an upload body is already locked", async () => {
+		const fake = createFake(echoApp().app, { host: HOST, maxRequestBodyBytes: 4 });
+		const request = new Request(`https://${HOST}/echo`, { method: "POST", body: "ok" });
+		const reader = request.body?.getReader();
+		try {
+			await expect(fake.fetch(request)).rejects.toThrow(TypeError);
+		} finally {
+			reader?.releaseLock();
+		}
+		expect((await fake.fetch("/echo", { method: "POST", body: "ok" })).status).toBe(200);
+		expect(fake.recorder.takeRequests().map(({ path }) => path)).toEqual(["/echo"]);
+	});
+
+	it.each(["1234", "12345"])("bounds %s before cloning a redirect body", async (body) => {
+		const { app, hits } = echoApp();
+		app.post("/moved", (c) => c.redirect("/echo", 307));
+		const fake = createFake(app, { host: HOST, maxRequestBodyBytes: 4 });
+		const request = new Request(`https://${HOST}/moved`, { method: "POST", body });
+		const clone = vi.spyOn(request, "clone").mockImplementation(() => {
+			throw new Error("Unbounded redirect body clone");
+		});
+		try {
+			const response = await fake.fetch(request);
+			expect(clone).not.toHaveBeenCalled();
+			if (body.length === 4) {
+				expect(response.status).toBe(200);
+				expect(await response.text()).toBe(body);
+				expect(hits()).toBe(1);
+				expect(fake.recorder.takeRequests()).toMatchObject([
+					{ path: "/moved", bodyLength: 4, bodySha256: sha256(body) },
+					{ path: "/echo", bodyLength: 4, bodySha256: sha256(body) },
+				]);
+			} else {
+				expect(response.status).toBe(413);
+				expect(hits()).toBe(0);
+				expect(fake.recorder.takeRequests()).toMatchObject([
+					{ path: "/moved", bodyLength: 5, refused: "request_body_too_large" },
+				]);
+			}
+		} finally {
+			clone.mockRestore();
+		}
+	});
+
 	it("applies the same cap over the loopback listener", async () => {
 		const { app, hits } = echoApp();
 		const fake = createFake(app, { host: HOST, maxRequestBodyBytes: 4 });
@@ -162,7 +249,13 @@ describe("optional bounded request intake", () => {
 				(await fetch(`${listener.origin}/echo`, { method: "POST", body: "12345" })).status,
 			).toBe(413);
 			expect(hits()).toBe(0);
-			expect(fake.recorder.takeRequests()).toEqual([]);
+			expect(fake.recorder.takeRequests()).toMatchObject([
+				{
+					bodyLength: 5,
+					bodySha256: sha256("12345"),
+					refused: "request_body_too_large",
+				},
+			]);
 			expect(
 				await (await fetch(`${listener.origin}/echo`, { method: "POST", body: "1234" })).text(),
 			).toBe("1234");
@@ -170,9 +263,216 @@ describe("optional bounded request intake", () => {
 			await listener.close();
 		}
 	});
+
+	it("returns a dated 413 and records a marked prefix for an oversized upload", async () => {
+		const clock = manualClock(Date.UTC(2026, 0, 2, 3, 4, 5));
+		const recorder = createRecorder({ maxBodyBytes: 2 });
+		const fake = createFake(echoApp().app, {
+			host: HOST,
+			recorder,
+			maxRequestBodyBytes: 4,
+			faults: createFaults({ clock }),
+		});
+		const response = await fake.fetch("/echo?q=%40", {
+			method: "POST",
+			body: "12345",
+			headers: { "X-Dy-Test": "synthetic" },
+		});
+		expect(response.status).toBe(413);
+		expect(await response.json()).toEqual({ error: "request_body_too_large" });
+		expect(response.headers.get("date")).toBe(new Date(clock.now()).toUTCString());
+		expect(recorder.takeRequests()).toMatchObject([
+			{
+				method: "POST",
+				host: HOST,
+				target: "/echo?q=%40",
+				path: "/echo",
+				query: "q=%40",
+				headerNames: ["content-type", "x-dy-test"],
+				headers: {},
+				body: new TextEncoder().encode("12"),
+				bodyLength: 5,
+				bodySha256: sha256("12345"),
+				refused: "request_body_too_large",
+			},
+		]);
+	});
+
+	it("routes another host before its upload refusal and leaves faults untouched", async () => {
+		const fake = createFake(echoApp().app, { host: HOST, maxRequestBodyBytes: 4 });
+		fake.faults.add({ kind: "server-error" });
+		const response = await fake.fetch("https://other.draftyak.example/echo", {
+			method: "POST",
+			body: "12345",
+		});
+		expect(response.status).toBe(421);
+		expect(await response.json()).toEqual({
+			error: "misdirected_request",
+			host: "other.draftyak.example",
+		});
+		expect(fake.recorder.takeRequests()).toMatchObject([
+			{ host: "other.draftyak.example", refused: "request_body_too_large" },
+		]);
+		expect(fake.faults.pending()).toHaveLength(1);
+	});
+
+	it("reserves capped records and faults before slow intake completes", async () => {
+		const fake = createFake(echoApp().app, { host: HOST, maxRequestBodyBytes: 4 });
+		fake.faults.add({ kind: "server-error", method: "POST" });
+		let finish = (): void => {};
+		const body = new ReadableStream<Uint8Array>({
+			start(stream) {
+				stream.enqueue(new Uint8Array([1]));
+				finish = () => stream.close();
+			},
+		});
+		const first = fake.fetch("/first", { method: "POST", body, duplex: "half" } as RequestInit);
+		try {
+			expect((await fake.fetch("/echo", { method: "POST", body: "ok" })).status).toBe(200);
+			expect(fake.recorder.takeRequests()).toEqual([]);
+		} finally {
+			finish();
+		}
+		expect((await first).status).toBe(503);
+		expect(fake.recorder.takeRequests().map(({ path }) => path)).toEqual(["/first", "/echo"]);
+	});
+
+	it("keeps loopback records and faults in arrival order while the first upload stalls", async () => {
+		const recorder = createRecorder();
+		const begin = recorder.begin.bind(recorder);
+		let arrived = (): void => {};
+		const arrival = new Promise<void>((resolve) => {
+			arrived = resolve;
+		});
+		vi.spyOn(recorder, "begin").mockImplementation((request) => {
+			const recording = begin(request);
+			if (rawTarget(request) === "/first") arrived();
+			return recording;
+		});
+		const fake = createFake(echoApp().app, { host: HOST, recorder, maxRequestBodyBytes: 4 });
+		fake.faults.add({ kind: "server-error", method: "POST" });
+		const listening = open.keep(await fake.listen());
+		const socket = connect({ host: "127.0.0.1", port: listening.port });
+		const first = new Promise<string>((resolve, reject) => {
+			let received = "";
+			socket.setEncoding("latin1");
+			socket.setTimeout(3000, () => reject(new Error("No first upload response")));
+			socket.on("error", reject);
+			socket.on("data", (part: string) => {
+				received += part;
+				if (received.includes("server_error")) resolve(received);
+			});
+			socket.once("connect", () =>
+				socket.write(`POST /first HTTP/1.1\r\nHost: ${HOST}\r\nContent-Length: 2\r\n\r\nx`),
+			);
+		});
+		try {
+			await Promise.race([arrival, first]);
+			expect((await fetch(`${listening.origin}/echo`, { method: "POST", body: "ok" })).status).toBe(
+				200,
+			);
+			expect(recorder.takeRequests()).toEqual([]);
+			socket.write("y");
+			expect(await first).toMatch(/^HTTP\/1\.1 503 /);
+			expect(recorder.takeRequests()).toMatchObject([
+				{ path: "/first", bodyLength: 2, bodySha256: sha256("xy") },
+				{ path: "/echo", bodyLength: 2, bodySha256: sha256("ok") },
+			]);
+			expect(fake.faults.pending()).toEqual([]);
+		} finally {
+			socket.destroy();
+		}
+	});
+
+	it("preserves uneven binary chunks across buffer growth and empty chunks", async () => {
+		const fake = createFake(echoApp().app, { host: HOST, maxRequestBodyBytes: 8192 });
+		const chunks = [
+			new Uint8Array([0xff, 0]),
+			new Uint8Array(),
+			randomBytes(1027),
+			randomBytes(3000),
+		];
+		const sent = Buffer.concat(chunks);
+		const body = new ReadableStream<Uint8Array>({
+			start(stream) {
+				for (const chunk of chunks) stream.enqueue(chunk);
+				stream.close();
+			},
+		});
+		const response = await fake.fetch("/echo", {
+			method: "POST",
+			body,
+			duplex: "half",
+		} as RequestInit);
+		expect(Buffer.from(await response.arrayBuffer()).equals(sent)).toBe(true);
+		expect(fake.recorder.takeRequests()).toMatchObject([
+			{ bodyLength: sent.length, bodySha256: sha256(sent) },
+		]);
+	});
+
+	it("preserves a large multi-chunk loopback upload under its cap", async () => {
+		const fake = createFake(echoApp().app, { host: HOST, maxRequestBodyBytes: 1024 * 1024 });
+		const listening = open.keep(await fake.listen());
+		const sent = randomBytes(300_000);
+		const response = await fetch(`${listening.origin}/echo`, { method: "POST", body: sent });
+		expect(Buffer.from(await response.arrayBuffer()).equals(sent)).toBe(true);
+		expect(fake.recorder.takeRequests()).toMatchObject([
+			{ bodyLength: sent.length, bodySha256: sha256(sent) },
+		]);
+	});
+
+	it.each([false, true])(
+		"refuses a stalled raw upload before EOF (chunked=%s)",
+		async (chunked) => {
+			const fake = createFake(echoApp().app, { host: HOST, maxRequestBodyBytes: 4 });
+			const listening = open.keep(await fake.listen());
+			const socket = connect({ host: "127.0.0.1", port: listening.port });
+			try {
+				const response = await new Promise<string>((resolve, reject) => {
+					let received = "";
+					socket.setEncoding("latin1");
+					socket.setTimeout(3000, () => reject(new Error("No refusal before upload EOF")));
+					socket.on("error", reject);
+					socket.on("data", (part: string) => {
+						received += part;
+						if (received.includes("request_body_too_large")) resolve(received);
+					});
+					socket.once("connect", () =>
+						socket.write(
+							`POST /echo HTTP/1.1\r\nHost: ${HOST}\r\n${chunked ? "Transfer-Encoding: chunked" : "Content-Length: 104857600"}\r\n\r\n${chunked ? "5\r\n12345\r\n" : "12345"}`,
+						),
+					);
+				});
+				expect(response).toMatch(/^HTTP\/1\.1 413 /);
+				expect(fake.recorder.takeRequests()).toMatchObject([
+					{ bodyLength: 5, refused: "request_body_too_large" },
+				]);
+			} finally {
+				socket.destroy();
+			}
+		},
+	);
 });
 
 describe("createFake in memory", () => {
+	it("dispatches uncapped requests on arrival before returning their promises", async () => {
+		const arrivals: string[] = [];
+		const fake = createFake(
+			{
+				fetch(request) {
+					arrivals.push(rawTarget(request));
+					return new Response("ok");
+				},
+			},
+			{ host: HOST },
+		);
+		const first = fake.fetch("/first");
+		expect(arrivals).toEqual(["/first"]);
+		const second = fake.fetch("/second");
+		expect(arrivals).toEqual(["/first", "/second"]);
+		await Promise.all([first, second]);
+	});
+
 	it("serves a request with no socket; a bare path goes to https://<host>", async () => {
 		const fake = createFake(echoApp().app, { host: HOST });
 		const response = await fake.fetch("/ping");

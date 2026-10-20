@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { createAdaptorServer, type Http2Bindings, type HttpBindings } from "@hono/node-server";
 import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 import { createFaults, DroppedConnectionError, type Faults, httpDate } from "./faults.ts";
-import { createRecorder, type Recorder } from "./recorder.ts";
+import { createRecorder, type Recorder, type Recording } from "./recorder.ts";
 import { rawTarget, targetOf, withTarget } from "./target.ts";
 
 /** The hub's listeners (47613–47615) and the Node inspector's port: a fake never takes them. */
@@ -23,7 +23,7 @@ export interface FakeOptions {
 	readonly host: string;
 	readonly recorder?: Recorder;
 	readonly faults?: Faults;
-	/** Optional intake cap, enforced before any recorder, redirect or application body clone. */
+	/** Optional intake cap, enforced before any redirect or application body clone. */
 	readonly maxRequestBodyBytes?: number;
 }
 
@@ -50,17 +50,25 @@ export interface Fake {
 
 const failed = (cause: unknown): TypeError => new TypeError("fetch failed", { cause });
 
-async function limitedRequest(request: Request, cap: number): Promise<Request | undefined> {
-	if (request.body === null) return request;
-	const reader = request.body.getReader();
+async function limitedRequest(
+	request: Request,
+	cap: number,
+	recording: Recording,
+): Promise<Request | undefined> {
+	if (request.body === null) {
+		recording.finish();
+		return request;
+	}
+	let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 	let bytes = Buffer.alloc(0),
 		size = 0;
 	const cancel = (reason?: unknown): void => {
-		void reader.cancel(reason).catch(() => {});
+		void reader?.cancel(reason).catch(() => {});
 	};
 	const abort = (): void => cancel(request.signal.reason);
 	request.signal.addEventListener("abort", abort, { once: true });
 	try {
+		reader = request.body.getReader();
 		if (request.signal.aborted) abort();
 		request.signal.throwIfAborted();
 		for (;;) {
@@ -68,8 +76,10 @@ async function limitedRequest(request: Request, cap: number): Promise<Request | 
 			request.signal.throwIfAborted();
 			if (item.done) break;
 			if (!(item.value instanceof Uint8Array)) throw new TypeError("Invalid request body chunk");
+			recording.write(item.value);
 			if (item.value.byteLength > cap - size) {
 				cancel();
+				recording.finish("request_body_too_large");
 				return;
 			}
 			const next = size + item.value.byteLength;
@@ -81,7 +91,7 @@ async function limitedRequest(request: Request, cap: number): Promise<Request | 
 			bytes.set(item.value, size);
 			size = next;
 		}
-		return withTarget(
+		const limited = withTarget(
 			new Request(request.url, {
 				method: request.method,
 				headers: request.headers,
@@ -98,12 +108,15 @@ async function limitedRequest(request: Request, cap: number): Promise<Request | 
 			}),
 			rawTarget(request),
 		);
+		recording.finish();
+		return limited;
 	} catch (error) {
 		cancel(error);
+		recording.discard();
 		throw error;
 	} finally {
 		request.signal.removeEventListener("abort", abort);
-		reader.releaseLock();
+		reader?.releaseLock();
 	}
 }
 
@@ -151,6 +164,10 @@ export function createFake(app: FetchApp, options: FakeOptions): Fake {
 		throw new TypeError(`a fake's host is a bare host name: ${options.host}`);
 	}
 	const recorder = options.recorder ?? createRecorder();
+	const begin = recorder.begin?.bind(recorder);
+	if (cap !== undefined && begin === undefined) {
+		throw new TypeError("A capped fake requires recorder.begin");
+	}
 	const faults = options.faults ?? createFaults();
 	const tooLarge = (): Response =>
 		Response.json(
@@ -169,13 +186,27 @@ export function createFake(app: FetchApp, options: FakeOptions): Fake {
 		);
 	};
 
-	// Each record is complete before its answer goes out. Optional bounded intake finishes before
-	// a request reaches this recorder/fault ordering. Other hosts meet no fault and no app.
-	const handle = async (request: Request, names: readonly string[]): Promise<Response> => {
-		const recorded = recorder.record(request);
+	// Reserve records and faults synchronously on arrival, before awaiting bounded intake.
+	const handle = async (
+		request: Request,
+		names: readonly string[],
+		ready?: (request: Request) => void,
+	): Promise<Response> => {
+		let intake: Promise<Request | undefined>;
+		if (cap === undefined) intake = Promise.resolve(request);
+		else {
+			if (begin === undefined) throw new TypeError("A capped fake requires recorder.begin");
+			intake = limitedRequest(request, cap, begin(request));
+		}
+		const recorded = cap === undefined ? recorder.record(request) : intake.then(() => {});
 		const authority = new URL(request.url).host;
 		const answered = names.includes(authority)
-			? faults.run(request, async (forwarded) => await app.fetch(forwarded))
+			? faults.run(request, async () => {
+					const forwarded = cap === undefined ? request : await intake;
+					if (forwarded === undefined) return tooLarge();
+					ready?.(forwarded);
+					return await app.fetch(forwarded);
+				})
 			: misdirected(authority);
 		await Promise.allSettled([recorded, answered]);
 		await recorded;
@@ -187,12 +218,11 @@ export function createFake(app: FetchApp, options: FakeOptions): Fake {
 		let request = first;
 		for (let hops = 0; ; hops += 1) {
 			request.signal.throwIfAborted();
-			const limited = cap === undefined ? request : await limitedRequest(request, cap);
-			if (!limited) return tooLarge();
-			request = limited;
 			const follows = request.redirect === "follow";
-			const copy = follows && request.body !== null ? request.clone() : null;
-			const response = await handle(request, [host]);
+			let copy: Request | null = null;
+			const response = await handle(request, [host], (forwarded) => {
+				if (follows && forwarded.body !== null) copy = forwarded.clone();
+			});
 			if (!REDIRECTS.has(response.status) || request.redirect === "manual") return response;
 			if (!follows) throw failed(new Error("unexpected redirect"));
 			const location = response.headers.get("location");
@@ -208,8 +238,7 @@ export function createFake(app: FetchApp, options: FakeOptions): Fake {
 			fetch: async (request: Request, env: HttpBindings | Http2Bindings) => {
 				try {
 					const input = withTarget(request, targetOf(env.incoming.url ?? "/"));
-					const limited = cap === undefined ? input : await limitedRequest(input, cap);
-					return limited ? await handle(limited, names()) : tooLarge();
+					return await handle(input, names());
 				} catch (error) {
 					if (!(error instanceof DroppedConnectionError)) throw error;
 					env.incoming.socket.destroy();
