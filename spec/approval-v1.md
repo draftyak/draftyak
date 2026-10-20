@@ -77,7 +77,17 @@ verification follows §9.3 Verification. Those native flows must specify the com
 consumption; no caller-supplied opaque digest substitutes for re-hashing that record. The pair confirmation binds the
 candidate's actual canonical approval SPKI and the exact ordered capability array,
 which must be nonempty, unique and drawn from `read`, `draft`, `organize`, `approve`,
-`admin`. A server-selected preset is never a body field. Pair review labels, SAS,
+`admin`, in that canonical order (subsets keep the same relative order).
+A server-selected preset is never a body field. The confirmation presets are
+`desktop` (`read`, `draft`, `organize`, `approve`, `admin`), `mobile` (`read`,
+`draft`, `organize`) and `cli` (`read`, `draft`), each fitting pairing role `device`.
+The caller must hold `approve` and every capability its selected preset grants;
+`canConfirm(capabilities, preset)` checks that policy in TypeScript and Rust.
+The hub applies it when creating the operation, issuing its challenge and accepting
+the confirmation. It also checks the candidate's role and that the statement's
+capabilities exactly equal the selected preset. Role `host:sms` and its exclusive
+`host` preset belong to the conditional SMS contract; neither is accepted here.
+Pair review labels, SAS,
 expiry display, user identity and the signature are outside the body. The signer device must differ from the candidate. Ordinary pairing requires an existing
 confirmed approver with the PIN, after SAS comparison. The trusted hub surface records
 the first approver's bootstrap directly under pairing-v1 section 10; bootstrap is not
