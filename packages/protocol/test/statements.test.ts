@@ -105,7 +105,7 @@ it("keeps admin groups closed and defers types without contracts", () => {
 it("pair capabilities bind exact order but cannot contain a duplicate or future grant", () => {
 	const doc = JSON.parse(readFileSync(path.join(directory, "pair-confirm.v1.json"), "utf8"));
 	const base = doc.cases[0].statement;
-	expect(
-		PairConfirmStatement.parse({ ...base, capabilities: ["draft", "read"] }).capabilities,
-	).toEqual(["draft", "read"]);
+	expect(PairConfirmStatement.safeParse({ ...base, capabilities: ["draft", "read"] }).success).toBe(
+		false,
+	);
 });

@@ -1,0 +1,1211 @@
+{
+  "format": "draftyak.vectors.schedule.v1",
+  "description": "Explicit wall/instant/display fixtures. Native rendering and hash verification must run independently; generation alone establishes no cross-language agreement.",
+  "metadata": {
+    "node": "26.12.0",
+    "nodeTzdata": "2026e",
+    "rust": {
+      "jiff": "0.2.38",
+      "jiffCore": "0.1.1",
+      "jiffTzdb": "0.1.9",
+      "expectedTzdata": "2026e"
+    }
+  },
+  "resolutionCases": [
+    {
+      "id": "new-york-gap-0200",
+      "wall": "2026-03-08T02:00",
+      "zone": "America/New_York",
+      "error": "NONEXISTENT_LOCAL_TIME"
+    },
+    {
+      "id": "new-york-gap-0230",
+      "wall": "2026-03-08T02:30",
+      "zone": "America/New_York",
+      "error": "NONEXISTENT_LOCAL_TIME"
+    },
+    {
+      "id": "new-york-gap-0259",
+      "wall": "2026-03-08T02:59",
+      "zone": "America/New_York",
+      "error": "NONEXISTENT_LOCAL_TIME"
+    },
+    {
+      "id": "new-york-overlap-0100",
+      "wall": "2026-11-01T01:00",
+      "zone": "America/New_York",
+      "error": "AMBIGUOUS_LOCAL_TIME"
+    },
+    {
+      "id": "new-york-overlap-0130",
+      "wall": "2026-11-01T01:30",
+      "zone": "America/New_York",
+      "error": "AMBIGUOUS_LOCAL_TIME"
+    },
+    {
+      "id": "new-york-overlap-0159",
+      "wall": "2026-11-01T01:59",
+      "zone": "America/New_York",
+      "error": "AMBIGUOUS_LOCAL_TIME"
+    },
+    {
+      "id": "london-gap-0100",
+      "wall": "2026-03-29T01:00",
+      "zone": "Europe/London",
+      "error": "NONEXISTENT_LOCAL_TIME"
+    },
+    {
+      "id": "london-gap-0130",
+      "wall": "2026-03-29T01:30",
+      "zone": "Europe/London",
+      "error": "NONEXISTENT_LOCAL_TIME"
+    },
+    {
+      "id": "london-gap-0159",
+      "wall": "2026-03-29T01:59",
+      "zone": "Europe/London",
+      "error": "NONEXISTENT_LOCAL_TIME"
+    },
+    {
+      "id": "london-overlap-0100",
+      "wall": "2026-10-25T01:00",
+      "zone": "Europe/London",
+      "error": "AMBIGUOUS_LOCAL_TIME"
+    },
+    {
+      "id": "london-overlap-0130",
+      "wall": "2026-10-25T01:30",
+      "zone": "Europe/London",
+      "error": "AMBIGUOUS_LOCAL_TIME"
+    },
+    {
+      "id": "london-overlap-0159",
+      "wall": "2026-10-25T01:59",
+      "zone": "Europe/London",
+      "error": "AMBIGUOUS_LOCAL_TIME"
+    },
+    {
+      "id": "lord-howe-gap-0200",
+      "wall": "2026-10-04T02:00",
+      "zone": "Australia/Lord_Howe",
+      "error": "NONEXISTENT_LOCAL_TIME"
+    },
+    {
+      "id": "lord-howe-gap-0215",
+      "wall": "2026-10-04T02:15",
+      "zone": "Australia/Lord_Howe",
+      "error": "NONEXISTENT_LOCAL_TIME"
+    },
+    {
+      "id": "lord-howe-gap-0229",
+      "wall": "2026-10-04T02:29",
+      "zone": "Australia/Lord_Howe",
+      "error": "NONEXISTENT_LOCAL_TIME"
+    },
+    {
+      "id": "lord-howe-overlap-0130",
+      "wall": "2026-04-05T01:30",
+      "zone": "Australia/Lord_Howe",
+      "error": "AMBIGUOUS_LOCAL_TIME"
+    },
+    {
+      "id": "lord-howe-overlap-0145",
+      "wall": "2026-04-05T01:45",
+      "zone": "Australia/Lord_Howe",
+      "error": "AMBIGUOUS_LOCAL_TIME"
+    },
+    {
+      "id": "lord-howe-overlap-0159",
+      "wall": "2026-04-05T01:59",
+      "zone": "Australia/Lord_Howe",
+      "error": "AMBIGUOUS_LOCAL_TIME"
+    },
+    {
+      "id": "new-york-gap-before",
+      "zone": "America/New_York",
+      "wall": "2026-03-08T01:59",
+      "notBefore": 1772953140000,
+      "localWallTime": "2026-03-08T01:59-05:00"
+    },
+    {
+      "id": "new-york-gap-after",
+      "zone": "America/New_York",
+      "wall": "2026-03-08T03:00",
+      "notBefore": 1772953200000,
+      "localWallTime": "2026-03-08T03:00-04:00"
+    },
+    {
+      "id": "new-york-overlap-before",
+      "zone": "America/New_York",
+      "wall": "2026-11-01T00:59",
+      "notBefore": 1793509140000,
+      "localWallTime": "2026-11-01T00:59-04:00"
+    },
+    {
+      "id": "new-york-overlap-after",
+      "zone": "America/New_York",
+      "wall": "2026-11-01T02:00",
+      "notBefore": 1793516400000,
+      "localWallTime": "2026-11-01T02:00-05:00"
+    },
+    {
+      "id": "london-gap-before",
+      "zone": "Europe/London",
+      "wall": "2026-03-29T00:59",
+      "notBefore": 1774745940000,
+      "localWallTime": "2026-03-29T00:59+00:00"
+    },
+    {
+      "id": "london-gap-after",
+      "zone": "Europe/London",
+      "wall": "2026-03-29T02:00",
+      "notBefore": 1774746000000,
+      "localWallTime": "2026-03-29T02:00+01:00"
+    },
+    {
+      "id": "london-overlap-before",
+      "zone": "Europe/London",
+      "wall": "2026-10-25T00:59",
+      "notBefore": 1792886340000,
+      "localWallTime": "2026-10-25T00:59+01:00"
+    },
+    {
+      "id": "london-overlap-after",
+      "zone": "Europe/London",
+      "wall": "2026-10-25T02:00",
+      "notBefore": 1792893600000,
+      "localWallTime": "2026-10-25T02:00+00:00"
+    },
+    {
+      "id": "lord-howe-gap-before",
+      "zone": "Australia/Lord_Howe",
+      "wall": "2026-10-04T01:59",
+      "notBefore": 1791041340000,
+      "localWallTime": "2026-10-04T01:59+10:30"
+    },
+    {
+      "id": "lord-howe-gap-after",
+      "zone": "Australia/Lord_Howe",
+      "wall": "2026-10-04T02:30",
+      "notBefore": 1791041400000,
+      "localWallTime": "2026-10-04T02:30+11:00"
+    },
+    {
+      "id": "lord-howe-overlap-before",
+      "zone": "Australia/Lord_Howe",
+      "wall": "2026-04-05T01:29",
+      "notBefore": 1775312940000,
+      "localWallTime": "2026-04-05T01:29+11:00"
+    },
+    {
+      "id": "lord-howe-overlap-after",
+      "zone": "Australia/Lord_Howe",
+      "wall": "2026-04-05T02:00",
+      "notBefore": 1775316600000,
+      "localWallTime": "2026-04-05T02:00+10:30"
+    },
+    {
+      "id": "new-york-ordinary",
+      "zone": "America/New_York",
+      "wall": "2026-01-15T09:15",
+      "notBefore": 1768486500000,
+      "localWallTime": "2026-01-15T09:15-05:00"
+    },
+    {
+      "id": "london-ordinary",
+      "zone": "Europe/London",
+      "wall": "2026-07-15T09:15",
+      "notBefore": 1784103300000,
+      "localWallTime": "2026-07-15T09:15+01:00"
+    },
+    {
+      "id": "lord-howe-ordinary",
+      "zone": "Australia/Lord_Howe",
+      "wall": "2026-07-15T09:15",
+      "notBefore": 1784069100000,
+      "localWallTime": "2026-07-15T09:15+10:30"
+    },
+    {
+      "id": "leap-day",
+      "zone": "UTC",
+      "wall": "2028-02-29T00:00",
+      "notBefore": 1835395200000,
+      "localWallTime": "2028-02-29T00:00+00:00"
+    },
+    {
+      "id": "upper-minute",
+      "zone": "UTC",
+      "wall": "9999-12-30T22:00",
+      "notBefore": 253402207200000,
+      "localWallTime": "9999-12-30T22:00+00:00"
+    },
+    {
+      "id": "invalid-day",
+      "wall": "2026-02-29T12:00",
+      "zone": "UTC",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "invalid-month",
+      "wall": "2026-13-01T12:00",
+      "zone": "UTC",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "hour-24",
+      "wall": "2026-01-01T24:00",
+      "zone": "UTC",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "seconds-not-input",
+      "wall": "2026-01-01T12:00:00",
+      "zone": "UTC",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "offset-not-input",
+      "wall": "2026-01-01T12:00+00:00",
+      "zone": "UTC",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "unknown-zone",
+      "wall": "2026-01-01T12:00",
+      "zone": "Invalid/Example",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "fixed-offset-not-zone",
+      "wall": "2026-01-01T12:00",
+      "zone": "+01:00",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "before-epoch",
+      "wall": "1969-12-31T23:59",
+      "zone": "UTC",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "unknown-sentinel",
+      "wall": "2026-01-01T00:00",
+      "zone": "Etc/Unknown",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "unknown-sentinel-lowercase",
+      "wall": "2026-01-01T00:00",
+      "zone": "etc/unknown",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "factory-placeholder",
+      "wall": "2026-01-01T00:00",
+      "zone": "Factory",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "factory-placeholder-lowercase",
+      "wall": "2026-01-01T00:00",
+      "zone": "factory",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "unrepresentable-offset",
+      "wall": "1970-01-01T00:00",
+      "zone": "Africa/Monrovia",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "above-upper-minute",
+      "wall": "9999-12-30T22:01",
+      "zone": "UTC",
+      "error": "INVALID_INPUT"
+    }
+  ],
+  "renderingCases": [
+    {
+      "id": "new-york-gap-before",
+      "notBefore": 1772953140000,
+      "zone": "America/New_York",
+      "localWallTime": "2026-03-08T01:59-05:00",
+      "mismatchedWallTime": "2026-03-08T01:59-05:00CANARY_MISMATCH"
+    },
+    {
+      "id": "new-york-gap-after",
+      "notBefore": 1772953200000,
+      "zone": "America/New_York",
+      "localWallTime": "2026-03-08T03:00-04:00",
+      "mismatchedWallTime": "2026-03-08T03:00-04:00CANARY_MISMATCH"
+    },
+    {
+      "id": "new-york-overlap-before",
+      "notBefore": 1793509140000,
+      "zone": "America/New_York",
+      "localWallTime": "2026-11-01T00:59-04:00",
+      "mismatchedWallTime": "2026-11-01T00:59-04:00CANARY_MISMATCH"
+    },
+    {
+      "id": "new-york-overlap-after",
+      "notBefore": 1793516400000,
+      "zone": "America/New_York",
+      "localWallTime": "2026-11-01T02:00-05:00",
+      "mismatchedWallTime": "2026-11-01T02:00-05:00CANARY_MISMATCH"
+    },
+    {
+      "id": "london-gap-before",
+      "notBefore": 1774745940000,
+      "zone": "Europe/London",
+      "localWallTime": "2026-03-29T00:59+00:00",
+      "mismatchedWallTime": "2026-03-29T00:59+00:00CANARY_MISMATCH"
+    },
+    {
+      "id": "london-gap-after",
+      "notBefore": 1774746000000,
+      "zone": "Europe/London",
+      "localWallTime": "2026-03-29T02:00+01:00",
+      "mismatchedWallTime": "2026-03-29T02:00+01:00CANARY_MISMATCH"
+    },
+    {
+      "id": "london-overlap-before",
+      "notBefore": 1792886340000,
+      "zone": "Europe/London",
+      "localWallTime": "2026-10-25T00:59+01:00",
+      "mismatchedWallTime": "2026-10-25T00:59+01:00CANARY_MISMATCH"
+    },
+    {
+      "id": "london-overlap-after",
+      "notBefore": 1792893600000,
+      "zone": "Europe/London",
+      "localWallTime": "2026-10-25T02:00+00:00",
+      "mismatchedWallTime": "2026-10-25T02:00+00:00CANARY_MISMATCH"
+    },
+    {
+      "id": "lord-howe-gap-before",
+      "notBefore": 1791041340000,
+      "zone": "Australia/Lord_Howe",
+      "localWallTime": "2026-10-04T01:59+10:30",
+      "mismatchedWallTime": "2026-10-04T01:59+10:30CANARY_MISMATCH"
+    },
+    {
+      "id": "lord-howe-gap-after",
+      "notBefore": 1791041400000,
+      "zone": "Australia/Lord_Howe",
+      "localWallTime": "2026-10-04T02:30+11:00",
+      "mismatchedWallTime": "2026-10-04T02:30+11:00CANARY_MISMATCH"
+    },
+    {
+      "id": "lord-howe-overlap-before",
+      "notBefore": 1775312940000,
+      "zone": "Australia/Lord_Howe",
+      "localWallTime": "2026-04-05T01:29+11:00",
+      "mismatchedWallTime": "2026-04-05T01:29+11:00CANARY_MISMATCH"
+    },
+    {
+      "id": "lord-howe-overlap-after",
+      "notBefore": 1775316600000,
+      "zone": "Australia/Lord_Howe",
+      "localWallTime": "2026-04-05T02:00+10:30",
+      "mismatchedWallTime": "2026-04-05T02:00+10:30CANARY_MISMATCH"
+    },
+    {
+      "id": "new-york-ordinary",
+      "notBefore": 1768486500000,
+      "zone": "America/New_York",
+      "localWallTime": "2026-01-15T09:15-05:00",
+      "mismatchedWallTime": "2026-01-15T09:15-05:00CANARY_MISMATCH"
+    },
+    {
+      "id": "london-ordinary",
+      "notBefore": 1784103300000,
+      "zone": "Europe/London",
+      "localWallTime": "2026-07-15T09:15+01:00",
+      "mismatchedWallTime": "2026-07-15T09:15+01:00CANARY_MISMATCH"
+    },
+    {
+      "id": "lord-howe-ordinary",
+      "notBefore": 1784069100000,
+      "zone": "Australia/Lord_Howe",
+      "localWallTime": "2026-07-15T09:15+10:30",
+      "mismatchedWallTime": "2026-07-15T09:15+10:30CANARY_MISMATCH"
+    },
+    {
+      "id": "leap-day",
+      "notBefore": 1835395200000,
+      "zone": "UTC",
+      "localWallTime": "2028-02-29T00:00+00:00",
+      "mismatchedWallTime": "2028-02-29T00:00+00:00CANARY_MISMATCH"
+    },
+    {
+      "id": "upper-minute",
+      "notBefore": 253402207200000,
+      "zone": "UTC",
+      "localWallTime": "9999-12-30T22:00+00:00",
+      "mismatchedWallTime": "9999-12-30T22:00+00:00CANARY_MISMATCH"
+    },
+    {
+      "id": "new-york-fold-first",
+      "notBefore": 1793511000000,
+      "zone": "America/New_York",
+      "localWallTime": "2026-11-01T01:30-04:00",
+      "mismatchedWallTime": "2026-11-01T01:30-04:00CANARY_MISMATCH"
+    },
+    {
+      "id": "new-york-fold-second",
+      "notBefore": 1793514600000,
+      "zone": "America/New_York",
+      "localWallTime": "2026-11-01T01:30-05:00",
+      "mismatchedWallTime": "2026-11-01T01:30-05:00CANARY_MISMATCH"
+    },
+    {
+      "id": "london-fold-first",
+      "notBefore": 1792888200000,
+      "zone": "Europe/London",
+      "localWallTime": "2026-10-25T01:30+01:00",
+      "mismatchedWallTime": "2026-10-25T01:30+01:00CANARY_MISMATCH"
+    },
+    {
+      "id": "london-fold-second",
+      "notBefore": 1792891800000,
+      "zone": "Europe/London",
+      "localWallTime": "2026-10-25T01:30+00:00",
+      "mismatchedWallTime": "2026-10-25T01:30+00:00CANARY_MISMATCH"
+    },
+    {
+      "id": "lord-howe-fold-first",
+      "notBefore": 1775313900000,
+      "zone": "Australia/Lord_Howe",
+      "localWallTime": "2026-04-05T01:45+11:00",
+      "mismatchedWallTime": "2026-04-05T01:45+11:00CANARY_MISMATCH"
+    },
+    {
+      "id": "lord-howe-fold-second",
+      "notBefore": 1775315700000,
+      "zone": "Australia/Lord_Howe",
+      "localWallTime": "2026-04-05T01:45+10:30",
+      "mismatchedWallTime": "2026-04-05T01:45+10:30CANARY_MISMATCH"
+    },
+    {
+      "id": "upper-positive-zone",
+      "notBefore": 253402207200999,
+      "zone": "Pacific/Kiritimati",
+      "localWallTime": "9999-12-31T12:00+14:00",
+      "mismatchedWallTime": "9999-12-31T12:00+14:00CANARY_MISMATCH"
+    },
+    {
+      "id": "epoch-negative-zone",
+      "notBefore": 0,
+      "zone": "America/New_York",
+      "localWallTime": "1969-12-31T19:00-05:00",
+      "mismatchedWallTime": "1969-12-31T19:00-05:00CANARY_MISMATCH"
+    },
+    {
+      "id": "placeholder-zone-0",
+      "notBefore": 0,
+      "zone": "Etc/Unknown",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "placeholder-zone-1",
+      "notBefore": 0,
+      "zone": "etc/unknown",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "placeholder-zone-2",
+      "notBefore": 0,
+      "zone": "Factory",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "placeholder-zone-3",
+      "notBefore": 0,
+      "zone": "factory",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "epoch",
+      "notBefore": 0,
+      "zone": "UTC",
+      "localWallTime": "1970-01-01T00:00+00:00",
+      "mismatchedWallTime": "1970-01-01T00:01+00:00"
+    },
+    {
+      "id": "minute-display-full-ms-instant",
+      "notBefore": 59999,
+      "zone": "UTC",
+      "localWallTime": "1970-01-01T00:00+00:00",
+      "mismatchedWallTime": "1970-01-01T00:01+00:00"
+    },
+    {
+      "id": "upper-ms",
+      "notBefore": 253402207200999,
+      "zone": "UTC",
+      "localWallTime": "9999-12-30T22:00+00:00",
+      "mismatchedWallTime": "9999-12-30T22:01+00:00"
+    },
+    {
+      "id": "above-upper-ms",
+      "notBefore": 253402207201000,
+      "zone": "UTC",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "above-temporal-range",
+      "notBefore": 9007199254740991,
+      "zone": "UTC",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "historical-second-offset",
+      "notBefore": 0,
+      "zone": "Africa/Monrovia",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "id": "unknown-render-zone",
+      "notBefore": 0,
+      "zone": "Invalid/Example",
+      "error": "INVALID_INPUT"
+    }
+  ],
+  "snapshots": [
+    {
+      "id": "america-new_york-900",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "America/New_York",
+          "localWallTime": "2026-10-30T20:00-04:00",
+          "latenessSec": 900,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "d9a3966b1cec20eadb77c62ae1ae60e121675dc80fb98dcc1400eaef13b37da0",
+      "fingerprint": "D9A3966B",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a3930302c226c6f63616c57616c6c54696d65223a22323032362d31302d33305432303a30302d30343a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a22416d65726963612f4e65775f596f726b227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793405700000
+      }
+    },
+    {
+      "id": "america-new_york-3600",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "America/New_York",
+          "localWallTime": "2026-10-30T20:00-04:00",
+          "latenessSec": 3600,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "6da0f564bfddb210082d516c4fadc8c7ca5612b93a0bf9ca90521f6340ddb980",
+      "fingerprint": "6DA0F564",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a333630302c226c6f63616c57616c6c54696d65223a22323032362d31302d33305432303a30302d30343a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a22416d65726963612f4e65775f596f726b227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793408400000
+      }
+    },
+    {
+      "id": "america-new_york-14400",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "America/New_York",
+          "localWallTime": "2026-10-30T20:00-04:00",
+          "latenessSec": 14400,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "0bbaefcc5823dd2ec54934593eb2c513bc43ac94e5ce85d222972bb3448339c5",
+      "fingerprint": "0BBAEFCC",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a31343430302c226c6f63616c57616c6c54696d65223a22323032362d31302d33305432303a30302d30343a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a22416d65726963612f4e65775f596f726b227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793419200000
+      }
+    },
+    {
+      "id": "america-new_york-86400",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "America/New_York",
+          "localWallTime": "2026-10-30T20:00-04:00",
+          "latenessSec": 86400,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "5186dafce82e6630ff20c1995db79f0bb41664969000191a16373601e6a9827b",
+      "fingerprint": "5186DAFC",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a38363430302c226c6f63616c57616c6c54696d65223a22323032362d31302d33305432303a30302d30343a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a22416d65726963612f4e65775f596f726b227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793491200000
+      }
+    },
+    {
+      "id": "europe-london-900",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "Europe/London",
+          "localWallTime": "2026-10-31T00:00+00:00",
+          "latenessSec": 900,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "a846a184df5dd0184658a00be2af26a85c4fb33f84b60b49069cd30a9040fb0f",
+      "fingerprint": "A846A184",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a3930302c226c6f63616c57616c6c54696d65223a22323032362d31302d33315430303a30302b30303a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a224575726f70652f4c6f6e646f6e227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793405700000
+      }
+    },
+    {
+      "id": "europe-london-3600",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "Europe/London",
+          "localWallTime": "2026-10-31T00:00+00:00",
+          "latenessSec": 3600,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "00558cd6df7824cc8878dab3b351f458024847cdbbdeed12e7f055ba2aeedcf0",
+      "fingerprint": "00558CD6",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a333630302c226c6f63616c57616c6c54696d65223a22323032362d31302d33315430303a30302b30303a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a224575726f70652f4c6f6e646f6e227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793408400000
+      }
+    },
+    {
+      "id": "europe-london-14400",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "Europe/London",
+          "localWallTime": "2026-10-31T00:00+00:00",
+          "latenessSec": 14400,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "9e92e597eefa291715ef0396b8e427515f99f41094aa3435f8c3e379d0c7fb16",
+      "fingerprint": "9E92E597",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a31343430302c226c6f63616c57616c6c54696d65223a22323032362d31302d33315430303a30302b30303a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a224575726f70652f4c6f6e646f6e227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793419200000
+      }
+    },
+    {
+      "id": "europe-london-86400",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "Europe/London",
+          "localWallTime": "2026-10-31T00:00+00:00",
+          "latenessSec": 86400,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "ebd0121612218f387ee1dc4923346c33a00e89848416a6499ffc566e5531013e",
+      "fingerprint": "EBD01216",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a38363430302c226c6f63616c57616c6c54696d65223a22323032362d31302d33315430303a30302b30303a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a224575726f70652f4c6f6e646f6e227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793491200000
+      }
+    },
+    {
+      "id": "australia-lord_howe-900",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "Australia/Lord_Howe",
+          "localWallTime": "2026-10-31T11:00+11:00",
+          "latenessSec": 900,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "e02176bdb4287d4446a90cee802b9f5230f74119b88e4716ff956502a1515564",
+      "fingerprint": "E02176BD",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a3930302c226c6f63616c57616c6c54696d65223a22323032362d31302d33315431313a30302b31313a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a224175737472616c69612f4c6f72645f486f7765227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793405700000
+      }
+    },
+    {
+      "id": "australia-lord_howe-3600",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "Australia/Lord_Howe",
+          "localWallTime": "2026-10-31T11:00+11:00",
+          "latenessSec": 3600,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "1a2e7c46a61d4c0a6bfc885f74de24e66c59df464573ee783f7ed531c77e2d18",
+      "fingerprint": "1A2E7C46",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a333630302c226c6f63616c57616c6c54696d65223a22323032362d31302d33315431313a30302b31313a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a224175737472616c69612f4c6f72645f486f7765227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793408400000
+      }
+    },
+    {
+      "id": "australia-lord_howe-14400",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "Australia/Lord_Howe",
+          "localWallTime": "2026-10-31T11:00+11:00",
+          "latenessSec": 14400,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "f0389e4e2f6b9d27007741278ecdac7d2c02e703922b7a3d06637d2deef78dfd",
+      "fingerprint": "F0389E4E",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a31343430302c226c6f63616c57616c6c54696d65223a22323032362d31302d33315431313a30302b31313a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a224175737472616c69612f4c6f72645f486f7765227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793419200000
+      }
+    },
+    {
+      "id": "australia-lord_howe-86400",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "at",
+          "notBefore": 1793404800000,
+          "zone": "Australia/Lord_Howe",
+          "localWallTime": "2026-10-31T11:00+11:00",
+          "latenessSec": 86400,
+          "holdIfNewInbound": true
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1790812800000,
+      "contentHash": "60f0e84f2a92edd2562d5c7babfa7656c23d6cbfa101e5710548472ec372b03e",
+      "fingerprint": "60F0E84F",
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c22636f6e766572736174696f6e223a6e756c6c2c22656d61696c223a7b22626363223a5b5d2c226363223a5b5d2c2266726f6d223a224f776e6572406578616d706c652e74657374222c227265666572656e636573223a5b5d2c227375626a656374223a22412066726f7a656e207265706c79222c22746f223a5b22526563697069656e74406578616d706c652e74657374225d7d2c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a22656d61696c222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b22686f6c6449664e6577496e626f756e64223a747275652c226b696e64223a226174222c226c6174656e657373536563223a38363430302c226c6f63616c57616c6c54696d65223a22323032362d31302d33315431313a30302b31313a3030222c226e6f744265666f7265223a313739333430343830303030302c227a6f6e65223a224175737472616c69612f4c6f72645f486f7765227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "window": {
+        "notBefore": 1793404800000,
+        "deliverBy": 1793491200000
+      }
+    }
+  ]
+}

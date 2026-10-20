@@ -4,7 +4,7 @@ export const titleTypes: readonly string[] =
 	"feat fix docs style refactor perf test build ci chore revert spike".split(" ");
 
 const title = new RegExp(`^(?:${titleTypes.join("|")})(?:\\([\\w./-]+\\))?!?: \\S`);
-const itemBranch = /^m(\d+[a-z]?)-\d{2}[a-z]?-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const itemBranch = /^m(\d+[a-z]?)-\d{2,}[a-z]?-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const milestoneBranch = /^m\d+[a-z]?$/;
 
 // Attribution by trailer syntax only, so prose that names the rule passes. "Generated with" may
