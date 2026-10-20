@@ -23,7 +23,7 @@ const OWNED_PINS: &[(&str, &str)] = &[
     ("jiff-tzdb", "0.1.9"),
     ("ring", "0.17.14"),
     ("untrusted", "0.9.0"),
-    ("rustls-webpki", "0.103.15"),
+    ("rustls-webpki", "0.103.16"),
 ];
 const RUST_CRYPTO: &[(&str, &str)] = &[
     ("base16ct", "1.0.0"),
@@ -307,7 +307,7 @@ fn policy_skips_are_only_exact_reasoned_inventory_entries_and_isc_is_scoped() {
     for row in [
         "{ name = \"ring\", version = \"=0.17.14\", allow = [\"Apache-2.0\", \"ISC\"] }",
         "{ name = \"untrusted\", version = \"=0.9.0\", allow = [\"ISC\"] }",
-        "{ name = \"rustls-webpki\", version = \"=0.103.15\", allow = [\"ISC\"] }",
+        "{ name = \"rustls-webpki\", version = \"=0.103.16\", allow = [\"ISC\"] }",
     ] {
         assert!(exceptions.contains(row), "ISC exception widened or changed");
     }
