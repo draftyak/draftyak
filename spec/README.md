@@ -95,3 +95,4 @@ These checked-in contracts remain draft until the M1 gate. A dash means the cont
 | Plugin manifests and templates | [Plugin manifest v1](plugin-manifest-v1.md) | [Plugin manifest v1](plugin-manifest-v1.schema.json) | [Manifests](vectors/manifests/) |
 | Approval and identity statements | [Approval v1: statements](approval-v1.md#statements) | — | [Statements](vectors/statements/) |
 | Relay architecture | [Relay protocol v1](relay-protocol-v1.md) | — | — |
+| Scheduling, DST resolution and the clock rule | [Approval v1: schedule](approval-v1.md#schedule-and-clock-rule) | — | [Schedule](vectors/schedule/) |
