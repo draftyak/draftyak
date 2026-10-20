@@ -42,6 +42,221 @@ describe("workflow policy", () => {
 		expect(checkWorkflow(file, read(file), toolchain)).toEqual([]);
 	});
 
+	it.each([
+		`\${{ format('{0}{1}', 'requ', 'ired') }}`,
+		`\${{ format('{0}{1}', 'pr-', 'title') }}`,
+		`\${{ join(fromJSON('["required"]'), '') }}`,
+		`\${{ github.job }}`,
+		`\${{ matrix.name }}`,
+		`prefix \${{ matrix.name }}`,
+		`\${{ '' }}required`,
+	])("refuses unreviewed computed job name %s", (name) => {
+		const source = workflow(pr).replace("  a:\n", `  a:\n    name: ${name}\n`);
+		expect(checkWorkflow("x.yml", source, toolchain).join("\n")).toContain(
+			"unreviewed computed job name",
+		);
+	});
+
+	it.each([
+		`\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`,
+		`\${{ matrix.spike }} on \${{ matrix.os }}`,
+	])("refuses a reviewed computed name on an unrelated job: %s", (name) => {
+		const source = workflow(pr).replace("  a:\n", `  a:\n    name: ${name}\n`);
+		expect(checkWorkflow("x.yml", source, toolchain).join("\n")).toContain(
+			"unreviewed computed job name",
+		);
+	});
+
+	it.each(["required", "required (draft)", "pr-title"])(
+		"refuses the protected literal name %s in another workflow",
+		(name) => {
+			const source = workflow(pr).replace("  a:\n", `  a:\n    name: ${name}\n`);
+			expect(checkWorkflow("x.yml", source, toolchain).join("\n")).toContain(
+				"protected check name belongs",
+			);
+		},
+	);
+	it.each(["false", "0", "[]"])("refuses non-string job name %s", (name) => {
+		const source = workflow(pr).replace("  a:\n", `  a:\n    name: ${name}\n`);
+		expect(checkWorkflow("x.yml", source, toolchain).join("\n")).toContain(
+			"unreviewed computed job name",
+		);
+	});
+
+	it.each(["branches", "branches-ignore", "paths", "paths-ignore"])(
+		"refuses top-level PR %s filters on required workflows",
+		(filter) => {
+			for (const file of ["ci.yml", "pr-title.yml"]) {
+				const source = read(`.github/workflows/${file}`).replaceAll("\r\n", "\n");
+				const mutated = source.replace(
+					"  pull_request:\n",
+					`  pull_request:\n    ${filter}: [disabled-ci]\n`,
+				);
+				expect(mutated).not.toBe(source);
+				expect(checkWorkflow(`.github/workflows/${file}`, mutated, toolchain).join("\n")).toContain(
+					"required PR events without path/branch filters",
+				);
+			}
+		},
+	);
+
+	it.each(["ci.yml", "pr-title.yml"])("requires every current PR event type in %s", (file) => {
+		const source = read(`.github/workflows/${file}`).replaceAll("\r\n", "\n");
+		const line = /^ {4}types: \[([^\n]+)\]$/m.exec(source);
+		expect(line).not.toBeNull();
+		const types = (line?.[1] ?? "").split(", ");
+		const variants = [
+			source.replace("  pull_request:", "  issue_comment:"),
+			source.replace(line?.[0] ?? "", ""),
+			source.replace(line?.[0] ?? "", "    types: [edited]"),
+			source.replace(line?.[0] ?? "", `    types: [${[...types, "opened"].join(", ")}]`),
+			...types.map((missing) =>
+				source.replace(
+					line?.[0] ?? "",
+					`    types: [${types.filter((type) => type !== missing).join(", ")}]`,
+				),
+			),
+		];
+		for (const mutated of variants) {
+			expect(mutated).not.toBe(source);
+			expect(checkWorkflow(`.github/workflows/${file}`, mutated, toolchain).join("\n")).toContain(
+				"required PR events without path/branch filters",
+			);
+		}
+	});
+
+	it.each([
+		["execution shell", "    shell: bash", "    shell: echo {0}"],
+		["changes job condition", "  changes:\n", "  changes:\n    if: false\n"],
+		["cheap job condition", "  cheap:\n", "  cheap:\n    if: false\n"],
+		[
+			"cheap job strategy",
+			"  cheap:\n",
+			"  cheap:\n    strategy:\n      matrix:\n        include: []\n",
+		],
+		[
+			"docs command replacement",
+			"run: node tools/verify/verify.ts --profile docs",
+			"run: echo docs-disabled",
+		],
+		["docs command removal", "        run: node tools/verify/verify.ts --profile docs\n", ""],
+		["docs condition", "if: needs.changes.outputs.docs-only == 'true'", "if: false"],
+		["docs condition removal", "        if: needs.changes.outputs.docs-only == 'true'\n", ""],
+		[
+			"cheap install replacement",
+			"run: pnpm install --frozen-lockfile",
+			"run: echo install-disabled",
+		],
+		[
+			"cheap command replacement",
+			"run: pnpm verify --profile cheap",
+			"run: echo cheap-suite-disabled",
+		],
+		["cheap command removal", "        run: pnpm verify --profile cheap\n", ""],
+		[
+			"cheap command condition",
+			"      - if: needs.changes.outputs.docs-only != 'true'\n        run: pnpm verify --profile cheap",
+			"      - if: false\n        run: pnpm verify --profile cheap",
+		],
+		[
+			"cheap condition removal",
+			"      - if: needs.changes.outputs.docs-only != 'true'\n        run: pnpm verify --profile cheap",
+			"      - run: pnpm verify --profile cheap",
+		],
+		[
+			"full job condition",
+			"if: needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)",
+			"if: false",
+		],
+		[
+			"full job condition removal",
+			"    if: needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)\n",
+			"",
+		],
+		["build replacement", "run: pnpm build", "run: echo build-disabled"],
+		["build removal", "      - run: pnpm build\n", ""],
+		["build condition", "      - run: pnpm build", "      - if: false\n        run: pnpm build"],
+		["build shell", "      - run: pnpm build", "      - run: pnpm build\n        shell: echo {0}"],
+		[
+			"build working directory",
+			"      - run: pnpm build",
+			"      - run: pnpm build\n        working-directory: elsewhere",
+		],
+		[
+			"build before install",
+			"      - run: pnpm install --frozen-lockfile\n      - run: pnpm build",
+			"      - run: pnpm build\n      - run: pnpm install --frozen-lockfile",
+		],
+		["heavy condition", "if: needs.changes.outputs.spikes != ''", "if: false"],
+		["heavy condition removal", "        if: needs.changes.outputs.spikes != ''\n", ""],
+		[
+			"heavy condition inversion",
+			"if: needs.changes.outputs.spikes != ''",
+			"if: needs.changes.outputs.spikes == ''",
+		],
+		[
+			"heavy command replacement",
+			`node tools/verify/turbo.ts run test:heavy "\${filters[@]}"`,
+			"echo heavy-suite-disabled",
+		],
+		[
+			"heavy filter removal",
+			'          for dir in $SPIKES; do filters+=("--filter=./$dir"); done\n',
+			"",
+		],
+		["heavy selection environment", `SPIKES: \${{ needs.changes.outputs.spikes }}`, "SPIKES: ''"],
+		[
+			"Windows condition",
+			"      - run: pnpm verify\n",
+			"      - if: false\n        run: pnpm verify\n",
+		],
+	])("refuses changed CI execution contract: %s", (_, before, after) => {
+		const file = ".github/workflows/ci.yml";
+		const source = read(file).replaceAll("\r\n", "\n");
+		const mutated = source.replace(before, after);
+		expect(mutated).not.toBe(source);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain("must preserve");
+	});
+
+	it.each([
+		["condition", (run: string) => `        if: false\n${run}`],
+		["soft failure", (run: string) => `        continue-on-error: true\n${run}`],
+		["shell", (run: string) => `        shell: echo {0}\n${run}`],
+		["working directory", (run: string) => `        working-directory: elsewhere\n${run}`],
+		["removed command", (_: string) => ""],
+		["replaced command", (_: string) => "        run: echo validation-disabled"],
+	])("refuses changed pr-title validation step: %s", (label, mutate) => {
+		const file = ".github/workflows/pr-title.yml";
+		const source = read(file).replaceAll("\r\n", "\n");
+		for (const command of [
+			"node tools/ci-checks/src/pr-meta.ts",
+			'node tools/vendor-guard/src/cli.ts --commits "$BASE_SHA..$HEAD_SHA"',
+		]) {
+			const mutated = source.replace(`        run: ${command}`, mutate(`        run: ${command}`));
+			expect(mutated, label).not.toBe(source);
+			expect(checkWorkflow(file, mutated, toolchain).join("\n"), command).toContain(
+				"must preserve pr-title command",
+			);
+		}
+	});
+
+	it.each([
+		["PR_TITLE", "github.event.pull_request.title"],
+		["PR_BODY", "github.event.pull_request.body"],
+		["PR_HEAD_REF", "github.event.pull_request.head.ref"],
+		["PR_BASE_REF", "github.event.pull_request.base.ref"],
+		["BASE_SHA", "github.event.pull_request.base.sha"],
+		["HEAD_SHA", "github.event.pull_request.head.sha"],
+	])("refuses changed pr-title validation input: %s", (key, expression) => {
+		const file = ".github/workflows/pr-title.yml";
+		const source = read(file).replaceAll("\r\n", "\n");
+		const mutated = source.replace(`${key}: \${{ ${expression} }}`, `${key}: unchecked`);
+		expect(mutated).not.toBe(source);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"must preserve pr-title command",
+		);
+	});
+
 	it("keeps the jobs that CI and later rulesets rely on", () => {
 		const jobs = (name: string): Record<string, unknown> =>
 			(parseYaml(read(`.github/workflows/${name}`)).value as { jobs: Record<string, unknown> })
@@ -53,6 +268,21 @@ describe("workflow policy", () => {
 			name: `\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`,
 			needs: ["changes", "cheap", "full", "windows"],
 		});
+		const reportedJobs = files.flatMap((file) =>
+			Object.entries(jobs(path.basename(file))).map(([id, job]) => ({
+				file,
+				id,
+				name: (job as { name?: string }).name ?? id,
+			})),
+		);
+		for (const [name, file, id] of [
+			["required", ".github/workflows/ci.yml", "required"],
+			["pr-title", ".github/workflows/pr-title.yml", "pr-title"],
+		] as const) {
+			expect(
+				reportedJobs.filter((job) => job.name.includes(name)).map((job) => [job.file, job.id]),
+			).toEqual([[file, id]]);
+		}
 		expect([jobs("dco.yml"), jobs("pr-title.yml")].map(Object.keys)).toEqual([
 			["dco"],
 			["pr-title"],
@@ -68,19 +298,38 @@ describe("workflow policy", () => {
 				],
 			},
 		});
-		// The whole step: an `if`, `continue-on-error` or a changed input would make it pass everywhere.
+		// Pin the job and whole validation steps: conditions, soft failure or input changes bypass checks.
 		const prTitle = jobs("pr-title.yml")["pr-title"] as { steps: unknown[] };
-		expect(prTitle.steps.at(-1)).toEqual({
-			env: {
-				BASE_SHA: `\${{ github.event.pull_request.base.sha }}`,
-				HEAD_SHA: `\${{ github.event.pull_request.head.sha }}`,
-				BASE_REPO: `\${{ github.repository }}`,
-				HEAD_REPO: `\${{ github.event.pull_request.head.repo.full_name }}`,
-				BASE_REF: `\${{ github.event.pull_request.base.ref }}`,
-				HEAD_REF: `\${{ github.event.pull_request.head.ref }}`,
+		expect(Object.keys(prTitle)).toEqual(["runs-on", "timeout-minutes", "steps"]);
+		expect(prTitle.steps.slice(2)).toEqual([
+			{
+				env: {
+					PR_TITLE: `\${{ github.event.pull_request.title }}`,
+					PR_BODY: `\${{ github.event.pull_request.body }}`,
+					PR_HEAD_REF: `\${{ github.event.pull_request.head.ref }}`,
+					PR_BASE_REF: `\${{ github.event.pull_request.base.ref }}`,
+				},
+				run: "node tools/ci-checks/src/pr-meta.ts",
 			},
-			run: "node tools/ci-checks/src/commit-identity.ts",
-		});
+			{
+				env: {
+					BASE_SHA: `\${{ github.event.pull_request.base.sha }}`,
+					HEAD_SHA: `\${{ github.event.pull_request.head.sha }}`,
+				},
+				run: 'node tools/vendor-guard/src/cli.ts --commits "$BASE_SHA..$HEAD_SHA"',
+			},
+			{
+				env: {
+					BASE_SHA: `\${{ github.event.pull_request.base.sha }}`,
+					HEAD_SHA: `\${{ github.event.pull_request.head.sha }}`,
+					BASE_REPO: `\${{ github.repository }}`,
+					HEAD_REPO: `\${{ github.event.pull_request.head.repo.full_name }}`,
+					BASE_REF: `\${{ github.event.pull_request.base.ref }}`,
+					HEAD_REF: `\${{ github.event.pull_request.head.ref }}`,
+				},
+				run: "node tools/ci-checks/src/commit-identity.ts",
+			},
+		]);
 		expect(jobs("zizmor.yml")).toMatchObject({
 			zizmor: {
 				steps: [
