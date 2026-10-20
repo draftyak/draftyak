@@ -8,6 +8,7 @@ import {
 	isCanonicalToolsListResult,
 } from "@draftyak/protocol/tool-v1";
 import { expect, it } from "vitest";
+import { observeStdioFixture } from "./stdio-readiness.ts";
 
 it("serves defined canonical tools over real stdin/stdout with trusted bootstrap and typed-error recovery", async () => {
 	const child = spawn(
@@ -18,14 +19,8 @@ it("serves defined canonical tools over real stdin/stdout with trusted bootstrap
 		],
 		{ stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
 	);
-	const stopped = new Promise<void>((resolve, reject) => {
-		child.once("error", reject);
-		child.once("close", () => resolve());
-	});
-	let diagnostics = "";
-	child.stderr.on("data", (chunk: Buffer) => {
-		diagnostics = (diagnostics + chunk.toString()).slice(0, 65_536);
-	});
+	const fixture = observeStdioFixture(child);
+	const stopped = fixture.stopped;
 	const lines = createInterface({ input: child.stdout });
 	const replies = lines[Symbol.asyncIterator]();
 	let id = 0;
@@ -37,28 +32,19 @@ it("serves defined canonical tools over real stdin/stdout with trusted bootstrap
 		child.stdin.write(
 			`${JSON.stringify({ jsonrpc: "2.0", id: current, method, params: { ...params, _meta: { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}, instance: { id: "forged", config: { topic: "forged" } } } } })}\n`,
 		);
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		try {
-			const line = await Promise.race([
-				replies.next(),
-				new Promise<undefined>((resolve) => {
-					timer = setTimeout(() => resolve(undefined), 3000);
-				}),
-			]);
-			if (!line || line.done) return undefined;
-			const reply = JSON.parse(line.value) as {
-				id: number;
-				result: Record<string, unknown>;
-				error?: unknown;
-			};
-			expect(reply.id).toBe(current);
-			expect(reply.error).toBeUndefined();
-			return reply.result;
-		} finally {
-			clearTimeout(timer);
-		}
+		const line = await fixture.nextLine(replies, method, current);
+		const reply = JSON.parse(line) as {
+			id: number;
+			result: Record<string, unknown>;
+			error?: unknown;
+		};
+		fixture.checkId(reply.id, current, method);
+		expect(reply.id).toBe(current);
+		expect(reply.error).toBeUndefined();
+		return reply.result;
 	};
 	try {
+		await fixture.ready();
 		const discover = await ask("server/discover");
 		expect(discover?.capabilities).toHaveProperty("tools");
 		const list = await ask("tools/list");
@@ -79,7 +65,7 @@ it("serves defined canonical tools over real stdin/stdout with trusted bootstrap
 			status: "ok",
 			value: { entries: [{ label: "actual-instance", text: "Owner topic" }] },
 		});
-		expect(diagnostics).toBe("");
+		expect(fixture.stderrText()).toBe("");
 	} finally {
 		lines.close();
 		child.stdin.end();

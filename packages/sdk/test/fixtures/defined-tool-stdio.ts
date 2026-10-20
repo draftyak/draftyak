@@ -1,3 +1,4 @@
+import { markStdioFixtureReady } from "../stdio-readiness.ts";
 import { serve } from "../../src/serve.ts";
 import { defineToolPlugin } from "../../src/tool.ts";
 import { PluginError } from "../../src/errors.ts";
@@ -11,3 +12,5 @@ serve(defineToolPlugin({manifest: toolManifest,
 		return {entries: [{label: context.instance.id, text: String(context.instance.config.topic)}]};
 	}},
 }), {instance: {id: "actual-instance", config: {topic: "Owner topic"}}});
+
+markStdioFixtureReady();
