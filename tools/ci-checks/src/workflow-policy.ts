@@ -230,6 +230,9 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 		}
 	}
 	if (file === ".github/workflows/pr-title.yml") {
+		if (workflow.defaults !== undefined) {
+			report(["defaults"], "pr-title.yml must not define workflow execution defaults");
+		}
 		checkCommands("pr-title", asMap(asMap(workflow.jobs)["pr-title"]), prTitleCommands);
 	}
 
