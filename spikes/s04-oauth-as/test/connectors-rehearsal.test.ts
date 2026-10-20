@@ -1039,6 +1039,133 @@ describe("authenticated MCP middleware refusals", () => {
 		for (const secret of run.secrets) expect(JSON.stringify(run.data)).not.toContain(secret);
 	});
 
+	test.each(["initialize", "modern"] as const)(
+		"non-object capability metadata in %s preserves each middleware 400 and diagnostic",
+		async (placement) => {
+			const values: unknown[] = [null, false, true, 0, 42, "not an object", [], [{}]];
+			const capabilities = [
+				...values,
+				...values.map((elicitation) => ({ elicitation })),
+				...values.map((extensions) => ({ extensions })),
+				...values.map((ui) => ({ extensions: { [UI_EXTENSION]: ui } })),
+				{ extensions: {} },
+			];
+			const run = await rehearse([plan("claude-code")], async ({ origin, owner, secrets }) => {
+				await owner.step("claude-code");
+				const connector = claudeCode();
+				vendor.serveAll(connector.documents);
+				const signed = await signIn(
+					new ScriptedClient(connector, { origin, approve: owner.approve }),
+				);
+				secrets.push(signed.accessToken, signed.refreshToken);
+				try {
+					for (const [id, declared] of capabilities.entries()) {
+						const response = await fetch(signed.mcp, {
+							method: "POST",
+							headers: {
+								"content-type": "application/json",
+								"mcp-protocol-version": "2026-07-28",
+								authorization: `Bearer ${signed.accessToken}`,
+							},
+							body: JSON.stringify({
+								jsonrpc: "2.0",
+								id,
+								method: placement === "initialize" ? "initialize" : "server/discover",
+								params:
+									placement === "initialize"
+										? { protocolVersion: "2025-11-25", capabilities: declared }
+										: {
+												_meta: {
+													[PROTOCOL_VERSION_META_KEY]: "2026-07-28",
+													[CLIENT_CAPABILITIES_META_KEY]: declared,
+												},
+											},
+							}),
+						});
+						expect(response.status, JSON.stringify(declared)).toBe(400);
+						expect(await response.json()).toMatchObject({ error: { code: -32020 } });
+					}
+				} finally {
+					await owner.done("claude-code");
+				}
+			});
+			const row = rowOf(run.rows, "claude-code");
+			expect(row).toMatchObject({
+				outcome: "blocked",
+				reason: "MCP requests failed (HTTP 400)",
+				declaredOrListed: { apps: false },
+				mcp: {
+					requests: capabilities.length,
+					ok: 0,
+					handledMethods: {},
+					elicitation: { declared: [] },
+					apps: { extensionDeclared: false, mimeTypes: [] },
+				},
+			});
+			expect(row.mcp.statuses).toStrictEqual({ "400": capabilities.length });
+			expect(row.mcp.refusals).toStrictEqual({ "header mismatch": capabilities.length });
+			expect(row.mcp.capabilityKeys).toStrictEqual(["elicitation", "extensions"]);
+			for (const secret of run.secrets) expect(JSON.stringify(run.data)).not.toContain(secret);
+		},
+	);
+
+	test.each(["initialize", "modern"] as const)(
+		"object-shaped capability metadata in %s retains valid declarations after refusal",
+		async (placement) => {
+			const run = await rehearse([plan("claude-code")], async ({ origin, owner }) => {
+				await owner.step("claude-code");
+				const connector = claudeCode();
+				vendor.serveAll(connector.documents);
+				const signed = await signIn(
+					new ScriptedClient(connector, { origin, approve: owner.approve }),
+				);
+				const capabilities = {
+					elicitation: { form: {}, url: {} },
+					extensions: {
+						[UI_EXTENSION]: {
+							mimeTypes: [null, false, 42, {}, [], "text/html;profile=mcp-app"],
+						},
+					},
+				};
+				const response = await fetch(signed.mcp, {
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						"mcp-protocol-version": "2026-07-28",
+						authorization: `Bearer ${signed.accessToken}`,
+					},
+					body: JSON.stringify({
+						jsonrpc: "2.0",
+						id: 1,
+						method: placement === "initialize" ? "initialize" : "server/discover",
+						params:
+							placement === "initialize"
+								? { protocolVersion: "2025-11-25", capabilities }
+								: {
+										_meta: {
+											[PROTOCOL_VERSION_META_KEY]: "2026-07-28",
+											[CLIENT_CAPABILITIES_META_KEY]: capabilities,
+										},
+									},
+					}),
+				});
+				expect(response.status).toBe(400);
+				expect(await response.json()).toMatchObject({ error: { code: -32020 } });
+				await owner.done("claude-code");
+			});
+			const row = rowOf(run.rows, "claude-code");
+			expect(row.declaredOrListed).toMatchObject({ apps: true, elicitation: true });
+			expect(row.mcp.apps).toStrictEqual({
+				extensionDeclared: true,
+				mimeTypes: ["text/html;profile=mcp-app"],
+			});
+			expect(row.mcp.elicitation).toMatchObject({ declared: ["form", "url"] });
+			expect(row.mcp.statuses).toStrictEqual({ "400": 1 });
+			expect(row.mcp.refusals).toStrictEqual({ "header mismatch": 1 });
+			expect(row.mcp.handledMethods).toStrictEqual({});
+		},
+	);
+
 	test("refused surface and write attempts cannot claim handler use after legacy fallback", async () => {
 		const attempts = [
 			{ method: "prompts/get", params: { name: "draft_reply" } },
