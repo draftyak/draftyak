@@ -50,7 +50,8 @@ export const SESSION_ACCEPTANCE: readonly string[] = [
 	"fallbacks: accepted",
 	"max_tokens: detected",
 ];
-// No such model: the API answers a working key with a 404 and a revoked one with a 401, unbilled.
+// No such model: the API answers a working key with a 404 and a revoked one with a 401.
+// These statuses establish authentication state, not a billing guarantee.
 export const CHECK_MODEL = "claude-revocation-check";
 export const PRICES_AS_OF = "2026-10-06";
 export const TINY_MAX_TOKENS = 16;
@@ -63,15 +64,19 @@ export const SESSION_INPUT: { readonly system: string; readonly prompt: string }
 };
 
 type Price = readonly [input: number, output: number];
-// USD per million tokens (Anthropic's pricing, PRICES_AS_OF). Fallbacks from Claude Opus 5.5 run on
-// Claude Opus 5 or 4.8; any other model is priced as the dearest one listed, so estimates run high.
+// Published base rates, not a complete server-defined default-routing table. Unknown response
+// models cannot settle a reservation. DEAREST is an estimate for non-fallback request planning.
 const PRICES: ReadonlyMap<string, Price> = new Map<string, Price>([
 	["claude-opus-5-5", [4, 20]],
 	["claude-opus-5", [5, 25]],
 	["claude-opus-4-8", [5, 25]],
 ]);
-const FALLBACK_PRICE: Price = [5, 25];
 const DEAREST: Price = [10, 50];
+const ACCOUNTING_VERSION = 2;
+export interface SyntheticRoutingBound {
+	readonly maxHops: number;
+	readonly price: Price;
+}
 // Prompt tokens the API adds to a body's own (format instructions, thinking); calls can raise it.
 const OVERHEAD_TOKENS = 8_192;
 
@@ -94,35 +99,75 @@ function entryCost(entry: Record<string, unknown>, model: string): number {
 
 // usage.iterations bills each attempt at its model's price; top-level usage covers only the last.
 export function costOf(body: unknown): number | undefined {
-	if (!isRecord(body) || !isRecord(body.usage)) return undefined;
+	if (
+		!isRecord(body) ||
+		!isRecord(body.usage) ||
+		body.type !== "message" ||
+		typeof body.stop_reason !== "string" ||
+		!Array.isArray(body.content)
+	)
+		return undefined;
 	const model = typeof body.model === "string" ? body.model : "";
 	const { iterations } = body.usage;
-	const entries = Array.isArray(iterations) ? iterations.filter(isRecord) : [];
-	if (entries.length === 0) return entryCost(body.usage, model);
-	return sum(entries.map((entry) => entryCost(entry, String(entry.model ?? model))));
+	if (iterations !== undefined && iterations !== null && !Array.isArray(iterations))
+		return undefined;
+	const entries = Array.isArray(iterations) && iterations.length > 0 ? iterations : [body.usage];
+	const handoffs = body.content.filter(
+		(block) => isRecord(block) && block.type === "fallback",
+	).length;
+	if (handoffs > 0 && (!Array.isArray(iterations) || iterations.length <= handoffs))
+		return undefined;
+	const billed: number[] = [];
+	for (const entry of entries) {
+		if (!isRecord(entry)) return undefined;
+		const atModel = entries[0] === body.usage ? model : entry.model;
+		if (typeof atModel !== "string" || !PRICES.has(atModel)) return undefined;
+		for (const field of [
+			"input_tokens",
+			"output_tokens",
+			"cache_creation_input_tokens",
+			"cache_read_input_tokens",
+		]) {
+			const value = entry[field];
+			if (value === undefined && field.startsWith("cache_")) continue;
+			if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) return undefined;
+		}
+		billed.push(entryCost(entry, atModel));
+	}
+	return sum(billed);
 }
 
-// The most a request can cost: its prompt plus max_tokens on the requested model and, with
-// fallbacks, one hop (as "default" documents) that reads the partial answer and writes max_tokens.
-// A body the verifier can't parse never leaves, so it costs nothing.
+// A conservative planning reservation, not a provider guarantee about token overhead or billing.
+// Live default routing has no established target/hop/price ceiling, so it cannot be admitted.
+// Synthetic routing metadata is supplied only by offline lifecycle rehearsals.
 export function worstCase(
 	body: unknown,
 	bytes: number,
 	overhead: number = OVERHEAD_TOKENS,
-): number {
+	syntheticRouting?: SyntheticRoutingBound,
+): number | undefined {
 	if (!isRecord(body)) return 0;
 	const output = count(body.max_tokens);
 	const prompt = bytes + overhead;
 	const [inPrice, outPrice] = PRICES.get(String(body.model)) ?? DEAREST;
 	let worst = prompt * inPrice + output * outPrice;
 	if ("fallbacks" in body) {
-		worst += (prompt + output) * FALLBACK_PRICE[0] + output * FALLBACK_PRICE[1];
+		if (!syntheticRouting) return undefined;
+		const { maxHops, price } = syntheticRouting;
+		if (
+			!Number.isSafeInteger(maxHops) ||
+			maxHops < 0 ||
+			price.some((rate) => !Number.isFinite(rate) || rate < 0)
+		)
+			return undefined;
+		for (let hop = 1; hop <= maxHops; hop++) {
+			worst += (prompt + hop * output) * price[0] + output * price[1];
+		}
 	}
 	return worst / 1e6;
 }
 
-// What a request without a usable answer counts as: its prompt at the input price. Whether the API
-// billed it can't be seen, and counting its whole worst case would leave no room to retry it.
+// Prompt-only estimate for comparison; never used to release an uncertain request's reservation.
 export function promptCost(
 	body: unknown,
 	bytes: number,
@@ -149,7 +194,7 @@ export function usageLimited(status: number, body: unknown): boolean {
 	return status === 429 && details.error_code === "enforced_spend_limit_reached";
 }
 
-export type NotSentCode = "call-cap" | "budget" | "record";
+export type NotSentCode = "call-cap" | "budget" | "record" | "routing";
 
 // A request the meter kept from leaving.
 export class NotSentError extends Error {
@@ -181,6 +226,8 @@ export interface MeterOptions {
 	readonly spentUsd?: number;
 	// Runs before a request leaves, with it already counted; if it throws, the request stays here.
 	readonly beforeSend?: () => Promise<unknown>;
+	// Offline fixture authority only; neither runLive nor the live entry provides this option.
+	readonly syntheticRouting?: SyntheticRoutingBound;
 }
 
 export interface Meter extends CtxFetchStub {
@@ -205,9 +252,10 @@ async function jsonOf(response: Response): Promise<unknown> {
 
 // Counts and prices every request the SDK makes, retries included, on top of earlier runs'. Past
 // the cap, when the estimate plus the request's worst case could pass the budget, or when
-// beforeSend fails, it throws before anything leaves. An answer's usage sets its cost, an error
-// status costs nothing, and a request without a usable answer costs its prompt. The SDK never
-// retries an answer that says the account can't pay.
+// beforeSend fails, it throws before anything leaves. Complete known-price usage settles a cost;
+// error statuses and requests without usable usage keep their full reservation. The SDK never
+// retries an answer that says the account can't pay. Unanswered or incomplete successes keep the
+// full admitted reservation, including in the record written before transport.
 export function meter(stub: CtxFetchStub, options: MeterOptions = {}): Meter {
 	const cap = options.cap ?? CALL_CAP;
 	const budgetUsd = options.budgetUsd ?? BUDGET_USD;
@@ -233,7 +281,13 @@ export function meter(stub: CtxFetchStub, options: MeterOptions = {}): Meter {
 			body = JSON.parse(text);
 		} catch {}
 		const bytes = Buffer.byteLength(text);
-		const worstUsd = worstCase(body, bytes, overhead);
+		const worstUsd = worstCase(body, bytes, overhead, options.syntheticRouting);
+		if (worstUsd === undefined) {
+			throw new NotSentError(
+				"routing",
+				`${label}: refused before sending: default fallback routing has no established target, hop or price bound; the live step is on hold`,
+			);
+		}
 		if (spentUsd() + worstUsd > budgetUsd) {
 			const at = `US$${spentUsd().toFixed(4)} estimated and up to US$${worstUsd.toFixed(4)} more`;
 			throw new NotSentError(
@@ -245,7 +299,7 @@ export function meter(stub: CtxFetchStub, options: MeterOptions = {}): Meter {
 			request: undefined,
 			body: undefined,
 			ms: 0,
-			costUsd: promptCost(body, bytes, overhead),
+			costUsd: worstUsd,
 			worstUsd,
 		};
 		attempts.push(attempt);
@@ -266,7 +320,6 @@ export function meter(stub: CtxFetchStub, options: MeterOptions = {}): Meter {
 			const response = await stub.fetch(input, init);
 			attempt.body = await jsonOf(response);
 			if (response.status < 200 || response.status > 299) {
-				attempt.costUsd = 0;
 				if (!usageLimited(response.status, attempt.body)) return response;
 				// The SDK obeys x-should-retry.
 				const headers = new Headers(response.headers);
@@ -788,13 +841,41 @@ function readRecorded(file: string): Recorded | null {
 	const { data } = json;
 	const session = isRecord(data.session) ? data.session : {};
 	const { step, calls, costUsd, revoked } = session;
+	const accountedUsd = session.accountedUsd;
+	if (
+		session.accountingVersion !== ACCOUNTING_VERSION ||
+		typeof accountedUsd !== "number" ||
+		!Number.isFinite(accountedUsd) ||
+		accountedUsd < 0
+	) {
+		throw new Error(
+			`${file} has no durable reservation accounting: preserve the record and ask the owner to revoke the key; do not reset its costs`,
+		);
+	}
+	if (data.revocation !== null && !isRecord(data.revocation)) throw refused;
 	const checks = isRecord(data.revocation) ? data.revocation.checks : 0;
 	const stops: unknown[] | null = Array.isArray(data.stops) ? data.stops : null;
 	if (step !== "session" && step !== "stopped") throw refused;
 	if (revoked !== "no" && revoked !== "yes") throw refused;
-	if (typeof calls !== "number" || typeof costUsd !== "number") throw refused;
-	if (typeof checks !== "number" || stops === null || !stops.every(isRecord)) throw refused;
+	if (
+		typeof calls !== "number" ||
+		!Number.isSafeInteger(calls) ||
+		calls < 0 ||
+		typeof costUsd !== "number" ||
+		!Number.isFinite(costUsd) ||
+		costUsd < 0
+	)
+		throw refused;
+	if (
+		typeof checks !== "number" ||
+		!Number.isSafeInteger(checks) ||
+		checks < 0 ||
+		stops === null ||
+		!stops.every(isRecord)
+	)
+		throw refused;
 	const used = calls + checks;
+	if (!Number.isSafeInteger(used) || used < 0) throw refused;
 	const last = stops.at(-1)?.stop;
 	const limited = last === "budget" || last === "call-cap";
 	return {
@@ -805,7 +886,7 @@ function readRecorded(file: string): Recorded | null {
 		stops,
 		calls: used,
 		checks,
-		costUsd,
+		costUsd: Math.max(costUsd, accountedUsd),
 		revoked: revoked === "yes",
 		ended: step === "stopped" && (limited || CALL_CAP - used < SESSION_CALLS),
 	};
@@ -852,6 +933,7 @@ async function session(
 	key: KeyMark,
 	options: LiveOptions,
 	say: Say,
+	makeMeter: typeof meter,
 ) {
 	const spikeDir = path.dirname(path.dirname(options.file));
 	const print = await (options.fingerprint ?? (() => fingerprint({ cwd: spikeDir })))();
@@ -878,6 +960,8 @@ async function session(
 		calls: metered.used(),
 		budgetUsd: BUDGET_USD,
 		costUsd: usd(metered.spentUsd()),
+		accountingVersion: ACCOUNTING_VERSION,
+		accountedUsd: metered.spentUsd(),
 		pricesAsOf: PRICES_AS_OF,
 		refusalProbe: probe ? "allowed" : "not allowed",
 		revoked: "no",
@@ -894,7 +978,7 @@ async function session(
 		const data = { session: summary("stopped"), stops: [...earlier.stops, run] };
 		return { ...data, acceptance: [], calls: [], revocation: null };
 	};
-	const metered = meter(stub, {
+	const metered = makeMeter(stub, {
 		used: earlier.calls,
 		spentUsd: earlier.costUsd,
 		beforeSend: async () => {
@@ -954,13 +1038,20 @@ async function session(
 	return { step: "session" as const, acceptance: lines, file };
 }
 
-// Step 2, run once the owner has revoked the key: one unbilled request with the session's own key
+// Step 2, run once the owner has revoked the key: one status request with the session's own key
 // must get the API's 401 authentication_error; any other 401 proves nothing. Each check counts
 // toward the 6 requests and is recorded before it is sent, as session requests are. After that
 // 401, revoked: yes is recorded first and the DY_LIVE_* entries are deleted after, so a failed
 // write leaves them for the next run; nothing is taken on trust.
-async function revocation(stub: CtxFetchStub, recorded: Recorded, options: LiveOptions, say: Say) {
+async function revocation(
+	stub: CtxFetchStub,
+	recorded: Recorded,
+	options: LiveOptions,
+	say: Say,
+	makeMeter: typeof meter,
+) {
 	const left = CALL_CAP - recorded.calls;
+	let accountedUsd = recorded.costUsd;
 	if (recorded.step === "stopped") {
 		const spent = `US$${recorded.costUsd.toFixed(4)} estimated`;
 		say(
@@ -968,7 +1059,12 @@ async function revocation(stub: CtxFetchStub, recorded: Recorded, options: LiveO
 		);
 	}
 	const record = (outcome: Record<string, unknown>, revoked: boolean): Promise<string> => {
-		const session = { ...recorded.session, revoked: revoked ? "yes" : "no" };
+		const session = {
+			...recorded.session,
+			costUsd: usd(accountedUsd),
+			accountedUsd,
+			revoked: revoked ? "yes" : "no",
+		};
 		const data = { ...recorded.data, session, revocation: outcome };
 		return writeEvidence(options.file, redact(data), { fingerprint: recorded.fingerprint });
 	};
@@ -982,10 +1078,13 @@ async function revocation(stub: CtxFetchStub, recorded: Recorded, options: LiveO
 			checks: recorded.checks + metered.attempts.length,
 			deleted: [],
 		});
-		const metered = meter(stub, {
+		const metered = makeMeter(stub, {
 			used: recorded.calls,
 			spentUsd: recorded.costUsd,
-			beforeSend: () => record(pending(), false),
+			beforeSend: () => {
+				accountedUsd = metered.spentUsd();
+				return record(pending(), false);
+			},
 		});
 		metered.label = "revocation check";
 		const client = createClient(metered, { maxRetries: 0 });
@@ -1010,6 +1109,7 @@ async function revocation(stub: CtxFetchStub, recorded: Recorded, options: LiveO
 					type === "broker_refused" ? "broker refused" : `${error.status} ${word(type) ?? "error"}`;
 			} else throw error;
 		}
+		accountedUsd = metered.spentUsd();
 		checks += metered.attempts.length;
 	}
 	say(`revocation check: ${check}`);
@@ -1091,6 +1191,21 @@ function keyMark(recorded: Recorded | null, due: Due, options: LiveOptions): Key
 // that can go on, a session runs; with a finished or ended one, the revocation check; once it
 // records revoked: yes, nothing. No key: a skip.
 export async function runLive(options: LiveOptions): Promise<LiveOutcome> {
+	return runLiveWithMeter(options, meter);
+}
+
+// Offline tests alone provide a bounded fake routing policy. No live CLI/configuration reads it.
+export async function runRehearsal(
+	options: LiveOptions,
+	makeMeter: typeof meter,
+): Promise<LiveOutcome> {
+	return runLiveWithMeter(options, makeMeter);
+}
+
+async function runLiveWithMeter(
+	options: LiveOptions,
+	makeMeter: typeof meter,
+): Promise<LiveOutcome> {
 	const recorded = readRecorded(options.file);
 	const due = dueOf(recorded);
 	let stub: CtxFetchStub;
@@ -1127,7 +1242,7 @@ export async function runLive(options: LiveOptions): Promise<LiveOutcome> {
 	};
 	const done =
 		due === "revocation" && recorded
-			? await revocation(stub, recorded, options, say)
-			: await session(stub, recorded, key, options, say);
+			? await revocation(stub, recorded, options, say, makeMeter)
+			: await session(stub, recorded, key, options, say, makeMeter);
 	return { ...done, lines };
 }

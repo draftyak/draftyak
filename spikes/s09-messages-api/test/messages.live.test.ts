@@ -4,8 +4,8 @@ import { expect, it } from "vitest";
 import { liveStub } from "../src/client.ts";
 import { LIVE_TIMEOUT_MS, runLive, SESSION_ACCEPTANCE } from "./live-session.ts";
 
-// S9b (M0.31) on the owner's key from .env.live: at most 6 calls under US$1, then, once the key is
-// revoked, the same command records revoked: yes. The runbook is notes/session.md.
+// S9b (M0.31): at most 6 requests with a US$1 planning/reservation gate. Current default fallback
+// routing is held before transport; original live acceptance remains pending. See notes/session.md.
 const file = fileURLToPath(new URL("../evidence/live.json", import.meta.url));
 
 it("S9b: the Messages API through ctx.fetch, live", { timeout: LIVE_TIMEOUT_MS }, async (ctx) => {
