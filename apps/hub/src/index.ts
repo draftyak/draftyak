@@ -8,6 +8,7 @@ export {
 	type AuditExportPage,
 	type AuditInput,
 } from "./audit/chain.ts";
+export { normalizeDraftBody, normalizeDraftContent } from "./drafts/normalize.ts";
 export { HubIdentity } from "./identity/hub-key.ts";
 export {
 	PinError,
