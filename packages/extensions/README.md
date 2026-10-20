@@ -34,9 +34,10 @@ safe integer; ordinary numeric values are not assignable to its branded type.
 `require(1)` means no restriction beyond the native owner/PIN floor. Core ANDs
 every policy with its own decision, takes the stricter approval requirement and
 never lets roles omit the owner. Propose, claim and every retry run policy; a throw or
-two-second timeout denies proposal or fails claim with `policy_error`. Frozen
-snapshots and flags reuse the authoritative protocol types. This package does
-not implement policy execution, deadlines or approval consumption.
+two-second timeout denies a proposal or, at claim or retry, moves the item to
+`NEEDS_REAPPROVAL` with reason `policy`. Frozen snapshots and flags reuse the
+authoritative protocol types. This package does not implement policy execution,
+deadlines or approval consumption.
 
 `db()` provides no raw SQL or connection handle. For module `example`, the table
 type is `ext_example_${string}`. Operations are structured, with explicit bounded
