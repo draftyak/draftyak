@@ -622,6 +622,17 @@ export const DEFERRED_BUDGET_MS: number = REQUEST_MS + DRAFT_TIMEOUT_MS + REVOKE
 export const isDeferredMinutes = (value: string): boolean =>
 	/^[1-9]\d{0,2}$/.test(value) && Number(value) <= DEFERRED_MAX_MIN;
 
+// Until now() reaches `due`, a minute per timer at most, so a clock that jumped (a PC that slept)
+// still ends the wait on time.
+export async function waitUntil(
+	due: number,
+	now: () => number = Date.now,
+	sleep: (ms: number) => Promise<unknown> = (ms) =>
+		new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<void> {
+	for (let left = due - now(); left > 0; left = due - now()) await sleep(Math.min(left, 60_000));
+}
+
 // Refusals that name the refresh token itself as invalid. Expiry doesn't prove a revocation, and
 // neither does reuse: a token rotated away is refused whether or not its session was revoked.
 export const CONFIRMING: ReadonlySet<string> = new Set([

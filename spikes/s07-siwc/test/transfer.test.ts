@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, type TestContext } from "vitest";
 import { type Credential, discover, newHostId, signIn } from "../src/auth.ts";
@@ -209,6 +210,8 @@ describe.concurrent("the step after expiry (--deferred)", WAIT, () => {
 		expect(step).not.toHaveProperty("code");
 		expect(step.msAfterExpiry).toBeGreaterThanOrEqual(AFTER_MS);
 		expect(step.idleMs).toBeGreaterThanOrEqual(EXPIRES_IN * 1000 + AFTER_MS);
+		// Both from the same send: the forced refresh's tokens lasted EXPIRES_IN from their savedAt.
+		expect(step.idleMs - step.msAfterExpiry).toBe(EXPIRES_IN * 1000);
 		// At the fake: the forced refresh, the one after expiry with the token the forced one issued,
 		// then the revoked token tried again, and nothing else. The first draft needed no refresh.
 		const issued = [...hub.auth.refresh.keys()];
@@ -283,6 +286,9 @@ describe.concurrent("the step after expiry (--deferred)", WAIT, () => {
 		const drafts = hub.api.received.filter((request) => request.path === "/v1/responses");
 		expect(drafts).toHaveLength(1);
 		expectNoToken(hub, run);
+		// The hub's only refresh() is the forced one, so the refresh after expiry is accessToken()'s.
+		const source = readFileSync(path.join(import.meta.dirname, "transfer-child.ts"), "utf8");
+		expect(source.match(/\.refresh\(/g)).toHaveLength(1);
 	});
 
 	it("a refresh after expiry answered without a new refresh token is recorded as not rotated, and the kept token revoked", async (ctx) => {
@@ -309,8 +315,10 @@ describe.concurrent("the step after expiry (--deferred)", WAIT, () => {
 	});
 
 	it("tokens that outlast the cap: the step doesn't run, and the hub revokes as without it", async (ctx) => {
+		// A wait of about 63 minutes against a 62-minute cap.
 		const hub = await handover(ctx, { after: { expiresIn: 3600 } });
-		const run = await child(deferred(hub, ...DRAFTING).slice(0, -2), hub.text, ctx.signal);
+		const args = [...deferred(hub, ...DRAFTING).slice(0, -3), "62"];
+		const run = await child(args, hub.text, ctx.signal);
 		expect(run).toMatchObject({
 			exitCode: 0,
 			result: {
@@ -322,7 +330,7 @@ describe.concurrent("the step after expiry (--deferred)", WAIT, () => {
 			},
 		});
 		const { dueInMs } = (run.result as Data).deferred;
-		expect(dueInMs).toBeGreaterThan(3600_000);
+		expect(dueInMs).toBeGreaterThan(62 * 60_000);
 		expect(dueInMs).toBeLessThanOrEqual(3600_000 + AFTER_EXPIRY_MS);
 		expect(refreshForms(hub.auth)).toHaveLength(2);
 		expectNoToken(hub, run);
