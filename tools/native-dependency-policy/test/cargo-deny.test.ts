@@ -119,6 +119,40 @@ function input(f: Fixture = fixture(), exitCode = 1): CargoDenyInputs {
 		denyWarnings: false,
 	};
 }
+function emptyPass(
+	fullAdvisories: ReturnType<typeof stats>,
+	advisoryAdvisories: ReturnType<typeof stats>,
+): CargoDenyInputs {
+	const audit = fixture().audit;
+	audit.warnings.unsound = [];
+	return {
+		full: {
+			stdout: bytes(""),
+			stderr: bytes(
+				JSON.stringify({
+					type: "summary",
+					fields: {
+						advisories: fullAdvisories,
+						bans: stats(),
+						licenses: stats(0, 0, 0, 3),
+						sources: stats(),
+					},
+				}) + "\n",
+			),
+			exitCode: 0,
+			signal: null,
+		},
+		advisory: {
+			stdout: bytes(JSON.stringify(audit) + "\n"),
+			stderr: bytes(
+				JSON.stringify({ type: "summary", fields: { advisories: advisoryAdvisories } }) + "\n",
+			),
+			exitCode: 0,
+			signal: null,
+		},
+		denyWarnings: true,
+	};
+}
 function refuses(value: CargoDenyInputs): void {
 	expect(() => parseCargoDenyReports(value)).toThrow(InputError);
 }
@@ -340,6 +374,27 @@ describe("report refusal boundaries", () => {
 		refuses(edit("full", "stderr", (s) => s.replace('"errors":1', '"errors":0'))));
 	it("requires the advisory-only summary to agree", () =>
 		refuses(edit("advisory", "stderr", (s) => s.replace('"errors":1', '"errors":0'))));
+	for (const counter of ["notes", "helps"] as const) {
+		for (const [fullValue, advisoryValue] of [
+			[0, 1],
+			[1, 0],
+		] as const) {
+			it(`refuses paired zero-error ${counter} totals ${fullValue} versus ${advisoryValue}`, () => {
+				const fullCounts = { ...stats(), [counter]: fullValue };
+				const advisoryCounts = { ...stats(), [counter]: advisoryValue };
+				for (const agreed of [fullCounts, advisoryCounts]) {
+					const valid = parseCargoDenyReports(emptyPass(agreed, agreed));
+					expect(valid.complete).toBe(true);
+					expect(valid.fullExitCode).toBe(0);
+					expect(valid.advisoryExitCode).toBe(0);
+					expect(valid.diagnostics).toEqual([]);
+					expect(valid.findings).toEqual([]);
+					expect(valid.counts.advisories).toEqual(agreed);
+				}
+				refuses(emptyPass(fullCounts, advisoryCounts));
+			});
+		}
+	}
 	it("requires full and advisory diagnostic graphs to agree", () =>
 		refuses(edit("advisory", "stderr", (s) => s.replace('"invented-root"', '"different-root"'))));
 	it("refuses an extra finding absent from diagnostics", () => {
