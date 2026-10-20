@@ -40,6 +40,21 @@
 /apps/hub/src/oauth-as* @nicksavov
 /apps/hub/src/api* @nicksavov
 
+# A trailing single star covers direct files; directories need recursive rules.
+/apps/hub/src/key-manager/ @nicksavov
+/apps/hub/src/audit/ @nicksavov
+/apps/hub/src/identity/ @nicksavov
+/apps/hub/src/auth/ @nicksavov
+/apps/hub/src/authz/ @nicksavov
+/apps/hub/src/policy/ @nicksavov
+/apps/hub/src/accounts/ @nicksavov
+/apps/hub/src/plugins/ @nicksavov
+/apps/hub/src/outbox/ @nicksavov
+/apps/hub/src/oauth-as/ @nicksavov
+/apps/hub/src/api/ @nicksavov
+/apps/hub/src/listeners/ @nicksavov
+/apps/hub/src/listeners.ts @nicksavov
+
 # Device hosts, MCP views, protocols, parsers and sandbox boundaries.
 /apps/mcp-apps/ @nicksavov
 /apps/sms-host/ @nicksavov
@@ -47,5 +62,8 @@
 /packages/mime/ @nicksavov
 /packages/extensions/ @nicksavov
 /packages/runtime-python/ @nicksavov
+/packages/bounded-files/ @nicksavov
+/packages/lookup-core/ @nicksavov
+/tools/launch-checks/ @nicksavov
 /crates/ @nicksavov
 /security/ @nicksavov

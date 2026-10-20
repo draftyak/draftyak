@@ -274,6 +274,12 @@ importers:
 
   tools/fetch-node: {}
 
+  tools/launch-checks:
+    dependencies:
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
+
   tools/vendor-guard: {}
 
   tools/verify: {}
