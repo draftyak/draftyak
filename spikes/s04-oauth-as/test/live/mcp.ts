@@ -7,9 +7,11 @@
 import type { View } from "@draftyak/spike-s03-mcp-sdk/src/apps.ts";
 import {
 	bodyCap,
+	HEADER_MISMATCH,
 	headerMatch,
 	MAX_BODY_BYTES,
 	rpcError,
+	UNSUPPORTED_VERSION,
 	versionAllowlist,
 } from "@draftyak/spike-s03-mcp-sdk/src/middleware.ts";
 import {
@@ -39,6 +41,7 @@ import { MCP_PATH, SCOPES, verifyAccessToken } from "../../src/provider.ts";
 import { PRM_PATH } from "../../src/routes.ts";
 import {
 	type McpAnswer,
+	type McpRefusal,
 	type McpRequestFacts,
 	type Recorder,
 	WRITE_SCOPE,
@@ -53,6 +56,7 @@ export interface McpEnv {
 		tokenClient: string;
 		grant: string;
 		scopes: readonly string[];
+		mcpRecorded: boolean;
 	};
 }
 
@@ -117,7 +121,10 @@ const WRITE = {
 // s03's surfaces plus one fake write tool, for ChatGPT's write access on the owner's plan. It
 // stores and sends nothing, its arguments are never recorded, and like §6's draft_create it needs
 // drafts:write: a token without it gets an isError result.
-export function liveFactory(hub: Hub): ServerFactory {
+export function liveFactory(
+	hub: Hub,
+	onWrite?: (clientId: string, allowed: boolean) => void,
+): ServerFactory {
 	const surfaces = surfaceFactory(hub);
 	return async (ctx) => {
 		const server = await surfaces(ctx);
@@ -135,6 +142,7 @@ export function liveFactory(hub: Hub): ServerFactory {
 				annotations: WRITE,
 			},
 			() => {
+				if (ctx.authInfo?.clientId) onWrite?.(ctx.authInfo.clientId, writes);
 				if (!writes) {
 					return {
 						isError: true,
@@ -156,7 +164,7 @@ type Json = Record<string, unknown>;
 const isObject = (value: unknown): value is Json =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 
-// What one request asks for, read from the body and headers the checks already passed.
+// What one request asks for, from the headers and any body the body cap parsed.
 export function requestFacts(
 	httpMethod: string,
 	body: unknown,
@@ -189,8 +197,8 @@ export function requestFacts(
 		capabilities ??= meta[CLIENT_CAPABILITIES_META_KEY];
 		clientInfo ??= meta[CLIENT_INFO_META_KEY];
 		if (message.method === "tools/call" && typeof params.name === "string") tools.push(params.name);
-		if (message.method === "resources/read") {
-			reads = String(params.uri).startsWith("ui://")
+		if (message.method === "resources/read" && typeof params.uri === "string") {
+			reads = params.uri.startsWith("ui://")
 				? { ...reads, ui: reads.ui + 1 }
 				: { ...reads, other: reads.other + 1 };
 		}
@@ -210,10 +218,26 @@ export function requestFacts(
 	};
 }
 
-// What the answer tells the recorder: an input-required result, and a tools/list result that
-// names the write tool.
+// Fixed categories only: error messages and data can contain request values.
+function refusalOf(status: number, body: unknown): McpRefusal | undefined {
+	if (status === 415) return "unsupported media type";
+	if (status === 413) return "body too large";
+	const code = isObject(body) && isObject(body.error) ? body.error.code : undefined;
+	if (code === -32700) return "parse error";
+	if (code === HEADER_MISMATCH) return "header mismatch";
+	if (code === UNSUPPORTED_VERSION) return "unsupported protocol version";
+	return undefined;
+}
+
+// What the answer tells the recorder, without copying error text or result values.
 async function answerOf(response: Response): Promise<McpAnswer> {
-	const answer = { status: response.status, inputRequired: false, listedWriteTool: false };
+	const answer = {
+		status: response.status,
+		handled: false,
+		inputRequired: false,
+		listedWriteTool: false,
+		refusal: refusalOf(response.status, undefined),
+	};
 	if (!(response.headers.get("content-type") ?? "").includes("application/json")) return answer;
 	try {
 		const body = (await response.clone().json()) as unknown;
@@ -222,6 +246,13 @@ async function answerOf(response: Response): Promise<McpAnswer> {
 			.filter((result) => result !== undefined);
 		return {
 			...answer,
+			// A parsed attempt alone never establishes surface use or a scope check. A partial
+			// batch also fails closed: no method is credited unless every reply has a result.
+			handled:
+				response.ok &&
+				results.length > 0 &&
+				results.length === (Array.isArray(body) ? body.length : 1),
+			refusal: refusalOf(response.status, body),
 			inputRequired: results.some((result) => result.resultType === "input_required"),
 			listedWriteTool: results.some(
 				(result) =>
@@ -245,7 +276,9 @@ export interface McpOptions {
 export function liveMcp(options: McpOptions): Hono<McpEnv> {
 	const { provider, publicOrigin, recorder } = options;
 	const { hub, admit } = liveHub(options.views);
-	const factory = liveFactory(hub);
+	const factory = liveFactory(hub, (clientId, allowed) =>
+		recorder.mcpWriteScope(clientId, allowed),
+	);
 	const onerror = options.onerror;
 	const modern = createMcpHandler(factory, {
 		legacy: "reject",
@@ -294,7 +327,22 @@ export function liveMcp(options: McpOptions): Hono<McpEnv> {
 			resource: new URL(MCP_PATH, publicOrigin),
 			extra: { grantId: token.grantId },
 		});
+		c.set("mcpRecorded", false);
 		await next();
+		// A body, header or version refusal never reaches a route handler. It still belongs to
+		// this token's client, including its claimed version and any parsed message's era.
+		if (!c.get("mcpRecorded")) {
+			const body = c.get("body");
+			const legacy = body === undefined || (await isLegacyRequest(c.req.raw, body));
+			recorder.mcp(
+				token.clientId,
+				token.grantId,
+				scopes,
+				requestFacts(c.req.method, body, c.env.incoming.headers, legacy),
+				await answerOf(c.res),
+				c.env.incoming,
+			);
+		}
 	};
 
 	const app = new Hono<McpEnv>();
@@ -337,6 +385,7 @@ export function liveMcp(options: McpOptions): Hono<McpEnv> {
 			await answerOf(response),
 			c.env.incoming,
 		);
+		c.set("mcpRecorded", true);
 		return response;
 	});
 	app.all(MCP_PATH, (c) => {
@@ -346,9 +395,10 @@ export function liveMcp(options: McpOptions): Hono<McpEnv> {
 			c.get("grant"),
 			c.get("scopes"),
 			facts,
-			{ status: 405, inputRequired: false, listedWriteTool: false },
+			{ status: 405, handled: false, inputRequired: false, listedWriteTool: false },
 			c.env.incoming,
 		);
+		c.set("mcpRecorded", true);
 		return rpcError(405, -32000, "Method not allowed: use POST", null, undefined, {
 			Allow: "POST",
 		});

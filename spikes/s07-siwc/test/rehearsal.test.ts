@@ -98,8 +98,10 @@ const notRun = (why: string): string[] =>
 	["text.format", "submit_draft", "transfer"].map((name) => `${name}: not-run(${why})`);
 // The loopback fakes' hosts fail the name rule, and only they.
 const LOOPBACK_HOSTS = 6;
-// A rehearsal starts its own fakes and child processes: about 9 s, but past 30 s on a loaded machine.
-const REHEARSAL = { timeout: 120_000 };
+// A rehearsal starts its own fakes and child processes: about 9 s, but past 30 s on a loaded machine and
+// past 80 s during a full parallel verify. Its sign-in may wait 90 s (rehearse.ts), so a slow one still ends
+// as a readable signin: blocked(…) line before this limit.
+const REHEARSAL = { timeout: 240_000 };
 
 describe.concurrent("a whole session", REHEARSAL, () => {
 	it("prints the five lines, keeps tokens only in .env.live, and the desktop forgets them before the hub revokes", async (ctx) => {
