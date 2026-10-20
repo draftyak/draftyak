@@ -1,10 +1,11 @@
-import type { HostFetchParams } from "@draftyak/protocol/host-channel";
+import { type HostFetchParams, LOOKUP_PERMIT_META_KEY } from "@draftyak/protocol/host-channel";
 import { checkToolResult } from "@draftyak/protocol/tool-v1";
 import { describe, expect, it } from "vitest";
 import { hostFetch } from "../src/fetch.ts";
 import { HostError, memoryHost } from "../src/host.ts";
 import { defineToolPlugin } from "../src/tool.ts";
 import { bootstrap, served, toolManifest } from "./definitions-fixtures.ts";
+import { permitA } from "./lookup-fixtures.ts";
 
 const body = '{"text":"DYTEST-body"}';
 function within<T>(promise: Promise<T>): Promise<T> {
@@ -156,7 +157,11 @@ describe("secret references in Request inputs", () => {
 				},
 			}),
 			async (ask) => {
-				const reply = await ask("tools/call", { name: "kb.lookup", arguments: { topic: "work" } });
+				const reply = await ask("tools/call", {
+					name: "kb.lookup",
+					arguments: { topic: "work" },
+					_meta: { [LOOKUP_PERMIT_META_KEY]: permitA },
+				});
 				expect(checkToolResult("kb.lookup", reply.result).status).toBe("ok");
 			},
 			bootstrap,
@@ -171,11 +176,13 @@ describe("secret references in Request inputs", () => {
 					["accept", "text/calendar"],
 					["if-none-match", '"DYTEST-v1"'],
 				],
+				lookupPermit: permitA,
 			},
 			{
 				method: "HEAD",
 				url: "secret://calendarUrl",
 				headers: [["if-modified-since", "Thu, 01 Jan 2026 00:00:00 GMT"]],
+				lookupPermit: permitA,
 			},
 		]);
 	});

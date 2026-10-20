@@ -15,6 +15,13 @@ export const HOST_JSON_MEMBER_MAX_DECODED_BYTES = 33_554_432;
 export const HOST_JSON_MEMBER_MAX_DEPTH = 64;
 export const HOST_JSON_MEMBER_MAX_NODES = 65_536;
 export const HOST_JSON_MEMBER_MAX_ERROR_BYTES = 65_536;
+export const LOOKUP_PERMIT_META_KEY = "io.github.draftyak/lookup-permit";
+
+// Exactly 32 bytes, including the canonical zero unused bits of the last character.
+export const LookupPermit: z.ZodString = Base64Url.length(43).meta({
+	description: "A parent-issued lookup grant: 32 bytes as canonical unpadded base64url.",
+});
+export type LookupPermit = z.infer<typeof LookupPermit>;
 
 const NO_LINE_BREAK = { not: { pattern: "[\\u000a\\u000d\\u2028\\u2029]" } };
 function singleLine(schema: z.ZodString): z.ZodString {
@@ -72,12 +79,14 @@ export interface HostFetchParams {
 	readonly sendTicket?: unknown;
 	readonly saveAs?: HostSaveAs;
 	readonly stream?: boolean;
+	readonly lookupPermit?: LookupPermit;
 }
 const fetchFields = {
 	url: Text.min(1),
 	headers: HostHeaders,
 	body: Bytes.optional(),
 	sendTicket: z.unknown().optional(),
+	lookupPermit: LookupPermit.optional(),
 };
 export const HostFetchParams: z.ZodType<HostFetchParams> = z.union([
 	z.strictObject({

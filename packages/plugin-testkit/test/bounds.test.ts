@@ -94,7 +94,7 @@ it("accepts exactly 33554432 tool response bytes and refuses the first excess by
 it("returns a fixed timeout before a bounded slow response can be admitted", async () => {
 	// Host time moves only after dispatch, so a busy runner can't use up the 5 ms budget first.
 	// The upstream's delay runs on real time, so it stays far beyond that budget.
-	vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+	vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
 	const fake = createToolUpstream({ slowMs: 30_000 });
 	const dispatched = Promise.withResolvers<void>();
 	const hub = track(

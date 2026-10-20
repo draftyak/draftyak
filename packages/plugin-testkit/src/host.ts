@@ -43,10 +43,21 @@ import {
 
 interface Lookup {
 	readonly id: number;
+	readonly generation: symbol;
+	readonly instance: string;
+	readonly account: MockAccount | undefined;
+	readonly kind: ToolKind | undefined;
+	readonly argumentsDigest: string;
 	readonly controller: AbortController;
 	readonly deadline: number;
+	readonly permit: string | undefined;
 	active: boolean;
 	requests: number;
+	pending: number;
+}
+interface Attempt {
+	scope?: Lookup;
+	reason?: string;
 }
 class Refusal extends HostError {
 	readonly reason: string;
@@ -89,17 +100,26 @@ async function interrupted<T>(promise: Promise<T>, signal: AbortSignal): Promise
 	}
 }
 
-export function createMockHost(options: {
-	readonly manifest: PluginManifestV1;
-	readonly account?: MockAccount;
-	readonly instance: string;
-	readonly upstreams: readonly Fake[];
-	readonly secrets?: Readonly<Record<string, string>>;
-}): {
+export function createMockHost(
+	options: {
+		readonly manifest: PluginManifestV1;
+		readonly account?: MockAccount;
+		readonly instance: string;
+		readonly upstreams: readonly Fake[];
+		readonly secrets?: Readonly<Record<string, string>>;
+	},
+	controls: { readonly entropy?: () => Uint8Array } = {},
+): {
 	readonly host: MockHost;
-	lookup<T>(action: (signal: AbortSignal) => Promise<T>, kind?: ToolKind): Promise<T>;
+	lookup<T>(
+		action: (signal: AbortSignal, permit?: string) => Promise<T>,
+		kind?: ToolKind,
+		args?: unknown,
+	): Promise<T>;
 } {
 	const manifest = options.manifest;
+	const generation = Symbol();
+	const account = options.account ? Object.freeze({ ...options.account }) : undefined;
 	if (!Ulid.safeParse(options.instance).success) throw new MockHubError("INVALID_INSTANCE");
 	const upstreams = new Map(options.upstreams.map((upstream) => [upstream.host, upstream]));
 	if (upstreams.size !== options.upstreams.length || upstreams.size > 64)
@@ -113,7 +133,10 @@ export function createMockHost(options: {
 		secrets.set(name, checked.url);
 	}
 	const scopes = new AsyncLocalStorage<Lookup>();
-	const active = new Set<Lookup>();
+	const attempts = new AsyncLocalStorage<Attempt>();
+	const retained = new Set<Lookup>();
+	const grants = new Map<string, Lookup>();
+	const reserved = new Set<string>();
 	const tickets = new Map<string, { ticket: SendTicket; headers: HeaderList }>();
 	const blobs = new Map<string, Uint8Array>();
 	const kv = new Map<string, unknown>();
@@ -126,11 +149,39 @@ export function createMockHost(options: {
 		auditComplete = true,
 		nextLookup = 0,
 		blobBytes = 0;
-	const streams = new Set<NodeJS.Immediate>();
+	const streams = new Set<() => void>();
+	const elapsed = (): number => performance.now();
+	const release = (scope: Lookup): void => {
+		if (scope.active || scope.pending !== 0) return;
+		retained.delete(scope);
+		if (scope.permit !== undefined) reserved.delete(scope.permit);
+	};
+	const own = <T>(scope: Lookup | undefined, work: Promise<T>): Promise<T> => {
+		if (!scope) return work;
+		scope.pending++;
+		const settled = (): void => {
+			scope.pending--;
+			release(scope);
+		};
+		void work.then(settled, settled);
+		return work;
+	};
+	const retire = (scope: Lookup, reason: HostError): void => {
+		scope.active = false;
+		if (scope.permit !== undefined) grants.delete(scope.permit);
+		scope.controller.abort(reason);
+		release(scope);
+	};
+	const disable = (): void => {
+		disabled = true;
+		for (const scope of retained) retire(scope, new HostError("DENIED"));
+	};
 	const deny = (
 		reason: string,
 		code?: "DENIED" | "TIMEOUT" | "TOO_LARGE" | "UNSUPPORTED",
 	): never => {
+		const attempt = attempts.getStore();
+		if (attempt) attempt.reason = reason;
 		throw new Refusal(reason, code);
 	};
 	const putBlob = (bytes: Uint8Array): { readonly ref: string } => {
@@ -183,21 +234,56 @@ export function createMockHost(options: {
 		);
 		if (mismatch) {
 			if (TICKET_DISABLES_PLUGIN.includes(mismatch)) {
-				disabled = true;
+				const attempt = attempts.getStore();
+				if (attempt) attempt.reason = mismatch;
+				disable();
 				alerts.push(Object.freeze({ reason: mismatch }));
 			}
 			return deny(mismatch);
 		}
 		return headers;
 	};
-	const queueStream = (bytes: Uint8Array, signal: AbortSignal, scope?: Lookup): string => {
+	const queueStream = (
+		bytes: Uint8Array,
+		signal: AbortSignal,
+		deadline: number,
+		scope?: Lookup,
+	): string => {
 		const streamId = id();
 		let position = 0,
 			sequence = 0;
+		let immediate: NodeJS.Immediate | undefined;
+		const done = Promise.withResolvers<void>();
+		own(scope, done.promise);
+		const cancel = (): void => {
+			if (immediate) clearImmediate(immediate);
+			streams.delete(cancel);
+			signal.removeEventListener("abort", cancel);
+			done.resolve();
+		};
 		const schedule = (): void => {
-			const immediate = setImmediate(() => {
-				streams.delete(immediate);
-				if (closed || signal.aborted || (scope && !scope.active)) return;
+			immediate = setImmediate(() => {
+				if (closed || signal.aborted || (scope && !scope.active)) {
+					cancel();
+					return;
+				}
+				if (elapsed() >= deadline) {
+					base.notify({
+						jsonrpc: "2.0",
+						method: "host/stream.chunk",
+						params: {
+							streamId,
+							sequence: sequence++,
+							base64: "",
+							done: true,
+							error: "TIMEOUT",
+						},
+					});
+					cancel();
+					if (scope && elapsed() >= scope.deadline)
+						retire(scope, new Refusal("LOOKUP_TIMEOUT", "TIMEOUT"));
+					return;
+				}
 				const chunk = bytes.subarray(position, position + MAX_INLINE_BYTES);
 				position += chunk.length;
 				base.notify({
@@ -211,23 +297,25 @@ export function createMockHost(options: {
 					},
 				});
 				if (position < bytes.length) schedule();
+				else cancel();
 			});
-			streams.add(immediate);
 		};
+		streams.add(cancel);
+		signal.addEventListener("abort", cancel, { once: true });
 		schedule();
 		return streamId;
 	};
 	const fetch = async (
 		params: HostFetchParams,
 		parentSignal: AbortSignal,
+		scope: Lookup | undefined,
 	): Promise<HostFetchResult> => {
-		const scope = scopes.getStore();
 		const foundTicket = takeTicket(params);
+		if (manifest.kind !== "tool" && params.lookupPermit !== undefined)
+			return deny("LOOKUP_PERMIT_FORBIDDEN");
 		if (params.saveAs !== undefined && params.saveAs !== "blob")
 			return deny("STORAGE_MODE_UNSUPPORTED", "UNSUPPORTED");
 		if (manifest.kind === "tool") {
-			if (!scope?.active || scope.controller.signal.aborted) return deny("LOOKUP_REQUIRED");
-			if (++scope.requests > TOOL_REQUESTS_PER_LOOKUP) return deny("LOOKUP_REQUEST_LIMIT");
 			if (
 				!["GET", "HEAD"].includes(params.method) ||
 				params.saveAs !== undefined ||
@@ -242,8 +330,7 @@ export function createMockHost(options: {
 		const matched = matchRequest(manifest, params.url, params.method, secrets);
 		if (!matched) return deny("OFF_RULE");
 		const { rule, url } = matched;
-		if (rule.class === "organize" && options.account?.mode !== "full")
-			return deny("FULL_MODE_REQUIRED");
+		if (rule.class === "organize" && account?.mode !== "full") return deny("FULL_MODE_REQUIRED");
 		if (rule.class === "send") {
 			if (manifest.kind !== "channel" || !manifest.send) return deny("RENDERER_REQUIRED");
 			ticketHeaders ??= consumeTicket(params, body);
@@ -251,7 +338,7 @@ export function createMockHost(options: {
 		if (body.byteLength > rule.maxBytes) return deny("REQUEST_TOO_LARGE", "TOO_LARGE");
 		const upstream = upstreams.get(new URL(url).hostname);
 		if (!upstream) return deny("UPSTREAM_UNAVAILABLE");
-		const now = Date.now();
+		const now = elapsed();
 		const deadline = Math.min(now + rule.timeoutMs, scope?.deadline ?? now + 30_000);
 		const budget = deadline - now;
 		if (budget <= 0) return deny("FETCH_TIMEOUT", "TIMEOUT");
@@ -264,7 +351,13 @@ export function createMockHost(options: {
 		const timer = setTimeout(() => timeout.abort(new Refusal("FETCH_TIMEOUT", "TIMEOUT")), budget);
 		const admit = (): void => {
 			if (signal.aborted) throw signal.reason;
-			if (Date.now() >= deadline) deny("FETCH_TIMEOUT", "TIMEOUT");
+			if (elapsed() >= deadline) {
+				const attempt = attempts.getStore();
+				if (attempt) attempt.reason = "FETCH_TIMEOUT";
+				const failure = new Refusal("FETCH_TIMEOUT", "TIMEOUT");
+				if (scope && elapsed() >= scope.deadline) retire(scope, failure);
+				throw failure;
+			}
 			if (scope && !scope.active) deny("LOOKUP_ENDED");
 		};
 		let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -276,13 +369,25 @@ export function createMockHost(options: {
 			const headers = ticketHeaders ?? keepToolHeaders(params.headers, allowed);
 			admit();
 			const response = await interrupted(
-				upstream.fetch(url, {
-					method: params.method,
-					headers: headers as [string, string][],
-					...(body.length ? { body: body as BodyInit } : {}),
-					redirect: "manual",
-					signal,
-				}),
+				own(
+					scope,
+					Promise.resolve()
+						.then(() => {
+							admit();
+							return upstream.fetch(url, {
+								method: params.method,
+								headers: headers as [string, string][],
+								...(body.length ? { body: body as BodyInit } : {}),
+								redirect: "manual",
+								signal,
+							});
+						})
+						.then((response) => {
+							if (closed || signal.aborted || elapsed() >= deadline || (scope && !scope.active))
+								own(scope, response.body?.cancel().catch(() => {}) ?? Promise.resolve());
+							return response;
+						}),
+				),
 				signal,
 			);
 			reader = response.body?.getReader();
@@ -292,7 +397,7 @@ export function createMockHost(options: {
 			const chunks: Uint8Array[] = [];
 			let total = 0;
 			while (reader) {
-				const next = await interrupted(reader.read(), signal);
+				const next = await interrupted(own(scope, reader.read()), signal);
 				admit();
 				if (next.done) break;
 				if (next.value.byteLength > rule.maxBytes - total)
@@ -313,14 +418,18 @@ export function createMockHost(options: {
 			if (bytes.length <= MAX_INLINE_BYTES)
 				return { ...common, body: { base64: bytes.toString("base64url") } };
 			if (params.stream === false) return deny("INLINE_TOO_LARGE", "TOO_LARGE");
-			return { ...common, streamId: queueStream(bytes, parentSignal, scope) };
+			return { ...common, streamId: queueStream(bytes, signal, deadline, scope) };
 		} catch (error) {
 			if (signal.aborted) throw signal.reason;
 			if (error instanceof Refusal) throw error;
 			return deny("UPSTREAM_FAILED");
 		} finally {
 			clearTimeout(timer);
-			void reader?.cancel().catch(() => {});
+			if (reader)
+				own(
+					scope,
+					reader.cancel().catch(() => {}),
+				);
 			reader?.releaseLock();
 		}
 	};
@@ -333,8 +442,28 @@ export function createMockHost(options: {
 		)
 			return deny("TOOL_METHOD_FORBIDDEN");
 		switch (method) {
-			case "host/fetch":
-				return fetch(params as HostFetchParams, signal);
+			case "host/fetch": {
+				const request = params as HostFetchParams;
+				const scope =
+					manifest.kind === "tool"
+						? request.lookupPermit === undefined
+							? undefined
+							: grants.get(request.lookupPermit)
+						: scopes.getStore();
+				if (manifest.kind === "tool") {
+					if (!scope?.active || scope.controller.signal.aborted) return deny("LOOKUP_REQUIRED");
+					const attempt = attempts.getStore();
+					if (attempt) attempt.scope = scope;
+					if (elapsed() >= scope.deadline) {
+						if (attempt) attempt.reason = "FETCH_TIMEOUT";
+						const failure = new Refusal("FETCH_TIMEOUT", "TIMEOUT");
+						retire(scope, failure);
+						throw failure;
+					}
+					if (++scope.requests > TOOL_REQUESTS_PER_LOOKUP) return deny("LOOKUP_REQUEST_LIMIT");
+				}
+				return own(scope, fetch(request, signal, scope));
+			}
 			case "host/log": {
 				if (logs.length >= STATE_LIMIT) return deny("LOG_LIMIT", "TOO_LARGE");
 				logs.push(jsonCopy(params) as { level: string; message: string });
@@ -372,9 +501,10 @@ export function createMockHost(options: {
 			params: HostMethods[M]["params"],
 			requestOptions?: HostRequestOptions,
 		): Promise<HostMethods[M]["result"]> {
-			const scope = scopes.getStore();
+			const attempt: Attempt = {};
+			if (manifest.kind !== "tool" || method !== "host/fetch") attempt.scope = scopes.getStore();
 			try {
-				return await base.request(method, params, requestOptions);
+				return await attempts.run(attempt, () => base.request(method, params, requestOptions));
 			} catch (error) {
 				const failure = error instanceof HostError ? error : new HostError("BAD_REQUEST");
 				if (denials.length < 4096)
@@ -383,13 +513,14 @@ export function createMockHost(options: {
 							sequence: denials.length,
 							method: Object.hasOwn(HOST_METHOD_SCHEMAS, method) ? method : "unknown",
 							reason:
-								error instanceof Refusal ? error.reason : closed ? "HOST_CLOSED" : failure.code,
-							lookup: scope?.id ?? null,
+								attempt.reason ??
+								(error instanceof Refusal ? error.reason : closed ? "HOST_CLOSED" : failure.code),
+							lookup: attempt.scope?.id ?? null,
 						}),
 					);
 				else {
 					auditComplete = false;
-					disabled = true;
+					disable();
 				}
 				throw failure;
 			}
@@ -451,11 +582,8 @@ export function createMockHost(options: {
 		close() {
 			if (closed) return;
 			closed = true;
-			for (const scope of active) {
-				scope.active = false;
-				scope.controller.abort(new HostError("DENIED"));
-			}
-			for (const immediate of streams) clearImmediate(immediate);
+			for (const scope of retained) retire(scope, new HostError("DENIED"));
+			for (const cancel of streams) cancel();
 			streams.clear();
 			base.close();
 			kv.clear();
@@ -468,9 +596,32 @@ export function createMockHost(options: {
 	};
 	return {
 		host,
-		async lookup<T>(action: (signal: AbortSignal) => Promise<T>, kind?: ToolKind): Promise<T> {
+		async lookup<T>(
+			action: (signal: AbortSignal, permit?: string) => Promise<T>,
+			kind?: ToolKind,
+			args?: unknown,
+		): Promise<T> {
 			if (closed || disabled) throw new MockHubError(closed ? "HOST_CLOSED" : "PLUGIN_DISABLED");
-			if (active.size >= 16) throw new MockHubError("LOOKUP_LIMIT");
+			// Trusted-fixture safeguard, including disposing work; no native admission bound is implied.
+			if (retained.size >= 16) throw new MockHubError("LOOKUP_LIMIT");
+			let permit: string | undefined;
+			if (manifest.kind === "tool" && kind !== undefined) {
+				try {
+					for (let draw = 0; draw < 4; draw++) {
+						const bytes = controls.entropy ? controls.entropy() : randomBytes(32);
+						if (!(bytes instanceof Uint8Array) || bytes.byteLength !== 32)
+							throw new Error("entropy");
+						const candidate = Buffer.from(bytes).toString("base64url");
+						if (!reserved.has(candidate)) {
+							permit = candidate;
+							break;
+						}
+					}
+				} catch {
+					throw new HostError("DENIED");
+				}
+				if (permit === undefined) throw new HostError("DENIED");
+			}
 			const budget = kind
 				? toolKindsV1[kind].timeoutMs
 				: manifest.kind === "tool"
@@ -478,29 +629,49 @@ export function createMockHost(options: {
 					: 30_000;
 			const scope: Lookup = {
 				id: ++nextLookup,
+				generation,
+				instance: options.instance,
+				account,
+				kind,
+				argumentsDigest: sha256Hex(Buffer.from(JSON.stringify(jsonCopy(args ?? null)))),
 				controller: new AbortController(),
-				deadline: Date.now() + budget,
+				deadline: elapsed() + budget,
+				permit,
 				active: true,
 				requests: 0,
+				pending: 0,
 			};
-			active.add(scope);
+			retained.add(scope);
+			if (permit !== undefined) {
+				grants.set(permit, scope);
+				reserved.add(permit);
+			}
 			const timer = setTimeout(
-				() => scope.controller.abort(new Refusal("LOOKUP_TIMEOUT", "TIMEOUT")),
+				() => retire(scope, new Refusal("LOOKUP_TIMEOUT", "TIMEOUT")),
 				budget,
 			);
 			try {
 				const result = await scopes.run(scope, () =>
-					interrupted(action(scope.controller.signal), scope.controller.signal),
+					interrupted(
+						own(
+							scope,
+							Promise.resolve().then(() => {
+								if (closed || !scope.active || scope.controller.signal.aborted)
+									throw scope.controller.signal.reason ?? new HostError("DENIED");
+								if (elapsed() >= scope.deadline) throw new Refusal("LOOKUP_TIMEOUT", "TIMEOUT");
+								return action(scope.controller.signal, permit);
+							}),
+						),
+						scope.controller.signal,
+					),
 				);
 				if (closed || !scope.active || scope.controller.signal.aborted)
 					throw scope.controller.signal.reason ?? new HostError("DENIED");
-				if (Date.now() >= scope.deadline) throw new Refusal("LOOKUP_TIMEOUT", "TIMEOUT");
+				if (elapsed() >= scope.deadline) throw new Refusal("LOOKUP_TIMEOUT", "TIMEOUT");
 				return result;
 			} finally {
 				clearTimeout(timer);
-				scope.active = false;
-				scope.controller.abort(new HostError("DENIED"));
-				active.delete(scope);
+				retire(scope, new HostError("DENIED"));
 			}
 		},
 	};

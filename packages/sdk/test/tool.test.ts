@@ -1,3 +1,4 @@
+import { LOOKUP_PERMIT_META_KEY } from "@draftyak/protocol/host-channel";
 import { canonicalize } from "@draftyak/protocol/jcs";
 import {
 	canonicalToolsList,
@@ -17,6 +18,7 @@ import {
 	type ToolPluginDefinition,
 } from "../src/tool.ts";
 import { bootstrap, channelManifest, served, toolManifest } from "./definitions-fixtures.ts";
+import { permitA } from "./lookup-fixtures.ts";
 
 type Definition = ToolPluginDefinition<typeof toolManifest>;
 function first<T>(list: readonly T[]): T {
@@ -342,7 +344,13 @@ describe("tool definitions", () => {
 				expect(
 					checkToolResult(
 						"kb.lookup",
-						(await ask("tools/call", { name: "kb.lookup", arguments: { topic: "work" } })).result,
+						(
+							await ask("tools/call", {
+								name: "kb.lookup",
+								arguments: { topic: "work" },
+								_meta: { [LOOKUP_PERMIT_META_KEY]: permitA },
+							})
+						).result,
 					).status,
 				).toBe("ok");
 			},
@@ -350,8 +358,8 @@ describe("tool definitions", () => {
 			host,
 		);
 		expect(requests).toEqual([
-			{ method: "GET", url: "secret://calendarUrl", headers: [] },
-			{ method: "HEAD", url: "https://example.test/read", headers: [] },
+			{ method: "GET", url: "secret://calendarUrl", headers: [], lookupPermit: permitA },
+			{ method: "HEAD", url: "https://example.test/read", headers: [], lookupPermit: permitA },
 		]);
 	});
 	it("checks semantic results and the declared byte cap and sanitizes typed and unknown errors", async () => {

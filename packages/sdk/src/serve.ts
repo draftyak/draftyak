@@ -1,6 +1,16 @@
-import { HOST_MAX_FRAME_BYTES, jsonCopy } from "@draftyak/protocol/host-channel";
+import {
+	HOST_MAX_FRAME_BYTES,
+	jsonCopy,
+	LOOKUP_PERMIT_META_KEY,
+	LookupPermit,
+} from "@draftyak/protocol/host-channel";
 import { canonicalize } from "@draftyak/protocol/jcs";
-import { isCanonicalToolsList, type ToolEntry, type ToolKind } from "@draftyak/protocol/tool-v1";
+import {
+	isCanonicalToolsList,
+	type ToolEntry,
+	type ToolKind,
+	toolKindsV1,
+} from "@draftyak/protocol/tool-v1";
 import {
 	type CallToolResult,
 	isJSONRPCErrorResponse,
@@ -144,7 +154,21 @@ export function createPluginServer(
 						if (signal.aborted) throw new Error("Plugin call cancelled");
 						const value = await Promise.race([
 							Promise.resolve().then(() => {
-								const metadata = Object.freeze(jsonCopy(context.mcpReq._meta ?? {}));
+								if (signal.aborted) throw new Error("Plugin call cancelled");
+								const raw = context.mcpReq._meta ?? {};
+								let lookupScope: Readonly<{ lookupPermit?: LookupPermit }> | undefined;
+								if (
+									keys[0] === "io.github.draftyak/tool" &&
+									Object.hasOwn(toolKindsV1, tool.name)
+								) {
+									const slots = fields(raw, 65_536);
+									if (Object.hasOwn(slots, LOOKUP_PERMIT_META_KEY)) {
+										const parsed = LookupPermit.safeParse(slots[LOOKUP_PERMIT_META_KEY]?.value);
+										if (!parsed.success) throw new PluginError("INVALID_INPUT");
+										lookupScope = Object.freeze({ lookupPermit: parsed.data });
+									} else lookupScope = Object.freeze({});
+								}
+								const metadata = Object.freeze(jsonCopy(raw));
 								let request: PluginRequestContext | undefined;
 								if (
 									keys[0] === "io.github.draftyak/ai-provider" &&
@@ -173,7 +197,7 @@ export function createPluginServer(
 								}
 								return tool.handler(
 									args,
-									createPluginContext(identity, host, signal),
+									createPluginContext(identity, host, signal, lookupScope),
 									metadata,
 									request,
 								);

@@ -26,6 +26,32 @@ for `channel_send` and pass its value unchanged to `context.fetch`. Metadata is
 untrusted input; the SDK neither forwards a ticket automatically nor treats it
 as native authorization. The hub's broker authenticates and consumes tickets.
 
+On a tool server, the three canonical kind lookups (`calendar.freebusy`,
+`contact.notes`, `kb.lookup`) capture `_meta['io.github.draftyak/lookup-permit']`
+once per call. A present malformed value returns typed `INVALID_INPUT` before
+the handler runs. With no permit, non-network computation may run, but
+`context.fetch` refuses locally with `HostError("DENIED")`. A valid captured
+value is echoed only in `host/fetch.params.lookupPermit`, never an HTTP header,
+URL, body, other host method or log. Cancellation and call settlement retire the
+cooperative fetch scope. There is no retry that strips the control field.
+
+The scope argument in `createPluginContext`/`hostFetch` is internal serving
+plumbing, not a plugin option or authority source. Neither `PluginContext` nor
+`HostFetchInit` exposes a permit field. Calls retain the same shared host channel
+and stream router; no ambient latest-call binding is used. Other call metadata
+still reaches the third handler argument as a detached copy. Channel/provider
+calls and tool probe/setup calls do not inherit a lookup permit; this feature
+does not define their admission, timeout or compatibility.
+
+Only a conforming parent ledger authorizes presented grants and enforces the
+actual instance/process generation, account, deadline, request budget and
+retirement. A hostile child can bypass SDK helpers or retain another active
+call's fetch closure. The grant controls the presented authority and budget;
+it does not prove internal causal origin, data origin or memory confidentiality
+between calls sharing that untrusted process. Require supporting parent contract
+and conformance before enabling tool egress; never infer support from an MCP
+version or silently fall back to unbound egress.
+
 `memoryHost(handler)` validates and copies JSON at the adapter boundary. It does
 not simulate broker policy. `stdioHost({input, output})` supplies the same API
 over RS-tagged host JSON lines and exposes its untagged MCP `transport`.
