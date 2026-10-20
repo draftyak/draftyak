@@ -613,6 +613,15 @@ export const HUB_BUDGET_MS: number =
 	REVOKE_MS +
 	(REQUEST_MS + REVOKE_MS + REQUEST_MS);
 
+// The step after expiry (DRAFTYAK_S7_DEFERRED_MIN): the hub process drafts again this long after its
+// access token expired, waiting at most the given whole minutes, 1 to 120. Its own requests add one
+// refresh, one draft and one revocation to the hub's budget.
+export const AFTER_EXPIRY_MS: number = 3 * 60_000;
+export const DEFERRED_MAX_MIN = 120;
+export const DEFERRED_BUDGET_MS: number = REQUEST_MS + DRAFT_TIMEOUT_MS + REVOKE_MS;
+export const isDeferredMinutes = (value: string): boolean =>
+	/^[1-9]\d{0,2}$/.test(value) && Number(value) <= DEFERRED_MAX_MIN;
+
 // Refusals that name the refresh token itself as invalid. Expiry doesn't prove a revocation, and
 // neither does reuse: a token rotated away is refused whether or not its session was revoked.
 export const CONFIRMING: ReadonlySet<string> = new Set([
