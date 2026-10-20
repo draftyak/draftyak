@@ -16,6 +16,7 @@ export {
 	PinService,
 	type PinWallClock,
 } from "./identity/pin.ts";
+export { isKnownSyncedPath } from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
 export {
 	type AddressFacts,
