@@ -94,3 +94,4 @@ These checked-in contracts remain draft until the M1 gate. A dash means the cont
 | Send snapshots | [Approval v1: snapshot](approval-v1.md#snapshot) | [Snapshot v1](schemas/snapshot-v1.schema.json) | [Snapshots](vectors/snapshot/) |
 | Approval and identity statements | [Approval v1: statements](approval-v1.md#statements) | — | [Statements](vectors/statements/) |
 | Relay architecture | [Relay protocol v1](relay-protocol-v1.md) | — | — |
+| Scheduling, DST resolution and the clock rule | [Approval v1: schedule](approval-v1.md#schedule-and-clock-rule) | — | [Schedule](vectors/schedule/) |

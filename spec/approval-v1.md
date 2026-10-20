@@ -218,4 +218,58 @@ M1.23 adds the SMS group's explicit kinds; the current empty group accepts none.
 
 ## Schedule and clock rule
 
-Timezone resolution, DST refusal and the clock rule are defined by M1.18.
+`resolveLocalTime(wall, zone)` accepts a real ISO calendar minute
+`YYYY-MM-DDTHH:mm` without an offset, seconds, annotations or surrounding
+whitespace. The zone uses the shared `IanaZone` syntax and must exist in the
+time-zone database. Earlier and later Temporal resolutions identify uniqueness:
+equal instants are accepted; different instants whose earlier local time equals
+the requested wall time give `AMBIGUOUS_LOCAL_TIME`; otherwise they give
+`NONEXISTENT_LOCAL_TIME`. The resolver never parses an exception message or
+silently adjusts a gap or overlap.
+
+When `typeof Temporal === 'undefined'`, resolution and rendering fail with
+`SCHEDULING_UNAVAILABLE`. Invalid grammar, dates, zones and unrepresentable
+instants fail with `INVALID_INPUT`, without repeating the input.
+
+`renderLocalWallTime(notBefore, zone)` returns `YYYY-MM-DDTHH:mm±HH:MM`.
+Minute display preserves the original millisecond instant for hashing and send
+window comparisons. The helpers accept nonnegative safe-integer UTC milliseconds
+through `253402207200999`, the pinned Jiff timestamp limit. Unrepresentable years
+and historical offsets containing seconds are refused. These helper limits do
+not change `UtcMs` or the frozen `Schedule` schema.
+
+Rust renders with `TimeZoneDatabase::bundled()`, rather than a global database
+that can prefer system zoneinfo. The virtual `Etc/Unknown` sentinel and bundled
+`Factory` placeholder are refused case-insensitively. `check_local_wall_time`
+validates and renders the instant and zone, then returns false for a different
+claimed display. Native review warns with the UTC instant when the display
+differs. The shared schedule vectors record the Node/tzdata producer and the
+pinned Rust dependencies; each language independently consumes every fixture.
+A tzdata version difference alone warns; a different answer fails.
+
+Scheduled claims and retries require
+`min(hubNow, secondNow) >= notBefore` and
+`max(hubNow, secondNow) <= deliverBy`. A malformed window refuses first; an
+unreadable clock or skew greater than two minutes holds the account; a maximum
+clock past `deliverBy` is missed; a minimum clock before `notBefore` is early.
+The broker observes the pre-claim response's own `Date` header and advances it
+by monotonic elapsed time. Plugins cannot supply this clock. The header must
+round-trip exactly through its instant's IMF-fixdate, including the weekday;
+normalised invalid dates and leap seconds are refused. Immediate items use the
+hub clock.
+
+HTTP `Date` has whole-second precision and is written before response transit.
+It lags a correct upstream by less than one second plus the one-way latency.
+With a correct hub clock this only delays a claim. With a slow hub clock and a
+correct upstream, the literal late comparison can admit a claim after
+`deliverBy` by at most that lag. This is the documented precision bound from
+ADR 0015.
+
+The scheduler uses injected-clock ticks of at most 15 seconds. It never arms a
+timer from a distant `notBefore`. An early hold retries after
+`clamp(ceil(notBefore - min(hubNow, secondNow)), 1000, 15000)` milliseconds;
+skew holds and failed pre-claim reads retry after 15000 milliseconds. The next
+due tick uses `max(notBefore, retryAt)` for each live row, with an account-wide
+retry time after a skew hold. Each hold episode alerts and audits once; missed
+is final. These claim and timer rules belong to the hub runtime; the schedule
+helpers only resolve and display time.
