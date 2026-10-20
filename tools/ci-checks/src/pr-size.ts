@@ -114,8 +114,8 @@ export function report(size: Size): string[] {
 
 // mN-<nn>-<slug> is item MN.<nn> going into mN; mN itself goes into main.
 export function itemOf(branch: string): { id: string; into: string } | undefined {
-	const item = /^m(\d+[a-z]?)-(\d{2})([a-z]?)-[a-z0-9]+(?:-[a-z0-9]+)*$/.exec(branch);
-	if (item) return { id: `M${item[1]}.${Number(item[2])}${item[3]}`, into: `m${item[1]}` };
+	const item = /^m(\d+[a-z]?)-(\d{2,})([a-z]?)-[a-z0-9]+(?:-[a-z0-9]+)*$/.exec(branch);
+	if (item?.[2]) return { id: `M${item[1]}.${BigInt(item[2])}${item[3]}`, into: `m${item[1]}` };
 	const milestone = /^m(\d+[a-z]?)$/.exec(branch);
 	return milestone ? { id: `M${milestone[1]}`, into: "main" } : undefined;
 }

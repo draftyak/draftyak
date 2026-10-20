@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { tempRepo } from "../test/temp-repo.ts";
 import { category, itemOf, measure, parseNumstat, report, sizeBand } from "./pr-size.ts";
@@ -69,6 +71,85 @@ describe("pr-size", () => {
 			{ id: "M0", into: "main" },
 			undefined,
 		]);
+	});
+
+	it.each([
+		["m1-99-size-probe", "M1.99", "m1"],
+		["m1-100-size-probe", "M1.100", "m1"],
+		["m2-142-size-probe", "M2.142", "m2"],
+		["m10-1000-size-probe", "M10.1000", "m10"],
+		["m1b-100a-size-probe", "M1b.100a", "m1b"],
+		["m11-1234567890-size-probe", "M11.1234567890", "m11"],
+		["m1-0100-size-probe", "M1.100", "m1"],
+		["m1-0000-size-probe", "M1.0", "m1"],
+	])("infers the complete item and base for %s", (branch, id, into) => {
+		expect(itemOf(branch)).toEqual({ id, into });
+	});
+
+	it("keeps distinct arbitrary-width item numbers exact while normalizing leading zeros", () => {
+		const numbers = ["9007199254740992", "9007199254740993", "9".repeat(400)];
+		const ids = numbers.map((number) => itemOf(`m1-${number}-size-probe`)?.id);
+		expect(ids).toEqual(numbers.map((number) => `M1.${number}`));
+		expect(new Set(ids).size).toBe(numbers.length);
+		for (const number of numbers) {
+			expect(itemOf(`m1b-000${number}a-size-probe`)).toEqual({
+				id: `M1b.${number}a`,
+				into: "m1b",
+			});
+		}
+	});
+
+	it.each([
+		"m1-1-size-probe",
+		"m1-9a-size-probe",
+		"m1--size-probe",
+		"m1-+100-size-probe",
+		"m1-1_00-size-probe",
+		"m1-0x64-size-probe",
+		"m1-100ab-size-probe",
+		"m1-100A-size-probe",
+		"prefix-m1-100-size-probe",
+		"refs/heads/m1-100-size-probe",
+		" m1-100-size-probe",
+		"m1/100-size-probe",
+		"M1-100-size-probe",
+		"m-100-size-probe",
+		"m1bb-100-size-probe",
+		"mx-100-size-probe",
+		"m1-100-",
+		"m1-100--size-probe",
+		"m1-100-size-probe-",
+		"m1-100-size--probe",
+		"m1-100-Size-probe",
+		"m1-100-size_probe",
+		"m1-100-size.probe",
+		"m1-100-size-probe/extra",
+		"m1-100-size-probe ",
+	])("does not infer an item or base from malformed branch %s", (branch) => {
+		expect(itemOf(branch)).toBeUndefined();
+	});
+
+	it("measures a branch above 99 against its inferred remote base through the CLI", () => {
+		const repo = tempRepo();
+		try {
+			const base = repo.commit("chore: size base");
+			repo.git("update-ref", "refs/remotes/origin/m2", base);
+			repo.git("checkout", "-q", "-b", "m2-142-width-probe");
+			repo.write("src/probe.ts", "export const probe = true;\n");
+			repo.commit("feat: size probe");
+			const result = spawnSync(process.execPath, [path.join(import.meta.dirname, "pr-size.ts")], {
+				cwd: repo.dir,
+				encoding: "utf8",
+				windowsHide: true,
+			});
+			expect(result.status, result.stderr).toBe(0);
+			expect(result.stdout).toContain(
+				"pr-size: M2.142, m2-142-width-probe against origin/m2, 1 files",
+			);
+			expect(result.stdout).toMatch(/counted code\s+1 lines: S/);
+		} finally {
+			repo.remove();
+		}
 	});
 
 	const repo = tempRepo();
