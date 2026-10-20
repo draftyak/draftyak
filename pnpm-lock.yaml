@@ -27,6 +27,35 @@ importers:
         specifier: 5.0.5
         version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(yaml@2.9.1))
 
+  apps/hub:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      better-sqlite3-multiple-ciphers:
+        specifier: 13.0.3
+        version: 13.0.3
+      kysely:
+        specifier: 0.29.6
+        version: 0.29.6
+    devDependencies:
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
+  packages/extensions:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      hono:
+        specifier: 4.13.13
+        version: 4.13.13
+    devDependencies:
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
   packages/fakes:
     dependencies:
       '@hono/node-server':
@@ -49,6 +78,25 @@ importers:
       '@cfworker/json-schema':
         specifier: 4.1.1
         version: 4.1.1
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
+  packages/sdk:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@modelcontextprotocol/server':
+        specifier: 2.3.1
+        version: 2.3.1
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
       fast-check:
         specifier: 4.10.2
         version: 4.10.2

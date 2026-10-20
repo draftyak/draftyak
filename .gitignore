@@ -19,4 +19,5 @@ local.properties
 **/gen/
 **/src-tauri/binaries/
 spikes/**/bundle/
+/spikes/s12-sms/evidence/
 *.tsbuildinfo
