@@ -225,3 +225,85 @@ append does not undo it. Rate limits, Retry-After and Date use shared scripted
 faults and the reader clock; they establish no real tier/exemption or live
 Slack behavior. No shared server/recorder/fault changes or Socket Mode fixture
 dependency are required.
+
+
+### Synthetic auth and Socket Mode companion
+
+`createSlackSocketFake` is separate from the read factory. It adapts the ordinary
+S6 fixture's synthetic user/app token checks, `auth.test`,
+`apps.connections.open`, hello/event envelopes, acknowledgements, dropped ACKs,
+redelivery and disconnect controls. It implements no native credential, approval,
+broker, send, scheduling, reconciliation or corpus authority.
+
+`await fake.start()` starts one private HTTP/WebSocket listener on IPv4 loopback;
+`fake.apiBase` is its HTTP API base. `fake.listen()` returns that same listener,
+and its `close()` closes the whole companion. An in-memory
+`fake.fetch('/api/apps.connections.open', ...)` also starts the private listener
+to return a usable WebSocket URL. HTTP requests use the existing capped shared
+fake/recorder/fault path. There is no shared server upgrade API or native fetch
+fallback.
+
+Use `fake.userToken` for a bare POST to `/api/auth.test` and `fake.appToken`
+for `/api/apps.connections.open`, in a Bearer header. These generated DYTEST
+values are fixture controls. Extra query/form arguments and every other route
+are refused. The open response contains a single-use, instance-bound local URL;
+wrong paths, queries and browser Origin headers cannot redeem it. The controlled
+`clock` expires unused tickets after 60 seconds and supplies HTTP Date headers.
+A failed handshake on the correct path may consume a ticket, as in S6.
+
+`sendHello`, `deliver(payload, {connection?, type?, acceptsResponsePayload?})`,
+`frame(connection, value)`, `dropAcks`, `acksFor(id)`,
+`disconnect(connection, reason, delayOrNull)` and `terminate(connection)` are
+synthetic controls. Obtain opaque connection handles from `live()`; another
+instance's handle refuses. Envelopes and ACK diagnostics are available through
+read-only bounded snapshots; current pending ACK lookup survives diagnostic history
+eviction. Caller payloads are copied as inert, finite JSON;
+getters, proxies, custom serialization, deep/large collections and nonfinite
+numbers refuse. Caller-provided payload content remains intentional fixture data.
+
+ACKs are text JSON containing only `envelope_id`. Unlike the permissive spike,
+this companion refuses binary/malformed ACKs, binds valid IDs to their delivery
+socket, omits unknown IDs from retained diagnostics and consumes `dropAcks` only
+for valid ACKs. It does not process response payloads;
+`acceptsResponsePayload` controls the emitted wire flag only. Unacknowledged
+envelopes retry at most three times (attempts 0,1,2,3), each with a fresh ID, the
+same copied payload/type and the newest live connection. Retries reset the
+response-payload flag to false, as in S6. An old-ID ACK does not cancel a newer
+retry. Work stops if no live socket remains instead of waiting forever.
+
+| Work | Fixture-local bound |
+|---|---|
+| HTTP admission | 16 KiB per upload, 16 concurrent in-memory/bridged requests, a 1-second abort timer |
+| Private transport | 8 TCP sockets including handshakes/HTTP/WS; 4 KiB handshake headers; 60-second socket lifetime |
+| Tickets | 32 outstanding, 60 seconds on the controlled clock |
+| Event wire / ACK message | 16 KiB / 1 KiB |
+| Delivery work | 64 pending events; at most 3 redeliveries per event |
+| Per-connection work | 256 outgoing messages and 256 received ACK/ping/pong messages |
+| Retention / timers | 256 entries per envelope/ACK/connection/HTTP record collection; 128 owned timers |
+| HTTP fault scripts | 32 pending; finite uses at most 1024 and latency at most 1 second |
+
+These bound completed message work and fixture-owned state; they make no
+original-ingress chunk/fragment count, arbitrary JavaScript CPU/time or global
+process-memory guarantee. Public `faults.add/run` refuse after close; `pending`
+and `clear` remain usable. Fault selection and latency use an abortable bodyless
+metadata request; the app still receives its original Request without a body
+clone. Close aborts fixture-owned waiting without waiting for a caller-provided
+app callback to settle. Such callbacks retain ownership of their own work; no
+arbitrary JavaScript is preempted. ACK/retry/disconnect timers and socket lifetime use
+real timers; advancing the HTTP/ticket clock does not advance them. Event-loop
+scheduling can delay timer callbacks. Trusted shared-fault match predicates
+retain their usual caller responsibilities.
+
+Retained HTTP records omit all header values, query values and body prefixes,
+while keeping bounded method/route metadata and received-byte lengths/hashes
+(including shared over-cap refusal evidence). Unknown paths become `/refused`; unknown method names become `OTHER`, and
+only fixed known header names remain.
+Synthetic auth values and ticket URLs are not retained in HTTP/ACK diagnostics.
+Direct `recorder.record` refuses body-bearing uploads; capped admission uses
+`begin/write` through `fetch`. Draining records releases their slots.
+
+`await fake.close()` is idempotent: it aborts owned uploads, cancels timers,
+invalidates tickets, terminates owned sockets, closes the private listener and
+clears retained state. It leaves other fakes alone; later use refuses.
+This synthetic suite is not native client ACK-before-reduce/deduplication,
+Socket Mode broker, ADR 0008, renderer/corpus or milestone acceptance.
