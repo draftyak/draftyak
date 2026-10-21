@@ -27,6 +27,18 @@ are refused. The runner supplies exact production values.
 There are at most 64 arguments, 8 KiB per argument and 64 KiB in total;
 environment values are at most 8 KiB each and 32 KiB in total.
 
+The optional `CARGO` entry accepts only that exact key spelling. Its value must
+pass the same absolute native-executable checks as the command, before capture
+files or a child are created. Empty values, scripts, shell interpreters and case
+aliases are refused. Omission never inherits an ambient `CARGO`. Arguments and
+environment scalars are copied before filesystem validation awaits. The requested
+invocation path is retained after validation, including its basename; it is not
+replaced with the resolved path, which could change rustup proxy dispatch.
+Native-header checks do not establish Cargo identity, toolchain provenance or
+child-tool behavior. The trusted driver must separately bind and recheck its
+selected tool. This optional entry does not connect a native audit driver or
+change the production `BASIS_UNAVAILABLE` refusal.
+
 Each stream has its own exclusive, non-following binary file named
 capture-ID.stdout.bin or capture-ID.stderr.bin. Stdout is capped at 16 MiB and
 stderr at 4 MiB. Each incoming native Buffer extent is checked before creating
