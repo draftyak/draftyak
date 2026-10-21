@@ -188,6 +188,9 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 	const nodeVersion = text(input.nodeVersion, /^\d+\.\d+\.\d+$/, "Node pin");
 	if (input.needs.length > 64 * 1024) throw new UsageError("CI job metadata exceeds 64 KiB");
 	const needs = object(parseJson(input.needs, "job metadata"));
+	if (Object.keys(needs).some((name) => !jobNames.some((job) => job === name))) {
+		throw new UsageError("unknown job in CI metadata");
+	}
 	const changes = object(needs.changes);
 	const changesOutputs = object(changes.outputs ?? {});
 	const docsOnly = changesOutputs["docs-only"] === "true";
