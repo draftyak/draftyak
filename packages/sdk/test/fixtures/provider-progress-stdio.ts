@@ -1,3 +1,4 @@
+import { markStdioFixtureReady } from "../stdio-readiness.ts";
 import { defineAiProviderPlugin } from "../../src/ai-provider.ts";
 import { serve } from "../../src/serve.ts";
 import { aiManifest } from "../definitions-fixtures.ts";
@@ -10,3 +11,5 @@ serve(defineAiProviderPlugin({manifest: aiManifest,
 		return {kind: "unexpected", model: "test-model", fallback: false, usage: {input: null, output: 0}, stopReason: null};
 	},
 }));
+
+markStdioFixtureReady();

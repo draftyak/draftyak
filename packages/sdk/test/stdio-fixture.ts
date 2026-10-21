@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { observeStdioFixture } from "./stdio-readiness.ts";
 
 export interface Reply {
 	readonly id: number;
@@ -23,6 +24,7 @@ interface Pending extends Request {
 	readonly cancel: () => void;
 }
 interface StdioFixture {
+	ready(): Promise<void>;
 	diagnostics(reason?: string): string;
 	stderr(): string;
 	ask(method: string, params?: Record<string, unknown>): Promise<Reply>;
@@ -49,7 +51,11 @@ function bounded(text: string): string {
 /** Synthetic test subprocess only; the production parent launch is a separate contract. */
 export function stdioFixture(
 	fixture: URL,
-	options: { readonly args?: readonly string[]; readonly clock?: Clock } = {},
+	options: {
+		readonly args?: readonly string[];
+		readonly clock?: Clock;
+		readonly ready?: boolean;
+	} = {},
 ): StdioFixture {
 	const timing = options.clock ?? clock;
 	const child = spawn(
@@ -58,6 +64,7 @@ export function stdioFixture(
 		{ stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
 	);
 	const stopped = Promise.withResolvers<void>();
+	const readiness = options.ready ? observeStdioFixture(child) : undefined;
 	const lines = createInterface({ input: child.stdout });
 	let stderr = "",
 		lastFrame: string | null = null,
@@ -89,7 +96,7 @@ export function stdioFixture(
 		request.reject(new Error(`Stdio fixture request failed: ${diagnostics(reason)}`));
 	};
 	child.stderr.on("data", (chunk: Buffer) => {
-		stderr = bounded(stderr + chunk.toString("utf8"));
+		stderr = bounded(readiness ? readiness.stderrText() : stderr + chunk.toString("utf8"));
 	});
 	child.stdout.prependListener("data", (chunk: Buffer) => {
 		stdoutBytes += chunk.length;
@@ -138,6 +145,9 @@ export function stdioFixture(
 		request.resolve(reply);
 	});
 	return {
+		async ready(): Promise<void> {
+			await readiness?.ready();
+		},
 		diagnostics,
 		stderr: () => stderr,
 		ask(method: string, params: Record<string, unknown> = {}): Promise<Reply> {
