@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "metadata": "node src/metadata-cli.ts ../..",
+    "community": "node src/community-cli.ts ../..",
     "typecheck": "tsc -b",
     "test": "vitest run"
   },
