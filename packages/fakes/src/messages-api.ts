@@ -77,9 +77,10 @@ function encoded(text: string, limit = MAX_BYTES): Uint8Array<ArrayBuffer> {
 }
 
 function prepare(step: MessagesApiStep, available: number): Prepared {
+	const kind = step.kind;
 	const limit = Math.min(MAX_BYTES, available);
 	const delayMs = step.delayMs ?? 0;
-	const streamed = step.kind !== "json";
+	const streamed = kind !== "json";
 	const chunkBytes = streamed ? (step.chunkBytes ?? 65_536) : 65_536;
 	const chunkDelayMs = streamed ? (step.chunkDelayMs ?? 0) : 0;
 	checkDelay("Messages fake delayMs", delayMs);
@@ -89,7 +90,7 @@ function prepare(step: MessagesApiStep, available: number): Prepared {
 	}
 	let text: string;
 	let contentType: string;
-	if (step.kind === "sse") {
+	if (kind === "sse") {
 		if (step.events.length > MAX_EVENTS) throw new RangeError("Messages fake event limit");
 		const frames: string[] = [];
 		let length = 0;
@@ -107,8 +108,8 @@ function prepare(step: MessagesApiStep, available: number): Prepared {
 		text = frames.join("");
 		contentType = "text/event-stream; charset=utf-8";
 	} else {
-		text = step.kind === "json" ? json(step.body) : step.body;
-		contentType = step.kind === "json" ? "application/json" : (step.contentType ?? "text/plain");
+		text = kind === "json" ? json(step.body) : step.body;
+		contentType = kind === "json" ? "application/json" : (step.contentType ?? "text/plain");
 	}
 	const bytes = encoded(text, limit);
 	if (Math.ceil(bytes.byteLength / chunkBytes) > MAX_CHUNKS) {
