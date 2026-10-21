@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 draftyak-protocol = { path = "../draftyak-protocol" }
 futures-util = { version = "=0.3.34", default-features = false, features = ["std", "sink"] }
+hkdf = { version = "=0.13.0", default-features = false }
 http-body-util = "=0.1.3"
 hyper = { version = "=1.12.0", default-features = false, features = ["client", "http1"] }
 hyper-util = { version = "=0.1.21", default-features = false, features = ["tokio"] }
