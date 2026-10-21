@@ -6,15 +6,19 @@ import {
 	mkdirSync,
 	opendirSync,
 	readdirSync,
-	readFileSync,
 	readlinkSync,
 	realpathSync,
-	statSync,
 } from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3-multiple-ciphers";
 import { MasterKey } from "../../../src/kernel/master-key.ts";
 import { openEncrypted } from "../../../src/store/open.ts";
+import {
+	databaseFileIdentities,
+	scanDescriptorDirectory,
+	scanNamedFiles,
+	tempFileScanSupported,
+} from "../temp-file-observer.ts";
 
 interface Scan {
 	readonly files: number;
@@ -39,7 +43,7 @@ const closeDirectory = Dir.prototype.closeSync;
 try {
 	assert.equal(process.argv.length, 4);
 	assert(root && nativeBinding);
-	assert(process.platform === "win32" || process.platform === "linux");
+	assert(tempFileScanSupported(process.platform));
 	assert(path.isAbsolute(root) && path.isAbsolute(nativeBinding));
 	assert.equal(realpathSync(root), root);
 	assert(path.basename(root).startsWith("draftyak-temp-store-"));
@@ -128,22 +132,17 @@ try {
 		return result;
 	};
 	const scan = (): Scan => {
-		const files = liveFiles();
-		const found = new Set<string>();
-		let bytes = 0;
-		for (const name of files) {
-			const info = statSync(name);
-			assert(info.isFile() && info.size <= 16 * 1024 * 1024);
-			const content = readFileSync(name);
-			assert(content.length <= 16 * 1024 * 1024);
-			bytes += content.length;
-			assert(bytes <= 64 * 1024 * 1024);
-			for (const needle of needles) if (content.includes(needle.value)) found.add(needle.label);
-		}
-		return { files: files.length, bytes, hits: [...found].sort() };
+		if (process.platform === "darwin")
+			return scanDescriptorDirectory(
+				"/dev/fd",
+				databaseFileIdentities(path.join(root, "hub.db")),
+				needles,
+			);
+		return scanNamedFiles(liveFiles(), needles);
 	};
+	const empty = (): void => assert.deepEqual(scan(), { files: 0, bytes: 0, hits: [] });
 	const sort = (): Scan => {
-		assert.deepEqual(liveFiles(), []);
+		empty();
 		const rows = db.prepare("SELECT body FROM records ORDER BY body").iterate();
 		try {
 			assert.equal(rows.next().done, false);
@@ -153,7 +152,7 @@ try {
 		}
 	};
 	const statement = (): Scan => {
-		assert.deepEqual(liveFiles(), []);
+		empty();
 		db.exec("BEGIN IMMEDIATE");
 		try {
 			// Possible trigger ABORT requires rollback of this multi-row statement.
@@ -174,7 +173,7 @@ try {
 		}
 	};
 	const table = (): Scan => {
-		assert.deepEqual(liveFiles(), []);
+		empty();
 		db.exec("CREATE TEMP TABLE copied AS SELECT subject,body,sender FROM records");
 		try {
 			return scan();
@@ -194,7 +193,7 @@ try {
 		assert.equal(observed.files, 0);
 		assert.deepEqual(observed.hits, []);
 	}
-	assert.deepEqual(liveFiles(), []);
+	empty();
 	phase = "file-setting";
 	db.pragma("temp_store = FILE");
 	db.pragma("temp.cache_size = 2");
