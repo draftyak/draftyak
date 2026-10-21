@@ -177,7 +177,7 @@ Keep the normal order: revoke first, delete both clients second. If both clients
 - `pnpm guard` reports 0 findings, the new evidence included; `git status` shows only `spikes/s08-gmail/evidence/live.json` (and later ADR 0010).
 - Once the evidence is committed: `node spikes/s08-gmail/test/live-cli.ts forget` deletes the session folder, which holds the addresses, the account's name and the session's working Gmail ids.
 
-If the session stops early: run `s8 revoke` if connect saved a grant (`status` shows `DY_LIVE_GMAIL_REFRESH_TOKEN: set`), else `node spikes/s08-gmail/test/live-cli.ts delete-entries`, which deletes every `DY_LIVE_GMAIL_*` entry. If a step stopped because a grant still refreshes, remove the app's access in the test account first. Then delete both clients (that ends every grant they hold) and run `forget`.
+If the session stops early: run `s8 revoke` if connect saved a grant (`status` shows `DY_LIVE_GMAIL_REFRESH_TOKEN: set`), else `node spikes/s08-gmail/test/live-cli.ts delete-entries`. If a step stopped because a grant still refreshes, remove the app's access in the test account first. Then delete both clients and confirm entry/grant cleanup separately. Preserve the private session folder, counters, prior results, input and error/cleanup provenance. Do not run `forget` here: deletion waits for recorded/committed evidence and privacy checks, or an explicit abandoned-session cleanup disposition. The CLI does not enforce those prerequisites.
 
 ## What ADR 0010 records
 
