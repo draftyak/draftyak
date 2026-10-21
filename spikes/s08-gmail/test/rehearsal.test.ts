@@ -40,6 +40,7 @@ import {
 	SEND_SUBJECT,
 	type Session,
 	type Step,
+	saveStep,
 	spikeDir,
 	type Timing,
 	type Work,
@@ -269,6 +270,7 @@ interface Scenario {
 	readonly agentRefused?: boolean;
 	readonly testAccount?: string;
 	readonly searchLagMs?: number;
+	readonly email?: string;
 }
 
 interface Rehearsal {
@@ -312,7 +314,12 @@ function writeInput(world: Setup, input: Readonly<Record<string, unknown>> = {})
 	const file = path.join(world.dirs.session, "input.json");
 	writeFileSync(
 		file,
-		JSON.stringify({ secondAddress: SECOND, accountName: ACCOUNT_NAME, ...input }),
+		JSON.stringify({
+			secondAddress: SECOND,
+			accountName: ACCOUNT_NAME,
+			testAccount: OWNER,
+			...input,
+		}),
 	);
 }
 
@@ -364,6 +371,7 @@ async function setup(scenario: Scenario): Promise<Setup> {
 		standard: await startFakeOAuth({
 			clientId: standard.clientId,
 			clientSecret: standard.clientSecret,
+			email: scenario.email ?? OWNER,
 			tokens: tokens.standard,
 			consent: (requested) =>
 				owner.untickGmail ? requested.filter((scope) => scope !== GMAIL_MODIFY) : requested,
@@ -371,13 +379,14 @@ async function setup(scenario: Scenario): Promise<Setup> {
 		agent: await startFakeOAuth({
 			clientId: agent.clientId,
 			clientSecret: agent.clientSecret,
+			email: scenario.email ?? OWNER,
 			tokens: tokens.agent,
 			consent: (requested) => (owner.cancel ? "deny" : requested),
 		}),
 	};
 	const fake = await startFakeGmail({
 		tokens: either(tokens.standard, tokens.agent),
-		email: OWNER,
+		email: scenario.email ?? OWNER,
 		searchLagMs: scenario.searchLagMs ?? 25,
 		...(scenario.gmail === "replaces"
 			? { messageIdPolicy: "replace" as const, datePolicy: "replace" as const }
@@ -768,7 +777,12 @@ describe("the S8b session rehearsed against FakeGmail and fake Google OAuth", ()
 			"Record that page's wording under observations.consent.agent.",
 		]);
 		expect(results.agent).toMatchObject({
-			consent: { asked: ASKED, error: "refused-on-page", redirected: false, declared: true },
+			consent: {
+				asked: [...ASKED, "login_hint"].toSorted(),
+				error: "refused-on-page",
+				redirected: false,
+				declared: true,
+			},
 			fullGrant: null,
 		});
 		expect(run.status).toContain(
@@ -1027,24 +1041,24 @@ describe("the S8b session rehearsed against FakeGmail and fake Google OAuth", ()
 			await expect(runStep("scheduled", session)).rejects.toThrow(/too close to the send time/);
 
 			// Reading stops 3 s before the send time, a second from now, well inside the index delay.
-			world.fake.insert((await scheduledProbe("Listed late.")).raw, ["SCHEDULED"]);
+			const probe = world.fake.insert((await scheduledProbe("Listed late.")).raw, ["SCHEDULED"]);
 			const bounded = {
 				...session,
 				timing: { ...FAST, indexTimeoutMs: 20_000, sendMarginMs: 3_000 },
 			};
 			setWork(dir, { sendAt: Date.now() + 4_000 });
-			const lines = await runStep("scheduled", bounded);
-			expect(lines[0]).toMatch(
-				/^in:scheduled: fails \(not listed in \d+\.\d s: stopped before the send time\)$/,
+			const stateBefore = readFileSync(path.join(dir, "state.json"), "utf8");
+			await expect(runStep("scheduled", bounded)).rejects.toThrow(
+				/in:scheduled was not established/,
 			);
-			const result = readState(dir).steps.scheduled?.data;
-			expect(result).toMatchObject({
-				inScheduled: "fails",
-				listedAfterMs: { inScheduled: null, labelFilter: 0, cutShort: true },
-			});
-			expect(result?.finishedBeforeSendMs).toBeGreaterThan(0);
+			expect(readFileSync(path.join(dir, "state.json"), "utf8")).toBe(stateBefore);
 
-			setWork(dir, { sendAt: Date.now() + 30_000 });
+			setWork(dir, {
+				sendAt: Date.now() + 30_000,
+				scheduledIds: [probe.id],
+				scheduledHistory: "1234",
+				scheduledHistoryAt: Date.now(),
+			});
 			await expect(runStep("sent", session)).rejects.toThrow(
 				/^the scheduled mail goes out .*: run the sent step after that$/,
 			);
@@ -1052,6 +1066,384 @@ describe("the S8b session rehearsed against FakeGmail and fake Google OAuth", ()
 			await expect(runStep("sent", session)).rejects.toThrow(
 				/took its history start after the send time/,
 			);
+		} finally {
+			await world.close();
+		}
+	});
+
+	it("requires successful complete scheduled-query negatives, and leaves prior results and history untouched otherwise", {
+		timeout: 60_000,
+	}, async () => {
+		const world = await setup({
+			gmail: "keeps",
+			scheduled: "scheduled",
+			concurrencyLimit: Infinity,
+			record: false,
+			searchLagMs: 0,
+		});
+		try {
+			const { session } = world;
+			await runStep("connect", session);
+			await runStep("schedule", session);
+			world.fake.insert((await scheduledProbe("Query verdict probe.")).raw, ["SCHEDULED"]);
+			const short = { ...session, timing: { ...FAST, indexTimeoutMs: 100 } };
+			const query = (input: RequestInfo | URL): URLSearchParams =>
+				new URL(urlOf(input)).searchParams;
+			const negative: typeof fetch = async (input, init) =>
+				query(input).get("q") === "in:scheduled"
+					? json(200, { messages: [], resultSizeEstimate: 0 })
+					: session.fetch(input, init);
+			expect(await runStep("scheduled", { ...short, fetch: negative })).toContain(
+				"in:scheduled: fails",
+			);
+			expect(readState(session.dir).steps.scheduled?.data).toMatchObject({
+				listedAfterMs: { successfulAnswersThroughout: true, cutShort: false },
+			});
+			const file = path.join(session.dir, "state.json");
+			for (const status of [429, 503, 408, 0]) {
+				let queries = 0;
+				const fetchWithGap: typeof fetch = async (input, init) => {
+					const params = query(input);
+					// Keep the existing label-filter polling active, allowing a later 200 after the gap.
+					if (params.has("labelIds")) return json(200, { messages: [], resultSizeEstimate: 0 });
+					if (params.get("q") === "in:scheduled") {
+						queries++;
+						if (queries === 1) {
+							if (status === 0) throw new Error("synthetic network failure");
+							return json(status, {});
+						}
+						return json(200, { messages: [], resultSizeEstimate: 0 });
+					}
+					return session.fetch(input, init);
+				};
+				const before = readFileSync(file, "utf8");
+				await expect(runStep("scheduled", { ...short, fetch: fetchWithGap })).rejects.toThrow(
+					/in:scheduled was not established/,
+				);
+				expect(queries).toBeGreaterThan(1);
+				expect(readFileSync(file, "utf8")).toBe(before);
+			}
+			const positiveWithSlowLabel: typeof fetch = async (input, init) =>
+				query(input).has("labelIds")
+					? json(200, { messages: [], resultSizeEstimate: 0 })
+					: session.fetch(input, init);
+			setWork(session.dir, { sendAt: Date.now() + 1_200 });
+			const lines = await runStep("scheduled", {
+				...session,
+				timing: { ...FAST, indexTimeoutMs: 5_000 },
+				fetch: positiveWithSlowLabel,
+			});
+			expect(lines[0]).toBe("in:scheduled: works");
+			expect(readState(session.dir).steps.scheduled?.data).toMatchObject({
+				inScheduled: "works",
+				listedAfterMs: { cutShort: false, labelFilter: null },
+			});
+		} finally {
+			await world.close();
+		}
+	});
+
+	it("matches token-bearing agent and drop consents to the configured account without retaining identity", {
+		timeout: 60_000,
+	}, async () => {
+		const world = await setup({
+			gmail: "keeps",
+			scheduled: "scheduled",
+			concurrencyLimit: Infinity,
+			record: false,
+			email: "owner@gmail.com",
+		});
+		try {
+			const { session } = world;
+			writeInput(world, { testAccount: "o.w.n.e.r+session@googlemail.com" });
+			await runStep("agent", session);
+			world.owner.untickGmail = true;
+			await runStep("drop", session);
+			const unicodeIdentity: typeof fetch = async (input, init) => {
+				const response = await session.fetch(input, init);
+				if (
+					urlOf(input) !== world.oauth.standard.endpoints.token ||
+					formOf(init).get("grant_type") !== "authorization_code"
+				)
+					return response;
+				const payload = Buffer.from(
+					JSON.stringify({ email: "owner@gmail.com", other: "雪🦊" }),
+				).toString("base64url");
+				return json(response.status, {
+					...((await response.json()) as Record<string, unknown>),
+					id_token: `fake.${payload}.signature`,
+				});
+			};
+			await runStep("drop", { ...session, fetch: unicodeIdentity });
+			const file = path.join(session.dir, "state.json");
+			const before = readFileSync(file, "utf8");
+			for (const expected of [undefined, "another@gmail.com"]) {
+				writeInput(world, { testAccount: expected });
+				for (const step of ["agent", "drop"] as const) {
+					world.owner.untickGmail = step === "drop";
+					const prior = world.oauth[step === "agent" ? "agent" : "standard"].revocations.length;
+					await expect(runStep(step, session)).rejects.toThrow(/account could not be matched/);
+					expect(
+						world.oauth[step === "agent" ? "agent" : "standard"].revocations.length,
+					).toBeGreaterThan(prior);
+					expect(readFileSync(file, "utf8")).toBe(before);
+				}
+			}
+			writeInput(world, { testAccount: "owner@gmail.com" });
+			world.owner.untickGmail = true;
+			const jwt = (payload: unknown) =>
+				`fake.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.signature`;
+			const privateValues = [
+				jwt({ email: "another@gmail.com" }),
+				"malformed-private-claim",
+				"fake._.signature",
+				jwt({}),
+				jwt({ email: 42 }),
+				jwt({ email: "bad address@gmail.com" }),
+				jwt({ email: "\u0000owner@gmail.com" }),
+				`fake.${"e".repeat(8_193)}.signature`,
+				"x".repeat(16_385),
+			];
+			for (const identity of [undefined, ...privateValues]) {
+				const changed: typeof fetch = async (input, init) => {
+					const response = await session.fetch(input, init);
+					if (
+						urlOf(input) !== world.oauth.standard.endpoints.token ||
+						formOf(init).get("grant_type") !== "authorization_code"
+					)
+						return response;
+					const body = (await response.json()) as Record<string, unknown>;
+					delete body.id_token;
+					return json(response.status, {
+						...body,
+						...(identity === undefined ? {} : { id_token: identity }),
+					});
+				};
+				const prior = world.oauth.standard.revocations.length;
+				await expect(runStep("drop", { ...session, fetch: changed })).rejects.toThrow(
+					/account could not be matched/,
+				);
+				expect(world.oauth.standard.revocations.length).toBeGreaterThan(prior);
+				expect(readFileSync(file, "utf8")).toBe(before);
+			}
+			// If connect's two revoke attempts failed, the mismatched drop must still end the grant.
+			let revokeAttempts = 0;
+			const refreshAnswers: string[] = [];
+			const lateCleanup: typeof fetch = async (input, init) => {
+				if (urlOf(input) === world.oauth.standard.endpoints.revocation && ++revokeAttempts <= 2)
+					return json(503, {});
+				const response = await session.fetch(input, init);
+				if (urlOf(input) !== world.oauth.standard.endpoints.token) return response;
+				const body = (await response.clone().json()) as Record<string, unknown>;
+				if (formOf(init).get("grant_type") === "refresh_token") {
+					if (typeof body.error === "string") refreshAnswers.push(body.error);
+					return response;
+				}
+				return json(response.status, { ...body, id_token: jwt({ email: "another@gmail.com" }) });
+			};
+			await expect(runStep("drop", { ...session, fetch: lateCleanup })).rejects.toThrow(
+				/account could not be matched/,
+			);
+			expect(revokeAttempts).toBe(3);
+			expect(refreshAnswers).toEqual(["invalid_grant"]);
+			expect(readFileSync(file, "utf8")).toBe(before);
+			const output = `${before}\n${world.logs.join("\n")}`;
+			for (const value of ["owner@gmail.com", "another@gmail.com", ...privateValues])
+				expect(output).not.toContain(value);
+			// No-token declarations remain owner observations, without an identity claim.
+			writeInput(world, { testAccount: undefined });
+			await runStep("agent", { ...session, declared: "refused" });
+			await runStep("drop", { ...session, declared: "no-checkbox" });
+		} finally {
+			await world.close();
+		}
+	});
+
+	const canonicalEmailJson = JSON.stringify({ email: "owner@gmail.com" });
+	const withRemainder = (remainder: number): Buffer => {
+		const original = Buffer.from(canonicalEmailJson);
+		return Buffer.concat([
+			original,
+			Buffer.from(" ".repeat((remainder - (original.length % 3) + 3) % 3)),
+		]);
+	};
+	const oneByteTail = withRemainder(1).toString("base64url");
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+	const changedTail =
+		oneByteTail.slice(0, -1) + alphabet[alphabet.indexOf(oneByteTail.at(-1) ?? "") + 1];
+	it.each([
+		[
+			"initial UTF-8 BOM",
+			Buffer.concat([Buffer.from([239, 187, 191]), Buffer.from(canonicalEmailJson)]).toString(
+				"base64url",
+			),
+		],
+		[
+			"invalid UTF-8",
+			Buffer.concat([
+				Buffer.from('{"email":"owner@gmail.com","other":"'),
+				Buffer.from([255]),
+				Buffer.from('"}'),
+			]).toString("base64url"),
+		],
+		["one-mod-four base64url length", `${withRemainder(0).toString("base64url")}A`],
+		["nonzero unused base64url bits", changedTail],
+	])("refuses malformed ID-token payload: %s", async (_name, encoded) => {
+		const world = await setup({
+			gmail: "keeps",
+			scheduled: "scheduled",
+			concurrencyLimit: Infinity,
+			record: false,
+			email: "owner@gmail.com",
+		});
+		try {
+			writeInput(world, { testAccount: "owner@gmail.com" });
+			await runStep("agent", world.session);
+			world.owner.untickGmail = true;
+			await runStep("drop", world.session);
+			const stateFile = path.join(world.session.dir, "state.json");
+			const envFile = path.join(world.dirs.env, ".env.live");
+			const priorState = readFileSync(stateFile, "utf8");
+			const priorEntries = readFileSync(envFile, "utf8");
+			const identity = `fake.${encoded}.signature`;
+			const changed: typeof fetch = async (input, init) => {
+				const response = await world.session.fetch(input, init);
+				if (
+					urlOf(input) !== world.oauth.standard.endpoints.token ||
+					formOf(init).get("grant_type") !== "authorization_code"
+				)
+					return response;
+				return json(response.status, {
+					...((await response.json()) as Record<string, unknown>),
+					id_token: identity,
+				});
+			};
+			const priorRevocations = world.oauth.standard.revocations.length;
+			await expect(runStep("drop", { ...world.session, fetch: changed })).rejects.toThrow(
+				/account could not be matched/,
+			);
+			expect(world.oauth.standard.revocations.length).toBeGreaterThan(priorRevocations);
+			expect(readFileSync(stateFile, "utf8")).toBe(priorState);
+			expect(readFileSync(envFile, "utf8")).toBe(priorEntries);
+			expect(world.logs.join("\n")).not.toContain(identity);
+			expect(world.logs.join("\n")).not.toContain("owner@gmail.com");
+		} finally {
+			await world.close();
+		}
+	});
+
+	it("deletes only Gmail entries after exact client-deletion errors and an otherwise complete owner-confirmed session", {
+		timeout: 60_000,
+	}, async () => {
+		const world = await setup({
+			gmail: "keeps",
+			scheduled: "scheduled",
+			concurrencyLimit: Infinity,
+			record: false,
+		});
+		try {
+			const { session } = world;
+			await runStep("agent", session);
+			world.owner.untickGmail = true;
+			await runStep("drop", session);
+			world.owner.untickGmail = false;
+			await runStep("connect", session);
+			saveStep(session, "send", {
+				probe: { messageId: "yes", date: "yes" },
+				bcc: { sentCopyHasBcc: true, otherCopies: 0 },
+				indexDelayMs: { rfc822msgid: 0, inSent: 0 },
+				threadsGetMinimal: { internalDate: true },
+				reconcile: {
+					byMessageId: { status: "sent", via: "fake", matchesSent: true },
+					fallback: { status: "sent", via: "fake", matchesSent: true },
+				},
+			});
+			saveStep(session, "concurrency", { line: "not provoked" });
+			saveStep(session, "scheduled", { inScheduled: "works" });
+			for (const step of ["schedule", "sent"] as const)
+				saveStep(session, step, { synthetic: true });
+			const file = path.join(session.dir, "state.json");
+			const envFile = path.join(world.dirs.env, ".env.live");
+			writeFileSync(
+				envFile,
+				`${readFileSync(envFile, "utf8")}\nUNRELATED_TEST_ENTRY=preserve-me\n`,
+			);
+			const beforeState = readFileSync(file, "utf8");
+			const beforeEnv = readFileSync(envFile, "utf8");
+			const failing = (code: string): Session => ({
+				...session,
+				fetch: async (input, init) =>
+					urlOf(input) === world.oauth.standard.endpoints.token &&
+					formOf(init).get("grant_type") === "refresh_token"
+						? json(401, { error: code })
+						: session.fetch(input, init),
+			});
+			writeInput(world, { observations: { ...OBSERVATIONS, clientsDeleted: false } });
+			const wrongSecret: typeof fetch = (input, init) => {
+				if (urlOf(input) !== world.oauth.standard.endpoints.token)
+					return session.fetch(input, init);
+				const form = formOf(init);
+				form.set("client_secret", "synthetic-wrong-secret");
+				return session.fetch(input, { ...init, body: form.toString() });
+			};
+			await expect(runStep("revoke", { ...session, fetch: wrongSecret })).rejects.toThrow(
+				/\(invalid_client\).*no entry was deleted/,
+			);
+			expect(readFileSync(file, "utf8")).toBe(beforeState);
+			expect(readFileSync(envFile, "utf8")).toBe(beforeEnv);
+			for (const code of ["invalid_client", "deleted_client"]) {
+				for (const confirmed of [undefined, false]) {
+					writeInput(world, { observations: { ...OBSERVATIONS, clientsDeleted: confirmed } });
+					await expect(runStep("revoke", failing(code))).rejects.toThrow();
+					expect(readFileSync(file, "utf8")).toBe(beforeState);
+					expect(readFileSync(envFile, "utf8")).toBe(beforeEnv);
+				}
+				writeInput(world, { observations: OBSERVATIONS });
+				for (const other of ["agent", "drop"] as const) {
+					const blocked = JSON.parse(beforeState) as {
+						steps: Record<string, { data: Record<string, unknown> }>;
+					};
+					const data = blocked.steps[other]?.data;
+					if (data === undefined) throw new Error("missing synthetic cleanup state");
+					if (other === "agent") data.fullGrant = { refreshAfter: "ok" };
+					else data.finalRefresh = "ok";
+					writeFileSync(file, JSON.stringify(blocked));
+					const blockedBytes = readFileSync(file, "utf8");
+					await expect(runStep("revoke", failing(code))).rejects.toThrow(/no entry was deleted/);
+					expect(readFileSync(file, "utf8")).toBe(blockedBytes);
+					expect(readFileSync(envFile, "utf8")).toBe(beforeEnv);
+					writeFileSync(file, beforeState);
+				}
+				const unfinished = JSON.parse(beforeState) as { steps: Record<string, unknown> };
+				delete unfinished.steps.sent;
+				writeFileSync(file, JSON.stringify(unfinished));
+				const partial = readFileSync(file, "utf8");
+				await expect(runStep("revoke", failing(code))).rejects.toThrow(
+					/run these steps first: sent/,
+				);
+				expect(readFileSync(file, "utf8")).toBe(partial);
+				expect(readFileSync(envFile, "utf8")).toBe(beforeEnv);
+				writeFileSync(file, beforeState);
+				const lines = await runStep("revoke", failing(code));
+				expect(lines[0]).toContain(`refresh afterwards: ${code}`);
+				expect(lines[2]).toBe(
+					"Cleanup basis: the owner confirmed both spike clients deleted; token refusal was not proved.",
+				);
+				expect(readState(session.dir).steps.revoke?.data).toMatchObject({
+					refreshAfter: code,
+					cleanupBasis: "owner-confirmed-client-deletion",
+					entriesLeft: [],
+				});
+				expect(readFileSync(envFile, "utf8")).toContain("UNRELATED_TEST_ENTRY=preserve-me");
+				expect(readFileSync(envFile, "utf8")).not.toContain("DY_LIVE_GMAIL_");
+				writeFileSync(file, beforeState);
+				writeFileSync(envFile, beforeEnv);
+			}
+			for (const code of ["invalid_request", "http_400", "network"]) {
+				await expect(runStep("revoke", failing(code))).rejects.toThrow(/no entry was deleted/);
+				expect(readFileSync(file, "utf8")).toBe(beforeState);
+				expect(readFileSync(envFile, "utf8")).toBe(beforeEnv);
+			}
 		} finally {
 			await world.close();
 		}

@@ -60,6 +60,7 @@ import {
 	type Answer,
 	buildReport,
 	type ConcurrencySummary,
+	clientDeletedCode,
 	type DropResult,
 	describeReconcile,
 	grantStatus,
@@ -268,7 +269,7 @@ export function liveSession(
 		endpoints: { standard: GOOGLE, agent: GOOGLE },
 		gmailRoot: GMAIL_ROOT,
 		fetch: (input, init) => fetch(input, init),
-		openBrowser: openSystemBrowser,
+		openBrowser: (url) => openSystemBrowser(url, log),
 		dir: sessionDir(env),
 		evidenceDir: path.join(spikeDir, "evidence"),
 		repoDir: spikeDir,
@@ -548,6 +549,37 @@ interface OAuthSink {
 	// Token requests started: a code came back from Google's consent before the first one.
 	tokenRequests: number;
 	refreshToken?: string;
+	accountEmail?: string;
+}
+
+// A cross-check of the token endpoint's TLS response, not independent JWT verification.
+// The claim is bounded and stays in memory; no userinfo or key-discovery request is made.
+function tokenEmail(value: unknown): string | undefined {
+	if (typeof value !== "string" || value.length > 16_384) return undefined;
+	const parts = value.split(".");
+	if (parts.length !== 3 || !parts.every((part) => /^[A-Za-z0-9_-]+$/.test(part))) return undefined;
+	if ((parts[1]?.length ?? 0) > 8_192) return undefined;
+	try {
+		const encoded = parts[1] ?? "";
+		const decoded = Buffer.from(encoded, "base64url");
+		if (decoded.toString("base64url") !== encoded) return undefined;
+		const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(decoded);
+		registerSecret(text);
+		const payload: unknown = JSON.parse(text);
+		const email = isRecord(payload) ? payload.email : undefined;
+		if (
+			typeof email !== "string" ||
+			email.length > 320 ||
+			!/^[\x21-\x7e]+$/.test(email) ||
+			!ADDRESS.test(email)
+		) {
+			return undefined;
+		}
+		registerSecret(email);
+		return email;
+	} catch {
+		return undefined;
+	}
 }
 
 const urlOf = (input: RequestInfo | URL): string =>
@@ -570,6 +602,8 @@ function oauthFetch(base: typeof fetch, endpoints: OAuthEndpoints, sink: OAuthSi
 			if (typeof value === "string") registerSecret(value);
 		}
 		if (typeof body.refresh_token === "string") sink.refreshToken = body.refresh_token;
+		const email = tokenEmail(body.id_token);
+		if (email !== undefined) sink.accountEmail = email;
 		sink.shapes.push(tokenShape(response.status, body));
 		return response;
 	};
@@ -716,6 +750,7 @@ interface Consented {
 	readonly shape?: TokenShape;
 	// From the token answer, also when connect() refused the grant and revoked it.
 	readonly refreshToken?: string;
+	readonly accountEmail?: string;
 }
 
 async function consent(session: Session, kind: ClientKind, prompt: string): Promise<Consented> {
@@ -738,6 +773,7 @@ async function consent(session: Session, kind: ClientKind, prompt: string): Prom
 		tokenRequests: sink.tokenRequests,
 		...(sink.shapes.at(-1) === undefined ? {} : { shape: sink.shapes.at(-1) }),
 		...(sink.refreshToken === undefined ? {} : { refreshToken: sink.refreshToken }),
+		...(sink.accountEmail === undefined ? {} : { accountEmail: sink.accountEmail }),
 	});
 	try {
 		const tokens = await connect({
@@ -957,6 +993,14 @@ async function agentStep(run: Run): Promise<Done> {
 		return { data, lines: [`agent client: Google refused the consent (${code})`, record] };
 	}
 	const api = await gmailApiCheck(session, full.tokens.accessToken);
+	const expected = testAccount(optionalInput(session.dir))?.reveal();
+	if (expected === undefined || api.address === undefined || !sameMailbox(api.address, expected)) {
+		return endLeftover(
+			session,
+			full,
+			"the agent consent's account could not be matched to input.json's testAccount: configure it, then rerun agent and choose that account",
+		);
+	}
 	const fullGrant: Revocation =
 		full.refreshToken === undefined
 			? {
@@ -1044,6 +1088,18 @@ async function dropStep(run: Run): Promise<Done> {
 			drop.tokens === undefined
 				? `the consent failed (${error?.code ?? "no tokens"}): rerun drop`
 				: "the consent kept gmail.modify: rerun drop and untick the Gmail permission. If the page offered no Gmail checkbox, record that with: s8 drop no-checkbox",
+		);
+	}
+	const expected = testAccount(optionalInput(session.dir))?.reveal();
+	if (
+		expected === undefined ||
+		drop.accountEmail === undefined ||
+		!sameMailbox(drop.accountEmail, expected)
+	) {
+		return endLeftover(
+			session,
+			drop,
+			"the drop consent's account could not be matched to input.json's testAccount: configure it, then rerun drop and choose that account",
 		);
 	}
 	const revocation =
@@ -1794,10 +1850,12 @@ async function scheduledStep(run: Run): Promise<Done> {
 		}
 	};
 	let looks = 0;
+	let scheduledAnswersOk = true;
 	const look = async () => {
 		const delta = await historySince(gmail, historyStart);
 		for (const id of deltaIds(delta)) await check(id);
 		const inScheduled = await tryList(gmail, { q: "in:scheduled" });
+		scheduledAnswersOk &&= inScheduled.ok;
 		const labelFilter = await tryList(gmail, { labelIds: ["SCHEDULED"] });
 		for (const id of [...inScheduled.ids, ...labelFilter.ids]) await check(id);
 		const labels = new Map<string, LabelList>();
@@ -1857,7 +1915,8 @@ async function scheduledStep(run: Run): Promise<Done> {
 	}
 	const waitedMs = Math.max(0, view.at - settling);
 	// Stopped by the send time, before the index delay was up.
-	const cutShort = waiting && settleEnd < settling + session.timing.indexTimeoutMs;
+	const cutShort =
+		listedAfterMs.inScheduled === null && settleEnd < settling + session.timing.indexTimeoutMs;
 	const inSent = await tryList(gmail, { q: sentQuery(startedAt) });
 	const inDrafts = await tryList(gmail, { q: "in:drafts" });
 	const ids = [...probes];
@@ -1897,12 +1956,20 @@ async function scheduledStep(run: Run): Promise<Done> {
 		})),
 	};
 	const historyIds = new Set(deltaIds(view.delta));
+	const works = listedAfterMs.inScheduled !== null;
+	if (
+		!works &&
+		(cutShort || !scheduledAnswersOk || Date.now() < settling + session.timing.indexTimeoutMs)
+	) {
+		throw new Error(
+			"in:scheduled was not established: rerun schedule, schedule a fresh probe, then rerun scheduled with the full index window before its send time",
+		);
+	}
 	updateWork(session.dir, {
 		scheduledIds: ids,
 		scheduledHistory: first.delta.historyId,
 		scheduledHistoryAt: first.at,
 	});
-	const works = listedAfterMs.inScheduled !== null;
 	const data: ScheduledSummary = {
 		inScheduled: works ? "works" : "fails",
 		found: {
@@ -1916,6 +1983,7 @@ async function scheduledStep(run: Run): Promise<Done> {
 			timeoutMs: session.timing.indexTimeoutMs,
 			waitedMs,
 			cutShort,
+			successfulAnswersThroughout: scheduledAnswersOk,
 		},
 		probes: ids.length,
 		messages,
@@ -2059,7 +2127,28 @@ async function revokeStep(run: Run): Promise<Done> {
 	const { client, refreshToken } = mailbox(session);
 	const revocation = await endGrant(session, client, refreshToken);
 	const { accepted, refreshAfter } = revocation;
-	if (refreshAfter !== "invalid_grant") {
+	let cleanupBasis: "owner-confirmed-client-deletion" | undefined;
+	if (clientDeletedCode(refreshAfter)) {
+		const state = readState(session.dir);
+		const input = readInput(session.dir);
+		const observations = parseObservations(input.observations, [accountName(input).reveal()]);
+		const candidate: State = {
+			...state,
+			steps: {
+				...state.steps,
+				revoke: {
+					at: new Date().toISOString(),
+					commit: null,
+					dirty: null,
+					data: { refreshAfter, entriesLeft: [], cleanupBasis: "owner-confirmed-client-deletion" },
+				},
+			},
+		};
+		if (buildReport(candidate, observations).acceptance.revoked === "yes") {
+			cleanupBasis = "owner-confirmed-client-deletion";
+		}
+	}
+	if (refreshAfter !== "invalid_grant" && cleanupBasis === undefined) {
 		throw new Error(
 			`the standard grant still refreshes (${refreshAfter}) after ${revocation.revokes} revocations, so no entry was deleted: rerun revoke. If it keeps refreshing, ${MANUAL_REVOKE}, then rerun revoke`,
 		);
@@ -2073,13 +2162,16 @@ async function revokeStep(run: Run): Promise<Done> {
 		refreshAfter,
 		entriesDeleted: deleted,
 		entriesLeft,
+		...(cleanupBasis === undefined ? {} : { cleanupBasis }),
 	};
 	return {
 		data,
 		lines: [
 			`standard grant: revoke ${accepted ? "accepted" : "refused"}; refresh afterwards: ${refreshAfter}`,
 			`.env.live: deleted ${deleted.join(", ") || "nothing"}; left: ${entriesLeft.join(", ") || "none"}`,
-			"Owner: delete both spike clients in the Cloud project, then record clientsDeleted: true.",
+			cleanupBasis === undefined
+				? "Owner: delete both spike clients in the Cloud project, then record clientsDeleted: true."
+				: "Cleanup basis: the owner confirmed both spike clients deleted; token refusal was not proved.",
 		],
 	};
 }

@@ -197,6 +197,39 @@ describe("the owner's observations", () => {
 		expect(error).toContain("no names: write <account>");
 		expect(error).not.toContain("Ann");
 	});
+
+	it("exempts only the five exact boilerplate components while always refusing the full name", () => {
+		const wording = (line: string) => ({
+			...valid,
+			consent: { ...valid.consent, standard: { ...consent, wording: [line] } },
+		});
+		for (const word of ["Google", "Gmail", "Account", "DraftYak", "Spike"]) {
+			expect(
+				parseObservations(wording(`Your ${word} permissions for <account>`), [
+					`${word.toUpperCase()} Morgan`,
+				]),
+			).toBeDefined();
+		}
+		for (const [name, line] of [
+			["Google Morgan", "Hi Morgan"],
+			["Google Morgan", "Hi google morgan"],
+			["Google Account", "Your GOOGLE ACCOUNT"],
+			["Googlex Morgan", "Hi Googlex"],
+			["Gmaıl Morgan", "Hi Gmaıl"],
+		]) {
+			let error = "";
+			try {
+				parseObservations(wording(line ?? ""), [name ?? ""]);
+			} catch (caught) {
+				error = String(caught);
+			}
+			expect(error).toContain("observations.consent.standard.wording[0]: no names");
+			expect(error).not.toContain(line);
+		}
+		expect(() =>
+			parseObservations(wording("Morganite from <account>"), ["Google Morgan"]),
+		).not.toThrow();
+	});
 });
 
 function state(change: Partial<Record<string, Record<string, unknown>>> = {}): State {
@@ -303,6 +336,73 @@ describe("the report", () => {
 			drop: "no refresh token: ends when the client is deleted",
 			standard: "not yet",
 		});
+	});
+
+	it("accepts only explicitly confirmed client-deletion cleanup, preserving its actual error and other gates", () => {
+		for (const code of ["invalid_client", "deleted_client"]) {
+			const cleanup = {
+				refreshAfter: code,
+				entriesLeft: [],
+				cleanupBasis: "owner-confirmed-client-deletion",
+			};
+			const completed = state({ revoke: cleanup });
+			expect(buildReport(completed, observations).acceptance.revoked).toBe("yes");
+			expect(buildReport(completed, observations).lines).toContain(
+				`cleanup basis: owner-confirmed deletion of both clients (${code}); token refusal not proved`,
+			);
+			expect(grantStatus(completed).standard).toBe(
+				`owner-confirmed client deletion (${code}); token refusal not proved`,
+			);
+			expect(
+				buildReport(state({ revoke: { refreshAfter: code, entriesLeft: [] } }), observations)
+					.acceptance.revoked,
+			).toBe("no");
+			expect(
+				buildReport(completed, { ...observations, clientsDeleted: false }).acceptance.revoked,
+			).toBe("no");
+			expect(
+				buildReport(
+					state({ revoke: { ...cleanup, entriesLeft: ["DY_LIVE_GMAIL_CLIENT_ID"] } }),
+					observations,
+				).acceptance.revoked,
+			).toBe("no");
+			expect(
+				buildReport(
+					state({ revoke: cleanup, agent: { consent: {}, fullGrant: { refreshAfter: "ok" } } }),
+					observations,
+				).acceptance.revoked,
+			).toBe("no");
+			expect(
+				buildReport(
+					state({ revoke: cleanup, drop: { behaviour: "refused", finalRefresh: "ok" } }),
+					observations,
+				).acceptance.revoked,
+			).toBe("no");
+			const partial = { ...completed, steps: { ...completed.steps, sent: undefined } };
+			expect(() => buildReport(partial, observations)).toThrow(/run these steps first: sent/);
+			expect(
+				recordProblems(
+					{ commit: "a".repeat(40), dirty: true },
+					completed,
+					true,
+					buildReport(completed, observations).acceptance,
+				),
+			).toContain("the checkout has tracked changes or no commit");
+		}
+		for (const code of ["ok", "network", "http_503", "invalid_request", "error"]) {
+			expect(
+				buildReport(
+					state({
+						revoke: {
+							refreshAfter: code,
+							entriesLeft: [],
+							cleanupBasis: "owner-confirmed-client-deletion",
+						},
+					}),
+					observations,
+				).acceptance.revoked,
+			).toBe("no");
+		}
 	});
 
 	it("shows an unchecked homepage with the owner's reason", () => {
