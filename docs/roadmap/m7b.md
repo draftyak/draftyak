@@ -192,7 +192,7 @@ The gate record (`docs/roadmap/m7b-gate.md`) is written at the gate, after the g
 - **Goal.** Verify the real calendar engine's wire output through the renderer.
 - **Inputs.** M7b.6 engine, shared UTC-ms validation, M7b.7 rendering and fixed owner settings/clock.
 - **Outputs.** End-to-end golden slots/labels from ICS, without hand-replacing the engine's busy intervals.
-- **Owns.** Component `tools/calendar-goldens/**` and `security/ics-corpus/free-slots/`; planned `apps/hub/test/tools/calendar-goldens.test.ts`; shared inputs coordinate with the calendar owner.
+- **Owns.** Component `tools/calendar-goldens/**`, its `pnpm-lock.yaml` workspace importer and `security/ics-corpus/free-slots/`; planned `apps/hub/test/tools/calendar-goldens.test.ts`; shared inputs coordinate with the calendar owner.
 - **Acceptance.** `pnpm --filter @draftyak/calendar-goldens typecheck` and `pnpm --filter @draftyak/calendar-goldens test` establish the offline pure composition; planned `pnpm --filter './apps/hub' test -- tools/calendar-goldens` remains required native integration. Run RRULE/RDATE/EXDATE/override, all-day/floating and transparent/cancelled/tentative fixtures through actual engine → shared validator → renderer and compare exact goldens. Include spring/fall DST in the scheduling corpus's three zones, midnight transitions, fractional offsets, in-progress clipping, quarter-hour rounding and minimum length. Require nonempty positive controls where appropriate; event-detail canaries never reach contexts. Oversize/malformed feeds stay errors, never empty availability.
 - **Depends on.** M7b.6–7 and merged M1 calendar/time-zone fixtures; native broker composition also needs M7b.5. M7b.10 consumes these goldens at the integrated gate.
 
