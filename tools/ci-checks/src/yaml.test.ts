@@ -22,6 +22,84 @@ jobs:
 `;
 
 describe("parseYaml", () => {
+	const flowPrefixes = [
+		["anchor", "&node"],
+		["alias", "*node"],
+		["local tag", "!local value"],
+		["global tag", "!!str value"],
+		["literal block", "|"],
+		["literal chomp", "|-"],
+		["folded block marker", ">"],
+		["folded block", ">-"],
+		["directive", "%YAML 1.2"],
+		["reserved at sign", "@reserved"],
+		["reserved backtick", "`reserved"],
+		["explicit key", "? key"],
+		["tab-separated key", "?\tkey"],
+		["standalone key", "?"],
+		["explicit value", ": value"],
+		["tab-separated value", ":\tvalue"],
+		["standalone value", ":"],
+		["sequence entry", "- item"],
+		["tab-separated sequence entry", "-\titem"],
+		["standalone sequence entry", "-"],
+	] as const;
+
+	it.each(flowPrefixes)("refuses unquoted %s in flow sequences", (_, raw) => {
+		for (const items of [raw, `${raw}, safe`, `safe, ${raw}, safe`, `safe, ${raw}`]) {
+			expect(() => parseYaml(`a: [${items}]`)).toThrow("unsupported flow sequence item");
+		}
+	});
+
+	it.each(flowPrefixes)("keeps quoted %s as literal flow data", (_, raw) => {
+		expect(parseYaml(`a: ['${raw}', ${JSON.stringify(raw)}]`).value).toEqual({ a: [raw, raw] });
+	});
+
+	it("preserves ordinary flow scalars and their existing resolution", () => {
+		expect(
+			parseYaml(
+				"a: [ -word, -12, +7, 1.5, -1e2, true, FALSE, null, ~, https://example.invalid/x, word&node, word!tag, word|data, ?word, :word, on, 'true', \"12\" ]",
+			).value,
+		).toEqual({
+			a: [
+				"-word",
+				-12,
+				7,
+				1.5,
+				"-1e2",
+				true,
+				false,
+				null,
+				null,
+				"https://example.invalid/x",
+				"word&node",
+				"word!tag",
+				"word|data",
+				"?word",
+				":word",
+				"on",
+				"true",
+				"12",
+			],
+		});
+	});
+
+	it("preserves empty flow sequences and the existing trailing comma", () => {
+		expect(parseYaml("a: []\nb: [one,]").value).toEqual({ a: [], b: ["one"] });
+	});
+
+	it.each([
+		"a: [[one]]",
+		"a: [{b: 1}]",
+		"a: [one: two]",
+		"a: [one # comment]",
+		"a: ['one' two]",
+		"a: [one",
+		"a: [one,,two]",
+	])("preserves flow grammar refusal for %s", (yaml) => {
+		expect(() => parseYaml(yaml)).toThrow(SyntaxError);
+	});
+
 	it("reads mappings, sequences, flow sequences, scalars and comments", () => {
 		const doc = parseYaml(source);
 		const step = { n: 0, on: false, q: 'a "b"', s: "it's # no", e: null };
