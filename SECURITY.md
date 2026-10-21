@@ -4,15 +4,30 @@ Report vulnerabilities privately through [GitHub private vulnerability reporting
 
 If that form is unavailable, email [draftyak@gmail.com](mailto:draftyak@gmail.com) privately.
 
+## Selected desktop pilot
+
+The selected release covers the desktop app and bundled hub on Windows, Apple-silicon macOS and Ubuntu 24.04, Gmail, Slack, drafting and one-off scheduled send. It uses only the five bundled first-party plugins listed in [PRIVACY.md](PRIVACY.md). Mobile/Android SMS, context tools, MCP/Apps, public MCP authorization/discovery, third-party plugin installation, Python and headless npm/Docker deployment are postponed. Paired remote desktops and their hub connections, retained account OAuth and provider consent remain in scope. Optional sign-in is separately maintained and is not required for launch.
+
+These scope choices do not establish completed security, native/platform or legal acceptance. Every retained protection below remains a release requirement; unavailable surfaces require their own absence/refusal evidence.
+
 ## Security model
 
-Every send requires a paired desktop's PIN-verified approval over the exact frozen content and send window. The hub consumes that approval once, while the approver remains confirmed and non-revoked, and sends only inside the approved window. A missed window requires fresh approval. For plugin channels, the broker matches the request byte-for-byte to the approved rendering. For SMS, the hub signs a single-use ticket and the SMS host verifies it before making one send call.
+Every send requires a paired desktop's PIN-verified approval over the exact frozen content and send window. The hub consumes that approval once, while the approver remains confirmed and non-revoked, and sends only inside the approved window. A missed window requires fresh approval. For plugin channels, the broker matches the request byte-for-byte to the approved rendering. The desktop must be awake and running for a scheduled send.
 
-Mobile clients can read, draft and organize but cannot approve. MCP, API, browser, rule, plugin and phone paths cannot approve or set a binding send time. Read-only MCP surfaces and an AI app's consent prompts never substitute for PIN approval. No recurring, rule-triggered or automatic sends are part of core.
+MCP, API, browser, rule, plugin and phone paths cannot approve or set a binding send time. A client's consent prompt never substitutes for PIN approval. No recurring, rule-triggered or automatic sends are part of core. Postponing a surface does not weaken these approval boundaries when it resumes.
 
-Message content, headers, plugin- or device-asserted metadata, and tool results are untrusted data. They reach data sinks rather than privileged decisions unless a visible flag is shown. Inbound content can hold a scheduled send; it cannot start, advance or change one. The hub binds lookup inputs from verified metadata, owner settings, the clock or constants before drafting. Message content never reaches tool inputs, and SMS sender numbers never reach them either.
+Message content, headers, plugin- or device-asserted metadata, and tool results are untrusted data. They reach data sinks rather than privileged decisions unless a visible flag is shown. Inbound content can hold a scheduled send; it cannot start, advance or change one. Message content never reaches tool inputs, and SMS sender numbers never reach them either. Context-tool execution is postponed; this prohibition remains required.
 
-DraftYak warns when connecting a shell-capable client because the same-OS-user limit below still applies. `login-code` requires the PIN. Credentials stay in the hub; the SMS SIM stays on the phone, which receives tickets rather than hub credentials. See [PRIVACY.md](PRIVACY.md) for routing, consent, retention and outbound destinations.
+Credentials stay in the hub. Where available, `login-code` requires the PIN. See [PRIVACY.md](PRIVACY.md) for routing, consent, retention and outbound destinations.
+
+## Postponed feature obligations
+
+The following requirements are preserved for resumption and do not describe available pilot flows or completed checks:
+
+- Mobile clients can read, draft and organize but cannot approve. Read-only MCP surfaces and an AI app's consent prompts never substitute for PIN approval.
+- The hub binds lookup inputs from verified metadata, owner settings, the clock or constants before drafting. Untrusted tool results remain data, and message content and SMS sender numbers never become tool inputs.
+- For SMS, the hub signs a single-use ticket and the SMS host verifies it before making one send call. The SIM stays on the phone, which receives tickets rather than hub credentials.
+- Connecting a shell-capable client requires a warning about the same-OS-user limit below.
 
 ## What to report
 
@@ -27,7 +42,7 @@ In scope:
 - OAuth, authentication, authorization, device pairing or revocation flaws.
 - A breach of the vendor-policy protections in the [compliance documents](docs/compliance/).
 
-The approval boundary covers DraftYak's sends. It does not protect against a process already running as the hub's OS user, which can read that user's keychain; a compromised SMS host phone; or another phone app with `SEND_SMS`. These documented limits are out of scope by themselves. A flaw that crosses a DraftYak boundary without already having that access remains in scope. Separate-user and container hub modes reduce exposure to other processes. Protected desktop service-user mode and hardware-backed wrapping are outside the MVP.
+The approval boundary covers DraftYak's sends. It does not protect against a process already running as the hub's OS user, which can read that user's keychain. The postponed SMS feature also cannot protect against a compromised host phone or another phone app with `SEND_SMS`. These documented limits are out of scope by themselves. A flaw that crosses a DraftYak boundary without already having that access remains in scope. Separate-user and container hub modes remain later deployment options for reducing exposure to other processes. Protected desktop service-user mode and hardware-backed wrapping are outside the MVP.
 
 ## A useful private report
 
