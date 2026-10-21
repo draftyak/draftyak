@@ -34,21 +34,28 @@ export interface ScopedFinding {
 	readonly advisory: string;
 	readonly ancestor: string;
 }
-interface ActiveDecision {
-	readonly version: 1;
+interface ActiveScope {
 	readonly state: "active";
-	readonly gate: "open";
 	readonly evidenceKind: "actual-source";
 	readonly confirmation: "unchanged-scope";
 	readonly binding: Binding;
 	readonly review: { readonly at: number; readonly due: number };
 	readonly exceptions: readonly ScopedFinding[];
 }
+type ActiveDecision = ActiveScope &
+	(
+		| { readonly version: 1; readonly gate: "open" }
+		| { readonly version: 2; readonly termination: "release-or-validated-fix" }
+	);
 type Decision =
 	| ActiveDecision
 	| {
 			readonly version: 1;
 			readonly state: "refusal-only" | "removed" | "revoked" | "expired" | "gate-closed";
+	  }
+	| {
+			readonly version: 2;
+			readonly state: "release-closed" | "removed" | "revoked";
 	  };
 export type Reason =
 	| "AUTHORITY_INVALID"
@@ -131,15 +138,24 @@ function decision(value: unknown): Decision {
 			return invalid();
 		return { version: 1, state };
 	}
-	if (["removed", "revoked", "expired", "gate-closed"].includes(state as string)) {
+	if (
+		["removed", "revoked", "expired", "gate-closed", "release-closed"].includes(state as string)
+	) {
 		const input = object(value, ["version", "state"]);
-		if (input.version !== 1) return invalid();
-		return { version: 1, state: state as "removed" | "revoked" | "expired" | "gate-closed" };
+		if (
+			input.version === 1 &&
+			["removed", "revoked", "expired", "gate-closed"].includes(state as string)
+		)
+			return { version: 1, state: state as "removed" | "revoked" | "expired" | "gate-closed" };
+		if (input.version === 2 && ["removed", "revoked", "release-closed"].includes(state as string))
+			return { version: 2, state: state as "removed" | "revoked" | "release-closed" };
+		return invalid();
 	}
+	const renewed = (value as Record<string, unknown>).version === 2;
 	const input = object(value, [
 		"version",
 		"state",
-		"gate",
+		renewed ? "termination" : "gate",
 		"evidenceKind",
 		"confirmation",
 		"binding",
@@ -147,9 +163,9 @@ function decision(value: unknown): Decision {
 		"exceptions",
 	]);
 	if (
-		input.version !== 1 ||
+		(renewed ? input.version !== 2 : input.version !== 1) ||
 		state !== "active" ||
-		input.gate !== "open" ||
+		(renewed ? input.termination !== "release-or-validated-fix" : input.gate !== "open") ||
 		input.evidenceKind !== "actual-source" ||
 		input.confirmation !== "unchanged-scope"
 	)
@@ -163,9 +179,10 @@ function decision(value: unknown): Decision {
 	const exceptions = input.exceptions.map(scoped);
 	if (new Set(exceptions.map((row) => row.advisory)).size !== exceptions.length) return invalid();
 	return {
-		version: 1,
+		...(renewed
+			? { version: 2 as const, termination: "release-or-validated-fix" as const }
+			: { version: 1 as const, gate: "open" as const }),
 		state: "active",
-		gate: "open",
 		evidenceKind: "actual-source",
 		confirmation: "unchanged-scope",
 		binding: binding(input.binding),
@@ -232,6 +249,7 @@ export function evaluate(input: EvaluationInput): PolicyVerdict {
 			: trusted.review.due;
 	if (completedAt >= reviewDeadline) return refuse("REVIEW_REQUIRED");
 	if (
+		trusted.version === 1 &&
 		BOUNDED_TUPLES.some(
 			([, , advisory, expiry]) =>
 				trusted.exceptions.some((row) => row.advisory === advisory) && completedAt >= expiry,
@@ -247,7 +265,11 @@ export function evaluate(input: EvaluationInput): PolicyVerdict {
 		![0, 1].includes(audit.advisoryExit)
 	)
 		return refuse("AUDIT_INCOMPLETE");
-	if (input.phase === "m4-gate" && (trusted.exceptions.length > 0 || audit.findings.length > 0))
+	if (
+		trusted.version === 1 &&
+		input.phase === "m4-gate" &&
+		(trusted.exceptions.length > 0 || audit.findings.length > 0)
+	)
 		return refuse("GATE_EXCEPTIONS_FORBIDDEN");
 	const actual = audit.findings.map(identity).sort();
 	const expected = trusted.exceptions.map(identity).sort();

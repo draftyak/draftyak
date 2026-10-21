@@ -92,6 +92,19 @@ function active() {
 		exceptions: findings(),
 	};
 }
+function renewed() {
+	const legacy = active();
+	return {
+		version: 2,
+		state: legacy.state,
+		termination: "release-or-validated-fix",
+		evidenceKind: legacy.evidenceKind,
+		confirmation: legacy.confirmation,
+		binding: legacy.binding,
+		review: legacy.review,
+		exceptions: legacy.exceptions,
+	};
+}
 function setup(record: unknown = active(), data: ProducedPolicyEvidence = dto()) {
 	const events: string[] = [];
 	let clock = NOW,
@@ -190,6 +203,9 @@ describe("authority-first orchestration", () => {
 		],
 		["terminal gate", { version: 1, state: "gate-closed" }, "TERMINAL_STATE", 1],
 		["revoked", { version: 1, state: "revoked" }, "TERMINAL_STATE", 1],
+		["release closure", { version: 2, state: "release-closed" }, "TERMINAL_STATE", 1],
+		["renewed removal", { version: 2, state: "removed" }, "TERMINAL_STATE", 1],
+		["renewed revocation", { version: 2, state: "revoked" }, "TERMINAL_STATE", 1],
 		["invalid active", { version: 1, state: "active" }, "AUTHORITY_INVALID", 2],
 	] as const)
 		it(`${name} refuses before any native producer`, async () => {
@@ -261,6 +277,68 @@ describe("authority-first orchestration", () => {
 		expect(result.output.reason).toBe("GATE_EXCEPTIONS_FORBIDDEN");
 		expect(result.output.audit?.fullExit).toBe(1);
 	});
+	it.each(["item", "m4-gate"] as const)(
+		"retains strict exits for explicit renewed authority in phase %s",
+		async (phase) => {
+			const f = setup(renewed());
+			const result = await runNativePolicy({
+				phase,
+				authority: f.authority,
+				producer: f.producer,
+				completionClock: f.clock,
+			});
+			expect(result.exitCode).toBe(0);
+			expect(result.output.verdict).toBe("pass-with-scoped-exceptions");
+			expect(result.output.accepted).toEqual(findings());
+			expect(result.output.rawExits).toEqual(f.data.rawExits);
+			expect(result.output.audit?.fullExit).toBe(1);
+			expect(result.output.audit?.advisoryExit).toBe(1);
+			expect(result.output.authorityRevision).toBe(REVISION);
+		},
+	);
+	it.each(["item", "m4-gate"] as const)(
+		"does not retain earlier v2 authority when closure is delivered during phase %s",
+		async (phase) => {
+			const f = setup(renewed());
+			const records: Record<string, unknown> = {
+				[REVISION]: renewed(),
+				[OTHER]: { version: 2, state: "release-closed" },
+			};
+			const selected: string[] = [];
+			f.authority.recordAt = async (revision) => {
+				selected.push(revision);
+				return Buffer.from(JSON.stringify(records[revision]));
+			};
+			const producer = createNativePolicyProducer({
+				collect: f.collector.collect,
+				revalidate: async (_context, data) => {
+					f.setCurrent(OTHER);
+					return current(data);
+				},
+			});
+			const result = await runNativePolicy({
+				phase,
+				authority: f.authority,
+				producer,
+				completionClock: f.clock,
+			});
+			expect(result.exitCode).toBe(1);
+			expect(result.output.reason).toBe("AUTHORITY_CHANGED");
+			expect(result.output.audit).toEqual(f.data.audit);
+			expect(result.output.rawExits).toEqual(f.data.rawExits);
+			expect(result.output.accepted).toEqual([]);
+			expect(selected).toEqual([REVISION]);
+			const later = await runNativePolicy({
+				phase,
+				authority: f.authority,
+				producer: f.producer,
+				completionClock: f.clock,
+			});
+			expect(later.output.reason).toBe("TERMINAL_STATE");
+			expect(later.output.audit).toBeNull();
+			expect(selected).toEqual([REVISION, OTHER]);
+		},
+	);
 	it("refuses missing current authority without running a producer or printing upstream text", async () => {
 		const f = setup();
 		f.authority.currentRevision = async () => {

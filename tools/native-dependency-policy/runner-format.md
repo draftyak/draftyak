@@ -52,8 +52,13 @@ and current source revisions, returning the current report digest, binding and
 source revisions. The runner compares these values with the frozen capture.
 It then checks current authority even if collection/revalidation refused. Only
 after both asynchronous stages finish does it read completion time. The decision
-evaluator applies exact binding, review/expiry, source freshness, gate and scoped
-finding checks using that completion time. It cannot evaluate a partial refusal
+evaluator applies exact binding, review, source freshness and scoped finding
+checks using that completion time. Version-1 records retain their fixed expiry
+and M4-gate limits. Explicit version-2 active records instead require the closed
+`termination: "release-or-validated-fix"` policy marker and retain the same
+first/weekly review deadlines. The marker is not proof of product-release or
+compatible-fix delivery. Neither a caller phase nor an upstream crate release
+event supplies that proof. It cannot evaluate a partial refusal
 as an operational pass. Current source delivery and final authority are mandatory;
 cached or unavailable source feeds cannot activate exceptions.
 
@@ -66,7 +71,23 @@ refusals have no invented native results. No absolute paths, capture contents,
 dependency prose, error stack or subprocess stdout/stderr is returned.
 
 Exit 0 denotes the evaluator's strict pass or explicitly scoped exception pass.
-Policy changes, delivered terminal state, expired/stale reviews and changed
+Policy changes, delivered terminal state, legacy expiry, overdue reviews and changed
 authority/inputs/sources refuse with exit 1. Input, tool, malformed evidence and
 unavailable producer/authority failures use exit 2. No code here approves,
 reviews, renews, publishes or modifies policy records.
+
+Version-2 `release-closed`, `removed` and `revoked` records refuse in preflight,
+before evidence directory creation or a native producer. The final authority
+revision check also refuses closure delivered during collection; the earlier
+active record cannot supply a verdict. Legacy terminal records retain that
+behavior. An explicit reduced active subset is compared with the complete
+actual finding set, and does not authorize a new version, parent, target,
+feature or graph. Empty actual findings cannot silently reduce the trusted
+scope. No terminal record is treated as an empty successful audit.
+
+Actual product-release closure ordering and independently validated compatible
+fix assessment remain integration responsibilities of the existing reviewed
+repository route. This module neither creates those facts nor checks arbitrary
+record history for reactivation. It introduces no caller-selected status,
+authority, phase, ref, clock or serialized proof. The initial checked-in record
+and production `BASIS_UNAVAILABLE` remain unchanged.
