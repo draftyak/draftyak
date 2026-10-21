@@ -7,7 +7,9 @@ import {
 	GOOGLE_OAUTH_CLIENT_ID,
 	GOOGLE_OAUTH_HOST,
 	GOOGLE_OAUTH_REDIRECT_URI,
+	type GoogleOAuthClient,
 	type GoogleOAuthFake,
+	type GoogleOAuthTokenError,
 } from "../src/google-oauth.ts";
 import { createRecorder } from "../src/recorder.ts";
 import { json, listeners } from "./helpers.ts";
@@ -21,6 +23,230 @@ const READ = ["openid", "email", READONLY];
 const VERIFIER = "DYTEST-verifier-".padEnd(43, "x");
 const CHALLENGE = createHash("sha256").update(VERIFIER).digest("base64url");
 const STATE = "DYTEST-state";
+
+describe("Google OAuth control snapshots", () => {
+	it("keeps consent capacity after a reentrant preparation", async () => {
+		const fake = createGoogleOAuthFake();
+		let entered = false;
+		expect(() =>
+			fake.enqueueConsent({
+				get kind() {
+					if (!entered) {
+						entered = true;
+						fake.enqueueConsent(...Array.from({ length: 256 }, () => ({ kind: "deny" as const })));
+					}
+					return "deny" as const;
+				},
+			}),
+		).toThrow(RangeError);
+		for (let i = 0; i < 256; i++) {
+			const response = await fake.fetch(authorization(), { redirect: "manual" });
+			expect(new URL(present(response.headers.get("location"))).searchParams.get("error")).toBe(
+				"access_denied",
+			);
+			fake.recorder.takeRequests();
+		}
+		await code(fake);
+	});
+	it("keeps token error capacity after a reentrant preparation", async () => {
+		const fake = createGoogleOAuthFake();
+		let entered = false;
+		expect(() =>
+			fake.enqueueTokenError({
+				get error() {
+					if (!entered) {
+						entered = true;
+						fake.enqueueTokenError(
+							...Array.from({ length: 256 }, () => ({ error: "temporarily_unavailable" as const })),
+						);
+					}
+					return "invalid_grant" as const;
+				},
+			}),
+		).toThrow(RangeError);
+		const pending = await code(fake);
+		for (let i = 0; i < 256; i++) {
+			expect((await exchange(fake, pending)).status).toBe(503);
+			fake.recorder.takeRequests();
+		}
+		expect((await exchange(fake, pending)).status).toBe(200);
+	});
+	it("copies indexed scopes without invoking a caller iterator", async () => {
+		const values = ["DYTEST-indexed"];
+		Object.defineProperty(values, Symbol.iterator, {
+			value: function* () {
+				for (let i = 0; i < 17; i++) yield `DYTEST-${i}`;
+			},
+		});
+		const fake = createGoogleOAuthFake();
+		fake.enqueueConsent({ kind: "unexpected-grant", scopes: values });
+		const tokens = await json<Tokens>(exchange(fake, await code(fake)));
+		expect(tokens.scope).toBe("DYTEST-indexed");
+		expect(fake.accessGrant(tokens.access_token)?.scopes).toEqual(["DYTEST-indexed"]);
+	});
+	it("copies indexed clients without registering iterator extras", async () => {
+		const clients: GoogleOAuthClient[] = [
+			{ clientId: GOOGLE_OAUTH_CLIENT_ID, redirectUris: [GOOGLE_OAUTH_REDIRECT_URI] },
+		];
+		Object.defineProperty(clients, Symbol.iterator, {
+			value: function* () {
+				for (let i = 0; i < 33; i++)
+					yield { clientId: `DYTEST-extra-${i}`, redirectUris: [GOOGLE_OAUTH_REDIRECT_URI] };
+			},
+		});
+		const fake = createGoogleOAuthFake({ clients });
+		expect(
+			(await fake.fetch(authorization({ client_id: "DYTEST-extra-32" }), { redirect: "manual" }))
+				.status,
+		).toBe(400);
+		expect((await exchange(fake, await code(fake))).status).toBe(200);
+	});
+	it("copies indexed callbacks without registering iterator extras", async () => {
+		const redirectUris = [GOOGLE_OAUTH_REDIRECT_URI];
+		Object.defineProperty(redirectUris, Symbol.iterator, {
+			value: function* () {
+				for (let i = 0; i < 17; i++) yield `http://127.0.0.1:${54000 + i}/cb`;
+			},
+		});
+		const fake = createGoogleOAuthFake({
+			clients: [{ clientId: GOOGLE_OAUTH_CLIENT_ID, redirectUris }],
+		});
+		expect(
+			(
+				await fake.fetch(authorization({ redirect_uri: "http://127.0.0.1:54016/cb" }), {
+					redirect: "manual",
+				})
+			).status,
+		).toBe(400);
+		expect((await exchange(fake, await code(fake))).status).toBe(200);
+	});
+	it("validates indexed scopes despite an overridden some method", async () => {
+		const values = [""];
+		Object.defineProperty(values, "some", { value: () => false });
+		const fake = createGoogleOAuthFake();
+		expect(() =>
+			fake.enqueueConsent({ kind: "deny" }, { kind: "unexpected-grant", scopes: values }),
+		).toThrow(TypeError);
+		await code(fake);
+	});
+	it("validates indexed callbacks despite an overridden some method", () => {
+		const redirectUris = ["https://outside.example/callback"];
+		Object.defineProperty(redirectUris, "some", { value: () => false });
+		expect(() =>
+			createGoogleOAuthFake({ clients: [{ clientId: GOOGLE_OAUTH_CLIENT_ID, redirectUris }] }),
+		).toThrow(TypeError);
+	});
+	it("refuses holes in indexed scope data atomically", async () => {
+		const fake = createGoogleOAuthFake();
+		expect(() =>
+			fake.enqueueConsent(
+				{ kind: "deny" },
+				{ kind: "unexpected-grant", scopes: new Array<string>(1) },
+			),
+		).toThrow(TypeError);
+		await code(fake);
+	});
+	it("refuses holes in indexed callback data", () => {
+		expect(() =>
+			createGoogleOAuthFake({
+				clients: [{ clientId: GOOGLE_OAUTH_CLIENT_ID, redirectUris: new Array<string>(1) }],
+			}),
+		).toThrow(TypeError);
+	});
+	it("stores the same token error value that was validated", async () => {
+		const fake = createGoogleOAuthFake();
+		const pending = await code(fake);
+		let reads = 0;
+		const step: GoogleOAuthTokenError = { error: "invalid_grant" };
+		Object.defineProperty(step, "error", {
+			get() {
+				return ++reads === 1 ? "invalid_grant" : "DYTEST-invalid-error";
+			},
+		});
+		fake.enqueueTokenError(step);
+		expect(await json(exchange(fake, pending))).toEqual({ error: "invalid_grant" });
+		expect(reads).toBe(1);
+		expect((await exchange(fake, pending)).status).toBe(200);
+	});
+	it("stores the same grant type value that was validated", async () => {
+		const fake = createGoogleOAuthFake();
+		const pending = await code(fake);
+		let reads = 0;
+		const step: GoogleOAuthTokenError = { error: "invalid_grant", grantType: "authorization_code" };
+		Object.defineProperty(step, "grantType", {
+			get() {
+				return ++reads === 1 ? "authorization_code" : "DYTEST-invalid-grant";
+			},
+		});
+		expect(() => fake.enqueueTokenError(step)).not.toThrow();
+		expect(await json(exchange(fake, pending))).toEqual({ error: "invalid_grant" });
+		expect(reads).toBe(1);
+		expect((await exchange(fake, pending)).status).toBe(200);
+	});
+	it("snapshots a client identifier once before validation and storage", async () => {
+		let reads = 0;
+		const client: GoogleOAuthClient = {
+			get clientId() {
+				return ++reads === 1 ? GOOGLE_OAUTH_CLIENT_ID : "DYTEST-changed";
+			},
+			redirectUris: [GOOGLE_OAUTH_REDIRECT_URI],
+		};
+		const fake = createGoogleOAuthFake({ clients: [client] });
+		expect((await exchange(fake, await code(fake))).status).toBe(200);
+		expect(reads).toBe(1);
+	});
+	it("snapshots an absent client secret once before storage", async () => {
+		let reads = 0;
+		const client: GoogleOAuthClient = {
+			clientId: GOOGLE_OAUTH_CLIENT_ID,
+			get clientSecret() {
+				return ++reads === 1 ? undefined : "DYTEST-later-secret";
+			},
+			redirectUris: [GOOGLE_OAUTH_REDIRECT_URI],
+		};
+		const fake = createGoogleOAuthFake({ clients: [client] });
+		expect((await exchange(fake, await code(fake))).status).toBe(200);
+		expect(reads).toBe(1);
+	});
+	it("snapshots client callback data once before validation and storage", async () => {
+		let reads = 0;
+		const client: GoogleOAuthClient = {
+			clientId: GOOGLE_OAUTH_CLIENT_ID,
+			get redirectUris() {
+				return ++reads === 1 ? [GOOGLE_OAUTH_REDIRECT_URI] : ["http://127.0.0.1:54322/changed"];
+			},
+		};
+		const fake = createGoogleOAuthFake({ clients: [client] });
+		expect((await exchange(fake, await code(fake))).status).toBe(200);
+		expect(reads).toBe(1);
+	});
+	it("snapshots consent kind once while preserving valid getters", async () => {
+		const fake = createGoogleOAuthFake();
+		let reads = 0;
+		const step = { kind: "grant" as const, scopes: ["email"] };
+		Object.defineProperty(step, "kind", {
+			get() {
+				return ++reads === 1 ? "grant" : "DYTEST-later-kind";
+			},
+		});
+		expect(() => fake.enqueueConsent(step)).not.toThrow();
+		expect((await json<Tokens>(exchange(fake, await code(fake)))).scope).toBe(EMAIL);
+		expect(reads).toBe(1);
+	});
+	it("snapshots consent scopes once while preserving valid getters", async () => {
+		const fake = createGoogleOAuthFake();
+		let reads = 0;
+		const step = {
+			kind: "grant" as const,
+			get scopes() {
+				return ++reads === 1 ? ["email"] : [""];
+			},
+		};
+		expect(() => fake.enqueueConsent(step)).not.toThrow();
+		expect((await json<Tokens>(exchange(fake, await code(fake)))).scope).toBe(EMAIL);
+		expect(reads).toBe(1);
+	});
+});
 
 function present<T>(value: T | null | undefined): T {
 	if (value === null || value === undefined) throw new Error("DYTEST fixture value missing");

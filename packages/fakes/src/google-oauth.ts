@@ -108,11 +108,21 @@ function scopes(value: string): string[] | undefined {
 		: undefined;
 }
 
+function indexed<T>(input: readonly T[], max: number): T[] | undefined {
+	if (!Array.isArray(input)) return;
+	const length = input.length;
+	if (!Number.isSafeInteger(length) || length < 0 || length > max) return;
+	const values: T[] = [];
+	for (let index = 0; index < length; index++) values.push(input[index] as T);
+	return values;
+}
+
 function scopeList(input: readonly string[]): string[] {
-	if (!Array.isArray(input) || input.length > 16 || input.some((s) => !text(s, 256))) {
+	const values = indexed(input, 16);
+	if (!values || values.some((s) => !text(s, 256))) {
 		throw new TypeError("Google OAuth fake scopes are invalid");
 	}
-	return [...new Set(input)];
+	return [...new Set(values)];
 }
 
 function redirectUri(value: string): boolean {
@@ -165,25 +175,33 @@ export function createGoogleOAuthFake(options: GoogleOAuthOptions = {}): GoogleO
 	const rotate = options.rotateRefreshTokens ?? true;
 	if (typeof rotate !== "boolean") throw new TypeError("Google OAuth fake rotation is invalid");
 	const clients = new Map<string, GoogleOAuthClient>();
-	const entries: readonly GoogleOAuthClient[] = options.clients ?? [
-		{ clientId: GOOGLE_OAUTH_CLIENT_ID, redirectUris: [GOOGLE_OAUTH_REDIRECT_URI] },
-	];
-	if (!Array.isArray(entries) || entries.length < 1 || entries.length > 32) {
+	const entries = indexed(
+		options.clients ?? [
+			{ clientId: GOOGLE_OAUTH_CLIENT_ID, redirectUris: [GOOGLE_OAUTH_REDIRECT_URI] },
+		],
+		32,
+	);
+	if (!entries || entries.length < 1) {
 		throw new RangeError("Google OAuth fake client count is invalid");
 	}
 	for (const client of entries) {
+		const { clientId, clientSecret, redirectUris: inputUris } = client;
+		const redirectUris = indexed(inputUris, 16);
 		if (
-			!text(client.clientId, 512) ||
-			clients.has(client.clientId) ||
-			(client.clientSecret !== undefined && !text(client.clientSecret, 512)) ||
-			!Array.isArray(client.redirectUris) ||
-			client.redirectUris.length < 1 ||
-			client.redirectUris.length > 16 ||
-			client.redirectUris.some((uri: unknown) => typeof uri !== "string" || !redirectUri(uri))
+			!text(clientId, 512) ||
+			clients.has(clientId) ||
+			(clientSecret !== undefined && !text(clientSecret, 512)) ||
+			!redirectUris ||
+			redirectUris.length < 1 ||
+			redirectUris.some((uri: unknown) => typeof uri !== "string" || !redirectUri(uri))
 		) {
 			throw new TypeError("Google OAuth fake client is invalid");
 		}
-		clients.set(client.clientId, { ...client, redirectUris: [...client.redirectUris] });
+		clients.set(clientId, {
+			clientId,
+			...(clientSecret === undefined ? {} : { clientSecret }),
+			redirectUris,
+		});
 	}
 	const faults = createFaults({ clock: options.clock });
 	const codes = new Map<string, Code>();
@@ -431,32 +449,39 @@ export function createGoogleOAuthFake(options: GoogleOAuthOptions = {}): GoogleO
 			if (steps.length + consents.length > MAX_QUEUE)
 				throw new RangeError("Google OAuth fake consent queue limit");
 			const prepared = steps.map((step): GoogleOAuthConsent => {
-				if (step.kind === "deny") return { kind: "deny" };
-				if (step.kind === "unexpected-grant")
-					return { kind: "unexpected-grant", scopes: scopeList(step.scopes) };
-				if (step.kind !== "grant") throw new TypeError("Google OAuth fake consent is invalid");
+				const kind = step.kind;
+				if (kind === "deny") return { kind: "deny" };
+				if (kind !== "unexpected-grant" && kind !== "grant")
+					throw new TypeError("Google OAuth fake consent is invalid");
+				const scopes = step.scopes;
+				if (kind === "unexpected-grant")
+					return { kind, scopes: scopeList(scopes as readonly string[]) };
 				return {
 					kind: "grant",
-					...(step.scopes === undefined ? {} : { scopes: scopeList(step.scopes) }),
+					...(scopes === undefined ? {} : { scopes: scopeList(scopes) }),
 				};
 			});
+			if (prepared.length + consents.length > MAX_QUEUE)
+				throw new RangeError("Google OAuth fake consent queue limit");
 			consents.push(...prepared);
 		},
 		enqueueTokenError(...steps) {
 			if (steps.length + errors.length > MAX_QUEUE)
 				throw new RangeError("Google OAuth fake error queue limit");
 			const prepared = steps.map((step): GoogleOAuthTokenError => {
+				const { error, grantType } = step;
 				if (
-					!["invalid_grant", "invalid_client", "temporarily_unavailable"].includes(step.error) ||
-					(step.grantType !== undefined &&
-						!["authorization_code", "refresh_token"].includes(step.grantType))
+					!["invalid_grant", "invalid_client", "temporarily_unavailable"].includes(error) ||
+					(grantType !== undefined && !["authorization_code", "refresh_token"].includes(grantType))
 				)
 					throw new TypeError("Google OAuth fake token error is invalid");
 				return {
-					error: step.error,
-					...(step.grantType === undefined ? {} : { grantType: step.grantType }),
+					error,
+					...(grantType === undefined ? {} : { grantType }),
 				};
 			});
+			if (prepared.length + errors.length > MAX_QUEUE)
+				throw new RangeError("Google OAuth fake error queue limit");
 			errors.push(...prepared);
 		},
 		accessGrant(value) {
