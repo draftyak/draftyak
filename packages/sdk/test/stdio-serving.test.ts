@@ -10,9 +10,12 @@ import { stdioFixture } from "./stdio-fixture.ts";
 
 describe("real stdio plugin serving", () => {
 	it("discovers, lists absent optional properties, and calls a canonical tool after a typed error", async () => {
-		const peer = stdioFixture(new URL("./fixtures/stdio-serving.ts", import.meta.url));
+		const peer = stdioFixture(new URL("./fixtures/stdio-serving.ts", import.meta.url), {
+			ready: true,
+		});
 		const { ask } = peer;
 		try {
+			await peer.ready();
 			const discovery = await ask("server/discover");
 			expect(discovery?.error).toBeUndefined();
 			expect(discovery.result?.capabilities, peer.diagnostics()).toEqual({
