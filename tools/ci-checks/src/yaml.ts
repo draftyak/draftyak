@@ -99,8 +99,15 @@ export function parseYaml(source: string): YamlDocument {
 			if (/^["']/.test(rest)) [value, rest] = quoted(rest, no);
 			else {
 				const raw = /^[^,[\]{}#'"]*/.exec(rest)?.[0] ?? "";
-				if (raw.trim() === "" || /:(?: |$)/.test(raw)) fail("unsupported flow sequence item", no);
-				value = resolve(raw.trim());
+				const plain = raw.trim();
+				if (
+					plain === "" ||
+					/:(?: |$)/.test(raw) ||
+					/^(?:[&*!%@`|>]|[?:-](?:[ \t]|$))/.test(plain)
+				) {
+					fail("unsupported flow sequence item", no);
+				}
+				value = resolve(plain);
 				rest = rest.slice(raw.length);
 			}
 			out.push(record([...path, out.length], value, no));
