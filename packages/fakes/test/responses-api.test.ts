@@ -625,6 +625,71 @@ const readerOf = (response: Response): ReadableStreamDefaultReader<Uint8Array> =
 	return response.body.getReader();
 };
 
+describe("Responses reply kind snapshots", () => {
+	const body = "abc";
+	const observe = async (step: ResponsesApiStep) => {
+		const fake = createResponsesApiFake({ steps: [step] });
+		expect(fake.pending()).toBe(1);
+		const response = await fake.handler(
+			new Request(`https://${RESPONSES_API_HOST}${RESPONSES_API_PATH}`, post()),
+		);
+		expect(fake.pending()).toBe(0);
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toBe("application/json");
+		const reader = readerOf(response);
+		const chunks: Uint8Array[] = [];
+		try {
+			for (;;) {
+				const next = await reader.read();
+				if (next.done) break;
+				chunks.push(next.value);
+			}
+		} finally {
+			await reader.cancel();
+			reader.releaseLock();
+		}
+		return {
+			lengths: chunks.map((chunk) => chunk.byteLength),
+			text: Buffer.concat(chunks).toString("utf8"),
+		};
+	};
+
+	it("uses one raw kind snapshot for exact response chunks and bytes", async () => {
+		const kinds = ["raw", "json", "raw"] as const;
+		let reads = 0;
+		const step: ResponsesApiStep = {
+			get kind() {
+				return kinds[reads++] ?? "raw";
+			},
+			body,
+			chunkBytes: 1,
+		};
+		const observed = await observe(step);
+		expect(observed.lengths).toEqual([1, 1, 1]);
+		expect(observed.text).toBe(body);
+		expect(reads).toBe(1);
+	});
+
+	it("preserves stable raw chunks and explicit JSON media", async () => {
+		const observed = await observe({
+			kind: "raw",
+			body,
+			chunkBytes: 1,
+			contentType: "application/json",
+		});
+		expect(observed.lengths).toEqual([1, 1, 1]);
+		expect(observed.text).toBe(body);
+		expect(() => JSON.parse(observed.text)).toThrow(SyntaxError);
+	});
+
+	it("preserves stable JSON string serialization and default chunks", async () => {
+		const observed = await observe({ kind: "json", body });
+		expect(observed.lengths).toEqual([5]);
+		expect(observed.text).toBe(JSON.stringify(body));
+		expect(JSON.parse(observed.text)).toBe(body);
+	});
+});
+
 describe("scripted Responses provider", () => {
 	it.each([
 		["valid", { kind: "json", body: completed() }, 200, completed()],
