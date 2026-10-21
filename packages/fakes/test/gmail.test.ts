@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { manualClock } from "../src/faults.ts";
 import { GmailState } from "../src/gmail/state.ts";
-import { body as readBody } from "../src/gmail/wire.ts";
+import { GmailInputError, MAX_GMAIL_RAW_BYTES, body as readBody } from "../src/gmail/wire.ts";
 import { createGmailFake, GMAIL_HOST } from "../src/gmail.ts";
 import { createRecorder } from "../src/recorder.ts";
 import {
@@ -43,6 +43,266 @@ const post = (value: unknown): RequestInit => ({
 	method: "POST",
 	headers: { "content-type": "application/json" },
 	body: JSON.stringify(value),
+});
+
+describe("Gmail control snapshots", () => {
+	const send = (fake: Gmail) =>
+		call(fake, "/messages/send", post({ raw: raw().toString("base64url") }));
+	it("does not trust a caller scope some method for send permission", async () => {
+		const scopes = [READ];
+		Object.defineProperty(scopes, "some", { value: () => true });
+		const fake = create({ accessGrant: () => ({ scopes, expiresAt: START + 60_000 }) });
+		const before = fake.historyId;
+		expect((await send(fake)).status).toBe(403);
+		expect(fake.historyId).toBe(before);
+	});
+	it("does not trust a caller scope includes method for metadata restrictions", async () => {
+		const scopes = [METADATA];
+		Object.defineProperty(scopes, "includes", { value: () => false });
+		const fake = create({
+			messages: [{ id: "m1", raw: raw() }],
+			accessGrant: () => ({ scopes, expiresAt: START + 60_000 }),
+		});
+		expect((await call(fake, "/messages/m1?format=raw")).status).toBe(403);
+	});
+	it("copies indexed grant scopes without caller iteration", async () => {
+		const scopes = [READ];
+		let iterations = 0;
+		scopes[Symbol.iterator] = function* () {
+			iterations++;
+			yield SEND;
+			return undefined;
+		};
+		const fake = create({ accessGrant: () => ({ scopes, expiresAt: START + 60_000 }) });
+		expect((await send(fake)).status).toBe(403);
+		expect(iterations).toBe(0);
+	});
+	it("uses one captured grant scope array for permission", async () => {
+		let reads = 0;
+		const grant = {
+			get scopes() {
+				return ++reads === 1 ? [READ] : [SEND];
+			},
+			expiresAt: START + 60_000,
+		};
+		const fake = create({ accessGrant: () => grant });
+		expect((await send(fake)).status).toBe(403);
+		expect(reads).toBe(1);
+	});
+	it("uses one captured grant expiry for validation", async () => {
+		let reads = 0;
+		const grant = {
+			scopes: [READ],
+			get expiresAt() {
+				return ++reads === 1 ? START + 60_000 : START - 1;
+			},
+		};
+		const fake = create({ accessGrant: () => grant });
+		expect((await call(fake, "/profile")).status).toBe(200);
+		expect(reads).toBe(1);
+	});
+	it("keeps send capacity after reentrant step preparation", async () => {
+		const fake = create();
+		let entered = false;
+		const step = {
+			get kind(): "accept" {
+				if (!entered) {
+					entered = true;
+					fake.queueSend(
+						...Array.from({ length: 1024 }, () => ({
+							kind: "mail-rate-limit" as const,
+							retryAfterSeconds: 1,
+						})),
+					);
+				}
+				return "accept";
+			},
+		};
+		expect(() => fake.queueSend(step)).toThrow();
+		expect(() => fake.queueSend({ kind: "accept" })).toThrow();
+		const response = await send(fake);
+		expect(response.status).toBe(429);
+		expect(response.headers.get("retry-after")).toBe("1");
+		expect(fake.historyId).toBe("1000");
+		expect(() => fake.queueSend({ kind: "accept" })).not.toThrow();
+		expect(() => fake.queueSend({ kind: "accept" })).toThrow();
+	});
+	it("copies the same raw seed bytes that were validated", () => {
+		const fake = create();
+		const bytes = raw();
+		let reads = 0;
+		expect(() =>
+			fake.addMessage({
+				id: "m1",
+				get raw() {
+					return ++reads === 1 ? bytes : new Uint8Array(0);
+				},
+			}),
+		).not.toThrow();
+		expect(fake.message("m1").raw).toEqual(new Uint8Array(bytes));
+		expect(reads).toBe(1);
+	});
+	it("captures a seed identifier before validating and storing it", () => {
+		const fake = create();
+		let reads = 0;
+		const seed = {
+			get id() {
+				return ++reads === 1 ? "m1" : "DYTEST invalid id";
+			},
+			raw: raw(),
+		};
+		expect(() => fake.addMessage(seed)).not.toThrow();
+		expect(fake.message("m1").id).toBe("m1");
+		expect(reads).toBe(1);
+	});
+	it("captures a seed thread identifier before validating and storing it", () => {
+		const fake = create();
+		let reads = 0;
+		fake.addMessage({
+			id: "m1",
+			get threadId() {
+				return ++reads === 1 ? "t1" : "DYTEST invalid thread";
+			},
+			raw: raw(),
+		});
+		expect(fake.message("m1").threadId).toBe("t1");
+		expect(reads).toBe(1);
+	});
+	it("checks duplicate identity against the prepared seed identifier", () => {
+		const bytes = raw();
+		const fake = create({ messages: [{ id: "m1", raw: bytes }] });
+		let reads = 0;
+		const before = fake.historyId;
+		const seed = {
+			get id() {
+				return ++reads === 1 ? "m1" : "unused";
+			},
+			threadId: "t1",
+			raw: raw("replacement"),
+		};
+		expect(() => fake.addMessage(seed)).toThrow();
+		expect(fake.historyId).toBe(before);
+		expect(fake.message("m1").raw).toEqual(new Uint8Array(bytes));
+	});
+	it("copies indexed labels without using later caller iterations", () => {
+		const fake = create({ messages: [{ id: "m1", raw: raw() }] });
+		const values = ["INBOX"];
+		let passes = 0;
+		values[Symbol.iterator] = function* () {
+			yield ++passes <= 2 ? "INBOX" : "DYTEST invalid label";
+			return undefined;
+		};
+		fake.setLabels("m1", values);
+		expect(fake.message("m1").labelIds).toEqual(["INBOX"]);
+		expect(passes).toBe(0);
+	});
+	it("validates indexed labels hidden by a caller iterator", () => {
+		const fake = create({ messages: [{ id: "m1", raw: raw() }] });
+		const values = ["DYTEST invalid label"];
+		values[Symbol.iterator] = function* () {
+			yield "INBOX";
+			return undefined;
+		};
+		const before = fake.historyId;
+		expect(() => fake.setLabels("m1", values)).toThrow();
+		expect(fake.historyId).toBe(before);
+	});
+	it("captures send kind before validation and preparation", async () => {
+		const fake = create();
+		let reads = 0;
+		const step = {
+			get kind(): "accept" | "mail-rate-limit" {
+				return ++reads === 1 ? "accept" : "mail-rate-limit";
+			},
+			retryAfterSeconds: -1,
+		};
+		expect(() => fake.queueSend(step)).not.toThrow();
+		expect((await send(fake)).status).toBe(200);
+		expect(reads).toBe(1);
+	});
+	it("retains the validated send date", async () => {
+		const fake = create();
+		const date = "Mon, 19 Oct 2026 09:00:00 +0000";
+		let reads = 0;
+		expect(() =>
+			fake.queueSend({
+				kind: "accept",
+				get date() {
+					return ++reads === 1 ? date : "\r\nX-DYTEST: unchecked";
+				},
+			}),
+		).not.toThrow();
+		const result = await json<{ id: string }>(send(fake));
+		expect(Buffer.from(fake.message(result.id).raw).toString()).toContain(`Date: ${date}\r\n`);
+		expect(Buffer.from(fake.message(result.id).raw).toString()).not.toContain("X-DYTEST");
+		expect(reads).toBe(1);
+	});
+	it("retains the validated send message identifier", async () => {
+		const fake = create();
+		const messageId = "<DYTEST-checked@draftyak.example>";
+		let reads = 0;
+		expect(() =>
+			fake.queueSend({
+				kind: "accept",
+				get messageId() {
+					return ++reads === 1 ? messageId : "<DYTEST-unchecked@other.invalid>";
+				},
+			}),
+		).not.toThrow();
+		const result = await json<{ id: string }>(send(fake));
+		expect(Buffer.from(fake.message(result.id).raw).toString()).toContain(
+			`Message-ID: ${messageId}\r\n`,
+		);
+		expect(reads).toBe(1);
+	});
+	it("retains the validated retry delay", async () => {
+		const fake = create();
+		let reads = 0;
+		expect(() =>
+			fake.queueSend({
+				kind: "mail-rate-limit",
+				get retryAfterSeconds() {
+					return ++reads === 1 ? 5 : -1;
+				},
+			}),
+		).not.toThrow();
+		const response = await send(fake);
+		expect(response.status).toBe(429);
+		expect(response.headers.get("retry-after")).toBe("5");
+		expect(fake.historyId).toBe("1000");
+		expect(reads).toBe(1);
+	});
+	it("retains validated budget units", async () => {
+		let reads = 0;
+		const fake = create({
+			readBudget: {
+				get units() {
+					return ++reads === 1 ? 1 : 2;
+				},
+				windowMs: 60_000,
+			},
+		});
+		expect((await call(fake, "/profile")).status).toBe(200);
+		expect((await call(fake, "/profile")).status).toBe(429);
+		expect(reads).toBe(1);
+	});
+	it("retains validated budget windows", async () => {
+		let reads = 0;
+		const clock = manualClock(START);
+		const fake = create({
+			clock,
+			readBudget: {
+				units: 1,
+				get windowMs() {
+					return ++reads === 1 ? 60_000 : 1;
+				},
+			},
+		});
+		expect((await call(fake, "/profile")).status).toBe(200);
+		clock.advance(1);
+		expect((await call(fake, "/profile")).status).toBe(429);
+		expect(reads).toBe(1);
+	});
 });
 
 describe("Gmail discovery and boundary controls", () => {
@@ -390,6 +650,29 @@ describe("Gmail discovery and boundary controls", () => {
 		expect(() => state.add({ id: "overTotal", raw: raw() })).toThrow();
 		state.remove("first");
 		expect(() => state.add({ id: "replacement", raw: raw() })).not.toThrow();
+	});
+
+	it("bounds copied raw bytes when caller byteLength is shadowed", () => {
+		const state = new GmailState(manualClock(START));
+		state.add({ id: "before", raw: raw() });
+		const messages = structuredClone(state.messages);
+		const history = structuredClone(state.history);
+		const sequence = state.sequence;
+		const oversized = new Uint8Array(MAX_GMAIL_RAW_BYTES + 1).fill(120);
+		oversized.set(raw());
+		expect(oversized.byteLength).toBe(MAX_GMAIL_RAW_BYTES + 1);
+		Object.defineProperty(oversized, "byteLength", { value: 1 });
+		expect(oversized.byteLength).toBe(1);
+		expect(() => state.add({ id: "tooLarge", raw: oversized })).toThrow(GmailInputError);
+		expect(state.messages).toEqual(messages);
+		expect(state.history).toEqual(history);
+		expect(state.sequence).toBe(sequence);
+		const exact = oversized.subarray(0, MAX_GMAIL_RAW_BYTES);
+		expect(exact.byteLength).toBe(MAX_GMAIL_RAW_BYTES);
+		expect(() => state.add({ id: "maximum", raw: exact })).not.toThrow();
+		expect(state.get("maximum").raw.byteLength).toBe(MAX_GMAIL_RAW_BYTES);
+		expect(state.sequence).toBe(sequence + 1n);
+		expect(state.history).toHaveLength(history.length + 1);
 	});
 
 	it("caps app-side request bytes and yielded chunks, cancelling the refused stream", async () => {

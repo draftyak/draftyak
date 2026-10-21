@@ -81,42 +81,47 @@ export interface GmailFake extends Fake {
 }
 function budget(value?: GmailBudget): GmailBudget | undefined {
 	if (!value) return;
+	const { units, windowMs } = value;
 	check(
-		Number.isSafeInteger(value.units) &&
-			value.units > 0 &&
-			Number.isSafeInteger(value.windowMs) &&
-			value.windowMs > 0 &&
-			value.windowMs <= 86_400_000,
+		Number.isSafeInteger(units) &&
+			units > 0 &&
+			Number.isSafeInteger(windowMs) &&
+			windowMs > 0 &&
+			windowMs <= 86_400_000,
 	);
-	return { units: value.units, windowMs: value.windowMs };
+	return { units, windowMs };
 }
 function sendStep(step: GmailSendStep): GmailSendStep {
-	check(step && ["accept", "mail-rate-limit", "concurrent-rate-limit"].includes(step.kind));
-	if (step.kind !== "accept") {
+	check(step);
+	const kind = step.kind;
+	check(["accept", "mail-rate-limit", "concurrent-rate-limit"].includes(kind));
+	if (kind !== "accept") {
+		const retryAfterSeconds = step.retryAfterSeconds;
 		check(
-			Number.isSafeInteger(step.retryAfterSeconds) &&
-				step.retryAfterSeconds >= 0 &&
-				step.retryAfterSeconds <= 604_800,
+			Number.isSafeInteger(retryAfterSeconds) &&
+				retryAfterSeconds >= 0 &&
+				retryAfterSeconds <= 604_800,
 		);
-		return { kind: step.kind, retryAfterSeconds: step.retryAfterSeconds };
+		return { kind, retryAfterSeconds };
 	}
-	if (step.date !== undefined)
+	const { date, messageId } = step;
+	if (date !== undefined)
 		check(
-			typeof step.date === "string" &&
-				step.date.length <= 128 &&
-				/^[\x20-\x7e]+$/.test(step.date) &&
-				Number.isFinite(Date.parse(step.date)),
+			typeof date === "string" &&
+				date.length <= 128 &&
+				/^[\x20-\x7e]+$/.test(date) &&
+				Number.isFinite(Date.parse(date)),
 		);
-	if (step.messageId !== undefined)
+	if (messageId !== undefined)
 		check(
-			typeof step.messageId === "string" &&
-				/^<[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.example>$/.test(step.messageId) &&
-				step.messageId.length <= 256,
+			typeof messageId === "string" &&
+				/^<[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.example>$/.test(messageId) &&
+				messageId.length <= 256,
 		);
 	return {
 		kind: "accept",
-		...(step.date === undefined ? {} : { date: step.date }),
-		...(step.messageId === undefined ? {} : { messageId: step.messageId }),
+		...(date === undefined ? {} : { date }),
+		...(messageId === undefined ? {} : { messageId }),
 	};
 }
 
@@ -202,13 +207,19 @@ export function createGmailFake(options: GmailOptions): GmailFake {
 				request.headers.get("authorization") ?? "",
 			);
 			const grant = bearer ? options.accessGrant(bearer[1] as string) : undefined;
+			const scopes = grant?.scopes,
+				expiresAt = grant?.expiresAt;
 			if (
 				!grant ||
-				!Array.isArray(grant.scopes) ||
-				!Number.isFinite(grant.expiresAt) ||
-				grant.expiresAt <= state.now()
+				!Array.isArray(scopes) ||
+				typeof expiresAt !== "number" ||
+				!Number.isFinite(expiresAt) ||
+				expiresAt <= state.now()
 			)
 				return failure(401, "authError", "Invalid synthetic grant");
+			const capturedScopes: string[] = [];
+			const scopeCount = scopes.length;
+			for (let index = 0; index < scopeCount; index++) capturedScopes.push(scopes[index]);
 			const allowed = isSend
 				? [ALL, GMAIL_MODIFY_SCOPE, COMPOSE, SEND]
 				: modify || batch
@@ -216,11 +227,11 @@ export function createGmailFake(options: GmailOptions): GmailFake {
 					: profile
 						? [ALL, GMAIL_MODIFY_SCOPE, GMAIL_READONLY_SCOPE, METADATA, COMPOSE]
 						: [ALL, GMAIL_MODIFY_SCOPE, GMAIL_READONLY_SCOPE, METADATA];
-			if (!grant.scopes.some((scope) => allowed.includes(scope)))
+			if (!capturedScopes.some((scope) => allowed.includes(scope)))
 				return failure(403, "insufficientPermissions", "Insufficient synthetic scope");
 			const metadataOnly =
-				grant.scopes.includes(METADATA) &&
-				!grant.scopes.some((scope) =>
+				capturedScopes.includes(METADATA) &&
+				!capturedScopes.some((scope) =>
 					[ALL, GMAIL_MODIFY_SCOPE, GMAIL_READONLY_SCOPE].includes(scope),
 				);
 			if (metadataOnly && (params.has("q") || (getOne && ["full", "raw"].includes(format))))
@@ -423,6 +434,7 @@ export function createGmailFake(options: GmailOptions): GmailFake {
 		queueSend: (...steps: readonly GmailSendStep[]): void => {
 			check(steps.length <= MAX_GMAIL_SEND_STEPS - script.length);
 			const checked = steps.map(sendStep);
+			check(checked.length <= MAX_GMAIL_SEND_STEPS - script.length);
 			script.push(...checked);
 		},
 		get historyId() {

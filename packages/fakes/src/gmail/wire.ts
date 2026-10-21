@@ -16,10 +16,17 @@ export function id(value: unknown): asserts value is string {
 	check(typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value));
 }
 export function labels(value: readonly string[]): string[] {
-	check(Array.isArray(value) && value.length <= 100);
-	for (const entry of value) id(entry);
-	check(new Set(value).size === value.length);
-	return [...value];
+	check(Array.isArray(value));
+	const length = value.length;
+	check(Number.isSafeInteger(length) && length >= 0 && length <= 100);
+	const result: string[] = [];
+	for (let index = 0; index < length; index++) {
+		const entry = value[index];
+		id(entry);
+		result.push(entry);
+	}
+	check(new Set(result).size === result.length);
+	return result;
 }
 export function decimal(value: string): bigint {
 	check(/^(?:0|[1-9][0-9]{0,19})$/.test(value));
