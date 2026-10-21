@@ -15,7 +15,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -47,7 +47,7 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 128,
-                            "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$",
+                            "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$(?![\\s\\S])",
                             "not": {
                               "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                             }
@@ -55,7 +55,7 @@
                           {
                             "type": "string",
                             "maxLength": 8192,
-                            "pattern": "^(?:[!-~](?:[\\t -~]*[!-~])?)?$",
+                            "pattern": "^(?:[!-~](?:[\\t -~]*[!-~])?)?$(?![\\s\\S])",
                             "not": {
                               "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                             }
@@ -75,7 +75,7 @@
                               "type": "string",
                               "minLength": 26,
                               "maxLength": 26,
-                              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
                               "description": "A ULID: 26 upper-case Crockford base32 characters."
                             }
                           },
@@ -91,7 +91,7 @@
                             "base64": {
                               "type": "string",
                               "maxLength": 87382,
-                              "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$",
+                              "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$(?![\\s\\S])",
                               "description": "Bytes as unpadded, canonical base64url."
                             }
                           },
@@ -151,7 +151,7 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 128,
-                            "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$",
+                            "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$(?![\\s\\S])",
                             "not": {
                               "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                             }
@@ -159,7 +159,7 @@
                           {
                             "type": "string",
                             "maxLength": 8192,
-                            "pattern": "^(?:[!-~](?:[\\t -~]*[!-~])?)?$",
+                            "pattern": "^(?:[!-~](?:[\\t -~]*[!-~])?)?$(?![\\s\\S])",
                             "not": {
                               "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                             }
@@ -179,7 +179,7 @@
                               "type": "string",
                               "minLength": 26,
                               "maxLength": 26,
-                              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
                               "description": "A ULID: 26 upper-case Crockford base32 characters."
                             }
                           },
@@ -195,7 +195,7 @@
                             "base64": {
                               "type": "string",
                               "maxLength": 87382,
-                              "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$",
+                              "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$(?![\\s\\S])",
                               "description": "Bytes as unpadded, canonical base64url."
                             }
                           },
@@ -267,7 +267,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -313,7 +313,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -329,7 +329,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -338,7 +338,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -370,7 +370,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -386,7 +386,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -417,7 +417,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -433,7 +433,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -464,7 +464,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -480,7 +480,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -513,7 +513,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -529,7 +529,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -560,7 +560,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -602,7 +602,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -657,7 +657,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -675,7 +675,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 128,
-                      "pattern": "^[!-~]+$",
+                      "pattern": "^[!-~]+$(?![\\s\\S])",
                       "not": {
                         "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                       }
@@ -726,7 +726,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -751,7 +751,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "not": {
                 "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
               }
@@ -828,7 +828,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }
@@ -841,7 +841,7 @@
                 "base64": {
                   "type": "string",
                   "maxLength": 87382,
-                  "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$",
+                  "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$(?![\\s\\S])",
                   "description": "Bytes as unpadded, canonical base64url."
                 },
                 "done": {
@@ -892,7 +892,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "not": {
                     "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
                   }

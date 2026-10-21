@@ -42,7 +42,7 @@
                   "type": "string",
                   "minLength": 26,
                   "maxLength": 26,
-                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
                   "description": "A ULID: 26 upper-case Crockford base32 characters."
                 }
               },
@@ -58,7 +58,7 @@
                 "base64": {
                   "type": "string",
                   "maxLength": 87382,
-                  "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$",
+                  "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$(?![\\s\\S])",
                   "description": "Bytes as unpadded, canonical base64url."
                 }
               },
@@ -170,7 +170,7 @@
         "subtype": {
           "type": "string",
           "maxLength": 64,
-          "pattern": "^[a-z][a-z0-9_]*$"
+          "pattern": "^[a-z][a-z0-9_]*$(?![\\s\\S])"
         },
         "text": {
           "type": "string",
@@ -296,7 +296,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[!-~]+$",
+      "pattern": "^[!-~]+$(?![\\s\\S])",
       "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces.",
       "not": {
         "pattern": "\\n"
@@ -306,7 +306,7 @@
       "type": "string",
       "minLength": 3,
       "maxLength": 255,
-      "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$",
+      "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$(?![\\s\\S])",
       "description": "A lower-case type/subtype without parameters, such as image/png.",
       "not": {
         "pattern": "\\n"
