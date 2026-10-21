@@ -30,6 +30,7 @@ const ENVIRONMENT = new Set([
 	"TEMP",
 	"TMP",
 	"TMPDIR",
+	"CARGO",
 	"CARGO_HOME",
 	"RUSTUP_HOME",
 	"RUSTUP_TOOLCHAIN",
@@ -142,7 +143,6 @@ async function validated(command: NativeCommand): Promise<NativeCommand> {
 			env: requestedEnv,
 			deadlineMs,
 		} = command;
-		const executable = await nativeExecutable(requested);
 		if (!Array.isArray(requestedArgs) || requestedArgs.length > 64) return refuse();
 		const args = [...requestedArgs];
 		let bytes = 0;
@@ -159,13 +159,7 @@ async function validated(command: NativeCommand): Promise<NativeCommand> {
 			!path.isAbsolute(requestedCwd)
 		)
 			return refuse();
-		const cwd = await realpath(requestedCwd);
-		if (
-			!(await stat(cwd)).isDirectory() ||
-			typeof requestedEnv !== "object" ||
-			requestedEnv === null ||
-			Array.isArray(requestedEnv)
-		)
+		if (typeof requestedEnv !== "object" || requestedEnv === null || Array.isArray(requestedEnv))
 			return refuse();
 		const env: Record<string, string> = {};
 		let envBytes = 0;
@@ -186,6 +180,10 @@ async function validated(command: NativeCommand): Promise<NativeCommand> {
 			env[key] = value;
 		}
 		if (envBytes > 32_768) return refuse();
+		const executable = await nativeExecutable(requested);
+		const cwd = await realpath(requestedCwd);
+		if (!(await stat(cwd)).isDirectory()) return refuse();
+		if (env.CARGO !== undefined) await nativeExecutable(env.CARGO);
 		return Object.freeze({
 			executable,
 			args: Object.freeze(args),

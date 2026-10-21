@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -18,7 +18,23 @@ import { captureNativeProcess, MAX_CAPTURE_MS, type NativeCommand } from "../src
 const injected = vi.hoisted(() => ({
 	mode: "real" as "real" | "spawn-error" | "unknown-signal" | "signal" | "bad-code" | "unclosed",
 	calls: [] as Array<{ executable: string; args: readonly string[]; options: unknown }>,
+	realpathPause: null as null | { requested: string; entered: () => void; wait: Promise<void> },
 }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs/promises")>();
+	return {
+		...actual,
+		realpath: async (requested: string) => {
+			const pause = injected.realpathPause;
+			if (pause?.requested === requested) {
+				injected.realpathPause = null;
+				pause.entered();
+				await pause.wait;
+			}
+			return actual.realpath(requested);
+		},
+	};
+});
 vi.mock("node:child_process", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:child_process")>();
 	return {
@@ -65,6 +81,7 @@ const env = (): Record<string, string> =>
 beforeEach(async () => {
 	injected.mode = "real";
 	injected.calls.length = 0;
+	injected.realpathPause = null;
 	root = await mkdtemp(path.join(os.tmpdir(), "draftyak-native-test-"));
 	checkout = path.join(root, "checkout");
 	directory = path.join(root, "evidence");
@@ -260,6 +277,155 @@ describe("native input restrictions", () => {
 		}
 		await refuses({ ...input, cwd: "." });
 		await refuses({ ...input, cwd: path.join(root, "absent") });
+	});
+});
+
+describe("explicit native CARGO environment", () => {
+	it("hands an explicit native CARGO to the controlled child without running it", async () => {
+		const result = await captureNativeProcess(
+			evidence,
+			"cargo-native",
+			await command("process.stdout.write(String(process.env.CARGO===process.execPath));", {
+				env: { ...env(), CARGO: process.execPath },
+			}),
+		);
+		expect(result.failure).toBeNull();
+		expect(result.exitCode).toBe(0);
+		expect(Buffer.from(await readCapturedBytes(evidence, result, "stdout")).toString()).toBe(
+			"true",
+		);
+		expect(injected.calls).toHaveLength(1);
+		expect(injected.calls[0]?.executable === process.execPath).toBe(true);
+	});
+	it("retains a requested native-looking path with spaces and noncanonical spelling", async () => {
+		const folder = path.join(root, "native paths");
+		await mkdir(folder);
+		const name = process.platform === "win32" ? "synthetic.exe" : "synthetic";
+		const fixture = path.join(folder, name);
+		await writeFile(fixture, Buffer.from([0x4d, 0x5a, 0, 0]));
+		await chmod(fixture, 0o700);
+		const requested = `${folder}${path.sep}..${path.sep}native paths${path.sep}${name}`;
+		const input = await command(
+			"process.stdout.write(String(process.env.CARGO===process.argv[2]));",
+			{
+				env: { ...env(), CARGO: requested },
+			},
+		);
+		const result = await captureNativeProcess(evidence, "cargo-spaces", {
+			...input,
+			args: [...input.args, requested],
+		});
+		expect(result.failure).toBeNull();
+		expect(result.exitCode).toBe(0);
+		expect(Buffer.from(await readCapturedBytes(evidence, result, "stdout")).toString()).toBe(
+			"true",
+		);
+		expect(injected.calls[0]?.executable === process.execPath).toBe(true);
+	});
+	it("does not inherit an ambient CARGO or PATH when the entries are omitted", async () => {
+		vi.stubEnv("CARGO", "synthetic-ambient-cargo");
+		vi.stubEnv("PATH", "synthetic-ambient-path");
+		try {
+			const result = await captureNativeProcess(
+				evidence,
+				"cargo-absent",
+				await command("process.stdout.write(String(!process.env.CARGO&&!process.env.PATH));"),
+			);
+			expect(result.failure).toBeNull();
+			expect(result.exitCode).toBe(0);
+			expect(Buffer.from(await readCapturedBytes(evidence, result, "stdout")).toString()).toBe(
+				"true",
+			);
+			const options = injected.calls[0]?.options as { env: Record<string, string> };
+			expect(Object.hasOwn(options.env, "CARGO")).toBe(false);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+	it.each(["cargo", "Cargo", "CaRgO"])(
+		"refuses the %s alias alone and beside CARGO",
+		async (alias) => {
+			const input = await command();
+			await refuses({ ...input, env: { ...env(), [alias]: process.execPath } });
+			await refuses({
+				...input,
+				env: { ...env(), CARGO: process.execPath, [alias]: process.execPath },
+			});
+			expect(await readdir(directory)).toEqual([]);
+		},
+	);
+	it("refuses invalid CARGO before capture creation or controlled-parent spawn", async () => {
+		const script = path.join(root, "synthetic.mjs");
+		const shell = path.join(root, process.platform === "win32" ? "cmd.exe" : "bash");
+		// Native-looking data fixtures are never invoked, even under the guard mutation.
+		for (const fixture of [script, shell]) {
+			await writeFile(fixture, Buffer.from([0x4d, 0x5a, 0, 0]));
+			await chmod(fixture, 0o700);
+		}
+		const nonnative = path.join(root, process.platform === "win32" ? "text.exe" : "text");
+		await writeFile(nonnative, "synthetic-not-native");
+		await chmod(nonnative, 0o700);
+		const nativeDirectory = path.join(root, "directory.exe");
+		await mkdir(nativeDirectory);
+		const input = await command();
+		for (const cargo of [
+			"",
+			"cargo",
+			".",
+			script,
+			...["cmd", "bat", "ps1", "sh", "js", "mjs", "cjs", "py"].map((suffix) =>
+				path.join(root, `tool.${suffix}`),
+			),
+			shell,
+			path.join(root, "absent.exe"),
+			nonnative,
+			nativeDirectory,
+			`${process.execPath}\0`,
+			`${process.execPath} --version`,
+			"a".repeat(8193),
+		]) {
+			await refuses({ ...input, env: { ...env(), CARGO: cargo } });
+		}
+		expect(await readdir(directory)).toEqual([]);
+		// Refused input must not consume the capture ID either.
+		const result = await captureNativeProcess(evidence, "invalid", input);
+		expect(result.failure).toBeNull();
+		expect(result.exitCode).toBe(0);
+	});
+	it("snapshots CARGO and argv before the first filesystem validation await", async () => {
+		const input = await command(
+			"process.stdout.write(String(process.env.CARGO===process.execPath&&process.argv[2]==='original'));",
+			{
+				env: { ...env(), CARGO: process.execPath },
+			},
+		);
+		const args = [...input.args, "original"];
+		const environment = { ...input.env };
+		const entered = Promise.withResolvers<void>();
+		const resume = Promise.withResolvers<void>();
+		injected.realpathPause = {
+			requested: process.execPath,
+			entered: entered.resolve,
+			wait: resume.promise,
+		};
+		const pending = captureNativeProcess(evidence, "cargo-snapshot", {
+			...input,
+			args,
+			env: environment,
+		});
+		try {
+			await entered.promise;
+			environment.CARGO = path.join(root, "later-unvalidated.cjs");
+			args[args.length - 1] = "changed";
+		} finally {
+			resume.resolve();
+		}
+		const result = await pending;
+		expect(result.failure).toBeNull();
+		expect(result.exitCode).toBe(0);
+		expect(Buffer.from(await readCapturedBytes(evidence, result, "stdout")).toString()).toBe(
+			"true",
+		);
 	});
 });
 
