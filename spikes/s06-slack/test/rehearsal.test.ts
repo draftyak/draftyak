@@ -14,9 +14,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Fingerprint, fingerprint, writeEvidence } from "@draftyak/spike-kit";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import type { Clock } from "../src/api.ts";
 import type { ChannelType } from "../src/reduce.ts";
 import { FakeSlack, fakeToken, messageEvent, OWNER, TEAM } from "./fake-slack.ts";
 import {
+	Calls,
 	type Cue,
 	type LiveOptions,
 	type LiveResult,
@@ -219,6 +221,7 @@ async function setUp(setup: Setup = {}): Promise<Fixture> {
 function options(fixture: Fixture, overrides: Partial<LiveOptions> = {}): LiveOptions {
 	const { fake: slack, socketUrls, planted } = fixture;
 	const Base = globalThis.WebSocket;
+	let readNow = Date.now();
 	return {
 		appToken: slack.appToken,
 		userToken: slack.userToken,
@@ -230,6 +233,13 @@ function options(fixture: Fixture, overrides: Partial<LiveOptions> = {}): LiveOp
 		say: (line) => fixture.lines.push(line),
 		apiBase: slack.apiBase,
 		allowSocketUrl: loopback,
+		readClock: {
+			now: () => readNow,
+			delay: async (ms, signal) => {
+				signal?.throwIfAborted();
+				readNow += ms;
+			},
+		},
 		fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = new URL(input instanceof Request ? input.url : input);
 			const method = url.pathname.split("/").at(-1) ?? "";
@@ -380,7 +390,572 @@ const exemptionRead = (method: string, url: URL): boolean =>
 const slackJson = (body: object, status = 200): Response =>
 	Response.json(body, { status, headers: { "content-type": "application/json; charset=utf-8" } });
 
+function manyConversations(slack: FakeSlack): void {
+	for (const [index, type] of ALL.entries()) {
+		for (let channel = 0; channel < 19; channel++) {
+			slack.conversations.push({
+				id: `C${index}EXTRA${String(channel).padStart(2, "0")}`,
+				type,
+				messages: [],
+			});
+		}
+	}
+}
+
+async function until(done: () => boolean): Promise<void> {
+	const deadline = Date.now() + 3000;
+	while (!done()) {
+		if (Date.now() >= deadline) throw new Error("synthetic socket condition did not settle");
+		await new Promise<void>((resolve) => setTimeout(resolve, 5));
+	}
+}
+
+describe("read pacing and send provenance", () => {
+	it("shares the Tier 3 burst across history and replies and stamps after pacing", async () => {
+		let now = 0;
+		const waits: number[] = [];
+		const sent: number[] = [];
+		const clock: Clock = {
+			now: () => now,
+			delay: async (ms) => {
+				waits.push(ms);
+				now += ms;
+			},
+		};
+		const calls = new Calls({
+			base: (async () => {
+				sent.push(now);
+				return slackJson({ ok: true, messages: [] });
+			}) as typeof fetch,
+			apiBase: "http://127.0.0.1:1/api/",
+			signal: undefined,
+			since: () => now,
+			hash: () => "hmac:synthetic",
+			seen: () => {},
+			clock,
+		});
+		for (let index = 0; index < 8; index++) {
+			await calls.call(
+				index % 2 === 0 ? "conversations.history" : "conversations.replies",
+				fakeToken("xoxp"),
+				{},
+				"sent check",
+				index !== 7,
+			);
+		}
+		expect(sent).toEqual([0, 0, 0, 0, 0, 1200, 2400, 3600]);
+		expect(waits).toEqual([1200, 1200, 1200]);
+		expect(calls.audit.map(({ atMs }) => atMs)).toEqual(sent);
+		expect(calls.records).toHaveLength(7);
+		expect(calls.audit).toHaveLength(8);
+	});
+
+	it("cancellation during a pacing wait sends and records nothing further", async () => {
+		const controller = new AbortController();
+		let sent = 0;
+		const calls = new Calls({
+			base: (async () => {
+				sent++;
+				return slackJson({ ok: true, messages: [] });
+			}) as typeof fetch,
+			apiBase: "http://127.0.0.1:1/api/",
+			signal: controller.signal,
+			since: () => 0,
+			hash: () => "hmac:synthetic",
+			seen: () => {},
+			clock: { now: () => 0, delay: async () => controller.abort() },
+		});
+		for (let index = 0; index < 5; index++) {
+			await calls.call("conversations.history", fakeToken("xoxp"), {}, "sent check");
+		}
+		await expect(
+			calls.call("conversations.replies", fakeToken("xoxp"), {}, "sent check"),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(sent).toBe(5);
+		expect(calls.audit).toHaveLength(5);
+		expect(calls.records).toHaveLength(5);
+	});
+});
+
 describe("rehearsal: the S6 live procedure against FakeSlack", () => {
+	it.each([
+		{ count: 49, expire: false, qualified: false },
+		{ count: 50, expire: false, qualified: true },
+		{ count: 50, expire: true, qualified: false },
+	])(
+		"qualifies the first 429 from actual rolling read sends: $count, expiry $expire",
+		async ({ count, expire, qualified }) => {
+			const fixture = await setUp();
+			manyConversations(fixture.fake);
+			let reads = 0;
+			let now = 0;
+			fixture.intercept = (method) => {
+				if (
+					(method === "conversations.history" || method === "conversations.replies") &&
+					++reads === count
+				) {
+					return slackJson({ ok: false, error: "ratelimited" }, 429);
+				}
+				return undefined;
+			};
+			const result = await runLive(
+				options(fixture, {
+					keepApp: true,
+					waits: { ...WAITS, eventsMs: 10, checkMs: 10_000, pollerMs: 20 },
+					readClock: {
+						now: () => now,
+						delay: async (ms) => {
+							now += ms;
+							if (expire && reads === 48) now += 60_000;
+						},
+					},
+				}),
+			);
+			expect(result.verdicts[4]).toBe(
+				qualified
+					? "exemption: inconclusive (rate limited after 50 history/replies reads in 60 s)"
+					: "exemption: does not hold (conversations.history rate limited: HTTP 429, ratelimited)",
+			);
+			const limited = callsOf(result).find((call) => call.status === 429);
+			expect(limited?.purpose).toBe("sent check");
+			expect(leaks(JSON.stringify(result.data), fixture)).toEqual([]);
+		},
+	);
+
+	it("keeps late decisive records after more than 200 sent-check calls, with exact omissions and order", async () => {
+		const fixture = await setUp();
+		const slack = fixture.fake;
+		manyConversations(slack);
+		const result = await runLive(
+			options(fixture, {
+				waits: { ...WAITS, eventsMs: 1200, checkMs: 1, remindMs: 10_000, pollerMs: 20 },
+				cue: (step) => {
+					if (step === "uninstall") {
+						slack.fail("auth.test", 50, "token_revoked");
+						revocationEvents(slack);
+					} else if (step === "delete") slack.fail("apps.connections.open", 50, "invalid_auth");
+				},
+			}),
+		);
+		const sent =
+			Number(at(result.data, "sentChecks")) +
+			slack.requests.filter(
+				({ method, params }) =>
+					method === "conversations.history" &&
+					params.oldest !== undefined &&
+					params.limit === "100",
+			).length;
+		expect(sent).toBeGreaterThan(200);
+		const calls = callsOf(result);
+		expect(calls.filter(({ purpose }) => purpose === "sent check")).toHaveLength(100);
+		expect(at(result.data, "rateLimits", "omittedSentCheckCalls")).toBe(sent - 100);
+		expect(calls[0]?.purpose).toBe("identity");
+		expect(calls.slice(1, 101).every(({ purpose }) => purpose === "sent check")).toBe(true);
+		expect(calls.slice(101).map(({ purpose }) => purpose)).toEqual([
+			"discovery",
+			"message.im",
+			"message.im",
+			"message.mpim",
+			"message.mpim",
+			"message.channels",
+			"message.channels",
+			"message.channels",
+			"message.groups",
+			"message.groups",
+			"exemption",
+			"exemption",
+			"after uninstall",
+			"after uninstall",
+			"after delete",
+			"final check",
+			"final check",
+		]);
+		expect(result.verdicts.at(-1)).toBe("revoked: yes");
+		const { text, findings } = await guarded("retained-late-records", result);
+		expect(findings).toEqual([]);
+		expect(leaks(text, fixture)).toEqual([]);
+		expect(leaks(fixture.lines.join("\n"), fixture)).toEqual([]);
+	}, 30_000);
+
+	it.each(["early", "late"] as const)(
+		"records %s revocation events without treating arrivals as token refusal",
+		async (timing) => {
+			const fixture = await setUp();
+			const slack = fixture.fake;
+			const result = await runLive(
+				options(fixture, {
+					expect: ["im"],
+					waits: { ...WAITS, uninstallMs: 80, deleteMs: 60, pollMs: 10 },
+					cue: (step) => {
+						if (step === "send") {
+							if (timing === "early") revocationEvents(slack);
+							send(slack, ["im"]);
+						} else if (step === "uninstall" && timing === "late") revocationEvents(slack);
+					},
+				}),
+			);
+			for (const kind of ["app_uninstalled", "tokens_revoked"]) {
+				const note = at(result.data, "revocation", kind) as Record<string, unknown>;
+				expect(note).toMatchObject({ verdict: RECEIVED, count: 1 });
+				if (timing === "early") {
+					expect(note.beforeCue).toBe(true);
+					expect(note.afterCueMs).toBeLessThanOrEqual(0);
+					expect(fixture.lines).toContain(`${kind} arrived before the uninstall prompt`);
+				} else {
+					expect(note).not.toHaveProperty("beforeCue");
+					expect(note.afterCueMs).toBeGreaterThanOrEqual(0);
+				}
+			}
+			expect(result.verdicts.at(-1)).toBe(
+				"revoked: no (user token: still accepted; app-level token: still accepted)",
+			);
+			expect(at(result.data, "revocation", "finalCheck")).toEqual({
+				userToken: "still accepted",
+				appToken: "still accepted",
+			});
+			expect(leaks(JSON.stringify(result.data), fixture)).toEqual([]);
+		},
+	);
+
+	it("retains pre-cue revocation markers even when no uninstall cue is planned", async () => {
+		const fixture = await setUp();
+		const result = await runLive(
+			options(fixture, {
+				expect: ["im"],
+				keepApp: true,
+				cue: () => {
+					revocationEvents(fixture.fake);
+					send(fixture.fake, ["im"]);
+				},
+			}),
+		);
+		expect(at(result.data, "revocation", "app_uninstalled")).toMatchObject({
+			verdict: RECEIVED,
+			beforeCue: true,
+			afterCueMs: null,
+			count: 1,
+		});
+		expect(at(result.data, "revocation", "tokens_revoked")).toMatchObject({
+			verdict: RECEIVED,
+			beforeCue: true,
+			afterCueMs: null,
+			count: 1,
+		});
+		expect(at(result.data, "revocation", "revoked")).toBe("not done (app kept for M6)");
+	});
+
+	it.each([OTHER, OWNER, null])(
+		"qualifies absent types only for untyped messages from others: %s",
+		async (user) => {
+			const fixture = await setUp();
+			const result = await runLive(
+				options(fixture, {
+					expect: ["im", "mpim"],
+					keepApp: true,
+					waits: { ...WAITS, eventsMs: 100, checkMs: 10_000 },
+					cue: () => {
+						send(fixture.fake, ["im"]);
+						post(fixture.fake, "mpim");
+						if (user !== null)
+							fixture.fake.deliver(
+								messageEvent({ channel: CHANNELS.mpim, user, ts: nextTs(), text: CANARY }),
+							);
+					},
+				}),
+			);
+			expect(result.verdicts[0]).toBe(`message.im: ${RECEIVED}`);
+			expect(result.verdicts[1]).toBe(
+				user === OTHER
+					? "message.mpim: not confirmed (1 untyped event(s) from others)"
+					: `message.mpim: ${NOT_DELIVERED}`,
+			);
+			expect(at(result.data, "unknownTypeEvents")).toBe(user === null ? 0 : 1);
+			expect(leaks(JSON.stringify(result.data), fixture)).toEqual([]);
+		},
+	);
+
+	it.each(["continuous", "drop", "refresh", "unknown refresh"] as const)(
+		"uses complete events-phase continuity for an absent type: %s",
+		async (mode) => {
+			const fixture = await setUp();
+			const slack = fixture.fake;
+			const result = await runLive(
+				options(fixture, {
+					expect: ["im", "mpim"],
+					keepApp: true,
+					waits: { ...WAITS, eventsMs: mode === "drop" ? 2000 : 900, checkMs: 10_000 },
+					cue: () => {
+						send(slack, ["im"]);
+						post(slack, "mpim");
+						const connection = slack.live()[0];
+						if (connection === undefined) throw new Error("fake connection missing");
+						if (mode === "drop") slack.terminate(connection);
+						else if (mode !== "continuous")
+							slack.disconnect(connection, mode === "refresh" ? "warning" : "other", null);
+					},
+				}),
+			);
+			const confirmed = mode === "continuous" || mode === "refresh";
+			expect(result.verdicts[1]).toBe(
+				confirmed
+					? `message.mpim: ${NOT_DELIVERED}`
+					: "message.mpim: not confirmed (socket continuity was interrupted or unknown)",
+			);
+			expect(at(result.data, "socketMode", "eventsContinuity", "confirmed")).toBe(confirmed);
+			const gaps = Number(at(result.data, "socketMode", "eventsContinuity", "gaps"));
+			if (confirmed) expect(gaps).toBe(0);
+			else expect(gaps).toBeGreaterThan(0);
+			expect(at(result.data, "socketMode", "eventsContinuity", "plannedRefreshOverlaps")).toBe(
+				mode === "refresh" ? 1 : 0,
+			);
+			if (mode === "drop")
+				expect(
+					fixture.lines.filter((line) => line === "socket: ready:1").length,
+				).toBeGreaterThanOrEqual(2);
+			expect(leaks(JSON.stringify(result.data), fixture)).toEqual([]);
+			expect(leaks(fixture.lines.join("\n"), fixture)).toEqual([]);
+		},
+	);
+
+	it("includes a socket drop during the final history check in the delivery window", async () => {
+		const fixture = await setUp();
+		const slack = fixture.fake;
+		let sendAt = 0;
+		let finalReadAt = 0;
+		let postedAt = 0;
+		let finalReads = 0;
+		const live = options(fixture, {
+			expect: ["im", "mpim"],
+			keepApp: true,
+			waits: { ...WAITS, eventsMs: 100, checkMs: 10_000 },
+			cue: () => {
+				sendAt = Date.now();
+				send(slack, ["im"]);
+			},
+		});
+		const fakeFetch = live.fetch;
+		if (!fakeFetch) throw new Error("fake fetch missing");
+		const result = await runLive({
+			...live,
+			fetch: async (input, init) => {
+				const url = new URL(input instanceof Request ? input.url : input);
+				if (
+					url.pathname.endsWith("/conversations.history") &&
+					url.searchParams.has("oldest") &&
+					url.searchParams.get("channel") === CHANNELS.mpim
+				) {
+					finalReads++;
+					finalReadAt = Date.now();
+					const connection = slack.live()[0];
+					if (!connection) throw new Error("fake connection missing");
+					slack.terminate(connection);
+					await until(() => fixture.lines.includes("socket: closed:1006"));
+					// This history-positive message is sent after the timed wait, while the read awaits.
+					postedAt = Date.now();
+					slack.conversations
+						.find(({ id }) => id === CHANNELS.mpim)
+						?.messages.push({ ts: String(postedAt / 1000), user: OTHER, text: CANARY });
+				}
+				return fakeFetch(input, init);
+			},
+		});
+		expect(finalReads).toBe(1);
+		expect(finalReadAt - sendAt).toBeGreaterThanOrEqual(100);
+		expect(postedAt).toBeGreaterThanOrEqual(finalReadAt);
+		expect(at(result.data, "events", "message.mpim", "historySinceConnect")).toMatchObject({
+			read: 1,
+			fromOthers: 1,
+			failed: [],
+			capped: false,
+		});
+		expect(result.verdicts[1]).toBe(
+			"message.mpim: not confirmed (socket continuity was interrupted or unknown)",
+		);
+		const continuity = at(result.data, "socketMode", "eventsContinuity") as {
+			confirmed: boolean;
+			gaps: number;
+			firstGapAtMs: number;
+			untilMs: number;
+		};
+		expect(continuity).toMatchObject({ confirmed: false, gaps: 1 });
+		expect(continuity.firstGapAtMs).toBeLessThanOrEqual(continuity.untilMs);
+		expect(leaks(JSON.stringify(result.data), fixture)).toEqual([]);
+	});
+
+	it("ends the final history delivery window before later uninstall and deletion closes", async () => {
+		const fixture = await setUp();
+		const slack = fixture.fake;
+		const result = await runLive(
+			options(fixture, {
+				expect: ["im", "mpim"],
+				waits: { ...WAITS, eventsMs: 100, checkMs: 10_000 },
+				cue: (step) => {
+					fixture.cues.push(step);
+					if (step === "send") {
+						send(slack, ["im"]);
+						post(slack, "mpim");
+					} else if (step === "uninstall") {
+						slack.fail("auth.test", 50, "token_revoked");
+						revocationEvents(slack);
+					} else {
+						slack.fail("apps.connections.open", 50, "invalid_auth");
+						for (const connection of slack.live()) slack.terminate(connection);
+					}
+				},
+			}),
+		);
+		expect(fixture.cues).toEqual(["send", "uninstall", "delete"]);
+		expect(at(result.data, "sentChecks")).toBe(1);
+		expect(result.verdicts[1]).toBe(`message.mpim: ${NOT_DELIVERED}`);
+		expect(at(result.data, "socketMode", "eventsContinuity")).toMatchObject({
+			confirmed: true,
+			gaps: 0,
+		});
+		expect(
+			(at(result.data, "socketMode", "states") as { state: string }[]).some(
+				({ state }) => state === "closed:1006",
+			),
+		).toBe(true);
+	});
+
+	it("a planned old socket closing before replacement hello is a gap despite quick recovery", async () => {
+		const fixture = await setUp();
+		const slack = fixture.fake;
+		let driven: Promise<void> = Promise.resolve();
+		const result = await runLive(
+			options(fixture, {
+				expect: ["im", "mpim"],
+				keepApp: true,
+				waits: { ...WAITS, eventsMs: 400, checkMs: 10_000 },
+				cue: () => {
+					send(slack, ["im"]);
+					post(slack, "mpim");
+					const old = slack.live()[0];
+					if (!old) throw new Error("fake connection missing");
+					slack.sendHello = false;
+					slack.disconnect(old, "warning", 0);
+					driven = (async () => {
+						await until(
+							() => old.closedCode !== null && slack.live().some(({ id }) => id !== old.id),
+						);
+						const replacement = slack.live().find(({ id }) => id !== old.id);
+						if (!replacement) throw new Error("replacement missing");
+						slack.frame(replacement, { type: "hello", num_connections: 1 });
+					})();
+				},
+			}),
+		);
+		await driven;
+		expect(result.verdicts[1]).toBe(
+			"message.mpim: not confirmed (socket continuity was interrupted or unknown)",
+		);
+		expect(at(result.data, "socketMode", "eventsContinuity")).toMatchObject({
+			confirmed: false,
+			plannedRefreshOverlaps: 0,
+		});
+		expect(
+			fixture.lines.filter((line) => line === "socket: ready:1").length,
+		).toBeGreaterThanOrEqual(2);
+	});
+
+	it("an older draining socket cannot prove replacement overlap", async () => {
+		const fixture = await setUp();
+		const slack = fixture.fake;
+		const Base = globalThis.WebSocket;
+		let hold = true;
+		const held: { socket: WebSocket; code: number | undefined; reason: string | undefined }[] = [];
+		class HeldClose extends Base {
+			close(code?: number, reason?: string): void {
+				if (hold && code === 1000) held.push({ socket: this, code, reason });
+				else super.close(code, reason);
+			}
+		}
+		let driven: Promise<void> = Promise.resolve();
+		const result = await runLive(
+			options(fixture, {
+				expect: ["im", "mpim"],
+				keepApp: true,
+				WebSocket: HeldClose,
+				waits: { ...WAITS, eventsMs: 600, checkMs: 10_000 },
+				cue: () => {
+					send(slack, ["im"]);
+					post(slack, "mpim");
+					const old = slack.live()[0];
+					if (!old) throw new Error("fake connection missing");
+					slack.sendHello = false;
+					slack.disconnect(old, "warning", null);
+					driven = (async () => {
+						await until(() => slack.live().some(({ id }) => id !== old.id));
+						const middle = slack.live().find(({ id }) => id !== old.id);
+						if (!middle) throw new Error("middle connection missing");
+						slack.frame(middle, { type: "hello", num_connections: 2 });
+						await until(() => held.length > 0);
+						slack.disconnect(middle, "warning", null);
+						await until(() => slack.live().some(({ id }) => id !== old.id && id !== middle.id));
+						middle.socket.close(1000);
+						await until(() => fixture.lines.includes("socket: closed:1000"));
+						const replacement = slack.live().find(({ id }) => id !== old.id && id !== middle.id);
+						if (!replacement) throw new Error("replacement missing");
+						slack.frame(replacement, { type: "hello", num_connections: 2 });
+						hold = false;
+						for (const { socket, code, reason } of held) socket.close(code, reason);
+					})();
+				},
+			}),
+		);
+		await driven;
+		expect(result.verdicts[1]).toBe(
+			"message.mpim: not confirmed (socket continuity was interrupted or unknown)",
+		);
+		expect(at(result.data, "socketMode", "eventsContinuity", "confirmed")).toBe(false);
+	});
+
+	it("a gap beyond the first 100 state examples still prevents a delivery failure verdict", async () => {
+		const fixture = await setUp();
+		const slack = fixture.fake;
+		let driven: Promise<void> = Promise.resolve();
+		const result = await runLive(
+			options(fixture, {
+				expect: ["im", "mpim"],
+				keepApp: true,
+				waits: { ...WAITS, eventsMs: 1600, checkMs: 10_000 },
+				cue: () => {
+					send(slack, ["im"]);
+					post(slack, "mpim");
+					driven = (async () => {
+						for (let index = 0; index < 35; index++) {
+							const current = slack.live().at(-1);
+							if (!current) throw new Error("fake connection missing");
+							slack.disconnect(current, "warning", null);
+							await until(() => current.closedCode !== null);
+						}
+						const current = slack.live().at(-1);
+						if (!current) throw new Error("fake connection missing");
+						slack.terminate(current);
+					})();
+				},
+			}),
+		);
+		await driven;
+		expect(result.verdicts[1]).toBe(
+			"message.mpim: not confirmed (socket continuity was interrupted or unknown)",
+		);
+		const states = at(result.data, "socketMode", "states") as { state: string }[];
+		expect(states).toHaveLength(100);
+		expect(states.some(({ state }) => state === "closed:1006")).toBe(false);
+		const count = Number(at(result.data, "socketMode", "stateCount"));
+		expect(count).toBeGreaterThan(100);
+		expect(at(result.data, "socketMode", "stateExamplesOmitted")).toBe(count - 100);
+		expect(at(result.data, "socketMode", "eventsContinuity")).toMatchObject({
+			confirmed: false,
+			gaps: 1,
+			plannedRefreshOverlaps: 35,
+		});
+		const { text, findings } = await guarded("full-continuity", result);
+		expect(findings).toEqual([]);
+		expect(leaks(text, fixture)).toEqual([]);
+	}, 15_000);
+
 	it("records every type over Socket Mode, the headers, the exemption and the revocation", async () => {
 		const fixture = await setUp();
 		const slack = fixture.fake;
@@ -575,6 +1150,13 @@ describe("rehearsal: the S6 live procedure against FakeSlack", () => {
 		expect(skew.max).toBeLessThan(2000);
 
 		const prompts = fixture.lines.filter((line) => /send now|Owner:/.test(line));
+		expect(at(data, "sentChecks")).toBe(0);
+		expect(at(data, "socketMode", "eventsContinuity", "confirmed")).toBe(true);
+		expect(
+			(at(data, "socketMode", "states") as { state: string }[]).some(
+				({ state }) => state === "closed:1006",
+			),
+		).toBe(true);
 		expect(prompts.map((line) => line.split(/[,.]/)[0])).toEqual([
 			expect.stringMatching(/^connected after/),
 			"Owner: uninstall the app now",
