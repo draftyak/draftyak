@@ -2,6 +2,7 @@ import { existsSync, globSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { capture } from "../lib/spawn.ts";
+import { approvedWorkspace, namedFiles } from "../lib/workspace-policy.ts";
 
 // ADR 0001's kept test. It reads the whole repo, so tools/verify/turbo.json keeps `test` uncached.
 // It imports nothing but lib/, so it doesn't depend on the M0-only prefetch.ts and profiles/m0.ts.
@@ -90,19 +91,7 @@ describe("workspace policy", () => {
 
 	it("keeps pnpm strict: package folders, release age, no dependency builds, exact saves", () => {
 		expect(globs).toEqual(["apps/*", "packages/*", "plugins/*", "spikes/*", "tools/*"]);
-		const settings = workspaceYaml.filter((line) => /^\w+:/.test(line));
-		// The release-age, build and trust settings, exactly: loosening one means editing this test.
-		const supplyChain =
-			/^(?:minimumReleaseAge\w*|allowBuilds|dangerouslyAllowAllBuilds|\w*BuiltDependencies\w*|strictDepBuilds|blockExoticSubdeps|trust\w*):/;
-		expect(settings.filter((line) => supplyChain.test(line)).toSorted()).toEqual([
-			"allowBuilds: {}",
-			"minimumReleaseAge: 1440",
-			"minimumReleaseAgeExclude: []",
-		]);
-		for (const line of ["engineStrict: true", "savePrefix: ''", "verifyDepsBeforeRun: error"]) {
-			const key = line.slice(0, line.indexOf(":") + 1);
-			expect(settings.filter((setting) => setting.startsWith(key))).toEqual([line]);
-		}
+		expect(approvedWorkspace(read("pnpm-workspace.yaml"))).toBe(true);
 	});
 
 	it("keeps only registry and auth keys in .npmrc, if there is one", () => {
@@ -226,15 +215,10 @@ describe("workspace policy", () => {
 			.filter((line) => line.startsWith("worktree "))
 			.map((line) => line.slice("worktree ".length))
 			.filter((dir) => key(dir) !== main);
-		// Ignored files at any depth, and tracked ones a force-add slipped past .gitignore; ignored
-		// folders such as node_modules are listed as one entry.
-		const ignored = ["ls-files", "-z", "--cached", "--others", "--ignored", "--exclude-standard"];
 		const holding: string[] = [];
 		const scan = async (dir: string): Promise<void> => {
-			const found = await git("--no-optional-locks", "-C", dir, ...ignored, "--directory");
-			const files = found.code === 0 ? found.stdout.split("\0") : [];
-			if (found.code !== 0 && existsSync(path.join(dir, ".env.live"))) files.push(".env.live");
-			for (const file of files.filter((file) => path.posix.basename(file) === ".env.live")) {
+			const files = await namedFiles(".env.live", dir);
+			for (const file of files) {
 				holding.push(`${dir}/${file}`);
 			}
 		};
