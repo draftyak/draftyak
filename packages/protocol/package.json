@@ -5,7 +5,94 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./*": "./src/*.ts"
+    "./ai-provider-v1": "./src/ai-provider-v1.ts",
+    "./channel-v1": "./src/channel-v1.ts",
+    "./data-class": "./src/data-class.ts",
+    "./date-pattern": "./src/date-pattern.ts",
+    "./digests": "./src/digests.ts",
+    "./draft-output": "./src/draft-output.ts",
+    "./draft-output-text": "./src/draft-output-text.ts",
+    "./entities": "./src/entities.ts",
+    "./entities/account": "./src/entities/account.ts",
+    "./entities/account/channels": "./src/entities/account/channels.ts",
+    "./entities/account/chat": "./src/entities/account/chat.ts",
+    "./entities/account/email": "./src/entities/account/email.ts",
+    "./entities/audit": "./src/entities/audit.ts",
+    "./entities/common": "./src/entities/common.ts",
+    "./entities/contact": "./src/entities/contact.ts",
+    "./entities/conversation": "./src/entities/conversation.ts",
+    "./entities/conversation/channels": "./src/entities/conversation/channels.ts",
+    "./entities/conversation/chat": "./src/entities/conversation/chat.ts",
+    "./entities/conversation/email": "./src/entities/conversation/email.ts",
+    "./entities/device": "./src/entities/device.ts",
+    "./entities/draft": "./src/entities/draft.ts",
+    "./entities/draft/channels": "./src/entities/draft/channels.ts",
+    "./entities/draft/chat": "./src/entities/draft/chat.ts",
+    "./entities/draft/email": "./src/entities/draft/email.ts",
+    "./entities/fields": "./src/entities/fields.ts",
+    "./entities/message": "./src/entities/message.ts",
+    "./entities/message/channels": "./src/entities/message/channels.ts",
+    "./entities/message/chat": "./src/entities/message/chat.ts",
+    "./entities/message/email": "./src/entities/message/email.ts",
+    "./entities/outbox": "./src/entities/outbox.ts",
+    "./entities/routing": "./src/entities/routing.ts",
+    "./entities/settings": "./src/entities/settings.ts",
+    "./entities/tool": "./src/entities/tool.ts",
+    "./errors": "./src/errors.ts",
+    "./extension": "./src/extension.ts",
+    "./flags": "./src/flags.ts",
+    "./hash": "./src/hash.ts",
+    "./host-channel": "./src/host-channel.ts",
+    "./index": "./src/index.ts",
+    "./jcs": "./src/jcs.ts",
+    "./json-template": "./src/json-template.ts",
+    "./manifest": "./src/manifest.ts",
+    "./manifest/ai-http": "./src/manifest/ai-http.ts",
+    "./manifest/auth": "./src/manifest/auth.ts",
+    "./manifest/auth-fields": "./src/manifest/auth-fields.ts",
+    "./manifest/egress": "./src/manifest/egress.ts",
+    "./manifest/json": "./src/manifest/json.ts",
+    "./manifest/runtime": "./src/manifest/runtime.ts",
+    "./manifest/text": "./src/manifest/text.ts",
+    "./manifest/tool": "./src/manifest/tool.ts",
+    "./mcp": "./src/mcp.ts",
+    "./mcp/completion": "./src/mcp/completion.ts",
+    "./mcp/errors": "./src/mcp/errors.ts",
+    "./mcp/prompts": "./src/mcp/prompts.ts",
+    "./mcp/request-state": "./src/mcp/request-state.ts",
+    "./mcp/resources": "./src/mcp/resources.ts",
+    "./mcp/results": "./src/mcp/results.ts",
+    "./mcp/scopes": "./src/mcp/scopes.ts",
+    "./mcp/tools": "./src/mcp/tools.ts",
+    "./mcp/views": "./src/mcp/views.ts",
+    "./normalized-change": "./src/normalized-change.ts",
+    "./pairing": "./src/pairing.ts",
+    "./plugin-argv": {
+      "node": "./src/plugin-argv.ts"
+    },
+    "./plugin-stdio": {
+      "node": "./src/plugin-stdio.ts"
+    },
+    "./scalars": "./src/scalars.ts",
+    "./schedule": "./src/schedule.ts",
+    "./send-ticket": "./src/send-ticket.ts",
+    "./sign": "./src/sign.ts",
+    "./snapshot": "./src/snapshot.ts",
+    "./statements": "./src/statements.ts",
+    "./statements/admin": "./src/statements/admin.ts",
+    "./statements/agent-session": "./src/statements/agent-session.ts",
+    "./statements/common": "./src/statements/common.ts",
+    "./statements/hub-key-rotate": "./src/statements/hub-key-rotate.ts",
+    "./statements/login": "./src/statements/login.ts",
+    "./statements/pair-confirm": "./src/statements/pair-confirm.ts",
+    "./statements/registry": "./src/statements/registry.ts",
+    "./statements/send": "./src/statements/send.ts",
+    "./tool-v1": "./src/tool-v1.ts",
+    "./tool-v1/bindings": "./src/tool-v1/bindings.ts",
+    "./tool-v1/declaration": "./src/tool-v1/declaration.ts",
+    "./tool-v1/egress": "./src/tool-v1/egress.ts",
+    "./tool-v1/kinds": "./src/tool-v1/kinds.ts",
+    "./tool-v1/results": "./src/tool-v1/results.ts"
   },
   "publishConfig": {
     "exports": {
@@ -13,9 +100,345 @@
         "types": "./dist/index.d.mts",
         "default": "./dist/index.mjs"
       },
-      "./*": {
-        "types": "./dist/*.d.mts",
-        "default": "./dist/*.mjs"
+      "./ai-provider-v1": {
+        "types": "./dist/ai-provider-v1.d.mts",
+        "default": "./dist/ai-provider-v1.mjs"
+      },
+      "./channel-v1": {
+        "types": "./dist/channel-v1.d.mts",
+        "default": "./dist/channel-v1.mjs"
+      },
+      "./data-class": {
+        "types": "./dist/data-class.d.mts",
+        "default": "./dist/data-class.mjs"
+      },
+      "./date-pattern": {
+        "types": "./dist/date-pattern.d.mts",
+        "default": "./dist/date-pattern.mjs"
+      },
+      "./digests": {
+        "types": "./dist/digests.d.mts",
+        "default": "./dist/digests.mjs"
+      },
+      "./draft-output": {
+        "types": "./dist/draft-output.d.mts",
+        "default": "./dist/draft-output.mjs"
+      },
+      "./draft-output-text": {
+        "types": "./dist/draft-output-text.d.mts",
+        "default": "./dist/draft-output-text.mjs"
+      },
+      "./entities": {
+        "types": "./dist/entities.d.mts",
+        "default": "./dist/entities.mjs"
+      },
+      "./entities/account": {
+        "types": "./dist/entities/account.d.mts",
+        "default": "./dist/entities/account.mjs"
+      },
+      "./entities/account/channels": {
+        "types": "./dist/entities/account/channels.d.mts",
+        "default": "./dist/entities/account/channels.mjs"
+      },
+      "./entities/account/chat": {
+        "types": "./dist/entities/account/chat.d.mts",
+        "default": "./dist/entities/account/chat.mjs"
+      },
+      "./entities/account/email": {
+        "types": "./dist/entities/account/email.d.mts",
+        "default": "./dist/entities/account/email.mjs"
+      },
+      "./entities/audit": {
+        "types": "./dist/entities/audit.d.mts",
+        "default": "./dist/entities/audit.mjs"
+      },
+      "./entities/common": {
+        "types": "./dist/entities/common.d.mts",
+        "default": "./dist/entities/common.mjs"
+      },
+      "./entities/contact": {
+        "types": "./dist/entities/contact.d.mts",
+        "default": "./dist/entities/contact.mjs"
+      },
+      "./entities/conversation": {
+        "types": "./dist/entities/conversation.d.mts",
+        "default": "./dist/entities/conversation.mjs"
+      },
+      "./entities/conversation/channels": {
+        "types": "./dist/entities/conversation/channels.d.mts",
+        "default": "./dist/entities/conversation/channels.mjs"
+      },
+      "./entities/conversation/chat": {
+        "types": "./dist/entities/conversation/chat.d.mts",
+        "default": "./dist/entities/conversation/chat.mjs"
+      },
+      "./entities/conversation/email": {
+        "types": "./dist/entities/conversation/email.d.mts",
+        "default": "./dist/entities/conversation/email.mjs"
+      },
+      "./entities/device": {
+        "types": "./dist/entities/device.d.mts",
+        "default": "./dist/entities/device.mjs"
+      },
+      "./entities/draft": {
+        "types": "./dist/entities/draft.d.mts",
+        "default": "./dist/entities/draft.mjs"
+      },
+      "./entities/draft/channels": {
+        "types": "./dist/entities/draft/channels.d.mts",
+        "default": "./dist/entities/draft/channels.mjs"
+      },
+      "./entities/draft/chat": {
+        "types": "./dist/entities/draft/chat.d.mts",
+        "default": "./dist/entities/draft/chat.mjs"
+      },
+      "./entities/draft/email": {
+        "types": "./dist/entities/draft/email.d.mts",
+        "default": "./dist/entities/draft/email.mjs"
+      },
+      "./entities/fields": {
+        "types": "./dist/entities/fields.d.mts",
+        "default": "./dist/entities/fields.mjs"
+      },
+      "./entities/message": {
+        "types": "./dist/entities/message.d.mts",
+        "default": "./dist/entities/message.mjs"
+      },
+      "./entities/message/channels": {
+        "types": "./dist/entities/message/channels.d.mts",
+        "default": "./dist/entities/message/channels.mjs"
+      },
+      "./entities/message/chat": {
+        "types": "./dist/entities/message/chat.d.mts",
+        "default": "./dist/entities/message/chat.mjs"
+      },
+      "./entities/message/email": {
+        "types": "./dist/entities/message/email.d.mts",
+        "default": "./dist/entities/message/email.mjs"
+      },
+      "./entities/outbox": {
+        "types": "./dist/entities/outbox.d.mts",
+        "default": "./dist/entities/outbox.mjs"
+      },
+      "./entities/routing": {
+        "types": "./dist/entities/routing.d.mts",
+        "default": "./dist/entities/routing.mjs"
+      },
+      "./entities/settings": {
+        "types": "./dist/entities/settings.d.mts",
+        "default": "./dist/entities/settings.mjs"
+      },
+      "./entities/tool": {
+        "types": "./dist/entities/tool.d.mts",
+        "default": "./dist/entities/tool.mjs"
+      },
+      "./errors": {
+        "types": "./dist/errors.d.mts",
+        "default": "./dist/errors.mjs"
+      },
+      "./extension": {
+        "types": "./dist/extension.d.mts",
+        "default": "./dist/extension.mjs"
+      },
+      "./flags": {
+        "types": "./dist/flags.d.mts",
+        "default": "./dist/flags.mjs"
+      },
+      "./hash": {
+        "types": "./dist/hash.d.mts",
+        "default": "./dist/hash.mjs"
+      },
+      "./host-channel": {
+        "types": "./dist/host-channel.d.mts",
+        "default": "./dist/host-channel.mjs"
+      },
+      "./index": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "./jcs": {
+        "types": "./dist/jcs.d.mts",
+        "default": "./dist/jcs.mjs"
+      },
+      "./json-template": {
+        "types": "./dist/json-template.d.mts",
+        "default": "./dist/json-template.mjs"
+      },
+      "./manifest": {
+        "types": "./dist/manifest.d.mts",
+        "default": "./dist/manifest.mjs"
+      },
+      "./manifest/ai-http": {
+        "types": "./dist/manifest/ai-http.d.mts",
+        "default": "./dist/manifest/ai-http.mjs"
+      },
+      "./manifest/auth": {
+        "types": "./dist/manifest/auth.d.mts",
+        "default": "./dist/manifest/auth.mjs"
+      },
+      "./manifest/auth-fields": {
+        "types": "./dist/manifest/auth-fields.d.mts",
+        "default": "./dist/manifest/auth-fields.mjs"
+      },
+      "./manifest/egress": {
+        "types": "./dist/manifest/egress.d.mts",
+        "default": "./dist/manifest/egress.mjs"
+      },
+      "./manifest/json": {
+        "types": "./dist/manifest/json.d.mts",
+        "default": "./dist/manifest/json.mjs"
+      },
+      "./manifest/runtime": {
+        "types": "./dist/manifest/runtime.d.mts",
+        "default": "./dist/manifest/runtime.mjs"
+      },
+      "./manifest/text": {
+        "types": "./dist/manifest/text.d.mts",
+        "default": "./dist/manifest/text.mjs"
+      },
+      "./manifest/tool": {
+        "types": "./dist/manifest/tool.d.mts",
+        "default": "./dist/manifest/tool.mjs"
+      },
+      "./mcp": {
+        "types": "./dist/mcp.d.mts",
+        "default": "./dist/mcp.mjs"
+      },
+      "./mcp/completion": {
+        "types": "./dist/mcp/completion.d.mts",
+        "default": "./dist/mcp/completion.mjs"
+      },
+      "./mcp/errors": {
+        "types": "./dist/mcp/errors.d.mts",
+        "default": "./dist/mcp/errors.mjs"
+      },
+      "./mcp/prompts": {
+        "types": "./dist/mcp/prompts.d.mts",
+        "default": "./dist/mcp/prompts.mjs"
+      },
+      "./mcp/request-state": {
+        "types": "./dist/mcp/request-state.d.mts",
+        "default": "./dist/mcp/request-state.mjs"
+      },
+      "./mcp/resources": {
+        "types": "./dist/mcp/resources.d.mts",
+        "default": "./dist/mcp/resources.mjs"
+      },
+      "./mcp/results": {
+        "types": "./dist/mcp/results.d.mts",
+        "default": "./dist/mcp/results.mjs"
+      },
+      "./mcp/scopes": {
+        "types": "./dist/mcp/scopes.d.mts",
+        "default": "./dist/mcp/scopes.mjs"
+      },
+      "./mcp/tools": {
+        "types": "./dist/mcp/tools.d.mts",
+        "default": "./dist/mcp/tools.mjs"
+      },
+      "./mcp/views": {
+        "types": "./dist/mcp/views.d.mts",
+        "default": "./dist/mcp/views.mjs"
+      },
+      "./normalized-change": {
+        "types": "./dist/normalized-change.d.mts",
+        "default": "./dist/normalized-change.mjs"
+      },
+      "./pairing": {
+        "types": "./dist/pairing.d.mts",
+        "default": "./dist/pairing.mjs"
+      },
+      "./plugin-argv": {
+        "node": {
+          "types": "./dist/plugin-argv.d.mts",
+          "default": "./dist/plugin-argv.mjs"
+        }
+      },
+      "./plugin-stdio": {
+        "node": {
+          "types": "./dist/plugin-stdio.d.mts",
+          "default": "./dist/plugin-stdio.mjs"
+        }
+      },
+      "./scalars": {
+        "types": "./dist/scalars.d.mts",
+        "default": "./dist/scalars.mjs"
+      },
+      "./schedule": {
+        "types": "./dist/schedule.d.mts",
+        "default": "./dist/schedule.mjs"
+      },
+      "./send-ticket": {
+        "types": "./dist/send-ticket.d.mts",
+        "default": "./dist/send-ticket.mjs"
+      },
+      "./sign": {
+        "types": "./dist/sign.d.mts",
+        "default": "./dist/sign.mjs"
+      },
+      "./snapshot": {
+        "types": "./dist/snapshot.d.mts",
+        "default": "./dist/snapshot.mjs"
+      },
+      "./statements": {
+        "types": "./dist/statements.d.mts",
+        "default": "./dist/statements.mjs"
+      },
+      "./statements/admin": {
+        "types": "./dist/statements/admin.d.mts",
+        "default": "./dist/statements/admin.mjs"
+      },
+      "./statements/agent-session": {
+        "types": "./dist/statements/agent-session.d.mts",
+        "default": "./dist/statements/agent-session.mjs"
+      },
+      "./statements/common": {
+        "types": "./dist/statements/common.d.mts",
+        "default": "./dist/statements/common.mjs"
+      },
+      "./statements/hub-key-rotate": {
+        "types": "./dist/statements/hub-key-rotate.d.mts",
+        "default": "./dist/statements/hub-key-rotate.mjs"
+      },
+      "./statements/login": {
+        "types": "./dist/statements/login.d.mts",
+        "default": "./dist/statements/login.mjs"
+      },
+      "./statements/pair-confirm": {
+        "types": "./dist/statements/pair-confirm.d.mts",
+        "default": "./dist/statements/pair-confirm.mjs"
+      },
+      "./statements/registry": {
+        "types": "./dist/statements/registry.d.mts",
+        "default": "./dist/statements/registry.mjs"
+      },
+      "./statements/send": {
+        "types": "./dist/statements/send.d.mts",
+        "default": "./dist/statements/send.mjs"
+      },
+      "./tool-v1": {
+        "types": "./dist/tool-v1.d.mts",
+        "default": "./dist/tool-v1.mjs"
+      },
+      "./tool-v1/bindings": {
+        "types": "./dist/tool-v1/bindings.d.mts",
+        "default": "./dist/tool-v1/bindings.mjs"
+      },
+      "./tool-v1/declaration": {
+        "types": "./dist/tool-v1/declaration.d.mts",
+        "default": "./dist/tool-v1/declaration.mjs"
+      },
+      "./tool-v1/egress": {
+        "types": "./dist/tool-v1/egress.d.mts",
+        "default": "./dist/tool-v1/egress.mjs"
+      },
+      "./tool-v1/kinds": {
+        "types": "./dist/tool-v1/kinds.d.mts",
+        "default": "./dist/tool-v1/kinds.mjs"
+      },
+      "./tool-v1/results": {
+        "types": "./dist/tool-v1/results.d.mts",
+        "default": "./dist/tool-v1/results.mjs"
       }
     }
   },

@@ -10,6 +10,11 @@ export const HOST_MAX_HEADER_BYTES = 16_384;
 export const HOST_MAX_ACTIVE_REQUESTS = 16;
 export const HOST_REQUEST_TIMEOUT_MS = 30_000;
 export const HOST_MAX_STREAM_BYTES = 33_554_432;
+export const HOST_JSON_MEMBER_MAX_ENTITY_BYTES = 50_331_648;
+export const HOST_JSON_MEMBER_MAX_DECODED_BYTES = 33_554_432;
+export const HOST_JSON_MEMBER_MAX_DEPTH = 64;
+export const HOST_JSON_MEMBER_MAX_NODES = 65_536;
+export const HOST_JSON_MEMBER_MAX_ERROR_BYTES = 65_536;
 
 const NO_LINE_BREAK = { not: { pattern: "[\\u000a\\u000d\\u2028\\u2029]" } };
 function singleLine(schema: z.ZodString): z.ZodString {
@@ -49,24 +54,45 @@ export const HOST_ERROR_CODES = [
 export type HostErrorCode = (typeof HOST_ERROR_CODES)[number];
 export const HostErrorCode: z.ZodType<HostErrorCode> = z.enum(HOST_ERROR_CODES);
 
+export interface HostJsonMemberSaveAs {
+	readonly kind: "base64url-json-member";
+	readonly member: "raw" | "data";
+}
+export const HostJsonMemberSaveAs: z.ZodType<HostJsonMemberSaveAs> = z.strictObject({
+	kind: z.literal("base64url-json-member"),
+	member: z.enum(["raw", "data"]),
+});
+export type HostSaveAs = "blob" | HostJsonMemberSaveAs;
+
 export interface HostFetchParams {
 	readonly method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
 	readonly url: string;
 	readonly headers: HeaderList;
 	readonly body?: Bytes;
 	readonly sendTicket?: unknown;
-	readonly saveAs?: "blob";
+	readonly saveAs?: HostSaveAs;
 	readonly stream?: boolean;
 }
-export const HostFetchParams: z.ZodType<HostFetchParams> = z.strictObject({
-	method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]),
+const fetchFields = {
 	url: Text.min(1),
 	headers: HostHeaders,
 	body: Bytes.optional(),
 	sendTicket: z.unknown().optional(),
-	saveAs: z.literal("blob").optional(),
-	stream: z.boolean().optional(),
-});
+};
+export const HostFetchParams: z.ZodType<HostFetchParams> = z.union([
+	z.strictObject({
+		...fetchFields,
+		method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]),
+		saveAs: z.literal("blob").optional(),
+		stream: z.boolean().optional(),
+	}),
+	z.strictObject({
+		...fetchFields,
+		method: z.literal("GET"),
+		saveAs: HostJsonMemberSaveAs,
+		stream: z.literal(false).optional(),
+	}),
+]);
 export interface HostFetchResult {
 	readonly status: number;
 	readonly headers: HeaderList;

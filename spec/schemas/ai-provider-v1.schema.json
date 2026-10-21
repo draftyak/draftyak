@@ -99,7 +99,7 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256,
-                    "pattern": "^[!-~]+$",
+                    "pattern": "^[!-~]+$(?![\\s\\S])",
                     "description": "A provider's model id: visible ASCII, no spaces."
                   },
                   "name": {
@@ -183,7 +183,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 256,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "description": "A provider's model id: visible ASCII, no spaces."
             }
           },
@@ -265,7 +265,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 256,
-              "pattern": "^[!-~]+$",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
               "description": "A provider's model id: visible ASCII, no spaces."
             },
             "system": {
@@ -311,7 +311,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 256,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "description": "A provider's model id: visible ASCII, no spaces."
                 },
                 "fallback": {
@@ -412,7 +412,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 256,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "description": "A provider's model id: visible ASCII, no spaces."
                 },
                 "fallback": {
@@ -473,7 +473,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 256,
-                      "pattern": "^[!-~]+$",
+                      "pattern": "^[!-~]+$(?![\\s\\S])",
                       "description": "A provider's model id: visible ASCII, no spaces."
                     },
                     {
@@ -504,7 +504,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 256,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "description": "A provider's model id: visible ASCII, no spaces."
                 },
                 "fallback": {
@@ -565,7 +565,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 256,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "description": "A provider's model id: visible ASCII, no spaces."
                 },
                 "fallback": {
@@ -605,7 +605,7 @@
                   "items": {
                     "type": "string",
                     "maxLength": 200,
-                    "pattern": "^[A-Za-z0-9_]+(?:[.][A-Za-z0-9_]+)*: [A-Za-z0-9_]+(?: [A-Za-z0-9_]+)*$",
+                    "pattern": "^[A-Za-z0-9_]+(?:[.][A-Za-z0-9_]+)*: [A-Za-z0-9_]+(?: [A-Za-z0-9_]+)*$(?![\\s\\S])",
                     "description": "A schema path and an issue, such as output.body: too_big."
                   }
                 }
@@ -630,7 +630,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 256,
-                  "pattern": "^[!-~]+$",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
                   "description": "A provider's model id: visible ASCII, no spaces."
                 },
                 "fallback": {

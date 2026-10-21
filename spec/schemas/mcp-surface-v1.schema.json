@@ -139,7 +139,7 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         }
       },
@@ -164,7 +164,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
             "description": "An owner-chosen account alias."
           }
         }
@@ -250,7 +250,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
             "description": "An owner-chosen account alias."
           }
         },
@@ -277,7 +277,7 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "tone": {
@@ -302,13 +302,13 @@
           "type": "string",
           "minLength": 43,
           "maxLength": 43,
-          "pattern": "^draftyak:\\/\\/draft\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          "pattern": "^draftyak:\\/\\/draft\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
         },
         "name": {
           "type": "string",
           "minLength": 32,
           "maxLength": 32,
-          "pattern": "^draft-[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          "pattern": "^draft-[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
         },
         "mimeType": {
           "type": "string",
@@ -395,19 +395,19 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "accountId": {
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "account": {
           "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
           "description": "An owner-chosen account alias."
         },
         "channel": {
@@ -679,7 +679,7 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         }
       },
@@ -704,7 +704,7 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "receivedAt": {
@@ -729,7 +729,7 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "status": {
@@ -754,7 +754,7 @@
           "type": "string",
           "minLength": 8,
           "maxLength": 8,
-          "pattern": "^[0-9A-F]{8}$"
+          "pattern": "^[0-9A-F]{8}$(?![\\s\\S])"
         },
         "reason": {
           "$ref": "#/$defs/draftyak.entities.StateReason"
@@ -859,7 +859,7 @@
     "draftyak.tool-v1.IanaZone": {
       "type": "string",
       "maxLength": 64,
-      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:\\/[A-Za-z0-9_+-]+)*$",
+      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:\\/[A-Za-z0-9_+-]+)*$(?![\\s\\S])",
       "description": "An IANA time zone name, such as America/Chicago; Temporal checks that it exists.",
       "not": {
         "pattern": "\\n"
@@ -1149,21 +1149,21 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "accountId": {
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "conversationId": {
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "direction": {
@@ -1346,7 +1346,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[!-~]+$",
+      "pattern": "^[!-~]+$(?![\\s\\S])",
       "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces.",
       "not": {
         "pattern": "\\n"
@@ -1413,7 +1413,7 @@
     "draftyak.entities.EmailAddress": {
       "type": "string",
       "maxLength": 254,
-      "pattern": "^[-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+(?:[.][-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+      "pattern": "^[-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+(?:[.][-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
       "not": {
         "pattern": "\\n"
       },
@@ -1475,7 +1475,7 @@
       "type": "string",
       "minLength": 3,
       "maxLength": 255,
-      "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$",
+      "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$(?![\\s\\S])",
       "description": "A lower-case type/subtype without parameters, such as image/png.",
       "not": {
         "pattern": "\\n"
@@ -1507,7 +1507,7 @@
               "type": "string",
               "minLength": 26,
               "maxLength": 26,
-              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
               "description": "A ULID: 26 upper-case Crockford base32 characters."
             }
           },
@@ -1529,14 +1529,14 @@
           "type": "string",
           "minLength": 64,
           "maxLength": 64,
-          "pattern": "^[0-9a-f]{64}$",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
           "description": "A SHA-256 digest as 64 lower-case hex characters."
         },
         "pendingId": {
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "exp": {
@@ -1673,21 +1673,21 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "accountId": {
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "conversationId": {
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "direction": {
@@ -1753,7 +1753,7 @@
             {
               "type": "string",
               "maxLength": 64,
-              "pattern": "^[a-z][a-z0-9_]*$",
+              "pattern": "^[a-z][a-z0-9_]*$(?![\\s\\S])",
               "not": {
                 "pattern": "\\n"
               }
@@ -1861,7 +1861,7 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         }
       },
@@ -1881,7 +1881,7 @@
               "properties": {
                 "account": {
                   "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
                   "description": "An owner-chosen account alias."
                 },
                 "window": {
@@ -1915,7 +1915,7 @@
                   "type": "string",
                   "minLength": 26,
                   "maxLength": 26,
-                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
                   "description": "A ULID: 26 upper-case Crockford base32 characters."
                 }
               },
@@ -1941,7 +1941,7 @@
                   "type": "string",
                   "minLength": 26,
                   "maxLength": 26,
-                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
                   "description": "A ULID: 26 upper-case Crockford base32 characters."
                 },
                 "tone": {
@@ -1975,7 +1975,7 @@
                   "type": "string",
                   "minLength": 26,
                   "maxLength": 26,
-                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
                   "description": "A ULID: 26 upper-case Crockford base32 characters."
                 }
               },
@@ -2034,25 +2034,25 @@
               "type": "string",
               "minLength": 50,
               "maxLength": 50,
-              "pattern": "^draftyak:\\/\\/conversation\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+              "pattern": "^draftyak:\\/\\/conversation\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
             },
             {
               "type": "string",
               "minLength": 45,
               "maxLength": 45,
-              "pattern": "^draftyak:\\/\\/message\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+              "pattern": "^draftyak:\\/\\/message\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
             },
             {
               "type": "string",
               "minLength": 43,
               "maxLength": 43,
-              "pattern": "^draftyak:\\/\\/draft\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+              "pattern": "^draftyak:\\/\\/draft\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
             },
             {
               "type": "string",
               "minLength": 50,
               "maxLength": 50,
-              "pattern": "^draftyak:\\/\\/send-request\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+              "pattern": "^draftyak:\\/\\/send-request\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
             }
           ]
         }
@@ -2079,25 +2079,25 @@
           "type": "string",
           "minLength": 50,
           "maxLength": 50,
-          "pattern": "^draftyak:\\/\\/conversation\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          "pattern": "^draftyak:\\/\\/conversation\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
         },
         {
           "type": "string",
           "minLength": 45,
           "maxLength": 45,
-          "pattern": "^draftyak:\\/\\/message\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          "pattern": "^draftyak:\\/\\/message\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
         },
         {
           "type": "string",
           "minLength": 43,
           "maxLength": 43,
-          "pattern": "^draftyak:\\/\\/draft\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          "pattern": "^draftyak:\\/\\/draft\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
         },
         {
           "type": "string",
           "minLength": 50,
           "maxLength": 50,
-          "pattern": "^draftyak:\\/\\/send-request\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          "pattern": "^draftyak:\\/\\/send-request\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
         }
       ]
     },
@@ -2191,13 +2191,13 @@
           "type": "string",
           "minLength": 50,
           "maxLength": 50,
-          "pattern": "^draftyak:\\/\\/send-request\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          "pattern": "^draftyak:\\/\\/send-request\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
         },
         "name": {
           "type": "string",
           "minLength": 39,
           "maxLength": 39,
-          "pattern": "^send-request-[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          "pattern": "^send-request-[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
         },
         "mimeType": {
           "type": "string",
@@ -2360,7 +2360,7 @@
       "type": "string",
       "minLength": 8,
       "maxLength": 8,
-      "pattern": "^[0-9A-F]{8}$"
+      "pattern": "^[0-9A-F]{8}$(?![\\s\\S])"
     },
     "draftyak.mcp.SendRequestState": {
       "type": "string",
@@ -2387,7 +2387,7 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         }
       },
@@ -2398,7 +2398,7 @@
       "properties": {
         "account": {
           "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
           "description": "An owner-chosen account alias."
         },
         "window": {

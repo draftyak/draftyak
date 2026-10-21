@@ -261,9 +261,9 @@ export interface SendWindow {
 	readonly deliverBy: number;
 }
 export function sendWindow(snapshot: SendSnapshotV1, iat: number): SendWindow {
-	if (!SendSnapshotV1.safeParse(snapshot).success || !UtcMs.safeParse(iat).success)
-		throw new SnapshotError("SNAPSHOT_INVALID");
-	const schedule = snapshot.schedule;
+	const result = SendSnapshotV1.safeParse(snapshot);
+	if (!result.success || !UtcMs.safeParse(iat).success) throw new SnapshotError("SNAPSHOT_INVALID");
+	const schedule = result.data.schedule;
 	const deliverBy =
 		schedule.kind === "now" ? iat + 15 * 60_000 : schedule.notBefore + schedule.latenessSec * 1000;
 	if (!Number.isSafeInteger(deliverBy)) throw new SnapshotError("SNAPSHOT_WINDOW_OVERFLOW");

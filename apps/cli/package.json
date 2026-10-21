@@ -1,0 +1,39 @@
+{
+  "name": "@draftyak/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/main.ts",
+    "./payload-contract": "./src/payload-contract.ts",
+    "./doctor": "./src/doctor/loader.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/main.d.mts",
+        "default": "./dist/main.mjs"
+      },
+      "./payload-contract": {
+        "types": "./dist/payload-contract.d.mts",
+        "default": "./dist/payload-contract.mjs"
+      },
+      "./doctor": {
+        "types": "./dist/doctor/loader.d.ts",
+        "default": "./dist/doctor/loader.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:heavy": "vitest run --mode heavy",
+    "build": "node scripts/build.ts"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}
