@@ -16,6 +16,7 @@ const publicModules = [
 	"channel-v1",
 	"data-class",
 	"date-pattern",
+	"device-api",
 	"digests",
 	"draft-output",
 	"draft-output-text",
