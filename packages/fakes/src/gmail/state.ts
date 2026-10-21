@@ -84,20 +84,25 @@ export class GmailState {
 		return true;
 	}
 	private prepare(seed: GmailMessageSeed): Omit<GmailMessage, "historyId"> {
-		id(seed.id);
-		id(seed.threadId ?? seed.id);
+		const key = seed.id,
+			threadId = seed.threadId ?? key,
+			input = seed.raw;
+		id(key);
+		id(threadId);
 		check(
-			seed.raw instanceof Uint8Array &&
-				seed.raw.byteLength > 0 &&
-				seed.raw.byteLength <= MAX_GMAIL_RAW_BYTES,
+			input instanceof Uint8Array &&
+				input.byteLength > 0 &&
+				input.byteLength <= MAX_GMAIL_RAW_BYTES,
 		);
-		headers(seed.raw);
+		const raw = new Uint8Array(input);
+		check(raw.byteLength > 0 && raw.byteLength <= MAX_GMAIL_RAW_BYTES);
+		headers(raw);
 		const internalDate = seed.internalDate ?? this.now();
 		check(Number.isSafeInteger(internalDate) && internalDate >= 0);
 		return {
-			id: seed.id,
-			threadId: seed.threadId ?? seed.id,
-			raw: new Uint8Array(seed.raw),
+			id: key,
+			threadId,
+			raw,
 			labelIds: labels(seed.labelIds ?? ["INBOX"]),
 			internalDate,
 		};
@@ -115,7 +120,7 @@ export class GmailState {
 	add(seed: GmailMessageSeed): void {
 		const prepared = this.prepare(seed);
 		check(
-			!this.messages.has(seed.id) &&
+			!this.messages.has(prepared.id) &&
 				this.messages.size < MAX_GMAIL_MESSAGES &&
 				prepared.raw.byteLength <= MAX_GMAIL_STATE_BYTES - this.bytes,
 		);
