@@ -88,6 +88,19 @@ function active() {
 		exceptions: [],
 	};
 }
+function renewed() {
+	const legacy = active();
+	return {
+		version: 2,
+		state: legacy.state,
+		termination: "release-or-validated-fix",
+		evidenceKind: legacy.evidenceKind,
+		confirmation: legacy.confirmation,
+		binding: legacy.binding,
+		review: legacy.review,
+		exceptions: legacy.exceptions,
+	};
+}
 
 function authority(
 	record: unknown,
@@ -189,6 +202,45 @@ describe("real production factory and policy runner", () => {
 			expect(await readdir(temporary)).toEqual(["checkout", "evidence"]);
 		},
 	);
+	it.each(PHASES)(
+		"explicit v2 renewal cannot activate unavailable production evidence: %s",
+		async (phase) => {
+			const trusted = authority(renewed());
+			const result = await runNativePolicy({
+				phase,
+				authority: trusted.transport,
+				producer: producer(),
+				completionClock: () => NOW,
+			});
+			expect(result.exitCode).toBe(2);
+			expect(result.output.reason).toBe("BASIS_UNAVAILABLE");
+			expect(result.output.runId).toMatch(UUID);
+			expect(result.output.rawExits).toEqual({ full: null, advisory: null });
+			expect(trusted.calls()).toBe(3);
+			noAudit(result);
+		},
+	);
+	for (const state of ["release-closed", "removed", "revoked"]) {
+		it.each(PHASES)(
+			`delivered v2 ${state} stops production before evidence creation: %s`,
+			async (phase) => {
+				const trusted = authority({ version: 2, state });
+				const result = await runNativePolicy({
+					phase,
+					authority: trusted.transport,
+					producer: producer(),
+					completionClock: () => NOW,
+				});
+				expect(result.exitCode).toBe(1);
+				expect(result.output.reason).toBe("TERMINAL_STATE");
+				expect(result.output.runId).toBeNull();
+				expect(result.output.rawExits).toBeNull();
+				expect(trusted.calls()).toBe(2);
+				noAudit(result);
+				await absent();
+			},
+		);
+	}
 
 	for (const state of ["removed", "revoked", "expired", "gate-closed"]) {
 		it.each(PHASES)(
