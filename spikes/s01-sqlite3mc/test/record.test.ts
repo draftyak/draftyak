@@ -1,50 +1,46 @@
-import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { codeChanged } from "../src/record.ts";
-import { tempDir } from "./support.ts";
+import { EvidenceProvenance } from "../../kit/provenance.ts";
 
-// git without the user's or the system's config (signing, hooks, templates), without repository
-// variables from a hook or `rebase -x`, and without background maintenance, which writes into .git
-// while the test reads it.
-function gitIn(root: string): (cwd: string, ...args: string[]) => void {
-	const config = path.join(root, "gitconfig");
-	writeFileSync(config, "[maintenance]\n\tauto = false\n[commit]\n\tgpgsign = false\n");
-	const env = {
-		...Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name))),
-		GIT_CONFIG_GLOBAL: config,
-		GIT_CONFIG_NOSYSTEM: "1",
-	};
-	return (cwd, ...args) => {
-		const result = spawnSync("git", args, { cwd, encoding: "utf8", env, windowsHide: true });
-		if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
-	};
-}
+// Pure provenance controls: importing the recorder would also initialize native/matrix helpers.
+it.each([40, 64])("preserves fingerprint fields for a %s-character commit", async (length) => {
+	const print = { commit: "a".repeat(length), dirty: true, measurement: 7 };
+	const provenance = new EvidenceProvenance(import.meta.dirname, () => ({ code: 0, stdout: "" }));
+	expect(await provenance.fingerprint(async () => print)).toEqual({ ...print, dirty: false });
+	expect(print.dirty).toBe(true);
+});
 
-it("counts changes anywhere in the repository except the spike's own evidence/ as code changes", () => {
-	const root = tempDir("s01-git-");
-	const repo = path.join(root, "repo");
-	const git = gitIn(root);
-	const write = (file: string, text: string): void => {
-		mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
-		writeFileSync(path.join(repo, file), text);
-	};
-	for (const file of ["spike/evidence/load.json", "spike/src/open.ts", "kit/index.ts"]) {
-		write(file, "{}\n");
+it("retains null and dirty status from the current root-wide sample", async () => {
+	for (const [code, stdout, dirty] of [
+		[1, "", null],
+		[0, "?? input.ts\n", true],
+	] as const) {
+		const provenance = new EvidenceProvenance(import.meta.dirname, () => ({ code, stdout }));
+		expect((await provenance.fingerprint(async () => ({ commit: null, dirty: false }))).dirty).toBe(
+			dirty,
+		);
 	}
-	git(repo, "init", "-q");
-	git(repo, "add", ".");
-	git(repo, "-c", "user.name=s01", "-c", "user.email=s01@example.invalid", "commit", "-qm", "base");
-	const spike = path.join(repo, "spike");
-	expect(codeChanged(spike)).toBe(false);
-	write("spike/evidence/load.json", '{ "recordedAt": "now" }\n');
-	write("spike/evidence/bench.json", "{}\n");
-	expect(codeChanged(spike)).toBe(false);
-	write("kit/index.ts", "export {};\n");
-	expect(codeChanged(spike)).toBe(true);
-	git(repo, "checkout", "--", "kit/index.ts");
-	write("spike/src/open.ts", "export {};\n");
-	expect(codeChanged(spike)).toBe(true);
-	expect(codeChanged(tempDir("s01-nogit-"))).toBeNull();
+});
+
+it("routes S1 load, matrix and benchmark outputs through successful-write ownership", () => {
+	const record = readFileSync(new URL("../src/record.ts", import.meta.url), "utf8");
+	const bench = readFileSync(new URL("./bench.heavy.test.ts", import.meta.url), "utf8");
+	expect(record).toContain("provenance.write(file,");
+	expect(record).toContain("provenance.write(path.join(evidenceDir, MATRIX)");
+	expect(record).toContain("await writeCodeEvidence(file, data, print)");
+	expect(bench).toContain("await writeCodeEvidence(file, data)");
+	expect(record).not.toContain("--untracked-files=no");
+});
+
+it("routes each S5 writer through the shared exact-output seam", () => {
+	const app = readFileSync(new URL("../../s05-desktop/test/app.ts", import.meta.url), "utf8");
+	expect(app).toContain("provenance.write(file,");
+	for (const suite of ["shell", "ekm", "power", "sidecar"]) {
+		const source = readFileSync(
+			new URL(`../../s05-desktop/test/${suite}.heavy.test.ts`, import.meta.url),
+			"utf8",
+		);
+		expect(source).toContain("writeCodeEvidence(file,");
+		expect(source).not.toContain("--untracked-files=no");
+	}
 });
