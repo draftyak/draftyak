@@ -1,0 +1,14 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.gitignore",
+        "$TURBO_ROOT$/biome.json",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/security/no-outbox-timers.grit"
+      ]
+    }
+  }
+}
