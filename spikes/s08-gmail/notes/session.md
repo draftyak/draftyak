@@ -47,31 +47,29 @@ Then write `C:/dev/.draftyak-cache/s08-session/input.json` as UTF-8 (the Write t
 }
 ```
 
-`testAccount` goes to Google as `login_hint` on each consent, and connect refuses (and revokes) a grant from any other account. `accountName` is for the report step, which refuses observations that contain it.
+`testAccount` goes to Google as `login_hint` on each consent. Token-bearing agent and drop results require it: agent compares the existing Gmail profile address; drop cross-checks a bounded email claim from that step's token response in memory, without claiming independent ID-token signature verification or making another identity request. Missing, unusable or different identities stop the step and run its leftover-grant cleanup without replacing an earlier result. Gmail dots, plus tags and googlemail.com use the existing mailbox equivalence. Connect keeps its existing account check. `accountName` is for the report step, which refuses observations that contain it.
 
-Define the step command once per shell. Each run prints its lines only with `--reporter=default` (Vitest hides passing tests' output in agent shells). The optional second word is the owner's declaration (below).
+Run each step with a complete command in a fresh shell; no shell function is required. In the table below, `s8 <step>` names the step to put in this command, not an installed command. Start from the session checkout's root. Set `DRAFTYAK_S8_LOGS` to a separate private log folder outside the checkout and the session folder. It must already exist; logs must not prevent `forget` from recognizing its session folder. Each example explicitly clears the declaration and selects preview mode. Change the literal `agent` to the intended step in both the environment and log name; use `refused` only for the agent page refusal, or `no-checkbox` only for drop, as described below.
 
-Git Bash:
+Submit the entire following invocation as a managed background task/session whose lifetime exceeds the step deadline plus startup and shutdown. Keep that wrapper shell alive through its wait and exit-receipt write; do not detach it and return early. The printed log basename identifies this invocation only. Fresh basenames prevent an older receipt from being mistaken for completion.
+
+Git Bash, one line (reserves a fresh private log basename and records its own completion):
 
 ```bash
-export DO_NOT_TRACK=1
-s8() { DRAFTYAK_S8_STEP="$1" DRAFTYAK_S8_OUTCOME="${2:-}" pnpm --filter @draftyak/spike-s08-gmail test:live -- --reporter=default; }
+s8_log="$(mktemp "$DRAFTYAK_S8_LOGS/s08-agent-$(date +%Y%m%d-%H%M%S)-XXXXXX")" || exit 1; printf '%s\n' "$s8_log"; (if cd spikes/s08-gmail && env DO_NOT_TRACK=1 DRAFTYAK_S8_STEP=agent DRAFTYAK_S8_OUTCOME= DRAFTYAK_RECORD_EVIDENCE=0 node ../kit/run.ts --live --reporter=default --exclude '**/*siwc*/**' --exclude '**/*siwc*' --exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'; then s8_exit=0; else s8_exit=$?; fi; printf '%s\n' "$s8_exit" >"$s8_log.exit" || exit 1; exit "$s8_exit") >"$s8_log.stdout.log" 2>"$s8_log.stderr.log" & s8_pid=$!; printf '%s\n' "$s8_pid" >"$s8_log.pid"; wait "$s8_pid"
 ```
 
-PowerShell:
+PowerShell, one line (retains the native process object and handle in this same managed shell, with a hidden window and separate logs):
 
 ```powershell
-$env:DO_NOT_TRACK = '1'
-function s8($step, $outcome) {
-  $env:DRAFTYAK_S8_STEP = $step
-  if ($outcome) { $env:DRAFTYAK_S8_OUTCOME = $outcome }
-  try { pnpm --filter @draftyak/spike-s08-gmail test:live -- --reporter=default }
-  finally {
-    Remove-Item Env:DRAFTYAK_S8_STEP
-    if (Test-Path Env:DRAFTYAK_S8_OUTCOME) { Remove-Item Env:DRAFTYAK_S8_OUTCOME }
-  }
-}
+$ErrorActionPreference = 'Stop'; $s8Log = Join-Path $env:DRAFTYAK_S8_LOGS ('s08-agent-' + (Get-Date -Format yyyyMMdd-HHmmss) + '-' + [Guid]::NewGuid().ToString('N')); Write-Output $s8Log; $env:DO_NOT_TRACK = '1'; $env:DRAFTYAK_S8_STEP = 'agent'; $env:DRAFTYAK_S8_OUTCOME = ''; $env:DRAFTYAK_RECORD_EVIDENCE = '0'; try { $s8Process = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList @('../kit/run.ts', '--live', '--reporter=default', '--exclude', '**/*siwc*/**', '--exclude', '**/*siwc*', '--exclude', '**/*dynamic-agent*', '--exclude', '**/*dynamic_agent*') -WorkingDirectory (Join-Path $PWD 'spikes/s08-gmail') -WindowStyle Hidden -PassThru -RedirectStandardOutput ($s8Log + '.stdout.log') -RedirectStandardError ($s8Log + '.stderr.log'); $null = $s8Process.Handle; $s8Process.Id | Set-Content -LiteralPath ($s8Log + '.pid') -Encoding ascii; $s8Process.WaitForExit(); $s8Exit = $s8Process.ExitCode; if ($null -eq $s8Exit) { throw 'The owned process did not provide an exit code' }; [IO.File]::WriteAllText(($s8Log + '.exit'), ([string]$s8Exit + [Environment]::NewLine), [Text.Encoding]::ASCII); exit $s8Exit } finally { Remove-Item Env:DRAFTYAK_S8_STEP, Env:DRAFTYAK_S8_OUTCOME, Env:DRAFTYAK_RECORD_EVIDENCE -ErrorAction SilentlyContinue }
 ```
+
+Always run in the background, including `sent`: its test timeout is 12 minutes; agent/drop/connect allow 10, send 8, scheduled 5, revoke 4, concurrency 3, schedule/report 2, plus process startup and shutdown. These are per-step limits, not a total session duration. A killed send still consumes its reserved send allowance. The managed shell itself waits for its owned child and writes only the child's integer exit code to `<log basename>.exit` before it exits; PowerShell must read `ExitCode` from its retained process object after `WaitForExit()` in that same invocation, not reconstruct it in another shell. Bash must not `exec` away the receipt-writing group.
+
+Never start another step until the managed task and its owned processes have finished. Inspect both logs through the normal guarded log reader. Completion requires all three: the managed task completed successfully, its fresh `.exit` receipt contains exactly `0`, and the final passed `Test Files` summary is present. A missing/malformed receipt, nonzero exit, cancelled task or missing/failed summary never counts as a pass and needs investigation, not a concurrent rerun. A PID file or a vanished process alone does not establish success.
+
+In PowerShell, `.pid` is the native Windows child PID; stop only that verified owned process/descendants through the managed task or its retained OS handle. Bash `s8_pid` and its `.pid` file identify the MSYS Bash wrapper, not a Windows PID: do not pass them to `taskkill`. Bash cancellation requires a managed session that actually retains the owned Windows child handles; if that boundary is unavailable, use the PowerShell form. Stopping a wrapper alone does not prove its children ended. Never find targets by a broad process-name search. A fresh shell can inspect the saved receipt and guarded logs after managed-task completion, but cannot use `wait` on a previous shell's child or recover an exit code from PID disappearance. Each next invocation explicitly sets both step and declaration again.
 
 `pnpm --filter @draftyak/spike-s08-gmail test:live` without a step only checks the `.env.live` entries and prints the session's state, like `live-cli.ts status`; it skips when entries are missing. A step that is asked for fails when its entries are missing, so it never passes as a skip.
 
@@ -85,7 +83,7 @@ function s8($step, $outcome) {
 | 4 | `s8 send` | orchestrator, then owner | 5 min | Sends the probe "DY S8 send probe" to the second address with the test account in Bcc, back-dated 90 s, then a reply into its thread: 2 of the 8 sends. A failed read-back is read again (up to 4 tries), never recorded as inconclusive. Prints `messageId preserved`, `date preserved`, Bcc, index delay, thread, reconcile and `threads.get` lines. Then the owner opens the probe in the second mailbox, shows the original message, and says whether it has a `Bcc:` line. |
 | 5 | `s8 concurrency` | orchestrator | 1 min | Bursts of parallel reads (10, 25, 50 and 100 profile reads, then 40 one-message lists; at most 225 requests) until Gmail answers with a limit: a 429, or a 403 rate limit. Prints `429 concurrent: …`. |
 | 6 | `s8 schedule` | orchestrator, then owner | 3 min | Records the history start point and prints the send time to pick: at least 10 minutes ahead, on a whole minute. The owner writes a new mail in the Gmail web UI to the second address, subject "DY S8 scheduled probe", one line of text, and uses the arrow beside Send → Schedule send → Pick date & time → exactly that time. The owner confirms the time picked; if it differs, record it before step 7: `node spikes/s08-gmail/test/live-cli.ts send-at <HH:MM>` (the computer's clock). |
-| 7 | `s8 scheduled` | orchestrator | 1–4 min | Right after the owner scheduled it, before the time it printed (a minute before the send time). Its labels when first seen and after Gmail's search index caught up, whether `in:scheduled` and a SCHEDULED label filter list it (up to 90 s each, but never past a minute before the send time), `in:sent`, `in:drafts`, the history events. Prints `in:scheduled: works` or `fails`. If the mail already went out, or goes out while the step reads, the step stops without recording: rerun `schedule` and schedule a new mail. |
+| 7 | `s8 scheduled` | orchestrator | 1–4 min | Right after the owner scheduled it, before the time it printed (a minute before the send time). Its labels when first seen and after Gmail's search index caught up, whether `in:scheduled` and a SCHEDULED label filter list it (up to 90 s each, but never past a minute before the send time), `in:sent`, `in:drafts`, the history events. Prints `in:scheduled: works` for a matching positive answer, or `fails` only after successful query answers throughout the complete 90-second index window. A cut-short or failed query stops without changing the scheduled result or history checkpoint and asks for a fresh scheduled probe. A slow label filter does not qualify a completed positive query. If the mail already went out, or goes out while the step reads, the step stops without recording: rerun `schedule` and schedule a new mail. |
 | 8 | homepage check | owner | 10 min | While the mail waits; see below. |
 | 9 | `s8 sent` | orchestrator | 1–8 min | After the send time (it refuses to start more than a minute before it): waits until the mail went out, then records its labels, whether it kept its id, the history events since the step 7 look that first showed it scheduled, and whether `sentIn()` counts it. |
 | 10 | `s8 revoke` | orchestrator | 1–3 min | Revokes the standard grant at `https://oauth2.googleapis.com/revoke`, waits for `invalid_grant` as in step 1, and only then deletes every `DY_LIVE_GMAIL_*` entry. |
@@ -94,7 +92,7 @@ function s8($step, $outcome) {
 
 A step that fails can be rerun on its own; its result replaces the earlier one, and a failed step never replaces it. A consent waits 5 minutes for the browser; a consent the owner didn't finish (closed, timed out, Cancel) or a failed token request is rerun, never recorded. A step that stops because a grant still refreshes says so: rerun it while the client exists (its revoke ends the client's whole grant), or remove the app's access in the test account (Google Account → Security → Your connections to third-party apps), then rerun it. `drop` must run before `connect`. Rerunning `send` counts against the 8-send limit. If `scheduled` says the history start point expired, or the mail went out, rerun `schedule` and schedule a new mail; first cancel any earlier scheduled probe still waiting (Gmail → Scheduled → open it → Cancel send) and delete the draft that leaves.
 
-The consent steps can outlast the Bash tool's 10-minute foreground limit if the owner is slow; run them in the background there and watch the output for the disclosure lines.
+If the fixed diagnostic `couldn't open the browser` appears, the operating system refused the browser launch; it says nothing about Google's consent or whether a browser window was shown. No URL or launcher error details are printed. The existing consent deadline and cleanup still apply.
 
 ### The homepage check (step 8)
 
@@ -106,7 +104,7 @@ It decides `homepage` and `publishing status`, and it is mandatory unless the ow
 
 ### The observations
 
-Add an `observations` object to `input.json` before the report step. The report refuses missing or unknown fields, `@`, runs of 6 or more digits, any `<placeholder>` other than `<account>`, invisible format characters (bidi controls, zero-width marks; retype such a line), and the test account's name from `accountName` in any case, or any word of it of three or more letters as written. It lists every problem by its path, never by its value. `live-cli.ts status` shows whether they are complete.
+Add an `observations` object to `input.json` before the report step. The report refuses missing or unknown fields, `@`, runs of 6 or more digits, any `<placeholder>` other than `<account>`, invisible format characters (bidi controls, zero-width marks; retype such a line), and the test account's name from `accountName` in any case, or any word of it of three or more letters as written. Only the exact component words Google, Gmail, Account, DraftYak and Spike (case-insensitive membership) may remain as isolated boilerplate; the full display name is always refused, including a name made entirely of those words. It lists every problem by its path, never by its value. `live-cli.ts status` shows whether they are complete.
 
 ```json
 {
@@ -147,8 +145,7 @@ Add an `observations` object to `input.json` before the report step. The report 
 
 Preview first: `s8 report` writes `C:/dev/.draftyak-cache/s08-session/evidence/live.json` and prints the lines below. Read the preview, then record into `spikes/s08-gmail/evidence/live.json`:
 
-- Git Bash: `DRAFTYAK_RECORD_EVIDENCE=1 DRAFTYAK_S8_STEP=report pnpm --filter @draftyak/spike-s08-gmail test:live -- --reporter=default`
-- PowerShell: `$env:DRAFTYAK_RECORD_EVIDENCE = '1'; s8 report; Remove-Item Env:DRAFTYAK_RECORD_EVIDENCE`
+Use the same complete background command above with the literal step and log name changed to `report`, declaration explicitly empty, and `DRAFTYAK_RECORD_EVIDENCE=1` (PowerShell: `$env:DRAFTYAK_RECORD_EVIDENCE = '1'`). Require managed-task completion, its fresh zero exit receipt and the final passed summary before continuing; PowerShell's `finally` clears the step, declaration and recording switch, while Bash confines them to the child.
 
 It records only when `revoked: yes` and the checkout is clean at the commit every step ran on; otherwise it says why and leaves the preview. The output starts with the acceptance lines:
 
@@ -168,6 +165,8 @@ revoked: yes
 followed by the extra checks: Bcc, index delay, `threads.get` minimal, reconcile, Publish without the homepage and the readings.
 
 ## Revocation and cleanup checks
+
+Keep the normal order: revoke first, delete both clients second. If both clients were already deleted, a narrow recovery is available only for an otherwise completed session whose other grants passed their own cleanup checks: the owner explicitly confirms **both** spike clients deleted by setting `observations.clientsDeleted: true` in the private input, then runs the complete `revoke` command. Only exact `invalid_client` or `deleted_client` refresh errors permit this recovery; the error alone does not establish deletion (a wrong secret can also cause `invalid_client`). Without that confirmation, nothing is deleted or replaced. The step preserves the actual error, deletes only the five S8 entries and reports `owner-confirmed client deletion`; it does not claim that token refusal was proved. Zero entries left, completed steps, other grants, the final owner observations and clean-checkout recording rules remain required. Other errors or a refresh that still works do not qualify.
 
 - `s8 agent` printed `grant revoked (refresh: invalid_grant)` (or that Google refused the consent), and `s8 drop` printed `scope drop: … grant revoked by … (refresh: invalid_grant)` (or `not possible at consent`). Neither records a grant that still refreshes.
 - `s8 revoke` printed `refresh afterwards: invalid_grant` and `left: none`.
@@ -195,5 +194,5 @@ From `evidence/live.json`, the observations and `notes/consent-and-policy.md`:
 11. The five consent-review readings R1–R5, each consistent, inconsistent or unclear, with sentences (a)–(e); R2–R5 stay open for the pre-launch legal review.
 12. The disclosure placement: the orchestrator showed each client's disclosure text in the chat before its consent (a stand-in for M5's wizard), and the screens' order; any policy page changes since 2026-10-16.
 13. V1: nodemailer 10.1.2.
-14. Revocation: both clients' grants revoked and confirmed with `invalid_grant` (with how long Google took), the entries deleted, both clients deleted.
+14. Revocation: the actual refresh outcomes and timing, the entries deleted and both clients deleted. Qualify any early-client-deletion recovery as owner-confirmed deletion with its actual error code, not proof of token refusal; the agent and drop grants retain their independent cleanup checks.
 15. Kept tests: `spikes/s08-gmail/test/mime.test.ts`, `test/reconcile.test.ts` and `test/fake-gmail.test.ts` (`pnpm --filter @draftyak/spike-s08-gmail test`), moving to M5 `plugins/channel-gmail/`, `packages/mime/` and `packages/fakes/` (FakeGmail and FakeGoogleOAuth).

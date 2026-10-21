@@ -49,6 +49,8 @@ export interface FakeOAuthOptions {
 	readonly clientId: string;
 	readonly clientSecret: string;
 	readonly tokens: TokenRegistry;
+	// Synthetic identity claim, only on an authorization-code exchange.
+	readonly email?: string;
 	// What the owner leaves ticked on the consent screen (granular consent).
 	readonly consent?: (requested: readonly string[]) => readonly string[] | "deny";
 }
@@ -118,6 +120,11 @@ export async function startFakeOAuth(options: FakeOAuthOptions): Promise<FakeOAu
 				...(tokens.refreshToken === undefined ? {} : { refresh_token: tokens.refreshToken }),
 				scope: scopes.map((scope) => LONG_NAMES[scope] ?? scope).join(" "),
 				token_type: "Bearer",
+				...(tokens.refreshToken === undefined || options.email === undefined
+					? {}
+					: {
+							id_token: `fake.${Buffer.from(JSON.stringify({ email: options.email })).toString("base64url")}.signature`,
+						}),
 			},
 			{ "cache-control": "no-store" },
 		);
