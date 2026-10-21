@@ -385,6 +385,18 @@ importers:
 
   tools/adr-check: {}
 
+  tools/calendar-goldens:
+    devDependencies:
+      '@draftyak/lookup-core':
+        specifier: workspace:*
+        version: link:../../packages/lookup-core
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@draftyak/tool-calendar-ics':
+        specifier: workspace:*
+        version: link:../../plugins/tool-calendar-ics
+
   tools/ci-checks: {}
 
   tools/fetch-node: {}
