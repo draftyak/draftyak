@@ -82,15 +82,16 @@ function prepare(step: ResponsesApiStep, available: number): Prepared {
 	if (!Number.isInteger(status) || status < 200 || status > 599 || [204, 205, 304].includes(status))
 		throw new RangeError("A scripted response needs a status that permits a body");
 	const delayMs = step.delayMs ?? 0;
-	const chunkDelayMs = step.kind === "json" ? 0 : (step.chunkDelayMs ?? 0);
-	const chunkBytes = step.kind === "json" ? MAX_CHUNK : (step.chunkBytes ?? MAX_CHUNK);
+	const kind = step.kind;
+	const chunkDelayMs = kind === "json" ? 0 : (step.chunkDelayMs ?? 0);
+	const chunkBytes = kind === "json" ? MAX_CHUNK : (step.chunkBytes ?? MAX_CHUNK);
 	checkDelay("delayMs", delayMs);
 	checkDelay("chunkDelayMs", chunkDelayMs);
 	if (!Number.isInteger(chunkBytes) || chunkBytes < 1 || chunkBytes > MAX_CHUNK)
 		throw new RangeError("chunkBytes must be from 1 to 65536");
 	let body: string;
 	let contentType: string;
-	switch (step.kind) {
+	switch (kind) {
 		case "json":
 			body = json(step.body);
 			contentType = "application/json";
