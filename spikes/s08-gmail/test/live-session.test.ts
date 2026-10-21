@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { randomBytes, randomInt } from "node:crypto";
 import {
 	existsSync,
@@ -25,7 +24,6 @@ import {
 } from "./live-report.ts";
 import {
 	accountName,
-	codeState,
 	credentialsProblem,
 	dateAnswer,
 	declaredFromEnv,
@@ -387,7 +385,7 @@ describe("the report", () => {
 					true,
 					buildReport(completed, observations).acceptance,
 				),
-			).toContain("the checkout has tracked changes or no commit");
+			).toContain("the checkout has changed inputs or no verified commit/status");
 		}
 		for (const code of ["ok", "network", "http_503", "invalid_request", "error"]) {
 			expect(
@@ -435,7 +433,20 @@ describe("the report", () => {
 		const clean = { commit: "a".repeat(40), dirty: false };
 		expect(recordProblems(clean, state(), true, acceptance)).toEqual([]);
 		expect(recordProblems({ ...clean, dirty: true }, state(), true, acceptance)).toEqual([
-			"the checkout has tracked changes or no commit",
+			"the checkout has changed inputs or no verified commit/status",
+		]);
+		expect(recordProblems({ ...clean, dirty: null }, state(), true, acceptance)).toEqual([
+			"the checkout has changed inputs or no verified commit/status",
+		]);
+		const previous = state();
+		const schedule = previous.steps.schedule;
+		if (schedule === undefined) throw new Error("the synthetic schedule record is required");
+		const unknownStep: State = {
+			...previous,
+			steps: { ...previous.steps, schedule: { ...schedule, dirty: null } },
+		};
+		expect(recordProblems(clean, unknownStep, true, acceptance)).toEqual([
+			"these steps ran on other code: schedule",
 		]);
 		expect(recordProblems({ ...clean, commit: "b".repeat(40) }, state(), true, acceptance)).toEqual(
 			[
@@ -602,69 +613,6 @@ describe("what the steps record", () => {
 		expect(
 			Object.keys(JSON.parse(readFileSync(path.join(s.dir, "state.json"), "utf8")).steps),
 		).toEqual(["schedule"]);
-	});
-});
-
-// A throwaway repository, isolated from the user's git config and without background maintenance.
-function tempRepo(): { readonly dir: string; write(file: string, text: string): void } {
-	const root = folder();
-	const dir = path.join(root, "repo");
-	const config = path.join(root, "gitconfig");
-	mkdirSync(dir);
-	writeFileSync(
-		config,
-		"[maintenance]\n\tauto = false\n[commit]\n\tgpgsign = false\n[user]\n\tname = Test\n\temail = test@example.invalid\n",
-	);
-	const env = Object.fromEntries(
-		Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)),
-	);
-	const git = (...args: string[]): void => {
-		const result = spawnSync("git", args, {
-			cwd: dir,
-			encoding: "utf8",
-			env: { ...env, GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: "1" },
-			windowsHide: true,
-		});
-		if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
-	};
-	const write = (file: string, text: string): void => {
-		mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
-		writeFileSync(path.join(dir, file), text);
-	};
-	git("init", "-q");
-	git("config", "maintenance.auto", "false");
-	for (const file of [
-		"README.md",
-		"spikes/s08-gmail/test/x.ts",
-		"spikes/s08-gmail/evidence/live.json",
-		"spikes/s07-siwc/evidence/run.json",
-	]) {
-		write(file, "{}\n");
-	}
-	git("add", "-A");
-	git("commit", "-qm", "stand-in");
-	return { dir, write };
-}
-
-describe("the commit and tracked changes the report checks", () => {
-	it("counts every tracked change but s08's own evidence", () => {
-		const repo = tempRepo();
-		const spike = path.join(repo.dir, "spikes", "s08-gmail");
-		const clean = codeState(spike);
-		expect(clean.commit).toMatch(/^[0-9a-f]{40}$/);
-		expect(clean.dirty).toBe(false);
-		repo.write("spikes/s08-gmail/evidence/live.json", '{ "data": {} }\n');
-		repo.write("spikes/s08-gmail/notes.txt", "untracked\n");
-		expect(codeState(spike).dirty).toBe(false);
-		for (const file of [
-			"README.md",
-			"spikes/s07-siwc/evidence/run.json",
-			"spikes/s08-gmail/test/x.ts",
-		]) {
-			const repoAt = tempRepo();
-			repoAt.write(file, "changed\n");
-			expect(codeState(path.join(repoAt.dir, "spikes", "s08-gmail")).dirty, file).toBe(true);
-		}
 	});
 });
 

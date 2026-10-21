@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -72,6 +71,9 @@ import {
 	type SendSummary,
 	seconds,
 } from "./live-report.ts";
+import { codeState, provenanceFor } from "./provenance.ts";
+
+export { codeState } from "./provenance.ts";
 
 // The S8b live procedure (M0.29), one step per run: gmail.live.test.ts runs it against Google, and
 // rehearsal.test.ts runs the same code against FakeGmail and the fake OAuth server. Each step keeps
@@ -363,32 +365,6 @@ export function setSendAt(dir: string, time: string): string {
 	const sendAt = nextClockTime(time, startedAt);
 	updateWork(dir, { sendAt });
 	return `the scheduled mail goes out ${clock(sendAt)}; the scheduled step reads it until a minute before`;
-}
-
-// The commit and whether tracked files outside evidence/ changed, as S1's codeChanged() reads it.
-export function codeState(dir: string): {
-	readonly commit: string | null;
-	readonly dirty: boolean | null;
-} {
-	const env = Object.fromEntries(
-		Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)),
-	);
-	const git = (...args: string[]) =>
-		spawnSync("git", args, { cwd: dir, encoding: "utf8", env, windowsHide: true });
-	const head = git("rev-parse", "HEAD");
-	const status = git(
-		"status",
-		"--porcelain",
-		"--untracked-files=no",
-		"--",
-		":/",
-		":(exclude)evidence",
-	);
-	const sha = head.status === 0 ? head.stdout.trim() : "";
-	return {
-		commit: /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sha) ? sha : null,
-		dirty: status.status === 0 ? status.stdout.trim() !== "" : null,
-	};
 }
 
 export function saveStep(
@@ -2195,7 +2171,7 @@ export function recordProblems(
 		problems.push("revoked isn't yes: finish the revocation and cleanup");
 	if (!requireClean) return problems;
 	if (print.commit === null || print.dirty !== false) {
-		problems.push("the checkout has tracked changes or no commit");
+		problems.push("the checkout has changed inputs or no verified commit/status");
 	}
 	const elsewhere = STEPS.filter((step) => {
 		const record = state.steps[step];
@@ -2212,18 +2188,19 @@ async function reportStep(session: Session): Promise<readonly string[]> {
 	const input = readInput(session.dir);
 	const name = accountName(input).reveal();
 	const report = buildReport(state, parseObservations(input.observations, [name]));
-	const print = await fingerprint({
-		cwd: session.repoDir,
-		...(session.sampleMs === undefined ? {} : { sampleMs: session.sampleMs }),
-	});
-	const code = codeState(session.repoDir);
-	const shown: Fingerprint = { ...print, dirty: code.dirty ?? print.dirty };
+	const provenance = provenanceFor(session.repoDir);
+	const shown = await provenance.fingerprint(() =>
+		fingerprint({
+			cwd: session.repoDir,
+			...(session.sampleMs === undefined ? {} : { sampleMs: session.sampleMs }),
+		}),
+	);
 	const problems = recordProblems(shown, state, session.requireClean, report.acceptance);
 	const recorded = session.record && problems.length === 0;
 	const dir = recorded ? session.evidenceDir : path.join(session.dir, "evidence");
-	const file = await writeEvidence(path.join(dir, "live.json"), report.data, {
-		fingerprint: shown,
-	});
+	const target = path.join(dir, "live.json");
+	const write = () => writeEvidence(target, report.data, { fingerprint: shown });
+	const file = recorded ? await provenance.write(target, write) : await write();
 	const why = problems.length > 0 ? problems.join("; ") : "DRAFTYAK_RECORD_EVIDENCE isn't 1";
 	return [
 		...report.lines,

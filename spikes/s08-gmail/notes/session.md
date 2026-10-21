@@ -25,7 +25,9 @@ The placeholder homepage on draftyak.com, verified in Search Console, should be 
 
 ## Preparing the checkout (orchestrator, about 5 minutes)
 
-Run the session from an installed worktree of a branch made from `origin/m0` with M0.29 merged, with no tracked changes: the report step records evidence only from a clean checkout at the commit every step ran on. The worktree reads `.env.live` from the main checkout.
+Run the session from an installed worktree of a branch made from `origin/m0` with M0.29 merged, with no changed tracked files or nonignored untracked inputs anywhere in the repository: the report step records evidence only from clean inputs at the commit every step ran on. Unavailable commit/status also prevents recording. The worktree reads `.env.live` from the main checkout.
+
+Only an exact successful JSON report output written by the current process can be exempted, and only while its identity and contents remain unchanged. An evidence directory is never exempt. Existing outputs from another process remain inputs; ownership is not persisted. Keep historical evidence and its normal commit/provenance record; this rule does not require rewriting or re-recording it.
 
 Re-read the policy pages that `notes/consent-and-policy.md` cites, and note whether anything changed since 2026-10-16 (`policyPages` below).
 
@@ -147,7 +149,7 @@ Preview first: `s8 report` writes `C:/dev/.draftyak-cache/s08-session/evidence/l
 
 Use the same complete background command above with the literal step and log name changed to `report`, declaration explicitly empty, and `DRAFTYAK_RECORD_EVIDENCE=1` (PowerShell: `$env:DRAFTYAK_RECORD_EVIDENCE = '1'`). Require managed-task completion, its fresh zero exit receipt and the final passed summary before continuing; PowerShell's `finally` clears the step, declaration and recording switch, while Bash confines them to the child.
 
-It records only when `revoked: yes` and the checkout is clean at the commit every step ran on; otherwise it says why and leaves the preview. The output starts with the acceptance lines:
+It records only when `revoked: yes` and all repository inputs are clean at the commit every step ran on, with verified status for the current report and every saved step; otherwise it says why and leaves the private preview. Preview writes grant no repository-output exemption. The output starts with the acceptance lines:
 
 ```
 messageId preserved: yes|no

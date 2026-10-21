@@ -732,14 +732,14 @@ describe("the S8b session rehearsed against FakeGmail and fake Google OAuth", ()
 		expect(results.sent).toMatchObject({ sameId: true, labels: ["SENT"], sentIn: true });
 		expect(guard(run.repo.dir)).toEqual({ code: 0, findings: [] });
 
-		// Recorded from a clean checkout at the commit every step ran on; then neither a tracked
-		// change outside s08's evidence/ nor steps that ran on another commit record.
+		// Recorded from clean inputs at the commit every step ran on; changed inputs or steps
+		// that ran on another commit cannot record.
 		expect(run.lines.report?.at(-1)).toBe(`evidence: ${path.resolve(run.evidenceFile)}`);
 		const report = async (): Promise<string | undefined> =>
 			(await runStep("report", run.session)).at(-1);
 		run.repo.write("README.md", "Changed.\n");
 		expect(await report()).toMatch(
-			/^evidence not recorded \(the checkout has tracked changes or no commit\); preview: /,
+			/^evidence not recorded \(the checkout has changed inputs or no verified commit\/status\); preview: /,
 		);
 		run.repo.commit("change");
 		expect(await report()).toMatch(
