@@ -665,6 +665,208 @@ describe("synthetic stateful read-only channel upstream", () => {
 			).error,
 		).toBe("invalid_cursor");
 	});
+	describe("denied provider scheduling", () => {
+		const targets = [
+			"/api/chat.scheduleMessage",
+			"/api/chat.deleteScheduledMessage",
+			"/api/chat.scheduledMessages.list",
+		] as const;
+		const seeded = () => {
+			const fake = createSlackReadFake({ conversations: [channel()] });
+			fake.addMessage(channel().id, {
+				ts: "1760000000.000001",
+				user: "UDYTEST01",
+				text: "DYTEST scheduling refusal",
+			});
+			return fake;
+		};
+		const history = () => `/api/conversations.history?channel=${channel().id}`;
+		const seededHistory = async (fake: SlackReadFake) => {
+			const result = await json(fake, history());
+			expect(result).toMatchObject({
+				ok: true,
+				messages: [
+					{
+						ts: "1760000000.000001",
+						user: "UDYTEST01",
+						text: "DYTEST scheduling refusal",
+					},
+				],
+			});
+			return result;
+		};
+
+		it.each(["string", "tagged", "tagged-init", "loopback"] as const)(
+			"refuses all three methods over %s without changing state or retaining POSTs",
+			async (transport) => {
+				const fake = seeded(),
+					other = seeded(),
+					before = await seededHistory(fake),
+					otherBefore = await seededHistory(other),
+					facts = fake.conversation(channel().id),
+					server = transport === "loopback" ? await listen(fake) : undefined,
+					localFetch = globalThis.fetch;
+				expect(otherBefore).toEqual(before);
+				fake.recorder.takeRequests();
+				const native = vi
+					.spyOn(globalThis, "fetch")
+					.mockRejectedValue(new Error("Native network forbidden"));
+				const request = (target: string, method: "GET" | "POST") => {
+					if (server) return localFetch(server.origin + target, { method, redirect: "error" });
+					if (transport === "string") return fake.fetch(target, { method });
+					const url = `https://${fake.host}${target}`;
+					return fake.fetch(
+						withTarget(new Request(url, { method }), targetOf(url)),
+						transport === "tagged-init" ? { redirect: "manual" } : undefined,
+					);
+				};
+				for (const target of targets) {
+					const post = await request(target, "POST");
+					expect(post.status).toBe(405);
+					expect(await post.json()).toEqual({ ok: false, error: "unknown_method" });
+					expect(fake.recorder.takeRequests()).toEqual([]);
+					const get = await request(target, "GET");
+					expect(get.status).toBe(400);
+					expect(await get.json()).toEqual({ ok: false, error: "invalid_arguments" });
+					const [record, ...extra] = fake.recorder.takeRequests();
+					expect(extra).toEqual([]);
+					expect(record).toMatchObject({ method: "GET", target, path: target, headers: {} });
+					expect(record?.bodyLength).toBe(0);
+				}
+				expect(fake.conversation(channel().id)).toEqual(facts);
+				expect(await seededHistory(fake)).toEqual(before);
+				expect(await seededHistory(other)).toEqual(otherBefore);
+				expect(native).not.toHaveBeenCalled();
+			},
+		);
+
+		it.each(["memory", "loopback"] as const)(
+			"keeps denials effect-free when before/after faults mask their response over %s",
+			async (transport) => {
+				const fake = seeded(),
+					before = await seededHistory(fake),
+					facts = fake.conversation(channel().id),
+					server = transport === "loopback" ? await listen(fake) : undefined,
+					localFetch = globalThis.fetch;
+				fake.recorder.takeRequests();
+				const native = vi
+					.spyOn(globalThis, "fetch")
+					.mockRejectedValue(new Error("Native network forbidden"));
+				const request = (target: string) =>
+					server
+						? localFetch(server.origin + target, { method: "POST", redirect: "error" })
+						: fake.fetch(target, { method: "POST" });
+				for (const target of targets) {
+					for (const after of [false, true]) {
+						for (const kind of ["server-error", "rate-limit", "drop"] as const) {
+							const scope = { method: "POST", path: target, times: 1, after };
+							if (kind === "server-error") fake.faults.add({ ...scope, kind, status: 502 });
+							else if (kind === "rate-limit") fake.faults.add({ ...scope, kind, retryAfter: 1.1 });
+							else fake.faults.add({ ...scope, kind });
+							if (kind === "drop") await expect(request(target)).rejects.toBeInstanceOf(TypeError);
+							else {
+								const response = await request(target);
+								expect(response.status).toBe(kind === "server-error" ? 502 : 429);
+								expect(response.headers.get("date")).toBe(new Date(fake.clock.now()).toUTCString());
+								if (kind === "rate-limit") expect(response.headers.get("retry-after")).toBe("2");
+								await response.body?.cancel();
+							}
+							expect(fake.faults.pending()).toEqual([]);
+							// A scripted transport response is not an application authorization result.
+							const retry = await request(target);
+							expect(retry.status).toBe(405);
+							expect(await retry.json()).toEqual({ ok: false, error: "unknown_method" });
+							expect(fake.recorder.takeRequests()).toEqual([]);
+						}
+					}
+				}
+				expect(fake.conversation(channel().id)).toEqual(facts);
+				expect(await seededHistory(fake)).toEqual(before);
+				expect(native).not.toHaveBeenCalled();
+			},
+		);
+
+		it.each(["string", "tagged", "tagged-init"] as const)(
+			"cancels each unsupported stream without cloning or retaining it over %s",
+			async (transport) => {
+				const clone = vi.spyOn(Request.prototype, "clone").mockImplementation(() => {
+					throw new Error("Unexpected body tee");
+				});
+				for (const target of targets) {
+					const fake = seeded();
+					let pulls = 0,
+						cancelled = 0;
+					const body = new ReadableStream<Uint8Array>({
+						pull(controller) {
+							pulls++;
+							controller.enqueue(new Uint8Array(16));
+						},
+						cancel() {
+							cancelled++;
+						},
+					});
+					const init: RequestInit & { duplex: "half" } = { method: "POST", body, duplex: "half" };
+					const url = `https://${fake.host}${target}`;
+					const response =
+						transport === "string"
+							? await fake.fetch(url, init)
+							: await fake.fetch(
+									withTarget(new Request(url, init), targetOf(url)),
+									transport === "tagged-init" ? { redirect: "manual" } : undefined,
+								);
+					expect(response.status).toBe(405);
+					expect(await response.json()).toEqual({ ok: false, error: "unknown_method" });
+					expect(cancelled).toBe(1);
+					expect(pulls).toBeLessThanOrEqual(transport === "string" ? 2 : 4);
+					const settled = pulls;
+					await new Promise<void>((resolve) => setTimeout(resolve, 0));
+					expect(pulls).toBe(settled);
+					expect(fake.recorder.takeRequests()).toEqual([]);
+				}
+				expect(clone).not.toHaveBeenCalled();
+			},
+		);
+
+		it.each(targets)(
+			"closes rawHTTP %s after a prefix without awaiting the declared body",
+			async (target) => {
+				const fake = seeded(),
+					server = await listen(fake),
+					before = await seededHistory(fake);
+				fake.recorder.takeRequests();
+				const wire = await new Promise<string>((resolve, reject) => {
+					const socket = createConnection({ host: "127.0.0.1", port: server.port });
+					let output = "";
+					const timeout = setTimeout(() => {
+						socket.destroy();
+						reject(new Error("Raw fixture refusal timed out"));
+					}, 2000);
+					socket.on("data", (chunk) => {
+						output += chunk.toString("ascii");
+						if (output.length > 4096) {
+							socket.destroy();
+							reject(new Error("Raw fixture response exceeded bounds"));
+						}
+					});
+					socket.once("error", reject);
+					socket.once("close", () => {
+						clearTimeout(timeout);
+						resolve(output);
+					});
+					socket.once("connect", () =>
+						socket.write(
+							`POST ${target} HTTP/1.1\r\nHost: 127.0.0.1:${server.port}\r\nContent-Length: 33554432\r\nConnection: close\r\n\r\nDYTEST prefix`,
+						),
+					);
+				});
+				expect(wire).toMatch(/^HTTP\/1\.1 405 /);
+				expect(wire).toContain('"error":"unknown_method"');
+				expect(fake.recorder.takeRequests()).toEqual([]);
+				expect(await seededHistory(fake)).toEqual(before);
+			},
+		);
+	});
+
 	it("keeps fixtures isolated, has no native fetch fallback and refuses send/schedule/write requests", async () => {
 		const a = createSlackReadFake({ conversations: [channel()] }),
 			b = createSlackReadFake({ conversations: [channel()] });
