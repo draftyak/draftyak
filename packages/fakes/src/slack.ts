@@ -1,9 +1,17 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo, Socket } from "node:net";
 import { isProxy } from "node:util/types";
-import { createFaults, type ManualClock, manualClock } from "./faults.ts";
-import type { RecordedRequest, Recorder } from "./recorder.ts";
-import { createFake, type Fake } from "./server.ts";
-import { rawTarget, withTarget } from "./target.ts";
+import { type RawData, WebSocket, WebSocketServer } from "ws";
+import { createFaults, type Fault, type Faults, type ManualClock, manualClock } from "./faults.ts";
+import {
+	createRecorder,
+	type RecordedRequest,
+	type Recorder,
+	type StreamingRecorder,
+} from "./recorder.ts";
+import { createFake, type Fake, type Listening, RESERVED_PORTS } from "./server.ts";
+import { rawTarget, targetOf, withTarget } from "./target.ts";
 
 export const SLACK_READ_HOST = "slack.draftyak.example";
 export const MAX_SLACK_CONVERSATIONS = 300;
@@ -39,6 +47,866 @@ export interface SlackReadUser {
 	readonly name: string;
 	readonly displayName: string;
 	readonly realName: string;
+}
+
+export const MAX_SLACK_SOCKET_BODY_BYTES: number = 16 * 1024;
+export const MAX_SLACK_SOCKET_EVENT_BYTES: number = 16 * 1024;
+export const MAX_SLACK_SOCKET_ACK_BYTES = 1024;
+export const MAX_SLACK_SOCKET_CONNECTIONS = 8;
+export const MAX_SLACK_SOCKET_TICKETS = 32;
+export const MAX_SLACK_SOCKET_PENDING = 64;
+export const MAX_SLACK_SOCKET_RECORDS = 256;
+const SOCKET_TICKET_MS = 60_000,
+	SOCKET_LIFETIME_MS = 60_000,
+	SOCKET_TIMERS = 128;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export interface SlackSocketConnection {
+	readonly id: number;
+	readonly closedCode: number | null;
+}
+export interface SlackSocketEnvelope {
+	readonly envelopeId: string;
+	readonly connection: number;
+	readonly type: string;
+	readonly retryAttempt: number;
+	readonly payload: Readonly<Record<string, unknown>>;
+	readonly acknowledged: boolean;
+	readonly redelivered: boolean;
+}
+export interface SlackSocketAck {
+	readonly connection: number;
+	readonly envelopeId?: string;
+	readonly accepted: boolean;
+	readonly dropped: boolean;
+}
+export interface SlackSocketFake extends Fake {
+	readonly appToken: string;
+	readonly userToken: string;
+	readonly clock: ManualClock;
+	readonly apiBase: string;
+	readonly connections: readonly SlackSocketConnection[];
+	readonly envelopes: readonly SlackSocketEnvelope[];
+	readonly acks: readonly SlackSocketAck[];
+	sendHello: boolean;
+	dropAcks: number;
+	start(): Promise<void>;
+	close(): Promise<void>;
+	live(): SlackSocketConnection[];
+	frame(connection: SlackSocketConnection, value: Record<string, unknown>): void;
+	deliver(
+		payload: Record<string, unknown>,
+		options?: {
+			readonly connection?: SlackSocketConnection;
+			readonly type?: string;
+			readonly acceptsResponsePayload?: boolean;
+		},
+	): SlackSocketEnvelope;
+	acksFor(envelopeId: string): SlackSocketAck[];
+	disconnect(connection: SlackSocketConnection, reason: string, closeAfterMs?: number | null): void;
+	terminate(connection: SlackSocketConnection): void;
+	stats(): { tickets: number; connections: number; pending: number; timers: number; http: number };
+}
+function socketRefused(): never {
+	throw new Error("Slack socket fixture refused");
+}
+function socketInteger(value: unknown, min: number, max: number): number {
+	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max)
+		socketRefused();
+	return value;
+}
+// Copy inert JSON data without invoking accessors, iterators or toJSON.
+function socketJSON(input: unknown): Readonly<Record<string, unknown>> {
+	let nodes = 0,
+		bytes = 0;
+	const copy = (value: unknown, depth: number): unknown => {
+		if (++nodes > 1024 || depth > 8) socketRefused();
+		if (value === null || typeof value === "boolean") return value;
+		if (typeof value === "number") {
+			if (!Number.isFinite(value)) socketRefused();
+			return value;
+		}
+		if (typeof value === "string") {
+			bytes += Buffer.byteLength(value);
+			if (bytes > MAX_SLACK_SOCKET_EVENT_BYTES) socketRefused();
+			return value;
+		}
+		if (!value || typeof value !== "object" || isProxy(value)) socketRefused();
+		if (Array.isArray(value))
+			return Object.freeze(list(value, 64).map((entry) => copy(entry, depth + 1)));
+		if (![Object.prototype, null].includes(Object.getPrototypeOf(value))) socketRefused();
+		const keys = Reflect.ownKeys(value);
+		if (keys.length > 64) socketRefused();
+		const result: Record<string, unknown> = Object.create(null);
+		for (const key of keys) {
+			if (typeof key !== "string") socketRefused();
+			bytes += Buffer.byteLength(key);
+			if (bytes > MAX_SLACK_SOCKET_EVENT_BYTES) socketRefused();
+			const d = Object.getOwnPropertyDescriptor(value, key);
+			if (!d?.enumerable || !("value" in d)) socketRefused();
+			result[key] = copy(d.value, depth + 1);
+		}
+		return Object.freeze(result);
+	};
+	if (!input || typeof input !== "object" || Array.isArray(input)) socketRefused();
+	const result = copy(input, 0) as Readonly<Record<string, unknown>>;
+	if (Buffer.byteLength(JSON.stringify(result)) > MAX_SLACK_SOCKET_EVENT_BYTES) socketRefused();
+	return result;
+}
+function socketRecorder(): StreamingRecorder {
+	const inner = createRecorder({ maxBodyBytes: 0 });
+	let reserved = 0;
+	const begin: StreamingRecorder["begin"] = (request) => {
+		if (reserved >= MAX_SLACK_SOCKET_RECORDS) socketRefused();
+		const target = rawTarget(request),
+			names = [...request.headers.keys()];
+		if (
+			target.length > 2048 ||
+			names.length > 64 ||
+			names.reduce((n, name) => n + name.length + (request.headers.get(name)?.length ?? 0), 0) >
+				8192
+		)
+			socketRefused();
+		const path = target.split("?")[0];
+		const safe =
+			path === "/api/auth.test" || path === "/api/apps.connections.open" ? path : "/refused";
+		const knownHeaders = [
+			"authorization",
+			"content-type",
+			"content-length",
+			"host",
+			"connection",
+			"transfer-encoding",
+			"accept",
+			"user-agent",
+			"accept-encoding",
+		];
+		const knownMethods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+		const redacted = new Request(`https://${SLACK_READ_HOST}${safe}`, {
+			method: knownMethods.includes(request.method) ? request.method : "OTHER",
+			headers: names.filter((name) => knownHeaders.includes(name)).map((name) => [name, ""]),
+		});
+		const slot = inner.begin(redacted);
+		reserved++;
+		let settled = false;
+		return {
+			write: (bytes) => slot.write(bytes),
+			finish(reason) {
+				slot.finish(reason);
+				settled = true;
+			},
+			discard() {
+				if (settled) socketRefused();
+				slot.discard();
+				settled = true;
+				reserved--;
+			},
+		};
+	};
+	return {
+		begin,
+		async record(request) {
+			// Body-bearing admission must use the shared capped begin/write path.
+			if (request.body) {
+				void request.body.cancel().catch(() => {});
+				socketRefused();
+			}
+			begin(request).finish();
+		},
+		takeRequests() {
+			const rows = inner.takeRequests();
+			reserved -= rows.length;
+			return rows;
+		},
+	};
+}
+function socketAwait<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const aborted = () => {
+			signal.removeEventListener("abort", aborted);
+			reject(signal.reason);
+		};
+		signal.addEventListener("abort", aborted, { once: true });
+		void work.then(
+			(value) => {
+				signal.removeEventListener("abort", aborted);
+				resolve(value);
+			},
+			(error) => {
+				signal.removeEventListener("abort", aborted);
+				reject(error);
+			},
+		);
+		if (signal.aborted) aborted();
+	});
+}
+/** A bounded synthetic auth/Socket Mode companion; it grants no native authority. */
+export function createSlackSocketFake(
+	options: { readonly ackTimeoutMs?: number; readonly nowMs?: number } = {},
+): SlackSocketFake {
+	const config = object(options, ["ackTimeoutMs", "nowMs"]);
+	const ackTimeout = socketInteger(config.ackTimeoutMs ?? 3000, 1, 60_000);
+	const clock = manualClock(
+		socketInteger(config.nowMs ?? 1_760_000_000_000, 0, 253_402_300_799_000),
+	);
+	const appToken = `DYTEST-SLACK-APP-${randomUUID()}`,
+		userToken = `DYTEST-SLACK-USER-${randomUUID()}`;
+	const recorder = socketRecorder(),
+		sharedFaults = createFaults({ clock });
+	const faultRuns = new Set<Promise<Response>>();
+	const faults: Faults = {
+		clock,
+		add(...input: Fault[]) {
+			active();
+			if (input.length + sharedFaults.pending().length > 32) socketRefused();
+			// Shared fault behavior, with finite fixture-local work instead of Infinity.
+			for (const value of input) {
+				const f = object(value, [
+					"kind",
+					"method",
+					"path",
+					"times",
+					"after",
+					"retryAfter",
+					"status",
+					"ms",
+				]);
+				socketInteger(f.times ?? 1, 1, 1024);
+				if (f.kind === "latency") socketInteger(f.ms, 0, 1000);
+			}
+			sharedFaults.add(...input);
+		},
+		pending: () => sharedFaults.pending(),
+		clear: () => sharedFaults.clear(),
+		run(request, app) {
+			active();
+			if (faultRuns.size >= 16) socketRefused();
+			const target = rawTarget(request);
+			if (target.length > 2048 || request.method.length > 64) socketRefused();
+			const signal = AbortSignal.any([request.signal, closingSignal.signal]);
+			signal.throwIfAborted();
+			// Fault selection needs method/path/signal only; intake may already hold the body reader.
+			const metadata = withTarget(
+				new Request(`https://${SLACK_READ_HOST}/`, { method: request.method, signal }),
+				target,
+			);
+			const work = socketAwait(
+				sharedFaults.run(metadata, () => app(request)),
+				signal,
+			);
+			faultRuns.add(work);
+			void work.finally(() => faultRuns.delete(work)).catch(() => {});
+			return work;
+		},
+	};
+	let closed = false,
+		hello = true,
+		drops = 0,
+		nextConnection = 0,
+		httpInFlight = 0;
+	const closingSignal = new AbortController();
+	const timers = new Set<ReturnType<typeof setTimeout>>();
+	const tickets = new Map<string, number>();
+	const tcp = new Set<Socket>();
+	const httpWork = new Set<Promise<Response>>();
+	let fetchOwned: Fake["fetch"];
+	type Connection = {
+		public: SlackSocketConnection;
+		socket: WebSocket;
+		closedCode: number | null;
+		messages: number;
+		frames: number;
+		lifetime?: ReturnType<typeof setTimeout>;
+	};
+	type Envelope = {
+		public: SlackSocketEnvelope;
+		envelopeId: string;
+		connection: number;
+		type: string;
+		retryAttempt: number;
+		payload: Readonly<Record<string, unknown>>;
+		acknowledged: boolean;
+		redelivered: boolean;
+	};
+	type Pending = { current: Envelope; timer?: ReturnType<typeof setTimeout> };
+	const connections = new Map<SlackSocketConnection, Connection>(),
+		connectionHistory: SlackSocketConnection[] = [];
+	const envelopes: Envelope[] = [],
+		acks: SlackSocketAck[] = [],
+		pending = new Set<Pending>();
+	const wss = new WebSocketServer({
+		noServer: true,
+		maxPayload: MAX_SLACK_SOCKET_ACK_BYTES,
+		perMessageDeflate: false,
+	});
+	let wsServer: ReturnType<typeof createServer> | undefined,
+		wsOrigin = "";
+	let wsStarting: Promise<void> | undefined, startPromise: Promise<void> | undefined;
+	let baseListener: Listening | undefined, closePromise: Promise<void> | undefined;
+	const active = () => {
+		if (closed) socketRefused();
+	};
+	const cancel = (timer?: ReturnType<typeof setTimeout>) => {
+		if (timer) {
+			clearTimeout(timer);
+			timers.delete(timer);
+		}
+	};
+	const later = (task: () => void, ms: number) => {
+		active();
+		if (timers.size >= SOCKET_TIMERS) socketRefused();
+		const timer = setTimeout(() => {
+			timers.delete(timer);
+			if (!closed) task();
+		}, ms);
+		timers.add(timer);
+		return timer;
+	};
+	const remember = <T>(rows: T[], value: T) => {
+		rows.push(value);
+		if (rows.length > MAX_SLACK_SOCKET_RECORDS) rows.shift();
+	};
+	const live = () =>
+		[...connections.values()].filter((c) => c.socket.readyState === WebSocket.OPEN);
+	const connection = (handle: SlackSocketConnection) => {
+		active();
+		const value = connections.get(handle);
+		if (!value || value.socket.readyState !== WebSocket.OPEN) socketRefused();
+		return value;
+	};
+	const send = (c: Connection, value: Readonly<Record<string, unknown>>) => {
+		const text = JSON.stringify(value),
+			bytes = Buffer.byteLength(text);
+		if (
+			bytes > MAX_SLACK_SOCKET_EVENT_BYTES ||
+			c.frames >= MAX_SLACK_SOCKET_RECORDS ||
+			c.socket.bufferedAmount + bytes > 4 * MAX_SLACK_SOCKET_EVENT_BYTES
+		)
+			socketRefused();
+		c.frames++;
+		c.socket.send(text, (error) => {
+			if (error) c.socket.terminate();
+		});
+	};
+	const expireTickets = () => {
+		for (const [ticket, until] of tickets) if (until <= clock.now()) tickets.delete(ticket);
+	};
+	const settle = (work: Pending) => {
+		cancel(work.timer);
+		pending.delete(work);
+	};
+	const emit = (
+		work: Pending,
+		c: Connection,
+		payload: Readonly<Record<string, unknown>>,
+		type: string,
+		attempt: number,
+		accepts: boolean,
+	): Envelope => {
+		const record = {
+			envelopeId: randomUUID(),
+			connection: c.public.id,
+			type,
+			retryAttempt: attempt,
+			payload,
+			acknowledged: false,
+			redelivered: false,
+		} as Envelope;
+		record.public = Object.freeze({
+			envelopeId: record.envelopeId,
+			connection: record.connection,
+			type,
+			retryAttempt: attempt,
+			payload,
+			get acknowledged() {
+				return record.acknowledged;
+			},
+			get redelivered() {
+				return record.redelivered;
+			},
+		});
+		send(c, {
+			envelope_id: record.envelopeId,
+			payload,
+			type,
+			accepts_response_payload: accepts,
+			retry_attempt: attempt,
+			retry_reason: attempt === 0 ? "" : "timeout",
+		});
+		work.current = record;
+		remember(envelopes, record);
+		work.timer = later(() => {
+			if (record.acknowledged || record.retryAttempt >= 3) {
+				settle(work);
+				return;
+			}
+			const next = live().at(-1);
+			// S6 waits indefinitely without a live socket; this bounded companion stops.
+			if (!next) {
+				settle(work);
+				return;
+			}
+			record.redelivered = true;
+			try {
+				emit(work, next, payload, type, attempt + 1, false);
+			} catch {
+				settle(work);
+				next.socket.terminate();
+			}
+		}, ackTimeout);
+		return record;
+	};
+	const received = (c: Connection): boolean => {
+		if (++c.messages > MAX_SLACK_SOCKET_RECORDS) {
+			c.socket.close(1008);
+			return false;
+		}
+		return true;
+	};
+	const receive = (c: Connection, data: RawData, binary: boolean) => {
+		if (!received(c)) return;
+		if (binary) {
+			c.socket.close(1003);
+			return;
+		}
+		const bytes = Buffer.isBuffer(data)
+			? data
+			: Array.isArray(data)
+				? Buffer.concat(data)
+				: Buffer.from(data);
+		if (bytes.length > MAX_SLACK_SOCKET_ACK_BYTES) {
+			c.socket.close(1009);
+			return;
+		}
+		let id: string;
+		try {
+			const value = object(JSON.parse(bytes.toString("utf8")), ["envelope_id"]);
+			if (typeof value.envelope_id !== "string" || !UUID.test(value.envelope_id)) socketRefused();
+			id = value.envelope_id;
+		} catch {
+			c.socket.close(1008);
+			return;
+		}
+		const envelope =
+			[...pending].find((work) => work.current.envelopeId === id)?.current ??
+			envelopes.find((e) => e.envelopeId === id);
+		const accepted = envelope !== undefined && envelope.connection === c.public.id;
+		const dropped = accepted && drops > 0;
+		if (dropped) drops--;
+		remember(
+			acks,
+			Object.freeze({
+				connection: c.public.id,
+				...(envelope ? { envelopeId: id } : {}),
+				accepted,
+				dropped,
+			}),
+		);
+		if (!accepted || dropped) return;
+		envelope.acknowledged = true;
+		for (const work of pending) if (work.current === envelope) settle(work);
+	};
+	const ensureWS = (): Promise<void> => {
+		active();
+		wsStarting ??= (async () => {
+			for (let attempt = 0; attempt < 10; attempt++) {
+				const server = createServer(
+					{ maxHeaderSize: 4096, highWaterMark: MAX_SLACK_SOCKET_BODY_BYTES + 1 },
+					(request, response) => {
+						const abort = new AbortController();
+						response.once("close", () => {
+							if (!response.writableEnded) abort.abort(new Error("Slack fixture client closed"));
+						});
+						void (async () => {
+							const target = request.url ?? "/";
+							if (target.length > 2048 || request.headers.host !== wsOrigin.slice(5)) {
+								response.writeHead(421, { Connection: "close" });
+								response.end();
+								return;
+							}
+							const method = request.method ?? "GET";
+							if (
+								(method === "GET" || method === "HEAD") &&
+								(request.headers["content-length"] !== undefined ||
+									request.headers["transfer-encoding"] !== undefined)
+							) {
+								response.writeHead(400, { Connection: "close" });
+								response.end();
+								return;
+							}
+							const headers = new Headers();
+							for (let at = 0; at < request.rawHeaders.length; at += 2)
+								headers.append(request.rawHeaders[at] ?? "", request.rawHeaders[at + 1] ?? "");
+							let detach = () => {};
+							const body =
+								method === "GET" || method === "HEAD"
+									? undefined
+									: new ReadableStream<Uint8Array>({
+											start(controller) {
+												const data = (chunk: Buffer) => {
+													request.pause();
+													controller.enqueue(new Uint8Array(chunk));
+												};
+												const end = () => {
+													detach();
+													controller.close();
+												};
+												const failed = () => {
+													detach();
+													controller.error(new Error("Slack fixture upload failed"));
+												};
+												detach = () => {
+													request.pause();
+													request.off("data", data);
+													request.off("end", end);
+													request.off("error", failed);
+													request.off("aborted", failed);
+												};
+												request.on("data", data);
+												request.once("end", end);
+												request.once("error", failed);
+												request.once("aborted", failed);
+												request.pause();
+											},
+											pull() {
+												request.resume();
+											},
+											// Stop reading while the small refusal response closes this connection.
+											cancel() {
+												detach();
+											},
+										});
+							const input = withTarget(
+								new Request(`https://${SLACK_READ_HOST}${target}`, {
+									method,
+									headers,
+									body,
+									signal: abort.signal,
+									duplex: "half",
+								} as RequestInit),
+								target,
+							);
+							const answer = await fetchOwned(input);
+							response.writeHead(answer.status, {
+								...Object.fromEntries(answer.headers),
+								Connection: "close",
+							});
+							response.end(Buffer.from(await answer.arrayBuffer()), () => request.destroy());
+						})().catch(() => {
+							if (!response.headersSent) response.writeHead(503, { Connection: "close" });
+							response.end();
+						});
+					},
+				);
+				server.maxConnections = MAX_SLACK_SOCKET_CONNECTIONS;
+				server.maxRequestsPerSocket = 1;
+				server.headersTimeout = 1000;
+				server.requestTimeout = 1000;
+				server.on("connection", (socket) => {
+					if (closed || tcp.size >= MAX_SLACK_SOCKET_CONNECTIONS) {
+						socket.destroy();
+						return;
+					}
+					tcp.add(socket);
+					socket.setTimeout(SOCKET_LIFETIME_MS, () => socket.destroy());
+					socket.once("close", () => tcp.delete(socket));
+				});
+				server.on("upgrade", (request, socket, head) => {
+					const target = request.url ?? "";
+					const ticket = target.startsWith("/link/") ? target.slice(6) : "";
+					expireTickets();
+					if (
+						closed ||
+						request.method !== "GET" ||
+						!UUID.test(ticket) ||
+						request.headers.host !== wsOrigin.slice(5) ||
+						request.headers.origin !== undefined ||
+						connections.size >= MAX_SLACK_SOCKET_CONNECTIONS ||
+						!tickets.delete(ticket)
+					) {
+						socket.destroy();
+						return;
+					}
+					try {
+						wss.handleUpgrade(request, socket, head, (ws) => {
+							if (closed) {
+								ws.terminate();
+								return;
+							}
+							const c = { socket: ws, closedCode: null, messages: 0, frames: 0 } as Connection;
+							c.public = Object.freeze({
+								id: ++nextConnection,
+								get closedCode() {
+									return c.closedCode;
+								},
+							});
+							connections.set(c.public, c);
+							remember(connectionHistory, c.public);
+							ws.on("error", () => {});
+							ws.on("message", (data, binary) => receive(c, data, binary));
+							ws.on("ping", () => {
+								received(c);
+							});
+							ws.on("pong", () => {
+								received(c);
+							});
+							ws.once("close", (code) => {
+								c.closedCode = code;
+								cancel(c.lifetime);
+								connections.delete(c.public);
+							});
+							c.lifetime = later(() => ws.terminate(), SOCKET_LIFETIME_MS);
+							if (hello)
+								send(c, {
+									type: "hello",
+									num_connections: live().length,
+									debug_info: {
+										host: "dytest-fixture",
+										build_number: 1,
+										approximate_connection_time: 0,
+									},
+									connection_info: { app_id: "ADYTEST01" },
+								});
+						});
+					} catch {
+						socket.destroy();
+					}
+				});
+				await new Promise<void>((resolve, reject) => {
+					server.once("error", reject);
+					server.listen({ host: "127.0.0.1", port: 0, exclusive: true }, () => {
+						server.off("error", reject);
+						resolve();
+					});
+				});
+				const port = (server.address() as AddressInfo).port;
+				if (closed || RESERVED_PORTS.has(port)) {
+					for (const socket of tcp) socket.destroy();
+					await new Promise<void>((resolve) => server.close(() => resolve()));
+					if (closed) socketRefused();
+					continue;
+				}
+				wsServer = server;
+				wsOrigin = `ws://127.0.0.1:${port}`;
+				return;
+			}
+			socketRefused();
+		})();
+		return wsStarting;
+	};
+	const fake = createFake(
+		{
+			async fetch(request) {
+				if (closed) return Response.json({ ok: false, error: "fixture_closed" }, { status: 503 });
+				const target = rawTarget(request);
+				const match = /^\/api\/(auth\.test|apps\.connections\.open)$/.exec(
+					target.split("?")[0] ?? "",
+				);
+				if (!match) return Response.json({ ok: false, error: "unknown_method" }, { status: 404 });
+				if (request.method !== "POST")
+					return Response.json({ ok: false, error: "method_not_allowed" }, { status: 405 });
+				const authorization = request.headers.get("authorization") ?? "";
+				if (!authorization.startsWith("Bearer "))
+					return Response.json({ ok: false, error: "not_authed" });
+				const token = authorization.slice(7),
+					app = match[1] === "apps.connections.open";
+				if (token === (app ? userToken : appToken))
+					return Response.json({ ok: false, error: "not_allowed_token_type" });
+				if (token !== (app ? appToken : userToken))
+					return Response.json({ ok: false, error: "invalid_auth" });
+				if (target.includes("?") || (await request.text()) !== "")
+					return Response.json({ ok: false, error: "invalid_arg_name" });
+				if (!app)
+					return Response.json({
+						ok: true,
+						user_id: "UDYTEST01",
+						team_id: "TDYTEST01",
+						user: "dytest-owner",
+						team: "DYTEST workspace",
+					});
+				await ensureWS();
+				expireTickets();
+				active();
+				if (tickets.size >= MAX_SLACK_SOCKET_TICKETS)
+					return Response.json({ ok: false, error: "fixture_capacity" }, { status: 503 });
+				const ticket = randomUUID();
+				tickets.set(ticket, clock.now() + SOCKET_TICKET_MS);
+				return Response.json({ ok: true, url: `${wsOrigin}/link/${ticket}` });
+			},
+		},
+		{ host: SLACK_READ_HOST, recorder, faults, maxRequestBodyBytes: MAX_SLACK_SOCKET_BODY_BYTES },
+	);
+	fetchOwned = (input, init) => {
+		active();
+		const url =
+			typeof input === "string" && input.startsWith("/") ? `https://${fake.host}${input}` : input;
+		const original = url instanceof Request && init === undefined ? url : new Request(url, init);
+		if (httpInFlight >= 16) {
+			if (original.body) void original.body.cancel().catch(() => {});
+			socketRefused();
+		}
+		const timeout = new AbortController();
+		const timer = later(() => timeout.abort(new Error("Slack fixture upload timeout")), 1000);
+		httpInFlight++;
+		const work = (async () => {
+			let forwarded: Request | undefined;
+			try {
+				forwarded = withTarget(
+					new Request(original, {
+						redirect: "error",
+						signal: AbortSignal.any([original.signal, closingSignal.signal, timeout.signal]),
+					}),
+					typeof url === "string" ? targetOf(url) : rawTarget(original),
+				);
+				return await fake.fetch(forwarded);
+			} catch (error) {
+				if (forwarded?.body && !forwarded.body.locked) void forwarded.body.cancel().catch(() => {});
+				throw error;
+			} finally {
+				cancel(timer);
+				httpInFlight--;
+			}
+		})();
+		httpWork.add(work);
+		void work.finally(() => httpWork.delete(work)).catch(() => {});
+		return work;
+	};
+	const listen = async (): Promise<Listening> => {
+		await ensureWS();
+		active();
+		const address = wsServer?.address();
+		if (!address || typeof address === "string") socketRefused();
+		if (!baseListener)
+			baseListener = {
+				port: address.port,
+				origin: wsOrigin.replace("ws:", "http:"),
+				close: () => companion.close(),
+			};
+		return baseListener;
+	};
+	const companion: SlackSocketFake = {
+		host: fake.host,
+		recorder,
+		faults,
+		clock,
+		appToken,
+		userToken,
+		get apiBase() {
+			if (!baseListener) socketRefused();
+			return `${baseListener.origin}/api/`;
+		},
+		get connections() {
+			return Object.freeze([...connectionHistory]);
+		},
+		get envelopes() {
+			return Object.freeze(envelopes.map((e) => e.public));
+		},
+		get acks() {
+			return Object.freeze([...acks]);
+		},
+		get sendHello() {
+			return hello;
+		},
+		set sendHello(value) {
+			if (typeof value !== "boolean") socketRefused();
+			hello = value;
+		},
+		get dropAcks() {
+			return drops;
+		},
+		set dropAcks(value) {
+			drops = socketInteger(value, 0, MAX_SLACK_SOCKET_RECORDS);
+		},
+		fetch: fetchOwned,
+		listen,
+		async start() {
+			active();
+			startPromise ??= (async () => {
+				baseListener = await listen();
+			})();
+			await startPromise;
+		},
+		close() {
+			closePromise ??= (async () => {
+				closed = true;
+				closingSignal.abort(new Error("Slack fixture closed"));
+				for (const timer of timers) clearTimeout(timer);
+				timers.clear();
+				tickets.clear();
+				pending.clear();
+				faults.clear();
+				for (const c of connections.values()) c.socket.terminate();
+				for (const socket of tcp) socket.destroy();
+				await Promise.allSettled([wsStarting, startPromise]);
+				await Promise.allSettled([...httpWork, ...faultRuns]);
+				if (wsServer)
+					await new Promise<void>((resolve) => {
+						wsServer?.close(() => resolve());
+						wsServer?.closeAllConnections();
+					});
+				await new Promise<void>((resolve) => wss.close(() => resolve()));
+				connections.clear();
+				tcp.clear();
+				connectionHistory.length = 0;
+				envelopes.length = 0;
+				acks.length = 0;
+				recorder.takeRequests();
+			})();
+			return closePromise;
+		},
+		live: () => live().map((c) => c.public),
+		frame(handle, value) {
+			const c = connection(handle);
+			send(c, socketJSON(value));
+		},
+		deliver(payload, raw = {}) {
+			active();
+			const options = object(raw, ["connection", "type", "acceptsResponsePayload"]);
+			const c =
+				options.connection === undefined
+					? live().at(-1)
+					: connection(options.connection as SlackSocketConnection);
+			if (!c || pending.size >= MAX_SLACK_SOCKET_PENDING || timers.size >= SOCKET_TIMERS)
+				socketRefused();
+			const type = options.type ?? "events_api";
+			if (
+				typeof type !== "string" ||
+				!/^[a-z_]{1,64}$/.test(type) ||
+				(options.acceptsResponsePayload !== undefined &&
+					typeof options.acceptsResponsePayload !== "boolean")
+			)
+				socketRefused();
+			const copied = socketJSON(payload),
+				work = {} as Pending;
+			const result = emit(work, c, copied, type, 0, options.acceptsResponsePayload === true);
+			pending.add(work);
+			return result.public;
+		},
+		acksFor: (id) => acks.filter((ack) => ack.envelopeId === id),
+		disconnect(handle, reason, closeAfterMs = null) {
+			const c = connection(handle);
+			if (typeof reason !== "string" || Buffer.byteLength(reason) > 256) socketRefused();
+			if (closeAfterMs !== null) {
+				socketInteger(closeAfterMs, 0, 60_000);
+				if (timers.size >= SOCKET_TIMERS) socketRefused();
+			}
+			send(c, { type: "disconnect", reason, debug_info: { host: "dytest-fixture" } });
+			if (closeAfterMs !== null) later(() => c.socket.close(1000), closeAfterMs);
+		},
+		terminate(handle) {
+			connection(handle).socket.terminate();
+		},
+		stats() {
+			expireTickets();
+			return {
+				tickets: tickets.size,
+				connections: connections.size,
+				pending: pending.size,
+				timers: timers.size,
+				http: httpInFlight,
+			};
+		},
+	};
+	return companion;
 }
 export interface SlackReadConversation {
 	readonly id: string;
