@@ -17,6 +17,13 @@ export {
 	PinService,
 	type PinWallClock,
 } from "./identity/pin.ts";
+export {
+	type Clock,
+	checkWait,
+	MAX_WAIT_MS,
+	systemClock,
+	type TimerClock,
+} from "./kernel/clock.ts";
 export { isKnownSyncedPath } from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
 export {
