@@ -20,6 +20,6 @@ Contributions use DCO 1.1, with no CLA. Apache-2.0 inbound equals outbound; cont
 
 ## Maintainer changes
 
-The owner appoints maintainers after reviewing their contributions, judgment and willingness to take responsibility. Changes to responsibilities and this document are proposed publicly and recorded in the repository. Maintainers disclose conflicts relevant to a decision and ask an uninvolved reviewer where possible.
+The current single-maintainer arrangement is valid for launch; recruiting another maintainer is optional. The owner appoints additional maintainers after reviewing their contributions and judgment and obtaining their agreement to take responsibility. Changes to responsibilities and this document are proposed publicly and recorded in the repository. Maintainers disclose conflicts relevant to a decision and ask an uninvolved reviewer where possible.
 
-TODO(owner): Recruit a co-maintainer and record an agreed continuity and handover process before launch.
+TODO(owner): Record continuity and handover arrangements for the current maintainer structure before launch. Update them when responsibilities change; do not assume an additional maintainer has agreed to serve.
