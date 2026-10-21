@@ -96,6 +96,57 @@ function post(extra: RequestInit = {}): RequestInit {
 	};
 }
 
+describe("Messages reply kind snapshots", () => {
+	const body = "DYTEST reply body";
+
+	it("uses one JSON kind snapshot for content type and exact wire bytes", async () => {
+		const kinds = ["json", "raw", "raw", "json"] as const;
+		let reads = 0;
+		const step: MessagesApiStep = {
+			get kind() {
+				return kinds[reads++] ?? "json";
+			},
+			body,
+		};
+		const fake = createMessagesApiFake({ steps: [step] });
+		expect(fake.pending()).toBe(1);
+		const response = await fake.fetch("/v1/messages", post());
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toBe("application/json");
+		const text = await response.text();
+		expect(fake.pending()).toBe(0);
+		expect(text).toBe(JSON.stringify(body));
+		expect(JSON.parse(text)).toBe(body);
+		expect(reads).toBe(1);
+	});
+
+	it("preserves stable JSON string serialization", async () => {
+		const fake = createMessagesApiFake({ steps: [{ kind: "json", body }] });
+		expect(fake.pending()).toBe(1);
+		const response = await fake.fetch("/v1/messages", post());
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toBe("application/json");
+		const text = await response.text();
+		expect(fake.pending()).toBe(0);
+		expect(text).toBe(JSON.stringify(body));
+		expect(JSON.parse(text)).toBe(body);
+	});
+
+	it("preserves explicit malformed raw bytes with JSON media", async () => {
+		const fake = createMessagesApiFake({
+			steps: [{ kind: "raw", body, contentType: "application/json" }],
+		});
+		expect(fake.pending()).toBe(1);
+		const response = await fake.fetch("/v1/messages", post());
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toBe("application/json");
+		const text = await response.text();
+		expect(fake.pending()).toBe(0);
+		expect(text).toBe(body);
+		expect(() => JSON.parse(text)).toThrow(SyntaxError);
+	});
+});
+
 describe("Messages API wire fake", () => {
 	it.each(["/v1/messages", "/v1/messages?beta=true"])(
 		"answers the exact stable and beta target %s without vendor traffic",
