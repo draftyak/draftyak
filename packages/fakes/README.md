@@ -184,3 +184,44 @@ are cancelled without cloning or collecting them.
 fixture policy, not a claim about Slack's actual tier or internal-app exemption.
 The shared `faults` script remains available for rate limits, errors, latency
 and drops, and stamps `Date` from the same injected clock.
+
+### Synthetic Slack send effects
+
+`createSlackSendFake({read, userToken: "DYTEST-send-user"})` adds a separate
+provider write fixture using a supplied `createSlackReadFake` instance. The
+existing read factory stays read-only. The new factory is available from the root
+and `@draftyak/fakes/slack` exports; it adds no dependency or native approval
+implementation.
+
+Only POST `/api/chat.postMessage` with JSON `channel`, optional `thread_ts`,
+`text`, and both `unfurl_links:false` and `unfurl_media:false` is admitted.
+A fixed invented DYTEST bearer is required. Extra fields, including
+`reply_broadcast`, refuse. This fixture never renders or converts broadcast
+intent. Native rendering, approval, broker tickets, current-fact policy,
+scheduling and actual reconciliation remain separate.
+
+A successful write appends once through the reader's public `addMessage`
+control. Read it back with that reader's public history/replies requests. Text
+is opaque already-rendered data, retained exactly: nonempty NFC, well-formed,
+at most 4,096 UTF-8 bytes and 4,096 UTF-16 units, with only TAB/LF controls.
+The existing 1,024-message/4 MiB state and thread-parent constraints apply;
+this is narrower than the native renderer's limits. A supplied reader whose
+owner cannot be stored by its message controls is refused at construction.
+The collaborator is trusted executable fixture input, not a runtime identity
+proof. The sender owns only its own listeners, not the supplied reader.
+
+Timestamps use the reader clock with a per-sender monotonic nanosecond suffix.
+Clock rollback does not reuse a committed identity. Collision, refusal or state
+exhaustion leaves the suffix unchanged; advancing the fixture clock can resolve
+a collision with seeded data. This is synthetic identity behavior, not provider
+pacing or idempotence. A repeated successful request remains a second write.
+
+The shared 32 KiB wire-intake cap is distinct from the stored-text limit.
+Refused intake can retain a received-prefix record and consume an arrival
+fault; the shared recorder is not globally bounded. Before-effect failures
+produce no message; after-effect drops can leave one message despite a lost
+reply. Abort before the synchronous append has no effect, while loss after
+append does not undo it. Rate limits, Retry-After and Date use shared scripted
+faults and the reader clock; they establish no real tier/exemption or live
+Slack behavior. No shared server/recorder/fault changes or Socket Mode fixture
+dependency are required.

@@ -1,11 +1,14 @@
+import { createHash } from "node:crypto";
 import { createConnection } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Listening } from "../src/server.ts";
 import {
 	createSlackReadFake,
+	createSlackSendFake,
 	MAX_SLACK_CONVERSATIONS,
 	MAX_SLACK_MESSAGES,
 	MAX_SLACK_READ_RECORDS,
+	MAX_SLACK_SEND_REQUEST_BYTES,
 	MAX_SLACK_USERS,
 	type SlackReadConversation,
 	type SlackReadFake,
@@ -1044,5 +1047,292 @@ describe("synthetic stateful read-only channel upstream", () => {
 		expect(wire).toContain('"error":"body_not_allowed"');
 		expect(fake.recorder.takeRequests()).toEqual([]);
 		expect(fake.conversation(channel().id).memberCount).toBe(30);
+	});
+});
+
+describe("synthetic Slack send effects", () => {
+	const credential = "DYTEST-send-user";
+	const path = "/api/chat.postMessage";
+	const wire = (patch: Record<string, unknown> = {}) => ({
+		channel: channel().id,
+		text: "DYTEST & <literal>\nfooter",
+		unfurl_links: false,
+		unfurl_media: false,
+		...patch,
+	});
+	const setup = () => {
+		const reader = createSlackReadFake({ conversations: [channel()] });
+		const sender = createSlackSendFake({ read: reader, userToken: credential });
+		return { reader, sender };
+	};
+	const send = (
+		sender: ReturnType<typeof createSlackSendFake>,
+		body: unknown = wire(),
+		target: string | Request = path,
+		init: RequestInit = {},
+	) =>
+		sender.fetch(target, {
+			method: "POST",
+			headers: { authorization: `Bearer ${credential}`, "content-type": "application/json" },
+			body: JSON.stringify(body),
+			...init,
+		});
+	const history = async (reader: SlackReadFake) => {
+		const result = await json(
+			reader,
+			`/api/conversations.history?channel=${channel().id}&limit=20`,
+		);
+		expect(result.ok).toBe(true);
+		return result;
+	};
+	it("stores exact opaque text and detached identity for top-level and threaded read-back", async () => {
+		const { reader, sender } = setup();
+		const response = await send(sender);
+		const first = await response.json();
+		expect(response.status).toBe(200);
+		expect(first).toMatchObject({
+			ok: true,
+			channel: channel().id,
+			message: { text: wire().text },
+		});
+		expect(response.headers.get("date")).toBe(new Date(reader.clock.now()).toUTCString());
+		first.message.text = "DYTEST detached";
+		expect((await history(reader)).messages).toMatchObject([{ text: wire().text }]);
+		const reply = await (
+			await send(sender, wire({ text: "DYTEST reply", thread_ts: first.ts }))
+		).json();
+		expect(reply.ts).not.toBe(first.ts);
+		const replies = await json(
+			reader,
+			`/api/conversations.replies?channel=${channel().id}&ts=${first.ts}`,
+		);
+		expect(replies.ok).toBe(true);
+		expect(replies.messages).toMatchObject([{ text: wire().text }, { text: "DYTEST reply" }]);
+		expect((await history(reader)).messages).toMatchObject([{ text: wire().text, reply_count: 1 }]);
+		const beforeRejectedReply = await history(reader);
+		expect((await send(sender, wire({ thread_ts: reply.ts }))).status).toBe(400);
+		expect(await history(reader)).toEqual(beforeRejectedReply);
+		const records = sender.recorder.takeRequests();
+		expect(records).toHaveLength(3);
+		expect(Buffer.from(records[0]?.body ?? []).toString("utf8")).toBe(JSON.stringify(wire()));
+		expect(records[0]?.headers).toEqual({});
+	});
+	it.each([
+		{ blocks: [] },
+		{ reply_broadcast: false },
+		{ reply_broadcast: true },
+		{ unfurl_links: true },
+		{ unfurl_media: 0 },
+		{ channel: "CDYTEST99" },
+		{ thread_ts: "2.0" },
+		{ text: "" },
+		{ text: "e\u0301" },
+		{ text: "DYTEST\rtext" },
+		{ text: "\ud800" },
+		{ text: "x".repeat(4097) },
+		{ text: "\u00e9".repeat(2049) },
+	])("declines without changing history or the next identity: %#", async (patch) => {
+		const { reader, sender } = setup();
+		reader.addMessage(channel().id, { ts: "1.0", user: reader.ownerId, text: "DYTEST prior" });
+		const before = await history(reader);
+		expect(before.messages).toHaveLength(1);
+		expect((await send(sender, wire(patch))).status).toBe(400);
+		expect(await history(reader)).toEqual(before);
+		const accepted = await (await send(sender)).json();
+		expect(accepted.ts).toBe(`${reader.clock.now() / 1000}.000000000`);
+	});
+	it("accepts exact stored-text byte boundaries without widening the old reader", async () => {
+		const { reader, sender } = setup();
+		for (const text of ["x".repeat(4096), "\u00e9".repeat(2048)]) {
+			expect((await send(sender, wire({ text }))).status).toBe(200);
+		}
+		expect((await history(reader)).messages).toHaveLength(2);
+		const oldPost = await reader.fetch(path, { method: "POST", body: "DYTEST" });
+		expect(oldPost.status).toBe(405);
+	});
+	it("snapshots the invented credential and rejects unsupported owner fixtures upfront", async () => {
+		const reader = createSlackReadFake({ conversations: [channel()] });
+		const options = { read: reader, userToken: credential };
+		const sender = createSlackSendFake(options);
+		options.userToken = "DYTEST-changed";
+		expect((await send(sender)).status).toBe(200);
+		const wrong = await send(sender, wire(), path, {
+			headers: { authorization: "Bearer DYTEST-changed", "content-type": "application/json" },
+		});
+		expect(wrong.status).toBe(401);
+		expect((await history(reader)).messages).toHaveLength(1);
+		expect(() =>
+			createSlackSendFake({
+				read: createSlackReadFake({ conversations: [channel()], ownerId: "WDYTEST01" }),
+				userToken: credential,
+			}),
+		).toThrow("Slack read fixture refused");
+	});
+	it.each(["string", "tagged"] as const)(
+		"rejects exact raw-target changes over %s input",
+		async (kind) => {
+			const { reader, sender } = setup();
+			const raw = "/api/../api/chat.postMessage";
+			const target =
+				kind === "string" ? raw : withTarget(new Request(`https://${sender.host}${path}`), raw);
+			expect((await send(sender, wire(), target)).status).toBe(400);
+			expect(sender.recorder.takeRequests()[0]?.target).toBe(raw);
+			expect((await history(reader)).messages).toHaveLength(0);
+			expect((await send(sender, wire(), `${path}?extra=1`)).status).toBe(400);
+			expect((await sender.fetch(path)).status).toBe(405);
+		},
+	);
+	it("preserves a tagged native Request without cloning or retaining header values", async () => {
+		const { reader, sender } = setup();
+		const request = withTarget(
+			new Request(`https://${sender.host}${path}`, {
+				method: "POST",
+				headers: {
+					authorization: `Bearer ${credential}`,
+					"content-type": "application/json",
+					"x-dytest-private": "DYTEST header value",
+				},
+				body: JSON.stringify(wire()),
+			}),
+			path,
+		);
+		const clone = vi.spyOn(Request.prototype, "clone").mockImplementation(() => {
+			throw new Error("DYTEST unexpected clone");
+		});
+		try {
+			expect((await sender.fetch(request, { redirect: "follow" })).status).toBe(200);
+			expect(clone).not.toHaveBeenCalled();
+			expect((await history(reader)).messages).toMatchObject([{ text: wire().text }]);
+			const records = sender.recorder.takeRequests();
+			expect(records).toHaveLength(1);
+			expect(records[0]?.target).toBe(path);
+			expect(records[0]?.headerNames).toEqual([
+				"authorization",
+				"content-type",
+				"x-dytest-private",
+			]);
+			expect(records[0]?.headers).toEqual({});
+		} finally {
+			clone.mockRestore();
+		}
+	});
+	it("distinguishes a definite failure from one committed write with a lost reply", async () => {
+		const { reader, sender } = setup();
+		sender.faults.add({ kind: "drop", method: "POST", path });
+		await expect(send(sender)).rejects.toThrow();
+		expect((await history(reader)).messages).toHaveLength(0);
+		expect(sender.faults.pending()).toHaveLength(0);
+		sender.faults.add({ kind: "server-error", status: 503, method: "POST", path });
+		expect((await send(sender)).status).toBe(503);
+		expect((await history(reader)).messages).toHaveLength(0);
+		expect(sender.faults.pending()).toHaveLength(0);
+		sender.faults.add({ kind: "drop", after: true, method: "POST", path });
+		await expect(send(sender)).rejects.toThrow();
+		expect(sender.faults.pending()).toHaveLength(0);
+		expect((await history(reader)).messages).toMatchObject([{ text: wire().text }]);
+		expect((await send(sender)).status).toBe(200);
+		expect((await history(reader)).messages).toHaveLength(2);
+	});
+	it("retains the arrival-fault reservation for an invalid same-path body", async () => {
+		const { reader, sender } = setup();
+		sender.faults.add({ kind: "rate-limit", retryAfter: 7, method: "POST", path });
+		const response = await send(sender, wire({ extra: true }));
+		expect(response.status).toBe(429);
+		expect(response.headers.get("retry-after")).toBe("7");
+		expect(sender.faults.pending()).toHaveLength(0);
+		expect((await history(reader)).messages).toHaveLength(0);
+		expect((await send(sender)).status).toBe(200);
+	});
+	it("does not consume sequence on a public-reader insertion collision", async () => {
+		const { reader, sender } = setup();
+		const collision = `${reader.clock.now() / 1000}.000000000`;
+		reader.addMessage(channel().id, { ts: collision, user: reader.ownerId, text: "DYTEST seed" });
+		const before = await history(reader);
+		for (let attempt = 0; attempt < 2; attempt++) {
+			expect((await send(sender)).status).toBe(400);
+			expect(await history(reader)).toEqual(before);
+		}
+		reader.clock.advance(1);
+		expect((await send(sender)).status).toBe(200);
+		expect((await history(reader)).messages).toHaveLength(2);
+	});
+	it("keeps committed identities monotonic across a controlled clock rollback", async () => {
+		const { reader, sender } = setup();
+		const milliseconds = reader.clock.now();
+		const first = await (await send(sender)).json();
+		reader.clock.set(milliseconds - 1);
+		const response = await send(sender);
+		const second = await response.json();
+		expect(response.status).toBe(200);
+		expect(second.ts).toBe(`${milliseconds / 1000}.000000001`);
+		expect(second.ts).not.toBe(first.ts);
+		expect(response.headers.get("date")).toBe(new Date(milliseconds - 1).toUTCString());
+		expect((await history(reader)).messages).toMatchObject([{ ts: second.ts }, { ts: first.ts }]);
+	});
+	it("refuses a full reader without partial effects and keeps separate readers isolated", async () => {
+		const { reader, sender } = setup();
+		for (let i = 0; i < MAX_SLACK_MESSAGES; i++)
+			reader.addMessage(channel().id, { ts: `${i}.0`, user: reader.ownerId, text: "DYTEST seed" });
+		const before = await history(reader);
+		expect((await send(sender)).status).toBe(400);
+		expect((await history(reader)).messages).toEqual(before.messages);
+		const other = setup();
+		expect((await send(other.sender)).status).toBe(200);
+		expect((await history(other.reader)).messages).toHaveLength(1);
+	});
+	it("accepts exact wire bytes and refuses plus-one with a received-prefix record", async () => {
+		const { reader, sender } = setup();
+		const body = JSON.stringify(wire());
+		const exact = body + " ".repeat(MAX_SLACK_SEND_REQUEST_BYTES - Buffer.byteLength(body));
+		const headers = { authorization: `Bearer ${credential}`, "content-type": "application/json" };
+		expect((await sender.fetch(path, { method: "POST", headers, body: exact })).status).toBe(200);
+		const oversized = await sender.fetch(path, { method: "POST", headers, body: `${exact} ` });
+		expect(oversized.status).toBe(413);
+		expect((await history(reader)).messages).toHaveLength(1);
+		const records = sender.recorder.takeRequests();
+		expect(records).toHaveLength(2);
+		expect(records[1]?.bodyLength).toBe(MAX_SLACK_SEND_REQUEST_BYTES + 1);
+		expect(records[1]?.refused).toBe("request_body_too_large");
+		expect(records[1]?.bodySha256).toBe(createHash("sha256").update(`${exact} `).digest("hex"));
+	});
+	it("cancels aborted intake before a provider effect", async () => {
+		const { reader, sender } = setup();
+		const controller = new AbortController();
+		let cancel = 0;
+		const body = new ReadableStream<Uint8Array>({
+			start(c) {
+				c.enqueue(new TextEncoder().encode('{"channel":'));
+			},
+			cancel() {
+				cancel++;
+			},
+		});
+		const work = sender.fetch(path, {
+			method: "POST",
+			headers: { authorization: `Bearer ${credential}`, "content-type": "application/json" },
+			body,
+			duplex: "half",
+			signal: controller.signal,
+		} as RequestInit);
+		controller.abort();
+		await expect(work).rejects.toThrow();
+		expect(cancel).toBe(1);
+		expect((await history(reader)).messages).toHaveLength(0);
+	});
+	it("serves an owned loopback send and read-back without taking reader lifecycle", async () => {
+		const { reader, sender } = setup();
+		const listener = await sender.listen();
+		listeners.push(listener);
+		const response = await fetch(listener.origin + path, {
+			method: "POST",
+			redirect: "error",
+			signal: AbortSignal.timeout(2000),
+			headers: { authorization: `Bearer ${credential}`, "content-type": "application/json" },
+			body: JSON.stringify(wire()),
+		});
+		expect(response.status).toBe(200);
+		expect((await history(reader)).messages).toHaveLength(1);
+		await listener.close();
+		expect((await history(reader)).messages).toHaveLength(1);
 	});
 });

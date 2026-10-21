@@ -678,3 +678,106 @@ export function createSlackReadFake(raw: {
 		return refuse();
 	}
 }
+
+/** Wire intake is separate from the read fixture's 4,096-byte stored-text limit. */
+export const MAX_SLACK_SEND_REQUEST_BYTES: number = 32 * 1024;
+
+/**
+ * A synthetic provider write surface sharing only the supplied reader's public controls.
+ * The caller owns the reader; this factory does not grant native send or reconcile authority.
+ */
+export function createSlackSendFake(raw: {
+	readonly read: SlackReadFake;
+	readonly userToken: string;
+}): Fake {
+	const options = object(raw, ["read", "userToken"]);
+	const reader = options.read as SlackReadFake;
+	if (reader === null || typeof reader !== "object" || isProxy(reader)) refuse();
+	const token = text(options.userToken, 160);
+	if (!/^DYTEST-[A-Za-z0-9._-]{1,128}$/.test(token)) refuse();
+	const owner = message({ ts: "0.0", user: reader.ownerId, text: "DYTEST owner" }).user;
+	const clock = reader.clock;
+	const now = clock.now.bind(clock);
+	const inspect = reader.conversation.bind(reader);
+	const append = reader.addMessage.bind(reader);
+	let committed = -1n;
+	const fake = createFake(
+		{
+			async fetch(request) {
+				try {
+					if (request.method !== "POST") return failure("unknown_method", 405);
+					if (rawTarget(request) !== "/api/chat.postMessage") return failure("invalid_arguments");
+					if (request.headers.get("authorization") !== `Bearer ${token}`)
+						return failure("invalid_auth", 401);
+					if (request.headers.get("content-type") !== "application/json")
+						return failure("invalid_arguments");
+					const fields = object(await request.json(), [
+						"channel",
+						"text",
+						"thread_ts",
+						"unfurl_links",
+						"unfurl_media",
+					]);
+					const id = identifier(fields.channel);
+					if (fields.unfurl_links !== false || fields.unfurl_media !== false) refuse();
+					const parent = fields.thread_ts === undefined ? undefined : stamp(fields.thread_ts);
+					inspect(id);
+					const milliseconds = now();
+					if (
+						!Number.isSafeInteger(milliseconds) ||
+						milliseconds < 0 ||
+						milliseconds > 253_402_300_799_000
+					)
+						refuse();
+					const observed = BigInt(milliseconds) * 1_000_000n;
+					const next = observed > committed ? observed : committed + 1n;
+					if (next > 253_402_300_799_999_999_999n) refuse();
+					const ts = `${next / 1_000_000_000n}.${String(next % 1_000_000_000n).padStart(9, "0")}`;
+					const value = message({
+						ts,
+						user: owner,
+						text: fields.text,
+						...(parent === undefined ? {} : { threadTs: parent }),
+					});
+					const response = json({
+						ok: true,
+						channel: id,
+						ts,
+						message: {
+							type: "message",
+							user: value.user,
+							text: value.text,
+							ts,
+							...(parent === undefined ? {} : { thread_ts: parent }),
+						},
+					});
+					request.signal.throwIfAborted();
+					append(id, value);
+					committed = next;
+					return response;
+				} catch (error) {
+					if (request.signal.aborted) throw error;
+					return failure("invalid_arguments");
+				}
+			},
+		},
+		{
+			host: SLACK_READ_HOST,
+			maxRequestBodyBytes: MAX_SLACK_SEND_REQUEST_BYTES,
+			faults: createFaults({ clock: { now } }),
+		},
+	);
+	return Object.freeze({
+		...fake,
+		async fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> {
+			if (input instanceof Request) {
+				const forwarded = withTarget(
+					new Request(input, { ...init, redirect: "error" }),
+					rawTarget(input),
+				);
+				return await fake.fetch(forwarded);
+			}
+			return await fake.fetch(input, { ...init, redirect: "error" });
+		},
+	});
+}
