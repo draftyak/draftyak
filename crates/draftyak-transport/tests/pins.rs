@@ -12,6 +12,7 @@ const OWNED_PINS: &[(&str, &str)] = &[
     ("unicode-normalization", "0.1.25"),
     ("proptest", "1.12.0"),
     ("http-body-util", "0.1.3"),
+    ("hkdf", "0.13.0"),
     ("hyper", "1.12.0"),
     ("hyper-util", "0.1.21"),
     ("rcgen", "0.14.10"),
@@ -40,6 +41,7 @@ const RUST_CRYPTO: &[(&str, &str)] = &[
     ("elliptic-curve", "0.14.1"),
     ("ff", "0.14.0"),
     ("group", "0.14.0"),
+    ("hkdf", "0.13.0"),
     ("hmac", "0.13.0"),
     ("hybrid-array", "0.4.15"),
     ("p256", "0.14.0"),
@@ -225,6 +227,7 @@ fn pin_predicates_reject_widening_changed_versions_and_added_generations() {
 fn transport_features_keep_the_explicit_ring_tls13_graph_and_test_only_features() {
     let manifest = include_str!("../Cargo.toml");
     for pin in [
+        "hkdf = { version = \"=0.13.0\", default-features = false }",
         "rustls = { version = \"=0.23.46\", default-features = false, features = [\"std\", \"ring\"] }",
         "tokio-rustls = { version = \"=0.26.6\", default-features = false, features = [\"ring\"] }",
         "jiff = { version = \"=0.2.38\", features = [\"tzdb-bundle-always\"] }",
