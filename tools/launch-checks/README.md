@@ -59,4 +59,34 @@ installation are postponed. M11.2b reconciles actual retained M1.25 contributor/
 additions after they reach this branch. The canonical plugin-author/channel
 walkthrough belongs to postponed documentation and requires real future
 implementations. Later documentation and launch commands are introduced with
-their own implementations; this package currently provides only metadata checks.
+their own implementations.
+
+## Static community audit
+
+`pnpm --filter @draftyak/launch-checks --fail-if-no-match community` reuses the
+metadata audit and checks the named community documents, approved Apache-2.0
+text, required sections/disclosures and current installer claims. Explicit
+postponed-feature references remain allowed. The CLI takes one repository root,
+optionally after `--`: `node tools/launch-checks/src/community-cli.ts .`.
+
+Inputs and file link targets must be regular files below the same unlinked
+repository root, each smaller than 3 MiB. Direct tracked directory targets are
+checked for existence without traversal; they cannot supply fragments.
+It checks at most 256 direct
+links; it neither recursively crawls target links nor fetches external URLs.
+The bounded Markdown subset supports inline links, full reference and defined
+shortcut links with single-line target definitions, and ATX-heading fragments
+with duplicate suffixes.
+Encoded root escapes, linked paths, reserved paths, ambiguous schemes, malformed
+links and unsupported HTML links refuse. Missing files/sections/targets/fragments
+are structural problems. File contents and filesystem errors are not echoed.
+Exit codes follow metadata: 0 success, 1 structural problems, 2 invalid invocation
+or unreadable/unsafe inputs. Fenced examples/comments cannot supply disclosures.
+
+This is a static document audit, not rendered-document conformance, a policy
+interpretation, installer validation or runtime/legal/platform/accessibility
+acceptance. Unresolved actual destinations and owner decisions remain separate.
+The base snapshot without a root README is a real failing input. Adding the
+partial project overview does not by itself satisfy the required quickstarts,
+sections, tray, reopen or autostart guidance; those documentation obligations
+remain open. The audit creates no placeholders or evidence-result format.
