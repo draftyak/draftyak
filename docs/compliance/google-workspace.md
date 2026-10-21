@@ -35,13 +35,15 @@ Agent sessions are time-boxed per tool class; Gmail's default is 15 minutes. Cli
 
 ## Review before launch
 
-The policy does not expressly approve the following readings. They remain release gates, with the per-item PIN control, in the consent review:
+TODO(owner): Record owner/legal review of the retained desktop Gmail feature, send and one-off delayed-send approval, actual data flows and provider destinations, injection safeguards, scopes/OAuth setup and verification responsibilities, privacy disclosures and Limited Use statement, retention/deletion/export/backups (including the configurable 30-day deletion deadline and owner-deleted or re-created hub-state backups), and nominative channel-descriptor naming before publication. Record current source versions, release applicability, unanswered issues and conditions. A user-supplied OAuth client, successful spike or policy hash does not itself establish an exemption or approval.
+
+## Deferred interpretation reviews
+
+The following four questions are preserved for tools, lookups and MCP when those features resume. They are postponed, not approved, and are not prerequisites for this desktop pilot. This deferral does not waive baseline Gmail, privacy, security or enabled-provider obligations; the policy has not been interpreted to approve these readings.
 
 1. TODO(owner): Confirm that a secret iCal feed fetched without a Google API or scope carries no Google Limited Use obligations. The calendar lookup sends no message data to the feed host.
 2. TODO(owner): Confirm that one "Draft with these lookups" confirmation per draft is sufficiently granular for the selected cloud lookups receiving Gmail-derived values.
 3. TODO(owner): Confirm that a time-boxed, device-approved agent session per tool class, with Gmail's 15-minute default, is sufficiently granular for MCP tool calls and mail resource reads.
 4. TODO(owner): Confirm that a Gmail auto-draft may run a cloud-tool lookup receiving no Gmail data without a per-draft confirmation. If rejected, Gmail auto-drafts run only local and local-network lookups.
-
-TODO(owner): Record legal approval of this document, the Limited Use statement and disclosures, OAuth setup obligations, retention and deletion behavior (including the configurable 30-day deletion deadline and owner-deleted or re-created hub-state backups), and nominative channel-descriptor naming. An owner-supplied OAuth client does not itself waive Google's verification or policy requirements.
 
 Vendor-guard rejects embedded Google credentials. Routing, lookup planning, consent and send-approval gating tests check the remaining boundaries. The weekly vendor-terms watch hashes the cited policies and triggers review when they change; it cannot resolve these legal readings.
