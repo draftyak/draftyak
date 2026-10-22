@@ -1,6 +1,11 @@
 import { type HostFetch, hostFetch } from "./fetch.ts";
 import type { HostChannel } from "./host.ts";
 
+export interface PluginInstance {
+	readonly id: string;
+	readonly config: Readonly<Record<string, unknown>>;
+}
+
 export interface HostSocket {
 	readonly id: string;
 	sendAck(envelopeId: string): Promise<void>;
@@ -10,6 +15,7 @@ export interface HostSocket {
 export interface PluginContext {
 	readonly plugin: string;
 	readonly account?: string;
+	readonly instance?: PluginInstance;
 	readonly signal: AbortSignal;
 	readonly fetch: HostFetch;
 	readonly ws: { open(url: string): Promise<HostSocket> };
@@ -25,6 +31,7 @@ export interface PluginContext {
 export interface ContextIdentity {
 	readonly plugin: string;
 	readonly account?: string;
+	readonly instance?: PluginInstance;
 }
 
 export function createPluginContext(
@@ -35,6 +42,7 @@ export function createPluginContext(
 	return Object.freeze({
 		plugin: identity.plugin,
 		...(identity.account ? { account: identity.account } : {}),
+		...(identity.instance ? { instance: identity.instance } : {}),
 		signal,
 		fetch: hostFetch(host, signal),
 		ws: Object.freeze({

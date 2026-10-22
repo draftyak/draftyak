@@ -42,11 +42,13 @@ import {
 	KEY_NAME,
 	type LiveOptions,
 	type LiveOutcome,
+	type MeterOptions,
 	meter,
+	runLive as ordinaryRunLive,
 	PROBE_FLAG,
 	plannedCalls,
 	promptCost,
-	runLive,
+	runRehearsal,
 	runSession,
 	SESSION_ACCEPTANCE,
 	StopError,
@@ -54,8 +56,12 @@ import {
 	worstCase,
 } from "./live-session.ts";
 
-// The rehearsal of test/messages.live.test.ts: the same runLive() against the spike's fake API,
-// with folders shaped like the repo in a temp dir. Nothing here reaches the API or .env.live.
+// Lifecycle fixtures alone assume a one-hop 5/25 fake routing bound. They do not establish live
+// default-routing acceptance. Independent ordinaryRunLive tests retain the unresolved live hold.
+const syntheticRouting = { maxHops: 1, price: [5, 25] as const };
+const fixtureMeter = (stub: CtxFetchStub, options: MeterOptions = {}) =>
+	meter(stub, { ...options, syntheticRouting });
+const runLive = (options: LiveOptions): Promise<LiveOutcome> => runRehearsal(options, fixtureMeter);
 
 const spikeDir = path.resolve(import.meta.dirname, "..");
 const repoRoot = path.resolve(spikeDir, "..", "..");
@@ -189,7 +195,8 @@ async function network<T>(
 }
 
 // What the meter counts for a request that got no answer, from the body the fake received.
-const unanswered = (raw: string): number => promptCost(JSON.parse(raw), Buffer.byteLength(raw));
+const unanswered = (raw: string): number =>
+	worstCase(JSON.parse(raw), Buffer.byteLength(raw), 8_192, syntheticRouting) as number;
 
 let clean: Fingerprint;
 beforeAll(async () => {
@@ -279,6 +286,8 @@ describe("the live session against the fake API", () => {
 			budgetUsd: 1,
 			// 1,200 tokens in at US$4 per million, and 300, 300, 16 and 0 out at US$20.
 			costUsd: 0.03152,
+			accountingVersion: 2,
+			accountedUsd: expect.closeTo(0.03152, 9),
 			pricesAsOf: "2026-10-06",
 			refusalProbe: "allowed",
 			revoked: "no",
@@ -355,7 +364,7 @@ describe("the live session against the fake API", () => {
 					},
 					ms: expect.any(Number),
 					costUsd: 0.0108,
-					worstUsd: expect.closeTo(worstCase(JSON.parse(raw), Buffer.byteLength(raw)), 5),
+					worstUsd: expect.closeTo(unanswered(raw), 5),
 				},
 			],
 			result: {
@@ -435,47 +444,318 @@ describe("the live session against the fake API", () => {
 		);
 	});
 
-	it("names what failed in place of an acceptance line, and still records the session", async () => {
+	it("retains a fallback rejection reservation and refuses the next request without acceptance", async () => {
 		const server = await start((request) =>
 			"fallbacks" in request.body
 				? errorReply(400, "invalid_request_error", "fallbacks: Extra inputs are not permitted")
 				: realistic(request),
 		);
-		const settings = options(server);
-		const outcome = await runLive(settings);
-		// Only the fallbacks call sends fallbacks, so the other lines don't share its 400.
-		expect(outcome).toMatchObject({
-			acceptance: [
-				"parse: ok",
-				"effort: ok",
-				"fallbacks: rejected (400 invalid_request_error)",
-				"max_tokens: detected",
-				"refusal: from the documentation",
-			],
-		});
+		const lines: string[] = [];
+		const settings = options(server, { log: (line) => lines.push(line) });
+		await expect(runLive(settings)).rejects.toThrow("could pass US$1.00");
 		// The API's message reaches the console only; the owner decides what happens next.
-		expect(linesOf(outcome)).toEqual(
+		expect(lines).toEqual(
 			expect.arrayContaining([
 				expect.stringMatching(
 					/^fallbacks: 400 invalid_request_error \(fallbacks: Extra inputs are not permitted\), 1 attempt, /,
 				),
-				expect.stringMatching(/^next: not every acceptance line passed: the owner decides /),
 			]),
 		);
 		expect(readFileSync(settings.file, "utf8")).not.toContain("Extra inputs");
-		expect(read(settings.file).data.calls[0]).toMatchObject({
-			status: 400,
-			errorType: "invalid_request_error",
-			costUsd: 0,
-			attempts: [{ response: { body: { type: "error", errorType: "invalid_request_error" } } }],
+		expect(server.received).toHaveLength(1);
+		expect(read(settings.file).data).toMatchObject({
+			session: {
+				calls: 1,
+				accountedUsd: expect.closeTo(unanswered(server.received[0]?.raw ?? ""), 9),
+			},
+			acceptance: [],
+			stops: [{ stop: "budget", call: "parse-effort" }],
 		});
 	});
 });
 
+describe("ordinary live routing is held", () => {
+	it("refuses the exact ordinary entry before transport and cannot take fixture bounds from the environment", async () => {
+		const server = await start();
+		const settings = options(server, {
+			env: { DRAFTYAK_RECORD_EVIDENCE: "1", DY_SYNTHETIC_ROUTING: "5,25,1" },
+		});
+		await expect(ordinaryRunLive(settings)).rejects.toThrow(
+			"default fallback routing has no established target, hop or price bound",
+		);
+		expect(server.received).toHaveLength(0);
+		expect(existsSync(settings.file)).toBe(false);
+		expect(held(settings.envLive, HASH_NAME)).toBeNull();
+		const entry = readFileSync(path.join(spikeDir, "test/messages.live.test.ts"), "utf8");
+		expect(entry).toContain(
+			"await runLive({ file, openStub: liveStub, signal: ctx.signal, log: console.log })",
+		);
+		expect(entry).not.toContain("runRehearsal");
+	});
+
+	it("refuses unresolved routing before even its beforeSend callback", async () => {
+		const server = await start();
+		let records = 0;
+		const strict = meter(await stubs(server)({ model: DEFAULT_MODEL, effort: DRAFT_EFFORT }), {
+			beforeSend: async () => {
+				records++;
+			},
+		});
+		const client = createClient(strict, { maxRetries: 1 });
+		await expect(runSession(client, strict, plannedCalls(false))).rejects.toThrow(
+			"default fallback routing has no established",
+		);
+		expect(records).toBe(0);
+		expect(strict.used()).toBe(0);
+		expect(server.received).toHaveLength(0);
+	});
+
+	it("refuses old under-reserved records before opening a transport and preserves their bytes", async () => {
+		const server = await start();
+		const settings = options(server);
+		await runLive(settings);
+		const legacy = read(settings.file);
+		delete legacy.data.session.accountingVersion;
+		delete legacy.data.session.accountedUsd;
+		legacy.data.session.costUsd = 0.001;
+		writeFileSync(settings.file, JSON.stringify(legacy));
+		const before = readFileSync(settings.file, "utf8");
+		let opened = 0;
+		await expect(
+			ordinaryRunLive({
+				...settings,
+				openStub: async () => {
+					opened++;
+					throw new Error("must not open");
+				},
+			}),
+		).rejects.toThrow("no durable reservation accounting");
+		expect(opened).toBe(0);
+		expect(readFileSync(settings.file, "utf8")).toBe(before);
+	});
+
+	it.each([
+		{ name: "missing", value: undefined },
+		{ name: "old", value: 1 },
+		{ name: "future", value: 3 },
+		{ name: "null", value: null },
+		{ name: "string", value: "2" },
+		{ name: "array", value: [2] },
+		{ name: "object", value: { version: 2 } },
+		{ name: "boolean", value: true },
+		{ name: "fraction", value: 2.5 },
+	])(
+		"refuses accounting versions independently of valid raw accounting: $name",
+		async ({ value }) => {
+			const server = await start();
+			const settings = options(server);
+			await runLive(settings);
+			const recorded = read(settings.file);
+			expect(recorded.data.session).toMatchObject({
+				accountingVersion: 2,
+				calls: 3,
+				revoked: "no",
+			});
+			expect(recorded.data.session.accountedUsd).toBeGreaterThan(0);
+			expect(recorded.data.revocation).toBeNull();
+			if (value === undefined) delete recorded.data.session.accountingVersion;
+			else recorded.data.session.accountingVersion = value;
+			const before = Buffer.from(JSON.stringify(recorded));
+			writeFileSync(settings.file, before);
+			const sent = server.received.length;
+			let opened = 0;
+			const error = await failure(
+				ordinaryRunLive({
+					...settings,
+					openStub: async (pin) => {
+						opened++;
+						return stubs(server)(pin);
+					},
+				}),
+			);
+			expect(opened).toBe(0);
+			expect(server.received).toHaveLength(sent);
+			expect(readFileSync(settings.file)).toEqual(before);
+			expect(error).toBeInstanceOf(Error);
+			expect((error as Error).message).toContain("no durable reservation accounting");
+		},
+	);
+
+	it("retains raw accounted reservations when a resumed display amount was rounded down", async () => {
+		const server = await start();
+		const settings = options(server);
+		await runLive(settings);
+		const recorded = read(settings.file);
+		recorded.data.session.step = "stopped";
+		recorded.data.session.costUsd = 0.7;
+		recorded.data.session.accountedUsd = 0.7000004;
+		recorded.data.stops = [{ calls: 3, call: "parse-effort", stop: "no answer" }];
+		writeFileSync(settings.file, JSON.stringify(recorded));
+		const sent = server.received.length;
+		await expect(runLive(settings)).rejects.toThrow("could pass US$1.00");
+		expect(server.received).toHaveLength(sent);
+		expect(read(settings.file).data.session.accountedUsd).toBe(0.7000004);
+	});
+
+	it("refuses malformed version2 request counters before opening transport and preserves their bytes", async () => {
+		const server = await start();
+		const settings = options(server);
+		await runLive(settings);
+		const valid = read(settings.file);
+		for (const [calls, checks] of [
+			[3, -1],
+			[3, 0.5],
+			[3, Number.MAX_SAFE_INTEGER + 1],
+			[Number.MAX_SAFE_INTEGER, 1],
+			[3, "nonfinite"],
+			[3, "invalid-container"],
+		]) {
+			const malformed = structuredClone(valid);
+			malformed.data.session.calls = calls;
+			malformed.data.revocation = checks === "invalid-container" ? [] : { checks };
+			const bytes = JSON.stringify(malformed).replace('"checks":"nonfinite"', '"checks":1e309');
+			writeFileSync(settings.file, bytes);
+			let opened = 0;
+			await expect(
+				ordinaryRunLive({
+					...settings,
+					openStub: async () => {
+						opened++;
+						throw new Error("must not open");
+					},
+				}),
+			).rejects.toThrow("isn't an S9b session record");
+			expect(opened).toBe(0);
+			expect(readFileSync(settings.file, "utf8")).toBe(bytes);
+		}
+	});
+
+	it("keeps full reservations for incomplete successful usage and unknown model prices", async () => {
+		for (const body of [
+			message(DEFAULT_MODEL, { usage: { input_tokens: 100 } }),
+			message(DEFAULT_MODEL, {
+				usage: { iterations: [{ model: DEFAULT_MODEL, input_tokens: 100, output_tokens: 1 }, {}] },
+			}),
+			message("claude-unlisted", { usage: { input_tokens: 100, output_tokens: 1 } }),
+		]) {
+			const server = await start(() => ({ status: 200, body }));
+			const strict = meter(await stubs(server)({ model: DEFAULT_MODEL, effort: DRAFT_EFFORT }));
+			const planned = plannedCalls(false)[1];
+			if (!planned) throw new Error("missing plain fixture");
+			await createClient(strict, { maxRetries: 0 })
+				.beta.messages.parse(planned.params, { headers: planned.headers })
+				.catch(() => null);
+			expect(strict.spentUsd()).toBe(strict.attempts[0]?.worstUsd);
+			await server.close();
+			open = undefined;
+		}
+	});
+
+	it.each([
+		{
+			name: "unknown final model",
+			model: "claude-unlisted",
+			serving: DEFAULT_MODEL,
+			type: "message",
+			retain: true,
+		},
+		{
+			name: "inconsistent serving model",
+			model: DEFAULT_MODEL,
+			serving: "claude-opus-4-8",
+			type: "message",
+			retain: true,
+		},
+		{
+			name: "non-serving iteration type",
+			model: DEFAULT_MODEL,
+			serving: DEFAULT_MODEL,
+			type: "advisor",
+			retain: true,
+		},
+		{
+			name: "consistent serving model",
+			model: DEFAULT_MODEL,
+			serving: DEFAULT_MODEL,
+			type: "message",
+			retain: false,
+		},
+	])(
+		"persists ordinary revocation accounting for ambiguous serving attribution: $name",
+		async ({ model, serving, type, retain }) => {
+			const server = await start();
+			const settings = options(server);
+			await runLive(settings);
+			let accounted = read(settings.file).data.session.accountedUsd as number;
+			const pending: number[] = [];
+			const reservations: number[] = [];
+			const body = message(model, {
+				content: [{ type: "text", text: JSON.stringify(draftOutput) }],
+				usage: {
+					input_tokens: 100,
+					output_tokens: 1,
+					iterations: [{ type, model: serving, input_tokens: 100, output_tokens: 1 }],
+				},
+			});
+			server.script = (request) => {
+				if (request.body.model !== CHECK_MODEL) return realistic(request);
+				pending.push(read(settings.file).data.session.accountedUsd);
+				const reservation = worstCase(request.body, Buffer.byteLength(request.raw));
+				if (reservation === undefined) throw new Error("plain revocation reservation missing");
+				reservations.push(reservation);
+				return { status: 200, body };
+			};
+			for (let index = 0; index < 2; index++) {
+				await expect(ordinaryRunLive(settings)).rejects.toThrow("the key still works (200)");
+				const reservation = reservations[index] ?? 0;
+				expect(reservation).toBeGreaterThan(0.00042);
+				expect(pending[index]).toBeCloseTo(accounted + reservation, 9);
+				accounted += retain ? reservation : 0.00042;
+				const recorded = read(settings.file).data;
+				expect(recorded.session.accountedUsd).toBeCloseTo(accounted, 9);
+				expect(recorded.session.costUsd).toBe(Math.round(accounted * 1e6) / 1e6);
+				expect(recorded.session).toMatchObject({ accountingVersion: 2, calls: 3, revoked: "no" });
+				expect(recorded.revocation).toMatchObject({ checks: index + 1, check: "200", deleted: [] });
+				expect(server.received).toHaveLength(4 + index);
+			}
+			expect(costOf(body)).toBe(retain ? undefined : 0.00042);
+			expect(await guard(repoOf(settings.file), AbortSignal.timeout(10_000))).toEqual([]);
+			const recorded = readFileSync(settings.file, "utf8");
+			expect(recorded).not.toContain(key.reveal());
+			expect(recorded).not.toContain(canary);
+			expect(held(settings.envLive, KEY_NAME)).toBe(key.reveal());
+		},
+	);
+});
+
 describe("limits and stops", () => {
+	it("retains non2xx reservations through actual SDK retries and durable resume", async () => {
+		const server = await start((request) =>
+			"fallbacks" in request.body
+				? realistic(request)
+				: {
+						...errorReply(500, "api_error", "synthetic failure"),
+						headers: { "retry-after-ms": "1" },
+					},
+		);
+		const settings = options(server);
+		await expect(runLive(settings)).rejects.toThrow("500 api_error");
+		expect(server.received).toHaveLength(3);
+		const errors = server.received.slice(1);
+		const reserve = errors.reduce((total, request) => total + unanswered(request.raw), 0);
+		const accounted = read(settings.file).data.session.accountedUsd;
+		expect(accounted).toBeGreaterThanOrEqual(reserve);
+		expect(accounted).toBeGreaterThan(0.7);
+		await expect(runLive(settings)).rejects.toThrow("could pass US$1.00");
+		expect(server.received).toHaveLength(3);
+		expect(read(settings.file).data.session.accountedUsd).toBeGreaterThanOrEqual(accounted);
+	});
+
 	it("refuses a 7th request before it is sent", async () => {
 		const server = await start();
-		const metered = meter(await stubs(server)({ model: DEFAULT_MODEL, effort: DRAFT_EFFORT }));
+		const metered = fixtureMeter(
+			await stubs(server)({ model: DEFAULT_MODEL, effort: DRAFT_EFFORT }),
+		);
 		const tiny = plannedCalls(false).find((call) => call.label === "max-tokens");
 		if (!tiny) throw new Error("no max-tokens call");
 		const client = createClient(metered, { maxRetries: 1 });
@@ -493,11 +773,13 @@ describe("limits and stops", () => {
 		const server = await start();
 		const settings = options(server);
 		const seen: unknown[] = [];
+		const reservations: Array<readonly [number, number]> = [];
 		server.script = (request) => {
 			const data = existsSync(settings.file) ? read(settings.file).data : null;
 			const stop = data?.stops.at(-1)?.stop;
 			const hash = held(settings.envLive, HASH_NAME);
 			seen.push(data && { step: data.session.step, calls: data.session.calls, stop, hash });
+			if (data) reservations.push([data.session.accountedUsd, unanswered(request.raw)]);
 			return realistic(request);
 		};
 		await runLive(settings);
@@ -505,6 +787,8 @@ describe("limits and stops", () => {
 		const hash = sha256(key.reveal());
 		const pending = (calls: number) => ({ step: "stopped", calls, stop: "interrupted", hash });
 		expect(seen).toEqual([pending(1), pending(2), pending(3)]);
+		for (const [accounted, reservation] of reservations)
+			expect(accounted).toBeGreaterThanOrEqual(reservation);
 		expect(read(settings.file).data).toMatchObject({
 			session: { step: "session", calls: 3 },
 			stops: [],
@@ -551,53 +835,39 @@ describe("limits and stops", () => {
 		]);
 	});
 
-	it("stops at a call the API doesn't answer, and the next run starts over within what is left", async ({
+	it("retains an early error reservation and refuses a retry that cannot fit", async ({
 		signal,
 	}) => {
-		let busy = true;
-		const server = await start((request) => (busy ? overloaded() : realistic(request)));
-		const settings = options(server);
-		await expect(runLive(settings)).rejects.toThrow(
-			/^fallbacks: the API didn't answer \(529 overloaded_error: Overloaded\): run the same command again later \(2 of 6 requests used, US\$0\.0000 estimated, recorded in .+\)$/,
-		);
-		const stop = {
-			ranAt: expect.any(String),
-			calls: 2,
-			costUsd: 0,
-			call: "fallbacks",
-			stop: "529 overloaded_error",
-		};
-		expect(read(settings.file).data).toMatchObject({
-			session: { step: "stopped", calls: 2, costUsd: 0, revoked: "no" },
-			stops: [stop],
-		});
-		expect(await guard(repoOf(settings.file), signal)).toEqual([]);
-		busy = false;
-		const outcome = await runLive(settings);
-		expect(outcome).toMatchObject({
-			step: "session",
-			acceptance: [...SESSION_ACCEPTANCE, "refusal: from the documentation"],
-		});
-		expect(linesOf(outcome)).toContain(
-			"calls: 5 of 6 (2 in 1 stopped run); estimated US$0.0267 of US$1",
-		);
-		const { data } = read(settings.file);
-		expect(data.session).toMatchObject({ step: "session", calls: 5 });
-		expect(data.stops).toEqual([stop]);
-		expect(server.received).toHaveLength(5);
-	});
-
-	it("goes to the revocation check once stops leave too few requests for a session", async () => {
 		const server = await start((request) =>
 			request.body.model === CHECK_MODEL ? realistic(request) : overloaded(),
 		);
 		const settings = options(server);
-		await expect(runLive(settings)).rejects.toThrow(
-			/\(2 of 6 requests used, US\$0\.0000 estimated, recorded in [^)]+\)$/,
+		await expect(runLive(settings)).rejects.toThrow("could pass US$1.00");
+		const stop = {
+			ranAt: expect.any(String),
+			calls: 1,
+			costUsd: expect.closeTo(unanswered(server.received[0]?.raw ?? ""), 5),
+			call: "fallbacks",
+			stop: "budget",
+		};
+		expect(read(settings.file).data).toMatchObject({
+			session: { step: "stopped", calls: 1, revoked: "no" },
+			stops: [stop],
+		});
+		expect(await guard(repoOf(settings.file), signal)).toEqual([]);
+		expect(server.received).toHaveLength(1);
+		await expect(runLive(settings)).rejects.toThrow("the key still works (404 not_found_error)");
+		expect(server.received).toHaveLength(2);
+		expect(read(settings.file).data.session.accountedUsd).toBeGreaterThan(0.9);
+	});
+
+	it("goes to the revocation check once stops leave too few requests for a session", async () => {
+		const server = await start((request) =>
+			request.body.max_tokens === TINY_MAX_TOKENS ? overloaded() : realistic(request),
 		);
-		// 2 left: the stop says so, and the next run is the revocation check.
+		const settings = options(server);
 		await expect(runLive(settings)).rejects.toThrow(
-			/\(4 of 6 requests used, US\$0\.0000 estimated, recorded in [^)]+\); the session can't go on: revoke the key in the Claude Console, then run the same command again$/,
+			/\(4 of 6 requests used, US\$0\.\d{4} estimated, recorded in [^)]+\); the session can't go on: revoke the key in the Claude Console, then run the same command again$/,
 		);
 		await expect(runLive(settings)).rejects.toThrow("the key still works (404 not_found_error)");
 		expect(server.received.map((request) => request.body.model)).toEqual([
@@ -612,7 +882,9 @@ describe("limits and stops", () => {
 		const revoked = await runLive({ ...settings, openStub: stubs(server, new Secret(fakeKey())) });
 		expect(revoked).toMatchObject({ step: "revocation", acceptance: ["revoked: yes"] });
 		expect(linesOf(revoked)).toEqual([
-			"the recorded session stopped and can't go on: 1 of 6 requests left, US$0.0000 estimated",
+			expect.stringMatching(
+				/^the recorded session stopped and can't go on: 1 of 6 requests left, US\$0\.\d{4} estimated$/,
+			),
 			"revocation check: 401 authentication_error",
 			`deleted from .env.live: ${KEY_NAME}, ${HASH_NAME}`,
 			"revoked: yes",
@@ -623,7 +895,7 @@ describe("limits and stops", () => {
 
 	it("keeps the session when retries leave no request to spare for the probe", async () => {
 		const server = await start((request) =>
-			firstTry(request) ? overloaded() : realistic(request),
+			!("fallbacks" in request.body) && firstTry(request) ? overloaded() : realistic(request),
 		);
 		const env = envLive({ [KEY_NAME]: key.reveal(), [PROBE_FLAG]: "yes" });
 		const settings = options(server, { envLive: env });
@@ -636,7 +908,7 @@ describe("limits and stops", () => {
 			],
 		});
 		expect(linesOf(outcome)).toContain("refusal-probe: not sent (no request left)");
-		expect(server.received).toHaveLength(6);
+		expect(server.received).toHaveLength(5);
 		expect(read(settings.file).data.calls[3]).toMatchObject({
 			label: "refusal-probe",
 			skipped: "no request left",
@@ -663,11 +935,11 @@ describe("limits and stops", () => {
 		});
 	});
 
-	it("retries a request whose answer was lost, counting the lost one at its prompt", async () => {
+	it("retries a lost answer while retaining its full admitted reservation", async () => {
 		const server = await start();
 		const settings = options(server);
 		const outcome = await network(
-			(nth) => (nth === 1 ? "after" : null),
+			(nth) => (nth === 2 ? "after" : null),
 			() => runLive(settings),
 		);
 		expect(outcome).toMatchObject({
@@ -676,41 +948,35 @@ describe("limits and stops", () => {
 		});
 		// The fake had the first request, and the SDK sent it again.
 		expect(server.received).toHaveLength(4);
-		const lost = unanswered(server.received[0]?.raw ?? "");
+		const lost = unanswered(server.received[1]?.raw ?? "");
 		const { data } = read(settings.file);
-		expect(data.calls[0].attempts).toMatchObject([
+		expect(data.calls[1].attempts).toMatchObject([
 			{ response: null, costUsd: expect.closeTo(lost, 5) },
 			{ response: { status: 200 }, costUsd: 0.0108 },
 		]);
 		expect(data.session).toMatchObject({ calls: 4, costUsd: expect.closeTo(0.02672 + lost, 5) });
 	});
 
-	it("stops when the network drops a call twice, and the next run uses what is left of the 6", async () => {
+	it("persists both lost-call reservations and refuses a resume that cannot fit another call", async () => {
 		const server = await start();
 		const settings = options(server);
 		const dropped = (nth: number) => (nth === 2 || nth === 3 ? "before" : null);
 		await expect(network(dropped, () => runLive(settings))).rejects.toThrow(
-			/^parse-effort: no answer \(Connection error\.\): run the same command again later \(3 of 6 requests used, US\$0\.\d{4} estimated, recorded in .+\)$/,
+			/^parse-effort: no answer \(Connection error\.\): preserve the ledger and its full reservations; any later retry requires owner approval and remaining request and reservation capacity \(3 of 6 requests used, US\$0\.\d{4} estimated, recorded in .+\)$/,
 		);
 		expect(server.received).toHaveLength(1);
 		expect(read(settings.file).data).toMatchObject({
 			session: { step: "stopped", calls: 3 },
 			stops: [{ calls: 3, call: "parse-effort", stop: "no answer" }],
 		});
-		const outcome = await runLive(settings);
-		expect(outcome).toMatchObject({
-			step: "session",
-			acceptance: [...SESSION_ACCEPTANCE, "refusal: from the documentation"],
-		});
-		expect(linesOf(outcome)).toEqual(
-			expect.arrayContaining([expect.stringMatching(/^calls: 6 of 6 \(3 in 1 stopped run\); /)]),
-		);
-		expect(server.received).toHaveLength(4);
-		// None is left for the revocation check: it sends nothing and says what to do instead.
-		await expect(runLive(settings)).rejects.toThrow(
-			"the key can't be checked (not run: all 6 calls are used)",
-		);
-		expect(server.received).toHaveLength(4);
+		const reserved = read(settings.file).data.session.accountedUsd;
+		expect(reserved).toBeGreaterThan(0.7);
+		await expect(runLive(settings)).rejects.toThrow("could pass US$1.00");
+		expect(server.received).toHaveLength(1);
+		expect(read(settings.file).data.session.accountedUsd).toBeGreaterThanOrEqual(reserved);
+		expect(read(settings.file).data.session.calls).toBe(3);
+		await expect(runLive(settings)).rejects.toThrow("the key still works (404 not_found_error)");
+		expect(server.received).toHaveLength(2);
 	});
 
 	it("stops at the first call when the API refuses the key, and records the request", async () => {
@@ -721,7 +987,49 @@ describe("limits and stops", () => {
 		);
 		expect(server.received).toHaveLength(1);
 		expect(read(settings.file).data.stops).toMatchObject([
-			{ calls: 1, costUsd: 0, call: "fallbacks", stop: "401 authentication_error" },
+			{
+				calls: 1,
+				costUsd: expect.closeTo(unanswered(server.received[0]?.raw ?? ""), 5),
+				call: "fallbacks",
+				stop: "401 authentication_error",
+			},
+		]);
+	});
+
+	it("retains retryable-error reservations and requires owner approval and both capacities for a later retry", async () => {
+		// The first call settles normally. Two full reservations for this later plain call fit the
+		// unchanged gate; retrying the first fallback call would correctly be refused before send.
+		const server = await start((request) =>
+			"fallbacks" in request.body
+				? realistic(request)
+				: {
+						...errorReply(529, "overloaded_error", "synthetic unavailable"),
+						headers: { "retry-after-ms": "1" },
+					},
+		);
+		const settings = options(server);
+		let failure: unknown;
+		try {
+			await runLive(settings);
+		} catch (error) {
+			failure = error;
+		}
+		expect(failure).toBeInstanceOf(Error);
+		const message = (failure as Error).message;
+		expect(message).toContain(
+			"the API didn't answer (529 overloaded_error: synthetic unavailable)",
+		);
+		expect(message).toContain("preserve the ledger and its full reservations");
+		expect(message).toContain("owner approval and remaining request and reservation capacity");
+		expect(message).not.toMatch(/run the same command|raise.*limit|add credits/);
+		expect(server.received).toHaveLength(3);
+		const data = read(settings.file).data;
+		expect(data.session.calls).toBe(3);
+		const fullReservation = unanswered(server.received[1]?.raw ?? "");
+		expect(data.session.accountedUsd).toBeCloseTo(0.0108 + 2 * fullReservation, 10);
+		expect(data.acceptance).toEqual([]);
+		expect(data.stops).toMatchObject([
+			{ calls: 3, call: "parse-effort", stop: "529 overloaded_error" },
 		]);
 	});
 
@@ -759,7 +1067,7 @@ describe("limits and stops", () => {
 		],
 	];
 	it.each(unpaid)(
-		"stops at %s without a retry or an acceptance line, and the next run goes on",
+		"stops at %s without a retry or acceptance, and keeps the reservation after account recovery",
 		async (_case, reply) => {
 			let paid = false;
 			const server = await start((request) => (paid ? realistic(request) : reply));
@@ -767,7 +1075,7 @@ describe("limits and stops", () => {
 			const status = reply.status ?? 200;
 			await expect(runLive(settings)).rejects.toThrow(
 				new RegExp(
-					`^fallbacks: the account can't pay for it \\(${status} \\w+: .+\\): raise the workspace's spend limit or add credits in the Claude Console, then run the same command again \\(1 of 6 requests used, US\\$0\\.0000 estimated, recorded in .+\\)$`,
+					`^fallbacks: the account can't pay for it \\(${status} \\w+: .+\\): keep the existing request and spend controls; preserve the ledger and its full reservations; any later recovery requires owner approval and remaining request and reservation capacity \\(1 of 6 requests used, US\\$0\\.\\d{4} estimated, recorded in .+\\)$`,
 				),
 			);
 			expect(server.received).toHaveLength(1);
@@ -775,23 +1083,23 @@ describe("limits and stops", () => {
 			const said = String((reply.body.error as { message: string }).message);
 			expect(text).not.toContain(said.slice(0, 20));
 			expect(JSON.parse(text).data).toMatchObject({
-				session: { step: "stopped", calls: 1, costUsd: 0, revoked: "no" },
+				session: {
+					step: "stopped",
+					calls: 1,
+					accountedUsd: expect.closeTo(unanswered(server.received[0]?.raw ?? ""), 9),
+					revoked: "no",
+				},
 				acceptance: [],
-				stops: [{ calls: 1, costUsd: 0, call: "fallbacks", stop: `${status} usage limit` }],
+				stops: [{ calls: 1, call: "fallbacks", stop: `${status} usage limit` }],
 			});
 			paid = true;
-			const outcome = await runLive(settings);
-			expect(outcome).toMatchObject({
-				step: "session",
-				acceptance: [...SESSION_ACCEPTANCE, "refusal: from the documentation"],
-			});
-			expect(linesOf(outcome)).toContain(
-				"calls: 4 of 6 (1 in 1 stopped run); estimated US$0.0267 of US$1",
-			);
+			await expect(runLive(settings)).rejects.toThrow("could pass US$1.00");
+			expect(server.received).toHaveLength(1);
+			expect(read(settings.file).data.session.accountedUsd).toBeGreaterThan(0.8);
 		},
 	);
 
-	it("prices usage per attempt and model, unknown models at the dearest, and bounds the worst case", () => {
+	it("prices known usage per attempt and model, retains unknown-model reservations, and bounds fixtures", () => {
 		expect(costOf(replies.draft(DEFAULT_MODEL).body)).toBeCloseTo(0.0108, 9);
 		// A declined Opus 5.5 attempt (1,200 in) and Opus 4.8 serving it (1,200 in, 280 out).
 		const served = replies.fallback([DEFAULT_MODEL, "claude-opus-4-8"]).body;
@@ -799,12 +1107,15 @@ describe("limits and stops", () => {
 		const unknown = message("claude-unlisted", {
 			usage: { input_tokens: 1_000, output_tokens: 1_000 },
 		});
-		expect(costOf(unknown)).toBeCloseTo(0.06, 9);
+		expect(costOf(unknown)).toBeUndefined();
 		const request = { model: DEFAULT_MODEL, max_tokens: 16_000 };
 		expect(worstCase(request, 1_000)).toBeCloseTo(0.356768, 9);
-		expect(worstCase({ ...request, fallbacks: "default" }, 1_000)).toBeCloseTo(0.882728, 9);
+		expect(worstCase({ ...request, fallbacks: "default" }, 1_000)).toBeUndefined();
+		expect(
+			worstCase({ ...request, fallbacks: "default" }, 1_000, 8_192, syntheticRouting),
+		).toBeCloseTo(0.882728, 9);
 		expect(worstCase("not JSON", 9)).toBe(0);
-		// No answer: the prompt (its bytes plus 8,192 tokens) at the input price.
+		// Prompt-only comparison; an unanswered attempt retains its full reservation.
 		expect(promptCost({ ...request, fallbacks: "default" }, 1_000)).toBeCloseTo(0.036768, 9);
 		expect(promptCost("not JSON", 9)).toBe(0);
 	});
@@ -862,19 +1173,53 @@ describe("before any call", () => {
 });
 
 describe("after the session", () => {
-	it("checks the revoked key with one unbilled call, then deletes the entries and records revoked: yes", async () => {
+	it("retains an unanswered revocation reservation across its next check", async () => {
+		const server = await start();
+		const settings = options(server);
+		await runLive(settings);
+		const before = read(settings.file).data.session.accountedUsd;
+		const pending: number[] = [];
+		server.script = (request) => {
+			if (request.body.model === CHECK_MODEL)
+				pending.push(read(settings.file).data.session.accountedUsd);
+			return realistic(request);
+		};
+		await expect(
+			network(
+				() => "after",
+				() => runLive(settings),
+			),
+		).rejects.toThrow("revocation check got no verdict (no answer)");
+		const held = read(settings.file).data.session.accountedUsd;
+		expect(held).toBeCloseTo(before + unanswered(server.received.at(-1)?.raw ?? ""), 9);
+		expect(pending[0]).toBeCloseTo(held, 9);
+		await expect(runLive(settings)).rejects.toThrow("the key still works (404 not_found_error)");
+		expect(read(settings.file).data.session.accountedUsd).toBeGreaterThanOrEqual(held);
+		expect(read(settings.file).data.revocation.checks).toBe(2);
+		expect(server.received).toHaveLength(5);
+	});
+
+	it("checks the revoked key once, then deletes the entries and records revoked: yes", async () => {
 		const server = await start();
 		const env = envLive({ [KEY_NAME]: key.reveal(), [PROBE_FLAG]: "no" });
 		const settings = options(server, { envLive: env });
 		await runLive(settings);
 		const recorded = read(settings.file);
-		// Not revoked yet: the check is a call, recorded as one, and nothing else changes.
+		// Authentication state is unchanged; the status request retains its reservation.
 		await expect(runLive(settings)).rejects.toThrow(
 			"the key still works (404 not_found_error): revoke it in the Claude Console, then run this again",
 		);
 		const check = { checkedAt: expect.any(String), check: "404 not_found_error", checks: 1 };
 		expect(read(settings.file).data).toEqual({
 			...recorded.data,
+			session: {
+				...recorded.data.session,
+				costUsd: expect.any(Number),
+				accountedUsd: expect.closeTo(
+					recorded.data.session.accountedUsd + unanswered(server.received.at(-1)?.raw ?? ""),
+					9,
+				),
+			},
 			revocation: { ...check, deleted: [] },
 		});
 		expect(loadEnvLive([KEY_NAME, PROBE_FLAG], env)).toBeTruthy();
@@ -885,7 +1230,16 @@ describe("after the session", () => {
 		expect(after.fingerprint).toEqual(recorded.fingerprint);
 		expect(after.data).toEqual({
 			...recorded.data,
-			session: { ...recorded.data.session, revoked: "yes" },
+			session: {
+				...recorded.data.session,
+				revoked: "yes",
+				costUsd: expect.any(Number),
+				accountedUsd: expect.closeTo(
+					recorded.data.session.accountedUsd +
+						server.received.slice(3).reduce((total, request) => total + unanswered(request.raw), 0),
+					9,
+				),
+			},
 			revocation: {
 				checkedAt: expect.any(String),
 				check: "401 authentication_error",
