@@ -3,7 +3,7 @@ import type { Flag } from "@draftyak/protocol/flags";
 import type { SendSnapshotV1 } from "@draftyak/protocol/snapshot";
 import { describe, expectTypeOf, it } from "vitest";
 import type { DeepReadonly, IdsOnlyEvent, Logger } from "../src/common.ts";
-import type { ModuleDatabase } from "../src/database.ts";
+import type { ModuleDatabase, ModuleRow } from "../src/database.ts";
 import { defineExtensionModule, type HubModule } from "../src/module.ts";
 import type { AuditSink } from "../src/points/audit.ts";
 import type { PushNotification } from "../src/points/push.ts";
@@ -55,6 +55,48 @@ function forbiddenCapabilities(registry: ExtensionRegistry<"example">): void {
 	database.select("ext_example_rows", { limit: 10 });
 	// @ts-expect-error Transactions are synchronous and cannot return a Promise.
 	database.transaction(async () => 1);
+}
+
+function synchronousTransactions(
+	database: ModuleDatabase<"example">,
+	query: { limit(count: number): unknown; then(resolve: (rows: number) => void): void },
+): void {
+	// @ts-expect-error An explicit unknown result cannot admit a Promise.
+	database.transaction<unknown>(async () => 1);
+	// @ts-expect-error An explicit void result cannot admit a Promise.
+	database.transaction<void>(async () => {});
+	// @ts-expect-error An explicit object result cannot admit a Promise.
+	database.transaction<object>(async () => ({}));
+	// @ts-expect-error An explicit empty object result cannot admit a Promise.
+	// biome-ignore lint/complexity/noBannedTypes: the empty object type is the case under test.
+	database.transaction<{}>(async () => 1);
+	// @ts-expect-error An explicit any result cannot admit a Promise.
+	// biome-ignore lint/suspicious/noExplicitAny: an explicit any result is the case under test.
+	database.transaction<any>(async () => 1);
+	// @ts-expect-error An explicit Promise-like result is refused.
+	database.transaction<PromiseLike<number>>(() => Promise.resolve(1));
+	// @ts-expect-error A callback typed to return unknown cannot return a Promise.
+	database.transaction((): unknown => Promise.resolve(1));
+	// @ts-expect-error A callback that returns any could return a Promise.
+	database.transaction(() => JSON.parse("1"));
+	// @ts-expect-error A thenable that is not a PromiseLike is refused too.
+	database.transaction(() => query);
+	expectTypeOf(
+		database.transaction((tables) => tables.insert("ext_example_rows", { id: 1 })),
+	).toEqualTypeOf<number>();
+	expectTypeOf(
+		database.transaction((tables) => tables.select("ext_example_rows", { limit: 10 })),
+	).toEqualTypeOf<readonly ModuleRow[]>();
+	expectTypeOf(
+		database.transaction((tables) => {
+			tables.delete("ext_example_rows", { id: 1 });
+		}),
+	).toEqualTypeOf<void>();
+	expectTypeOf(
+		database.transaction<void>((tables) => {
+			tables.delete("ext_example_rows", { id: 1 });
+		}),
+	).toEqualTypeOf<void>();
 }
 
 function immutableModule(module: HubModule): void {
@@ -119,6 +161,7 @@ describe("security surface type checks", () => {
 	});
 	it("keeps forbidden surfaces as compile errors", () => {
 		expectTypeOf(forbiddenCapabilities).toBeFunction();
+		expectTypeOf(synchronousTransactions).toBeFunction();
 		expectTypeOf(forbiddenPolicy).toBeFunction();
 		expectTypeOf(immutableModule).toBeFunction();
 		expectTypeOf(noContent).toBeFunction();

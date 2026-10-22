@@ -16,9 +16,17 @@ export interface ModuleTables<Id extends string> {
 	delete(table: ModuleTable<Id>, equals: ModuleRow): number;
 }
 
+/** Never for thenables and for result types a Promise is assignable to. */
+type SynchronousResult<Result> = Result extends { then(...args: never[]): unknown }
+	? never
+	: Promise<never> extends Result
+		? never
+		: Result extends void
+			? // biome-ignore lint/suspicious/noConfusingVoidType: a bare void return would accept a Promise.
+				undefined | void
+			: Result;
+
 /** Own SQLite3MC file only; no SQL, schema access, native connection or transaction control. */
 export interface ModuleDatabase<Id extends string = string> extends ModuleTables<Id> {
-	transaction<Result>(
-		work: (tables: ModuleTables<Id>) => Result extends PromiseLike<unknown> ? never : Result,
-	): Result;
+	transaction<Result>(work: (tables: ModuleTables<Id>) => SynchronousResult<Result>): Result;
 }
