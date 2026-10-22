@@ -121,3 +121,125 @@ Every feed answer also carries `Set-Cookie` and `X-Upstream-Trace` (and `Date`),
 2. Build a Hono app for the service's routes. Let errors throw (`app.onError((error) => { throw error; })`), so an aborted request rejects as `fetch` would. Match raw paths or queries with `rawTarget(c.req.raw)`, since Hono's own path is decoded.
 3. Return `createFake(app, {host, faults: createFaults({clock}), recorder})`, plus whatever controls the tests need. Take the clock from the options, and reuse the fault script for 429s, 5xx, latency and drops rather than adding routes for them. Check delay and size options when the fake is created (`checkDelay`).
 4. Keep fixtures synthetic, and test the fake in `test/<name>.test.ts`.
+
+## Scripted Responses API
+
+`createResponsesApiFake({clock?, recorder?, steps?})` serves finite synthetic
+JSON, SSE or raw responses for exact `POST /v1/responses` at logical host
+`api.openai.com`. The host is used only for in-memory matching; `listen()` binds
+to numeric loopback. It makes no vendor request and checks no credentials.
+`createResponsesApiDraftFake` additionally checks the closed API-key drafting
+request shape: model, instructions, one user input, strict `draft_output` JSON
+format, `store:false`, `stream:true`, and optional nonempty reasoning effort.
+Schema contents remain opaque fixture data. This is no native verifier,
+pin, consent, header, schema or credential authority, nor a live wire oracle.
+
+`enqueue(...steps)` snapshots wire bytes atomically. JSON serializes the supplied
+value; SSE serializes `{event, data}` entries into exact event/data frames; raw
+scripts retain malformed text and optional content type. Status, headers,
+header delay, chunk bytes and inter-chunk delay are configurable. Both delays
+accept `Infinity` until abort/cancel. These scripts can represent benign,
+obedient, schema-breaking, refusing, slow, authentication, rate and quota cases;
+they make no claim about model safety or vendor availability.
+
+There are at most 1,024 queued steps, 4,096 events per SSE step, 16 MiB of UTF-8
+wire bytes per step, 65,536 emitted chunks per step and 64 MiB of queued response
+payload bytes. Chunks are 1–65,536 bytes. Preparation stops at the first overflow
+without adding any part of the batch or preparing later steps; reentrant enqueue
+during serialization is refused. The aggregate budget includes JSON bytes and
+SSE framing, and is released at app admission, before response delays or reads.
+Caller-owned input, JSON serialization temporaries, headers and active responses
+are separate from that queued-payload budget; it is no global memory ceiling.
+Fixture serialization and property/iterator callbacks execute caller-supplied
+JavaScript; these limits neither sandbox that code nor bound its runtime.
+
+Ordinary `fetch` and `listen` use the shared one-MiB request intake cap before
+redirect cloning and handler admission. Admitted non-null bodies are buffered
+into a replacement Request. Oversized input normally returns `413` and consumes
+no app step. The recorder retains its configured prefix and a hash of received
+bytes including the crossing chunk, marks the refusal, and does not claim the
+unread remainder. Arrival faults are reserved/consumed independently; a fault
+can replace the refusal response. Malformed chunks, aborts and upload errors
+discard incomplete records without consuming a step. A custom recorder needs
+`begin`, called with its original receiver. This cap provides no original-ingress
+chunk-count, duration or global-memory limit.
+
+The exported fake also has `handler(request)` and `recorder` for ordinary generic
+composition. Passing the original Request to `handler` leaves its URL, raw target,
+headers and wire body untouched. Direct calls apply no shared host check, intake
+buffer, recording, Date header or fault script; callers supply those layers with
+the existing shared APIs when needed. The handler's own defensive reads cap one
+MiB and 65,536 yielded app chunks, including empty chunks, cancel malformed or
+excess input and preserve abort/source errors. Buffered shared intake does not
+preserve original upload chunk counts. Strict decoding is fatal UTF-8 with JSON's
+ordinary last-member semantics, not duplicate-member refusal.
+
+`pending()` counts queued steps only. Exact matching requests consume on app
+admission before app reads or response waits, including a strict shape refusal.
+With shared capped intake, a later completed upload can therefore reach the app
+first while recorder entries retain arrival order. Wrong target/method and
+pre-app faults consume no step; after-app faults do. Discarded response streams
+release their own waits. Exhaustion is a fixed `503`; strict shape refusal is a
+fixed content-free `400`. No automatic repair, native admission or billing switch
+is implemented. The public root and `@draftyak/fakes/responses-api` expose the same
+factories.
+
+## The Messages request fake
+
+`createMessagesApiFake({clock?, recorder?, steps?})` supplies finite synthetic
+JSON, SSE or raw response scripts at logical host `api.anthropic.com`. It accepts
+exact `POST /v1/messages` and `POST /v1/messages?beta=true`, in memory or through
+the shared numeric loopback listener. It never calls the logical host or global
+`fetch`. `createMessagesApiDraftFake` adds a closed synthetic draft-request shape;
+the generic factory deliberately accepts malformed request content within its
+intake cap. Both factories expose the shared `fetch` handler and recorder, without
+a separate authentication mode.
+
+Script steps are `{kind: "json", body}`, `{kind: "sse", events: [{event, data}]}`
+or `{kind: "raw", body, contentType?}`. Optional `status`, `headers`, `delayMs`,
+`chunkBytes` and `chunkDelayMs` control their wire output. Delays can be `Infinity`
+to wait for cancellation. The raw script permits deliberately malformed JSON,
+truncated SSE and consumer-oversize output. Scripts can express benign, obedient,
+schema-breaking, refusing, slow, auth, rate and quota responses; these are invented
+fixtures, not live provider behavior or a version/model oracle.
+
+`enqueue(...steps)` validates and detaches an entire batch atomically, stopping
+preparation when a limit is exceeded. `pending()` reports queued steps. There are
+at most 1,024 steps, 4,096 SSE events per step, 16 MiB of UTF-8 response body per
+step, and 64 MiB of response bodies across the queue. Stream chunks are 1–65,536
+bytes, with at most 65,536 chunks per response. Queued body bytes are released as
+soon as a matching request takes a step at app admission, before validation or a
+header delay. These are queued-body budgets; they exclude caller fixtures,
+preparation overhead, headers and active responses, and imply no global or
+concurrent memory bound.
+
+The event cap also counts actual iterator yields before reading excess event
+fields. Reentrant `enqueue` calls from fixture getters or serialization are
+refused before queue mutation; the outer batch stays atomic and preparation
+recovers after a failure.
+
+Both factories opt into shared 1 MiB request intake before redirect or app cloning.
+The shared recorder keeps its configured body prefix and hashes all received
+bytes, including the crossing chunk when intake returns `413 request_body_too_large`.
+It does not hash unread input. Partial failed, malformed-chunk or aborted uploads
+discard their incomplete record. Custom recorders must implement `begin`.
+Arrival faults are reserved independently and may replace the refusal response;
+before-faults can bypass app admission and after-faults can replace its result.
+Discarded scripted response streams are cancelled.
+
+Scripts are FIFO at app admission after successful intake, rather than request
+arrival: a later completed upload or a pre-app latency fault can change admission
+order. Intake refusal, upload failure, wrong routes and wrong methods take no
+step; a matching admitted strict request takes one even if its shape is refused.
+The recorder preserves arrival order. No bound is claimed on original empty
+upload chunks, upload duration or simultaneous uploads; the strict app's chunk
+check is only defensive after shared buffering.
+
+The strict shape requires nonempty `model`, string `system`, one string user
+message, `max_tokens` from 1 to 16,000, and `output_config` with a supported
+synthetic `effort` and `format: {type: "json_schema", schema: <object>}`. It permits
+only optional boolean `stream` and `fallbacks: "default"`. JSON media may specify
+UTF-8 charset; decoding is fatal and duplicate members follow `JSON.parse`'s
+last-member semantics. Schema contents are opaque. This fixture does not verify
+native pins, prompt hashes, credentials, request headers, model availability or
+provider policy, and establishes no native approval or streaming authority.
