@@ -6,6 +6,8 @@ import { planHeavyShards } from "./heavy-shards.ts";
 import { appendSummary, git, runCli, setOutputs, UsageError } from "./lib.ts";
 import { nativeTransportSelection } from "./native-transport.ts";
 
+// reserved and reserved-windows: the opted-in reserved suites and their execution proof, in logs
+// of their own, the second wherever windows runs.
 export const jobNames = [
 	"changes",
 	"cheap",
@@ -14,6 +16,8 @@ export const jobNames = [
 	"heavy",
 	"windows",
 	"macos",
+	"reserved",
+	"reserved-windows",
 ] as const;
 type JobName = (typeof jobNames)[number];
 type JobResult = "success" | "failure" | "cancelled" | "skipped";
@@ -251,6 +255,8 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 		heavy: full && (selection?.ordinaryHeavy.length ?? 0) > 0,
 		windows,
 		macos: native,
+		reserved: !docsOnly,
+		"reserved-windows": windows,
 	};
 	const problems: string[] = [];
 	const entries = jobNames.map((name) => {
@@ -305,7 +311,12 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 			if (source.checkoutSha !== testedSha)
 				problems.push(`${name}: checkout differs from tested SHA`);
 			if (source.nodeVersion !== nodeVersion) problems.push(`${name}: Node differs from the pin`);
-			const platform = name === "macos" ? "darwin" : name === "windows" ? "win32" : "linux";
+			const platform =
+				name === "macos"
+					? "darwin"
+					: name === "windows" || name === "reserved-windows"
+						? "win32"
+						: "linux";
 			if (source.platform !== platform) problems.push(`${name}: unexpected runner platform`);
 			const architecture = name === "macos" ? "arm64" : "x64";
 			if (source.architecture !== architecture)

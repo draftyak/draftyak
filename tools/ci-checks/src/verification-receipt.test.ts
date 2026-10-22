@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { sourceCopies } from "../test/source-copies.ts";
 import { tempRepo } from "../test/temp-repo.ts";
 import { areaNames, classify } from "./changes.ts";
 import { UsageError } from "./lib.ts";
@@ -21,7 +22,14 @@ const treeSha = "d".repeat(40);
 const lockfileSha256 = "e".repeat(64);
 const nodeVersion = "26.12.0";
 type JobName = (typeof jobNames)[number];
-const baseRequiredJobNames = ["changes", "cheap", "full", "windows"] as const;
+const baseRequiredJobNames = [
+	"changes",
+	"cheap",
+	"full",
+	"windows",
+	"reserved",
+	"reserved-windows",
+] as const;
 interface TestJob {
 	result: string;
 	outputs: Record<string, unknown>;
@@ -61,6 +69,8 @@ const needs = (docsOnly = false): Needs => ({
 	heavy: { result: "skipped", outputs: {} },
 	windows: job("win32"),
 	macos: { result: "skipped", outputs: {} },
+	reserved: job(),
+	"reserved-windows": job("win32"),
 });
 const input = (extra: Partial<ReceiptInput> = {}, jobs = needs()): ReceiptInput => ({
 	repository: "example/project",
@@ -99,7 +109,7 @@ const completeSelectedGroups = (jobs: Needs): void => {
 };
 const changeSource = (jobs: Needs, name: JobName, extra: Record<string, unknown>): void => {
 	jobs[name].outputs.source = JSON.stringify({
-		...source({ platform: name === "windows" ? "win32" : "linux" }),
+		...source({ platform: name === "windows" || name === "reserved-windows" ? "win32" : "linux" }),
 		...extra,
 	});
 };
@@ -138,7 +148,17 @@ describe("CI verification receipts", () => {
 			event: "pull_request",
 		});
 		expect(Object.keys(receipt.jobResults)).toEqual(jobNames);
-		expect(jobNames).toEqual(["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"]);
+		expect(jobNames).toEqual([
+			"changes",
+			"cheap",
+			"full",
+			"spikes",
+			"heavy",
+			"windows",
+			"macos",
+			"reserved",
+			"reserved-windows",
+		]);
 		expect(baseRequiredJobNames.every((name) => receipt.jobResults[name].required)).toBe(true);
 		for (const name of ["spikes", "heavy"] as const) {
 			expect(receipt.jobResults[name]).toMatchObject({ required: false, result: "skipped" });
@@ -154,10 +174,16 @@ describe("CI verification receipts", () => {
 			label: "draft PR",
 			extra: { draft: true },
 			docs: false,
-			skipped: ["full", "windows"],
+			skipped: ["full", "windows", "reserved-windows"],
 			coverage: "draft",
 		},
-		{ label: "docs PR", extra: {}, docs: true, skipped: ["full", "windows"], coverage: "docs" },
+		{
+			label: "docs PR",
+			extra: {},
+			docs: true,
+			skipped: ["full", "windows", "reserved", "reserved-windows"],
+			coverage: "docs",
+		},
 		{
 			label: "main push",
 			extra: { event: "push", ref: "refs/heads/main" },
@@ -169,7 +195,7 @@ describe("CI verification receipts", () => {
 			label: "docs main push",
 			extra: { event: "push", ref: "refs/heads/main" },
 			docs: true,
-			skipped: ["full", "windows"],
+			skipped: ["full", "windows", "reserved", "reserved-windows"],
 			coverage: "docs",
 		},
 		{
@@ -183,7 +209,7 @@ describe("CI verification receipts", () => {
 			label: "item dispatch",
 			extra: { event: "workflow_dispatch", ref: "refs/heads/m1", baseSha: null },
 			docs: false,
-			skipped: ["windows"],
+			skipped: ["windows", "reserved-windows"],
 			coverage: "linux",
 		},
 	] as const)("records the actual job scope for $label", ({ extra, docs, skipped, coverage }) => {
@@ -218,6 +244,23 @@ describe("CI verification receipts", () => {
 				expect(receipt.problems).toContain(`${name}: ${result}`);
 				if (name === "changes") expect(receipt.selection).toBeNull();
 			}
+		},
+	);
+
+	// A refusing gate fails the changes job before it writes any output, and every job that
+	// needs it is skipped. The receipt fails, and never reads those skips as a docs-only run.
+	it.each([false, true])(
+		"fails when the changes job fails, as a refusing gate leaves it (draft: %s)",
+		(draft) => {
+			const jobs = needs();
+			jobs.changes = { result: "failure", outputs: {} };
+			for (const name of jobNames.filter((other) => other !== "changes")) skip(jobs, name);
+			const receipt = buildReceipt(input({ draft }, jobs));
+			expect(receipt.passed).toBe(false);
+			expect(receipt.selection).toBeNull();
+			expect(receipt.problems).toEqual(
+				expect.arrayContaining(["changes: failure", "cheap: skipped", "reserved: skipped"]),
+			);
 		},
 	);
 
@@ -257,7 +300,10 @@ describe("CI verification receipts", () => {
 	it("checks Windows platform metadata independently", () => {
 		const jobs = needs();
 		changeSource(jobs, "windows", { platform: "linux" });
-		expect(buildReceipt(input({}, jobs)).problems).toContain("windows: unexpected runner platform");
+		changeSource(jobs, "reserved-windows", { platform: "linux" });
+		const problems = buildReceipt(input({}, jobs)).problems;
+		expect(problems).toContain("windows: unexpected runner platform");
+		expect(problems).toContain("reserved-windows: unexpected runner platform");
 	});
 
 	it.each(["{", "null", "[]", "true", '"metadata"', " ".repeat(64 * 1024 + 1)])(
@@ -764,6 +810,66 @@ describe("selected three-platform native transport receipts", () => {
 	});
 });
 
+// Mutation cases: each part of the required-job rule removed from a copy of verification-receipt.ts
+// lets a ready PR's receipt pass with a required job skipped, so "fails when required %s is
+// skipped, failed or cancelled" fails without it. The copy left as it is fails every such receipt.
+describe("verification receipts without each part of the required-job rule", () => {
+	const copies = sourceCopies([
+		"tools/ci-checks/src/verification-receipt.ts",
+		"tools/ci-checks/src/heavy-shards.ts",
+		"tools/ci-checks/src/lib.ts",
+		"tools/ci-checks/src/native-transport.ts",
+		"tools/verify/lib/spawn.ts",
+		"tools/verify/lib/tools.ts",
+	]);
+	afterAll(() => copies.remove());
+	// For each job named, a ready PR's receipt with only that job skipped, from a copy with `change`.
+	const skipping = async (names: readonly JobName[], change?: readonly [string, string]) => {
+		const copy = await copies.load<typeof import("./verification-receipt.ts")>(change);
+		return names.map((name) => {
+			const jobs = needs();
+			skip(jobs, name);
+			const receipt = copy.buildReceipt(input({}, jobs));
+			return {
+				name,
+				passed: receipt.passed,
+				required: receipt.jobResults[name].required,
+				problems: receipt.problems,
+			};
+		});
+	};
+
+	it("fails a ready PR's receipt with any required job skipped, from a copy left as it is", async () => {
+		expect(await skipping(baseRequiredJobNames)).toEqual(
+			baseRequiredJobNames.map((name) => ({
+				name,
+				passed: false,
+				required: true,
+				problems: [`${name}: skipped`],
+			})),
+		);
+	});
+
+	it("passes a ready PR's receipt with any required job skipped once required jobs needn't succeed", async () => {
+		const change = ['(required[name] && result !== "success") ||', "false ||"] as const;
+		expect(await skipping(baseRequiredJobNames, change)).toEqual(
+			baseRequiredJobNames.map((name) => ({ name, passed: true, required: true, problems: [] })),
+		);
+	});
+
+	it.each([
+		["reserved", "reserved: !docsOnly,", "reserved: false,"],
+		["reserved-windows", '"reserved-windows": windows,', '"reserved-windows": false,'],
+	] as const)(
+		"passes a ready PR's receipt with %s skipped once that job is no longer required",
+		async (name, from, to) => {
+			expect(await skipping([name], [from, to])).toEqual([
+				{ name, passed: true, required: false, problems: [] },
+			]);
+		},
+	);
+});
+
 describe("verification receipt selection metadata", () => {
 	const selected = (outputs: Record<string, unknown>) => {
 		const jobs = needs();
@@ -1224,7 +1330,7 @@ describe("verification receipt CLI", () => {
 			for (const name of baseRequiredJobNames) {
 				jobs[name].outputs.source = JSON.stringify({
 					...captured,
-					platform: name === "windows" ? "win32" : "linux",
+					platform: name === "windows" || name === "reserved-windows" ? "win32" : "linux",
 				});
 			}
 			const runner = path.join(repo.dir, "runner");
