@@ -18,6 +18,33 @@ allow = [
     # unicode-ident, through serde's and thiserror's derive macros.
     "Unicode-3.0",
 ]
+# ISC is approved only for these exact TLS dependencies, never for another crate or version.
+exceptions = [
+    { name = "ring", version = "=0.17.14", allow = ["Apache-2.0", "ISC"] },
+    { name = "untrusted", version = "=0.9.0", allow = ["ISC"] },
+    { name = "rustls-webpki", version = "=0.103.16", allow = ["ISC"] },
+]
+
+[bans]
+multiple-versions = "deny"
+multiple-versions-include-dev = true
+skip = [
+    { name = "getrandom", version = "=0.2.17", reason = "ring 0.17.14 requires getrandom 0.2; rand 0.10.3 requires getrandom 0.4.3" },
+    { name = "windows-sys", version = "=0.52.0", reason = "ring 0.17.14 requires windows-sys 0.52; tokio, mio and socket2 require 0.61.2" },
+]
+deny = [
+    { name = "reqwest" },
+    { name = "native-tls" },
+    { name = "tokio-native-tls" },
+    { name = "openssl" },
+    { name = "openssl-sys" },
+    { name = "aws-lc-rs" },
+    { name = "aws-lc-sys" },
+    { name = "rustls-native-certs" },
+    { name = "webpki-roots" },
+    { name = "rustls-platform-verifier" },
+    { name = "webpki-root-certs" },
+]
 
 # crates.io only.
 [sources]
