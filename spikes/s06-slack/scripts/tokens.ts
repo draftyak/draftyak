@@ -250,7 +250,47 @@ async function revoked(): Promise<number> {
 	return both ? 0 : 1;
 }
 
-function remove(): number {
+async function remove(): Promise<number> {
+	const { user, app } = stored();
+	if (user === null && app === null) {
+		console.log(`neither was set in ${envLivePath()}`);
+		return 0;
+	}
+	if (user === null || app === null || problem("user", user) || problem("app", app)) {
+		console.error("tokens: deletion refused: a complete valid saved token pair is required");
+		return 1;
+	}
+	const statuses: number[] = [];
+	let states: Record<TokenKind, string>;
+	try {
+		states = await askSlack(
+			{ user, app },
+			{
+				fetch: async (input, init) => {
+					const response = await globalThis.fetch(input, init);
+					statuses.push(response.status);
+					return response;
+				},
+			},
+		);
+	} catch {
+		console.error("tokens: deletion refused: both token refusals could not be verified");
+		return 1;
+	}
+	// Deletion needs ordinary API responses; a proxy/status failure is not revocation evidence.
+	if (
+		statuses.length !== 2 ||
+		statuses.some((status) => status !== 200) ||
+		!KINDS.every((kind) => REFUSED.has(states[kind]))
+	) {
+		console.error("tokens: deletion refused: both saved tokens must be refused by the API");
+		return 1;
+	}
+	const current = stored();
+	if (current.user !== user || current.app !== app) {
+		console.error("tokens: deletion refused: the saved token pair changed during verification");
+		return 1;
+	}
 	const removed = deleteEnvLive([TOKEN_NAMES.user, TOKEN_NAMES.app]);
 	console.log(
 		removed.length > 0
@@ -270,7 +310,7 @@ if (import.meta.main) {
 		} else if (command === "revoked" && rest.length === 0) {
 			process.exitCode = await revoked();
 		} else if (command === "delete" && rest.length === 0) {
-			process.exitCode = remove();
+			process.exitCode = await remove();
 		} else {
 			console.error(usage);
 			process.exitCode = 2;
