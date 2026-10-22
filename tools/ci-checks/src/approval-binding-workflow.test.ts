@@ -90,8 +90,8 @@ describe("approval binding workflow selection", () => {
 			expect(job["runs-on"]).toBe("ubuntu-24.04");
 			expect(job["timeout-minutes"]).toBe(30);
 			const actual = steps(job);
-			expect(actual).toHaveLength(6);
-			expect(actual.slice(0, 5)).toEqual([
+			expect(actual).toHaveLength(8);
+			expect(actual.slice(0, 7)).toEqual([
 				{
 					uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
 					with: { "persist-credentials": false, ref },
@@ -100,6 +100,8 @@ describe("approval binding workflow selection", () => {
 					uses: "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
 					with: { "node-version-file": ".node-version" },
 				},
+				{ name: "Reserved paths and execution inputs", run: "node tools/verify/gate.ts" },
+				{ name: "Pre-install script check", run: "node tools/verify/preinstall.ts" },
 				{
 					uses: "pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413",
 					with: { cache: true },
@@ -123,8 +125,8 @@ describe("approval binding workflow selection", () => {
 			const job = bindingJob(value);
 			expect(job.env).toBeUndefined();
 			const actual = steps(job);
-			expect(actual).toHaveLength(6);
-			const check = mapping(actual[5]);
+			expect(actual).toHaveLength(8);
+			const check = mapping(actual[7]);
 			expect(Object.keys(check).sort()).toEqual(["name", "run", "working-directory"]);
 			expect(check["working-directory"]).toBe("apps/hub");
 			if (typeof check.run !== "string") throw new TypeError("Expected the binding command");

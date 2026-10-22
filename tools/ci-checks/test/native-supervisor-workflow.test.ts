@@ -35,6 +35,9 @@ const admissionBindings =
 	"NATIVE_SUPERVISOR_HEAD: ${{ inputs.head }}\n          NATIVE_SUPERVISOR_CONTROL_SHA: ${{ inputs.controlSha }}";
 const executionBindings =
 	"NATIVE_SUPERVISOR_HEAD: ${{ steps.source.outputs.head }}\n          NATIVE_SUPERVISOR_CONTROL_SHA: ${{ inputs.controlSha }}";
+// The source verification and the execution bind the same values, so each change names its step.
+const verification = `- name: Verify the source checkout\n        env:\n          NATIVE_SUPERVISOR_PR: \${{ steps.source.outputs.pr }}\n          `;
+const execution = `id: native\n        env:\n          NATIVE_SUPERVISOR_PR: \${{ steps.source.outputs.pr }}\n          `;
 const mutations: readonly Mutation[] = [
 	["pull request execution", "workflow_dispatch:", "pull_request:"],
 	["reusable execution", "workflow_dispatch:", "workflow_call:"],
@@ -81,8 +84,14 @@ const mutations: readonly Mutation[] = [
 	],
 	[
 		"output-derived execution pin",
-		executionBindings,
-		executionBindings.replace("inputs.controlSha", "steps.source.outputs.controlSha"),
+		execution + executionBindings,
+		execution + executionBindings.replace("inputs.controlSha", "steps.source.outputs.controlSha"),
+	],
+	[
+		"output-derived verification pin",
+		verification + executionBindings,
+		verification +
+			executionBindings.replace("inputs.controlSha", "steps.source.outputs.controlSha"),
 	],
 	[
 		"command before source admission",
@@ -125,8 +134,13 @@ const mutations: readonly Mutation[] = [
 	],
 	[
 		"raw head at execution",
-		"NATIVE_SUPERVISOR_HEAD: ${{ steps.source.outputs.head }}",
-		"NATIVE_SUPERVISOR_HEAD: ${{ inputs.head }}",
+		`${execution}NATIVE_SUPERVISOR_HEAD: \${{ steps.source.outputs.head }}`,
+		`${execution}NATIVE_SUPERVISOR_HEAD: \${{ inputs.head }}`,
+	],
+	[
+		"raw head at verification",
+		`${verification}NATIVE_SUPERVISOR_HEAD: \${{ steps.source.outputs.head }}`,
+		`${verification}NATIVE_SUPERVISOR_HEAD: \${{ inputs.head }}`,
 	],
 	[
 		"direct source install",
@@ -180,26 +194,41 @@ describe("dedicated native supervisor workflow", () => {
 		if (!Array.isArray(job.steps)) throw new Error("Missing workflow steps");
 		const steps = job.steps.map(map);
 		expect(steps.flatMap((step) => (typeof step.run === "string" ? [step.run] : []))).toEqual([
+			"node tools/verify/gate.ts",
 			"node tools/ci-checks/src/native-supervisor.ts admit",
+			"node tools/ci-checks/src/native-supervisor.ts verify-source",
+			"node tools/verify/gate.ts --root source",
+			"node tools/verify/preinstall.ts --root source",
 			"node tools/ci-checks/src/native-supervisor.ts run",
 		]);
+		const at = (run: string): number => steps.findIndex((step) => step.run === run);
+		const gate = at("node tools/verify/gate.ts");
 		const admission = steps.findIndex((step) => step.id === "source");
 		const source = steps.findIndex((step) => map(step.with ?? {}).path === "source");
+		const verified = at("node tools/ci-checks/src/native-supervisor.ts verify-source");
+		const sourceGate = at("node tools/verify/gate.ts --root source");
+		const sourceCheck = at("node tools/verify/preinstall.ts --root source");
+		const pnpm = steps.findIndex((step) => String(step.uses).startsWith("pnpm/action-setup@"));
 		const native = steps.findIndex((step) => step.id === "native");
-		expect(admission).toBeGreaterThan(0);
+		expect(gate).toBeGreaterThan(0);
+		expect(admission).toBeGreaterThan(gate);
 		expect(source).toBeGreaterThan(admission);
-		expect(native).toBeGreaterThan(source);
+		expect(verified).toBe(source + 1);
+		expect([sourceGate, sourceCheck, pnpm]).toEqual([verified + 1, verified + 2, verified + 3]);
+		expect(native).toBeGreaterThan(pnpm);
 		expect(steps[admission]?.env).toEqual({
 			NATIVE_SUPERVISOR_PR: "${{ inputs.pr }}",
 			NATIVE_SUPERVISOR_HEAD: "${{ inputs.head }}",
 			NATIVE_SUPERVISOR_CONTROL_SHA: "${{ inputs.controlSha }}",
 		});
 		expect(steps[native]?.["working-directory"]).toBeUndefined();
-		expect(steps[native]?.env).toEqual({
-			NATIVE_SUPERVISOR_PR: "${{ steps.source.outputs.pr }}",
-			NATIVE_SUPERVISOR_HEAD: "${{ steps.source.outputs.head }}",
-			NATIVE_SUPERVISOR_CONTROL_SHA: "${{ inputs.controlSha }}",
-		});
+		for (const step of [verified, native]) {
+			expect(steps[step]?.env).toEqual({
+				NATIVE_SUPERVISOR_PR: "${{ steps.source.outputs.pr }}",
+				NATIVE_SUPERVISOR_HEAD: "${{ steps.source.outputs.head }}",
+				NATIVE_SUPERVISOR_CONTROL_SHA: "${{ inputs.controlSha }}",
+			});
+		}
 	});
 
 	it("refuses checking the control pin only at the workload step", () => {

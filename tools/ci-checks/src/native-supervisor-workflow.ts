@@ -43,6 +43,8 @@ export function nativeSupervisorWorkflowContract(
 						uses: use("actions/setup-node"),
 						with: { "node-version-file": ".node-version" },
 					},
+					// The gate on the trusted controls, before any of their code runs.
+					{ name: "Reserved paths and execution inputs", run: "node tools/verify/gate.ts" },
 					{
 						name: "Admit the exact owner PR head",
 						id: "source",
@@ -62,6 +64,25 @@ export function nativeSupervisorWorkflowContract(
 							path: "source",
 							"persist-credentials": false,
 						},
+					},
+					// The admitted source, verified, then the trusted gate and pre-install check on it
+					// with --root, before pnpm starts there.
+					{
+						name: "Verify the source checkout",
+						env: {
+							NATIVE_SUPERVISOR_PR: "${{ steps.source.outputs.pr }}",
+							NATIVE_SUPERVISOR_HEAD: "${{ steps.source.outputs.head }}",
+							NATIVE_SUPERVISOR_CONTROL_SHA: "${{ inputs.controlSha }}",
+						},
+						run: "node tools/ci-checks/src/native-supervisor.ts verify-source",
+					},
+					{
+						name: "Reserved paths and execution inputs of the source",
+						run: "node tools/verify/gate.ts --root source",
+					},
+					{
+						name: "Pre-install script check of the source",
+						run: "node tools/verify/preinstall.ts --root source",
 					},
 					{ name: "Set up pinned pnpm", uses: use("pnpm/action-setup") },
 					{

@@ -22,6 +22,8 @@ defaults:
   run:
     shell: bash
 
+# Every job runs the reserved gate on its own checkout before any repository code, and the
+# pre-install check right before pnpm sets up or installs anything.
 jobs:
   changes:
     runs-on: ubuntu-24.04
@@ -47,6 +49,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
       - id: source
         run: node tools/ci-checks/src/verification-receipt.ts capture
       - id: areas
@@ -78,11 +82,16 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
       - id: source
         run: node tools/ci-checks/src/verification-receipt.ts capture
       - name: Docs-only checks, without an install
         if: needs.changes.outputs.docs-only == 'true'
         run: node tools/verify/verify.ts --profile docs
+      - name: Pre-install script check
+        if: needs.changes.outputs.docs-only != 'true'
+        run: node tools/verify/preinstall.ts
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         if: needs.changes.outputs.docs-only != 'true'
         with:
@@ -114,6 +123,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
       - id: source
         run: node tools/ci-checks/src/verification-receipt.ts capture
       - name: Require the selected native platform
@@ -122,6 +133,8 @@ jobs:
           NATIVE_PLATFORM: linux
           NATIVE_ARCHITECTURE: x64
         run: node tools/ci-checks/src/native-transport.ts platform
+      - name: Pre-install script check
+        run: node tools/verify/preinstall.ts
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           cache: true
@@ -172,7 +185,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
       - run: node tools/ci-checks/src/heavy-shards.ts validate
+      - name: Pre-install script check
+        run: node tools/verify/preinstall.ts
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           cache: true
@@ -233,6 +250,13 @@ jobs:
           DRAFTYAK_CACHE_DIR: ${{ runner.temp }}/draftyak-node-scratch
         run: |
           node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "--filter=./$SPIKE"
+      # The step above leaves reserved packages out; this one runs the reserved heavy suites of
+      # the shard's spike opted in, uncached, and proves from their counts that they ran.
+      - name: Opt-in heavy suites in the touched spikes
+        env:
+          DRAFTYAK_RESERVED_TESTS: '1'
+        run: |
+          node tools/verify/reserved-proof.ts --tier heavy "--filter=./$SPIKE"
       - id: receipt
         env:
           SHARD_COMMAND_RESULT: ${{ steps.heavy-test.outcome }}
@@ -260,6 +284,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
       - id: source
         run: node tools/ci-checks/src/verification-receipt.ts capture
       - name: Require every shard to succeed
@@ -295,8 +321,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
       - id: source
         run: node tools/ci-checks/src/verification-receipt.ts capture
+      - name: Pre-install script check
+        run: node tools/verify/preinstall.ts
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           cache: true
@@ -390,6 +420,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
       - id: source
         run: node tools/ci-checks/src/verification-receipt.ts capture
       - name: Require the selected native platform
@@ -407,6 +439,8 @@ jobs:
         if: needs.changes.outputs.native-transport == 'true'
         with:
           workspaces: crates
+      - name: Pre-install script check
+        run: node tools/verify/preinstall.ts
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           cache: true
@@ -455,6 +489,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
       - id: source
         run: node tools/ci-checks/src/verification-receipt.ts capture
       - name: Require the selected native platform
@@ -462,6 +498,8 @@ jobs:
           NATIVE_PLATFORM: darwin
           NATIVE_ARCHITECTURE: arm64
         run: node tools/ci-checks/src/native-transport.ts platform
+      - name: Pre-install script check
+        run: node tools/verify/preinstall.ts
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           cache: true
@@ -480,10 +518,94 @@ jobs:
           NATIVE_ARCHITECTURE: arm64
         run: pnpm exec node tools/ci-checks/src/native-transport.ts run
 
+  # The reserved unit suites run opted in here, in a log of their own, and the proof checks from
+  # their counts that they ran; the inventory check keeps their maintainer's minimums from dropping.
+  reserved:
+    needs: changes
+    outputs:
+      source: ${{ steps.source.outputs.source }}
+    if: needs.changes.outputs.docs-only != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
+      - id: source
+        run: node tools/ci-checks/src/verification-receipt.ts capture
+      - name: Reserved-test inventory against the base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_REPO: ${{ github.repository }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: node tools/ci-checks/src/reserved-inventory.ts
+      - name: Pre-install script check
+        run: node tools/verify/preinstall.ts
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+      - run: pnpm install --frozen-lockfile
+      - name: Opt-in reserved unit suites and their execution proof
+        env:
+          DRAFTYAK_RESERVED_TESTS: '1'
+        run: node tools/verify/reserved-proof.ts --tier unit
+
+  # The same opted-in unit proof on Windows, wherever the windows job runs, since that job's
+  # pnpm verify leaves the reserved suites out.
+  reserved-windows:
+    needs: changes
+    outputs:
+      source: ${{ steps.source.outputs.source }}
+    if: needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && needs.changes.outputs.native-transport == 'true'))
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
+      - id: source
+        run: node tools/ci-checks/src/verification-receipt.ts capture
+      - name: Pre-install script check
+        run: node tools/verify/preinstall.ts
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+      - run: pnpm install --frozen-lockfile
+      # As in the windows job: the kit's capability probes ask the engine for its platform.
+      - name: Initialize the Windows container service
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          Start-Service -Name docker -ErrorAction Stop
+          (Get-Service -Name docker).WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+          $dockerOs = docker version --format '{{.Server.Os}}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($dockerOs -notin @('windows', 'linux')) { throw 'Docker engine did not report its platform' }
+          Write-Output "Docker engine platform: $dockerOs"
+      - name: Opt-in reserved unit suites and their execution proof
+        env:
+          DRAFTYAK_RESERVED_TESTS: '1'
+        run: node tools/verify/reserved-proof.ts --tier unit
+
   required:
     # The merge rule requires `required`, so a draft run's cheap-only result reports under another name.
     name: ${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}
-    needs: [changes, cheap, full, spikes, heavy, windows, macos]
+    needs: [changes, cheap, full, spikes, heavy, windows, macos, reserved, reserved-windows]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -495,6 +617,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      # This job runs even after another job's gate refused the tree, so it checks first too.
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
       - name: Write verification receipt and enforce required jobs
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
