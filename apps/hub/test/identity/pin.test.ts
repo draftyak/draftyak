@@ -1,7 +1,8 @@
-import { argon2, timingSafeEqual } from "node:crypto";
+import { argon2, randomBytes, timingSafeEqual } from "node:crypto";
 import { AuditEvent } from "@draftyak/protocol/entities/audit";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AuditChain } from "../../src/audit/chain.ts";
+import { auditHeadTag } from "../../src/audit/head.ts";
 import { type PinProof, PinService, type PinWallClock } from "../../src/identity/pin.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import { HubStore, type SqlTransaction } from "../../src/store/store.ts";
@@ -12,6 +13,18 @@ let audit: AuditChain;
 let pins: PinService;
 let wall: number;
 const user = newId(1);
+const pinRow = () =>
+	f.store.read((db) =>
+		db.get<{ failures: number; locked_until: number }>(
+			"SELECT failures,locked_until FROM main.approval_pins",
+		),
+	);
+const auditActions = () =>
+	f.store
+		.read((db) => audit.exportVerifiedJsonl(db))
+		.jsonl.trim()
+		.split("\n")
+		.map((line) => JSON.parse(line).action);
 beforeEach(async () => {
 	f = await fixture();
 	wall = 1_800_000_000_000;
@@ -570,6 +583,15 @@ it("refuses an overflowing lock deadline without committing a failure count or d
 		code: "PIN_REQUIRED",
 		message: "PIN_REQUIRED",
 	});
+	const fresh = new PinService(f.store, audit, { wallMs: () => wall });
+	try {
+		await expect(fresh.verify(user, "738294", "approval:n1")).rejects.toMatchObject({
+			code: "PIN_REQUIRED",
+			message: "PIN_REQUIRED",
+		});
+	} finally {
+		fresh.lock();
+	}
 	expect(
 		f.store.read((db) => db.get("SELECT failures,locked_until FROM main.approval_pins")),
 	).toEqual({ failures: 4, locked_until: 0 });
@@ -634,41 +656,221 @@ it("bounds concurrent native KDF work and refuses lock while initialization is p
 });
 
 it("replaces native failures with fixed PIN errors and rolls back unsuccessful audit writes", async () => {
+	const refused = { message: "PIN_REQUIRED", code: "PIN_REQUIRED" };
 	const subkey = f.key.derive("audit");
-	const unusable = new AuditChain(subkey);
+	const destroyed = new AuditChain(subkey);
 	subkey.fill(0);
-	unusable.destroy();
-	const service = new PinService(f.store, unusable, { wallMs: () => wall });
+	destroyed.destroy();
+	const other = randomBytes(32);
+	const wrongKey = new AuditChain(other);
+	other.fill(0);
 	try {
-		await expect(service.verify(user, "999999", "approval:n1")).rejects.toMatchObject({
-			message: "PIN_REQUIRED",
-			code: "PIN_REQUIRED",
-		});
-		expect(
-			f.store.read((db) => db.get<{ failures: number }>("SELECT failures FROM main.approval_pins"))
-				?.failures,
-		).toBe(0);
-		const candidate = newId(9);
-		f.store.write((tx) => tx.run("INSERT INTO main.users VALUES(?,?)", [candidate, wall]));
-		await expect(service.initialize(candidate, "492738")).rejects.toMatchObject({
-			message: "PIN_REQUIRED",
-			code: "PIN_REQUIRED",
-		});
-		expect(
-			f.store.read((db) =>
-				db.get("SELECT user_id FROM main.approval_pins WHERE user_id=?", [candidate]),
-			),
-		).toBeUndefined();
+		for (const unusable of [destroyed, wrongKey]) {
+			const service = new PinService(f.store, unusable, { wallMs: () => wall });
+			try {
+				await expect(service.verify(user, "738294", "approval:n1")).rejects.toMatchObject(refused);
+				await expect(service.verify(user, "999999", "approval:n1")).rejects.toMatchObject(refused);
+				await expect(service.verify(user, "738294", "approval:n1")).rejects.toMatchObject(refused);
+				expect(
+					f.store.read((db) =>
+						db.get<{ failures: number }>("SELECT failures FROM main.approval_pins"),
+					)?.failures,
+				).toBe(0);
+				const candidate = newId(9);
+				f.store.write((tx) => tx.run("INSERT INTO main.users VALUES(?,?)", [candidate, wall]));
+				await expect(service.initialize(candidate, "492738")).rejects.toMatchObject(refused);
+				expect(
+					f.store.read((db) =>
+						db.get("SELECT user_id FROM main.approval_pins WHERE user_id=?", [candidate]),
+					),
+				).toBeUndefined();
+			} finally {
+				service.lock();
+			}
+		}
 	} finally {
-		service.lock();
+		wrongKey.destroy();
 	}
+	for (let count = 0; count < 4; count++)
+		await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
+	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+	await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+	wall += 900_001;
 	const pending = pins.verify(user, "738294", "approval:n1");
 	f.store.close();
-	await expect(pending).rejects.toMatchObject({ message: "PIN_REQUIRED", code: "PIN_REQUIRED" });
+	await expect(pending).rejects.toMatchObject(refused);
+});
+
+it("counts a failure that could not be recorded once recording recovers", async () => {
+	for (let count = 0; count < 4; count++)
+		await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
+	const head = f.store.read((db) =>
+		db.get<{ audit_seq: number; audit_head: string; audit_tag: string }>(
+			"SELECT audit_seq,audit_head,audit_tag FROM main.audit_meta",
+		),
+	);
+	if (!head) throw new Error("Missing test chain head");
+	const key = randomBytes(32);
+	const forged = auditHeadTag(key, head.audit_seq, head.audit_head);
+	key.fill(0);
+	f.store.write((tx) => tx.run("UPDATE main.audit_meta SET audit_tag=?", [forged]));
+	await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_REQUIRED");
+	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_REQUIRED");
+	expect(pinRow()).toEqual({ failures: 4, locked_until: 0 });
+	f.store.write((tx) => tx.run("UPDATE main.audit_meta SET audit_tag=?", [head.audit_tag]));
+	await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+	expect(pinRow()).toEqual({ failures: 5, locked_until: wall + 900_000 });
+	wall += 900_001;
+	const proof = await pins.verify(user, "738294", "approval:n1");
+	f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
+	expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
+	expect(auditActions()).toEqual([
+		"pin.initialized",
+		"pin.failed",
+		"pin.failed",
+		"pin.failed",
+		"pin.failed",
+		"pin.locked",
+		"pin.verified",
+	]);
+});
+
+// Switched on, a temporary trigger leaves a deferred foreign key violation, so COMMIT fails after
+// the write callback has returned.
+const COMMIT_FAULT = `CREATE TEMP TABLE fault_switch(id INTEGER PRIMARY KEY);
+CREATE TEMP TABLE fault_parent(id INTEGER PRIMARY KEY);
+CREATE TEMP TABLE fault_child(id INTEGER REFERENCES fault_parent(id) DEFERRABLE INITIALLY DEFERRED);
+CREATE TEMP TRIGGER fault_pins AFTER UPDATE ON main.approval_pins
+WHEN EXISTS (SELECT 1 FROM fault_switch) BEGIN INSERT INTO fault_child(id) VALUES(1); END;`;
+const commitFault = (on: boolean) =>
+	f.store.write((tx) =>
+		tx.run(on ? "INSERT INTO temp.fault_switch VALUES(1)" : "DELETE FROM temp.fault_switch"),
+	);
+
+it("keeps a failure pending through a failed COMMIT until a committed write records it", async () => {
+	await addShadows(f, COMMIT_FAULT);
+	for (let count = 0; count < 4; count++)
+		await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
+	commitFault(true);
+	let returned = false;
+	expect(() =>
+		f.store.write((tx) => {
+			tx.run("UPDATE main.approval_pins SET failures=failures");
+			returned = true;
+		}),
+	).toThrow("FOREIGN KEY constraint failed");
+	expect(returned).toBe(true);
+	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_REQUIRED");
+	await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_REQUIRED");
+	expect(pinRow()).toEqual({ failures: 4, locked_until: 0 });
+	commitFault(false);
+	await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+	expect(pinRow()).toEqual({ failures: 5, locked_until: wall + 900_000 });
+	wall += 900_001;
+	const proof = await pins.verify(user, "738294", "approval:n1");
+	f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
+	expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
+	expect(auditActions()).toEqual([
+		"pin.initialized",
+		"pin.failed",
+		"pin.failed",
+		"pin.failed",
+		"pin.failed",
+		"pin.locked",
+		"pin.verified",
+	]);
+});
+
+it("records a pending failure below the lock once, in the same write as the next attempt", async () => {
+	await addShadows(f, COMMIT_FAULT);
+	for (let count = 0; count < 2; count++)
+		await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
+	commitFault(true);
+	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_REQUIRED");
+	commitFault(false);
+	const proof = await pins.verify(user, "738294", "approval:n1");
+	f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
+	expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
+	pins.discard(await pins.verify(user, "738294", "approval:n1"));
+	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
+	expect(pinRow()).toEqual({ failures: 1, locked_until: 0 });
+	commitFault(true);
+	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_REQUIRED");
+	commitFault(false);
+	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
+	expect(pinRow()).toEqual({ failures: 3, locked_until: 0 });
+	expect(auditActions()).toEqual([
+		"pin.initialized",
+		"pin.failed",
+		"pin.failed",
+		"pin.failed",
+		"pin.verified",
+		"pin.verified",
+		"pin.failed",
+		"pin.failed",
+		"pin.failed",
+	]);
+});
+
+it("leaves nothing pending when only a correct PIN's write failed", async () => {
+	await addShadows(f, COMMIT_FAULT);
+	for (let count = 0; count < 4; count++)
+		await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
+	commitFault(true);
+	await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_REQUIRED");
+	commitFault(false);
+	const proof = await pins.verify(user, "738294", "approval:n1");
+	f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
+	expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
+	expect(auditActions()).toEqual([
+		"pin.initialized",
+		"pin.failed",
+		"pin.failed",
+		"pin.failed",
+		"pin.failed",
+		"pin.verified",
+	]);
+});
+
+it("keeps the lock set by the fifth of concurrent wrong PINs from two connections", async () => {
+	for (let count = 0; count < 4; count++)
+		await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
+	const otherStore = new HubStore({ filename: f.filename, masterKey: f.key, nativeBinding });
+	const key = f.key.derive("audit");
+	const otherAudit = new AuditChain(key);
+	key.fill(0);
+	const otherPins = new PinService(otherStore, otherAudit, { wallMs: () => wall });
+	try {
+		const outcomes = await Promise.allSettled([
+			pins.verify(user, "999999", "approval:n1"),
+			otherPins.verify(user, "999999", "approval:n1"),
+			pins.verify(user, "999999", "approval:n1"),
+			otherPins.verify(user, "999999", "approval:n1"),
+		]);
+		expect(
+			outcomes.map((outcome) => outcome.status === "rejected" && outcome.reason.message),
+		).toEqual(["PIN_LOCKED", "PIN_LOCKED", "PIN_LOCKED", "PIN_LOCKED"]);
+		expect(pinRow()).toEqual({ failures: 5, locked_until: wall + 900_000 });
+		await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+		await expect(otherPins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+		expect(auditActions()).toEqual([
+			"pin.initialized",
+			"pin.failed",
+			"pin.failed",
+			"pin.failed",
+			"pin.failed",
+			"pin.locked",
+		]);
+	} finally {
+		otherPins.lock();
+		otherAudit.destroy();
+		otherStore.close();
+	}
 });
 
 it("writes complete merged ID-only AuditEvent records for PIN state changes", async () => {
 	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
+	pins.discard(await pins.verify(user, "738294", "approval:n1"));
 	const page = f.store.read((db) => audit.exportVerifiedJsonl(db));
 	const events = page.jsonl
 		.trim()
@@ -680,7 +882,11 @@ it("writes complete merged ID-only AuditEvent records for PIN state changes", as
 			expect(mac).toMatch(/^[0-9a-f]{64}$/);
 			return AuditEvent.parse(event);
 		});
-	expect(events.map((event) => event.action)).toEqual(["pin.initialized", "pin.failed"]);
+	expect(events.map((event) => event.action)).toEqual([
+		"pin.initialized",
+		"pin.failed",
+		"pin.verified",
+	]);
 	for (const event of events) {
 		expect(event.actor).toEqual({ kind: "hub", id: null });
 		expect(event.refs).toEqual({ user });
