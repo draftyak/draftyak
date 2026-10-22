@@ -1,12 +1,18 @@
-import { jsonCopy } from "@draftyak/protocol/host-channel";
+import { HOST_MAX_FRAME_BYTES, jsonCopy } from "@draftyak/protocol/host-channel";
+import { canonicalize } from "@draftyak/protocol/jcs";
 import { isCanonicalToolsList, type ToolEntry, type ToolKind } from "@draftyak/protocol/tool-v1";
 import {
 	type CallToolResult,
+	isJSONRPCErrorResponse,
+	isJSONRPCResultResponse,
 	isSpecType,
 	type ListToolsResult,
 	McpServer,
 	type McpServerFactory,
+	ProtocolErrorCode,
+	SERVER_INFO_META_KEY,
 	type ServerCapabilities,
+	type Transport,
 } from "@modelcontextprotocol/server";
 import { type StdioServerHandle, serveStdio } from "@modelcontextprotocol/server/stdio";
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/server/validators/cf-worker";
@@ -54,6 +60,8 @@ const EXTENSIONS = [
 	"io.github.draftyak/ai-provider",
 	"io.github.draftyak/tool",
 ];
+// The hub reads only structuredContent; a JSON copy in content would double the reply frame.
+const RESULT_TEXT = "Result in structuredContent.";
 
 /** The factory is fresh for each HTTP request; stdio pins its instance for a connection. */
 export function createPluginServer(
@@ -110,17 +118,15 @@ export function createPluginServer(
 		...(entry.account ? { account: entry.account } : {}),
 		...(instance ? { instance } : {}),
 	};
+	const info = { name: entry.name, version: entry.version };
 	return () => {
-		const server = new McpServer(
-			{ name: entry.name, version: entry.version },
-			{
-				capabilities: {
-					tools: { listChanged: false },
-					extensions: extensions as ServerCapabilities["extensions"],
-				},
-				jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
+		const server = new McpServer(info, {
+			capabilities: {
+				tools: { listChanged: false },
+				extensions: extensions as ServerCapabilities["extensions"],
 			},
-		);
+			jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
+		});
 		for (const tool of tools)
 			server.registerTool(
 				tool.name,
@@ -181,10 +187,18 @@ export function createPluginServer(
 						const result = jsonCopy(value);
 						if (!result || typeof result !== "object" || Array.isArray(result))
 							throw new Error("Invalid plugin result");
-						return {
+						const reply: CallToolResult = {
 							structuredContent: result as Record<string, unknown>,
-							content: [{ type: "text", text: JSON.stringify(result) }],
+							content: [{ type: "text", text: RESULT_TEXT }],
 						};
+						// The whole line the 2026-07-28 encoder writes for this reply must fit one frame.
+						const line = canonicalize({
+							jsonrpc: "2.0",
+							id: context.mcpReq.id,
+							result: { ...reply, resultType: "complete", _meta: { [SERVER_INFO_META_KEY]: info } },
+						});
+						if (Buffer.byteLength(line) > HOST_MAX_FRAME_BYTES) throw new PluginError("TRANSIENT");
+						return reply;
 					} catch (error) {
 						return pluginErrorResult(
 							error,
@@ -224,11 +238,42 @@ export function serve(
 	try {
 		return serveStdio(createPluginServer(entry, channel, bootstrap), {
 			legacy: "reject",
-			transport: channel.transport,
+			transport: answered(channel.transport, onerror),
 			onerror,
 		});
 	} catch (error) {
 		if (!host) channel.close();
 		throw error;
 	}
+}
+/** A refused reply is reported and answered once with a small error, so no request waits out its timeout. */
+function answered(wire: Transport, onerror?: (error: Error) => void): Transport {
+	const transport: Transport = {
+		start: () => wire.start(),
+		close: () => wire.close(),
+		async send(message, options) {
+			try {
+				await wire.send(message, options);
+			} catch (error) {
+				if (!isJSONRPCResultResponse(message) && !isJSONRPCErrorResponse(message)) throw error;
+				try {
+					onerror?.(error instanceof Error ? error : new Error(String(error)));
+				} catch {
+					/* Reporting cannot leave the request unanswered. */
+				}
+				await wire.send(
+					{
+						jsonrpc: "2.0",
+						id: message.id,
+						error: { code: ProtocolErrorCode.InternalError, message: "Internal error" },
+					},
+					options,
+				);
+			}
+		},
+	};
+	wire.onmessage = (message, extra) => transport.onmessage?.(message, extra);
+	wire.onerror = (error) => transport.onerror?.(error);
+	wire.onclose = () => transport.onclose?.();
+	return transport;
 }
