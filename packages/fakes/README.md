@@ -115,12 +115,159 @@ Message objects are `{id, conversationId, author, text, createdAt}`, with `creat
 
 Every feed answer also carries `Set-Cookie` and `X-Upstream-Trace` (and `Date`), headers outside the `tool-*` allowlist (`Content-Type`, `ETag`, `Last-Modified`, `Content-Length`) that the broker must strip. Other methods find no route and get `404`.
 
+## The Gmail fake
+
+`createGmailFake({accessGrant, clock?, recorder?, messages?, readBudget?, sendBudget?})`
+returns the shared `Fake` interface with Gmail fixture controls. Import it from
+`@draftyak/fakes/gmail` or the package root. `GMAIL_HOST` is the logical host
+`gmail.googleapis.com`, so an injected fetch can receive the exact approved
+provider URL. This fixture makes no outbound request; its optional listener is
+still loopback-only. Message addresses and content must remain synthetic.
+
+`accessGrant(token)` supplies `{scopes, expiresAt}` or `undefined` for a synthetic
+bearer. It can bind the Google OAuth fake's `accessGrant` without importing that
+fake or any production credential service. The expiry uses UTC milliseconds.
+Missing/expired grants return 401, and insufficient scopes return 403. Read-only
+can read raw mail but cannot mutate or send. Metadata-only grants cannot retrieve
+bodies or search. These fixtures do not authenticate or approve a real account.
+
+Seeds are `{id, threadId?, raw: Uint8Array, labelIds?, internalDate?}`. The fake
+copies raw bytes and returned state. `addMessage`, `deleteMessage` and `setLabels`
+record history; `historyId` exposes the current checkpoint and
+`expireHistory(before)` makes older checkpoints return 404 for rescan tests.
+`message(id)` returns a detached stored message. `queueSend(...steps)` accepts
+`{kind: "accept", date?, messageId?}` or
+`{kind: "mail-rate-limit" | "concurrent-rate-limit", retryAfterSeconds}`. A
+queued header rewrite models a possible provider outcome rather than an S8
+finding. A rate step returns 429 immediately with the complete Retry-After;
+tests advance their clock rather than waiting hours. The shared fault
+`{kind: "drop", after: true}` models an accepted send with a lost reply.
+
+Supported routes under `/gmail/v1/users/me` are profile, paginated messages and
+threads, message/thread projections, history, label modification/batch modification,
+and JSON `messages/send`. The approved
+`/upload/gmail/v1/users/me/messages/send?uploadType=multipart` route accepts a
+bounded multipart/related metadata part plus exact message/rfc822 bytes. Raw
+read-back preserves those bytes unless the fixture explicitly scripts a header
+rewrite. Metadata projections contain headers without body data. The `full`
+projection is a basic top-level header/body fixture, not a general MIME parser;
+use raw mail with the real content parser for MIME integration.
+
+Only the documented search subset is implemented; unsupported queries and wire
+fields fail rather than fabricate a match. A Gmail-UI scheduled seed carries
+`SCHEDULED`/`DRAFT`, not `SENT`; it can be read without establishing that a send
+happened. Native consumers must still enforce their own scheduled-mail exclusion,
+complete bounded scans, attempt identity, body/thread checks and uncertainty rules.
+
+Thread joins in this fixture require an exact Subject match plus References and
+In-Reply-To identifying a stored parent in the requested thread. A mismatch is a
+fixture refusal, not a prediction of how Gmail would assign a thread. Search
+supports AND combinations of `in:sent`, `in:inbox`, `in:scheduled`, `is:unread`,
+`after:<epoch-seconds>` and `rfc822msgid:<id>` only. Page tokens retain a bounded
+snapshot for 60 seconds and bind the bearer, route and filter set; changing those
+inputs refuses the token. Retrying a non-final token returns the same continuation
+without reserving another cursor. Expiring or evicting history advances its floor.
+
+Optional budgets are `{units, windowMs}`: one unit per admitted request, in
+independent send and non-send fixed windows. They are synthetic counters rather
+than Google's quota weights. Moving the fixture clock backward clears budget
+and page state. Storage is capped at 1,024 messages and 64 MiB of raw bytes,
+with at most 36,700,160 raw bytes per message, 2,048 retained history records,
+128 page tokens/4 MiB of retained page data, and 1,024 queued send steps.
+Shared intake caps request bodies at 50 MiB before application or redirect
+cloning. Oversize requests normally return the shared `413 request_body_too_large`
+response and are cancelled; a scripted fault retains its arrival-order response.
+The recorder retains its configured prefix and hashes received bytes, including
+the offending chunk, with a refusal marker rather than claiming to read the
+unreceived remainder. Custom recorders must implement the shared `begin` writer.
+App-side request and JSON response parsing retains its 50 MiB cap. The app reader
+also limits its forwarded body to 65,536 yielded chunks; shared intake buffers
+and replaces the body, so this is not a limit on original ingress chunk count.
+These are no global memory, concurrency or stream-duration bounds. Native
+transport limits remain separate.
+
+The independent test oracle reads the vendored Gmail discovery document
+(revision `20261012`, SHA-256
+`1eefc40da41cc5d19736d26b16f7f276a0300307c36b9abe33dc6c3ab12f414b`)
+and checks supported request and successful response shapes. Required fields
+follow that document; the fixture separately requires `startHistoryId` for history
+requests. Product modules import no spike code. Discovery conformance does not
+establish live Gmail behavior. Actual approval, broker scope/identity injection,
+exact MIME rendering, durable apply/outbox state and S8/ADR 0010 cases remain
+native/owner integration.
+
 ## Adding a fake
 
 1. Put the public part in `src/<name>.ts`, which `@draftyak/fakes/<name>` then exports, and anything larger in `src/<name>/`.
 2. Build a Hono app for the service's routes. Let errors throw (`app.onError((error) => { throw error; })`), so an aborted request rejects as `fetch` would. Match raw paths or queries with `rawTarget(c.req.raw)`, since Hono's own path is decoded.
 3. Return `createFake(app, {host, faults: createFaults({clock}), recorder})`, plus whatever controls the tests need. Take the clock from the options, and reuse the fault script for 429s, 5xx, latency and drops rather than adding routes for them. Check delay and size options when the fake is created (`checkDelay`).
 4. Keep fixtures synthetic, and test the fake in `test/<name>.test.ts`.
+
+## The Google OAuth fake
+
+`createGoogleOAuthFake({clock?, recorder?, clients?, codeTtlMs?,
+accessTtlSeconds?, refreshTtlSeconds?, rotateRefreshTokens?})` serves the synthetic
+`google-oauth.draftyak.example` host in memory or on the shared loopback listener.
+Import it from `@draftyak/fakes` or `@draftyak/fakes/google-oauth`. Constants
+`GOOGLE_OAUTH_HOST`, `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_REDIRECT_URI`
+provide an invented Desktop registration. No request calls Google or follows an
+outbound callback. Use `redirect: "manual"` to inspect the authorization response.
+
+| Request | Fixture behavior |
+|---|---|
+| `GET /o/oauth2/v2/auth` | Requires a registered client/exact callback, nonempty state/scope, `response_type=code` and a 43-character S256 challenge. Returns a 302 with echoed state and a single-use code, or a queued consent denial. |
+| `POST /token` | Accepts UTF-8 form data. Checks the registered client/secret, exact callback, 43–128-character verifier and S256 digest before code exchange. Refresh checks client binding, expiry, revocation and the configured rotation policy. |
+| `POST /revoke` | Accepts a form `token`. Revokes that client's current authorization, including earlier consents, rotated tokens and pending codes. Other clients remain independent. A fresh consent establishes a fresh authorization. |
+
+`endpoints` exposes the three synthetic URLs. `enqueueConsent(...steps)` accepts
+`{kind: "grant", scopes?}` for normal granular consent, `{kind: "deny"}`, or
+`{kind: "unexpected-grant", scopes}` to deliberately return unrequested grants
+for caller-refusal scenarios. Only that explicit hostile step can overgrant;
+ordinary consent stays within the requested scope set. `email` and `profile`
+have their Google URI aliases in responses; equivalent spellings compare equally
+for granular consent. The fixture can supply complete, missing, empty, companion,
+broad, settings and out-of-mode grants. It makes no decision about the caller's
+full/read-only scope admission.
+
+`enqueueTokenError(...steps)` scripts `invalid_grant`, `invalid_client` or
+`temporarily_unavailable`, optionally restricted to `authorization_code` or
+`refresh_token`. An error consumes no code or refresh token. Wrong code binding
+consumes that authenticated exchange attempt; a valid code exchanges only once,
+including concurrent attempts. Shared before-effect faults bypass the handler;
+after-effect lost replies leave its code consumption or refresh rotation intact.
+
+`accessGrant(accessToken)` returns a new frozen `{clientId, scopes, expiresAt}`
+with a frozen scope list, or `undefined`. `revoke(token)` is the fixture-side
+equivalent of a successful revoke request. Revoke requests are recorded so callers
+can distinguish confirmed/unconfirmed initial-grant cleanup from failed
+reconnect/mode-switch handling that makes no automatic whole-client revoke.
+These are synthetic grant facts and traces; native admission and persistence
+belong to the connection flow.
+
+Callbacks are exact canonical HTTP URLs with numeric `127.0.0.1` or `[::1]`,
+an explicit port and no query/fragment. No wildcard or hostname callback exists.
+There are at most 32 clients and 16 callbacks per client, 256 queued consent
+steps and 256 token errors, 4,096 pending codes and 4,096 token entries. Expired
+entries still count toward those finite budgets; create a fresh instance to reset.
+Scope requests allow at most 16 entries and 2,048 characters, with 256 characters
+per scope. Forms/authorization queries allow 32 unique parameters and 16 KiB;
+duplicate keys and malformed percent-encoded or raw UTF-8 are refused.
+
+The shared `maxRequestBodyBytes: 16384` intake runs before handler admission or
+body cloning. Oversize intake cancels and normally returns a dated 413. Its
+recorder entry is marked `request_body_too_large`; the length/hash cover all
+received bytes through the crossing chunk, not an unread remainder. Retention
+uses the recorder's configured prefix. Arrival faults are still reserved and
+consumed and can supply the response instead. Incomplete malformed/aborted
+streams reject and discard their recorder slots. A byte cap provides neither an
+upload deadline nor an original-ingress chunk-count bound. A custom recorder
+must provide `begin` as well as `record` and `takeRequests`.
+
+Default lifetimes are ten minutes for codes and one hour for access tokens;
+refresh tokens have no expiry unless configured. The injected clock determines
+expiry and `Date`. Refresh rotation defaults to true as declared fixture policy,
+not a claim about Google's behavior. The fake proves no native callback-state,
+identity, credential storage, disclosure, cleanup enforcement or live acceptance.
 
 ## The Slack read fake
 
