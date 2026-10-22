@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PINNED_IMAGE } from "./docker.ts";
 import { exec, sleep } from "./exec.ts";
+import { evidenceStatusArgs } from "./provenance.ts";
 import { gitEnv } from "./repo.ts";
 
 export interface MachineLoad {
@@ -24,6 +25,8 @@ export interface Fingerprint {
 }
 
 const round1 = (value: number): number => Math.round(value * 10) / 10;
+
+export { evidenceStatusArgs } from "./provenance.ts";
 
 // Busy share of all cores over `ms` (os.loadavg() is always 0 on Windows).
 export async function sampleCpu(ms = 1000): Promise<number> {
@@ -73,7 +76,7 @@ export async function fingerprint(
 	const git = (...args: string[]) => exec("git", ["-C", cwd, ...args], { env: gitEnv() });
 	const [head, status] = await Promise.all([
 		git("rev-parse", "HEAD").catch(() => null),
-		git("status", "--porcelain", "--untracked-files=no").catch(() => null),
+		git(...evidenceStatusArgs(cwd)).catch(() => null),
 	]);
 	const sha = head?.code === 0 ? head.stdout.trim() : "";
 	return {

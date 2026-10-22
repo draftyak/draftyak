@@ -9,8 +9,15 @@ import {
 	redactHeaders,
 } from "@draftyak/spike-kit";
 import { refusal, TOKEN_NAMES, tokenState } from "../scripts/tokens.ts";
-import { callSlack, type Method, type Params, SlackError } from "../src/api.ts";
-import { Poller } from "../src/poller.ts";
+import {
+	type Clock,
+	callSlack,
+	type Method,
+	type Params,
+	SlackError,
+	systemClock,
+} from "../src/api.ts";
+import { Poller, TIER_PER_MINUTE, TokenBucket } from "../src/poller.ts";
 import { type ChannelType, id, type Json, obj, type SlackEvent, tsKey } from "../src/reduce.ts";
 import { runSocketMode, type SocketState, type StopReason } from "../src/socket-mode.ts";
 
@@ -147,6 +154,8 @@ export interface LiveOptions extends Settings {
 	readonly WebSocket?: typeof WebSocket;
 	readonly allowSocketUrl?: (url: URL) => boolean;
 	readonly signal?: AbortSignal;
+	// Read pacing uses the same clock for its bucket and actual-send audit.
+	readonly readClock?: Clock;
 }
 
 export interface LiveResult {
@@ -319,14 +328,17 @@ const limited = (reply: Reply): boolean =>
 	reply.record.status === 429 || reply.error?.kind === "rate_limited";
 const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
-class Calls {
+export class Calls {
 	readonly records: CallRecord[] = [];
+	readonly audit: CallRecord[] = [];
 	private readonly base: typeof fetch;
 	private readonly apiBase: string | undefined;
 	private readonly signal: AbortSignal | undefined;
 	private readonly since: () => number;
 	private readonly hash: (value: string) => string;
 	private readonly seen: (seen: Seen) => void;
+	private readonly clock: Clock;
+	private readonly reads: TokenBucket;
 
 	constructor(context: {
 		readonly base: typeof fetch;
@@ -335,6 +347,7 @@ class Calls {
 		readonly since: () => number;
 		readonly hash: (value: string) => string;
 		readonly seen: (seen: Seen) => void;
+		readonly clock?: Clock;
 	}) {
 		this.base = context.base;
 		this.apiBase = context.apiBase;
@@ -342,6 +355,8 @@ class Calls {
 		this.since = context.since;
 		this.hash = context.hash;
 		this.seen = context.seen;
+		this.clock = context.clock ?? systemClock;
+		this.reads = new TokenBucket(TIER_PER_MINUTE[3], () => this.clock.now());
 	}
 
 	// One callSlack call; a SlackError becomes the reply's error. `keep` false leaves it out of the
@@ -353,6 +368,13 @@ class Calls {
 		purpose: string,
 		keep = true,
 	): Promise<Reply> {
+		this.signal?.throwIfAborted();
+		if (method === "conversations.history" || method === "conversations.replies") {
+			for (let wait = this.reads.take(); wait > 0; wait = this.reads.take()) {
+				await this.clock.delay(wait, this.signal);
+				this.signal?.throwIfAborted();
+			}
+		}
 		const box: { seen?: Seen } = {};
 		const atMs = this.since();
 		let data: Json | null = null;
@@ -393,6 +415,7 @@ class Calls {
 			headers: box.seen?.headers ?? null,
 			date: box.seen?.date ?? null,
 		};
+		this.audit.push(record);
 		if (keep) this.records.push(record);
 		return { data, error, record };
 	}
@@ -454,7 +477,8 @@ function frameOf(data: unknown, atMs: number): Frame | null {
 }
 
 interface SocketHooks {
-	readonly receive: (data: unknown) => void;
+	readonly receive: (data: unknown, socket: object) => void;
+	readonly close: (code: number, socket: object) => void;
 	// False drops the frame the client sends.
 	readonly send: (data: unknown) => boolean;
 }
@@ -471,7 +495,8 @@ function observed(
 		constructor(url: string | URL, protocols?: string | string[]) {
 			super(url, protocols);
 			sockets.add(this);
-			this.addEventListener("message", (event) => hooks.receive(event.data));
+			this.addEventListener("message", (event) => hooks.receive(event.data, this));
+			this.addEventListener("close", (event) => hooks.close(event.code, this));
 		}
 
 		send(data: Parameters<WebSocket["send"]>[0]): void {
@@ -591,7 +616,17 @@ class LiveRun {
 	private readonly sockets = new WeakSet<object>();
 	private readonly arrivals: Arrival[] = [];
 	private readonly frames: Frame[] = [];
-	private readonly states: { readonly atMs: number; readonly state: SocketState }[] = [];
+	private readonly states: {
+		readonly atMs: number;
+		readonly state: SocketState;
+		readonly plannedOverlap: boolean;
+	}[] = [];
+	private readonly readySockets = new Set<object>();
+	private readonly refreshingSockets = new Set<object>();
+	private readonly drainingSockets = new Set<object>();
+	private closeOverlap = false;
+	private eventsBounds: { from: number; until: number; fromMs: number; untilMs: number } | null =
+		null;
 	private readonly pings: number[] = [];
 	private readonly opens: Seen[] = [];
 	private readonly dates: DateNote[] = [];
@@ -625,13 +660,16 @@ class LiveRun {
 
 	constructor(options: LiveOptions) {
 		this.options = options;
+		const clock = options.readClock ?? systemClock;
+		const readStarted = clock.now() - this.since();
 		this.calls = new Calls({
 			base: options.fetch ?? globalThis.fetch,
 			apiBase: options.apiBase,
 			signal: options.signal,
-			since: () => this.since(),
+			since: () => clock.now() - readStarted,
 			hash: (value) => this.hash(value),
 			seen: (seen) => this.noteSeen(seen),
+			clock,
 		});
 	}
 
@@ -712,13 +750,30 @@ class LiveRun {
 				this.noteSeen(seen);
 			}),
 			WebSocket: observed(options.WebSocket ?? globalThis.WebSocket, this.sockets, {
-				receive: (data) => this.frame(data),
+				receive: (data, socket) => this.frame(data, socket),
+				close: (code, socket) => {
+					this.closeOverlap =
+						code === 1000 &&
+						this.refreshingSockets.has(socket) &&
+						[...this.readySockets].some(
+							(other) => other !== socket && !this.drainingSockets.has(other),
+						);
+					this.readySockets.delete(socket);
+					this.refreshingSockets.delete(socket);
+					this.drainingSockets.delete(socket);
+				},
 				send: (data) => this.ack(data),
 			}),
 			signal: this.controller.signal,
 			onEvent: (event) => this.arrive(event),
 			onState: (state) => {
-				this.states.push({ atMs: this.since(), state });
+				this.states.push({
+					atMs: this.since(),
+					state,
+					plannedOverlap: state.kind === "closed" && this.closeOverlap,
+				});
+				this.closeOverlap = false;
+				this.say(`socket: ${stateName(state)}`);
 				if (state.kind === "ready") this.readyAt ??= Date.now();
 				if (state.kind === "stopped") this.stopped = state.reason;
 				this.waiter.notify();
@@ -741,10 +796,18 @@ class LiveRun {
 
 	// Every frame, before the client: the first message from another user becomes the envelope
 	// whose ack is dropped once (DRAFTYAK_S6_DROP_ACK), and its retry is watched for.
-	private frame(data: unknown): void {
+	private frame(data: unknown, socket: object): void {
 		const frame = frameOf(data, this.since());
 		if (frame === null) return;
 		this.frames.push(frame);
+		if (frame.type === "hello") this.readySockets.add(socket);
+		if (frame.type === "disconnect") this.drainingSockets.add(socket);
+		if (
+			frame.type === "disconnect" &&
+			(frame.reason === "warning" || frame.reason === "refresh_requested")
+		) {
+			this.refreshingSockets.add(socket);
+		}
 		const { probe } = this;
 		if (probe.target === null) {
 			if (
@@ -820,8 +883,12 @@ class LiveRun {
 					: `as ${event.change} ${event.subtype ?? "message"}`;
 				this.say(`${EVENT_TYPES[event.channelType]}: ${RECEIVED} (${after})`);
 			}
-		} else if (event.kind !== "message" && this.revokeFrom !== null) {
-			this.say(`${event.kind}: ${RECEIVED}`);
+		} else if (event.kind !== "message") {
+			this.say(
+				this.revokeFrom === null
+					? `${event.kind} arrived before the uninstall prompt`
+					: `${event.kind}: ${RECEIVED}`,
+			);
 		}
 		this.waiter.notify();
 	}
@@ -835,6 +902,12 @@ class LiveRun {
 
 	private async events(): Promise<void> {
 		const { expect, waits, signal } = this.options;
+		this.eventsBounds = {
+			from: this.states.findIndex(({ state }) => state.kind === "ready"),
+			until: this.states.length,
+			fromMs: (this.readyAt ?? this.started) - this.started,
+			untilMs: this.since(),
+		};
 		const missing = (): ChannelType[] => expect.filter((type) => !this.announced.has(type));
 		const asks = expect.map((type) => ASKS[type]).join(", ");
 		this.say(
@@ -870,11 +943,13 @@ class LiveRun {
 			this.running("the events phase");
 		}
 		const absent = missing();
+		if (absent.length > 0) this.sent = await this.sentCheck(absent);
+		this.eventsBounds.until = this.states.length;
+		this.eventsBounds.untilMs = this.since();
 		if (absent.length === 0) {
 			this.say("every expected message type arrived");
 			return;
 		}
-		this.sent = await this.sentCheck(absent);
 		const why = absent.map((type) => `${EVENT_TYPES[type]} ${this.missingVerdict(type)}`);
 		this.say(`stopped waiting after ${minutes(waits.eventsMs)}: ${why.join("; ")}`);
 	}
@@ -895,11 +970,76 @@ class LiveRun {
 		return [...codes, ...(note.capped ? ["more than the run reads"] : [])].join(", ");
 	}
 
+	// Full state history in the events window, never the capped serialized examples. A normal
+	// close is exempt only when the observer saw this socket's planned refresh and another
+	// socket's hello before it closed; a nearby ready state alone proves no overlap.
+	private continuity(): {
+		confirmed: boolean;
+		gaps: number;
+		firstGapAtMs: number | null;
+		plannedRefreshOverlaps: number;
+		fromMs: number | null;
+		untilMs: number | null;
+	} {
+		const bounds = this.eventsBounds;
+		const states = bounds === null ? [] : this.states.slice(Math.max(0, bounds.from), bounds.until);
+		let connected = false;
+		let refreshing = false;
+		let gaps = 0;
+		let firstGapAtMs: number | null = null;
+		let plannedRefreshOverlaps = 0;
+		const gap = (atMs: number): void => {
+			if (connected || gaps === 0) gaps++;
+			connected = false;
+			firstGapAtMs ??= atMs;
+		};
+		if (bounds === null || bounds.from < 0 || states[0]?.state.kind !== "ready") {
+			gap(bounds?.fromMs ?? 0);
+		}
+		for (const { atMs, state, plannedOverlap } of states) {
+			switch (state.kind) {
+				case "ready":
+					if (state.connections > 0) connected = true;
+					else gap(atMs);
+					refreshing = false;
+					break;
+				case "refreshing":
+					refreshing = state.reason === "warning" || state.reason === "refresh_requested";
+					if (!refreshing) gap(atMs);
+					break;
+				case "connecting":
+					if (!refreshing) gap(atMs);
+					break;
+				case "closed":
+					if (plannedOverlap) plannedRefreshOverlaps++;
+					else gap(atMs);
+					break;
+				default:
+					gap(atMs);
+			}
+		}
+		return {
+			confirmed: gaps === 0 && connected,
+			gaps,
+			firstGapAtMs,
+			plannedRefreshOverlaps,
+			fromMs: bounds?.fromMs ?? null,
+			untilMs: bounds?.untilMs ?? null,
+		};
+	}
+
 	// For an expected type that sent no event: a message from others in its history since the
 	// connect means Slack didn't deliver it; none means nobody sent one.
 	private missingVerdict(type: ChannelType): string {
+		const untyped = this.arrivals.filter(
+			({ event }) => this.fromOther(event) && event.channelType === null,
+		).length;
+		if (untyped > 0) return `not confirmed (${untyped} untyped event(s) from others)`;
+		const continuity = this.continuity();
+		if (!continuity.confirmed)
+			return "not confirmed (socket continuity was interrupted or unknown)";
 		const note = this.sent.get(type);
-		if (note === undefined) return `${NOT_DELIVERED} (history not checked)`;
+		if (note === undefined) return "not confirmed (history not checked)";
 		if (note.fromOthers > 0) return NOT_DELIVERED;
 		if (note.failed.length > 0 || note.capped) {
 			return `not confirmed (no event; history check incomplete: ${this.gaps(note)})`;
@@ -1058,13 +1198,21 @@ class LiveRun {
 	}
 
 	private exemptionVerdict(): string {
-		const reads = this.calls.records.filter(
+		const reads = this.calls.audit.filter(
 			(record) =>
-				(record.method === "conversations.history" || record.method === "conversations.replies") &&
-				(record.status === 429 || record.error === "ratelimited"),
+				record.method === "conversations.history" || record.method === "conversations.replies",
 		);
-		const [first] = reads;
+		const index = reads.findIndex(
+			(record) => record.status === 429 || record.error === "ratelimited",
+		);
+		const first = reads[index];
 		if (first !== undefined) {
+			const recent = reads
+				.slice(0, index + 1)
+				.filter((record) => record.atMs > first.atMs - 60_000);
+			if (recent.length >= TIER_PER_MINUTE[3]) {
+				return `inconclusive (rate limited after ${recent.length} history/replies reads in 60 s)`;
+			}
 			return `does not hold (${first.method} rate limited: HTTP ${first.status ?? "none"}, ${first.error})`;
 		}
 		const { listed, probes, second } = this.exemption;
@@ -1145,8 +1293,7 @@ class LiveRun {
 	}
 
 	private revocations(kind: Revocation): Arrival[] {
-		const from = this.revokeFrom?.arrivals ?? this.arrivals.length;
-		return this.arrivals.slice(from).filter((arrival) => arrival.event.kind === kind);
+		return this.arrivals.filter((arrival) => arrival.event.kind === kind);
 	}
 
 	private async revoke(): Promise<void> {
@@ -1407,6 +1554,9 @@ class LiveRun {
 			states: this.states
 				.slice(0, 100)
 				.map(({ atMs, state }) => ({ atMs, state: stateName(state) })),
+			stateCount: this.states.length,
+			stateExamplesOmitted: Math.max(0, this.states.length - 100),
+			eventsContinuity: this.continuity(),
 			stopped: this.stopped,
 		};
 	}
@@ -1419,7 +1569,10 @@ class LiveRun {
 		return {
 			verdict: RECEIVED,
 			count: this.revocations(kind).length,
-			afterCueMs: first.at - (this.revokeFrom?.at ?? first.at),
+			afterCueMs: this.revokeFrom === null ? null : first.at - this.revokeFrom.at,
+			...(this.revokeFrom === null || this.arrivals.indexOf(first) < this.revokeFrom.arrivals
+				? { beforeCue: true }
+				: {}),
 			eventTimeLagS: lag === null ? null : Math.round(lag * 10) / 10,
 			...(event.kind === "tokens_revoked"
 				? {
@@ -1432,7 +1585,18 @@ class LiveRun {
 	}
 
 	private revocationData(): Readonly<Record<string, unknown>> {
-		if (this.revokeFrom === null) return { uninstall: KEPT, revoked: KEPT };
+		if (this.revokeFrom === null) {
+			return {
+				uninstall: KEPT,
+				revoked: KEPT,
+				...Object.fromEntries(
+					REVOCATIONS.filter((kind) => this.revocations(kind).length > 0).map((kind) => [
+						kind,
+						this.revocationNote(kind),
+					]),
+				),
+			};
+		}
 		const user = stateOf(this.finalUser);
 		const app = stateOf(this.finalApp);
 		const already = refused(this.appAfterUninstall);
@@ -1494,6 +1658,10 @@ class LiveRun {
 			atMs: reply.record.atMs,
 		});
 		const clock = this.clockNote();
+		let sentCheckCalls = 0;
+		const calls = this.calls.records.filter(
+			(record) => record.purpose !== "sent check" || sentCheckCalls++ < 100,
+		);
 		const data = {
 			procedure: {
 				expected: this.options.expect.map((type) => EVENT_TYPES[type]),
@@ -1510,7 +1678,8 @@ class LiveRun {
 			).length,
 			socketMode: this.socketNote(),
 			rateLimits: {
-				calls: this.calls.records.slice(0, 200),
+				calls,
+				omittedSentCheckCalls: Math.max(0, sentCheckCalls - 100),
 				headerValuesReplaced: this.replaced,
 				exemption: {
 					verdict: this.exemptionVerdict(),

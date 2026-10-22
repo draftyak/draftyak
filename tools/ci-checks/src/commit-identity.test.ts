@@ -93,12 +93,12 @@ describe("commit-identity", () => {
 	});
 
 	it.each([
-		["this repository", "draftyak/draftyak", "draftyak/draftyak", false],
-		["this repository in another case", "DraftYak/DraftYak", "draftyak/draftyak", false],
-		["a fork", "someone/draftyak", "draftyak/draftyak", true],
-		["a deleted fork", "", "draftyak/draftyak", true],
-		["a local run without BASE_REPO", undefined, undefined, false],
-	])("treats %s as a fork: %s", (_, headRepo, baseRepo, fork) => {
+		["this repository", false, "draftyak/draftyak", "draftyak/draftyak"],
+		["this repository in another case", false, "DraftYak/DraftYak", "draftyak/draftyak"],
+		["a fork", true, "someone/draftyak", "draftyak/draftyak"],
+		["a deleted fork", true, "", "draftyak/draftyak"],
+		["a local run without BASE_REPO", false, undefined, undefined],
+	])("treats %s as a fork: %s", (_, fork, headRepo, baseRepo) => {
 		expect(isFork(headRepo, baseRepo)).toBe(fork);
 	});
 
@@ -109,6 +109,7 @@ describe("commit-identity", () => {
 	it.each([
 		["m0", "main", true],
 		["m7b", "main", true],
+		["m10", "main", true],
 		["m0", "m1", false],
 		["m0-03c-commit-identity", "main", false],
 		["main", "main", false],
@@ -160,6 +161,7 @@ describe("commit-identity", () => {
 		"Ada Contributor <ada@example.com>",
 	);
 	const contributed = repo.git("rev-parse", "HEAD");
+	repo.write(".mailmap", `${owner} <nick@example.com>\n${owner} <bot@example.com>\n`);
 
 	it("reads base..head from git, merges and both parents included, and names each commit with another email", () => {
 		const commits = identitiesBetween(base, head, repo.dir);
@@ -198,6 +200,12 @@ describe("commit-identity", () => {
 		const failed = run(own);
 		expect(failed.status).toBe(1);
 		expect(failed.stdout).toContain("commit-identity: 4 of 6 commits");
+		expect(failed.stdout).toContain("commits use an email that");
+		const badGate = run({ ...own, HEAD_REF: "m0", BASE_REF: "main" });
+		expect(badGate.status).toBe(1);
+		expect(badGate.stdout).toContain("4 of 6 commits use a committer email");
+		expect(badGate.stdout).toContain("fix: b: committer Nick Savov <nick@example.com>");
+		expect(badGate.stdout).not.toContain("author ");
 		const fork = run({ ...own, HEAD_REPO: "someone/draftyak" });
 		expect(fork.status).toBe(0);
 		expect(fork.stdout).toContain("skipped, the PR comes from someone/draftyak");
