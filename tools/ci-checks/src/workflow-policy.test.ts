@@ -525,6 +525,187 @@ describe("workflow policy", () => {
 		expect(checkWorkflow("x.yml", source, "1.95.0")).toEqual([]);
 	});
 
+	describe("M10 candidate tag filters", () => {
+		const candidateFiles = [".github/workflows/release.yml", ".github/workflows/mobile.yml"];
+		const tags = "  tags: ['m10-rc-*']";
+		const tagged = (extra: string[] = [], steps = checkout): string =>
+			workflow(["push:", tags, ...extra], steps);
+
+		it.each(candidateFiles)(
+			"admits the exact tag filter and existing events/branches in %s",
+			(file) => {
+				for (const on of [
+					["push:", tags],
+					["push:", "  tags:", "    - 'm10-rc-*'"],
+					["push:", "  branches: [main]", tags],
+					["push:", "  branches: ['spikes-run/**']", tags],
+					["push:", "  branches: [main, 'spikes-run/**']", tags],
+					["push:", "  branches: [main]"],
+					["push:", "  branches: ['spikes-run/**']"],
+					[
+						"push:",
+						tags,
+						"workflow_dispatch:",
+						"pull_request:",
+						"schedule:",
+						"  - cron: '0 0 * * 0'",
+					],
+				]) {
+					expect(checkWorkflow(file, workflow(on), toolchain), on.join("\n")).toEqual([]);
+				}
+				expect(checkWorkflow(file, tagged(["  paths: ['apps/**']"]), toolchain)).toEqual([]);
+				expect(checkWorkflow(file, tagged(["  paths-ignore: ['docs/**']"]), toolchain)).toEqual([]);
+			},
+		);
+
+		it.each([
+			"x.yml",
+			".github/workflows/ci.yml",
+			".github/workflows/spikes.yml",
+			".github/workflows/release.yaml",
+			".github/workflows/mobile.yaml",
+			".github/workflows/Release.yml",
+			".github/workflows/Mobile.yml",
+			".github/workflows/release-extra.yml",
+			".github/workflows/subdir/release.yml",
+			"./.github/workflows/release.yml",
+			"release.yml",
+			"mobile.yml",
+		])("refuses the candidate tag pattern in another exact filename: %s", (file) => {
+			for (const extra of [[], ["  branches: [main]"]]) {
+				expect(checkWorkflow(file, tagged(extra), toolchain).join("\n")).toContain(
+					"push may only run",
+				);
+			}
+		});
+
+		it.each(candidateFiles)(
+			"refuses broad, wrong, extra and malformed tag patterns in %s",
+			(file) => {
+				for (const value of [
+					"['*']",
+					"['**']",
+					"['v*']",
+					"['m10-*']",
+					"['m10-rc-**']",
+					"['m10-rc-1']",
+					"['!m10-rc-*']",
+					"['m10-rc-*', 'v*']",
+					"['m10-rc-*', 'm10-rc-*']",
+					"['m10-rc-*', 'm10-rc-1']",
+					"['m10-rc-* ']",
+					`['\${{ inputs.tag }}']`,
+					"[]",
+					"'m10-rc-*'",
+					"null",
+					"true",
+					"42",
+					"[42]",
+					"[null]",
+				]) {
+					for (const branches of [[], ["  branches: [main]"]]) {
+						const source = workflow(["push:", `  tags: ${value}`, ...branches]);
+						expect(checkWorkflow(file, source, toolchain).join("\n"), value).toContain(
+							"push may only run",
+						);
+					}
+				}
+			},
+		);
+
+		it.each(candidateFiles)("retains branch validation beside valid tags in %s", (file) => {
+			for (const value of [
+				"[m10]",
+				"[main, m10]",
+				"['*']",
+				"['main*']",
+				"['refs/heads/main']",
+				"['spikes-run/*']",
+				"[]",
+				"main",
+				"null",
+				"[true]",
+				"[42]",
+			]) {
+				expect(
+					checkWorkflow(file, tagged([`  branches: ${value}`]), toolchain).join("\n"),
+					value,
+				).toContain("push may only run");
+			}
+		});
+
+		it.each(candidateFiles)("refuses a map masquerading as the one-tag list in %s", (file) => {
+			for (const branches of [[], ["  branches: [main]"]]) {
+				const source = workflow([
+					"push:",
+					"  tags:",
+					"    0: 'm10-rc-*'",
+					"    length: 1",
+					...branches,
+				]);
+				expect(checkWorkflow(file, source, toolchain).join("\n")).toContain("push may only run");
+			}
+		});
+
+		it.each(candidateFiles)(
+			"refuses ignored filters, extra filters and unfiltered pushes in %s",
+			(file) => {
+				for (const filter of ["tags-ignore: ['*']", "branches-ignore: [m10]", "unknown: [main]"]) {
+					expect(checkWorkflow(file, tagged([`  ${filter}`]), toolchain).join("\n")).toContain(
+						"push may only run",
+					);
+				}
+				for (const on of [
+					["push:"],
+					["push:", "  paths: ['apps/**']"],
+					["push:", "  paths-ignore: ['docs/**']"],
+					["push:", "  tags-ignore: ['v*']"],
+					["push:", "  branches-ignore: [m10]"],
+				]) {
+					expect(checkWorkflow(file, workflow(on), toolchain).join("\n")).toContain(
+						"push may only run",
+					);
+				}
+				for (const on of ["push", "[push]", "[push, workflow_dispatch]"]) {
+					const source = workflow(["push:"]).replace("on:\n  push:", `on: ${on}`);
+					expect(checkWorkflow(file, source, toolchain).join("\n")).toContain("push may only run");
+				}
+			},
+		);
+
+		it.each(candidateFiles)(
+			"retains security and artifact refusals with permitted tags in %s",
+			(file) => {
+				const source = tagged();
+				const upload = (path: string): string =>
+					tagged([], [`- uses: ${pin("actions/upload-artifact")}`, "  with:", `    path: ${path}`]);
+				for (const [changed, problem] of [
+					[
+						source.replace("permissions:\n  contents: read", "permissions:\n  contents: write"),
+						"exactly `contents: read`",
+					],
+					[
+						source.replace("    runs-on:", "    permissions: write-all\n    runs-on:"),
+						"job permissions may only be",
+					],
+					[source.replace("  DO_NOT_TRACK: '1'\n", ""), "DO_NOT_TRACK"],
+					[tagged(["pull_request_target:"]), "pull_request_target is not allowed"],
+					[tagged(["workflow_run:"]), "workflow_run is not allowed"],
+					[tagged([], ["- uses: actions/checkout@v7"]), "40-hex SHA"],
+					[tagged([], [`- uses: actions/checkout@${sha}`]), "# v7.0.1"],
+					[tagged([], [`- uses: ${pin("actions/checkout")}`]), "persist-credentials"],
+					[tagged([], run("github.event.pull_request.title")), "through env"],
+					[tagged([], run("inputs.name")), "through env"],
+					[upload("app.apk"), "never an installable build"],
+					[upload(`\${{ runner.temp }}/ci-verification.json`), "fixed CI receipt"],
+				]) {
+					expect(checkWorkflow(file, changed ?? "", toolchain).join("\n")).toContain(problem);
+				}
+				expect(checkWorkflow(file, upload("spikes/*/evidence/"), toolchain)).toEqual([]);
+			},
+		);
+	});
+
 	it.each([
 		["write permissions", workflow(pr, checkout, ["contents: write"]), "exactly `contents: read`"],
 		["extra permissions", workflow(pr, checkout, ["contents: read", "id-token: write"]), "exactly"],

@@ -191,15 +191,25 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	if (events.includes("push")) {
 		const push = asMap(asMap(on).push);
 		const branches = asList(push.branches);
+		const hasTags = Object.hasOwn(push, "tags");
+		const m10Tags =
+			(file === ".github/workflows/release.yml" || file === ".github/workflows/mobile.yml") &&
+			Array.isArray(push.tags) &&
+			push.tags.length === 1 &&
+			push.tags[0] === "m10-rc-*";
 		const filters = Object.keys(push).filter(
-			(key) => !["branches", "paths", "paths-ignore"].includes(key),
+			(key) => !["branches", "paths", "paths-ignore", "tags"].includes(key),
 		);
 		if (
 			filters.length > 0 ||
-			branches.length === 0 ||
+			(hasTags && !m10Tags) ||
+			(branches.length === 0 && (Object.hasOwn(push, "branches") || !m10Tags)) ||
 			branches.some((b) => !pushBranches.has(String(b)))
 		) {
-			report(["on", "push"], "push may only run on the branches main or spikes-run/**");
+			report(
+				["on", "push"],
+				"push may only run on the branches main or spikes-run/**, or the single m10-rc-* tag pattern in release.yml or mobile.yml",
+			);
 		}
 	}
 	if (file === ".github/workflows/ci.yml") {
