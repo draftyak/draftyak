@@ -175,8 +175,9 @@ export function hostFetch(host: HostChannel, defaultSignal?: AbortSignal): HostF
 		const { sendTicket, saveAs, stream, body, ...requestInit } = init;
 		const reference = bodyReference(body) ? body : undefined;
 		const url = input instanceof Request ? input.url : input.toString();
-		// Request's URL parser cannot represent the hub's opaque secret references.
-		const secret = url.startsWith("secret://");
+		// Request's URL parser cannot represent the hub's opaque secret references. A Request input
+		// is already parsed and keeps its own method, headers, body and signal.
+		const secret = !(input instanceof Request) && url.startsWith("secret://");
 		const request = new Request(secret ? "https://secret.invalid/" : input, {
 			...requestInit,
 			...(reference ? {} : body === undefined ? {} : { body: body as BodyInit }),
