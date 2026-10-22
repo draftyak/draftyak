@@ -1,7 +1,8 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultExclude } from "vitest/config";
-import { tierFromMode, vitestConfig } from "../../../vitest.shared.ts";
+import { RESERVED_TESTS, reservedGlobs } from "../../../reserved-tests.ts";
+import { PLUGIN_MISSING, tierFiles, tierFromMode, vitestConfig } from "../../../vitest.shared.ts";
 
 function configured(platform: string, ci: string | undefined, mode: string) {
 	const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
@@ -41,13 +42,17 @@ const cases = contexts.flatMap(({ platform, ci, timeouts }) =>
 	modes.map((mode, index) => ({ platform, ci, mode, timeout: timeouts[index] })),
 );
 const tiers = [
-	{ mode: "test", tier: "unit", pattern: "**/*.test.ts", empty: false },
-	{ mode: "heavy", tier: "heavy", pattern: "**/*.heavy.test.ts", empty: true },
-	{ mode: "live", tier: "live", pattern: "**/*.live.test.ts", empty: true },
-	{ mode: "device", tier: "device", pattern: "**/*.device.test.ts", empty: true },
+	{ mode: "test", tier: "unit", pattern: "**/*.test.ts" },
+	{ mode: "heavy", tier: "heavy", pattern: "**/*.heavy.test.ts" },
+	{ mode: "live", tier: "live", pattern: "**/*.live.test.ts" },
+	{ mode: "device", tier: "device", pattern: "**/*.device.test.ts" },
 ];
 
 describe("consumed Vitest configuration", () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
 	it.each(cases)(
 		"bounds timeouts for $platform CI=$ci mode=$mode",
 		({ platform, ci, mode, timeout }) => {
@@ -57,19 +62,27 @@ describe("consumed Vitest configuration", () => {
 		},
 	);
 
+	// The tier's glob and passWithNoTests arrive at run time through draftyak:reserved-tests; the
+	// real Vitest runs in tools/verify/test/reserved-tests.test.ts prove them.
 	it.each(tiers)(
-		"preserves selection and empty-suite rules for $mode",
-		({ mode, tier, pattern, empty }) => {
+		"leaves selection and empty-suite rules to the reserved-tests plugin for $mode",
+		({ mode, tier, pattern }) => {
+			vi.stubEnv(RESERVED_TESTS, undefined);
 			const config = configured("win32", "true", mode);
 			expect(tierFromMode(mode)).toBe(tier);
+			expect(tierFiles[tierFromMode(mode)]).toBe(pattern);
 			expect(config.envDir).toBe(false);
-			expect(config.test?.include).toEqual([pattern]);
-			expect(config.test?.exclude).toEqual(
-				mode === "test"
+			expect(config.plugins?.map((plugin) => (plugin as { name?: string }).name)).toEqual([
+				"draftyak:reserved-tests",
+			]);
+			expect(config.test?.include).toEqual([PLUGIN_MISSING]);
+			expect(config.test?.exclude).toEqual([
+				...(mode === "test"
 					? [...defaultExclude, "**/*.heavy.test.ts", "**/*.live.test.ts", "**/*.device.test.ts"]
-					: defaultExclude,
-			);
-			expect(config.test?.passWithNoTests).toBe(empty);
+					: defaultExclude),
+				...reservedGlobs,
+			]);
+			expect(config.test?.passWithNoTests).toBe(false);
 			expect(config.test?.fsModuleCachePath).toBe(
 				path.join(process.cwd(), "node_modules", ".vitest-cache"),
 			);

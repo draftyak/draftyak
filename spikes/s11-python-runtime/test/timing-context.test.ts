@@ -63,7 +63,11 @@ describe("S11 timing context", () => {
 		expect(tag?.skip ?? false).toBe(!eligible);
 		expect(actual.test?.fileParallelism).toBe(false);
 		const strict = env.DRAFTYAK_STRICT_SKIPS === "1";
-		expect(actual.plugins).toHaveLength(strict ? 1 : 0);
+		// The kit's config keeps the shared reserved-tests plugin first in every run.
+		expect(actual.plugins?.map((plugin) => (plugin as { name?: string }).name)).toEqual([
+			"draftyak:reserved-tests",
+			...(strict ? ["draftyak:strict-skips"] : []),
+		]);
 	});
 
 	it("carries Actions identity through the actual uncached heavy task", () => {

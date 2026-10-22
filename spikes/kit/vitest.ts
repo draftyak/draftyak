@@ -123,18 +123,22 @@ export function spikeVitestConfig(
 	const timeout = timeouts[tier];
 	return {
 		...base,
-		// configureVitest runs before Vitest creates its reporters, so the strict one joins Vitest's
-		// defaults (github-actions in CI) and whatever --reporter names instead of replacing them.
-		plugins: strict
-			? [
-					{
-						name: "draftyak:strict-skips",
-						configureVitest({ vitest }: VitestPluginContext) {
-							vitest.config.reporters.push(strictSkipsReporter(vitest, routed));
+		// base.plugins holds draftyak:reserved-tests; without it no test file is found. The
+		// strict reporter joins through configureVitest, which runs before Vitest creates its
+		// reporters, so it adds to Vitest's defaults (github-actions in CI) and any --reporter.
+		plugins: [
+			...(base.plugins ?? []),
+			...(strict
+				? [
+						{
+							name: "draftyak:strict-skips",
+							configureVitest({ vitest }: VitestPluginContext) {
+								vitest.config.reporters.push(strictSkipsReporter(vitest, routed));
+							},
 						},
-					},
-				]
-			: [],
+					]
+				: []),
+		],
 		test: {
 			...base.test,
 			tags,

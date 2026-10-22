@@ -1,10 +1,15 @@
-// Whether a reserved spike's tests are off. Inactive for now: false for every folder and every
-// environment.
+import { OFF_NOTICE, reservedPath, reservedTestsOn } from "../../reserved-tests.ts";
+
+// Whether a spike's tests are off, which holds for a reserved folder unless
+// DRAFTYAK_RESERVED_TESTS=1. This file imports only the shared helper (node: built-ins), so a fault
+// elsewhere in the kit can't break a reserved spike's default runs: run.ts asks here before anything
+// else of the kit loads, and such a spike's vitest.config.ts returns reservedOffConfig() while
+// reservedSpikeOff(import.meta.dirname) holds, importing the kit's factory only otherwise.
 export function reservedSpikeOff(
-	_dir: string = process.cwd(),
-	_env: NodeJS.ProcessEnv = process.env,
+	dir: string = process.cwd(),
+	env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-	return false;
+	return !reservedTestsOn(env) && reservedPath(dir);
 }
 
 export interface ReservedOffConfig {
@@ -12,11 +17,8 @@ export interface ReservedOffConfig {
 	readonly test: { readonly include: string[]; readonly passWithNoTests: true };
 }
 
-const notice =
-	"tests below this folder are reserved and off by default; DRAFTYAK_RESERVED_TESTS=1 runs them";
-
 // The Vitest config of a spike whose tests are off: no test files, and a run that passes.
 export function reservedOffConfig(): ReservedOffConfig {
-	process.stderr.write(`${notice}\n`);
+	process.stderr.write(`${OFF_NOTICE}\n`);
 	return { envDir: false, test: { include: [], passWithNoTests: true } };
 }
