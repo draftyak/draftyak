@@ -417,8 +417,7 @@
         "pairingCode": {
           "type": "string",
           "maxLength": 1000,
-          "format": "starts_with",
-          "pattern": "^draftyak-pair:v1:.*"
+          "pattern": "^draftyak-pair:v1:"
         }
       },
       "required": [
