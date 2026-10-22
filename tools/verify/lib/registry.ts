@@ -5,13 +5,18 @@ import type { Captured, RunOptions } from "./spawn.ts";
 
 export type StepOutcome =
 	| { readonly status: "passed" }
-	| { readonly status: "failed" | "skipped"; readonly reason: string };
+	| { readonly status: "failed" | "skipped"; readonly reason: string }
+	// A gate profile's reserved step without the maintainer's opted-in run, never a pass.
+	| { readonly status: "incomplete"; readonly reason: string };
 
 // Every spawn goes through these helpers: no shell, no .cmd shims, cwd at the repo root.
 export interface StepContext {
 	readonly root: string;
 	readonly profile: string;
 	readonly env: NodeJS.ProcessEnv;
+	// A gate profile's heavy-tier turbo filters (Profile.heavyFilters), for the steps that run that
+	// tier's suites: its heavy step, and the reserved step. Unset outside the gate profiles.
+	readonly heavyFilters?: readonly string[];
 	run(command: string, args: readonly string[], options?: RunOptions): Promise<number>;
 	capture(command: string, args: readonly string[], options?: RunOptions): Promise<Captured>;
 	node(args: readonly string[], options?: RunOptions): Promise<number>;
@@ -34,6 +39,9 @@ export interface Profile {
 	readonly name: string;
 	readonly description: string;
 	select(steps: readonly Step[]): readonly Step[];
+	// A gate profile (verify:m<N>) runs the heavy tier with these turbo filters (without --filter=),
+	// for the folders that exist in the checkout at `root`.
+	heavyFilters?(root: string): readonly string[];
 }
 
 export function fromExitCode(code: number): StepOutcome {

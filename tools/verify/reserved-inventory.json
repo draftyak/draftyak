@@ -1,0 +1,80 @@
+{
+  "about": "Reserved test execution inventory, kept by the reserved files' maintainer: names and counts only. tools/verify/reserved-proof.ts needs a row for every tracked reserved test file, and each CI or sync run of a row's tier to pass at least minPassed of its tests. Live and device rows run only in owner sessions.",
+  "files": [
+    {
+      "file": "spikes/s07-siwc/test/auth.test.ts",
+      "tier": "unit",
+      "minPassed": 44
+    },
+    {
+      "file": "spikes/s07-siwc/test/broker.test.ts",
+      "tier": "unit",
+      "minPassed": 8
+    },
+    {
+      "file": "spikes/s07-siwc/test/errors.test.ts",
+      "tier": "unit",
+      "minPassed": 27
+    },
+    {
+      "file": "spikes/s07-siwc/test/live-record.test.ts",
+      "tier": "unit",
+      "minPassed": 13
+    },
+    {
+      "file": "spikes/s07-siwc/test/no-codegen.test.ts",
+      "tier": "unit",
+      "minPassed": 1
+    },
+    {
+      "file": "spikes/s07-siwc/test/rehearsal.test.ts",
+      "tier": "unit",
+      "minPassed": 46
+    },
+    {
+      "file": "spikes/s07-siwc/test/responses.test.ts",
+      "tier": "unit",
+      "minPassed": 43
+    },
+    {
+      "file": "spikes/s07-siwc/test/serve.test.ts",
+      "tier": "unit",
+      "minPassed": 1
+    },
+    {
+      "file": "spikes/s07-siwc/test/session.test.ts",
+      "tier": "unit",
+      "minPassed": 19
+    },
+    {
+      "file": "spikes/s07-siwc/test/stream.test.ts",
+      "tier": "unit",
+      "minPassed": 17
+    },
+    {
+      "file": "spikes/s07-siwc/test/transfer.test.ts",
+      "tier": "unit",
+      "minPassed": 2
+    },
+    {
+      "file": "spikes/s07-siwc/test/verify.test.ts",
+      "tier": "unit",
+      "minPassed": 32
+    },
+    {
+      "file": "spikes/s07-siwc/test/port.heavy.test.ts",
+      "tier": "heavy",
+      "minPassed": 3
+    },
+    {
+      "file": "spikes/s07-siwc/test/rehearsal.heavy.test.ts",
+      "tier": "heavy",
+      "minPassed": 1
+    },
+    {
+      "file": "spikes/s07-siwc/test/siwc.live.test.ts",
+      "tier": "live",
+      "minPassed": 1
+    }
+  ]
+}
