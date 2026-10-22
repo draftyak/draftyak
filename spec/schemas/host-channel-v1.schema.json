@@ -913,10 +913,7 @@
                 },
                 "data": {
                   "type": "string",
-                  "maxLength": 8192,
-                  "not": {
-                    "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
-                  }
+                  "maxLength": 1048496
                 }
               },
               "required": [
