@@ -1,4 +1,12 @@
-import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+	linkSync,
+	mkdirSync,
+	mkdtempSync,
+	realpathSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,18 +14,20 @@ import { defineExtensionModule, type HubModule } from "../src/module.ts";
 import { approvalCount } from "../src/points/send-policy.ts";
 import { isMigrationDirectoryPath, migrationNumber } from "../src/validation.ts";
 
+// macOS's os.tmpdir() sits under the /var -> /private/var link, which the alias guard refuses.
+const temporaryRoot = realpathSync(os.tmpdir());
 const temporary: string[] = [];
 const directory = (): string => {
-	const root = mkdtempSync(path.join(os.tmpdir(), "draftyak-extension-contract-"));
+	const root = mkdtempSync(path.join(temporaryRoot, "draftyak-extension-contract-"));
 	temporary.push(root);
+	expect(defineExtensionModule(definition({ migrations: root })).migrations).toBe(root);
 	return root;
 };
 afterEach(() => {
 	for (const root of temporary.splice(0)) {
-		const target = path.resolve(root),
-			temp = path.resolve(os.tmpdir());
+		const target = path.resolve(root);
 		if (
-			!target.startsWith(`${temp}${path.sep}`) ||
+			!target.startsWith(`${temporaryRoot}${path.sep}`) ||
 			!path.basename(target).startsWith("draftyak-extension-contract-")
 		)
 			throw new Error("Extension fixture cleanup refused");
@@ -162,6 +172,17 @@ describe("migration folder declarations", () => {
 		const alias = path.join(root, "alias");
 		symlinkSync(actual, alias, process.platform === "win32" ? "junction" : "dir");
 		refused(definition({ migrations: alias }));
+	});
+	it("refuses a folder reached through a linked parent folder", () => {
+		const root = directory();
+		const actual = path.join(root, "actual");
+		const canonical = path.join(actual, "migrations");
+		mkdirSync(canonical, { recursive: true });
+		writeFileSync(path.join(canonical, "0001_initial.sql"), "");
+		const alias = path.join(root, "alias");
+		symlinkSync(actual, alias, process.platform === "win32" ? "junction" : "dir");
+		expect(defineExtensionModule(definition({ migrations: canonical })).migrations).toBe(canonical);
+		refused(definition({ migrations: path.join(alias, "migrations") }));
 	});
 	it("refuses linked migration files and hard links", () => {
 		const root = directory();
