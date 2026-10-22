@@ -112,6 +112,7 @@ describe("the package", () => {
 		expect(manifest.exports).toEqual({
 			".": "./src/index.ts",
 			...Object.fromEntries(publicModules.map((name) => [`./${name}`, `./src/${name}.ts`])),
+			"./plugin-argv": { node: "./src/plugin-argv.ts" },
 			"./plugin-stdio": { node: "./src/plugin-stdio.ts" },
 		});
 		expect(manifest.publishConfig.exports).toEqual({
@@ -125,11 +126,17 @@ describe("the package", () => {
 					},
 				]),
 			),
+			"./plugin-argv": {
+				node: { types: "./dist/plugin-argv.d.mts", default: "./dist/plugin-argv.mjs" },
+			},
 			"./plugin-stdio": {
 				node: { types: "./dist/plugin-stdio.d.mts", default: "./dist/plugin-stdio.mjs" },
 			},
 		});
-		const keys = [".", ...[...publicModules, "plugin-stdio"].sort().map((name) => `./${name}`)];
+		const keys = [
+			".",
+			...[...publicModules, "plugin-argv", "plugin-stdio"].sort().map((name) => `./${name}`),
+		];
 		expect(Object.keys(manifest.exports)).toEqual(keys);
 		expect(Object.keys(manifest.publishConfig.exports)).toEqual(keys);
 		expect(manifest.files).toEqual(["dist"]);

@@ -3,10 +3,30 @@
 // included, and partial or failing runs write nothing. `node test/record.ts [vitest args]` is the
 // strict heavy run with recording on.
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { type BigIntStats, lstatSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { fingerprint, writeEvidence } from "@draftyak/spike-kit";
+import { evidenceStatusArgs, fingerprint, writeEvidence } from "@draftyak/spike-kit";
 
 const spikeDir = path.join(import.meta.dirname, "..");
+const generatedOutputs = new Map<string, Map<string, string>>();
+
+// A pathname alone cannot distinguish our output from a later directory or changed input.
+function outputStamp(file: string): string | null {
+	try {
+		const identity = (stat: BigIntStats): string =>
+			[stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(":");
+		const before = lstatSync(file, { bigint: true });
+		if (!before.isFile()) return null;
+		const digest = createHash("sha256").update(readFileSync(file)).digest("hex");
+		const after = lstatSync(file, { bigint: true });
+		return after.isFile() && identity(before) === identity(after)
+			? `${identity(after)}:${digest}`
+			: null;
+	} catch {
+		return null;
+	}
+}
 
 // DRAFTYAK_RECORD_EVIDENCE=1 records and 0 doesn't; unset, only CI runs (spikes-run) record.
 export function recording(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -44,13 +64,17 @@ export function unmet(findings: Readonly<Record<string, boolean>>): string[] {
 		.map(([name]) => `${name} is false`);
 }
 
-// Tracked changes outside <dir>/evidence, which a recording run writes as it goes; null when git
-// can't tell. GIT_* variables from a hook or `rebase -x` would point git at another repository.
-export function codeChanged(dir: string = spikeDir): boolean | null {
+// Count tracked and non-ignored untracked inputs across the repository. Only exact JSON outputs
+// written by this recording process are exempt; other evidence files can be executable inputs.
+// GIT_* variables from a hook or `rebase -x` would point git at another repository.
+export function codeChanged(
+	dir: string = spikeDir,
+	outputs: readonly string[] = [],
+): boolean | null {
 	const env = Object.fromEntries(
 		Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)),
 	);
-	const args = ["status", "--porcelain", "--untracked-files=no", "--", ":/", ":(exclude)evidence"];
+	const args = evidenceStatusArgs(dir, outputs);
 	const status = spawnSync("git", args, { cwd: dir, encoding: "utf8", env, windowsHide: true });
 	return status.status === 0 ? status.stdout.trim() !== "" : null;
 }
@@ -59,15 +83,25 @@ export async function recordEvidence(
 	file: string,
 	problems: readonly string[],
 	data: Readonly<Record<string, unknown>>,
+	dir: string = spikeDir,
 ): Promise<void> {
 	if (!recording()) return;
 	if (problems.length > 0) {
 		console.log(`evidence not recorded (${path.basename(file)}): ${problems.join("; ")}`);
 		return;
 	}
-	const print = await fingerprint({ cwd: spikeDir });
-	const dirty = codeChanged() ?? print.dirty;
-	console.log(`evidence: ${await writeEvidence(file, data, { fingerprint: { ...print, dirty } })}`);
+	const print = await fingerprint({ cwd: dir });
+	const key = path.resolve(dir);
+	const outputs = generatedOutputs.get(key) ?? new Map<string, string>();
+	const unchanged = [...outputs].filter(([output, stamp]) => outputStamp(output) === stamp);
+	const dirty =
+		unchanged.length !== outputs.size ||
+		(codeChanged(dir, [...unchanged.map(([output]) => output), file]) ?? print.dirty);
+	const output = await writeEvidence(file, data, { fingerprint: { ...print, dirty } });
+	const stamp = outputStamp(output);
+	if (stamp !== null) outputs.set(path.resolve(output), stamp);
+	generatedOutputs.set(key, outputs);
+	console.log(`evidence: ${output}`);
 }
 
 if (import.meta.main) {

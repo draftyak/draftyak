@@ -1,6 +1,9 @@
 import { jsonCopy } from "@draftyak/protocol/host-channel";
+import { isCanonicalToolsList, type ToolEntry, type ToolKind } from "@draftyak/protocol/tool-v1";
 import {
 	type CallToolResult,
+	isSpecType,
+	type ListToolsResult,
 	McpServer,
 	type McpServerFactory,
 	type ServerCapabilities,
@@ -8,13 +11,18 @@ import {
 import { type StdioServerHandle, serveStdio } from "@modelcontextprotocol/server/stdio";
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/server/validators/cf-worker";
 import * as z from "zod";
-import { createPluginContext, type PluginContext } from "./context.ts";
-import { pluginErrorResult } from "./errors.ts";
+import { createPluginContext, type PluginContext, type PluginInstance } from "./context.ts";
+import { dataCopy, fields, freezeJson } from "./definitions.ts";
+import { PluginError, pluginErrorResult } from "./errors.ts";
 import type { HostChannel } from "./host.ts";
 import { type StdioHost, stdioHost } from "./stdio.ts";
 
 z.config({ jitless: true });
 export type PluginCallMetadata = Readonly<Record<string, unknown>>;
+export interface PluginRequestContext {
+	/** Reports on this MCP request only, using its caller-supplied progress token. */
+	progress(value: number, total?: number): Promise<void>;
+}
 export interface PluginTool {
 	readonly name: string;
 	readonly description?: string;
@@ -25,6 +33,7 @@ export interface PluginTool {
 		args: unknown,
 		context: PluginContext,
 		metadata: PluginCallMetadata,
+		request?: PluginRequestContext,
 	) => unknown | Promise<unknown>;
 }
 export interface PluginEntry {
@@ -34,6 +43,11 @@ export interface PluginEntry {
 	readonly account?: string;
 	readonly extensions: Readonly<Record<string, unknown>>;
 	readonly tools: readonly PluginTool[];
+	readonly canonicalTools?: readonly ToolEntry[];
+}
+export interface PluginServerOptions {
+	/** Trusted local runtime input, independent of MCP call metadata; never network authority. */
+	readonly instance?: PluginInstance;
 }
 const EXTENSIONS = [
 	"io.github.draftyak/channel",
@@ -42,7 +56,27 @@ const EXTENSIONS = [
 ];
 
 /** The factory is fresh for each HTTP request; stdio pins its instance for a connection. */
-export function createPluginServer(entry: PluginEntry, host: HostChannel): McpServerFactory {
+export function createPluginServer(
+	entry: PluginEntry,
+	host: HostChannel,
+	options: PluginServerOptions = {},
+): McpServerFactory {
+	const optionSlots = fields(options);
+	if (Object.keys(optionSlots).some((key) => key !== "instance"))
+		throw new TypeError("Serving options refused");
+	let instance: PluginInstance | undefined;
+	if (Object.hasOwn(optionSlots, "instance")) {
+		const copy = dataCopy(optionSlots.instance?.value, 65_536);
+		const slots = fields(copy);
+		if (
+			Object.keys(slots).sort().join() !== "config,id" ||
+			typeof slots.id?.value !== "string" ||
+			!/^[!-~]{1,256}$/.test(slots.id.value)
+		)
+			throw new TypeError("Instance refused");
+		fields(slots.config?.value, 4096);
+		instance = freezeJson(copy) as PluginInstance;
+	}
 	const extensions = jsonCopy(entry.extensions);
 	const keys = Object.keys(extensions);
 	if (keys.length !== 1 || !EXTENSIONS.includes(keys[0] ?? ""))
@@ -56,7 +90,26 @@ export function createPluginServer(entry: PluginEntry, host: HostChannel): McpSe
 			throw new Error("Invalid plugin timeout");
 		return { ...tool, timeoutMs };
 	});
-	const identity = { plugin: entry.plugin, ...(entry.account ? { account: entry.account } : {}) };
+	let canonical: ToolEntry[] | undefined;
+	if (entry.canonicalTools !== undefined) {
+		const list = dataCopy(entry.canonicalTools);
+		const kinds = tools
+			.map((tool) => tool.name)
+			.filter((name) => name !== "tool_describe" && name !== "tool_probe") as ToolKind[];
+		if (
+			keys[0] !== "io.github.draftyak/tool" ||
+			!isCanonicalToolsList(list, kinds) ||
+			tools.length !== new Set(tools.map((tool) => tool.name)).size ||
+			tools.length !== (list as ToolEntry[]).length
+		)
+			throw new TypeError("Canonical tools refused");
+		canonical = list as ToolEntry[];
+	}
+	const identity = {
+		plugin: entry.plugin,
+		...(entry.account ? { account: entry.account } : {}),
+		...(instance ? { instance } : {}),
+	};
 	return () => {
 		const server = new McpServer(
 			{ name: entry.name, version: entry.version },
@@ -78,6 +131,7 @@ export function createPluginServer(entry: PluginEntry, host: HostChannel): McpSe
 				},
 				async (args, context): Promise<CallToolResult> => {
 					const controller = new AbortController();
+					let active = true;
 					const signal = AbortSignal.any([context.mcpReq.signal, controller.signal]);
 					const timer = setTimeout(() => controller.abort(), tool.timeoutMs);
 					try {
@@ -85,7 +139,38 @@ export function createPluginServer(entry: PluginEntry, host: HostChannel): McpSe
 						const value = await Promise.race([
 							Promise.resolve().then(() => {
 								const metadata = Object.freeze(jsonCopy(context.mcpReq._meta ?? {}));
-								return tool.handler(args, createPluginContext(identity, host, signal), metadata);
+								let request: PluginRequestContext | undefined;
+								if (
+									keys[0] === "io.github.draftyak/ai-provider" &&
+									tool.name === "ai_draft_generate"
+								) {
+									const token = metadata.progressToken;
+									if (token !== undefined && !isSpecType.ProgressToken(token))
+										throw new PluginError("INVALID_INPUT");
+									request = Object.freeze({
+										async progress(progress: number, total?: number): Promise<void> {
+											if (!active || signal.aborted) throw new Error("Plugin call ended");
+											if (token === undefined) return;
+											const notification = {
+												method: "notifications/progress" as const,
+												params: {
+													progressToken: token,
+													progress,
+													...(total === undefined ? {} : { total }),
+												},
+											};
+											if (!isSpecType.ProgressNotification(notification))
+												throw new PluginError("INVALID_INPUT");
+											await context.mcpReq.notify(notification);
+										},
+									});
+								}
+								return tool.handler(
+									args,
+									createPluginContext(identity, host, signal),
+									metadata,
+									request,
+								);
 							}),
 							new Promise<never>((_, reject) =>
 								signal.addEventListener("abort", () => reject(new Error("Plugin call cancelled")), {
@@ -106,22 +191,44 @@ export function createPluginServer(entry: PluginEntry, host: HostChannel): McpSe
 							keys[0] === "io.github.draftyak/tool" ? "tool" : "structured",
 						);
 					} finally {
+						active = false;
 						clearTimeout(timer);
 						controller.abort();
 					}
 				},
 			);
+		if (canonical)
+			server.server.setRequestHandler("tools/list", async () => ({
+				tools: jsonCopy(canonical) as unknown as ListToolsResult["tools"],
+				resultType: "complete",
+			}));
 		return server;
 	};
 }
 export function serve(
 	entry: PluginEntry,
-	options: { readonly host?: StdioHost; readonly onerror?: (error: Error) => void } = {},
+	options: PluginServerOptions & {
+		readonly host?: StdioHost;
+		readonly onerror?: (error: Error) => void;
+	} = {},
 ): StdioServerHandle {
-	const host = options.host ?? stdioHost({ onerror: options.onerror });
-	return serveStdio(createPluginServer(entry, host), {
-		legacy: "reject",
-		transport: host.transport,
-		onerror: options.onerror,
-	});
+	const slots = fields(options);
+	if (Object.keys(slots).some((key) => !["host", "onerror", "instance"].includes(key)))
+		throw new TypeError("Serving options refused");
+	const onerror = slots.onerror?.value as ((error: Error) => void) | undefined;
+	const host = slots.host?.value as StdioHost | undefined;
+	const bootstrap = Object.hasOwn(slots, "instance")
+		? { instance: slots.instance?.value as PluginInstance }
+		: {};
+	const channel = host ?? stdioHost({ onerror });
+	try {
+		return serveStdio(createPluginServer(entry, channel, bootstrap), {
+			legacy: "reject",
+			transport: channel.transport,
+			onerror,
+		});
+	} catch (error) {
+		if (!host) channel.close();
+		throw error;
+	}
 }

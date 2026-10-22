@@ -239,6 +239,13 @@ describe("CI verification receipts", () => {
 		}
 	});
 
+	it("refuses an unrecognized fifth job instead of ignoring its failure", () => {
+		const jobs = { ...needs(), python: { result: "failure", outputs: {} } };
+		expect(() => buildReceipt(input({ needs: JSON.stringify(jobs) }))).toThrow(
+			new UsageError("unknown job in CI metadata"),
+		);
+	});
+
 	it("refuses a successful classifier without its docs-only decision", () => {
 		for (const value of [undefined, "", "yes", "FALSE"]) {
 			const jobs = needs();
@@ -478,6 +485,13 @@ describe("verification receipt selection metadata", () => {
 		'["heavy:./packages/protocol\\n"]',
 		'["heavy:...{./apps/../hub}"]',
 		'["rust:crates/../outside"]',
+		'["rust:crates/.."]',
+		'["spikes/.."]',
+		'["heavy:./packages/.."]',
+		'["Rust:crates"]',
+		'[":crates"]',
+		'["-rust:crates"]',
+		'["rust/x:crates"]',
 		'["python:./apps/./hub"]',
 		'["android-host:apps//hub"]',
 		'["heavy:...{./apps/..}"]',
@@ -503,6 +517,9 @@ describe("verification receipt selection metadata", () => {
 
 	it.each([
 		["rust", "crates/../outside"],
+		["rust", "crates/.."],
+		["rust", ".."],
+		["rust", "."],
 		["rust", "crates//member"],
 		["rust", "crates/./member"],
 		["rust", "crates/"],
@@ -517,6 +534,7 @@ describe("verification receipt selection metadata", () => {
 		["rust", '["crates"]'],
 		["spikes", "apps/hub/../probe"],
 		["spikes", "spikes/../outside"],
+		["spikes", "spikes/."],
 		["spikes", "spikes//s01"],
 		["spikes", "spikes/S01"],
 		["spikes", "spikes/s01\nspikes/s01"],
@@ -527,6 +545,8 @@ describe("verification receipt selection metadata", () => {
 		["heavy", "...{./apps/..}"],
 		["heavy", "...{./apps/.}"],
 		["heavy", "./packages/../protocol"],
+		["heavy", "./packages/.."],
+		["heavy", "./.."],
 		["heavy", "./packages//protocol"],
 		["heavy", "./packages/Protocol"],
 		["heavy", "{./packages/protocol}"],
@@ -731,6 +751,34 @@ describe("verification receipt CLI", () => {
 			timeout: 15_000,
 			windowsHide: true,
 		});
+
+	it("exits 2 without publishing a receipt for an unrecognized failed job", () => {
+		const repo = tempRepo();
+		try {
+			repo.write(".node-version", `${nodeVersion}\n`);
+			const jobs = { ...needs(), python: { result: "failure", outputs: {} } };
+			const result = invoke(repo.dir, ["report"], {
+				GITHUB_REPOSITORY: "example/project",
+				GITHUB_EVENT_NAME: "pull_request",
+				GITHUB_REF: "refs/pull/42/merge",
+				GITHUB_SHA: mergeSha,
+				CI_HEAD_SHA: headSha,
+				CI_BASE_SHA: baseSha,
+				CI_PR_DRAFT: "false",
+				GITHUB_RUN_ID: "123",
+				GITHUB_RUN_ATTEMPT: "2",
+				CI_NEEDS: JSON.stringify(jobs),
+				RUNNER_TEMP: repo.dir,
+				GITHUB_STEP_SUMMARY: path.join(repo.dir, "summary.md"),
+			});
+			expect(result.status).toBe(2);
+			expect(result.stderr).toContain("unknown job in CI metadata");
+			expect(existsSync(path.join(repo.dir, "ci-verification.json"))).toBe(false);
+			expect(existsSync(path.join(repo.dir, "summary.md"))).toBe(false);
+		} finally {
+			repo.remove();
+		}
+	});
 
 	it("captures real committed metadata, writes an aggregate receipt and preserves a failure", () => {
 		const repo = tempRepo();
