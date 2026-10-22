@@ -239,6 +239,20 @@ base64url `base64`, `done`, and optional typed `error`. Stream chunks are at mos
 out-of-order chunks, typed errors, cancellation or incomplete channel closure.
 Chunks arriving in the fetch reply's read are buffered within the frame bound.
 
+`host/ws.message` `data` is the text of one WebSocket message, bounded only by
+the frame. A frame is at most 1,048,576 bytes and the smallest `host/ws.message`
+frame (one-character `socketId`, empty `data`) is 80 bytes, so `data` is at most
+1,048,496 characters, counted as Unicode code points like JSON Schema
+`maxLength`. Multi-byte characters, JSON escapes and a longer `socketId` take
+more bytes, so the frame bound decides whether a message fits. `data` may span
+lines: JSON escapes LF and CR, so they never end a frame. The hub never
+truncates or splits a message, and never sends a frame over the bound: when a
+message would not fit in one frame, it closes that WebSocket with status 1009
+(Message Too Big) instead and retires its `socketId`, so later requests naming
+it fail with `DENIED`. A `host/ws.message` that fails the schema or the frame
+bound is refused like any other invalid or overlong frame: the child channel
+closes, taking MCP with it, and its pending requests are rejected.
+
 Host errors have `{jsonrpc:'2.0', id, error:{code,message,data:{code}}}`. The typed
 `data.code` is one of `DENIED`, `TIMEOUT`, `TOO_LARGE`, `BAD_REQUEST`, `UNSUPPORTED`.
 The SDK reports this bounded code rather than exposing arbitrary remote messages.

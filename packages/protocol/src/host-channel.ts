@@ -6,6 +6,8 @@ import { Base64Url } from "./scalars.ts";
 
 export const HOST_FRAME_TAG = "\u001e";
 export const HOST_MAX_FRAME_BYTES = 1_048_576;
+// The smallest ws.message frame (one-character socketId, empty data) is 80 bytes.
+export const HOST_MAX_WS_DATA_LENGTH: number = HOST_MAX_FRAME_BYTES - 80;
 export const HOST_MAX_HEADER_BYTES = 16_384;
 export const HOST_MAX_ACTIVE_REQUESTS = 16;
 export const HOST_REQUEST_TIMEOUT_MS = 30_000;
@@ -28,6 +30,8 @@ function singleLine(schema: z.ZodString): z.ZodString {
 	return schema.refine((text) => !/[\r\n\u2028\u2029]/.test(text)).meta(NO_LINE_BREAK);
 }
 const Text = singleLine(z.string().max(8192));
+// JSON escaping keeps line breaks off the wire; the frame bound decides the exact size.
+const WsData = z.string().max(HOST_MAX_WS_DATA_LENGTH);
 const Id = singleLine(
 	z
 		.string()
@@ -236,7 +240,7 @@ export const HostNotification: z.ZodType<HostNotification> = z.union([
 	z.strictObject({
 		jsonrpc: z.literal("2.0"),
 		method: z.literal("host/ws.message"),
-		params: z.strictObject({ socketId: Id, data: Text }),
+		params: z.strictObject({ socketId: Id, data: WsData }),
 	}),
 ]);
 export const HostMessage: z.ZodType<HostRequest | HostReply | HostNotification> = z.union([
