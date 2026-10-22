@@ -1207,6 +1207,15 @@
       "valid": false
     },
     {
+      "id": "PairingWindow-prefix-not-at-start",
+      "action": "schema",
+      "schema": "PairingWindow",
+      "value": {
+        "pairingCode": "other:draftyak-pair:v1:test"
+      },
+      "valid": false
+    },
+    {
       "id": "OperationRequest-plugin.install",
       "action": "schema",
       "schema": "OperationRequest",
@@ -5157,6 +5166,102 @@
       "valid": false
     },
     {
+      "id": "ChallengeRequest-acknowledgement-superset",
+      "action": "schema",
+      "schema": "ChallengeRequest",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT",
+          "REPLY_TO_REDIRECT"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "send-requested-acknowledgements-superset",
+      "action": "challenge",
+      "challenge": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiTkVXX1JFQ0lQSUVOVCJdLCJmbGFnc0hhc2giOiI5ODQ3OTYyM2U1ZjM5ZDdhNjE1YWExNmFlMGNjNmNiY2U5NzYyMTliZjEwNjZhMDFmNWZmNjhjN2YwNWY0OTBlIiwiaHViIjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImlhdCI6MTc5MjM0MjgwMDAwMCwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwibm90QmVmb3JlIjpudWxsLCJvdXRib3giOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "request": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT",
+          "REPLY_TO_REDIRECT"
+        ]
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
       "id": "send-binding-challenge.id",
       "action": "challenge",
       "challenge": {
@@ -6643,6 +6748,86 @@
         "kind": "approval.send.v1",
         "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
         "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiRVhURVJOQUxfTElOSyJdLCJmbGFnc0hhc2giOiI5ODQ3OTYyM2U1ZjM5ZDdhNjE1YWExNmFlMGNjNmNiY2U5NzYyMTliZjEwNjZhMDFmNWZmNjhjN2YwNWY0OTBlIiwiaHViIjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImlhdCI6MTc5MjM0MjgwMDAwMCwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwibm90QmVmb3JlIjpudWxsLCJvdXRib3giOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "request": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT"
+        ]
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "send-statement-flagsAcked-[\"EXTERNAL_LINK\",\"NEW_RECIPIENT\",\"REPLY_TO_REDIRECT\"]",
+      "action": "challenge",
+      "challenge": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiTkVXX1JFQ0lQSUVOVCIsIlJFUExZX1RPX1JFRElSRUNUIl0sImZsYWdzSGFzaCI6Ijk4NDc5NjIzZTVmMzlkN2E2MTVhYTE2YWUwY2M2Y2JjZTk3NjIxOWJmMTA2NmEwMWY1ZmY2OGM3ZjA1ZjQ5MGUiLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJub25jZSI6IkFBRUNBd1FGQmdjSUNRb0xEQTBPRHciLCJub3RCZWZvcmUiOm51bGwsIm91dGJveCI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JDIiwidiI6MX0"
       },
       "review": {
         "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",

@@ -327,6 +327,12 @@ export function apiCases(): ApiCase[] {
 			`code-${length}`,
 		);
 	schema("PairingWindow", { pairingCode: "other:v1:test" }, false, "prefix");
+	schema(
+		"PairingWindow",
+		{ pairingCode: "other:draftyak-pair:v1:test" },
+		false,
+		"prefix-not-at-start",
+	);
 	for (const kind of adminKinds)
 		schema("OperationRequest", { kind, ids: ids.slice(0, 100) }, true, kind);
 	schema("OperationRequest", { kind: "data.export", ids: [] }, true, "empty-admin-ids");
@@ -455,6 +461,14 @@ export function apiCases(): ApiCase[] {
 		"challenge",
 		change(send, "request.flagsAcked", []) as ObjectValue,
 	);
+	// One code beyond the signed list still covers every required flag; only equality refuses it.
+	const ackedSuperset = change(
+		send,
+		"request.flagsAcked",
+		[...(member(send, "request").flagsAcked as string[]), "REPLY_TO_REDIRECT"].toSorted(),
+	) as ObjectValue;
+	schema("ChallengeRequest", member(ackedSuperset, "request"), true, "acknowledgement-superset");
+	add("send-requested-acknowledgements-superset", "challenge", ackedSuperset);
 	for (const [kind, fixture] of [
 		["send", send],
 		["pair", pair],
@@ -494,6 +508,8 @@ export function apiCases(): ApiCase[] {
 		["flagsAcked", []],
 		["flagsAcked", ["NEW_RECIPIENT", "EXTERNAL_LINK"]],
 		["flagsAcked", ["EXTERNAL_LINK", "EXTERNAL_LINK"]],
+		// A signed superset still covers every required flag; only equality refuses it.
+		["flagsAcked", ["EXTERNAL_LINK", "NEW_RECIPIENT", "REPLY_TO_REDIRECT"]],
 		["notBefore", SNAPSHOT_IAT],
 		["deliverBy", SNAPSHOT_IAT + 1],
 		["epoch", 2],

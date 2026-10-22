@@ -224,6 +224,10 @@ describe("the pairing payload", () => {
 		expect(outcome(() => encodePairingPayload(long))).toBe("PAIR_ENCODING");
 	});
 
+	it("keeps a prefix the device API's pairingCode pattern can hold unescaped", () => {
+		expect(PAIRING_PREFIX).toMatch(/^[\w:-]+$/);
+	});
+
 	it("never repeats a sender's member names in a refusal", () => {
 		const forged = "x\r\n2026-10-18T00:00:00Z INFO pairing confirmed\u{85}\u{2028}\u{1b}[2K";
 		const extra = toBase64Url(utf8(canonicalize({ ...base, [forged]: 1 })));
