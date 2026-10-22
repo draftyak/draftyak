@@ -8,6 +8,7 @@ import {
 	type EgressPolicy,
 	egressHost,
 	egressPort,
+	networkRefused,
 	type PinnedAddress,
 	validateEgressAnswers,
 } from "./addresses.ts";
@@ -30,6 +31,12 @@ export function createPinnedHttpsConnection(
 	egressPort(port, policy);
 	const checked = validateEgressAnswers([pin], policy),
 		hooks = networkTestHooks();
+	// Node dials an IP-literal host directly, skipping the pinned lookup, so it must equal the pin.
+	if (
+		isIP(host) !== 0 &&
+		(isIP(host) !== checked.family || canonicalAddress(host) !== checked.address)
+	)
+		throw networkRefused();
 	const dial = hooks?.dial?.(checked, port) ?? { ...checked, port };
 	const agent = new Agent({ keepAlive: false, maxSockets: 1, maxCachedSessions: 0, proxyEnv: {} });
 	const lookup: NonNullable<RequestOptions["lookup"]> = (_host, options, callback) => {

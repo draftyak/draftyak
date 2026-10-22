@@ -84,7 +84,10 @@ export async function createTlsFixture(): Promise<{
 					new BasicConstraintsExtension(false, undefined, true),
 					new KeyUsagesExtension(KeyUsageFlags.digitalSignature, true),
 					new ExtendedKeyUsageExtension([ExtendedKeyUsage.serverAuth]),
-					new SubjectAlternativeNameExtension([{ type: "ip", value: "127.0.0.2" }]),
+					new SubjectAlternativeNameExtension([
+						{ type: "ip", value: "127.0.0.2" },
+						{ type: "ip", value: "::1" },
+					]),
 				],
 			},
 			crypto,

@@ -11,7 +11,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
 	createPinnedHttpsConnection,
 	type EgressPolicy,
+	type PinnedAddress,
 	resolveEgress,
+	validateEgressAnswers,
 } from "../../../src/plugins/broker/network/index.ts";
 import {
 	type NetworkTestHooks,
@@ -101,8 +103,9 @@ async function get(
 	host = "guard.example",
 	expired = () => false,
 	native: EgressPolicy = policy,
+	pinned?: PinnedAddress,
 ): Promise<string> {
-	const pin = await resolveEgress(host, 443, native, new AbortController().signal);
+	const pin = pinned ?? (await resolveEgress(host, 443, native, new AbortController().signal));
 	const connection = createPinnedHttpsConnection(host, 443, pin, native);
 	return new Promise<string>((resolve, reject) => {
 		let settled = false;
@@ -163,6 +166,66 @@ describe("real pinned HTTPS", () => {
 					expect(remote.seen.httpBytes).toBe(0);
 				}
 				expect(remote.seen.sni).toEqual([]);
+			} finally {
+				await remote.close();
+			}
+		},
+	);
+	it.each([
+		["127.0.0.1", { address: "127.0.0.2", family: 4 }, "127.0.0.1"],
+		["127.0.0.1", { address: "::1", family: 6 }, "127.0.0.1"],
+		["::1", { address: "2606:4700:4700::1111", family: 6 }, "::1"],
+		["0:0:0:0:0:0:0:1", { address: "2606:4700:4700::1111", family: 6 }, "::1"],
+		["0:0:0:0:0:0:0:1", { address: "127.0.0.1", family: 4 }, "::1"],
+		["::ffff:127.0.0.1", { address: "127.0.0.1", family: 4 }, "127.0.0.1"],
+	] as const)(
+		"refuses literal host %s under accepted pin %j of another address or family before connecting",
+		async (host, other, bind) => {
+			const local = { ...policy, allowLocal: true };
+			expect(validateEgressAnswers([other], local)).toEqual(other);
+			const remote = await peer((response) => response.end("DYTEST-unexpected"), tls.cert, bind);
+			const dial = vi.fn((checked: PinnedAddress) => ({ ...checked, port: remote.port }));
+			try {
+				await expect(
+					withNetworkTestHooks({ ca: tls.ca, dial }, () => get(host, () => false, local, other)),
+				).rejects.toThrow("Network request refused");
+				expect(remote.seen.connections).toBe(0);
+				expect(dial).not.toHaveBeenCalled();
+				expect(() => createPinnedHttpsConnection(host, 443, other, local)).toThrow(
+					"Network request refused",
+				);
+			} finally {
+				await remote.close();
+			}
+		},
+	);
+	it.each([
+		["127.0.0.2", { address: "127.0.0.2", family: 4 }, "127.0.0.2", undefined],
+		["::1", { address: "::1", family: 6 }, "[::1]", undefined],
+		["0:0:0:0:0:0:0:1", { address: "::1", family: 6 }, "[0:0:0:0:0:0:0:1]", undefined],
+		["0::1", { address: "::1", family: 6 }, "[0::1]", { address: "0:0:0:0:0:0:0:1", family: 6 }],
+	] as const)(
+		"connects literal host %s through its equal canonical pin %j",
+		async (host, equal, authority, given) => {
+			const remote = await peer(
+				(response) => response.end("DYTEST-literal"),
+				tls.ipCert,
+				equal.address,
+			);
+			const dial = vi.fn((checked: PinnedAddress) => ({ ...checked, port: remote.port }));
+			try {
+				await expect(
+					withNetworkTestHooks({ ca: tls.ca, dial }, () =>
+						get(host, () => false, { ...policy, allowLocal: true }, given),
+					),
+				).resolves.toBe("DYTEST-literal");
+				expect(dial).toHaveBeenCalledExactlyOnceWith(equal, 443);
+				expect(remote.seen).toMatchObject({
+					connections: 1,
+					requests: 1,
+					hosts: [authority],
+					sni: [],
+				});
 			} finally {
 				await remote.close();
 			}
