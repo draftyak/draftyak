@@ -2,7 +2,7 @@ import { existsSync, globSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { capture } from "../lib/spawn.ts";
-import { approvedWorkspace, namedFiles } from "../lib/workspace-policy.ts";
+import { approvedWorkspace, listedWorktrees, namedWorktreeFiles } from "../lib/workspace-policy.ts";
 
 // ADR 0001's kept test. It reads the whole repo, so tools/verify/turbo.json keeps `test` uncached.
 // It imports nothing but lib/, so it doesn't depend on the M0-only prefetch.ts and profiles/m0.ts.
@@ -206,18 +206,21 @@ describe("workspace policy", () => {
 
 		const common = (await git("rev-parse", "--path-format=absolute", "--git-common-dir")).stdout;
 		const key = (dir: string): string => {
-			const resolved = path.resolve(dir.trim());
+			const resolved = path.resolve(dir);
 			return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 		};
 		const main = key(path.dirname(common.trim()));
-		const worktrees = (await git("worktree", "list", "--porcelain")).stdout
-			.split(/\r?\n/)
-			.filter((line) => line.startsWith("worktree "))
-			.map((line) => line.slice("worktree ".length))
+		const refreshWorktrees = async () => {
+			const result = await git("worktree", "list", "--porcelain", "-z");
+			if (result.code !== 0) throw new Error("file-name inventory failed");
+			return listedWorktrees(result.stdout);
+		};
+		const worktrees = (await refreshWorktrees())
+			.map(({ directory }) => directory)
 			.filter((dir) => key(dir) !== main);
 		const holding: string[] = [];
 		const scan = async (dir: string): Promise<void> => {
-			const files = await namedFiles(".env.live", dir);
+			const files = await namedWorktreeFiles(".env.live", dir, refreshWorktrees);
 			for (const file of files) {
 				holding.push(`${dir}/${file}`);
 			}
