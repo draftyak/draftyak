@@ -2,6 +2,7 @@
 //! `{"cmd": <name>, …}`, answered by one line on stdout, the command's result, or
 //! `{"fault": <message>}` when the request itself is wrong.
 
+mod device_api;
 mod jcs_sign;
 mod snapshot;
 mod statements;
@@ -15,6 +16,7 @@ type Command = fn(&Map<String, Value>) -> Result<Value, String>;
 
 // One line per area module, and no command name in two areas.
 const AREAS: &[&[(&str, Command)]] = &[
+    device_api::COMMANDS,
     jcs_sign::COMMANDS,
     snapshot::COMMANDS,
     statements::COMMANDS,

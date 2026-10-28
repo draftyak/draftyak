@@ -219,14 +219,13 @@ jobs:
           if-no-files-found: warn
           overwrite: true
           retention-days: 7
-      - name: Estimated billed minutes
+      - name: Elapsed runner time
         if: always()
         env:
           STARTED: ${{ steps.start.outputs.at }}
           RUNNER: ${{ matrix.os }}
-          RATE: ${{ matrix.rate }}
         run: |
           minutes=$(( ($(date +%s) - STARTED + 59) / 60 ))
-          line="about $minutes min on $RUNNER x $RATE = $(( minutes * RATE )) billed minutes, counted from the first step"
+          line="about $minutes min of elapsed runner time on $RUNNER, counted from the first step"
           echo "$line"
-          printf '### Estimated billed minutes\n\n%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"
+          printf '### Elapsed runner time\n\n%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"

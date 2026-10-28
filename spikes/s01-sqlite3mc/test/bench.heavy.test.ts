@@ -1,13 +1,13 @@
 import { readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
-import { acquireBenchLock, benchTimeout, writeEvidence } from "@draftyak/spike-kit";
+import { acquireBenchLock, benchTimeout } from "@draftyak/spike-kit";
 import { expect, it } from "vitest";
 import { DB_FILES } from "../src/canary.ts";
 import { openEncrypted, readSettings, truncateWal } from "../src/db.ts";
 import { evidenceDir } from "../src/matrix.ts";
 import type { SqliteDatabase } from "../src/open.ts";
 import { hostTarget, PACKAGE, packageDir } from "../src/prebuilds.ts";
-import { codeFingerprint, recording } from "../src/record.ts";
+import { recording, writeCodeEvidence } from "../src/record.ts";
 import { type Rotation, rotate } from "../src/rotate.ts";
 import {
 	addConversation,
@@ -308,8 +308,7 @@ it("measures secure_delete on 10k rows and their FTS5 rows, the keyed open, both
 	for (const rotation of rotations) expect(rotation.bytes).toBeGreaterThan(0);
 	if (recording()) {
 		const file = path.join(evidenceDir, `bench-${hostTarget()}.json`);
-		const fingerprint = await codeFingerprint();
-		console.log(`evidence: ${await writeEvidence(file, data, { fingerprint })}`);
+		console.log(`evidence: ${await writeCodeEvidence(file, data)}`);
 	} else {
 		console.log("evidence not recorded: run pnpm --filter @draftyak/spike-s01-sqlite3mc record");
 	}

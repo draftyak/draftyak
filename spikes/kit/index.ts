@@ -15,5 +15,6 @@ export * from "./evidence.ts";
 export * from "./lock.ts";
 export * from "./node.ts";
 export * from "./ports.ts";
+export { EvidenceProvenance } from "./provenance.ts";
 export { cacheDir } from "./repo.ts";
 export * from "./skip.ts";

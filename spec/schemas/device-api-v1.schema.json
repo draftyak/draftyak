@@ -1,0 +1,2334 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/schemas/device-api-v1.schema.json",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/draftyak.device-api.DeviceStatus"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.BootstrapRequest"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.BootstrapStatus"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.PairingWindowRequest"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.PairingWindow"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.OperationRequest"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.OperationCreated"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.SyncPause"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.Accepted"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.SendReview"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.PairConfirmSubject"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.OperationReview"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "principal": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "grant",
+                "token"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "account": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "toolClass": {
+          "type": "string",
+          "enum": [
+            "read",
+            "draft",
+            "organize"
+          ]
+        },
+        "authorization": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "session"
+                },
+                "durationMs": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "const": 900000
+                    },
+                    {
+                      "type": "number",
+                      "const": 3600000
+                    },
+                    {
+                      "type": "number",
+                      "const": 28800000
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "durationMs"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "call"
+                },
+                "paramsDigest": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "validForMs": {
+                  "type": "number",
+                  "const": 600000
+                },
+                "singleUse": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "method": {
+                  "type": "string",
+                  "const": "tools/call"
+                },
+                "target": {
+                  "type": "string",
+                  "enum": [
+                    "accounts_list",
+                    "contacts_search",
+                    "conversation_get",
+                    "conversations_list",
+                    "draft_get",
+                    "drafts_list",
+                    "message_get",
+                    "messages_search",
+                    "conversation_archive",
+                    "conversation_label",
+                    "conversation_mark_read",
+                    "draft_create",
+                    "draft_update",
+                    "draft_discard",
+                    "send_request_create",
+                    "send_request_cancel",
+                    "send_request_status"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "paramsDigest",
+                "validForMs",
+                "singleUse",
+                "method",
+                "target"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "call"
+                },
+                "paramsDigest": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "validForMs": {
+                  "type": "number",
+                  "const": 600000
+                },
+                "singleUse": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "method": {
+                  "type": "string",
+                  "const": "resources/read"
+                },
+                "target": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "draftyak://guide/agents"
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "ui://draftyak/draft-v1",
+                        "ui://draftyak/send-status-v1"
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "minLength": 50,
+                      "maxLength": 50,
+                      "pattern": "^draftyak:\\/\\/conversation\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
+                    },
+                    {
+                      "type": "string",
+                      "minLength": 45,
+                      "maxLength": 45,
+                      "pattern": "^draftyak:\\/\\/message\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
+                    },
+                    {
+                      "type": "string",
+                      "minLength": 43,
+                      "maxLength": 43,
+                      "pattern": "^draftyak:\\/\\/draft\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
+                    },
+                    {
+                      "type": "string",
+                      "minLength": 50,
+                      "maxLength": 50,
+                      "pattern": "^draftyak:\\/\\/send-request\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "paramsDigest",
+                "validForMs",
+                "singleUse",
+                "method",
+                "target"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "principal",
+        "account",
+        "toolClass",
+        "authorization"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.ChallengeRequest"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.Challenge"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.SignedEnvelope"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.EventsRequest"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.EventFrame"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.ApiError"
+    }
+  ],
+  "title": "DraftYak device API v1",
+  "description": "L2 requests, reviews, challenges, envelopes and ID-only event frames. Runtime binding rules are in device-api-v1.md.",
+  "$defs": {
+    "draftyak.device-api.DeviceStatus": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "confirmed": {
+          "type": "boolean"
+        },
+        "capabilities": {
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/draftyak.entities.DeviceCapability"
+          }
+        },
+        "testUpstreams": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deviceId",
+        "epoch",
+        "confirmed",
+        "capabilities",
+        "testUpstreams"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.entities.DeviceCapability": {
+      "type": "string",
+      "enum": [
+        "read",
+        "draft",
+        "organize",
+        "approve",
+        "admin"
+      ],
+      "description": "What a paired device may do."
+    },
+    "draftyak.device-api.BootstrapRequest": {
+      "type": "object",
+      "properties": {
+        "pin": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 64,
+          "pattern": "^[0-9]+$(?![\\s\\S])",
+          "not": {
+            "pattern": "[\\r\\n\\u2028\\u2029]"
+          }
+        }
+      },
+      "required": [
+        "pin"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.device-api.BootstrapStatus": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "confirmed": {
+          "type": "boolean"
+        },
+        "capabilities": {
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/draftyak.entities.DeviceCapability"
+          }
+        },
+        "testUpstreams": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deviceId",
+        "epoch",
+        "confirmed",
+        "capabilities",
+        "testUpstreams"
+      ],
+      "additionalProperties": false,
+      "$ref": "#/$defs/draftyak.device-api.DeviceStatus"
+    },
+    "draftyak.device-api.PairingWindowRequest": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "device"
+          ]
+        },
+        "pin": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 64,
+          "pattern": "^[0-9]+$(?![\\s\\S])",
+          "not": {
+            "pattern": "[\\r\\n\\u2028\\u2029]"
+          }
+        }
+      },
+      "required": [
+        "role",
+        "pin"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.device-api.PairingWindow": {
+      "type": "object",
+      "properties": {
+        "pairingCode": {
+          "type": "string",
+          "maxLength": 1000,
+          "format": "starts_with",
+          "pattern": "^draftyak-pair:v1:.*"
+        }
+      },
+      "required": [
+        "pairingCode"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.device-api.OperationRequest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "plugin.install",
+                "plugin.upgrade",
+                "account.connect",
+                "account.disconnect",
+                "account.mode-full",
+                "policy.routing-loosen",
+                "policy.auto-draft-enable",
+                "tool.instance-create",
+                "tool.secret-set",
+                "tool.enable",
+                "tool.posture-no-train",
+                "access.token-mint",
+                "access.grant-widen",
+                "access.cimd-host-add",
+                "access.exposure-enable",
+                "access.bind-address-add",
+                "access.advertised-addresses-set",
+                "security.device-capabilities",
+                "security.pin-change",
+                "security.key-rotate",
+                "data.export"
+              ]
+            },
+            "ids": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 26,
+                "maxLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "description": "A ULID: 26 upper-case Crockford base32 characters."
+              },
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "kind",
+            "ids"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "pair-confirm"
+            },
+            "ids": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                }
+              ],
+              "items": false,
+              "minItems": 1,
+              "maxItems": 1
+            },
+            "preset": {
+              "$ref": "#/$defs/draftyak.entities.ConfirmationPreset"
+            }
+          },
+          "required": [
+            "kind",
+            "ids",
+            "preset"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "draftyak.entities.ConfirmationPreset": {
+      "type": "string",
+      "enum": [
+        "desktop",
+        "mobile",
+        "cli"
+      ],
+      "description": "A server-selected confirmation policy, never a signed statement field."
+    },
+    "draftyak.device-api.OperationCreated": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.device-api.SyncPause": {
+      "type": "object",
+      "properties": {
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paused"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.device-api.Accepted": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "approval.send.v1",
+            "pair-confirm.v1",
+            "login.v1",
+            "consent.v1",
+            "agent-session.v1",
+            "admin.v1"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.device-api.SendReview": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "snapshot": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "v": {
+                  "type": "number",
+                  "const": 1
+                },
+                "hub": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "epoch": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "outbox": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "account": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "conversation": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 26,
+                      "maxLength": 26,
+                      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                      "description": "A ULID: 26 upper-case Crockford base32 characters."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "render": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "POST",
+                        "PUT",
+                        "PATCH"
+                      ]
+                    },
+                    "url": {
+                      "type": "string",
+                      "maxLength": 8192,
+                      "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$(?![\\s\\S])",
+                      "description": "A canonical https URL: a lower-case DNS host, no userinfo, no port 443, no dot segments, percent-encoding in upper-case hex and never of an unreserved character, and no fragment.",
+                      "allOf": [
+                        {
+                          "not": {
+                            "pattern": "^https://[^/]+:443/"
+                          }
+                        },
+                        {
+                          "not": {
+                            "pattern": "^https://[^/]+:(?:6553[6-9]|655[4-9][0-9]|65[6-9][0-9]{2}|6[6-9][0-9]{3}|[7-9][0-9]{4})/"
+                          }
+                        },
+                        {
+                          "not": {
+                            "pattern": "^https://[^/]+/(?:[^?]*/)?[.]{1,2}(/|[?]|$)"
+                          }
+                        }
+                      ]
+                    },
+                    "headersSha256": {
+                      "type": "string",
+                      "minLength": 64,
+                      "maxLength": 64,
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                      "description": "A SHA-256 digest as 64 lower-case hex characters."
+                    },
+                    "bodySha256": {
+                      "type": "string",
+                      "minLength": 64,
+                      "maxLength": 64,
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                      "description": "A SHA-256 digest as 64 lower-case hex characters."
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "url",
+                    "headersSha256",
+                    "bodySha256"
+                  ],
+                  "additionalProperties": false
+                },
+                "body": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "maxLength": 100000,
+                      "not": {
+                        "pattern": "\\r"
+                      }
+                    },
+                    "footer": {
+                      "type": "string",
+                      "maxLength": 10000,
+                      "not": {
+                        "pattern": "\\r"
+                      }
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "footer"
+                  ],
+                  "additionalProperties": false
+                },
+                "attachments": {
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "filename": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "not": {
+                          "pattern": "[\\r\\n]"
+                        }
+                      },
+                      "contentType": {
+                        "$ref": "#/$defs/draftyak.normalized-change.MediaType"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64,
+                        "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                        "description": "A SHA-256 digest as 64 lower-case hex characters."
+                      }
+                    },
+                    "required": [
+                      "filename",
+                      "contentType",
+                      "size",
+                      "sha256"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "schedule": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "now"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "at"
+                        },
+                        "notBefore": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                        },
+                        "zone": {
+                          "$ref": "#/$defs/draftyak.tool-v1.IanaZone"
+                        },
+                        "localWallTime": {
+                          "type": "string",
+                          "minLength": 22,
+                          "maxLength": 22,
+                          "pattern": "^(?:(?:[0-9]{2}(?:[2468][048]|[13579][26]|0[48])|(?:[02468][048]|[13579][26])00)-02-29|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9][+-](?:[01][0-9]|2[0-3]):[0-5][0-9]$(?![\\s\\S])",
+                          "not": {
+                            "pattern": "-00:00$"
+                          }
+                        },
+                        "latenessSec": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "const": 900
+                            },
+                            {
+                              "type": "number",
+                              "const": 3600
+                            },
+                            {
+                              "type": "number",
+                              "const": 14400
+                            },
+                            {
+                              "type": "number",
+                              "const": 86400
+                            }
+                          ]
+                        },
+                        "holdIfNewInbound": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "notBefore",
+                        "zone",
+                        "localWallTime",
+                        "latenessSec",
+                        "holdIfNewInbound"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ],
+                  "title": "Schedule",
+                  "description": "A frozen send time; zone resolution and DST/instant agreement are checked before approval."
+                },
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "draft": {
+                      "type": "string",
+                      "minLength": 26,
+                      "maxLength": 26,
+                      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                      "description": "A ULID: 26 upper-case Crockford base32 characters."
+                    },
+                    "rev": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "authors": {
+                      "minItems": 1,
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/draftyak.entities.DraftAuthor"
+                      }
+                    }
+                  },
+                  "required": [
+                    "draft",
+                    "rev",
+                    "authors"
+                  ],
+                  "additionalProperties": false
+                },
+                "kind": {
+                  "type": "string",
+                  "const": "email"
+                },
+                "email": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "$ref": "#/$defs/draftyak.entities.EmailAddress"
+                    },
+                    "to": {
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/draftyak.entities.EmailAddress"
+                      }
+                    },
+                    "cc": {
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/draftyak.entities.EmailAddress"
+                      }
+                    },
+                    "bcc": {
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/draftyak.entities.EmailAddress"
+                      }
+                    },
+                    "subject": {
+                      "type": "string",
+                      "maxLength": 2000,
+                      "not": {
+                        "pattern": "[\\r\\n]"
+                      }
+                    },
+                    "threadId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "inReplyTo": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "references": {
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                      }
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "cc",
+                    "bcc",
+                    "subject",
+                    "references"
+                  ],
+                  "additionalProperties": false,
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "to": {
+                          "minItems": 1
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "cc": {
+                          "minItems": 1
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "bcc": {
+                          "minItems": 1
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "v",
+                "hub",
+                "epoch",
+                "outbox",
+                "account",
+                "conversation",
+                "body",
+                "attachments",
+                "schedule",
+                "source",
+                "kind",
+                "email"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "v": {
+                  "type": "number",
+                  "const": 1
+                },
+                "hub": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "epoch": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "outbox": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "account": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "conversation": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "render": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "POST",
+                        "PUT",
+                        "PATCH"
+                      ]
+                    },
+                    "url": {
+                      "type": "string",
+                      "maxLength": 8192,
+                      "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$(?![\\s\\S])",
+                      "description": "A canonical https URL: a lower-case DNS host, no userinfo, no port 443, no dot segments, percent-encoding in upper-case hex and never of an unreserved character, and no fragment.",
+                      "allOf": [
+                        {
+                          "not": {
+                            "pattern": "^https://[^/]+:443/"
+                          }
+                        },
+                        {
+                          "not": {
+                            "pattern": "^https://[^/]+:(?:6553[6-9]|655[4-9][0-9]|65[6-9][0-9]{2}|6[6-9][0-9]{3}|[7-9][0-9]{4})/"
+                          }
+                        },
+                        {
+                          "not": {
+                            "pattern": "^https://[^/]+/(?:[^?]*/)?[.]{1,2}(/|[?]|$)"
+                          }
+                        }
+                      ]
+                    },
+                    "headersSha256": {
+                      "type": "string",
+                      "minLength": 64,
+                      "maxLength": 64,
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                      "description": "A SHA-256 digest as 64 lower-case hex characters."
+                    },
+                    "bodySha256": {
+                      "type": "string",
+                      "minLength": 64,
+                      "maxLength": 64,
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                      "description": "A SHA-256 digest as 64 lower-case hex characters."
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "url",
+                    "headersSha256",
+                    "bodySha256"
+                  ],
+                  "additionalProperties": false
+                },
+                "body": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "maxLength": 100000,
+                      "not": {
+                        "pattern": "\\r"
+                      }
+                    },
+                    "footer": {
+                      "type": "string",
+                      "maxLength": 10000,
+                      "not": {
+                        "pattern": "\\r"
+                      }
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "footer"
+                  ],
+                  "additionalProperties": false
+                },
+                "attachments": {
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "filename": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "not": {
+                          "pattern": "[\\r\\n]"
+                        }
+                      },
+                      "contentType": {
+                        "$ref": "#/$defs/draftyak.normalized-change.MediaType"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64,
+                        "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                        "description": "A SHA-256 digest as 64 lower-case hex characters."
+                      }
+                    },
+                    "required": [
+                      "filename",
+                      "contentType",
+                      "size",
+                      "sha256"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "schedule": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "now"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "at"
+                        },
+                        "notBefore": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                        },
+                        "zone": {
+                          "$ref": "#/$defs/draftyak.tool-v1.IanaZone"
+                        },
+                        "localWallTime": {
+                          "type": "string",
+                          "minLength": 22,
+                          "maxLength": 22,
+                          "pattern": "^(?:(?:[0-9]{2}(?:[2468][048]|[13579][26]|0[48])|(?:[02468][048]|[13579][26])00)-02-29|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9][+-](?:[01][0-9]|2[0-3]):[0-5][0-9]$(?![\\s\\S])",
+                          "not": {
+                            "pattern": "-00:00$"
+                          }
+                        },
+                        "latenessSec": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "const": 900
+                            },
+                            {
+                              "type": "number",
+                              "const": 3600
+                            },
+                            {
+                              "type": "number",
+                              "const": 14400
+                            },
+                            {
+                              "type": "number",
+                              "const": 86400
+                            }
+                          ]
+                        },
+                        "holdIfNewInbound": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "notBefore",
+                        "zone",
+                        "localWallTime",
+                        "latenessSec",
+                        "holdIfNewInbound"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ],
+                  "title": "Schedule",
+                  "description": "A frozen send time; zone resolution and DST/instant agreement are checked before approval."
+                },
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "draft": {
+                      "type": "string",
+                      "minLength": 26,
+                      "maxLength": 26,
+                      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                      "description": "A ULID: 26 upper-case Crockford base32 characters."
+                    },
+                    "rev": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "authors": {
+                      "minItems": 1,
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/draftyak.entities.DraftAuthor"
+                      }
+                    }
+                  },
+                  "required": [
+                    "draft",
+                    "rev",
+                    "authors"
+                  ],
+                  "additionalProperties": false
+                },
+                "kind": {
+                  "type": "string",
+                  "const": "chat"
+                },
+                "chat": {
+                  "type": "object",
+                  "properties": {
+                    "channelId": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "channelName": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "not": {
+                        "pattern": "[\\r\\n]"
+                      }
+                    },
+                    "channelType": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ChatChannelType"
+                    },
+                    "external": {
+                      "type": "boolean"
+                    },
+                    "memberCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "threadTs": {
+                      "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                    },
+                    "broadcast": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "channelId",
+                    "channelName",
+                    "channelType",
+                    "external",
+                    "memberCount",
+                    "broadcast"
+                  ],
+                  "additionalProperties": false,
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "broadcast": {
+                          "const": false
+                        }
+                      }
+                    },
+                    {
+                      "required": [
+                        "threadTs"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "v",
+                "hub",
+                "epoch",
+                "outbox",
+                "account",
+                "conversation",
+                "body",
+                "attachments",
+                "schedule",
+                "source",
+                "kind",
+                "chat"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "title": "SendSnapshotV1",
+          "description": "The exact frozen send content. Body and footer are Unicode 17 NFC with LF line endings; claim-time MIME fields are absent."
+        },
+        "contentHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+          "description": "A SHA-256 digest as 64 lower-case hex characters."
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/draftyak.flags.Flag"
+          },
+          "uniqueItems": true,
+          "description": "A revision's flags, in any order; flagsHash sorts them."
+        },
+        "flagsHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+          "description": "A SHA-256 digest as 64 lower-case hex characters."
+        },
+        "state": {
+          "$ref": "#/$defs/draftyak.entities.OutboxState"
+        },
+        "stateReason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/draftyak.entities.StateReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requiredUsers": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 26,
+            "maxLength": 26,
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+            "description": "A ULID: 26 upper-case Crockford base32 characters."
+          },
+          "uniqueItems": true
+        },
+        "expiresAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+        }
+      },
+      "required": [
+        "id",
+        "snapshot",
+        "contentHash",
+        "flags",
+        "flagsHash",
+        "state",
+        "stateReason",
+        "requiredUsers",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.normalized-change.MediaType": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255,
+      "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$(?![\\s\\S])",
+      "description": "A lower-case type/subtype without parameters, such as image/png.",
+      "not": {
+        "pattern": "\\n"
+      }
+    },
+    "draftyak.tool-v1.IanaZone": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:\\/[A-Za-z0-9_+-]+)*$(?![\\s\\S])",
+      "description": "An IANA time zone name, such as America/Chicago; Temporal checks that it exists.",
+      "not": {
+        "pattern": "\\n"
+      }
+    },
+    "draftyak.entities.DraftAuthor": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "owner",
+            "ai",
+            "agent",
+            "plugin"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false,
+      "description": "Who wrote a revision: the owner (a user id), the hub's AI (an AI run id), an agent (a grant or agent token id) or a plugin (a plugin instance id)."
+    },
+    "draftyak.entities.EmailAddress": {
+      "type": "string",
+      "maxLength": 254,
+      "pattern": "^[-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+(?:[.][-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
+      "not": {
+        "pattern": "\\n"
+      },
+      "description": "An address as the hub normalizes it: a dot-atom local part as given, without spaces, quotes or invisible characters, and a lower-case DNS domain with IDN labels as A-labels."
+    },
+    "draftyak.normalized-change.ProviderId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[!-~]+$(?![\\s\\S])",
+      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces.",
+      "not": {
+        "pattern": "\\n"
+      }
+    },
+    "draftyak.normalized-change.ChatChannelType": {
+      "type": "string",
+      "enum": [
+        "dm",
+        "group_dm",
+        "public",
+        "private"
+      ],
+      "description": "A direct message, a group direct message, or a public or private channel."
+    },
+    "draftyak.flags.Flag": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "NEW_RECIPIENT",
+                "RECIPIENT_ADDED_BY_AGENT",
+                "REPLY_TO_REDIRECT",
+                "AGENT_AUTHORED",
+                "DMARC_FAIL",
+                "EXTERNAL_LINK",
+                "AGENT_INSERTED_CONTACT",
+                "ATTACHMENT_ADDED_BY_AGENT",
+                "INVISIBLE_CHARS",
+                "MASS_MENTION",
+                "CROSS_THREAD_DATA",
+                "SECRET_PATTERN",
+                "TOOL_DATA_IN_BODY"
+              ]
+            },
+            "severity": {
+              "type": "string",
+              "const": "ack"
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code",
+            "severity"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "TOOL_CONTEXT_USED"
+              ]
+            },
+            "severity": {
+              "type": "string",
+              "const": "info"
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code",
+            "severity"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "SUSPECTED_INSTRUCTIONS",
+                "TOOL_INSTRUCTIONS"
+              ]
+            },
+            "severity": {
+              "type": "string",
+              "const": "advisory"
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code",
+            "severity"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "A flag on a draft revision: its code, the code's severity, and an optional detail (1 to 1,000 Unicode scalar values) that the composer and the approval window show as data."
+    },
+    "draftyak.entities.OutboxState": {
+      "type": "string",
+      "enum": [
+        "PENDING_APPROVAL",
+        "APPROVED",
+        "SCHEDULED",
+        "SENDING",
+        "RETRY_WAIT",
+        "UNKNOWN",
+        "SENT",
+        "FAILED",
+        "NEEDS_REAPPROVAL",
+        "CANCELLED",
+        "REJECTED",
+        "SUPERSEDED",
+        "EXPIRED"
+      ],
+      "description": "An outbox item's state. APPROVED, SCHEDULED, SENDING, RETRY_WAIT and UNKNOWN are live: while a draft has a live item, it is locked."
+    },
+    "draftyak.entities.StateReason": {
+      "type": "string",
+      "enum": [
+        "missed",
+        "new_reply",
+        "channel_changed",
+        "approver_revoked",
+        "credential_lost",
+        "plugin_quarantined",
+        "policy",
+        "restored",
+        "not_found"
+      ],
+      "description": "Why an item needs approval again; the UI labels it from this, as Missed."
+    },
+    "draftyak.device-api.PairConfirmSubject": {
+      "type": "object",
+      "properties": {
+        "candidate": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "name": {
+          "$ref": "#/$defs/draftyak.pairing.DisplayName"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "device"
+          ]
+        },
+        "transportSpkiSha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+          "description": "A SHA-256 digest as 64 lower-case hex characters."
+        },
+        "signingKey": {
+          "$ref": "#/$defs/draftyak.entities.PublicKeySpki"
+        },
+        "preset": {
+          "$ref": "#/$defs/draftyak.entities.ConfirmationPreset"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/draftyak.entities.DeviceCapabilities"
+        }
+      },
+      "required": [
+        "candidate",
+        "name",
+        "role",
+        "transportSpkiSha256",
+        "signingKey",
+        "preset",
+        "capabilities"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.pairing.DisplayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "A display name: 1 to 64 code points under the rules of spec/pairing-v1.md section 2: no hidden code point, no blank first or last, and at least one code point that is neither a blank nor a joiner. JSON Schema can't state the rules, only the length."
+    },
+    "draftyak.entities.PublicKeySpki": {
+      "type": "string",
+      "minLength": 122,
+      "maxLength": 122,
+      "pattern": "^MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE[A-Za-z0-9_-]{85}[AQgw]$(?![\\s\\S])",
+      "description": "A P-256 public key as canonical base64url of its 91-byte SPKI DER, uncompressed point."
+    },
+    "draftyak.entities.DeviceCapabilities": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/draftyak.entities.DeviceCapability"
+      },
+      "uniqueItems": true,
+      "anyOf": [
+        {
+          "maxItems": 1
+        },
+        {
+          "not": {
+            "contains": {
+              "pattern": "^host:"
+            }
+          }
+        }
+      ],
+      "description": "A device's capabilities, each once. A host:* capability is exclusive: a device that holds one holds nothing else."
+    },
+    "draftyak.device-api.OperationReview": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "kind": {
+              "type": "string",
+              "const": "pair-confirm"
+            },
+            "digest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "subject": {
+              "$ref": "#/$defs/draftyak.device-api.PairConfirmSubject"
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "remainingMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 120000
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "digest",
+            "subject",
+            "expiresAt",
+            "remainingMs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "kind": {
+              "type": "string",
+              "const": "agent-session"
+            },
+            "digest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "subject": {
+              "type": "object",
+              "properties": {
+                "principal": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "grant",
+                        "token"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 26,
+                      "maxLength": 26,
+                      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                      "description": "A ULID: 26 upper-case Crockford base32 characters."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id"
+                  ],
+                  "additionalProperties": false
+                },
+                "account": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "toolClass": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "draft",
+                    "organize"
+                  ]
+                },
+                "authorization": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "session"
+                        },
+                        "durationMs": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "const": 900000
+                            },
+                            {
+                              "type": "number",
+                              "const": 3600000
+                            },
+                            {
+                              "type": "number",
+                              "const": 28800000
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "durationMs"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "call"
+                        },
+                        "paramsDigest": {
+                          "type": "string",
+                          "minLength": 64,
+                          "maxLength": 64,
+                          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                          "description": "A SHA-256 digest as 64 lower-case hex characters."
+                        },
+                        "validForMs": {
+                          "type": "number",
+                          "const": 600000
+                        },
+                        "singleUse": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "method": {
+                          "type": "string",
+                          "const": "tools/call"
+                        },
+                        "target": {
+                          "type": "string",
+                          "enum": [
+                            "accounts_list",
+                            "contacts_search",
+                            "conversation_get",
+                            "conversations_list",
+                            "draft_get",
+                            "drafts_list",
+                            "message_get",
+                            "messages_search",
+                            "conversation_archive",
+                            "conversation_label",
+                            "conversation_mark_read",
+                            "draft_create",
+                            "draft_update",
+                            "draft_discard",
+                            "send_request_create",
+                            "send_request_cancel",
+                            "send_request_status"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "paramsDigest",
+                        "validForMs",
+                        "singleUse",
+                        "method",
+                        "target"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "call"
+                        },
+                        "paramsDigest": {
+                          "type": "string",
+                          "minLength": 64,
+                          "maxLength": 64,
+                          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                          "description": "A SHA-256 digest as 64 lower-case hex characters."
+                        },
+                        "validForMs": {
+                          "type": "number",
+                          "const": 600000
+                        },
+                        "singleUse": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "method": {
+                          "type": "string",
+                          "const": "resources/read"
+                        },
+                        "target": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "const": "draftyak://guide/agents"
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "ui://draftyak/draft-v1",
+                                "ui://draftyak/send-status-v1"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "minLength": 50,
+                              "maxLength": 50,
+                              "pattern": "^draftyak:\\/\\/conversation\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
+                            },
+                            {
+                              "type": "string",
+                              "minLength": 45,
+                              "maxLength": 45,
+                              "pattern": "^draftyak:\\/\\/message\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
+                            },
+                            {
+                              "type": "string",
+                              "minLength": 43,
+                              "maxLength": 43,
+                              "pattern": "^draftyak:\\/\\/draft\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
+                            },
+                            {
+                              "type": "string",
+                              "minLength": 50,
+                              "maxLength": 50,
+                              "pattern": "^draftyak:\\/\\/send-request\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "paramsDigest",
+                        "validForMs",
+                        "singleUse",
+                        "method",
+                        "target"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "principal",
+                "account",
+                "toolClass",
+                "authorization"
+              ],
+              "additionalProperties": false
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "remainingMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 120000
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "digest",
+            "subject",
+            "expiresAt",
+            "remainingMs"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "draftyak.device-api.ChallengeRequest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "approval.send.v1"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "flagsAcked": {
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/draftyak.flags.FlagCode"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "flagsAcked"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "pair-confirm.v1"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "agent-session.v1"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "draftyak.flags.FlagCode": {
+      "type": "string",
+      "enum": [
+        "NEW_RECIPIENT",
+        "RECIPIENT_ADDED_BY_AGENT",
+        "REPLY_TO_REDIRECT",
+        "AGENT_AUTHORED",
+        "DMARC_FAIL",
+        "EXTERNAL_LINK",
+        "AGENT_INSERTED_CONTACT",
+        "ATTACHMENT_ADDED_BY_AGENT",
+        "INVISIBLE_CHARS",
+        "MASS_MENTION",
+        "CROSS_THREAD_DATA",
+        "SECRET_PATTERN",
+        "SUSPECTED_INSTRUCTIONS",
+        "TOOL_DATA_IN_BODY",
+        "TOOL_CONTEXT_USED",
+        "TOOL_INSTRUCTIONS"
+      ],
+      "description": "A flag in the catalogue of spec/flags-v1.md."
+    },
+    "draftyak.device-api.Challenge": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "approval.send.v1"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "statement": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 21846
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "statement"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "pair-confirm.v1"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "statement": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 21846
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "statement"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "agent-session.v1"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "statement": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 21846
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "statement"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "draftyak.device-api.SignedEnvelope": {
+      "type": "object",
+      "properties": {
+        "statement": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 21846
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 86,
+          "maxLength": 86
+        },
+        "pin": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 64,
+          "pattern": "^[0-9]+$(?![\\s\\S])",
+          "not": {
+            "pattern": "[\\r\\n\\u2028\\u2029]"
+          }
+        }
+      },
+      "required": [
+        "statement",
+        "signature",
+        "pin"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.device-api.EventsRequest": {
+      "type": "object",
+      "properties": {
+        "after": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512,
+              "pattern": "^[\\u0000-\\u007f]*$(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.device-api.EventFrame": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ready"
+            },
+            "cursor": {
+              "type": "string",
+              "maxLength": 512,
+              "pattern": "^[\\u0000-\\u007f]*$(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "type",
+            "cursor"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "event"
+            },
+            "cursor": {
+              "type": "string",
+              "maxLength": 512,
+              "pattern": "^[\\u0000-\\u007f]*$(?![\\s\\S])"
+            },
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9.-]*$(?![\\s\\S])",
+              "not": {
+                "pattern": "[\\r\\n\\u2028\\u2029]"
+              }
+            },
+            "ids": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 26,
+                "maxLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "description": "A ULID: 26 upper-case Crockford base32 characters."
+              },
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "type",
+            "cursor",
+            "kind",
+            "ids"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "reset"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "cursor_expired",
+                "epoch_changed",
+                "resync_required"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "draftyak.device-api.ApiError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "INVALID_REQUEST",
+            "FORBIDDEN",
+            "NOT_FOUND",
+            "TOO_LARGE",
+            "PIN_INVALID",
+            "PIN_LOCKED",
+            "SIGNATURE_INVALID",
+            "CHALLENGE_INVALID",
+            "CODE_MISMATCH",
+            "ACK_REQUIRED",
+            "STALE",
+            "LOCAL_TIME_MISMATCH",
+            "WINDOW_UNAVAILABLE",
+            "POLICY_DENIED",
+            "DRAFT_LOCKED",
+            "SCHEDULE_LIMIT",
+            "SCHEDULING_UNAVAILABLE",
+            "UNAVAILABLE"
+          ]
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

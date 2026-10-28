@@ -38,6 +38,23 @@ const pr = ["pull_request:"];
 const run = (expression: string): string[] => ["- run: |", `    echo "\${{ ${expression} }}"`];
 
 describe("workflow policy", () => {
+	it.each(["&evt pull_request_target", "!event pull_request_target", "!!str workflow_run"])(
+		"refuses unsupported unquoted flow event %s",
+		(event) => {
+			const source = workflow(pr).replace("on:\n  pull_request:\n", `on: [${event}]\n`);
+			expect(source).toContain(`on: [${event}]`);
+			expect(checkWorkflow("x.yml", source, toolchain).join("\n")).toContain(
+				"unsupported flow sequence item",
+			);
+		},
+	);
+
+	it("keeps an ordinary flow event readable", () => {
+		const source = workflow(pr).replace("on:\n  pull_request:\n", "on: [pull_request]\n");
+		expect(source).toContain("on: [pull_request]");
+		expect(checkWorkflow("x.yml", source, toolchain)).toEqual([]);
+	});
+
 	it.each(files)("%s follows the policy", (file) => {
 		expect(checkWorkflow(file, read(file), toolchain)).toEqual([]);
 	});
