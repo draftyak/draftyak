@@ -115,6 +115,87 @@ Message objects are `{id, conversationId, author, text, createdAt}`, with `creat
 
 Every feed answer also carries `Set-Cookie` and `X-Upstream-Trace` (and `Date`), headers outside the `tool-*` allowlist (`Content-Type`, `ETag`, `Last-Modified`, `Content-Length`) that the broker must strip. Other methods find no route and get `404`.
 
+## The Gmail fake
+
+`createGmailFake({accessGrant, clock?, recorder?, messages?, readBudget?, sendBudget?})`
+returns the shared `Fake` interface with Gmail fixture controls. Import it from
+`@draftyak/fakes/gmail` or the package root. `GMAIL_HOST` is the logical host
+`gmail.googleapis.com`, so an injected fetch can receive the exact approved
+provider URL. This fixture makes no outbound request; its optional listener is
+still loopback-only. Message addresses and content must remain synthetic.
+
+`accessGrant(token)` supplies `{scopes, expiresAt}` or `undefined` for a synthetic
+bearer. It can bind the Google OAuth fake's `accessGrant` without importing that
+fake or any production credential service. The expiry uses UTC milliseconds.
+Missing/expired grants return 401, and insufficient scopes return 403. Read-only
+can read raw mail but cannot mutate or send. Metadata-only grants cannot retrieve
+bodies or search. These fixtures do not authenticate or approve a real account.
+
+Seeds are `{id, threadId?, raw: Uint8Array, labelIds?, internalDate?}`. The fake
+copies raw bytes and returned state. `addMessage`, `deleteMessage` and `setLabels`
+record history; `historyId` exposes the current checkpoint and
+`expireHistory(before)` makes older checkpoints return 404 for rescan tests.
+`message(id)` returns a detached stored message. `queueSend(...steps)` accepts
+`{kind: "accept", date?, messageId?}` or
+`{kind: "mail-rate-limit" | "concurrent-rate-limit", retryAfterSeconds}`. A
+queued header rewrite models a possible provider outcome rather than an S8
+finding. A rate step returns 429 immediately with the complete Retry-After;
+tests advance their clock rather than waiting hours. The shared fault
+`{kind: "drop", after: true}` models an accepted send with a lost reply.
+
+Supported routes under `/gmail/v1/users/me` are profile, paginated messages and
+threads, message/thread projections, history, label modification/batch modification,
+and JSON `messages/send`. The approved
+`/upload/gmail/v1/users/me/messages/send?uploadType=multipart` route accepts a
+bounded multipart/related metadata part plus exact message/rfc822 bytes. Raw
+read-back preserves those bytes unless the fixture explicitly scripts a header
+rewrite. Metadata projections contain headers without body data. The `full`
+projection is a basic top-level header/body fixture, not a general MIME parser;
+use raw mail with the real content parser for MIME integration.
+
+Only the documented search subset is implemented; unsupported queries and wire
+fields fail rather than fabricate a match. A Gmail-UI scheduled seed carries
+`SCHEDULED`/`DRAFT`, not `SENT`; it can be read without establishing that a send
+happened. Native consumers must still enforce their own scheduled-mail exclusion,
+complete bounded scans, attempt identity, body/thread checks and uncertainty rules.
+
+Thread joins in this fixture require an exact Subject match plus References and
+In-Reply-To identifying a stored parent in the requested thread. A mismatch is a
+fixture refusal, not a prediction of how Gmail would assign a thread. Search
+supports AND combinations of `in:sent`, `in:inbox`, `in:scheduled`, `is:unread`,
+`after:<epoch-seconds>` and `rfc822msgid:<id>` only. Page tokens retain a bounded
+snapshot for 60 seconds and bind the bearer, route and filter set; changing those
+inputs refuses the token. Retrying a non-final token returns the same continuation
+without reserving another cursor. Expiring or evicting history advances its floor.
+
+Optional budgets are `{units, windowMs}`: one unit per admitted request, in
+independent send and non-send fixed windows. They are synthetic counters rather
+than Google's quota weights. Moving the fixture clock backward clears budget
+and page state. Storage is capped at 1,024 messages and 64 MiB of raw bytes,
+with at most 36,700,160 raw bytes per message, 2,048 retained history records,
+128 page tokens/4 MiB of retained page data, and 1,024 queued send steps.
+Shared intake caps request bodies at 50 MiB before application or redirect
+cloning. Oversize requests normally return the shared `413 request_body_too_large`
+response and are cancelled; a scripted fault retains its arrival-order response.
+The recorder retains its configured prefix and hashes received bytes, including
+the offending chunk, with a refusal marker rather than claiming to read the
+unreceived remainder. Custom recorders must implement the shared `begin` writer.
+App-side request and JSON response parsing retains its 50 MiB cap. The app reader
+also limits its forwarded body to 65,536 yielded chunks; shared intake buffers
+and replaces the body, so this is not a limit on original ingress chunk count.
+These are no global memory, concurrency or stream-duration bounds. Native
+transport limits remain separate.
+
+The independent test oracle reads the vendored Gmail discovery document
+(revision `20261012`, SHA-256
+`1eefc40da41cc5d19736d26b16f7f276a0300307c36b9abe33dc6c3ab12f414b`)
+and checks supported request and successful response shapes. Required fields
+follow that document; the fixture separately requires `startHistoryId` for history
+requests. Product modules import no spike code. Discovery conformance does not
+establish live Gmail behavior. Actual approval, broker scope/identity injection,
+exact MIME rendering, durable apply/outbox state and S8/ADR 0010 cases remain
+native/owner integration.
+
 ## Adding a fake
 
 1. Put the public part in `src/<name>.ts`, which `@draftyak/fakes/<name>` then exports, and anything larger in `src/<name>/`.
@@ -243,3 +324,255 @@ UTF-8 charset; decoding is fatal and duplicate members follow `JSON.parse`'s
 last-member semantics. Schema contents are opaque. This fixture does not verify
 native pins, prompt hashes, credentials, request headers, model availability or
 provider policy, and establishes no native approval or streaming authority.
+
+## The Google OAuth fake
+
+`createGoogleOAuthFake({clock?, recorder?, clients?, codeTtlMs?,
+accessTtlSeconds?, refreshTtlSeconds?, rotateRefreshTokens?})` serves the synthetic
+`google-oauth.draftyak.example` host in memory or on the shared loopback listener.
+Import it from `@draftyak/fakes` or `@draftyak/fakes/google-oauth`. Constants
+`GOOGLE_OAUTH_HOST`, `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_REDIRECT_URI`
+provide an invented Desktop registration. No request calls Google or follows an
+outbound callback. Use `redirect: "manual"` to inspect the authorization response.
+
+| Request | Fixture behavior |
+|---|---|
+| `GET /o/oauth2/v2/auth` | Requires a registered client/exact callback, nonempty state/scope, `response_type=code` and a 43-character S256 challenge. Returns a 302 with echoed state and a single-use code, or a queued consent denial. |
+| `POST /token` | Accepts UTF-8 form data. Checks the registered client/secret, exact callback, 43–128-character verifier and S256 digest before code exchange. Refresh checks client binding, expiry, revocation and the configured rotation policy. |
+| `POST /revoke` | Accepts a form `token`. Revokes that client's current authorization, including earlier consents, rotated tokens and pending codes. Other clients remain independent. A fresh consent establishes a fresh authorization. |
+
+`endpoints` exposes the three synthetic URLs. `enqueueConsent(...steps)` accepts
+`{kind: "grant", scopes?}` for normal granular consent, `{kind: "deny"}`, or
+`{kind: "unexpected-grant", scopes}` to deliberately return unrequested grants
+for caller-refusal scenarios. Only that explicit hostile step can overgrant;
+ordinary consent stays within the requested scope set. `email` and `profile`
+have their Google URI aliases in responses; equivalent spellings compare equally
+for granular consent. The fixture can supply complete, missing, empty, companion,
+broad, settings and out-of-mode grants. It makes no decision about the caller's
+full/read-only scope admission.
+
+`enqueueTokenError(...steps)` scripts `invalid_grant`, `invalid_client` or
+`temporarily_unavailable`, optionally restricted to `authorization_code` or
+`refresh_token`. An error consumes no code or refresh token. Wrong code binding
+consumes that authenticated exchange attempt; a valid code exchanges only once,
+including concurrent attempts. Shared before-effect faults bypass the handler;
+after-effect lost replies leave its code consumption or refresh rotation intact.
+
+`accessGrant(accessToken)` returns a new frozen `{clientId, scopes, expiresAt}`
+with a frozen scope list, or `undefined`. `revoke(token)` is the fixture-side
+equivalent of a successful revoke request. Revoke requests are recorded so callers
+can distinguish confirmed/unconfirmed initial-grant cleanup from failed
+reconnect/mode-switch handling that makes no automatic whole-client revoke.
+These are synthetic grant facts and traces; native admission and persistence
+belong to the connection flow.
+
+Callbacks are exact canonical HTTP URLs with numeric `127.0.0.1` or `[::1]`,
+an explicit port and no query/fragment. No wildcard or hostname callback exists.
+There are at most 32 clients and 16 callbacks per client, 256 queued consent
+steps and 256 token errors, 4,096 pending codes and 4,096 token entries. Expired
+entries still count toward those finite budgets; create a fresh instance to reset.
+Scope requests allow at most 16 entries and 2,048 characters, with 256 characters
+per scope. Forms/authorization queries allow 32 unique parameters and 16 KiB;
+duplicate keys and malformed percent-encoded or raw UTF-8 are refused.
+
+The shared `maxRequestBodyBytes: 16384` intake runs before handler admission or
+body cloning. Oversize intake cancels and normally returns a dated 413. Its
+recorder entry is marked `request_body_too_large`; the length/hash cover all
+received bytes through the crossing chunk, not an unread remainder. Retention
+uses the recorder's configured prefix. Arrival faults are still reserved and
+consumed and can supply the response instead. Incomplete malformed/aborted
+streams reject and discard their recorder slots. A byte cap provides neither an
+upload deadline nor an original-ingress chunk-count bound. A custom recorder
+must provide `begin` as well as `record` and `takeRequests`.
+
+Default lifetimes are ten minutes for codes and one hour for access tokens;
+refresh tokens have no expiry unless configured. The injected clock determines
+expiry and `Date`. Refresh rotation defaults to true as declared fixture policy,
+not a claim about Google's behavior. The fake proves no native callback-state,
+identity, credential storage, disclosure, cleanup enforcement or live acceptance.
+
+## The Slack read fake
+
+`createSlackReadFake({conversations, ownerId?, users?, scopes?, nowMs?, readBudget?})`
+serves synthetic reads at `slack.draftyak.example`, in memory or on its loopback
+listener. It has no authentication exchange, Socket Mode, send, scheduling or
+reconciliation implementation. Its responses establish no native approval,
+credential, freshness, purge or vendor-policy authority.
+
+`ownerId` is an invented Slack user ID, default `UDYTEST01`. Conversation
+`member` means membership of that connected owner. A request cannot select
+another owner. `users` contains detached `{id, name, displayName, realName}`
+profiles; without it, the fake supplies a synthetic owner profile. `scopes`
+defaults to the supported channel read/history scopes and `users:read`.
+
+| Request | Behavior |
+|---|---|
+| `GET /api/users.conversations` | The connected owner's conversations allowed by its read scopes. Accepts only `cursor`, `limit`, `types` and `exclude_archived`; a caller `user` selector is refused. |
+| `GET /api/users.info?user=<id>` | A validated user selector is required. `users:read` is required before looking up the profile; otherwise `missing_scope`, including for an unknown user. |
+| `GET /api/conversations.info?channel=<id>&include_num_members=true` | Current synthetic facts under the conversation type's read scope. The optional member count is emitted only when requested. |
+| `GET /api/conversations.history?channel=<id>` | Root messages, newest first, under that type's history scope. |
+| `GET /api/conversations.replies?channel=<id>&ts=<root>` | Root and replies, oldest first, under that type's history scope. |
+
+History and replies accept `cursor`, `limit`, `oldest`, `latest` and `inclusive`.
+Timestamp comparisons preserve up to nine fractional digits without floating
+point conversion. Unknown keys, duplicate keys, malformed raw paths and
+selectors are refused. Legacy `conversations.list`, `users.list` and all writes
+are denied. No request makes a provider call.
+
+Lists and message reads use pages of 1–200 rows (100 by default). Cursor tokens
+are opaque, instance/route/filter-bound snapshots; a repeat is stable, a token
+expires after 60,000 injected milliseconds, and moving the clock backwards
+invalidates cursors and rate windows. Provider filters run after each virtual
+page, so an empty page can still have a next cursor. Current owner membership
+and scopes still restrict every list page.
+
+Membership controls list visibility. Configured fixture info and message routes
+remain addressable under their type scopes after membership changes; this
+synthetic control does not model Slack's complete resource authorization rules.
+
+Fixture controls are `conversation(id)`, `changeConversation(id, patch)`,
+`addMessage(channel, message)`, the checked manual `clock`, and `revoke()`.
+They support rename, archive, sharing, membership, growth and new replies.
+`revoke()` makes every supported read return `token_revoked`; it does not
+purge fixture state or call a revoke endpoint. Create a new instance to reset
+state. Constructor values and returned facts are isolated from caller changes.
+
+Limits are 300 conversations, 1,024 user profiles and 1,024 messages. Message
+text is NFC and at most 4,096 UTF-8 bytes; conversation names and profile display
+names are at most 256 bytes, user names 64 bytes. Responses are capped at
+256 KiB, with separate 4 MiB budgets for message text, cursor snapshots and
+recorder accounting. At most 128 cursors and 1,024 pending recorder entries
+are kept. Raw targets are at most 2,048 characters; each record permits 64
+headers and 8,192 bytes of target/header accounting. Draining the recorder
+releases its budget. Header values are not retained. Unsupported request bodies
+are cancelled without cloning or collecting them.
+
+`readBudget: {calls, windowMs}` supplies a synthetic per-method fixed window
+(default 1,000 calls per 60,000 milliseconds). Exhaustion returns Slack-shaped
+`429 ratelimited` and a ceiling-rounded delay-seconds `Retry-After`. This is
+fixture policy, not a claim about Slack's actual tier or internal-app exemption.
+The shared `faults` script remains available for rate limits, errors, latency
+and drops, and stamps `Date` from the same injected clock.
+
+### Synthetic Slack send effects
+
+`createSlackSendFake({read, userToken: "DYTEST-send-user"})` adds a separate
+provider write fixture using a supplied `createSlackReadFake` instance. The
+existing read factory stays read-only. The new factory is available from the root
+and `@draftyak/fakes/slack` exports; it adds no dependency or native approval
+implementation.
+
+Only POST `/api/chat.postMessage` with JSON `channel`, optional `thread_ts`,
+`text`, and both `unfurl_links:false` and `unfurl_media:false` is admitted.
+A fixed invented DYTEST bearer is required. Extra fields, including
+`reply_broadcast`, refuse. This fixture never renders or converts broadcast
+intent. Native rendering, approval, broker tickets, current-fact policy,
+scheduling and actual reconciliation remain separate.
+
+A successful write appends once through the reader's public `addMessage`
+control. Read it back with that reader's public history/replies requests. Text
+is opaque already-rendered data, retained exactly: nonempty NFC, well-formed,
+at most 4,096 UTF-8 bytes and 4,096 UTF-16 units, with only TAB/LF controls.
+The existing 1,024-message/4 MiB state and thread-parent constraints apply;
+this is narrower than the native renderer's limits. A supplied reader whose
+owner cannot be stored by its message controls is refused at construction.
+The collaborator is trusted executable fixture input, not a runtime identity
+proof. The sender owns only its own listeners, not the supplied reader.
+
+Timestamps use the reader clock with a per-sender monotonic nanosecond suffix.
+Clock rollback does not reuse a committed identity. Collision, refusal or state
+exhaustion leaves the suffix unchanged; advancing the fixture clock can resolve
+a collision with seeded data. This is synthetic identity behavior, not provider
+pacing or idempotence. A repeated successful request remains a second write.
+
+The shared 32 KiB wire-intake cap is distinct from the stored-text limit.
+Refused intake can retain a received-prefix record and consume an arrival
+fault; the shared recorder is not globally bounded. Before-effect failures
+produce no message; after-effect drops can leave one message despite a lost
+reply. Abort before the synchronous append has no effect, while loss after
+append does not undo it. Rate limits, Retry-After and Date use shared scripted
+faults and the reader clock; they establish no real tier/exemption or live
+Slack behavior. No shared server/recorder/fault changes or Socket Mode fixture
+dependency are required.
+
+
+### Synthetic auth and Socket Mode companion
+
+`createSlackSocketFake` is separate from the read factory. It adapts the ordinary
+S6 fixture's synthetic user/app token checks, `auth.test`,
+`apps.connections.open`, hello/event envelopes, acknowledgements, dropped ACKs,
+redelivery and disconnect controls. It implements no native credential, approval,
+broker, send, scheduling, reconciliation or corpus authority.
+
+`await fake.start()` starts one private HTTP/WebSocket listener on IPv4 loopback;
+`fake.apiBase` is its HTTP API base. `fake.listen()` returns that same listener,
+and its `close()` closes the whole companion. An in-memory
+`fake.fetch('/api/apps.connections.open', ...)` also starts the private listener
+to return a usable WebSocket URL. HTTP requests use the existing capped shared
+fake/recorder/fault path. There is no shared server upgrade API or native fetch
+fallback.
+
+Use `fake.userToken` for a bare POST to `/api/auth.test` and `fake.appToken`
+for `/api/apps.connections.open`, in a Bearer header. These generated DYTEST
+values are fixture controls. Extra query/form arguments and every other route
+are refused. The open response contains a single-use, instance-bound local URL;
+wrong paths, queries and browser Origin headers cannot redeem it. The controlled
+`clock` expires unused tickets after 60 seconds and supplies HTTP Date headers.
+A failed handshake on the correct path may consume a ticket, as in S6.
+
+`sendHello`, `deliver(payload, {connection?, type?, acceptsResponsePayload?})`,
+`frame(connection, value)`, `dropAcks`, `acksFor(id)`,
+`disconnect(connection, reason, delayOrNull)` and `terminate(connection)` are
+synthetic controls. Obtain opaque connection handles from `live()`; another
+instance's handle refuses. Envelopes and ACK diagnostics are available through
+read-only bounded snapshots; current pending ACK lookup survives diagnostic history
+eviction. Caller payloads are copied as inert, finite JSON;
+getters, proxies, custom serialization, deep/large collections and nonfinite
+numbers refuse. Caller-provided payload content remains intentional fixture data.
+
+ACKs are text JSON containing only `envelope_id`. Unlike the permissive spike,
+this companion refuses binary/malformed ACKs, binds valid IDs to their delivery
+socket, omits unknown IDs from retained diagnostics and consumes `dropAcks` only
+for valid ACKs. It does not process response payloads;
+`acceptsResponsePayload` controls the emitted wire flag only. Unacknowledged
+envelopes retry at most three times (attempts 0,1,2,3), each with a fresh ID, the
+same copied payload/type and the newest live connection. Retries reset the
+response-payload flag to false, as in S6. An old-ID ACK does not cancel a newer
+retry. Work stops if no live socket remains instead of waiting forever.
+
+| Work | Fixture-local bound |
+|---|---|
+| HTTP admission | 16 KiB per upload, 16 concurrent in-memory/bridged requests, a 1-second abort timer |
+| Private transport | 8 TCP sockets including handshakes/HTTP/WS; 4 KiB handshake headers; 60-second socket lifetime |
+| Tickets | 32 outstanding, 60 seconds on the controlled clock |
+| Event wire / ACK message | 16 KiB / 1 KiB |
+| Delivery work | 64 pending events; at most 3 redeliveries per event |
+| Per-connection work | 256 outgoing messages and 256 received ACK/ping/pong messages |
+| Retention / timers | 256 entries per envelope/ACK/connection/HTTP record collection; 128 owned timers |
+| HTTP fault scripts | 32 pending; finite uses at most 1024 and latency at most 1 second |
+
+These bound completed message work and fixture-owned state; they make no
+original-ingress chunk/fragment count, arbitrary JavaScript CPU/time or global
+process-memory guarantee. Public `faults.add/run` refuse after close; `pending`
+and `clear` remain usable. Fault selection and latency use an abortable bodyless
+metadata request; the app still receives its original Request without a body
+clone. Close aborts fixture-owned waiting without waiting for a caller-provided
+app callback to settle. Such callbacks retain ownership of their own work; no
+arbitrary JavaScript is preempted. ACK/retry/disconnect timers and socket lifetime use
+real timers; advancing the HTTP/ticket clock does not advance them. Event-loop
+scheduling can delay timer callbacks. Trusted shared-fault match predicates
+retain their usual caller responsibilities.
+
+Retained HTTP records omit all header values, query values and body prefixes,
+while keeping bounded method/route metadata and received-byte lengths/hashes
+(including shared over-cap refusal evidence). Unknown paths become `/refused`; unknown method names become `OTHER`, and
+only fixed known header names remain.
+Synthetic auth values and ticket URLs are not retained in HTTP/ACK diagnostics.
+Direct `recorder.record` refuses body-bearing uploads; capped admission uses
+`begin/write` through `fetch`. Draining records releases their slots.
+
+`await fake.close()` is idempotent: it aborts owned uploads, cancels timers,
+invalidates tickets, terminates owned sockets, closes the private listener and
+clears retained state. It leaves other fakes alone; later use refuses.
+This synthetic suite is not native client ACK-before-reduce/deduplication,
+Socket Mode broker, ADR 0008, renderer/corpus or milestone acceptance.
