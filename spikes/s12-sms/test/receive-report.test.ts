@@ -1,10 +1,11 @@
-import { spawn } from "node:child_process";
+import * as childProcess from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os, { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { assertContentFree } from "@draftyak/spike-kit";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import {
 	ADB_ARGS,
 	checkReport,
@@ -21,6 +22,8 @@ import {
 	reportRule,
 	validate,
 } from "../src/receive-report.ts";
+
+vi.mock("node:child_process", { spy: true });
 
 type Json = Record<string, unknown>;
 type At = (string | number)[];
@@ -88,6 +91,12 @@ const refusals = (value: unknown): readonly Problem[] => {
 	const result = checkReport(bytes(value));
 	return result.ok ? [] : result.problems;
 };
+
+// Synthetic rule input assembled without placing a configuration filename in the source.
+const vendorText = ["DYTEST- ", ".", "co", "dex", "/", "auth", ".json"].join("");
+const bodyReport = (body: string): Json =>
+	edit(["testMessages", 1, "body"], (node, key) => ((node as Json)[key] = body));
+const vendorReport = () => bodyReport(vendorText);
 
 describe("the probe report schema", () => {
 	it("compiles, and lists every allowed field with its type, enum or pattern", () => {
@@ -470,9 +479,155 @@ describe("the report validator", () => {
 				"content-shaped values ($.testMessages[1].body (user))",
 			);
 	});
+
+	it.each([
+		["vendor configuration path", [".", "clau", "de", "/settings"].join(""), "anthropic-config"],
+		["vendor authentication path", [".", "co", "dex", "/auth.json"].join(""), "openai-codex-auth"],
+		["vendor configuration", ["CLAU", "DE_CONFIG_DIR"].join(""), "anthropic-config"],
+		["vendor token setting", ["CLAU", "DE_CODE_OAUTH_TOKEN"].join(""), "anthropic-token"],
+		["vendor package", ["clau", "de-code-sdk"].join(""), "anthropic-agent-sdk"],
+		["vendor endpoint", ["mcp", ".slack", ".com"].join(""), "slack-mcp"],
+		[
+			"synthetic client id",
+			["1-", "a".repeat(20), ".apps", ".googleusercontent", ".com"].join(""),
+			"google-client-id",
+		],
+		[
+			"synthetic webhook",
+			["hooks", ".slack", ".com/services/Tsynthetic/", "a".repeat(20)].join(""),
+			"secret-slack",
+		],
+	])("refuses %s after spaces and decoded line breaks without quoting it", (_, text, rule) => {
+		for (const separator of [" ", "\n", "\r", "\t"]) {
+			const report = bodyReport(`DYTEST-${separator}${text}`);
+			const checked = checkReport(bytes(report));
+			if (separator === " " || separator === "\n") {
+				expect(validate(report), JSON.stringify(separator)).toEqual([]);
+				expect(() => assertContentFree(report, "report")).not.toThrow();
+				expect(checked, JSON.stringify(separator)).toEqual({
+					ok: false,
+					problems: [{ path: "$", rule: `vendor-file rule ${rule}` }],
+				});
+			} else {
+				expect(checked, JSON.stringify(separator)).toEqual({
+					ok: false,
+					problems: [{ path: "$.testMessages[1].body", rule: "outside the allowed pattern" }],
+				});
+			}
+			expect(JSON.stringify(checked)).not.toContain(text);
+		}
+		const newlineReport = bodyReport(`DYTEST-\n${text}`);
+		const unicodeEscaped = Buffer.from(JSON.stringify(newlineReport).replaceAll("\\n", "\\u000a"));
+		expect(checkReport(unicodeEscaped)).toEqual({
+			ok: false,
+			problems: [{ path: "$", rule: `vendor-file rule ${rule}` }],
+		});
+		for (const literal of ["\\n", "\\r", "\\t"]) {
+			const report = bodyReport(`DYTEST-${literal}${text}`);
+			expect(checkReport(bytes(report)), literal).toEqual({ ok: true, report });
+		}
+	});
 });
 
 describe("receive", () => {
+	it("refuses vendor-file data in checks before any private destination write or replacement", async () => {
+		const report = vendorReport();
+		expect(validate(report)).toEqual([]);
+		expect(() => assertContentFree(report, "report")).not.toThrow();
+		const expected = {
+			ok: false,
+			problems: [{ path: "$", rule: "vendor-file rule openai-codex-auth" }],
+		};
+		const evidenceDir = path.join(temp, "vendor-private", "evidence");
+		const refused = await receive(bytes(report), { name: "refused", evidenceDir });
+		expect(refused).toEqual(expected);
+		expect(checkReport(bytes(report))).toEqual(expected);
+		expect(() => readdirSync(path.dirname(evidenceDir))).toThrow();
+		mkdirSync(evidenceDir, { recursive: true });
+		const file = path.join(evidenceDir, "refused.json");
+		const original = Buffer.from("synthetic earlier evidence\n");
+		writeFileSync(file, original);
+		expect(await receive(bytes(report), { name: "refused", evidenceDir, replace: true })).toEqual(
+			expected,
+		);
+		expect(readFileSync(file)).toEqual(original);
+		expect(readdirSync(evidenceDir)).toEqual(["refused.json"]);
+		expect(JSON.stringify(refused)).not.toContain(vendorText);
+	});
+
+	it("refuses a vendor basename before creating or replacing private evidence", async () => {
+		const name = ["clau", "de", "-code", "-sdk"].join("");
+		const evidenceDir = path.join(temp, "named-vendor-private", "evidence");
+		const expected = {
+			ok: false,
+			problems: [{ path: "$", rule: "vendor-file rule anthropic-agent-sdk" }],
+		};
+		expect(checkReport(bytes(full))).toEqual({ ok: true, report: full });
+		expect(await receive(bytes(full), { name, evidenceDir })).toEqual(expected);
+		expect(() => readdirSync(path.dirname(evidenceDir))).toThrow();
+		mkdirSync(evidenceDir, { recursive: true });
+		const file = path.join(evidenceDir, `${name}.json`);
+		const original = Buffer.from("synthetic earlier evidence\n");
+		writeFileSync(file, original);
+		expect(await receive(bytes(full), { name, evidenceDir, replace: true })).toEqual(expected);
+		expect(readFileSync(file)).toEqual(original);
+		expect(readdirSync(evidenceDir)).toEqual([`${name}.json`]);
+	});
+
+	it("applies the evidence-only tailnet rule to checks and private writes", async () => {
+		const report = bodyReport(["DYTEST- -", ".ts", ".net"].join(""));
+		const evidenceDir = path.join(temp, "canonical-private", "evidence");
+		const expected = {
+			ok: false,
+			problems: [{ path: "$", rule: "vendor-file rule evidence-tailnet" }],
+		};
+		expect(validate(report)).toEqual([]);
+		expect(() => assertContentFree(report, "report")).not.toThrow();
+		expect(checkReport(bytes(report))).toEqual(expected);
+		expect(await receive(bytes(report), { name: "tailnet-refused", evidenceDir })).toEqual(
+			expected,
+		);
+		expect(() => readdirSync(path.dirname(evidenceDir))).toThrow();
+	});
+
+	it("captures an evidence name getter once for validation, file rules and destination", async () => {
+		const evidenceDir = path.join(temp, "name-getter", "evidence");
+		let reads = 0;
+		const options = {
+			get name(): string {
+				reads++;
+				return reads === 1 ? "first-report" : "../escaped-report";
+			},
+			evidenceDir,
+		};
+		expect(await receive(bytes(full), options)).toEqual({
+			ok: true,
+			written: path.join(evidenceDir, "first-report.json"),
+		});
+		expect(reads).toBe(1);
+		expect(readdirSync(evidenceDir)).toEqual(["first-report.json"]);
+		expect(readdirSync(path.dirname(evidenceDir))).toEqual(["evidence"]);
+		expect(
+			JSON.parse(readFileSync(path.join(evidenceDir, "first-report.json"), "utf8")).data,
+		).toEqual(full);
+	}, 60_000);
+
+	it("rejects a non-string evidence name before coercion or writing", async () => {
+		const evidenceDir = path.join(temp, "name-coercion", "evidence");
+		let coercions = 0;
+		const name = {
+			toString(): string {
+				coercions++;
+				return coercions === 1 ? "safe-report" : "../escaped-report";
+			},
+		};
+		await expect(
+			receive(bytes(full), { name: name as unknown as string, evidenceDir }),
+		).rejects.toThrow("bad evidence name");
+		expect(coercions).toBe(0);
+		expect(() => readdirSync(path.dirname(evidenceDir))).toThrow();
+	});
+
 	it("writes evidence only once the report passes, and only what passed", async () => {
 		const evidence = path.join(temp, "write", "evidence");
 		const refused = await receive(bytes({ ...full, extra: corpusStrings[0] }), {
@@ -516,6 +671,189 @@ describe("receive", () => {
 describe("adb", () => {
 	const fakeAdb = fixture("fake-adb.mjs");
 	const env = (extra: Record<string, string>): NodeJS.ProcessEnv => ({ ...process.env, ...extra });
+
+	it("passes the private native selector as one argument before the fixed report command", async () => {
+		const serial = "synthetic-\u00e9 device;$(literal)";
+		const args = path.join(temp, "selected-args.json");
+		const capturedEnv = path.join(temp, "selected-env.json");
+		const inherited = env({
+			FAKE_ADB_OUT: fixture("report-full.json"),
+			FAKE_ADB_ARGS: args,
+			FAKE_ADB_ENV: capturedEnv,
+			ANDROID_SERIAL: "inherited-uppercase",
+		});
+		const before = { ...inherited };
+		const read = await readFromAdb([process.execPath, fakeAdb], { serial, env: inherited });
+		expect(JSON.parse(readFileSync(args, "utf8"))).toEqual(["-s", serial, ...ADB_ARGS]);
+		expect(JSON.parse(readFileSync(capturedEnv, "utf8"))).toEqual({ androidSerial: serial });
+		expect(inherited).toEqual(before);
+		expect(Buffer.from(read)).toEqual(readFileSync(fixture("report-full.json")));
+	});
+
+	it("removes every inherited selector case variant from the spawn environment", async () => {
+		const inherited = env({
+			FAKE_ADB_OUT: fixture("report-full.json"),
+			ANDROID_SERIAL: "synthetic-uppercase",
+			android_serial: "synthetic-lowercase",
+			Android_Serial: "synthetic-mixed-case",
+		});
+		const before = { ...inherited };
+		const serial = "synthetic-selected-selector";
+		const calls = vi.spyOn(childProcess, "spawn").mockClear();
+		try {
+			const read = await readFromAdb([process.execPath, fakeAdb], { serial, env: inherited });
+			expect(calls).toHaveBeenCalledExactlyOnceWith(
+				process.execPath,
+				[fakeAdb, "-s", serial, ...ADB_ARGS],
+				expect.objectContaining({ windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }),
+			);
+			const selectedEnv = calls.mock.calls[0]?.[2]?.env;
+			expect(
+				Object.keys(selectedEnv ?? {}).filter((key) => key.toUpperCase() === "ANDROID_SERIAL"),
+			).toEqual(["ANDROID_SERIAL"]);
+			expect(selectedEnv).toEqual({
+				...Object.fromEntries(
+					Object.entries(before).filter(([key]) => key.toUpperCase() !== "ANDROID_SERIAL"),
+				),
+				ANDROID_SERIAL: serial,
+			});
+			expect(inherited).toEqual(before);
+			expect(Buffer.from(read)).toEqual(readFileSync(fixture("report-full.json")));
+		} finally {
+			calls.mockRestore();
+		}
+	});
+
+	it("keeps inherited selection and original argv when no explicit selector is supplied", async () => {
+		const args = path.join(temp, "inherited-args.json");
+		const capturedEnv = path.join(temp, "inherited-env.json");
+		await readFromAdb([process.execPath, fakeAdb], {
+			env: env({
+				FAKE_ADB_OUT: fixture("report-full.json"),
+				FAKE_ADB_ARGS: args,
+				FAKE_ADB_ENV: capturedEnv,
+				ANDROID_SERIAL: "synthetic-inherited",
+			}),
+		});
+		expect(JSON.parse(readFileSync(args, "utf8"))).toEqual([...ADB_ARGS]);
+		expect(JSON.parse(readFileSync(capturedEnv, "utf8"))).toEqual({
+			androidSerial: "synthetic-inherited",
+		});
+	});
+
+	it("omits native error diagnostics with an explicit private selector", async () => {
+		const serial = "synthetic-private-serial";
+		const failed = readFromAdb([process.execPath, fakeAdb], {
+			serial,
+			env: env({ FAKE_ADB_MODE: "serial-error" }),
+		});
+		await expect(failed).rejects.toThrow(/^adb exited with 1$/);
+		await expect(failed).rejects.not.toThrow(serial);
+	});
+
+	it("keeps explicit selection private after the caller clears its options", async () => {
+		const serial = "synthetic-cleared-private-serial";
+		const args = path.join(temp, "cleared-options-args.json");
+		const capturedEnv = path.join(temp, "cleared-options-env.json");
+		const options: { serial?: string; env: NodeJS.ProcessEnv } = {
+			serial,
+			env: env({ FAKE_ADB_MODE: "serial-error", FAKE_ADB_ARGS: args, FAKE_ADB_ENV: capturedEnv }),
+		};
+		const failed = readFromAdb([process.execPath, fakeAdb], options);
+		delete options.serial;
+		await expect(failed).rejects.toThrow(/^adb exited with 1$/);
+		expect(JSON.parse(readFileSync(args, "utf8"))).toEqual(["-s", serial, ...ADB_ARGS]);
+		expect(JSON.parse(readFileSync(capturedEnv, "utf8"))).toEqual({ androidSerial: serial });
+	});
+
+	it("captures an explicit serial getter once for validation, argv, environment and diagnostics", async () => {
+		const serial = "synthetic-first-selector";
+		const args = path.join(temp, "getter-options-args.json");
+		const capturedEnv = path.join(temp, "getter-options-env.json");
+		let reads = 0;
+		const options = {
+			get serial(): string {
+				reads++;
+				return reads === 1 ? serial : "synthetic-later-selector";
+			},
+			env: env({ FAKE_ADB_MODE: "serial-error", FAKE_ADB_ARGS: args, FAKE_ADB_ENV: capturedEnv }),
+		};
+		await expect(readFromAdb([process.execPath, fakeAdb], options)).rejects.toThrow(
+			/^adb exited with 1$/,
+		);
+		expect(reads).toBe(1);
+		expect(JSON.parse(readFileSync(args, "utf8"))).toEqual(["-s", serial, ...ADB_ARGS]);
+		expect(JSON.parse(readFileSync(capturedEnv, "utf8"))).toEqual({ androidSerial: serial });
+	});
+
+	it.each(["serial-fragment-error", "serial-encoded-error"])(
+		"omits transformed native selector diagnostics (%s)",
+		async (mode) => {
+			const failed = readFromAdb([process.execPath, fakeAdb], {
+				serial: "synthetic-private-\u00e9-device-selector",
+				env: env({ FAKE_ADB_MODE: mode }),
+			});
+			await expect(failed).rejects.toThrow(/^adb exited with 1$/);
+		},
+	);
+
+	it("omits truncated native diagnostics that could contain only part of the private selector", async () => {
+		const serial = "synthetic-".repeat(250);
+		const failed = readFromAdb([process.execPath, fakeAdb], {
+			serial,
+			env: env({ FAKE_ADB_MODE: "serial-error" }),
+		});
+		await expect(failed).rejects.toThrow(/^adb exited with 1$/);
+		await expect(failed).rejects.not.toThrow("synthetic-");
+	});
+
+	it("retains native size and timeout limits with an explicit selector", async () => {
+		const serial = "synthetic-bounded-serial";
+		await expect(
+			readFromAdb([process.execPath, fakeAdb], {
+				serial,
+				env: env({ FAKE_ADB_MODE: "huge" }),
+			}),
+		).rejects.toThrow(`larger than ${MAX_REPORT_BYTES} bytes`);
+		await expect(
+			readFromAdb([process.execPath, fakeAdb], {
+				serial,
+				timeoutMs: 300,
+				env: env({ FAKE_ADB_MODE: "hang" }),
+			}),
+		).rejects.toThrow("adb timed out");
+	});
+
+	it.each(["", " ", "-d", "--all", "x\nprivate", "x\rprivate", "x\0private"])(
+		"refuses an invalid direct selector before spawning (%j)",
+		(serial) => {
+			expect(() => readFromAdb([process.execPath, fakeAdb], { serial })).toThrow("bad adb serial");
+		},
+	);
+
+	it.each([
+		{ label: "null", serial: null },
+		{ label: "boolean", serial: true },
+		{ label: "number", serial: 123 },
+		{ label: "array", serial: ["synthetic-array-selector"] },
+		{ label: "boxed string", serial: Object("synthetic-boxed-selector") },
+		{ label: "string-like object", serial: { trim: () => "synthetic-object-selector" } },
+	])("refuses a non-string direct selector before spawning ($label)", ({ serial }) => {
+		const calls = vi
+			.spyOn(childProcess, "spawn")
+			.mockClear()
+			.mockImplementation(() => {
+				throw new Error("unexpected fake spawn");
+			});
+		try {
+			expect(() => readFromAdb([process.execPath, fakeAdb], { serial: serial as string })).toThrow(
+				"bad adb serial",
+			);
+			expect(calls).not.toHaveBeenCalled();
+		} finally {
+			calls.mockRestore();
+		}
+	});
 
 	it("spawns adb itself, with exec-out run-as ... cat files/report.json, and keeps the bytes", async () => {
 		// Multibyte UTF-8 and CRLF between tokens, which a PowerShell pipe would re-encode.
@@ -589,6 +927,100 @@ describe("the receive-report CLI", () => {
 		});
 		return { code, out: out.join("\n"), err: err.join("\n") };
 	};
+
+	it("refuses vendor-file data in stdin check and named CLI modes without quoting it", async () => {
+		for (const target of [["--check"], ["--name", "vendor-refused"]]) {
+			const evidenceDir = path.join(temp, `cli-vendor-${target[0]?.slice(2)}`, "evidence");
+			const result = await run(["--stdin", ...target], vendorReport(), { evidenceDir });
+			expect(result).toEqual({
+				code: 1,
+				out: "",
+				err: "receive-report: refused (1 problems); nothing written\n  $: vendor-file rule openai-codex-auth",
+			});
+			expect(result.err).not.toContain(vendorText);
+			expect(() => readdirSync(path.dirname(evidenceDir))).toThrow();
+		}
+	});
+
+	it.each([
+		{
+			label: "vendor basename",
+			name: ["clau", "de", "-code", "-sdk"].join(""),
+			report: full,
+			rule: "anthropic-agent-sdk",
+		},
+		{
+			label: "canonical evidence rule",
+			name: "tailnet-refused",
+			report: bodyReport(["DYTEST- -", ".ts", ".net"].join("")),
+			rule: "evidence-tailnet",
+		},
+	])(
+		"refuses a $label through stdin named CLI mode before writing",
+		async ({ name, report, rule }) => {
+			const evidenceDir = path.join(temp, `cli-semantic-${name}`, "evidence");
+			expect(await run(["--stdin", "--name", name], report, { evidenceDir })).toEqual({
+				code: 1,
+				out: "",
+				err: `receive-report: refused (1 problems); nothing written\n  $: vendor-file rule ${rule}`,
+			});
+			expect(() => readdirSync(path.dirname(evidenceDir))).toThrow();
+		},
+	);
+
+	it("routes explicit selection through the CLI for checks and named writes", async () => {
+		const args = path.join(temp, "cli-selected-args.json");
+		const selectedEnv = path.join(temp, "cli-selected-env.json");
+		const evidenceDir = path.join(temp, "cli-selected", "evidence");
+		const serial = "synthetic-cli-serial";
+		const extra = {
+			evidenceDir,
+			adb: [process.execPath, fixture("fake-adb.mjs")] as const,
+			env: {
+				...process.env,
+				FAKE_ADB_OUT: fixture("report-full.json"),
+				FAKE_ADB_ARGS: args,
+				FAKE_ADB_ENV: selectedEnv,
+				ANDROID_SERIAL: "other-synthetic-serial",
+			},
+		};
+		for (const target of [["--check"], ["--name", "selected-cli"]]) {
+			const result = await run(["--from-adb", "--serial", serial, ...target], full, extra);
+			expect(result).toMatchObject({ code: 0, err: "" });
+			expect(result.out).not.toContain(serial);
+			expect(JSON.parse(readFileSync(args, "utf8"))).toEqual(["-s", serial, ...ADB_ARGS]);
+			expect(JSON.parse(readFileSync(selectedEnv, "utf8"))).toEqual({ androidSerial: serial });
+		}
+		expect(
+			JSON.parse(readFileSync(path.join(evidenceDir, "selected-cli.json"), "utf8")).data,
+		).toEqual(full);
+	}, 60_000);
+
+	it("refuses invalid selector usage with zero fake child calls and no value in errors", async () => {
+		const args = path.join(temp, "invalid-selector-never-called.json");
+		const invalid = [
+			["--from-adb", "--check", "--serial"],
+			...["", " ", "-d", "--check", "x\nprivate", "x\rprivate", "x\0private"].map((serial) => [
+				"--from-adb",
+				"--check",
+				"--serial",
+				serial,
+			]),
+			["--from-adb", "--check", "--serial", "private-value", "--serial", "second-value"],
+			["--stdin", "--check", "--serial", "private-value"],
+			["--fields", "--serial", "private-value"],
+		];
+		for (const argv of invalid) {
+			const result = await run(argv, full, {
+				adb: [process.execPath, fixture("fake-adb.mjs")],
+				env: { ...process.env, FAKE_ADB_ARGS: args },
+			});
+			expect(result.code).toBe(2);
+			expect(result.out).toBe("");
+			expect(result.err).not.toMatch(/private-value|second-value|x[\r\n]/);
+			expect(() => readFileSync(args)).toThrow();
+		}
+	});
 
 	it("checks a report from stdin and writes nothing with --check, with or without a leading --", async () => {
 		for (const argv of [
@@ -714,7 +1146,7 @@ describe("the receive-report CLI", () => {
 		const script = fileURLToPath(new URL("../src/receive-report.ts", import.meta.url));
 		const runProcess = (input: Buffer) =>
 			new Promise<{ code: number | null; out: string; err: string }>((resolve, reject) => {
-				const child = spawn(process.execPath, [script, "--stdin", "--check"], {
+				const child = childProcess.spawn(process.execPath, [script, "--stdin", "--check"], {
 					cwd: temp,
 					windowsHide: true,
 				});
