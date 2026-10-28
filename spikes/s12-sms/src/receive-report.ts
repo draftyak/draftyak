@@ -6,6 +6,8 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertContentFree, redact, writeEvidence } from "@draftyak/spike-kit";
+import { rules } from "../../../tools/vendor-guard/rules/index.ts";
+import { jsonStrings, lineHits, type PatternRule } from "../../../tools/vendor-guard/src/rules.ts";
 import { fileHits } from "../../../tools/vendor-guard/src/scan.ts";
 
 // AGENTS.md's only allowed run-as: the report bytes straight from the probe's private files.
@@ -176,11 +178,18 @@ export type CheckResult =
 
 // Apply file rules to report data under the S12 evidence policy, including private destinations.
 // The kit-generated envelope retains its own content gate; this is not an envelope equivalence.
+const REPORT_TEXT_RULES = rules.filter(
+	(rule): rule is PatternRule =>
+		rule.kind === "vendor" || rule.kind === "secret" || rule.kind === "attribution",
+);
+
 function reportFileProblems(report: Json, name = "check"): readonly Problem[] {
-	const hits = fileHits(`spikes/s12-sms/evidence/${name}.json`, {
-		text: JSON.stringify(report),
-		plain: true,
-	});
+	const text = JSON.stringify(report);
+	const hits = [
+		...fileHits(`spikes/s12-sms/evidence/${name}.json`, { text, plain: true }),
+		// Decode once so JSON escapes cannot hide a line or word boundary.
+		...jsonStrings(text).flatMap(({ value }) => lineHits(value, REPORT_TEXT_RULES)),
+	];
 	return [...new Set(hits.map(({ rule }) => rule.id))]
 		.slice(0, MAX_PROBLEMS)
 		.map((id) => ({ path: "$", rule: `vendor-file rule ${id}` }));
@@ -231,13 +240,14 @@ export async function receive(
 ): Promise<Received> {
 	const checked = checkReport(bytes);
 	if (!checked.ok) return checked;
-	if (options.name === undefined) return { ok: true, written: null };
-	if (!EVIDENCE_NAME.test(options.name)) throw new Error("bad evidence name");
-	const fileProblems = reportFileProblems(checked.report, options.name);
+	const { name, evidenceDir, replace } = options;
+	if (name === undefined) return { ok: true, written: null };
+	if (typeof name !== "string" || !EVIDENCE_NAME.test(name)) throw new Error("bad evidence name");
+	const fileProblems = reportFileProblems(checked.report, name);
 	if (fileProblems.length > 0) return { ok: false, problems: fileProblems };
-	const file = path.join(options.evidenceDir ?? EVIDENCE_DIR, `${options.name}.json`);
-	if (writing.has(file) || (!options.replace && existsSync(file))) {
-		throw new Error(`evidence/${options.name}.json exists; --replace overwrites it`);
+	const file = path.join(evidenceDir ?? EVIDENCE_DIR, `${name}.json`);
+	if (writing.has(file) || (!replace && existsSync(file))) {
+		throw new Error(`evidence/${name}.json exists; --replace overwrites it`);
 	}
 	writing.add(file);
 	try {
@@ -339,8 +349,11 @@ export function readFromAdb(
 	});
 }
 
-const validSerial = (serial: string): boolean =>
-	serial.trim().length > 0 && !serial.trim().startsWith("-") && !/[\0\r\n]/.test(serial);
+const validSerial = (serial: unknown): serial is string =>
+	typeof serial === "string" &&
+	serial.trim().length > 0 &&
+	!serial.trim().startsWith("-") &&
+	!/[\0\r\n]/.test(serial);
 
 async function readAll(stream: NodeJS.ReadableStream): Promise<Uint8Array> {
 	const chunks: Buffer[] = [];
