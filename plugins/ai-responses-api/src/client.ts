@@ -1,6 +1,7 @@
 import type { DraftRequest } from "@draftyak/protocol/ai-provider-v1";
 import OpenAI, { APIConnectionError } from "openai";
-import { buildRequest, type Settings } from "./request.ts";
+import { buildRequest, type ResponsesRequest, type Settings } from "./request.ts";
+import { CONSUMER_TIMEOUT_MS, type CompletedTransport, completedResponse } from "./runner.ts";
 import { normalizeError, ResponsesError } from "./shared.ts";
 
 export type ResponsesFetch = (
@@ -95,10 +96,56 @@ function makeSdk(fetch: ResponsesFetch, capture: (response: Response | undefined
 	});
 }
 
-/** Returns the original unread HTTP response, including non-2xx, for the bounded native consumer. */
-export function createClient(fetch: ResponsesFetch): ResponsesSdkClient {
+function validateFetch(fetch: ResponsesFetch): void {
 	if (typeof fetch !== "function" || Reflect.has(process.env, "OPENAI_CUSTOM_HEADERS"))
 		throw new ResponsesError("INVALID_INPUT");
+}
+
+// Only this package's validated request builder supplies this internal SDK seam.
+async function sendRequest(
+	fetch: ResponsesFetch,
+	request: ResponsesRequest,
+	signal?: AbortSignal,
+	timeout?: number,
+): Promise<Response> {
+	if (signal?.aborted) throw new ResponsesError("ABORTED");
+	const { body } = request;
+	let ownedResponse: Response | undefined;
+	const client = makeSdk(fetch, (received) => {
+		ownedResponse = received;
+	});
+	let response: Response;
+	try {
+		response = await client.responses
+			.create(
+				{ ...body, input: body.input.map((item) => ({ ...item })) },
+				{ signal, ...(timeout === undefined ? {} : { timeout }) },
+			)
+			.asResponse();
+	} catch (error) {
+		if (signal?.aborted) {
+			cancelBody(ownedResponse);
+			throw new ResponsesError("ABORTED");
+		}
+		const raw = rawResponse(error);
+		if (!raw) {
+			cancelBody(ownedResponse);
+			if (error instanceof APIConnectionError && error.cause instanceof FetchFailure)
+				throw error.cause.error;
+			throw normalizeError(error);
+		}
+		response = raw;
+	}
+	if (signal?.aborted) {
+		cancelBody(ownedResponse);
+		throw new ResponsesError("ABORTED");
+	}
+	return response;
+}
+
+/** Returns the original unread HTTP response, including non-2xx. */
+export function createClient(fetch: ResponsesFetch): ResponsesSdkClient {
+	validateFetch(fetch);
 	return Object.freeze({
 		async send(
 			input: DraftRequest,
@@ -106,36 +153,17 @@ export function createClient(fetch: ResponsesFetch): ResponsesSdkClient {
 			signal?: AbortSignal,
 		): Promise<Response> {
 			if (signal?.aborted) throw new ResponsesError("ABORTED");
-			const { body } = buildRequest(input, settings);
-			let ownedResponse: Response | undefined;
-			const client = makeSdk(fetch, (received) => {
-				ownedResponse = received;
-			});
-			let response: Response;
-			try {
-				response = await client.responses
-					.create({ ...body, input: body.input.map((item) => ({ ...item })) }, { signal })
-					.asResponse();
-			} catch (error) {
-				if (signal?.aborted) {
-					cancelBody(ownedResponse);
-					throw new ResponsesError("ABORTED");
-				}
-				const raw = rawResponse(error);
-				if (!raw) {
-					cancelBody(ownedResponse);
-					if (error instanceof APIConnectionError && error.cause instanceof FetchFailure)
-						throw error.cause.error;
-					throw normalizeError(error);
-				}
-				response = raw;
-			}
-			if (signal?.aborted) {
-				cancelBody(ownedResponse);
-				throw new ResponsesError("ABORTED");
-			}
-			ownedResponse = undefined;
-			return response;
+			return sendRequest(fetch, buildRequest(input, settings), signal);
 		},
 	});
+}
+
+/** Consumes the SDK wire response for generateDraft's already-built request. */
+export function createCompletedTransport(fetch: ResponsesFetch): CompletedTransport {
+	validateFetch(fetch);
+	return (request, { signal }) =>
+		completedResponse(
+			(consumerSignal) => sendRequest(fetch, request, consumerSignal, CONSUMER_TIMEOUT_MS),
+			signal,
+		);
 }

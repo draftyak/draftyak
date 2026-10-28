@@ -1,6 +1,11 @@
 export type { DraftOutcome, DraftRequest } from "@draftyak/protocol/ai-provider-v1";
 export { MAX_DRAFT_OUTPUT_TEXT_BYTES } from "@draftyak/protocol/draft-output-text";
-export { createClient, type ResponsesFetch, type ResponsesSdkClient } from "./client.ts";
+export {
+	createClient,
+	createCompletedTransport,
+	type ResponsesFetch,
+	type ResponsesSdkClient,
+} from "./client.ts";
 export type {
 	Effort,
 	RequestBody,
