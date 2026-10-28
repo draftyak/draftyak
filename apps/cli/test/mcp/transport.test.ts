@@ -307,6 +307,51 @@ test("modern account answers relay once with the exact original params and hub s
 	assert.equal(wire.seen.length, before);
 });
 
+test.each(["expired", "consumed", "unknown"] as const)(
+	"unavailable modern question gives fixed restart guidance for %s state without HTTP",
+	async (kind) => {
+		const wire = await bridge((message) =>
+			message.params.inputResponses ? { messages: [] } : question,
+		);
+		await wire.request("server/discover", { _meta: envelope() });
+		const original = {
+			name: "triage_inbox",
+			arguments: { window: "24h" },
+			_meta: envelope({ elicitation: { form: {} } }),
+		};
+		const asked = await wire.request("prompts/get", original);
+		const answer = {
+			...original,
+			requestState: kind === "unknown" ? "DYTEST-UNKNOWN-STATE-CANARY" : asked.result.requestState,
+			inputResponses: {
+				account: { action: "accept", content: { account: "DYTEST-ACCOUNT-CANARY" } },
+			},
+		};
+		if (kind === "consumed")
+			assert.deepEqual((await wire.request("prompts/get", answer)).result, { messages: [] });
+		if (kind === "expired") {
+			const now = performance.now();
+			vi.spyOn(performance, "now").mockReturnValue(now + 600_001);
+		}
+		const before = wire.seen.length;
+		const reply = await wire.request("prompts/get", answer);
+		assert.equal(wire.seen.length, before);
+		assert.deepEqual(reply.error, {
+			code: -32602,
+			message:
+				"The previous question is no longer available. This answer was not relayed. Run the original request again.",
+		});
+		for (const value of [
+			TOKEN,
+			answer.requestState,
+			"DYTEST-ACCOUNT-CANARY",
+			"triage_inbox",
+			"24h",
+		])
+			assert.equal(JSON.stringify(reply.error).includes(value), false);
+	},
+);
+
 test("strict JSON params retain own special keys for native validation without prototype mutation", async () => {
 	const wire = await bridge(() => ({ messages: [] }));
 	await wire.initialize();
