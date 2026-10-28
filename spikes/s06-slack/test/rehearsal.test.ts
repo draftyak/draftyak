@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Fingerprint, fingerprint, writeEvidence } from "@draftyak/spike-kit";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Clock } from "../src/api.ts";
 import type { ChannelType } from "../src/reduce.ts";
 import { FakeSlack, fakeToken, messageEvent, OWNER, TEAM } from "./fake-slack.ts";
@@ -526,17 +526,42 @@ describe("rehearsal: the S6 live procedure against FakeSlack", () => {
 		const fixture = await setUp();
 		const slack = fixture.fake;
 		manyConversations(slack);
-		const result = await runLive(
-			options(fixture, {
-				waits: { ...WAITS, eventsMs: 1200, checkMs: 1, remindMs: 10_000, pollerMs: 20 },
-				cue: (step) => {
-					if (step === "uninstall") {
-						slack.fail("auth.test", 50, "token_revoked");
-						revocationEvents(slack);
-					} else if (step === "delete") slack.fail("apps.connections.open", 50, "invalid_auth");
-				},
-			}),
-		);
+		let released = false;
+		let result: LiveResult;
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			result = await runLive(
+				options(fixture, {
+					waits: { ...WAITS, eventsMs: 1200, checkMs: 0, remindMs: 10_000, pollerMs: 20 },
+					say: (line) => {
+						fixture.lines.push(line);
+						// Advance only after a whole batch of real reads, without adding message events.
+						if (
+							!released &&
+							line.startsWith("message.im: ") &&
+							slack.requests.filter(
+								({ method, params }) =>
+									method === "conversations.history" &&
+									params.oldest !== undefined &&
+									params.limit === "100",
+							).length > 200
+						) {
+							released = true;
+							vi.advanceTimersByTime(1200);
+						}
+					},
+					cue: (step) => {
+						if (step === "uninstall") {
+							slack.fail("auth.test", 50, "token_revoked");
+							revocationEvents(slack);
+						} else if (step === "delete") slack.fail("apps.connections.open", 50, "invalid_auth");
+					},
+				}),
+			);
+		} finally {
+			vi.useRealTimers();
+		}
+		expect(released).toBe(true);
 		const sent =
 			Number(at(result.data, "sentChecks")) +
 			slack.requests.filter(
