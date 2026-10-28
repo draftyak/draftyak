@@ -134,7 +134,7 @@ export class ClosedDependencies {
 			const text = this.#lock.split(`\n${section}:\n`)[1]?.split(/\n[^ \n]/)[0];
 			if (
 				!text?.split(/\r?\n/).some((line) => {
-					const value = /^ {2}(?:'([^']+)'|([^'\s][^:]*)):$/.exec(line);
+					const value = /^ {2}(?:'([^']+)'|([^'\s][^:]*)):(?: \{\})?$/.exec(line);
 					const entry = value?.[1] ?? value?.[2];
 					return entry === key || (section === "snapshots" && entry?.startsWith(`${key}(`));
 				})
