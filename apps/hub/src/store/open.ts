@@ -152,6 +152,8 @@ const SETTINGS = {
 	cipher: "chacha20",
 	journal_mode: "wal",
 	synchronous: 2,
+	fullfsync: 1,
+	checkpoint_fullfsync: 1,
 	busy_timeout: 5000,
 	foreign_keys: 1,
 	recursive_triggers: 1,
@@ -262,6 +264,9 @@ export function openEncrypted(
 		db.key(key);
 		// Applying the key does not verify it. This read must succeed before any schema write.
 		db.prepare("SELECT count(*) FROM sqlite_master").get();
+		// Request full-sync behavior before any opening-time configuration can write the file.
+		db.pragma("fullfsync = ON");
+		db.pragma("checkpoint_fullfsync = ON");
 		db.pragma("temp_store = MEMORY");
 		db.pragma("auto_vacuum = INCREMENTAL");
 		db.pragma("journal_mode = WAL");

@@ -27,17 +27,38 @@ importers:
         specifier: 5.0.5
         version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(yaml@2.9.1))
 
+  apps/cli:
+    devDependencies:
+      rolldown:
+        specifier: 1.2.14
+        version: 1.2.14
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   apps/hub:
     dependencies:
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@peculiar/x509':
+        specifier: 2.2.0
+        version: 2.2.0
       better-sqlite3-multiple-ciphers:
         specifier: 13.0.3
         version: 13.0.3
       kysely:
         specifier: 0.29.6
         version: 0.29.6
+      reflect-metadata:
+        specifier: 0.2.2
+        version: 0.2.2
+    devDependencies:
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
+  packages/bounded-files:
     devDependencies:
       tsdown:
         specifier: 0.23.1
@@ -379,6 +400,16 @@ importers:
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+
+  tools/egress-recorder:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+    devDependencies:
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
 
   tools/fetch-node: {}
 
@@ -1694,6 +1725,9 @@ packages:
   raw-body@3.0.2:
     resolution: {integrity: sha512-K5zQjDllxWkf7Z5xJdV0/B0WTNqx6vxG70zJE4N0kBs4LovmEYWJzQGxC9bS9RAKu3bgM40lrd5zoLJ12MQ5BA==}
     engines: {node: '>= 0.10'}
+
+  reflect-metadata@0.2.2:
+    resolution: {integrity: sha512-urBwgfrvVP/eAyXx4hluJivBKzuEbSQs9rKWCrCkbSxNv8mxPcUZKeuoF3Uy4mJl3Lwprp6yy5/39VWigZ4K6Q==}
 
   require-from-string@2.0.2:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
@@ -3153,6 +3187,8 @@ snapshots:
       http-errors: 2.0.1
       iconv-lite: 0.7.3
       unpipe: 1.0.0
+
+  reflect-metadata@0.2.2: {}
 
   require-from-string@2.0.2: {}
 
