@@ -259,7 +259,7 @@ describe("main argument ownership and output", () => {
 		expect(stderr.join("")).not.toContain("DYTEST-AFTER-CALL");
 	});
 
-	it.each([CANARY, "mcp", "help;DYTEST", "../../help", " help "])(
+	it.each([CANARY, "not-installed", "help;DYTEST", "../../help", " help "])(
 		"refuses unknown literal command %s without echoing any argument",
 		async (command) => {
 			expect(await main([command, CANARY, "--token=DYTEST-NONCREDENTIAL"])).toBe(2);
