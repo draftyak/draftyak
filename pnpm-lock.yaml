@@ -403,6 +403,9 @@ importers:
 
   tools/doctor:
     dependencies:
+      '@draftyak/fetch-node':
+        specifier: workspace:*
+        version: link:../fetch-node
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
