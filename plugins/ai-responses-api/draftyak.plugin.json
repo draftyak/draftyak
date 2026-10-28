@@ -1,0 +1,15 @@
+{
+  "id": "@draftyak/ai-responses-api",
+  "version": "0.0.0",
+  "sdk": "1.0.0",
+  "runtime": "node",
+  "kind": "ai-provider",
+  "contract": { "extension": "io.github.draftyak/ai-provider", "version": 1 },
+  "isolation": "standard",
+  "auth": { "kind": "api-key", "scopes": [], "requiredGrantedScopes": [] },
+  "credentials": { "mode": "brokered", "urlSecrets": [] },
+  "permissions": {},
+  "dataClasses": ["gmail.metadata", "gmail.content", "slack.metadata", "slack.content"],
+  "egress": { "profile": "responses-api-v1" },
+  "license": "Apache-2.0"
+}

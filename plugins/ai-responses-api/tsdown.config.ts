@@ -6,7 +6,7 @@ const config: UserConfig = {
 	format: "esm",
 	platform: "node",
 	fixedExtension: true,
-	deps: { neverBundle: ["@draftyak/protocol", "openai", "zod"] },
+	deps: { neverBundle: ["@draftyak/protocol", "@draftyak/sdk", "openai", "zod"] },
 	dts: { generator: "oxc" },
 };
 export default config;
