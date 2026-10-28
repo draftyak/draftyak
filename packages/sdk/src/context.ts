@@ -1,5 +1,11 @@
+import type { LookupPermit } from "@draftyak/protocol/host-channel";
 import { type HostFetch, hostFetch } from "./fetch.ts";
 import type { HostChannel } from "./host.ts";
+
+export interface PluginInstance {
+	readonly id: string;
+	readonly config: Readonly<Record<string, unknown>>;
+}
 
 export interface HostSocket {
 	readonly id: string;
@@ -10,6 +16,7 @@ export interface HostSocket {
 export interface PluginContext {
 	readonly plugin: string;
 	readonly account?: string;
+	readonly instance?: PluginInstance;
 	readonly signal: AbortSignal;
 	readonly fetch: HostFetch;
 	readonly ws: { open(url: string): Promise<HostSocket> };
@@ -25,18 +32,22 @@ export interface PluginContext {
 export interface ContextIdentity {
 	readonly plugin: string;
 	readonly account?: string;
+	readonly instance?: PluginInstance;
 }
 
 export function createPluginContext(
 	identity: ContextIdentity,
 	host: HostChannel,
 	signal: AbortSignal = new AbortController().signal,
+	// Internal serving plumbing; only the parent can authorize a presented grant.
+	lookupScope?: Readonly<{ lookupPermit?: LookupPermit }>,
 ): PluginContext {
 	return Object.freeze({
 		plugin: identity.plugin,
 		...(identity.account ? { account: identity.account } : {}),
+		...(identity.instance ? { instance: identity.instance } : {}),
 		signal,
-		fetch: hostFetch(host, signal),
+		fetch: hostFetch(host, signal, lookupScope),
 		ws: Object.freeze({
 			async open(url: string): Promise<HostSocket> {
 				const { socketId: id } = await host.request("host/ws.open", { url }, { signal });

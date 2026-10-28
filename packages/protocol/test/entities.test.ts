@@ -95,6 +95,22 @@ const { mailbox } = fixtures;
 const untrusted = (text: string) => ({ untrusted: true, text });
 
 describe("entities", () => {
+	it("requires an explicit sharing fact without conflating it with external status", () => {
+		const { shared: _, ...legacy } = fixtures.chatConversation;
+		agree(
+			"ChatConversation",
+			[
+				{ ...fixtures.chatConversation, external: false, shared: true },
+				{ ...fixtures.chatConversation, external: true, shared: false },
+			],
+			[legacy, ...each(fixtures.chatConversation, "shared", [null, "false", 0, [], {}])],
+		);
+		expect(
+			entities.ChatConversation.safeParse({ ...fixtures.chatConversation, shared: undefined })
+				.success,
+		).toBe(false);
+	});
+
 	it("accept §3-shaped samples and refuse unknown or missing members, in zod and JSON Schema", () => {
 		for (const [name, accepted] of Object.entries(fixtures.samples)) {
 			agree(

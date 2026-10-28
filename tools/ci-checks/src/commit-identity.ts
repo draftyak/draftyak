@@ -91,7 +91,7 @@ function main(argv: readonly string[]): number {
 		return 0;
 	}
 	console.log(
-		`commit-identity: ${problems.length} of ${commits.length} commits use a ${checked} that this repository's branches don't allow:`,
+		`commit-identity: ${problems.length} of ${commits.length} commits use ${gate ? "a" : "an"} ${checked} that this repository's branches don't allow:`,
 	);
 	for (const problem of problems) console.log(`  ${problem}`);
 	console.log(`commit-identity: allowed: ${[...allowedEmails].join(", ")}`);

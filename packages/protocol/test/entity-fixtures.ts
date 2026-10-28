@@ -80,6 +80,7 @@ export const chatConversation: E.ChatConversation = {
 	name: untrusted("project-yak"),
 	type: "public",
 	external: true,
+	shared: true,
 	memberCount: 12,
 	channelArchived: false,
 	member: true,

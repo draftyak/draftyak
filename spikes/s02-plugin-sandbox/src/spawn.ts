@@ -91,7 +91,7 @@ export function preSpawnLinkScan(dirs: readonly string[]): LinkFinding | null {
 export interface ScrubEnvSpec {
 	readonly pluginId: string;
 	readonly instanceId: string;
-	// home and temp point here (plan §4 Environment); the plugin never sees the real profile paths.
+	// Home and temp environment variables point here; OS/report APIs can still expose real paths.
 	readonly dataDir: string;
 	readonly parentEnv?: NodeJS.ProcessEnv;
 	readonly platform?: NodeJS.Platform;
@@ -102,8 +102,8 @@ export interface ScrubEnvSpec {
 // The result is built from an empty object, never the parent's, so NODE_OPTIONS and every
 // other variable are dropped. On Windows, libuv injects a required variable only when it is absent, so
 // PATH, USERNAME, USERDOMAIN, LOGONSERVER, SYSTEMDRIVE and WINDIR are all set empty here to keep the
-// real values out of the child. os.userInfo() and os.hostname() still return the real user, home and
-// host through OS APIs regardless of the env; that residual is accepted and recorded for ADR 0003.
+// real values out of the environment. OS and diagnostic-report APIs can still expose user, home,
+// host and network metadata; ADR 0003 records the qualified observations and limited owner acceptance.
 export function scrubEnv(spec: ScrubEnvSpec): Record<string, string> {
 	const parent = spec.parentEnv ?? process.env;
 	const platform = spec.platform ?? process.platform;
