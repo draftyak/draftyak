@@ -28,7 +28,7 @@ const forbidden = Buffer.from("biome-ignore");
 // Entries Biome would skip or reconfigure below the outbox: names the root .gitignore matches
 // (VCS ignores outrank files.includes), nested Biome configuration and ignore files.
 export const SKIPPED_NAME: RegExp =
-	/^(?:node_modules|\.turbo|\.vitest|\.cache|dist|target|\.gradle|build|gen|binaries|local\.properties|biome\.jsonc?|\.gitignore|\.ignore)$|^\.env|\.(?:log|apk|aab|jks|keystore|tsbuildinfo)$/i;
+	/^(?:node_modules|\.git|\.svn|\.hg|\.yarn|\.DS_Store|\.turbo|\.vitest|\.cache|dist|target|\.gradle|build|gen|binaries|local\.properties|biome\.jsonc?|\.gitignore|\.ignore)$|^\.env|\.(?:log|apk|aab|jks|keystore|tsbuildinfo)$/i;
 
 function refuse(): never {
 	throw new Error("Outbox suppression scan refused");

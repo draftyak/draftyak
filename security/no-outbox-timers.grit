@@ -10,7 +10,7 @@ language js
 // - module sources, strings and plain template literals naming timers, node:timers,
 //   timers/promises or node:timers/promises: imports, re-exports, require, import().
 // It matches source spelling only. It can't follow a timer through a variable or another module,
-// an escaped name or string (setTimeout, "node:t\imers") or a name built at run time
+// an escaped name or string (set\u0054imeout, "node:t\imers") or a name built at run time
 // (concatenation, Function, vm, a computed import()). The claim's two-clock check, not this rule,
 // is what keeps a send from going early.
 pattern banned_string() {
