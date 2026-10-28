@@ -561,9 +561,48 @@ process.exitCode = exit;
 			windowsHide: true,
 		},
 	);
-	expect({ status: result.status, stderr: result.stderr }).toEqual({
+	expect({
+		status: result.status,
+		stderr: result.stderr,
+		report: JSON.parse(result.stdout),
+	}).toEqual({
 		status: 1,
 		stderr: "Command refused.\n",
+		report: { exit: 1, dependencyEvaluated: false },
 	});
-	expect(JSON.parse(result.stdout)).toEqual({ exit: 1, dependencyEvaluated: false });
+});
+
+it("bundles an explicit workspace JSON export without a runtime source or package lookup", () => {
+	const f = fixture();
+	const ownerName = "@draftyak/build-fixture",
+		policyName = "@draftyak/build-policy";
+	const owner = workspacePackage(
+		f,
+		ownerName,
+		`
+import policy from '${policyName}/versions.json' with { type: 'json' };
+export const value: string = policy.minimum;\n`,
+		"export declare const value: string;\n",
+	);
+	const policy = workspacePackage(f, policyName, "export {};\n", "export {};\n");
+	const manifest = JSON.parse(readFileSync(path.join(policy, "package.json"), "utf8"));
+	manifest.exports = { "./versions.json": "./versions.json" };
+	put(policy, "package.json", JSON.stringify(manifest));
+	put(
+		policy,
+		"versions.json",
+		JSON.stringify({ minimum: "DYTEST floor", bundled: "DYTEST bundled" }),
+	);
+	dependencies(owner, [policyName]);
+	linkPackage(owner, policyName, policy);
+	dependencies(f.cli, [ownerName]);
+	command(f, "return value === 'DYTEST floor' ? 15 : 8;", `import { value } from '${ownerName}';`);
+	const staged = built(f);
+	assertClosedImports(f, staged);
+	const result = invoke(staged, ["dependency"]);
+	expect({ status: result.status, stdout: result.stdout, stderr: result.stderr }).toEqual({
+		status: 15,
+		stdout: "",
+		stderr: "",
+	});
 });
