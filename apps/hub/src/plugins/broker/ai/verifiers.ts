@@ -20,7 +20,10 @@ function headers(
 	for (const [name, expected] of Object.entries(required))
 		if (input.headers.get(name) !== expected) refuse();
 	for (const [name, value] of input.headers)
-		if (!(Object.hasOwn(required, name) && required[name] === value) && !optional[name]?.(value))
+		if (
+			!(Object.hasOwn(required, name) && required[name] === value) &&
+			!(Object.hasOwn(optional, name) && optional[name]?.(value))
+		)
 			refuse();
 }
 
