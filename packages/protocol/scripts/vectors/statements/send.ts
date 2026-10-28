@@ -1,7 +1,18 @@
 import { flagsHash } from "../../../src/flags.ts";
-import { contentHash, sendWindow } from "../../../src/snapshot.ts";
+import {
+	CurrentSendSnapshotV1,
+	contentHash,
+	SendSnapshotV1,
+	sendWindow,
+} from "../../../src/snapshot.ts";
 import type { VectorContext, VectorFile } from "../../vectors.ts";
-import { exampleSnapshot, SNAPSHOT_IAT, SNAPSHOT_IDS, scheduleAt } from "../snapshot.ts";
+import {
+	exampleSnapshot,
+	SNAPSHOT_IAT,
+	SNAPSHOT_IDS,
+	scheduleAt,
+	snapshotVectors,
+} from "../snapshot.ts";
 import { type SignVector, statementBase, testFlags, typedVectors } from "./shared.ts";
 export function example(): Record<string, unknown> {
 	const base = statementBase();
@@ -52,6 +63,25 @@ async function extra(
 		true,
 		{ snapshot, windowValid: true },
 	);
+	const legacy = SendSnapshotV1.parse(
+		snapshotVectors().find((vector) => vector.id === "chat-thread")?.snapshot,
+	);
+	if (legacy.kind !== "chat") throw new Error("expected legacy chat fixture");
+	await signed(
+		"legacy-chat-current-window-refused",
+		{ ...base, contentHash: contentHash(legacy), ...sendWindow(legacy, Number(base.iat)) },
+		true,
+		{ snapshot: legacy, windowValid: false },
+	);
+	for (const shared of [false, true]) {
+		const current = CurrentSendSnapshotV1.parse({ ...legacy, chat: { ...legacy.chat, shared } });
+		await signed(
+			`current-chat-sharing-${shared}`,
+			{ ...base, contentHash: contentHash(current), ...sendWindow(current, Number(base.iat)) },
+			true,
+			{ snapshot: current, windowValid: true },
+		);
+	}
 }
 export const generate = (context: VectorContext): Promise<VectorFile[]> =>
 	typedVectors("approval.send.v1", context, example, extra);

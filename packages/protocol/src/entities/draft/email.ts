@@ -1,10 +1,7 @@
 import * as z from "zod";
 import { MediaType } from "../../normalized-change.ts";
 import { Sha256Hex, Ulid } from "../../scalars.ts";
-import { bodyText, EmailAddress, oneLine } from "../common.ts";
-
-// A send snapshot holds at most this many of each list, so a draft does too.
-const MAX_ITEMS = 100;
+import { bodyText, EmailAddress, MAX_EMAIL_LIST_ITEMS, oneLine } from "../common.ts";
 
 export const DraftAttachment: z.ZodObject<
 	{
@@ -33,7 +30,7 @@ export const DraftAttachment: z.ZodObject<
 export type DraftAttachment = z.infer<typeof DraftAttachment>;
 
 type Addresses = z.ZodArray<typeof EmailAddress>;
-const addresses: Addresses = z.array(EmailAddress).max(MAX_ITEMS);
+const addresses: Addresses = z.array(EmailAddress).max(MAX_EMAIL_LIST_ITEMS);
 
 export const EmailDraftContent: z.ZodObject<
 	{
@@ -54,7 +51,7 @@ export const EmailDraftContent: z.ZodObject<
 		bcc: addresses,
 		subject: oneLine(2000),
 		body: bodyText(100_000),
-		attachments: z.array(DraftAttachment).max(MAX_ITEMS),
+		attachments: z.array(DraftAttachment).max(MAX_EMAIL_LIST_ITEMS),
 	})
 	.meta({
 		id: "draftyak.entities.EmailDraftContent",

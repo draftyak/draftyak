@@ -1,6 +1,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as z from "zod";
+import { guardExportedPatterns } from "../src/schema-patterns.ts";
 import { cli, json, modulesIn, type Output, specFiles, sync } from "./lib.ts";
 
 const SCHEMA_PATH = /^(?:[a-z0-9-]+\/)*[a-z0-9-]+-v\d+\.schema\.json$/;
@@ -8,7 +9,7 @@ const SCHEMA_PATH = /^(?:[a-z0-9-]+\/)*[a-z0-9-]+-v\d+\.schema\.json$/;
 // Input mode: the JSON Schema accepts what the zod validator accepts, as other languages check
 // documents as they arrive, so a defaulted field may be left out and a stripping object stays open.
 export const jsonSchemaOf = (schema: z.ZodType): z.core.JSONSchema.BaseSchema =>
-	z.toJSONSchema(schema, { target: "draft-2020-12", io: "input" });
+	guardExportedPatterns(z.toJSONSchema(schema, { target: "draft-2020-12", io: "input" }));
 
 // Each scripts/spec/*.ts and scripts/spec/<area>/*.ts exports `path` (under spec/) and `schema`.
 // Exported schemas stay declarative: refinements don't reach JSON Schema.

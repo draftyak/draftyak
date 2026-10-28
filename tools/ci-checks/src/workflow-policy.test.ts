@@ -351,7 +351,11 @@ describe("workflow policy", () => {
 			"      - run: pnpm build\n      - run: pnpm install --frozen-lockfile",
 		],
 		["heavy condition", "if: needs.changes.outputs.spikes != ''", "if: false"],
-		["heavy condition removal", "        if: needs.changes.outputs.spikes != ''\n", ""],
+		[
+			"heavy condition removal",
+			"        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''\n",
+			"",
+		],
 		[
 			"heavy condition inversion",
 			"if: needs.changes.outputs.spikes != ''",
@@ -368,6 +372,63 @@ describe("workflow policy", () => {
 			"",
 		],
 		["heavy selection environment", `SPIKES: \${{ needs.changes.outputs.spikes }}`, "SPIKES: ''"],
+		[
+			"heavy package condition removal",
+			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''",
+			"if: needs.changes.outputs.spikes != ''",
+		],
+		[
+			"heavy package selection environment",
+			`HEAVY: \${{ needs.changes.outputs.heavy }}`,
+			"HEAVY: ''",
+		],
+		[
+			"heavy package selection environment removal",
+			`          HEAVY: \${{ needs.changes.outputs.heavy }}\n`,
+			"",
+		],
+		[
+			"heavy smoke selection environment",
+			`SMOKE: \${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}`,
+			"SMOKE: 'true'",
+		],
+		[
+			"heavy strict skips",
+			"          DRAFTYAK_STRICT_SKIPS: '1'",
+			"          DRAFTYAK_STRICT_SKIPS: '0'",
+		],
+		["heavy strict skips removal", "          DRAFTYAK_STRICT_SKIPS: '1'\n", ""],
+		[
+			"heavy package filter loop removal",
+			'          while IFS= read -r filter; do\n            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi\n          done <<< "$HEAVY"\n',
+			"",
+		],
+		[
+			"heavy package filter blank guard",
+			'if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
+			'if false; then filters+=("--filter=$filter"); fi',
+		],
+		[
+			"heavy smoke exclusion removal",
+			'          if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then\n            filters+=("--filter=!./packages/create-plugin")\n          fi\n',
+			"",
+		],
+		["heavy smoke exclusion inversion", 'if [ "$SMOKE" != true ]', 'if [ "$SMOKE" == true ]'],
+		[
+			"heavy shell override",
+			"      - name: test:heavy for the touched spikes and the selected packages\n",
+			"      - name: test:heavy for the touched spikes and the selected packages\n        shell: echo {0}\n",
+		],
+		[
+			"heavy working directory",
+			"      - name: test:heavy for the touched spikes and the selected packages\n",
+			"      - name: test:heavy for the touched spikes and the selected packages\n        working-directory: elsewhere\n",
+		],
+		[
+			"heavy soft failure",
+			"      - name: test:heavy for the touched spikes and the selected packages\n",
+			"      - name: test:heavy for the touched spikes and the selected packages\n        continue-on-error: true\n",
+		],
 		[
 			"Windows condition",
 			"      - run: pnpm verify\n",

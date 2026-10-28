@@ -328,6 +328,47 @@ describe("verification receipt selection metadata", () => {
 		return buildReceipt(input({}, jobs));
 	};
 
+	it("preserves actual reviewed app filters in both the receipt and its summary", () => {
+		const repo = tempRepo();
+		try {
+			for (const app of ["cli", "hub"]) {
+				repo.write(
+					`apps/${app}/package.json`,
+					JSON.stringify({
+						name: `@draftyak/${app}`,
+						scripts: { "test:heavy": "vitest run --mode heavy" },
+					}),
+				);
+			}
+			for (const files of [
+				["apps/hub/src/a.ts"],
+				["pnpm-lock.yaml"],
+				["apps/cli/src/a.ts", "package.json"],
+			]) {
+				const classified = classify(files, repo.dir, () => []);
+				const areas = areaNames(classified);
+				const receipt = selected({
+					areas: JSON.stringify(areas),
+					rust: "",
+					spikes: "",
+					heavy: classified.heavy.join("\n"),
+					"template-smoke": String(classified.templateSmoke),
+				});
+				expect(receipt.selection?.heavy).toEqual(classified.heavy);
+				expect(receipt.selection?.areas).toEqual(areas);
+				const summary = renderSummary(receipt);
+				for (const filter of classified.heavy) expect(summary).toContain(filter);
+				expect(summary).toContain(
+					`| Heavy filters | ${classified.heavy.map((filter) => `\`${filter}\``).join(", ")} |`,
+				);
+				expect(summary).toContain(`PR/source head: \`${headSha}\``);
+				expect(summary).toContain("A successful job does not establish that every test ran.");
+			}
+		} finally {
+			repo.remove();
+		}
+	});
+
 	it.each([undefined, ""])(
 		"records explicitly empty selection when optional list outputs are %s",
 		(value) => {

@@ -16,7 +16,7 @@ import { manifestJson } from "../src/manifest/json.ts";
 import { ManifestToolRule } from "../src/manifest/tool.ts";
 import { PluginManifestV1, validateManifest } from "../src/manifest.ts";
 import { SendUrl } from "../src/send-ticket.ts";
-import { ENGINE_DEPENDENT, patterns } from "./vectors.ts";
+import { ENGINE_DEPENDENT, patternBody, patterns } from "./vectors.ts";
 
 const validator = (schema: z.ZodType): Validator =>
 	new Validator(jsonSchemaOf(schema) as Schema, "2020-12", false);
@@ -80,9 +80,9 @@ describe("portable manifest declarations", () => {
 			}
 			if (!value || typeof value !== "object") return;
 			const node = value as Record<string, unknown>;
-			if (typeof node.pattern === "string" && expected.has(node.pattern)) {
+			if (typeof node.pattern === "string" && expected.has(patternBody(node.pattern))) {
 				expect(node).toMatchObject({ not: { pattern: "\\n" } });
-				seen.add(node.pattern);
+				seen.add(patternBody(node.pattern));
 			}
 			for (const child of Object.values(node)) walk(child);
 		}
