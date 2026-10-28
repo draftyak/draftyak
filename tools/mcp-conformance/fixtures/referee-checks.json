@@ -1,0 +1,1063 @@
+{
+  "conformanceVersion": "0.2.0-alpha.12",
+  "eras": {
+    "2025-11-25": {
+      "completion-complete": [
+        {
+          "id": "completion-complete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "dns-rebinding-protection": [
+        {
+          "id": "localhost-host-rebinding-rejected",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "localhost-host-valid-accepted",
+          "status": "SUCCESS"
+        }
+      ],
+      "elicitation-sep1034-defaults": [
+        {
+          "id": "elicitation-sep1034-general",
+          "status": "FAILURE"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "elicitation-sep1330-enums": [
+        {
+          "id": "elicitation-sep1330-general",
+          "status": "FAILURE"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "json-schema-2020-12": [
+        {
+          "id": "json-schema-2020-12-tool-found",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "json-schema-2020-12-$schema",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "json-schema-2020-12-$defs",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "json-schema-2020-12-additionalProperties",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2106-composition-keywords-preserved",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2106-conditional-keywords-preserved",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2106-anchor-keyword-preserved",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "logging-set-level": [
+        {
+          "id": "logging-set-level",
+          "status": "FAILURE"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "ping": [
+        {
+          "id": "ping",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "prompts-get-embedded-resource": [
+        {
+          "id": "prompts-get-embedded-resource",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "prompts-get-simple": [
+        {
+          "id": "prompts-get-simple",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "prompts-get-with-args": [
+        {
+          "id": "prompts-get-with-args",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "prompts-get-with-image": [
+        {
+          "id": "prompts-get-with-image",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "prompts-list": [
+        {
+          "id": "prompts-list",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "resources-list": [
+        {
+          "id": "resources-list",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "resources-read-binary": [
+        {
+          "id": "resources-read-binary",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "resources-read-text": [
+        {
+          "id": "resources-read-text",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "resources-subscribe": [
+        {
+          "id": "resources-subscribe",
+          "status": "FAILURE"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "resources-templates-read": [
+        {
+          "id": "resources-templates-read",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "resources-unsubscribe": [
+        {
+          "id": "resources-unsubscribe",
+          "status": "FAILURE"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "server-initialize": [
+        {
+          "id": "server-initialize",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "server-session-id-visible-ascii",
+          "status": "INFO"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "server-session-lifecycle": [
+        {
+          "id": "server-session-lifecycle-skipped",
+          "status": "INFO"
+        }
+      ],
+      "server-sse-multiple-streams": [
+        {
+          "id": "server-sse-multiple-streams-session",
+          "status": "WARNING"
+        }
+      ],
+      "server-sse-polling": [
+        {
+          "id": "server-sse-polling-session",
+          "status": "WARNING"
+        },
+        {
+          "id": "outgoing-request",
+          "status": "INFO"
+        },
+        {
+          "id": "incoming-response",
+          "status": "INFO"
+        },
+        {
+          "id": "server-sse-content-type",
+          "status": "INFO"
+        }
+      ],
+      "tools-call-audio": [
+        {
+          "id": "tools-call-audio",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-elicitation": [
+        {
+          "id": "tools-call-elicitation",
+          "status": "FAILURE"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-embedded-resource": [
+        {
+          "id": "tools-call-embedded-resource",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-error": [
+        {
+          "id": "tools-call-error",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-image": [
+        {
+          "id": "tools-call-image",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-mixed-content": [
+        {
+          "id": "tools-call-mixed-content",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-sampling": [
+        {
+          "id": "tools-call-sampling",
+          "status": "FAILURE"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-simple-text": [
+        {
+          "id": "tools-call-simple-text",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-with-logging": [
+        {
+          "id": "tools-call-with-logging",
+          "status": "FAILURE"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-with-progress": [
+        {
+          "id": "tools-call-with-progress",
+          "status": "FAILURE"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-list": [
+        {
+          "id": "tools-list",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "tools-name-format",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ]
+    },
+    "2026-07-28": {
+      "caching": [
+        {
+          "id": "sep-2549-tools-list-caching-hints",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2549-prompts-list-caching-hints",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2549-resources-list-caching-hints",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2549-resources-templates-list-caching-hints",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2549-resources-read-caching-hints",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2549-ttl-non-negative",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2549-cache-scope-valid",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "completion-complete": [
+        {
+          "id": "completion-complete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "dns-rebinding-protection": [
+        {
+          "id": "localhost-host-rebinding-rejected",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "localhost-host-valid-accepted",
+          "status": "SUCCESS"
+        }
+      ],
+      "http-custom-header-server-validation": [
+        {
+          "id": "sep-2243-server-decode-base64",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-invalid-param-chars",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-param-mismatch",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-invalid-param-chars",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-param-mismatch",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-validate-param-match",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-validate-param-match",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-validate-param-match",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-param-mismatch",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "http-header-validation": [
+        {
+          "id": "sep-2243-server-reject-invalid-headers",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-error-code",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-invalid-headers",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-error-code",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-invalid-headers",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-error-code",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-accepts-whitespace-header-value",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-invalid-headers",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-error-code",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-header-name-case-insensitive",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-header-name-case-insensitive",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-invalid-headers",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2243-server-reject-error-code",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-basic-elicitation": [
+        {
+          "id": "sep-2322-elicitation-incomplete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2322-elicitation-complete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-basic-list-roots": [
+        {
+          "id": "sep-2322-list-roots-incomplete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2322-list-roots-complete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-basic-sampling": [
+        {
+          "id": "sep-2322-sampling-incomplete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2322-sampling-complete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-capability-check": [
+        {
+          "id": "sep-2322-respect-client-capabilities",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-ignore-extra-params": [
+        {
+          "id": "sep-2322-ignore-unexpected-params",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-missing-input-response": [
+        {
+          "id": "sep-2322-missing-response-rerequests",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-multi-round": [
+        {
+          "id": "sep-2322-multi-round-r1",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2322-multi-round-r2",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2322-multi-round-r3",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-multiple-input-requests": [
+        {
+          "id": "sep-2322-multiple-inputs-incomplete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2322-multiple-inputs-complete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-non-tool-request": [
+        {
+          "id": "sep-2322-non-tool-incomplete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2322-non-tool-complete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-request-state": [
+        {
+          "id": "sep-2322-request-state-incomplete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2322-request-state-complete",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-result-type": [
+        {
+          "id": "sep-2322-result-type-included",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-tampered-state": [
+        {
+          "id": "sep-2322-reject-tampered-state",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-unsupported-methods": [
+        {
+          "id": "sep-2322-not-on-unsupported-requests",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "input-required-result-validate-input": [
+        {
+          "id": "sep-2322-validate-input-responses",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2322-error-on-protocol-error",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "json-schema-2020-12": [
+        {
+          "id": "json-schema-2020-12-tool-found",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "json-schema-2020-12-$schema",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "json-schema-2020-12-$defs",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "json-schema-2020-12-additionalProperties",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2106-composition-keywords-preserved",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2106-conditional-keywords-preserved",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2106-anchor-keyword-preserved",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "prompts-get-embedded-resource": [
+        {
+          "id": "prompts-get-embedded-resource",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "prompts-get-simple": [
+        {
+          "id": "prompts-get-simple",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "prompts-get-with-args": [
+        {
+          "id": "prompts-get-with-args",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "prompts-get-with-image": [
+        {
+          "id": "prompts-get-with-image",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "prompts-list": [
+        {
+          "id": "prompts-list",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "resources-list": [
+        {
+          "id": "resources-list",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "resources-read-binary": [
+        {
+          "id": "resources-read-binary",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "resources-read-text": [
+        {
+          "id": "resources-read-text",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "resources-templates-read": [
+        {
+          "id": "resources-templates-read",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "sep-2164-resource-not-found": [
+        {
+          "id": "sep-2164-no-empty-contents",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2164-error-code",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2164-data-uri",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "server-sse-multiple-streams": [
+        {
+          "id": "server-accepts-multiple-post-streams",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "server-sse-streams-functional",
+          "status": "INFO"
+        }
+      ],
+      "server-stateless": [
+        {
+          "id": "sep-2575-request-meta-invalid-missing-meta",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-meta-invalid-400",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-request-meta-invalid-missing-protocol-version",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-meta-invalid-400",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-request-meta-invalid-missing-client-capabilities",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-meta-invalid-400",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-request-meta-client-info-optional",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-server-implements-discover",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-server-identifies-in-result-meta",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-server-declares-prompts-in-discover",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-discover-capabilities-match-handlers",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-server-unsupported-version-error",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-unsupported-version-400",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-header-mismatch-400",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-server-rejects-undeclared-capability",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-missing-capability-http-400",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-method-not-found-404-initialize",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-method-not-found-404-ping",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-method-not-found-404-logging-setlevel",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-method-not-found-404-resources-subscribe",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-method-not-found-404-resources-unsubscribe",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-method-not-found-404",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-http-server-no-independent-requests-on-stream",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-server-no-log-without-loglevel",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "sep-2575-server-sends-subscription-ack",
+          "status": "SKIPPED"
+        },
+        {
+          "id": "sep-2575-server-tags-subscription-id",
+          "status": "SKIPPED"
+        },
+        {
+          "id": "sep-2575-server-honors-notification-filter",
+          "status": "SKIPPED"
+        },
+        {
+          "id": "sep-2575-server-sends-prompts-list-changed-on-subscription",
+          "status": "SKIPPED"
+        },
+        {
+          "id": "sep-2575-server-sends-tools-list-changed-on-subscription",
+          "status": "SKIPPED"
+        },
+        {
+          "id": "sep-2575-http-server-error-jsonrpc-id",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-audio": [
+        {
+          "id": "tools-call-audio",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-embedded-resource": [
+        {
+          "id": "tools-call-embedded-resource",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-error": [
+        {
+          "id": "tools-call-error",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-image": [
+        {
+          "id": "tools-call-image",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-mixed-content": [
+        {
+          "id": "tools-call-mixed-content",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-simple-text": [
+        {
+          "id": "tools-call-simple-text",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-call-with-progress": [
+        {
+          "id": "tools-call-with-progress",
+          "status": "FAILURE"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ],
+      "tools-list": [
+        {
+          "id": "tools-list",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "tools-name-format",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "tools-list-deterministic-order",
+          "status": "SUCCESS"
+        },
+        {
+          "id": "wire-schema-valid",
+          "status": "SUCCESS"
+        }
+      ]
+    }
+  }
+}
