@@ -418,6 +418,33 @@ describe("entities", () => {
 		expect(entities.DraftContent.safeParse(nfc).success).toBe(true);
 	});
 
+	it("hold at most 100 of each mailbox list and of attachments, and mark a list the hub cut", () => {
+		const { emailMessage } = fixtures;
+		const lists = ["from", "replyTo", "to", "cc", "bcc", "attachments"] as const;
+		const holding = (list: (typeof lists)[number], count: number, marker?: unknown) => ({
+			...emailMessage,
+			[list]:
+				list === "attachments"
+					? Array(count).fill(emailMessage.attachments[0])
+					: Array.from({ length: count }, (_, n) => mailbox(`ana${n}@example.org`)),
+			...(marker === undefined ? {} : { [`${list}Truncated`]: marker }),
+		});
+		agree(
+			"EmailMessage",
+			lists.flatMap((list) => [
+				holding(list, 100),
+				holding(list, 100, true),
+				// A result with a smaller budget, such as message_get's, keeps fewer and says so.
+				holding(list, 1, true),
+			]),
+			lists.flatMap((list) => [
+				holding(list, 101),
+				holding(list, 101, true),
+				...[false, "true", 1, null].map((marker) => holding(list, 1, marker)),
+			]),
+		);
+	});
+
 	it("refuse text that isn't well-formed Unicode, which JSON Schema can't express", () => {
 		const lone = "a\ud800b";
 		const refused: [z.ZodType, unknown][] = [
