@@ -11,7 +11,7 @@
       "type": "string",
       "minLength": 64,
       "maxLength": 64,
-      "pattern": "^[0-9a-f]{64}$",
+      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
       "description": "A SHA-256 digest as 64 lower-case hex characters."
     },
     "epoch": {
@@ -23,7 +23,7 @@
       "type": "string",
       "minLength": 26,
       "maxLength": 26,
-      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
       "description": "A ULID: 26 upper-case Crockford base32 characters."
     },
     "nonce": {
@@ -47,7 +47,7 @@
       "type": "string",
       "minLength": 26,
       "maxLength": 26,
-      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
       "description": "A ULID: 26 upper-case Crockford base32 characters."
     },
     "principal": {
@@ -64,7 +64,7 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         }
       },
@@ -78,7 +78,7 @@
       "type": "string",
       "minLength": 26,
       "maxLength": 26,
-      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
       "description": "A ULID: 26 upper-case Crockford base32 characters."
     },
     "toolClass": {
@@ -139,7 +139,7 @@
               "type": "string",
               "minLength": 64,
               "maxLength": 64,
-              "pattern": "^[0-9a-f]{64}$",
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
               "description": "A SHA-256 digest as 64 lower-case hex characters."
             },
             "validForMs": {

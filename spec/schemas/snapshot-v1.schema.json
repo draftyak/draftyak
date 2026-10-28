@@ -13,7 +13,7 @@
           "type": "string",
           "minLength": 64,
           "maxLength": 64,
-          "pattern": "^[0-9a-f]{64}$",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
           "description": "A SHA-256 digest as 64 lower-case hex characters."
         },
         "epoch": {
@@ -25,14 +25,14 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "account": {
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "conversation": {
@@ -41,7 +41,7 @@
               "type": "string",
               "minLength": 26,
               "maxLength": 26,
-              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
               "description": "A ULID: 26 upper-case Crockford base32 characters."
             },
             {
@@ -63,7 +63,7 @@
             "url": {
               "type": "string",
               "maxLength": 8192,
-              "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$",
+              "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$(?![\\s\\S])",
               "description": "A canonical https URL: a lower-case DNS host, no userinfo, no port 443, no dot segments, percent-encoding in upper-case hex and never of an unreserved character, and no fragment.",
               "allOf": [
                 {
@@ -87,14 +87,14 @@
               "type": "string",
               "minLength": 64,
               "maxLength": 64,
-              "pattern": "^[0-9a-f]{64}$",
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
               "description": "A SHA-256 digest as 64 lower-case hex characters."
             },
             "bodySha256": {
               "type": "string",
               "minLength": 64,
               "maxLength": 64,
-              "pattern": "^[0-9a-f]{64}$",
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
               "description": "A SHA-256 digest as 64 lower-case hex characters."
             }
           },
@@ -156,7 +156,7 @@
                 "type": "string",
                 "minLength": 64,
                 "maxLength": 64,
-                "pattern": "^[0-9a-f]{64}$",
+                "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
                 "description": "A SHA-256 digest as 64 lower-case hex characters."
               }
             },
@@ -204,7 +204,7 @@
                   "type": "string",
                   "minLength": 22,
                   "maxLength": 22,
-                  "pattern": "^(?:(?:[0-9]{2}(?:[2468][048]|[13579][26]|0[48])|(?:[02468][048]|[13579][26])00)-02-29|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9][+-](?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+                  "pattern": "^(?:(?:[0-9]{2}(?:[2468][048]|[13579][26]|0[48])|(?:[02468][048]|[13579][26])00)-02-29|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9][+-](?:[01][0-9]|2[0-3]):[0-5][0-9]$(?![\\s\\S])",
                   "not": {
                     "pattern": "-00:00$"
                   }
@@ -254,7 +254,7 @@
               "type": "string",
               "minLength": 26,
               "maxLength": 26,
-              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
               "description": "A ULID: 26 upper-case Crockford base32 characters."
             },
             "rev": {
@@ -391,7 +391,7 @@
           "type": "string",
           "minLength": 64,
           "maxLength": 64,
-          "pattern": "^[0-9a-f]{64}$",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
           "description": "A SHA-256 digest as 64 lower-case hex characters."
         },
         "epoch": {
@@ -403,21 +403,21 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "account": {
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "conversation": {
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         },
         "render": {
@@ -434,7 +434,7 @@
             "url": {
               "type": "string",
               "maxLength": 8192,
-              "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$",
+              "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$(?![\\s\\S])",
               "description": "A canonical https URL: a lower-case DNS host, no userinfo, no port 443, no dot segments, percent-encoding in upper-case hex and never of an unreserved character, and no fragment.",
               "allOf": [
                 {
@@ -458,14 +458,14 @@
               "type": "string",
               "minLength": 64,
               "maxLength": 64,
-              "pattern": "^[0-9a-f]{64}$",
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
               "description": "A SHA-256 digest as 64 lower-case hex characters."
             },
             "bodySha256": {
               "type": "string",
               "minLength": 64,
               "maxLength": 64,
-              "pattern": "^[0-9a-f]{64}$",
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
               "description": "A SHA-256 digest as 64 lower-case hex characters."
             }
           },
@@ -527,7 +527,7 @@
                 "type": "string",
                 "minLength": 64,
                 "maxLength": 64,
-                "pattern": "^[0-9a-f]{64}$",
+                "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
                 "description": "A SHA-256 digest as 64 lower-case hex characters."
               }
             },
@@ -575,7 +575,7 @@
                   "type": "string",
                   "minLength": 22,
                   "maxLength": 22,
-                  "pattern": "^(?:(?:[0-9]{2}(?:[2468][048]|[13579][26]|0[48])|(?:[02468][048]|[13579][26])00)-02-29|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9][+-](?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+                  "pattern": "^(?:(?:[0-9]{2}(?:[2468][048]|[13579][26]|0[48])|(?:[02468][048]|[13579][26])00)-02-29|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9][+-](?:[01][0-9]|2[0-3]):[0-5][0-9]$(?![\\s\\S])",
                   "not": {
                     "pattern": "-00:00$"
                   }
@@ -625,7 +625,7 @@
               "type": "string",
               "minLength": 26,
               "maxLength": 26,
-              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
               "description": "A ULID: 26 upper-case Crockford base32 characters."
             },
             "rev": {
@@ -670,6 +670,9 @@
               "$ref": "#/$defs/draftyak.normalized-change.ChatChannelType"
             },
             "external": {
+              "type": "boolean"
+            },
+            "shared": {
               "type": "boolean"
             },
             "memberCount": {
@@ -727,13 +730,13 @@
     }
   ],
   "title": "SendSnapshotV1",
-  "description": "The exact frozen send content. Body and footer are Unicode 17 NFC with LF line endings; claim-time MIME fields are absent.",
+  "description": "The exact frozen send content. Body and footer are Unicode 17 NFC with LF line endings; claim-time MIME fields are absent. Legacy sharing-field absence is preserved without authorizing a current send.",
   "$defs": {
     "draftyak.normalized-change.MediaType": {
       "type": "string",
       "minLength": 3,
       "maxLength": 255,
-      "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$",
+      "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$(?![\\s\\S])",
       "description": "A lower-case type/subtype without parameters, such as image/png.",
       "not": {
         "pattern": "\\n"
@@ -742,7 +745,7 @@
     "draftyak.tool-v1.IanaZone": {
       "type": "string",
       "maxLength": 64,
-      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:\\/[A-Za-z0-9_+-]+)*$",
+      "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:\\/[A-Za-z0-9_+-]+)*$(?![\\s\\S])",
       "description": "An IANA time zone name, such as America/Chicago; Temporal checks that it exists.",
       "not": {
         "pattern": "\\n"
@@ -764,7 +767,7 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         }
       },
@@ -778,7 +781,7 @@
     "draftyak.entities.EmailAddress": {
       "type": "string",
       "maxLength": 254,
-      "pattern": "^[-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+(?:[.][-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+      "pattern": "^[-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+(?:[.][-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
       "not": {
         "pattern": "\\n"
       },
@@ -788,7 +791,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[!-~]+$",
+      "pattern": "^[!-~]+$(?![\\s\\S])",
       "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces.",
       "not": {
         "pattern": "\\n"

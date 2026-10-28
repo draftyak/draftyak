@@ -16,7 +16,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { skipOrFail, writeEvidence } from "@draftyak/spike-kit";
+import { skipOrFail } from "@draftyak/spike-kit";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import { tauriDir } from "../tauri-app/scripts/stage-sidecar.ts";
 import {
@@ -24,7 +24,6 @@ import {
 	type AppEvent,
 	built,
 	capture,
-	codeFingerprint,
 	goneWithin,
 	killAll,
 	l2,
@@ -32,6 +31,7 @@ import {
 	spikeDir,
 	stillOurs,
 	windows,
+	writeCodeEvidence,
 } from "./app.ts";
 
 const HOLDER = "DraftYak Spike Desktop";
@@ -203,7 +203,7 @@ afterAll(async () => {
 		}),
 	);
 	const data = { target, method: METHODS[process.platform], versions, ...results };
-	const written = await writeEvidence(file, data, { fingerprint: await codeFingerprint() });
+	const written = await writeCodeEvidence(file, data);
 	console.log(`evidence: ${path.relative(spikeDir, written)}`);
 }, 120_000);
 

@@ -21,12 +21,14 @@ import { loadViews } from "@draftyak/spike-s03-mcp-sdk/src/apps.ts";
 import { buildViews } from "@draftyak/spike-s03-mcp-sdk/views/build.ts";
 import { expect, it } from "vitest";
 import {
+	LIVE_CLEANUP_MS,
 	LIVE_PORT,
 	livePlans,
 	recordDecision,
 	recordingRequested,
 	selfCheckMessage,
 	startLiveSession,
+	summary,
 } from "./live/session.ts";
 
 const ENTRY = "DY_LIVE_FUNNEL_BASE_URL";
@@ -34,13 +36,12 @@ const spikeDir = path.join(import.meta.dirname, "..");
 const plans = livePlans();
 // The view build, the route checks and the clean-up, beside each client's deadline.
 const SETUP_MS = 30 * 60_000;
-const CLEANUP_MS = 35 * 60_000;
 const say = (text: string): void => {
 	process.stderr.write(`${text}\n`);
 };
 
 it("connects claude.ai, ChatGPT, remote Claude Code and Codex through Funnel and records what the AS saw", {
-	timeout: SETUP_MS + CLEANUP_MS + plans.reduce((total, plan) => total + plan.deadlineMs, 0),
+	timeout: SETUP_MS + LIVE_CLEANUP_MS + plans.reduce((total, plan) => total + plan.deadlineMs, 0),
 }, async (ctx) => {
 	let base: string;
 	try {
@@ -79,9 +80,15 @@ it("connects claude.ai, ChatGPT, remote Claude Code and Codex through Funnel and
 		`AS and MCP endpoint listening on 127.0.0.1:${LIVE_PORT}; checking the route from this machine`,
 	);
 	say(selfCheckMessage(await session.selfCheck({ signal: ctx.signal })));
-	const rows = await session.run(plans, ctx.signal);
+	let rows = await session.run(plans, ctx.signal);
 	if (decision.record) {
 		await session.cleanUp({ signal: ctx.signal, deleteEntry: () => deleteEnvLive([ENTRY]) });
+		rows = session.recorder.rows(plans.map((plan) => plan.client));
+		say(
+			["", "Final results (after clean-up):", ...summary(rows, session.recorder.notes())].join(
+				"\n",
+			),
+		);
 	} else {
 		say("clean-up: after the recorded run (spikes/s04-oauth-as/notes/session.md, step 9)");
 	}

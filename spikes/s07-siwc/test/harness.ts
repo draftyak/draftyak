@@ -111,6 +111,41 @@ export function memoryStore(initial: Credential | null = null): CredentialStore 
 	};
 }
 
+// Changes each refresh answer the fake gives from here on, numbered from 1, after any change set
+// before. In the hub's step after expiry, 1 is its forced refresh and 2 the refresh after expiry.
+export function refreshAnswers(
+	auth: FakeAuth,
+	change: (body: Record<string, unknown>, n: number) => Record<string, unknown>,
+): void {
+	const before = auth.options.tokenResponse;
+	let n = 0;
+	auth.options.tokenResponse = (body, grant) => {
+		const kept = before ? before(body, grant) : body;
+		return grant === "refresh_token" ? change(kept, ++n) : kept;
+	};
+}
+
+// Tokens issued from here on last `seconds`, up to the next refresh's; later ones last an hour. In
+// the step after expiry only the hub's forced refresh then expires within a test, however slow the
+// machine.
+export function shortLivedRefresh(auth: FakeAuth, seconds: number): void {
+	auth.options.expiresIn = seconds;
+	refreshAnswers(auth, (body) => {
+		auth.options.expiresIn = 3600;
+		return body;
+	});
+}
+
+// The session ends at the issuer once the next refresh is answered (the owner removes DraftYak,
+// say), so the refresh after it is refused with invalid_grant.
+export function endAfterForcedRefresh(auth: FakeAuth): void {
+	refreshAnswers(auth, (body) => {
+		const family = auth.refresh.get(String(body.refresh_token))?.family;
+		if (family) family.revoked = true;
+		return body;
+	});
+}
+
 // The value a rejected promise settled with, so a test can check it.
 export async function failure(promise: Promise<unknown>): Promise<unknown> {
 	try {

@@ -12,7 +12,7 @@ Use a worktree at an `m0` commit that includes M0.25, with a clean tree and depe
 
    Git Bash:
    ```bash
-   WT=/c/dev/draftyak-wt/<session worktree>
+   WT='/c/dev/draftyak-wt/<session worktree>'
    cd "$WT" && git status --porcelain        # prints nothing
    pnpm install --frozen-lockfile
    pnpm --filter @draftyak/spike-s06-slack test
@@ -28,28 +28,31 @@ Use a worktree at an `m0` commit that includes M0.25, with a clean tree and depe
    ```
    `tokens.ts check` exits 1 and prints `.env.live: C:\dev\draftyak\.env.live (git ignores it)`, then both entries as `missing`. If its first line says git doesn't ignore the file, switch the main checkout back to `m0` before the owner pastes anything. It never prints a value.
 
-2. **Vendor-guard on the rehearsal's evidence** (3 min). The rehearsal already runs vendor-guard's CLI on its output in a temp repository. This repeats the check with `pnpm guard` in the worktree, through a throwaway folder shaped like `evidence/`. `DRAFTYAK_S6_REHEARSAL_DIR` must be a missing or empty folder outside every git work tree; the rehearsal refuses anything else, since it runs `git init` there.
+2. **Vendor-guard on the rehearsal's evidence** (3 min). The rehearsal writes synthetic evidence into a missing or empty scratch folder outside every git worktree. Run the guard from that scratch repository using the worktree's absolute CLI path, then check for raw Slack IDs. Retain the scratch folder for inspection until these checks pass.
 
    Git Bash:
    ```bash
    OUT="$(cygpath -m "$(mktemp -d)")"
-   DRAFTYAK_S6_REHEARSAL_DIR="$OUT" pnpm --filter @draftyak/spike-s06-slack test test/rehearsal.test.ts
-   mkdir -p spikes/s06-slack/rehearsal-check/evidence
-   cp "$OUT"/spikes/s06-slack/evidence/*.json spikes/s06-slack/rehearsal-check/evidence/
-   pnpm guard                                  # vendor-guard: 0 findings
-   rm -rf spikes/s06-slack/rehearsal-check "$OUT"
+   DRAFTYAK_S6_REHEARSAL_DIR="$OUT" pnpm --filter @draftyak/spike-s06-slack test test/rehearsal.test.ts --reporter=default
+   (cd "$OUT" && node "$WT/tools/vendor-guard/src/cli.ts")
+   grep -nE '"[CDGTUW][A-Z0-9]{8,}"' "$OUT"/spikes/s06-slack/evidence/*.json
+   git -C "$WT" status --porcelain
    ```
    PowerShell:
    ```powershell
-   $out = Join-Path $env:TEMP "s06-rehearsal-$(Get-Random)"
+   $out = Join-Path ([IO.Path]::GetTempPath()) ("s06-rehearsal-" + [guid]::NewGuid().ToString('N'))
    $env:DRAFTYAK_S6_REHEARSAL_DIR = $out
-   pnpm --filter @draftyak/spike-s06-slack test test/rehearsal.test.ts
-   Remove-Item Env:DRAFTYAK_S6_REHEARSAL_DIR
-   New-Item -ItemType Directory -Force spikes\s06-slack\rehearsal-check\evidence | Out-Null
-   Copy-Item "$out\spikes\s06-slack\evidence\*.json" spikes\s06-slack\rehearsal-check\evidence\
-   pnpm guard
-   Remove-Item -Recurse -Force spikes\s06-slack\rehearsal-check, $out
+   try {
+     pnpm --filter @draftyak/spike-s06-slack test test/rehearsal.test.ts --reporter=default
+   } finally {
+     Remove-Item Env:DRAFTYAK_S6_REHEARSAL_DIR
+   }
+   Push-Location $out
+   try { node "$wt/tools/vendor-guard/src/cli.ts" } finally { Pop-Location }
+   Select-String -CaseSensitive -Pattern '"[CDGTUW][A-Z0-9]{8,}"' "$out/spikes/s06-slack/evidence/*.json"
+   git -C $wt status --porcelain
    ```
+   The guard reports 0 findings; the ID scan and worktree status print nothing. An interrupted or failing check leaves the synthetic files in the external scratch folder for inspection. Remove only that exact scratch folder after inspection.
 
 3. **Re-read Slack's pages** (10 min). M0.24's handoff asks for this before session 2. `fetch` saves today's Markdown copies of 12 pages: each page a `> ` quote in `notes/rate-limits.md` cites (the two rate-limit changelog entries of 2025-05-29 and 2025-06-03, the rate-limits page and five others), plus the pages the notes quote inside running text (Using Socket Mode, Comparing HTTP and Socket Mode, `apps.connections.open`, `auth.test`). `check` looks up each `> ` quote in each page linked just above it.
 
@@ -99,29 +102,78 @@ Use a worktree at an `m0` commit that includes M0.25, with a clean tree and depe
 
 ## The run (orchestrator)
 
-Open the token window for the owner (step 4). PowerShell:
-```powershell
-Start-Process powershell.exe -WorkingDirectory $wt -ArgumentList '-NoExit', '-Command', 'node spikes/s06-slack/scripts/tokens.ts save'
-```
-Git Bash:
-```bash
-powershell.exe -NoProfile -Command "Start-Process powershell.exe -WorkingDirectory '$(cygpath -w "$WT")' -ArgumentList '-NoExit','-Command','node spikes/s06-slack/scripts/tokens.ts save'"
-```
-Then check that both tokens are stored, still without seeing them, and start the run in the background:
+Open the token window for the owner (step 4) using a temporary two-line script outside every repository. The script saves hidden input, then waits at a secure close prompt. Start PowerShell with `-NoProfile`; the child also uses `-NoProfile` and `-File`, and closes after the prompt.
 
-Git Bash:
-```bash
-node spikes/s06-slack/scripts/tokens.ts check     # both "set", exit 0
-git status --porcelain                            # prints nothing
-pnpm --filter @draftyak/spike-s06-slack test:live
-```
 PowerShell:
 ```powershell
+$tokenWindow = Join-Path ([IO.Path]::GetTempPath()) ('s06-token-window-' + [guid]::NewGuid().ToString('N') + '.ps1')
+@'
+node spikes/s06-slack/scripts/tokens.ts save
+$null = Read-Host -AsSecureString 'Press Enter to close this window'
+'@ | Set-Content -LiteralPath $tokenWindow -Encoding utf8
+Start-Process powershell.exe -WorkingDirectory $wt -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"{0}"' -f $tokenWindow)
+```
+Git Bash:
+```bash
+TOKEN_WINDOW="$(mktemp --suffix=.ps1)"
+cat > "$TOKEN_WINDOW" <<'POWERSHELL'
+node spikes/s06-slack/scripts/tokens.ts save
+$null = Read-Host -AsSecureString 'Press Enter to close this window'
+POWERSHELL
+powershell.exe -NoProfile -Command "Start-Process powershell.exe -WorkingDirectory '$(cygpath -w "$WT")' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','\"$(cygpath -w "$TOKEN_WINDOW")\"'"
+```
+After the owner has saved both tokens and pressed Enter to close the window, remove that exact temporary script. Rehearse the paste/close behavior with synthetic values before the real token step.
+
+Then perform the existing token-presence and clean-tree checks from the session checkout's root, without showing a token:
+
+```text
 node spikes/s06-slack/scripts/tokens.ts check
 git status --porcelain
-pnpm --filter @draftyak/spike-s06-slack test:live
 ```
-Settings go in front of the run: `DRAFTYAK_S6_KEEP_APP=1 pnpm …` in Git Bash, or `$env:DRAFTYAK_S6_KEEP_APP = '1'` before it and `Remove-Item Env:DRAFTYAK_S6_KEEP_APP` after it in PowerShell. Vitest may hide a passing test's console output, so the run writes its `S6 live:` lines straight to stderr, where they show at once. Relay these to the owner:
+
+Both tokens must be set and the tracked tree clean. In the same managed shell, set `DRAFTYAK_S6_LOGS` to an existing private log folder outside every checkout and the token store. Submit the complete invocation below as a managed background task/session that stays alive through the native wait and receipt write. Its task lifetime must accommodate the existing 45-minute live-test timeout plus startup/shutdown; this changes no harness phase or timeout. Do not detach the wrapper and return early. Its printed fresh log basename identifies only this invocation.
+
+Git Bash, in a managed `--noprofile --norc` shell from the session checkout root:
+
+```bash
+: "${DRAFTYAK_S6_LOGS:?Set the existing private log folder}"; s6_log="$(mktemp "$DRAFTYAK_S6_LOGS/s06-live-$(date +%Y%m%d-%H%M%S)-XXXXXX")" || exit 1; printf '%s\n' "$s6_log"; (if cd spikes/s06-slack && env DO_NOT_TRACK=1 DRAFTYAK_STRICT_SKIPS=1 node ../kit/run.ts --live --reporter=default --exclude '**/*siwc*/**' --exclude '**/*siwc*' --exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'; then s6_exit=0; else s6_exit=$?; fi; printf '%s\n' "$s6_exit" >"$s6_log.exit" || exit 1; exit "$s6_exit") >"$s6_log.stdout.log" 2>"$s6_log.stderr.log" & s6_pid=$!; printf '%s\n' "$s6_pid" >"$s6_log.pid"; wait "$s6_pid"
+```
+
+PowerShell, in a managed `-NoProfile` shell from the session checkout root:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$s6Log = Join-Path $env:DRAFTYAK_S6_LOGS ('s06-live-' + (Get-Date -Format yyyyMMdd-HHmmss) + '-' + [Guid]::NewGuid().ToString('N'))
+Write-Output $s6Log
+$previousStrictSkips = $env:DRAFTYAK_STRICT_SKIPS
+$previousDoNotTrack = $env:DO_NOT_TRACK
+$env:DRAFTYAK_STRICT_SKIPS = '1'
+$env:DO_NOT_TRACK = '1'
+try {
+  $s6Process = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList @('../kit/run.ts', '--live', '--reporter=default', '--exclude', '**/*siwc*/**', '--exclude', '**/*siwc*', '--exclude', '**/*dynamic-agent*', '--exclude', '**/*dynamic_agent*') -WorkingDirectory (Join-Path $PWD 'spikes/s06-slack') -WindowStyle Hidden -PassThru -RedirectStandardOutput ($s6Log + '.stdout.log') -RedirectStandardError ($s6Log + '.stderr.log')
+  $null = $s6Process.Handle
+  $s6Process.Id | Set-Content -LiteralPath ($s6Log + '.pid') -Encoding ascii
+  $s6Process.WaitForExit()
+  $s6Exit = $s6Process.ExitCode
+  if ($null -eq $s6Exit) { throw 'The owned process did not provide an exit code' }
+  [IO.File]::WriteAllText(($s6Log + '.exit'), ([string]$s6Exit + [Environment]::NewLine), [Text.Encoding]::ASCII)
+  exit $s6Exit
+} finally {
+  if ($null -eq $previousStrictSkips) { Remove-Item Env:DRAFTYAK_STRICT_SKIPS -ErrorAction SilentlyContinue } else { $env:DRAFTYAK_STRICT_SKIPS = $previousStrictSkips }
+  if ($null -eq $previousDoNotTrack) { Remove-Item Env:DO_NOT_TRACK -ErrorAction SilentlyContinue } else { $env:DO_NOT_TRACK = $previousDoNotTrack }
+}
+```
+
+These invoke the existing `test:live` entry directly through the kit runner. Strict skips are `1` during this live invocation; Bash confines its assignment to the child command, and PowerShell restores the previous value in its managed shell's `finally`. Other owner-selected settings retain their existing meanings and cleanup; no token belongs in a command or log.
+
+Keep the wrapper shell/process object through `WaitForExit()` and reading `ExitCode`; PowerShell writes an ASCII integer-only `<log basename>.exit` receipt in that same invocation and exits with the native status. Bash must keep its receipt-writing group and wait in the originating managed shell. A fresh shell may inspect saved evidence after completion, but cannot `wait` on another shell's child or recover its status from PID disappearance.
+
+Completion requires all three: the managed task completed successfully with exit0, this invocation's fresh receipt contains exactly ASCII `0` followed by LF or CRLF, and guarded logs contain the final passed `Test Files` summary. A missing/malformed/nonzero receipt, cancelled/pending task or missing/failed summary is not a pass. Never infer completion from a PID, elapsed time, a vanished process or a summary alone. Do not rerun while the managed task or any owned child remains.
+
+PowerShell's `.pid` records the native Windows child; stop only its verified owned process/descendants through the managed task or retained OS handles. Bash's `s6_pid` and `.pid` identify an MSYS wrapper, not a taskkill-safe Windows PID. Bash cancellation requires a managed session that retains the owned Windows child handles; otherwise use PowerShell. Stopping only a wrapper does not prove children ended. Never search broadly by process name. Relay new prompt lines promptly from the current guarded logs.
+
+
+Vitest may hide a passing test's console output, so the run writes its `S6 live:` lines straight to stderr, where they show at once. Relay these to the owner:
 
 | The run says | Who acts |
 |---|---|
@@ -132,18 +184,21 @@ Settings go in front of the run: `DRAFTYAK_S6_KEEP_APP=1 pnpm …` in Git Bash, 
 | `still waiting for app_uninstalled, …` | nobody: Slack may deliver late |
 | `Owner: now delete the app …`, then `waiting for the owner to delete the app` | the owner, step 8 |
 
-Each phase has a limit: connecting 1 minute, messages 15, the uninstall 10 and the delete 10. A run takes about 10 minutes when every event arrives, about 20 when Slack sends no revocation events, and at most about 38.
-- **Messages.** Every 3 minutes the run reads the history of each type that has sent no event yet. At 15 minutes each such type gets `not delivered` (a message from someone other than the owner is in its history since the run connected, but no event came), `not sent (…)` (nobody else posted there) or `not confirmed (…)` (the history couldn't be fully read). For `not sent`, or whenever another try is wanted, don't let the owner uninstall: stop the run, which writes nothing, and start it again. The tokens stay valid until the uninstall.
+The phase settings remain: connecting 1 minute, messages 15, the uninstall 10 and the delete 10. About 10 minutes when every event arrives, 20 when revocation events do not arrive, and 38 for a long run are planning estimates, not elapsed-time maxima. Paced reads, including the existing final history check after the message wait, can extend the duration. The live test retains its 45-minute timeout; no phase or request allowance is increased.
+- **Messages.** Every 3 minutes the run reads the history of each type that has sent no event yet. After the 15-minute wait and final history check, each absent type gets `not delivered` (history contains a message from someone other than the owner, no event came, and continuity is confirmed), `not sent (…)` (nobody else posted there) or `not confirmed (…)` (incomplete history, untyped events from others, or interrupted/unknown continuity prevents a conclusion). The delivery window includes the final history check, but excludes later uninstall/deletion closes. For `not sent` or `not confirmed`, or whenever another try is wanted, do not relay a later uninstall cue. Stop only this invocation's verified owned processes, preserve any existing evidence, and review the current observed credential/cleanup state with the owner before an existing retry. Early revocation can precede the cue, so cue order alone does not prove that tokens still work; an event alone also does not prove credential refusal. If validity or cleanup is uncertain, stop for the normal owner cleanup/disposition. This prescribes no additional verification calls or retry allowance.
+- **Read pacing.** History and replies share the configured Tier 3 token bucket (50 reads/minute, burst 5), and each call's time is stamped after its pacing wait. This bucket does not guarantee at most 50 sends in every sliding minute. At the first history/replies 429, 50 or more actual sends in the preceding 60 seconds makes the exemption result `inconclusive`, rather than attributing that limit to Slack's app policy.
 - **The dropped ack.** Unless `DRAFTYAK_S6_DROP_ACK=0`, the run says it dropped one ack, and then that Slack redelivered the message, after how long and with which `retry_attempt`.
-- **Uninstall.** The phase ends once `app_uninstalled` and `tokens_revoked` have arrived and auth.test refuses the user token, or after 10 minutes, since Slack may deliver the events late.
+- **Uninstall.** The phase ends once `app_uninstalled` and `tokens_revoked` have arrived and auth.test refuses the user token, or after 10 minutes, since Slack may deliver the events late. Events received before the uninstall prompt are announced and retained. Such an event does not prove credential refusal; review an early arrival with the owner, and keep the token checks separate.
 - **Delete.** The run polls `apps.connections.open` until Slack refuses the app-level token. If Slack already refused it right after the uninstall, the run can't see the delete, so it waits the full 10 minutes. Then it asks Slack about both tokens once more (`final check: …`); that check decides `revoked`.
 - **Clean tree.** The run refuses to start on a tree with uncommitted tracked changes, since the evidence must come from a clean tree. It fails, writing nothing, if Socket Mode can't connect or stops while messages are expected.
 
-It ends with the acceptance lines, one per event type (`received over Socket Mode`, `not delivered`, `not sent (…)` or `not confirmed (…)`), then `exemption: …`, `app_uninstalled: …`, `tokens_revoked: …`, `revoked: …`, `Slack's Date header: …`, and `evidence written to evidence/live.json`, with a count of any header values replaced for their shape.
+It prints `Slack's Date header: …` first, then the acceptance lines, one per event type (`received over Socket Mode`, `not delivered`, `not sent (…)` or `not confirmed (…)`), then `exemption: …`, `app_uninstalled: …`, `tokens_revoked: …`, `revoked: …`, and `evidence written to evidence/live.json`, with a count of any header values replaced for their shape.
 
 ## After the run (orchestrator, about 5 minutes)
 
-The `.env.live` entries go only once Slack refuses both tokens. Git Bash and PowerShell alike:
+The `.env.live` entries go only once both saved tokens are verified as refused. Ordinary `delete` independently asks `auth.test` and `apps.connections.open` exactly once each. Both must return HTTP 200 with one of `token_revoked`, `invalid_auth`, `account_inactive`, `not_authed` or `token_expired`; then the helper rechecks that neither saved token changed before deleting the pair. These are two additional verification requests after the run's final check, with no socket connection.
+
+Accepted, unknown, network-error and non-200 responses preserve the file's exact bytes, including auth-looking bodies on 403, 429 or 5xx. A partial/invalid pair or a pair replaced during verification is also preserved; both entries already absent is an idempotent no-op. There is no force bypass. If deletion refuses, retain the store, resolve the app/token state with the owner and retry verification. A prior `revoked: yes` or revocation event never bypasses these checks. Git Bash and PowerShell alike:
 - **`revoked: yes`:**
   ```text
   node spikes/s06-slack/scripts/tokens.ts delete    # deleted DY_LIVE_SLACK_USER_TOKEN and DY_LIVE_SLACK_APP_TOKEN …
@@ -172,13 +227,14 @@ Commit `evidence/live.json` with ADR 0008. The evidence's fingerprint names the 
 
 - **Decision.** Go (Socket Mode) when all four message types are `received over Socket Mode`. Go with fallback (the budgeted poller, `src/poller.ts`) for any type `not delivered`, with the plan changes for M6. A type `not sent` or `not confirmed` is never a reason for the fallback: re-run it, or record it as `Not run` for that type. Latency per type (min, median, max): the receive time minus the message's `ts`, from new messages without a subtype only (an edit or a reply notification carries an older `ts`). The clock skew below bounds its error.
 - **Sent but not delivered.** Per type without an event, `historySinceConnect`: conversations of that type, how many were read, and the messages from others since the run connected. The poller's `fromOthersSinceConnect` counts the same per type.
-- **The connection.** The time to the first `hello`, Slack's `approximate_connection_time`, every refresh (`warning`, `refresh_requested`), the reconnects and `apps.connections.open` calls, and the WebSocket pings and their interval (for M6's dead-connection check). `retryProbe` answers notes open point 7: whether Slack redelivered the envelope whose ack was dropped, after how long, with which `retry_attempt` and `retry_reason`, under a new `envelope_id` or not, and with the same `event_id` or not. That confirms or corrects FakeSlack's redelivery shape.
+- **The connection.** The time to the first `hello`, Slack's `approximate_connection_time`, every refresh (`warning`, `refresh_requested`), the reconnects and `apps.connections.open` calls, and the WebSocket pings and their interval (for M6's dead-connection check). Continuity uses the full internal state history through the final message-history check, rather than only the first 100 serialized state examples. `eventsContinuity` records the window, gap count/first gap and proven planned overlaps; `stateCount` and `stateExamplesOmitted` describe the bounded examples. A planned old-socket close is exempt only when its refresh and another non-draining socket's hello were observed before that close. Quick recovery alone does not erase a gap. Untyped messages from others or unproven continuity make absent types `not confirmed`; neither justifies the poller fallback. `retryProbe` answers notes open point 7: whether Slack redelivered the envelope whose ack was dropped, after how long, with which `retry_attempt` and `retry_reason`, under a new `envelope_id` or not, and with the same `event_id` or not. That confirms or corrects FakeSlack's redelivery shape.
 - **Rate-limit headers** (open point 4) of `conversations.info`, `.history` and `.replies`, plus `auth.test`, `users.conversations` and `apps.connections.open`. These are the header names, with values only for `*ratelimit*`, `retry-after` and `content-type`; whole-number values are kept as numbers, and `headerValuesReplaced` counts values replaced for an unexpected shape. They show whether Slack sends any limit header on success.
+- **Call evidence.** `rateLimits.calls` retains the first 100 `sent check` examples and every other retained call record in original order, including later claim-time reads, exemption probes and final token checks. `omittedSentCheckCalls` reports the exact omitted example count. Verdicts use the complete internal read-attempt audit; the serialized total may exceed 200 without increasing any request budget.
 - **The exemption** (open point 2): `holds`, `inconclusive`, `does not hold (capped …)` or `does not hold (… rate limited …)`, from `conversations.history` with `limit` 100 on the owner's public channels in turn until one returns more than 15 messages, then a second call on it in the same minute, and from any rate limit on history or replies during the run. This is the dependency ADR 0015 builds on; cross-reference ADR 0015 if it doesn't hold. The limit ceiling (open point 3: 1,000 or 999) would need 1,000 messages, so it stays as documented.
 - **`conversations.info`'s channel fields** per conversation type, read with `include_num_members`: which of the pre-claim facts (archived, shared, type, member count as `num_members`) the read returns.
 - **Slack's `Date` header** (plan §3 Clock rule; ADR 0015's `secondNow`): on how many responses it came, whether every one round-trips as an IMF-fixdate, and the skew against this machine (min, median, max; the header counts whole seconds, so it reads up to a second low).
 - **One poller cycle** against Slack: conversations read, failures and cut-off reads, the live check of the fallback.
-- **Revocation** (open point 6). Whether Slack accepted `app_uninstalled` and `tokens_revoked` as user events (owner step 2), and whether each arrived over Socket Mode on uninstall, how soon, and whether `tokens_revoked` listed the owner. auth.test's answer after the uninstall, and how soon it refused, is the hub's own check (plan §3 Revocation); only Slack's auth codes (`token_revoked`, `invalid_auth`, `account_inactive`, `not_authed`, `token_expired`) count as a refusal, and anything else reads `unexpected (…)`. Also: whether the app-level token still works after the uninstall (it belongs to the app, not the install) and is refused once the app is deleted, what Socket Mode did meanwhile, and the final check of both tokens.
+- **Revocation** (open point 6). Whether Slack accepted `app_uninstalled` and `tokens_revoked` as user events (owner step 2), and whether each arrived over Socket Mode, how soon, and whether `tokens_revoked` listed the owner. Events are selected from all arrivals in the run, including before the uninstall cue: `beforeCue: true` marks an early first arrival and its signed `afterCueMs` is retained (null if no cue was planned). Arrival is independent of the token-refusal verdict. auth.test's answer after the uninstall, and how soon it refused, is the hub's own check (plan §3 Revocation); only Slack's auth codes (`token_revoked`, `invalid_auth`, `account_inactive`, `not_authed`, `token_expired`) count as a refusal, and anything else reads `unexpected (…)`. Also: whether the app-level token still works after the uninstall (it belongs to the app, not the install) and is refused once the app is deleted, what Socket Mode did meanwhile, and the final check of both tokens. The later deletion command applies its separate HTTP 200-only verification policy above.
 - **Cleanup.** `revoked: yes` and the deleted `DY_LIVE_SLACK_*` entries, any manual revoke with its `tokens.ts revoked` result, or the keep-for-M6 decision.
 - **The manifest** as Slack took it (open point 8), and the re-read: unchanged, or each change.
 - **Kept from M0.24's notes:** `users.conversations` in place of plan §4's `conversations.list`, and Slack's written confirmation (open point 1) with its date, or still pending.

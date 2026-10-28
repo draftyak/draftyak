@@ -24,17 +24,21 @@ import {
 	PLAN_SCOPE,
 	planUsage,
 	signIn,
+	type Tokens,
 } from "../src/auth.ts";
 import { type Broker, createBroker } from "../src/broker.ts";
 import { classifyError, SiwcError } from "../src/errors.ts";
 import { createClient, STRUCTURES, type Structure } from "../src/responses.ts";
 import { type CredentialStore, Session, transferText } from "../src/session.ts";
 import {
+	AFTER_EXPIRY_MS,
 	type AuthCall,
 	afterRevocation,
 	authRecorder,
 	type Confirmation,
 	chunkStats,
+	DEFERRED_BUDGET_MS,
+	DEFERRED_MAX_MIN,
 	DRAFT_TIMEOUT_MS,
 	type DraftRecord,
 	detailText,
@@ -42,6 +46,7 @@ import {
 	type ErrorRecord,
 	errorRecord,
 	HUB_BUDGET_MS,
+	isDeferredMinutes,
 	isRecord,
 	liveJob,
 	MODEL_SLUG,
@@ -90,7 +95,8 @@ export interface LiveDeps {
 	// Progress for the owner and the orchestrator; never a value from .env.live.
 	readonly say: (text: string) => void;
 	readonly envLive?: EnvLiveOptions;
-	// Model overrides (DRAFTYAK_S7_MODEL, DRAFTYAK_S7_API_MODEL); process.env by default.
+	// Model overrides (DRAFTYAK_S7_MODEL, DRAFTYAK_S7_API_MODEL) and DRAFTYAK_S7_DEFERRED_MIN;
+	// process.env by default.
 	readonly env?: NodeJS.ProcessEnv;
 	// undefined: 127.0.0.1:1455, as live.
 	readonly port?: number;
@@ -102,6 +108,10 @@ export interface LiveDeps {
 	readonly signInTimeoutMs?: number;
 	readonly pollMs?: number;
 	readonly fingerprint?: Fingerprint;
+	// The step after expiry: the hub process keeps the session until its access token has expired,
+	// then drafts once more, waiting at most this many minutes. DRAFTYAK_S7_DEFERRED_MIN by default;
+	// off when neither is set.
+	readonly deferredMinutes?: number;
 }
 
 export interface LiveResult {
@@ -130,6 +140,8 @@ export class SessionStopped extends Error {
 const SIGN_IN_TIMEOUT_MS = 8 * 60_000;
 // Longer than the hub process's worst case, so it ends with its result rather than killed.
 const CHILD_TIMEOUT_MS = HUB_BUDGET_MS + 60_000;
+// test/siwc.live.test.ts's limit without the step after expiry.
+const LIVE_TIMEOUT_MS = 60 * 60_000;
 const CHILD = path.join(import.meta.dirname, "transfer-child.ts");
 const TOOL_STRUCTURES: readonly Structure[] = STRUCTURES.filter((s) => s !== "text-format");
 // The model in the docs' example (Models and inference): the plan drafts' model when the list can't
@@ -138,6 +150,31 @@ const DOCS_MODEL = "gpt-6.1-sol";
 const IN_CHATGPT =
 	"remove DraftYak in ChatGPT's settings (Settings > Security and login > Sign in with ChatGPT)";
 const FORGET = "node spikes/s07-siwc/test/session-env.ts forget tokens";
+export const DEFERRED_MIN = "DRAFTYAK_S7_DEFERRED_MIN";
+
+// DRAFTYAK_S7_DEFERRED_MIN, read like DRAFTYAK_S7_MODEL from the shell: whole minutes from 1 to
+// 120, or undefined when unset. Any other value is refused before the sign-in.
+export function deferredMinutes(env: NodeJS.ProcessEnv = process.env): number | undefined {
+	const value = env[DEFERRED_MIN];
+	if (value === undefined) return undefined;
+	if (!isDeferredMinutes(value)) {
+		throw new Error(
+			`refusing to start: ${DEFERRED_MIN} must be whole minutes from 1 to ${DEFERRED_MAX_MIN}; unset it to leave the step after expiry off`,
+		);
+	}
+	return Number(value);
+}
+
+// The step after expiry lengthens the hub process's limit and the live test's by its cap and its
+// own requests. A value deferredMinutes() refuses adds nothing: the run won't start.
+export const deferredExtraMs = (minutes: number): number => minutes * 60_000 + DEFERRED_BUDGET_MS;
+export const childTimeoutMs = (minutes?: number): number =>
+	CHILD_TIMEOUT_MS + (minutes === undefined ? 0 : deferredExtraMs(minutes));
+export function liveTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+	const value = env[DEFERRED_MIN];
+	const minutes = value !== undefined && isDeferredMinutes(value) ? Number(value) : undefined;
+	return LIVE_TIMEOUT_MS + (minutes === undefined ? 0 : deferredExtraMs(minutes));
+}
 
 export const openaiVariables = (env: NodeJS.ProcessEnv): string[] =>
 	Object.keys(env)
@@ -149,7 +186,8 @@ export type Gate =
 	| { readonly run: false; readonly reason: string };
 
 // The opt-in first (a run without it skips), then the refusals: OPENAI_* in the shell, which the SDK
-// would read, and evidence from an earlier run that only an opt-in with --again may replace.
+// would read, a DRAFTYAK_S7_DEFERRED_MIN deferredMinutes() refuses, and evidence from an earlier run
+// that only an opt-in with --again may replace.
 export function gate(
 	evidenceFile: string,
 	options: EnvLiveOptions = {},
@@ -170,6 +208,7 @@ export function gate(
 			`refusing to start: ${set.join(", ")} set in this shell, and the OpenAI SDK reads OPENAI_* variables; unset them and run again`,
 		);
 	}
+	deferredMinutes(env);
 	if (value === OPT_IN_VALUES.run && existsSync(evidenceFile)) {
 		throw new Error(
 			`refusing to start: ${path.basename(evidenceFile)} holds an earlier session's evidence; commit or move it, or opt in with --again to replace it`,
@@ -462,6 +501,8 @@ interface TransferRecord {
 	readonly draft: Readonly<Record<string, unknown>> | null;
 	// Its first refresh request, if it sent one.
 	readonly refresh: Readonly<Record<string, unknown>> | null;
+	// The step after expiry, only when it was asked for: null unless the forced refresh worked.
+	readonly deferred?: Readonly<Record<string, unknown>> | null;
 	readonly revoked: boolean | null;
 	readonly revocation: readonly number[];
 	readonly afterRevoke: Readonly<Record<string, unknown>> | null;
@@ -473,8 +514,9 @@ interface Fallback {
 	readonly after: Readonly<Record<string, unknown>> | null;
 }
 
-// The hub's revocation, unless its refresh may have left a newer token it never saw: a refresh that
-// got no answer, or one refused as reused, which says another holder refreshed first.
+// The hub's revocation, unless one of its refreshes may have left a newer token it never saw: a
+// refresh that got no answer, or one refused as reused, which says another holder refreshed first.
+// The refresh after expiry also counts when it was answered 2xx with tokens the hub couldn't keep.
 function hubVerdict(transfer: TransferRecord): Revoked {
 	if (transfer.refresh?.status === 0) {
 		return "no(revocation unconfirmed: the hub's refresh got no answer)";
@@ -482,10 +524,68 @@ function hubVerdict(transfer: TransferRecord): Revoked {
 	if (!transfer.refreshed && transfer.apiCode === "refresh_token_reused") {
 		return "no(revocation unconfirmed: refresh_token_reused)";
 	}
+	const later = transfer.deferred;
+	const laterStatus = later && isRecord(later.refresh) ? later.refresh.status : undefined;
+	if (laterStatus === 0) {
+		return "no(revocation unconfirmed: the hub's refresh after expiry got no answer)";
+	}
+	if (later?.refreshed === false && later.apiCode === "refresh_token_reused") {
+		return "no(revocation unconfirmed: refresh_token_reused)";
+	}
+	const answered = typeof laterStatus === "number" && laterStatus >= 200 && laterStatus < 300;
+	if (later?.refreshed === false && answered) {
+		return "no(revocation unconfirmed: the hub's refresh after expiry was answered but not kept)";
+	}
 	return revocationVerdict(transfer.revoked === true, transfer.afterRevoke?.refresh);
 }
 
+// Before the hub process starts: what the step after expiry will most likely do, from the lifetime of
+// the tokens handed over. The hub decides from its own refresh's tokens.
+function deferredPlan(tokens: Tokens, cap: number): string {
+	const lifetime = tokens.expiresAt - tokens.savedAt;
+	const life = Math.round(lifetime / 60_000);
+	const wait = Math.ceil((lifetime + AFTER_EXPIRY_MS) / 60_000);
+	const after = AFTER_EXPIRY_MS / 60_000;
+	return wait > cap
+		? `After expiry: the tokens last ${life} minutes, so the hub process would wait about ${wait} minutes, past the ${cap}-minute cap. It most likely revokes the session without that step (it decides from its own refresh's tokens).`
+		: `After expiry: the hub process keeps the session until ${after} minutes after its access token expires, about ${wait} minutes (the tokens last ${life} minutes; the cap is ${cap}), then drafts once more, refreshing first, and revokes it. Nothing to do meanwhile: keep this PC on mains power and awake.`;
+}
+
+// The step after expiry as the details say it.
+function deferredText(record: Readonly<Record<string, unknown>>, cap: number): string {
+	const count = (key: string): number | null => {
+		const value = record[key];
+		return typeof value === "number" ? value : null;
+	};
+	const due = count("dueInMs");
+	if (record.ran !== true) {
+		return due === null
+			? "not run"
+			: `not run (due in ${Math.ceil(due / 60_000)} min, over the ${cap}-minute cap)`;
+	}
+	const after = count("msAfterExpiry");
+	const idle = count("idleMs");
+	const timing =
+		after === null || idle === null
+			? "no refresh sent"
+			: `${Math.round(after / 1000)} s after expiry, idle ${Math.round(idle / 60_000)} min`;
+	const draft = isRecord(record.draft) ? record.draft : null;
+	const said = draft && (draft.outcome === "draft" ? "ok" : name(draft.code ?? draft.outcome));
+	const drafted = said ? `draft ${said}` : "no draft";
+	return `refreshed ${record.refreshed === true} (rotated ${record.rotated === true}, ${timing}), ${drafted}`;
+}
+
 export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
+	const env = deps.env ?? process.env;
+	// Read like DRAFTYAK_S7_MODEL; a value either source can't take stops the run before anything
+	// is sent.
+	const fromEnv = deferredMinutes(env);
+	const deferred = deps.deferredMinutes ?? fromEnv;
+	if (deferred !== undefined && !isDeferredMinutes(String(deferred))) {
+		throw new Error(
+			`refusing to start: deferredMinutes must be whole minutes from 1 to ${DEFERRED_MAX_MIN}`,
+		);
+	}
 	const began = performance.now();
 	const since = (from: number): number => Math.round(performance.now() - from);
 	const key = newSessionKey();
@@ -495,7 +595,6 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 	const auth = authRecorder(issued.fetch, deps.issuer);
 	const api = upstreamRecorder(base);
 	const envLive = deps.envLive ?? {};
-	const env = deps.env ?? process.env;
 	const signal = deps.signal ?? new AbortController().signal;
 	const say = deps.say;
 	const ms: Record<string, number> = {};
@@ -511,6 +610,9 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 	let blocked: string | undefined;
 	// The credential between its handover and the hub's answer, revoked here if the hub never kept it.
 	let handedOver: Credential | undefined;
+	// With the step after expiry, a hub process that ended without a result (stopped during its wait,
+	// say) may hold refreshed tokens that still work.
+	let hubLost = false;
 
 	const withHash = (error: ErrorRecord): ErrorRecord =>
 		error.requestId === undefined ? error : { ...error, requestId: hashed(error.requestId) };
@@ -614,6 +716,7 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 			if (verdict !== "yes" && item.kept) keep = true;
 			if (verdict !== "yes" && !item.kept) lost = true;
 		}
+		if (hubLost) lost = true;
 		if (keep) {
 			say(
 				`They stay in .env.live, and the next opted-in run revokes them first. If no run follows, ${IN_CHATGPT}, then run ${FORGET}.`,
@@ -867,10 +970,12 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 				model && planOn ? (STRUCTURES.find(ok) ?? "text-format") : undefined;
 			const args = [deps.issuer, hostId, "--revoke", "--live", deps.apiOrigin];
 			if (model && childStructure) args.push("--draft", model, childStructure);
+			if (deferred !== undefined) args.push("--deferred", String(deferred));
 			say(
 				"Transfer: a second local process takes the session over, drafts once, refreshes it, revokes it and forgets it.",
 			);
-			const timeout = AbortSignal.any([signal, AbortSignal.timeout(CHILD_TIMEOUT_MS)]);
+			if (deferred !== undefined) say(deferredPlan(full.tokens, deferred));
+			const timeout = AbortSignal.any([signal, AbortSignal.timeout(childTimeoutMs(deferred))]);
 			const run = await (deps.runChild ?? runTransferChild)(args, text, timeout);
 			const out = isRecord(run.output) ? run.output : undefined;
 			if (out === undefined) {
@@ -895,12 +1000,21 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 				apiCode: typeof field.apiCode === "string" ? name(field.apiCode) : null,
 				draft: nested("draft"),
 				refresh: nested("refresh"),
+				...(deferred !== undefined && { deferred: nested("deferred") }),
 				revoked: typeof field.revoked === "boolean" ? field.revoked : null,
 				revocation: Array.isArray(field.revocation)
 					? field.revocation.filter((status): status is number => typeof status === "number")
 					: [],
 				afterRevoke: nested("afterRevoke"),
 			};
+			if (deferred !== undefined) {
+				const step = transfer.deferred;
+				say(
+					step
+						? `The hub process has ended. After expiry: ${deferredText(step, deferred)}.`
+						: "The hub process has ended, with no record of the step after expiry.",
+				);
+			}
 			// The hub kept the session once it revoked it or sent a refresh, which may have rotated the
 			// desktop's copy away. Otherwise this process revokes its copy itself.
 			const hubKept = transfer.accepted && (transfer.revoked === true || transfer.refresh !== null);
@@ -913,6 +1027,7 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 				fallback = await revokeHere(full);
 			}
 			handedOver = undefined;
+			hubLost = deferred !== undefined && !transfer.result;
 			transferVerdict = !transfer.result
 				? "no(hub process ended without a result)"
 				: fallback
@@ -1007,6 +1122,15 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 				return `fails(${why.join(":")})`;
 			}
 			const hubDraft = transfer.draft;
+			// The step after expiry, which runs only once the hub's own refresh worked.
+			const later = transfer.deferred;
+			if (later?.ran === true && later.refreshed !== true) {
+				return `fails(deferred-refresh:${name(later.code ?? "unknown")})`;
+			}
+			const second = later && isRecord(later.draft) ? later.draft : null;
+			if (second && second.outcome !== "draft" && hubDraft?.outcome === "draft") {
+				return `fails(deferred-draft:${name(second.code ?? second.outcome)})`;
+			}
 			const desktop = drafts.find((d) => d.structure === transfer?.childStructure);
 			if (hubDraft && hubDraft.outcome !== "draft" && desktop?.outcome === "draft") {
 				return `fails(draft:${name(hubDraft.code ?? hubDraft.outcome)})`;
@@ -1040,6 +1164,9 @@ export async function runLiveSession(deps: LiveDeps): Promise<LiveResult> {
 				? `accepted ${transfer.accepted}, ${draft}refreshed ${transfer.refreshed}, revoked ${transfer.revoked}`
 				: `no result (exit ${transfer.exitCode})`;
 			details.push(`hub process: ${how}${fallback ? "; this process revoked its copy" : ""}`);
+			if (transfer.deferred && deferred !== undefined) {
+				details.push(`after expiry: ${deferredText(transfer.deferred, deferred)}`);
+			}
 		}
 		const after = fallback ? fallback.after : transfer?.afterRevoke;
 		if (isRecord(after) && isRecord(after.refresh) && isRecord(after.models)) {
