@@ -1,13 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire, isBuiltin } from "node:module";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { API } from "typescript/unstable/sync";
+import { rolldown } from "rolldown";
 import type { PayloadCatalog } from "../src/catalog.ts";
 import { moduleName } from "../src/layout.ts";
-import { assertSourceAdmission } from "./source-admission.ts";
+import { ClosedDependencies } from "./closed-dependencies.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const source = path.join(root, "src");
@@ -40,7 +40,7 @@ function filesIn(parent: string): { files: string[]; directories: string[] } {
 	return { files, directories };
 }
 
-function checkSource(): void {
+function sourceFiles(): string[] {
 	const files = filesIn(source).files.filter((file) => !file.endsWith("/.gitkeep"));
 	for (const file of files) {
 		if (!file.endsWith(".ts")) throw new Error("CLI build refused.");
@@ -58,36 +58,14 @@ function checkSource(): void {
 	for (const prefix of ["commands/", "doctor/checks/"])
 		if (files.filter((file) => file.startsWith(prefix)).length > 256)
 			throw new Error("CLI build refused.");
-	const api = new API();
-	try {
-		const config = path.join(root, "tsconfig.build.json");
-		using snapshot = api.updateSnapshot({ openProjects: [config] });
-		const project = snapshot.getProject(config);
-		if (!project) throw new Error("CLI build refused.");
-		for (const file of files) {
-			const filename = path.join(source, file);
-			const ast = project.program.getSourceFile(filename);
-			if (!ast) throw new Error("CLI build refused.");
-			function specifier(value: string): void {
-				if (isBuiltin(value)) return;
-				if (/[?#%\\]/.test(value)) throw new Error("CLI build refused.");
-				if (!value.startsWith("./") && !value.startsWith("../"))
-					throw new Error("CLI build refused.");
-				const relative = path
-					.relative(source, path.resolve(path.dirname(filename), value))
-					.replaceAll(path.sep, "/");
-				if (!files.includes(relative)) throw new Error("CLI build refused.");
-			}
-			for (const value of assertSourceAdmission(ast, file === "module-loader.ts")) specifier(value);
-		}
-	} finally {
-		api.close();
-	}
+	return files;
 }
 
 clean();
+const dependencies = new ClosedDependencies(root);
 try {
-	checkSource();
+	const files = sourceFiles();
+	dependencies.admit(files);
 	const compiler = path.join(
 		path.dirname(createRequire(import.meta.url).resolve("typescript/package.json")),
 		"bin/tsc",
@@ -98,6 +76,32 @@ try {
 		windowsHide: true,
 	});
 	if (result.status !== 0) throw new Error("CLI build refused.");
+	dependencies.verifySources();
+	const bundled = await rolldown({
+		cwd: root,
+		input: Object.fromEntries(
+			files.map((file) => [file.replace(/\.ts$/, ""), path.join(source, file)]),
+		),
+		platform: "node",
+		preserveEntrySignatures: "strict",
+		treeshake: { moduleSideEffects: (id, external) => !(external && id === "node:module") },
+		plugins: [dependencies.plugin()],
+		onwarn(warning) {
+			if (warning.code !== "EMPTY_BUNDLE") throw new Error("CLI build refused.");
+		},
+	});
+	try {
+		await bundled.write({
+			dir: destination,
+			format: "esm",
+			entryFileNames: "[name].js",
+			chunkFileNames: "chunks/[name]-[hash].js",
+			polyfillRequire: false,
+		});
+	} finally {
+		await bundled.close();
+	}
+	dependencies.verifySources();
 	mkdirSync(path.join(destination, "doctor/checks"), { recursive: true });
 	writeFileSync(path.join(destination, "package.json"), '{"type":"module"}\n');
 	writeFileSync(path.join(destination, "main.mjs"), 'export { main } from "./main.js";\n');
@@ -111,6 +115,7 @@ try {
 		'export * from "./payload-contract.js";\n',
 	);
 	const tree = filesIn(destination);
+	dependencies.verifyOutput(tree.files);
 	const modules = filesIn(source).files.filter((file) =>
 		/^(?:commands|doctor\/checks)\/[^/]+\.ts$/.test(file),
 	);
@@ -138,4 +143,6 @@ try {
 } catch (error) {
 	clean();
 	throw error;
+} finally {
+	dependencies.close();
 }
