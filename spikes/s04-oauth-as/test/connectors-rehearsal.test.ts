@@ -8,10 +8,11 @@ import { spawnSync } from "node:child_process";
 import { createHash, randomInt } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { createRequire } from "node:module";
+import { createRequire, stripTypeScriptTypes } from "node:module";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { runInNewContext } from "node:vm";
 import { fingerprint, writeEvidence } from "@draftyak/spike-kit";
 import {
 	CHARSET,
@@ -29,7 +30,7 @@ import {
 	CLIENT_INFO_META_KEY,
 	PROTOCOL_VERSION_META_KEY,
 } from "@modelcontextprotocol/server";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { requestWindow } from "../src/dcr-window.ts";
 import { SCOPES } from "../src/provider.ts";
 import { PRM_PATH } from "../src/routes.ts";
@@ -57,6 +58,7 @@ import {
 	identify,
 	type LiveData,
 	type OwnerReason,
+	Recorder,
 	type Row,
 	redirectShape,
 	SESSION_DCR_RULE,
@@ -65,9 +67,12 @@ import {
 	type WriteToolAnswer,
 } from "./live/record.ts";
 import {
+	CLEANUP_CONFIRM_MS,
+	CLEANUP_STEPS,
 	type Cleanup,
 	isCompleteRun,
 	LIVE_ACCESS_TOKEN_TTL,
+	LIVE_CLEANUP_MS,
 	type LiveSession,
 	livePlans,
 	recordDecision,
@@ -77,6 +82,7 @@ import {
 	type StepPlan,
 	selfCheckMessage,
 	startLiveSession,
+	summary,
 } from "./live/session.ts";
 import { type FunnelStandIn, type StandInOptions, startFunnelStandIn } from "./live/standin.ts";
 
@@ -1715,6 +1721,253 @@ describe("the session console", () => {
 });
 
 describe("the clean-up", () => {
+	test.each([0, 1, 2])(
+		"refresh evidence retains %i actual cleanup grants, independently of accounts success and owner confirmation",
+		async (count) => {
+			let client: ScriptedClient;
+			let token = "";
+			let finalRows: readonly Row[] = [];
+			const run = await rehearse(
+				[plan("claude-ai")],
+				async ({ origin, owner, secrets }) => {
+					await owner.step("claude-ai");
+					const connector = claudeAi();
+					vendor.serveAll(connector.documents);
+					client = new ScriptedClient(connector, { origin, approve: owner.approve });
+					const signed = await signIn(client);
+					token = signed.refreshToken;
+					secrets.push(signed.accessToken, token);
+					const mcp = new McpCalls(signed.mcp, signed.accessToken);
+					await mcp.legacy("initialize", {
+						protocolVersion: "2025-06-18",
+						capabilities: {},
+						clientInfo: { name: "claude-ai", version: "0.1.0" },
+					});
+					expect(
+						(await mcp.legacy("tools/call", { name: "accounts_list", arguments: {} }, "2025-06-18"))
+							.status,
+					).toBe(200);
+					await owner.done("claude-ai");
+				},
+				{
+					cleanUp: async ({ session, owner, standIn }) => {
+						const cleaning = session.cleanUp({
+							deleteEntry: () => [],
+							confirmMs: 5_000,
+							offMs: 5_000,
+							everyMs: 20,
+						});
+						await owner.until((view) => view.cleanup?.awaitingOwner === true);
+						expect(session.recorder.active).toBeUndefined();
+						for (let i = 0; i < count; i++) {
+							const grant = await client.refresh(token);
+							expect(grant.status).toBe(200);
+							expect(grant.body.refresh_token).not.toBe(token);
+							token = String(grant.body.refresh_token);
+						}
+						await owner.post("cleanup", {});
+						await standIn.close();
+						const cleanup = await cleaning;
+						finalRows = session.recorder.rows(CLIENTS);
+						return cleanup;
+					},
+				},
+			);
+			expect(rowOf(run.rows, "claude-ai").token.refreshes).toBe(0);
+			expect(rowOf(run.data.clients, "claude-ai").token.refreshes).toBe(count);
+			expect(finalRows.map((row) => row.token.refreshes)).toStrictEqual([count, 0, 0, 0]);
+			const row = rowOf(finalRows, "claude-ai");
+			expect(row.mcp.tools).toMatchObject({ accounts_list: 1 });
+			expect(row.authorization.scopes).not.toContain("offline_access");
+			expect(row.mcp.tokenScopes).not.toContain("offline_access");
+			expect(row.outcome).toBe(rowOf(run.rows, "claude-ai").outcome);
+			const text = summary(finalRows).join("\n");
+			expect(text).toContain("refresh grants observed");
+			expect(text).toContain(`refreshes ${count}${count === 0 ? " (not observed)" : ""}`);
+			for (const secret of [...run.secrets, token]) expect(text).not.toContain(secret);
+			expect(text).not.toContain(run.origin);
+		},
+	);
+
+	test("refresh evidence prompt offers one bounded accounts opportunity before removal and retains the hard stop", () => {
+		const [opportunity, removal] = CLEANUP_STEPS;
+		expect(opportunity).toContain("up to 10 minutes total");
+		expect(opportunity).toContain("one further accounts-list ask per client");
+		expect(opportunity).toContain("request/observe refresh");
+		expect(opportunity).toContain("accounts result alone is not refresh evidence");
+		expect(opportunity).toContain("2 h 30 min of its start");
+		expect(removal).toContain("Remove");
+	});
+
+	test("cleanup deadline defaults to thirty minutes, with no confirmation inferred from elapsed time", async () => {
+		const run = await rehearse([plan("codex", 100)], async () => {}, {
+			cleanUp: async ({ session, owner, standIn }) => {
+				let now = Date.now();
+				const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+				const stop = new AbortController();
+				const cleaning = session.cleanUp({
+					deleteEntry: () => [],
+					offMs: 5_000,
+					everyMs: 20,
+					signal: stop.signal,
+				});
+				try {
+					await owner.until((view) => view.cleanup?.awaitingOwner === true);
+					now += 21 * MINUTE;
+					await new Promise((done) => setTimeout(done, 150));
+					expect((await owner.view()).cleanup?.awaitingOwner).toBe(true);
+					now += 9 * MINUTE;
+					await standIn.close();
+					await owner.until((view) => view.cleanup?.awaitingOwner === false);
+					return await cleaning;
+				} finally {
+					stop.abort();
+					await cleaning.catch(() => {});
+					clock.mockRestore();
+				}
+			},
+		});
+		expect(CLEANUP_CONFIRM_MS).toBe(30 * MINUTE);
+		expect(run.cleanup).toMatchObject({
+			connectors: "not confirmed",
+			funnel: "off",
+			revoked: "no",
+		});
+	});
+
+	test("recorded entry prints fresh post-cleanup refresh evidence and retains the 135-minute outer budget", async () => {
+		const source = readFileSync(path.join(import.meta.dirname, "connectors.live.test.ts"), "utf8");
+		// Evaluate the entry only after replacing every import and external action with a stand-in.
+		// Unknown imports fail closed; no real CLI, live environment, build, server or evidence writer runs.
+		const stripped = stripTypeScriptTypes(
+			source.replaceAll("import.meta.dirname", JSON.stringify(import.meta.dirname)),
+			{ mode: "strip" },
+		);
+		const script = stripped.replace(
+			/import\s+(\{[\s\S]*?\}|\w+)\s+from\s+"([^"]+)";/g,
+			(_all, binding: string, name: string) =>
+				`const ${binding} = imports(${JSON.stringify(name)});`,
+		);
+		const events: string[] = [];
+		const printed: string[] = [];
+		const recorder = new Recorder({
+			publicOrigin: new URL("https://synthetic.invalid"),
+			cimdHosts: new Set(),
+			fixtures: new Map(),
+		});
+		const initial = recorder.rows();
+		const final = initial.map((row, i) => ({
+			...row,
+			token: { ...row.token, refreshes: [1, 0, 2, 0][i] ?? 0 },
+		}));
+		let cleaned = false;
+		let callback:
+			| ((ctx: {
+					signal: AbortSignal;
+					onTestFinished: (done: () => void) => void;
+			  }) => Promise<void>)
+			| undefined;
+		let timeout = 0;
+		const session = {
+			selfCheck: async () => ({ route: "tailnet identity headers" }),
+			run: async () => {
+				events.push("run");
+				return initial;
+			},
+			cleanUp: async (options: { deleteEntry: () => readonly string[] }) => {
+				events.push("cleanup");
+				await Promise.resolve();
+				options.deleteEntry();
+				cleaned = true;
+			},
+			recorder: {
+				rows: () => {
+					events.push("rows");
+					expect(cleaned).toBe(true);
+					return final;
+				},
+				notes: () => [],
+			},
+			evidence: () => {
+				events.push("evidence");
+				expect(cleaned).toBe(true);
+				return { clients: final };
+			},
+			[Symbol.asyncDispose]: async () => {},
+		};
+		const modules: Record<string, unknown> = {
+			"node:fs": { mkdtempSync: () => "synthetic-views", rmSync: () => {} },
+			"node:os": { tmpdir: () => "synthetic-tmp" },
+			"node:path": path,
+			"@draftyak/spike-kit": {
+				acquireBenchLock: async () => ({ [Symbol.dispose]: () => {} }),
+				deleteEnvLive: () => {
+					events.push("delete");
+					return ["DY_LIVE_FUNNEL_BASE_URL"];
+				},
+				fingerprint: async () => ({ dirty: false }),
+				loadEnvLive: () => ({
+					DY_LIVE_FUNNEL_BASE_URL: { reveal: () => "https://synthetic.invalid" },
+				}),
+				skipOrFail: () => {
+					throw new Error("unexpected skip");
+				},
+				writeEvidence: async (_file: string, data: unknown) => {
+					events.push("write");
+					expect(data).toStrictEqual({ clients: final });
+					return "synthetic-evidence";
+				},
+			},
+			"@draftyak/spike-s03-mcp-sdk/src/apps.ts": { loadViews: () => [] },
+			"@draftyak/spike-s03-mcp-sdk/views/build.ts": { buildViews: async () => {} },
+			vitest: {
+				expect,
+				it: (_title: string, options: { timeout: number }, run: typeof callback) => {
+					timeout = options.timeout;
+					callback = run;
+				},
+			},
+			"./live/session.ts": {
+				LIVE_PORT: 47615,
+				LIVE_CLEANUP_MS,
+				livePlans: () => livePlans({}),
+				recordDecision,
+				recordingRequested: () => true,
+				selfCheckMessage,
+				startLiveSession: async () => session,
+				summary,
+			},
+		};
+		const boundary = {
+			imports: (name: string) => {
+				if (!Object.hasOwn(modules, name)) throw new Error("unapproved entry import");
+				return modules[name];
+			},
+			process: { stderr: { write: (line: string) => printed.push(line) } },
+		};
+		const vmOptions = { contextCodeGeneration: { strings: false, wasm: false } };
+		for (const name of ["node:child_process", "node:net", "node:dns", "node:https"])
+			expect(() => boundary.imports(name)).toThrow("unapproved entry import");
+		expect(
+			runInNewContext("[typeof fetch, typeof require, typeof process.env]", boundary, vmOptions),
+		).toEqual(["undefined", "undefined", "undefined"]);
+		expect(() => runInNewContext("Function('return 1')()", boundary, vmOptions)).toThrow(
+			/Code generation/,
+		);
+		runInNewContext(script, boundary, vmOptions);
+		expect(timeout).toBe(135 * MINUTE);
+		expect(callback).toBeTypeOf("function");
+		if (!callback) throw new Error("entry test was not registered");
+		await callback({ signal: new AbortController().signal, onTestFinished: () => {} });
+		expect(events).toStrictEqual(["run", "cleanup", "delete", "rows", "evidence", "write"]);
+		const text = printed.join("\n");
+		expect(text).toContain("Final results (after clean-up):");
+		expect(text).toMatch(/claude-ai\s+\|[^\n]+refreshes 1/);
+		expect(text).toMatch(/claude-code\s+\|[^\n]+refreshes 2/);
+		expect(text).toMatch(/chatgpt\s+\|[^\n]+refreshes 0 \(not observed\)/);
+		expect(text).not.toContain("https://synthetic.invalid");
+	});
+
 	const cleanUp =
 		(options: { readonly stopFunnel: boolean; readonly deleted: string[] }) =>
 		async ({
