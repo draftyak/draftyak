@@ -22,10 +22,6 @@ const formatJson = canonicalize(zodTextFormat(z.fromJSONSchema(wireSchema), "dra
 export interface Settings {
 	readonly effort?: Effort;
 }
-export interface Pin {
-	readonly model: string;
-	readonly effort?: Effort;
-}
 export interface RequestBody {
 	readonly model: string;
 	readonly instructions: string;
@@ -51,15 +47,6 @@ export interface ResponsesRequest {
 	};
 	readonly body: RequestBody;
 }
-export interface OutgoingRequest {
-	readonly method: string;
-	readonly url: string;
-	readonly headers: Headers | Readonly<Record<string, string>>;
-	readonly body: unknown;
-}
-export type Verdict =
-	| { readonly ok: true; readonly request: ResponsesRequest }
-	| { readonly ok: false; readonly problems: readonly string[] };
 
 export function buildRequest(input: DraftRequest, settings: Settings = {}): ResponsesRequest {
 	try {
@@ -87,37 +74,5 @@ export function buildRequest(input: DraftRequest, settings: Settings = {}): Resp
 		};
 	} catch {
 		throw new ResponsesError("INVALID_INPUT");
-	}
-}
-
-// Rebuilding from allowlisted scalars also detaches the returned value from the caller's objects.
-export function verifyRequest(request: OutgoingRequest, pin: Pin): Verdict {
-	try {
-		if (request.method !== "POST" || request.url !== API_URL)
-			return { ok: false, problems: ["target: refused"] };
-		const body = request.body as Partial<RequestBody> | null;
-		if (body === null || typeof body !== "object" || Array.isArray(body))
-			return { ok: false, problems: ["body: refused"] };
-		const first = Array.isArray(body.input) && body.input.length === 1 ? body.input[0] : null;
-		if (!first || typeof first !== "object" || first.role !== "user")
-			return { ok: false, problems: ["input: refused"] };
-		const clean = buildRequest(
-			{
-				model: pin.model,
-				system: body.instructions as string,
-				prompt: first.content,
-				contextIds: [],
-			},
-			{ effort: pin.effort },
-		);
-		if (canonicalize(body) !== canonicalize(clean.body))
-			return { ok: false, problems: ["body: refused"] };
-		const headers = new Headers(request.headers);
-		const accepted = new Headers(clean.headers);
-		if (canonicalize(Object.fromEntries(headers)) !== canonicalize(Object.fromEntries(accepted)))
-			return { ok: false, problems: ["headers: refused"] };
-		return { ok: true, request: clean };
-	} catch {
-		return { ok: false, problems: ["request: refused"] };
 	}
 }
