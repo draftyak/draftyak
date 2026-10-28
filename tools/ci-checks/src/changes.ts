@@ -45,6 +45,9 @@ export function isDocs(file: string): boolean {
 // The Cargo workspace holding a file: the nearest [workspace] manifest above it, else the nearest
 // package. Each Rust spike is its own workspace; the repo root never is one.
 export function rustWorkspace(root: string, file: string): string | undefined {
+	if (path.posix.isAbsolute(file)) {
+		throw new Error("Rust workspace paths must be repository-relative");
+	}
 	let nearest: string | undefined;
 	for (let dir = path.posix.dirname(file); dir !== "."; dir = path.posix.dirname(dir)) {
 		const manifest = path.join(root, dir, "Cargo.toml");

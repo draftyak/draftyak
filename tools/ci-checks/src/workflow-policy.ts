@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { parseYaml, type Yaml, type YamlDocument, type YamlPath } from "./yaml.ts";
 
 // The single source of truth for action pins: [SHA, version comment], each SHA checked against its
@@ -32,10 +33,129 @@ const expressions = /\$\{\{([\s\S]*?)\}\}/g;
 // github.event, github.head_ref, github[...], the whole github context and inputs, in any case.
 const untrusted = /(?<![\w.-])(?:github(?!\s*\.\s*(?!(?:event|head_ref)\b)[a-z_])|inputs\b)/i;
 const evidence = /^!?spikes\/(?:\*|[a-z0-9][a-z0-9-]*)\/evidence(?:\/.*)?$/;
+const requiredName = `\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`;
+// These are the only reviewed computed names. The spike name always has a literal separator,
+// so even arbitrary matrix values cannot report exactly `required` or `pr-title`.
+const computedNames = [
+	[".github/workflows/ci.yml", "required", requiredName],
+	[".github/workflows/spikes.yml", "run", `\${{ matrix.spike }} on \${{ matrix.os }}`],
+] as const;
+const requiredPrTypes: Readonly<Record<string, readonly string[]>> = {
+	".github/workflows/ci.yml": ["opened", "synchronize", "reopened", "ready_for_review"],
+	".github/workflows/pr-title.yml": ["opened", "edited", "synchronize", "reopened"],
+};
+const nonDocs = "needs.changes.outputs.docs-only != 'true'";
+const ciControls: Readonly<Record<string, YamlMap>> = {
+	changes: {},
+	cheap: { needs: "changes" },
+	full: {
+		needs: "changes",
+		if: `${nonDocs} && (github.event_name != 'pull_request' || !github.event.pull_request.draft)`,
+	},
+	windows: {
+		needs: "changes",
+		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft))`,
+	},
+	required: { needs: ["changes", "cheap", "full", "windows"], if: "always()" },
+};
+const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
+	cheap: [
+		{
+			if: "needs.changes.outputs.docs-only == 'true'",
+			run: "node tools/verify/verify.ts --profile docs",
+		},
+		{ if: nonDocs, run: "pnpm install --frozen-lockfile" },
+		{ if: nonDocs, run: "pnpm verify --profile cheap" },
+	],
+	full: [
+		{ run: "pnpm install --frozen-lockfile" },
+		{ run: "pnpm build" },
+		{
+			if: "needs.changes.outputs.spikes != ''",
+			env: { SPIKES: `\${{ needs.changes.outputs.spikes }}` },
+			run: [
+				"filters=()",
+				'for dir in $SPIKES; do filters+=("--filter=./$dir"); done',
+				`node tools/verify/turbo.ts run test:heavy "\${filters[@]}"`,
+				"",
+			].join("\n"),
+		},
+	],
+	windows: [
+		{ run: "pnpm install --frozen-lockfile" },
+		{ run: "pnpm verify", env: { TURBO_CONCURRENCY: "1" } },
+	],
+};
+const prTitleCommands: readonly YamlMap[] = [
+	{
+		env: {
+			PR_TITLE: `\${{ github.event.pull_request.title }}`,
+			PR_BODY: `\${{ github.event.pull_request.body }}`,
+			PR_HEAD_REF: `\${{ github.event.pull_request.head.ref }}`,
+			PR_BASE_REF: `\${{ github.event.pull_request.base.ref }}`,
+		},
+		run: "node tools/ci-checks/src/pr-meta.ts",
+	},
+	{
+		env: {
+			BASE_SHA: `\${{ github.event.pull_request.base.sha }}`,
+			HEAD_SHA: `\${{ github.event.pull_request.head.sha }}`,
+		},
+		run: 'node tools/vendor-guard/src/cli.ts --commits "$BASE_SHA..$HEAD_SHA"',
+	},
+];
 
 const readOnly = (permissions: Yaml | undefined): boolean => {
 	const map = asMap(permissions);
 	return Object.keys(map).join() === "contents" && map.contents === "read";
+};
+
+const labelsFile = ".github/workflows/labels.yml";
+// The sole write-permission exception pins the whole execution context, including every step.
+// A one-line condition retains the parser's refusal of folded and multiline scalars.
+const labelsContract: Yaml = {
+	name: "Sync approved labels",
+	on: { workflow_dispatch: null },
+	permissions: { contents: "read" },
+	env: { DO_NOT_TRACK: "1", TURBO_TELEMETRY_DISABLED: "1" },
+	jobs: {
+		"sync-labels": {
+			if: `\${{ github.event_name == 'workflow_dispatch' && github.repository == 'draftyak/draftyak' && github.actor == 'nicksavov' && github.triggering_actor == 'nicksavov' && github.ref == 'refs/heads/m11' }}`,
+			permissions: { contents: "read", issues: "write" },
+			"runs-on": "ubuntu-24.04",
+			steps: [
+				{
+					name: "Check out source",
+					uses: `actions/checkout@${actionPins["actions/checkout"]?.[0]}`,
+					with: { ref: `\${{ github.sha }}`, "persist-credentials": false },
+				},
+				{
+					name: "Set up pnpm",
+					uses: `pnpm/action-setup@${actionPins["pnpm/action-setup"]?.[0]}`,
+				},
+				{
+					name: "Set up Node",
+					uses: `actions/setup-node@${actionPins["actions/setup-node"]?.[0]}`,
+					with: { "node-version-file": ".node-version" },
+				},
+				{ name: "Install locked dependencies", run: "pnpm install --frozen-lockfile" },
+				{
+					name: "Validate metadata",
+					run: "pnpm --filter @draftyak/launch-checks --fail-if-no-match metadata",
+				},
+				{
+					name: "Validate issue drafts and labels",
+					run: "pnpm --filter @draftyak/launch-checks --fail-if-no-match issues",
+				},
+				{
+					name: "Synchronize approved labels",
+					id: "sync-approved-labels",
+					env: { GH_TOKEN: `\${{ github.token }}` },
+					run: "node tools/launch-checks/src/issues-cli.ts --sync-labels",
+				},
+			],
+		},
+	},
 };
 
 // Problems in one workflow file, as `file:line: message`.
@@ -51,7 +171,29 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 		const scalar = doc.scalars.find((s) => prefix.every((part, at) => s.path[at] === part));
 		problems.push(`${file}${scalar ? `:${scalar.line}` : ""}: ${message}`);
 	};
+	const checkCommands = (job: string, definition: YamlMap, commands: readonly YamlMap[]): void => {
+		const steps = asList(definition.steps).map(asMap);
+		let previous = -1;
+		for (const expected of commands) {
+			const matches = steps.flatMap((step, index) => (step.run === expected.run ? [index] : []));
+			const index = matches[0] ?? -1;
+			const step = Object.fromEntries(
+				Object.entries(steps[index] ?? {}).filter(([key]) => key !== "name"),
+			);
+			if (matches.length !== 1 || index <= previous || !isDeepStrictEqual(step, expected)) {
+				report(
+					["jobs", job, "steps"],
+					`must preserve ${job} command and its execution controls: ${expected.run}`,
+				);
+			}
+			previous = index;
+		}
+	};
 	const workflow = asMap(doc.value);
+	const reviewedLabels = file === labelsFile && isDeepStrictEqual(doc.value, labelsContract);
+	if (file === labelsFile && !reviewedLabels) {
+		report([], "labels.yml must exactly match the reviewed owner-only labels contract");
+	}
 	if (file === ".github/workflows/ci.yml") {
 		const checkFailurePolicy = (value: Yaml, at: YamlPath): void => {
 			if (Array.isArray(value)) {
@@ -83,19 +225,78 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	for (const event of forbiddenEvents.filter((name) => events.includes(name))) {
 		report(["on", event], `${event} is not allowed`);
 	}
+	const requiredTypes = requiredPrTypes[file];
+	if (requiredTypes) {
+		const trigger = asMap(asMap(on).pull_request);
+		const types = asList(trigger.types);
+		if (
+			Object.keys(trigger).join() !== "types" ||
+			types.length !== requiredTypes.length ||
+			!requiredTypes.every((type) => types.includes(type))
+		) {
+			report(
+				["on", "pull_request"],
+				"must preserve required PR events without path/branch filters",
+			);
+		}
+	}
 	if (events.includes("push")) {
 		const push = asMap(asMap(on).push);
 		const branches = asList(push.branches);
+		const hasTags = Object.hasOwn(push, "tags");
+		const m10Tags =
+			hasTags &&
+			(file === ".github/workflows/release.yml" || file === ".github/workflows/mobile.yml") &&
+			Array.isArray(push.tags) &&
+			push.tags.length === 1 &&
+			push.tags[0] === "m10-rc-*";
 		const filters = Object.keys(push).filter(
-			(key) => !["branches", "paths", "paths-ignore"].includes(key),
+			(key) => !["branches", "paths", "paths-ignore", "tags"].includes(key),
 		);
 		if (
 			filters.length > 0 ||
-			branches.length === 0 ||
+			(hasTags && !m10Tags) ||
+			(branches.length === 0 && (Object.hasOwn(push, "branches") || !m10Tags)) ||
 			branches.some((b) => !pushBranches.has(String(b)))
 		) {
-			report(["on", "push"], "push may only run on the branches main or spikes-run/**");
+			report(
+				["on", "push"],
+				"push may only run on the branches main or spikes-run/**, or the single m10-rc-* tag pattern in release.yml or mobile.yml",
+			);
 		}
+	}
+	if (file === ".github/workflows/ci.yml") {
+		if (!isDeepStrictEqual(workflow.defaults, { run: { shell: "bash" } })) {
+			report(["defaults"], "must preserve the CI execution shell");
+		}
+		for (const [job, controls] of Object.entries(ciControls)) {
+			const definition = asMap(asMap(workflow.jobs)[job]);
+			const actual = Object.fromEntries(
+				Object.entries(definition).filter(([key]) => ["if", "needs"].includes(key)),
+			);
+			const allowed = [
+				"name",
+				"runs-on",
+				"timeout-minutes",
+				"outputs",
+				"steps",
+				...Object.keys(controls),
+			];
+			if (
+				!isMap(asMap(workflow.jobs)[job]) ||
+				!isDeepStrictEqual(actual, controls) ||
+				Object.keys(definition).some((key) => !allowed.includes(key))
+			) {
+				report(["jobs", job], `must preserve ${job} job execution controls`);
+			}
+			checkCommands(job, definition, ciCommands[job] ?? []);
+		}
+	}
+	if (file === ".github/workflows/pr-title.yml") {
+		if (workflow.defaults !== undefined) {
+			report(["defaults"], "pr-title.yml must not define workflow execution defaults");
+		}
+		checkCommands("pr-title", asMap(asMap(workflow.jobs)["pr-title"]), prTitleCommands);
 	}
 
 	for (const scalar of doc.scalars) {
@@ -112,7 +313,29 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 
 	for (const [job, definition] of Object.entries(asMap(workflow.jobs))) {
 		const jobMap = asMap(definition);
-		if (Object.hasOwn(jobMap, "permissions") && !readOnly(jobMap.permissions)) {
+		const name = jobMap.name ?? job;
+		if (
+			typeof name !== "string" ||
+			(name.includes("${{") &&
+				!computedNames.some(
+					([owner, id, reviewed]) => file === owner && job === id && name === reviewed,
+				))
+		) {
+			report(["jobs", job, "name"], "unreviewed computed job name");
+		}
+		for (const [protectedName, owner, id] of [
+			["required", ".github/workflows/ci.yml", "required"],
+			["pr-title", ".github/workflows/pr-title.yml", "pr-title"],
+		] as const) {
+			if (String(name).includes(protectedName) && (file !== owner || job !== id)) {
+				report(["jobs", job, "name"], "protected check name belongs to its required workflow job");
+			}
+		}
+		if (
+			Object.hasOwn(jobMap, "permissions") &&
+			!readOnly(jobMap.permissions) &&
+			!(reviewedLabels && job === "sync-labels")
+		) {
 			report(["jobs", job, "permissions"], "job permissions may only be `contents: read`");
 		}
 		for (const [index, value] of asList(jobMap.steps).entries()) {
