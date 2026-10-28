@@ -1,7 +1,12 @@
-import type { DraftRequest } from "@draftyak/protocol/ai-provider-v1";
+import { type DraftRequest, ModelId } from "@draftyak/protocol/ai-provider-v1";
 import OpenAI, { APIConnectionError } from "openai";
 import { buildRequest, type ResponsesRequest, type Settings } from "./request.ts";
-import { CONSUMER_TIMEOUT_MS, type CompletedTransport, completedResponse } from "./runner.ts";
+import {
+	CONSUMER_TIMEOUT_MS,
+	type CompletedTransport,
+	completedResponse,
+	metadataResponse,
+} from "./runner.ts";
 import { normalizeError, ResponsesError } from "./shared.ts";
 
 export type ResponsesFetch = (
@@ -101,27 +106,19 @@ function validateFetch(fetch: ResponsesFetch): void {
 		throw new ResponsesError("INVALID_INPUT");
 }
 
-// Only this package's validated request builder supplies this internal SDK seam.
-async function sendRequest(
+async function sendSdk(
 	fetch: ResponsesFetch,
-	request: ResponsesRequest,
+	operation: (client: OpenAI) => Promise<Response>,
 	signal?: AbortSignal,
-	timeout?: number,
 ): Promise<Response> {
 	if (signal?.aborted) throw new ResponsesError("ABORTED");
-	const { body } = request;
 	let ownedResponse: Response | undefined;
 	const client = makeSdk(fetch, (received) => {
 		ownedResponse = received;
 	});
 	let response: Response;
 	try {
-		response = await client.responses
-			.create(
-				{ ...body, input: body.input.map((item) => ({ ...item })) },
-				{ signal, ...(timeout === undefined ? {} : { timeout }) },
-			)
-			.asResponse();
+		response = await operation(client);
 	} catch (error) {
 		if (signal?.aborted) {
 			cancelBody(ownedResponse);
@@ -141,6 +138,27 @@ async function sendRequest(
 		throw new ResponsesError("ABORTED");
 	}
 	return response;
+}
+
+// Only this package's validated request builder supplies this internal SDK seam.
+async function sendRequest(
+	fetch: ResponsesFetch,
+	request: ResponsesRequest,
+	signal?: AbortSignal,
+	timeout?: number,
+): Promise<Response> {
+	const { body } = request;
+	return sendSdk(
+		fetch,
+		(client) =>
+			client.responses
+				.create(
+					{ ...body, input: body.input.map((item) => ({ ...item })) },
+					{ signal, ...(timeout === undefined ? {} : { timeout }) },
+				)
+				.asResponse(),
+		signal,
+	);
 }
 
 /** Returns the original unread HTTP response, including non-2xx. */
@@ -166,4 +184,30 @@ export function createCompletedTransport(fetch: ResponsesFetch): CompletedTransp
 			(consumerSignal) => sendRequest(fetch, request, consumerSignal, CONSUMER_TIMEOUT_MS),
 			signal,
 		);
+}
+
+/** Internal metadata operations keep SDK JSON decoding behind the bounded reader. */
+export async function modelMetadata(
+	fetch: ResponsesFetch,
+	model?: string,
+	signal?: AbortSignal,
+): Promise<unknown> {
+	validateFetch(fetch);
+	if (model !== undefined && !ModelId.safeParse(model, { jitless: true }).success)
+		throw new ResponsesError("INVALID_INPUT");
+	return metadataResponse(
+		(consumerSignal) =>
+			sendSdk(
+				fetch,
+				(client) => {
+					const options = { signal: consumerSignal, timeout: CONSUMER_TIMEOUT_MS };
+					return model === undefined
+						? client.models.list(options).asResponse()
+						: client.models.retrieve(model, options).asResponse();
+				},
+				consumerSignal,
+			),
+		signal,
+		model !== undefined,
+	);
 }
