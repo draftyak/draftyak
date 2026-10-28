@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { request as httpRequest } from "node:http";
-import { setImmediate } from "node:timers/promises";
+import { syncBuiltinESMExports } from "node:module";
+import type { TimerOptions } from "node:timers";
+import timerPromises, { setImmediate } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import { manualClock } from "../src/faults.ts";
 import { createRecorder, type Recorder } from "../src/recorder.ts";
@@ -1187,7 +1189,28 @@ describe("scripted Responses provider", () => {
 	it.each(["cancel", "abort"] as const)(
 		"cleans up a direct handler's unanswered inter-chunk wait on %s",
 		async (mode) => {
-			const before = timers();
+			const originalDelay = timerPromises.setTimeout;
+			// Release a leaked native wait in finally after the cleanup assertion has failed.
+			const cleanup = new AbortController();
+			const signals: AbortSignal[] = [];
+			const pending = new Set<Promise<unknown>>();
+			const delay = vi
+				.spyOn(timerPromises, "setTimeout")
+				.mockImplementation(<T>(ms?: number, value?: T, options?: TimerOptions): Promise<T> => {
+					if (ms !== 2_147_483_647 || !options?.signal) return originalDelay(ms, value, options);
+					signals.push(options.signal);
+					const promise = originalDelay(ms, value, {
+						...options,
+						signal: AbortSignal.any([options.signal, cleanup.signal]),
+					});
+					pending.add(promise);
+					void promise.then(
+						() => pending.delete(promise),
+						() => pending.delete(promise),
+					);
+					return promise;
+				});
+			syncBuiltinESMExports();
 			const fake = createResponsesApiFake({
 				steps: [{ kind: "raw", body: "abc", chunkBytes: 1, chunkDelayMs: Infinity }],
 			});
@@ -1199,11 +1222,15 @@ describe("scripted Responses provider", () => {
 			const added = vi.spyOn(request.signal, "addEventListener");
 			const removed = vi.spyOn(request.signal, "removeEventListener");
 			try {
+				expect(pending.size).toBe(0);
 				const response = await fake.handler(request);
+				expect(fake.pending()).toBe(0);
 				const reader = readerOf(response);
 				expect(new TextDecoder().decode((await reader.read()).value)).toBe("a");
 				await setImmediate();
-				expect(timers()).toBeGreaterThan(before);
+				expect(signals).toHaveLength(1);
+				expect(signals[0]?.aborted).toBe(false);
+				expect(pending.size).toBe(1);
 				if (mode === "cancel") await reader.cancel("synthetic cancel");
 				else {
 					const next = reader.read();
@@ -1212,7 +1239,9 @@ describe("scripted Responses provider", () => {
 					await failed;
 				}
 				await setImmediate();
-				expect(timers()).toBeLessThanOrEqual(before);
+				expect(pending.size).toBe(0);
+				expect(signals[0]?.aborted).toBe(true);
+				expect(fake.pending()).toBe(0);
 				for (const [type, listener] of added.mock.calls)
 					if (type === "abort")
 						expect(
@@ -1222,8 +1251,12 @@ describe("scripted Responses provider", () => {
 						).toBe(true);
 			} finally {
 				controller.abort();
+				cleanup.abort();
+				await Promise.allSettled(pending);
 				added.mockRestore();
 				removed.mockRestore();
+				delay.mockRestore();
+				syncBuiltinESMExports();
 			}
 		},
 	);
