@@ -430,6 +430,71 @@ it("bundles an exact locked external runtime dependency declared by a workspace 
 	});
 });
 
+it("builds and runs a typed workspace facade with the real pinned Zod dependency", () => {
+	const { fixture: f, owner, external } = externalFixture();
+	const require = createRequire(path.join(workspaceRoot, "packages/protocol/package.json"));
+	const installed = realpathSync.native(path.dirname(require.resolve("zod/package.json")));
+	const metadata = JSON.parse(readFileSync(path.join(installed, "package.json"), "utf8"));
+	expect({ name: metadata.name, version: metadata.version }).toEqual({
+		name: "zod",
+		version: "4.6.7",
+	});
+	cpSync(installed, external, { recursive: true });
+	put(
+		owner,
+		"src/index.ts",
+		'import { z } from "zod"; export function validated(value: unknown): string { return z.string().parse(value); }\n',
+	);
+	put(
+		owner,
+		"tsconfig.json",
+		JSON.stringify({
+			extends: "../../tsconfig.base.json",
+			compilerOptions: {
+				noEmit: false,
+				noEmitOnError: true,
+				emitDeclarationOnly: true,
+				rootDir: "src",
+				outDir: "dist",
+				types: [],
+			},
+			include: ["src/**/*.ts"],
+		}),
+	);
+	const compiler = path.join(
+		path.dirname(createRequire(import.meta.url).resolve("typescript/package.json")),
+		"bin/tsc",
+	);
+	const typed = spawnSync(process.execPath, [compiler, "-p", "tsconfig.json"], {
+		cwd: owner,
+		env: childEnvironment(),
+		encoding: "utf8",
+		timeout: 60_000,
+		windowsHide: true,
+	});
+	expect({ status: typed.status, stdout: typed.stdout, stderr: typed.stderr }).toEqual({
+		status: 0,
+		stdout: "",
+		stderr: "",
+	});
+	expect(readFileSync(path.join(owner, "dist/index.d.ts"), "utf8")).toContain(
+		"validated(value: unknown): string",
+	);
+	command(
+		f,
+		'let rejected = false; try { validated(7); } catch { rejected = true; } return validated("DYTEST real Zod") === "DYTEST real Zod" && rejected ? 13 : 8;',
+		'import { validated } from "@draftyak/build-fixture";',
+	);
+	const staged = built(f);
+	assertClosedImports(f, staged);
+	const result = invoke(staged, ["dependency"]);
+	expect({ status: result.status, stdout: result.stdout, stderr: result.stderr }).toEqual({
+		status: 13,
+		stdout: "",
+		stderr: "",
+	});
+});
+
 it.each(["undeclared", "mismatched name", "mismatched version"] as const)(
 	"refuses a resolvable %s external runtime dependency before compilation",
 	(failure) => {

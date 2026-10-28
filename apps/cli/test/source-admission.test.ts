@@ -46,6 +46,18 @@ const elements = fields.flatMap((field) => [
 ]);
 const allowed: Case[] = [
 	{
+		label: "ordinary process method name",
+		text: "class Parser { process(value: string): string { return value; } }",
+	},
+	{
+		label: "ordinary process object key",
+		text: "const parser = { process: (value: string): string => value };",
+	},
+	{
+		label: "ordinary process export alias",
+		text: "const processSchema = (): number => 1; export { processSchema as process };",
+	},
+	{
 		label: "unrelated string values",
 		text: 'const a = "getBuiltinModule"; const b = "mainModule"; const c = "process";',
 	},
@@ -67,6 +79,28 @@ const dependencies: Case = {
 	text: 'import value from "node:path"; import { other } from "./other.ts"; export { item } from "../item.ts";',
 };
 
+const processCaptures: Case[] = [
+	{ label: "global process capture", text: "const captured = process;" },
+	{ label: "globalThis process capture", text: "const captured = globalThis.process;" },
+	{
+		label: "aliased global process capture",
+		text: "const scope = globalThis; const captured = scope.process;",
+	},
+	{ label: "global process export", text: "export { process };" },
+	{ label: "global process export value", text: "export { process as captured };" },
+	{ label: "global process object value", text: "const captured = { process: process };" },
+	{
+		label: "process assignment capture",
+		text: "let captured; ({ process: captured } = globalThis);",
+	},
+	{
+		label: "process loop assignment capture",
+		text: "let captured; for ({ process: captured } of values) {}",
+	},
+	{ label: "process namespace import", text: 'import * as captured from "node:process";' },
+	{ label: "process bare import", text: 'import * as captured from "process";' },
+];
+
 const asts = new Map<string, SourceFile>();
 const tempRoot = realpathSync(tmpdir());
 let directory: string | undefined;
@@ -82,6 +116,7 @@ beforeAll(() => {
 		...nested,
 		...elements,
 		...allowed,
+		...processCaptures,
 		dependencies,
 	];
 	const files = cases.map((_, index) => `case-${index}.ts`);
@@ -167,6 +202,10 @@ it("refuses reserved literal keys in generic element syntax", () => {
 
 it.each(allowed)("admits $label", (entry) => {
 	expect(assertSourceAdmission(astFor(entry))).toEqual([]);
+});
+
+it.each(processCaptures)("refuses $label", (entry) => {
+	expect(() => assertSourceAdmission(astFor(entry))).toThrow(new Error("CLI build refused."));
 });
 
 it("collects literal ESM dependencies without loading them", () => {

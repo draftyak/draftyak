@@ -7,10 +7,12 @@ import {
 	isComputedPropertyName,
 	isElementAccessExpression,
 	isExportDeclaration,
+	isExportSpecifier,
 	isForInStatement,
 	isForOfStatement,
 	isIdentifier,
 	isImportDeclaration,
+	isMethodDeclaration,
 	isNonNullExpression,
 	isObjectLiteralExpression,
 	isParenthesizedExpression,
@@ -49,6 +51,14 @@ function literalField(node: Node | undefined): string | undefined {
 	return value && isStringLiteralLikeNode(value) ? value.text : undefined;
 }
 
+function processName(node: Node): boolean {
+	const parent = node.parent;
+	return (
+		((isMethodDeclaration(parent) || isPropertyAssignment(parent)) && parent.name === node) ||
+		(isExportSpecifier(parent) && parent.name === node && parent.propertyName !== undefined)
+	);
+}
+
 /** Checks syntax admitted by the installed relative ESM payload. */
 export function assertSourceAdmission(ast: Node, moduleLoader: boolean = false): readonly string[] {
 	const specifiers: string[] = [];
@@ -60,7 +70,9 @@ export function assertSourceAdmission(ast: Node, moduleLoader: boolean = false):
 		if (isObjectLiteralExpression(value)) {
 			for (const property of value.properties) {
 				if (isPropertyAssignment(property)) {
-					const field = literalField(property.name);
+					const field = isIdentifier(property.name)
+						? property.name.text
+						: literalField(property.name);
 					if (field !== undefined && reservedLiteralFields.has(field))
 						throw new Error("CLI build refused.");
 					assignmentPattern(property.initializer);
@@ -84,6 +96,7 @@ export function assertSourceAdmission(ast: Node, moduleLoader: boolean = false):
 			isIdentifier(node) &&
 			(runtimeLoaderFields.has(node.text) ||
 				(node.text === "process" &&
+					!processName(node) &&
 					!(isPropertyAccessExpression(node.parent) && node.parent.expression === node)))
 		)
 			throw new Error("CLI build refused.");
