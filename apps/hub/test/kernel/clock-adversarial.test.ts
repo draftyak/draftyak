@@ -125,6 +125,18 @@ describe("bounded clock admission", () => {
 	it.each([
 		["plain", { aborted: false }],
 		["null-prototype", Object.assign(Object.create(null), { aborted: false })],
+		["AbortSignal-prototype fake", Object.create(AbortSignal.prototype)],
+		[
+			"throwing-getPrototypeOf proxy",
+			new Proxy(
+				{},
+				{
+					getPrototypeOf() {
+						throw new Error("Synthetic prototype trap ran");
+					},
+				},
+			),
+		],
 		[
 			"throwing-addEventListener",
 			{
@@ -146,7 +158,7 @@ describe("bounded clock admission", () => {
 		});
 		hook.enable();
 		try {
-			returned = systemClock.after(100, signal as unknown as AbortSignal);
+			returned = systemClock.after(0, signal as unknown as AbortSignal);
 		} catch (error) {
 			thrown = error;
 		} finally {
@@ -157,6 +169,42 @@ describe("bounded clock admission", () => {
 		expect((thrown as Error).message).toBe("Clock wait signal must be an AbortSignal");
 		expect(returned).toBeUndefined();
 		expect(timers).toBe(0);
+	});
+
+	it("normalizes a real signal without calling its patched subscription method", async () => {
+		const controller = new AbortController();
+		let listenerCalls = 0;
+		Object.defineProperty(controller.signal, "addEventListener", {
+			configurable: true,
+			value() {
+				listenerCalls++;
+				throw new Error("Synthetic listener failure");
+			},
+		});
+		let timers = 0;
+		let thrown: unknown;
+		let pending: Promise<void> | undefined;
+		const hook = createHook({
+			init(_id, type) {
+				if (type === "Timeout") timers++;
+			},
+		});
+		hook.enable();
+		try {
+			pending = systemClock.after(0, controller.signal);
+			void pending.catch(() => {});
+		} catch (error) {
+			thrown = error;
+		} finally {
+			hook.disable();
+			Reflect.deleteProperty(controller.signal, "addEventListener");
+			controller.abort();
+		}
+		expect(thrown).toBeUndefined();
+		expect(pending).toBeDefined();
+		expect(listenerCalls).toBe(0);
+		expect(timers).toBe(1);
+		await expect(pending).rejects.toMatchObject({ name: "AbortError" });
 	});
 
 	it("observes a real native Timeout for an accepted zero wait", async () => {
