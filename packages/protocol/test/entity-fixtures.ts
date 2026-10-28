@@ -259,7 +259,7 @@ export const ownerSettings: E.OwnerSettings = {
 };
 
 // Every object entity with its samples, by export name. Each sample holds every member its schema
-// knows, so a sample without any one of them is refused.
+// requires, so a sample without any one of them is refused.
 export const samples: Readonly<Record<string, readonly Record<string, unknown>[]>> = {
 	Account: [emailAccount, chatAccount],
 	EmailAccount: [emailAccount],
