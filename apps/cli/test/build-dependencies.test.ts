@@ -27,6 +27,7 @@ import {
 } from "typescript/unstable/ast";
 import { API } from "typescript/unstable/sync";
 import { afterEach, expect, it } from "vitest";
+import { kernelFixtureSource } from "./kernel-fixture.ts";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = path.resolve(packageRoot, "../..");
@@ -102,7 +103,10 @@ function fixture(): Fixture {
 	const cli = path.join(workspace, "apps/cli");
 	mkdirSync(cli, { recursive: true });
 	for (const name of ["src", "scripts", "package.json", "tsconfig.json", "tsconfig.build.json"])
-		cpSync(path.join(packageRoot, name), path.join(cli, name), { recursive: true });
+		cpSync(path.join(packageRoot, name), path.join(cli, name), {
+			recursive: true,
+			filter: kernelFixtureSource,
+		});
 	cpSync(
 		path.join(workspaceRoot, "tsconfig.base.json"),
 		path.join(workspace, "tsconfig.base.json"),

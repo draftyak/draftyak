@@ -26,20 +26,22 @@ it("exports the fixed inert payload handoff", () => {
 		expect(isCliExitCode(value)).toBe(false);
 });
 
-it("discovers only the implemented help command in the fixed source directory", async () => {
+it("discovers the implemented help and MCP commands in the fixed source directory", async () => {
 	const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 	const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-	expect(commandNames()).toEqual(["help"]);
+	expect(commandNames()).toEqual(["help", "mcp"]);
 	expect(await main([])).toBe(0);
-	expect(stderr).toHaveBeenCalledExactlyOnceWith("Usage: draftyak <command>\nCommands:\nhelp\n");
+	expect(stderr).toHaveBeenCalledExactlyOnceWith(
+		"Usage: draftyak <command>\nCommands:\nhelp\nmcp\n",
+	);
 	expect(stdout).not.toHaveBeenCalled();
 });
 
-it("returns unknown MCP failure without sharing diagnostics with stdout", async () => {
+it("returns malformed MCP argv refusal without sharing diagnostics with stdout", async () => {
 	const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 	const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 	expect(await main(["mcp", "DYTEST-PRIVATE-ARG"])).toBe(2);
-	expect(stderr).toHaveBeenCalledExactlyOnceWith("Command refused.\n");
+	expect(stderr).toHaveBeenCalledExactlyOnceWith("Usage: draftyak mcp --client <name>\n");
 	expect(stdout).not.toHaveBeenCalled();
 });
 

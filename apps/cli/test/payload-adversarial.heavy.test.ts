@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { kernelFixtureSource } from "./kernel-fixture.ts";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const repositoryRoot = path.resolve(packageRoot, "../..");
@@ -61,7 +62,10 @@ function prepare(files: Readonly<Record<string, string>> = {}): Fixture {
 	mkdirSync(source, { recursive: true });
 	mkdirSync(installed);
 	for (const directory of ["src", "scripts"])
-		cpSync(path.join(packageRoot, directory), path.join(source, directory), { recursive: true });
+		cpSync(path.join(packageRoot, directory), path.join(source, directory), {
+			recursive: true,
+			filter: kernelFixtureSource,
+		});
 	for (const filename of ["package.json", "tsconfig.json", "tsconfig.build.json"])
 		cpSync(path.join(packageRoot, filename), path.join(source, filename));
 	cpSync(
