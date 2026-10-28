@@ -8,7 +8,13 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
-import { type Fingerprint, fingerprint, skipOrFail } from "@draftyak/spike-kit";
+import {
+	EvidenceProvenance,
+	type Fingerprint,
+	fingerprint,
+	skipOrFail,
+	writeEvidence,
+} from "@draftyak/spike-kit";
 import { expect, type TestContext } from "vitest";
 import { type Staged, stageSidecar, tauriDir } from "../tauri-app/scripts/stage-sidecar.ts";
 
@@ -45,18 +51,22 @@ export function recording(env: NodeJS.ProcessEnv = process.env): boolean {
 	return value === "1" || (value === "" && !!env.CI);
 }
 
-// One heavy run writes several evidence files, and those written before this one aren't code
-// changes, so the tree counts as dirty only outside evidence/ (S1's rule).
-export async function codeFingerprint(): Promise<Fingerprint> {
-	const print = await fingerprint({ cwd: spikeDir });
-	const env = Object.fromEntries(
-		Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)),
+const provenance = new EvidenceProvenance(spikeDir);
+
+// Only exact unchanged outputs successfully written by this process are exempt.
+export function codeFingerprint(): Promise<Fingerprint> {
+	return provenance.fingerprint(() => fingerprint({ cwd: spikeDir }));
+}
+
+export async function writeCodeEvidence(
+	file: string,
+	data: Readonly<Record<string, unknown>>,
+	print?: Fingerprint,
+): Promise<string> {
+	const sampled = print ?? (await codeFingerprint());
+	return provenance.write(file, () =>
+		writeEvidence(file, data, { fingerprint: { ...sampled, dirty: provenance.dirty() } }),
 	);
-	const args = ["status", "--porcelain", "--untracked-files=no", "--", ":/", ":(exclude)evidence"];
-	const status = await execFileAsync("git", args, { cwd: spikeDir, env, windowsHide: true }).catch(
-		() => null,
-	);
-	return { ...print, dirty: status === null ? print.dirty : status.stdout.trim() !== "" };
 }
 
 interface Run {

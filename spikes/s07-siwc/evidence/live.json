@@ -1,0 +1,1394 @@
+{
+  "recordedAt": "2026-10-21T14:22:03.069Z",
+  "fingerprint": {
+    "os": {
+      "platform": "win32",
+      "arch": "x64",
+      "osName": "Windows 11 Home",
+      "osVersion": "10.0.26200"
+    },
+    "node": {
+      "nodeVersion": "26.12.0",
+      "v8Version": "14.6.202.34-node.39"
+    },
+    "commit": "77be2468177974211587a731fdab74c4a49b8666",
+    "dirty": false,
+    "load": {
+      "cpuPercent": 9.5,
+      "cpuCount": 24,
+      "cpuModel": "12th Gen Intel(R) Core(TM) i9-12900K",
+      "memoryUsedPercent": 82.6,
+      "concurrentBuilds": 0
+    }
+  },
+  "data": {
+    "procedure": "s07b-live",
+    "run": "live",
+    "issuerHost": "auth.openai.com",
+    "apiHost": "api.openai.com",
+    "port": 1455,
+    "lock": {
+      "waitedMs": 0,
+      "idle": null
+    },
+    "discovery": {
+      "issuerMatches": true,
+      "endpoints": {
+        "authorization_endpoint": {
+          "host": "auth.openai.com",
+          "path": "/api/accounts/authorize",
+          "sameOrigin": true,
+          "query": false
+        },
+        "token_endpoint": {
+          "host": "auth.openai.com",
+          "path": "/api/accounts/oauth/token",
+          "sameOrigin": true,
+          "query": false
+        },
+        "revocation_endpoint": {
+          "host": "auth.openai.com",
+          "path": "/api/accounts/oauth/revoke",
+          "sameOrigin": true,
+          "query": false
+        },
+        "jwks_uri": {
+          "host": "auth.openai.com",
+          "path": "/.well-known/jwks.json",
+          "sameOrigin": true,
+          "query": false
+        }
+      },
+      "fields": [
+        "authorization_endpoint",
+        "claims_supported",
+        "code_challenge_methods_supported",
+        "grant_types_supported",
+        "id_token_signing_alg_values_supported",
+        "issuer",
+        "jwks_uri",
+        "request_parameter_supported",
+        "request_uri_parameter_supported",
+        "response_modes_supported",
+        "response_types_supported",
+        "revocation_endpoint",
+        "revocation_endpoint_auth_methods_supported",
+        "scopes_supported",
+        "subject_types_supported",
+        "token_endpoint",
+        "token_endpoint_auth_methods_supported",
+        "userinfo_endpoint"
+      ],
+      "scopes_supported": [
+        "email",
+        "offline_access",
+        "openid",
+        "profile"
+      ],
+      "id_token_signing_alg_values_supported": [
+        "RS256"
+      ],
+      "code_challenge_methods_supported": [
+        "S256"
+      ],
+      "grant_types_supported": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "response_types_supported": [
+        "code"
+      ],
+      "token_endpoint_auth_methods_supported": [
+        "client_secret_basic",
+        "client_secret_post",
+        "none"
+      ]
+    },
+    "leftovers": {
+      "found": false
+    },
+    "jwks": {
+      "keys": 4,
+      "kty": [
+        "RSA"
+      ],
+      "alg": [
+        "RS256"
+      ],
+      "use": [
+        "sig"
+      ]
+    },
+    "signIn": {
+      "attempts": [
+        {
+          "outcome": "ok",
+          "registration": "new",
+          "ms": 16873
+        }
+      ],
+      "token": {
+        "fields": [
+          "access_token",
+          "earliest_refresh_at",
+          "expires_in",
+          "id_token",
+          "refresh_token",
+          "scope",
+          "token_type"
+        ],
+        "types": {
+          "access_token": "string",
+          "earliest_refresh_at": "number",
+          "expires_in": "number",
+          "id_token": "string",
+          "refresh_token": "string",
+          "scope": "string",
+          "token_type": "string"
+        },
+        "tokenType": "Bearer",
+        "expiresIn": 3600,
+        "scopes": [
+          "chatgpt.tokens.use.direct",
+          "email",
+          "offline_access",
+          "openid",
+          "profile",
+          "resource.invoke"
+        ],
+        "earliestRefreshAt": {
+          "type": "number",
+          "unit": "s",
+          "inS": 3240
+        },
+        "accessToken": {
+          "format": "jwt",
+          "length": 2106,
+          "alg": "RS256",
+          "typ": "(withheld)",
+          "kid": true,
+          "claims": [
+            "aud",
+            "client_id",
+            "exp",
+            "https://api.openai.com/auth",
+            "iat",
+            "iss",
+            "jti",
+            "nbf",
+            "scope",
+            "sub"
+          ],
+          "audType": "string"
+        },
+        "refreshToken": {
+          "format": "opaque",
+          "length": 196
+        },
+        "idToken": {
+          "format": "jwt",
+          "length": 1168,
+          "alg": "RS256",
+          "typ": "JWT",
+          "kid": true,
+          "claims": [
+            "at_hash",
+            "aud",
+            "auth_time",
+            "email",
+            "email_verified",
+            "exp",
+            "https://api.openai.com/auth",
+            "iat",
+            "iss",
+            "jti",
+            "name",
+            "nonce",
+            "sid",
+            "sub"
+          ],
+          "audType": "array",
+          "facts": {
+            "audHasClientId": true,
+            "audHasDynamicAgentClient": false,
+            "audHasResource": false,
+            "azpIsClientId": false,
+            "issIsIssuer": true
+          }
+        }
+      },
+      "clientId": {
+        "prefix": "oaiapp_",
+        "length": 32
+      },
+      "planScope": {
+        "name": "chatgpt.tokens.use.direct",
+        "granted": true
+      },
+      "planCheck": "ok",
+      "tokensKept": true
+    },
+    "models": {
+      "shape": "models",
+      "count": 9,
+      "listed": 7,
+      "listedSlugs": [
+        "gpt-6.1-sol",
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna"
+      ],
+      "visibilities": [
+        "hide",
+        "list"
+      ],
+      "fields": [
+        "additional_speed_tiers",
+        "apply_patch_tool_type",
+        "auto_compact_token_limit",
+        "auto_review_model_override",
+        "availability_nux",
+        "available_access_programs",
+        "available_in_plans",
+        "base_instructions",
+        "comp_hash",
+        "context_window",
+        "default_reasoning_level",
+        "default_reasoning_summary",
+        "default_service_tier",
+        "default_verbosity",
+        "description",
+        "display_name",
+        "experimental_supported_tools",
+        "guardian",
+        "include_apps_usage_instructions",
+        "include_plugin_usage_instructions",
+        "include_skills_usage_instructions",
+        "input_modalities",
+        "max_context_window",
+        "minimal_client_version",
+        "model_messages",
+        "model_specialty",
+        "multi_agent_reasoning_effort",
+        "multi_agent_version",
+        "node_repl_auto_review_required",
+        "node_repl_disabled",
+        "prefer_websockets",
+        "priority",
+        "requires_sandboxed_review",
+        "service_tiers",
+        "shell_type",
+        "slug",
+        "support_verbosity",
+        "supported_in_api",
+        "supported_reasoning_levels",
+        "supports_experimental_context",
+        "supports_image_detail_original",
+        "supports_parallel_tool_calls",
+        "supports_reasoning_effort_updates",
+        "supports_reasoning_summaries",
+        "supports_reasoning_summary_parameter",
+        "supports_search_tool",
+        "tool_mode",
+        "truncation_policy",
+        "upgrade",
+        "use_responses_lite",
+        "visibility",
+        "web_search_tool_type"
+      ],
+      "chosen": "gpt-6.1-sol",
+      "upstream": [
+        {
+          "method": "GET",
+          "path": "/v1/models",
+          "status": 200,
+          "ms": 861,
+          "headers": [
+            "access-control-expose-headers",
+            "alt-svc",
+            "cache-control",
+            "cf-cache-status",
+            "cf-ray",
+            "content-encoding",
+            "content-type",
+            "date",
+            "etag",
+            "server",
+            "set-cookie",
+            "strict-transport-security",
+            "x-content-type-options",
+            "x-oai-request-id",
+            "x-openai-proxy-wasm"
+          ],
+          "values": {
+            "content-type": "application/json"
+          },
+          "chunks": {
+            "count": 61,
+            "bytes": 567356,
+            "min": 10,
+            "max": 16384,
+            "median": 6134,
+            "firstChunkMs": 870,
+            "sizes": [
+              2979,
+              3483,
+              3118,
+              3923,
+              2881,
+              3152,
+              3817,
+              3944,
+              4784,
+              687,
+              3641,
+              4214,
+              10,
+              3831,
+              4191,
+              497,
+              3698,
+              12686,
+              16384,
+              16384,
+              16384,
+              16384,
+              16384,
+              16054,
+              330,
+              16384,
+              16384,
+              16384,
+              16384,
+              16384,
+              14671,
+              1713,
+              6134,
+              4161,
+              6089,
+              3321,
+              13063,
+              16384,
+              16384,
+              16384,
+              16384,
+              16054,
+              330,
+              16054,
+              330,
+              16384,
+              16384,
+              16384,
+              16384,
+              16384,
+              16384,
+              16384,
+              16384,
+              5133,
+              4303,
+              4290,
+              2658,
+              2040,
+              5207,
+              9137,
+              10300
+            ]
+          }
+        }
+      ]
+    },
+    "model": {
+      "slug": "gpt-6.1-sol",
+      "source": "models"
+    },
+    "drafts": [
+      {
+        "structure": "text-format",
+        "toolChoice": null,
+        "outcome": "draft",
+        "via": "text",
+        "draft": {
+          "bodyChars": 58,
+          "ownerNotesChars": 41,
+          "needsOwnerInput": 1,
+          "suspectedInstructions": false,
+          "contextRefs": 0
+        },
+        "ms": 11033,
+        "events": {
+          "counts": {
+            "response.created": 1,
+            "response.in_progress": 1,
+            "response.output_item.added": 2,
+            "response.output_item.done": 2,
+            "response.content_part.added": 1,
+            "response.output_text.delta": 53,
+            "response.metadata": 1,
+            "response.output_text.done": 1,
+            "response.content_part.done": 1,
+            "response.completed": 1
+          },
+          "deltas": 53,
+          "deltaChars": 234,
+          "firstDeltaMs": 9135,
+          "model": "gpt-6.1-sol",
+          "completed": {
+            "status": "completed",
+            "outputTypes": [],
+            "functionCalls": [],
+            "repeatsOutput": false,
+            "outputChars": 0,
+            "fields": [
+              "access_programs",
+              "background",
+              "completed_at",
+              "created_at",
+              "error",
+              "frequency_penalty",
+              "id",
+              "incomplete_details",
+              "instructions",
+              "max_output_tokens",
+              "max_tool_calls",
+              "metadata",
+              "model",
+              "moderation",
+              "object",
+              "output",
+              "parallel_tool_calls",
+              "presence_penalty",
+              "previous_response_id",
+              "prompt_cache_key",
+              "prompt_cache_retention",
+              "reasoning",
+              "safety_identifier",
+              "service_tier",
+              "status",
+              "store",
+              "temperature",
+              "text",
+              "tool_choice",
+              "tool_usage",
+              "tools",
+              "top_logprobs",
+              "top_p",
+              "truncation",
+              "usage",
+              "user"
+            ],
+            "usage": {
+              "inputTokens": 159,
+              "outputTokens": 241,
+              "totalTokens": 400,
+              "cachedTokens": 0,
+              "reasoningTokens": 178
+            }
+          },
+          "failure": null
+        },
+        "upstream": [
+          {
+            "method": "POST",
+            "path": "/v1/responses",
+            "status": 200,
+            "ms": 942,
+            "headers": [
+              "access-control-expose-headers",
+              "alt-svc",
+              "cf-cache-status",
+              "cf-ray",
+              "date",
+              "server",
+              "set-cookie",
+              "strict-transport-security",
+              "x-codex-safety-buffering-enabled",
+              "x-codex-safety-buffering-faster-model",
+              "x-codex-turn-state",
+              "x-content-type-options",
+              "x-models-etag",
+              "x-oai-request-id",
+              "x-openai-proxy-wasm"
+            ],
+            "values": {},
+            "chunks": {
+              "count": 51,
+              "bytes": 29615,
+              "min": 27,
+              "max": 2939,
+              "median": 262,
+              "firstChunkMs": 945,
+              "sizes": [
+                1360,
+                682,
+                1360,
+                528,
+                1360,
+                314,
+                1360,
+                1369,
+                1483,
+                816,
+                779,
+                260,
+                520,
+                27,
+                233,
+                285,
+                262,
+                233,
+                260,
+                27,
+                233,
+                520,
+                260,
+                260,
+                782,
+                1822,
+                260,
+                262,
+                260,
+                260,
+                1042,
+                260,
+                27,
+                493,
+                1041,
+                261,
+                27,
+                233,
+                27,
+                233,
+                27,
+                1535,
+                261,
+                27,
+                233,
+                896,
+                474,
+                523,
+                592,
+                27,
+                2939
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "structure": "tool-namespace",
+        "toolChoice": "required",
+        "outcome": "draft",
+        "via": "tool",
+        "draft": {
+          "bodyChars": 56,
+          "ownerNotesChars": 45,
+          "needsOwnerInput": 0,
+          "suspectedInstructions": false,
+          "contextRefs": 0
+        },
+        "ms": 4679,
+        "events": {
+          "counts": {
+            "response.created": 1,
+            "response.in_progress": 1,
+            "response.output_item.added": 1,
+            "response.function_call_arguments.delta": 49,
+            "response.metadata": 1,
+            "response.function_call_arguments.done": 1,
+            "response.output_item.done": 1,
+            "response.completed": 1
+          },
+          "deltas": 49,
+          "deltaChars": 196,
+          "firstDeltaMs": 3430,
+          "model": "gpt-6.1-sol",
+          "completed": {
+            "status": "completed",
+            "outputTypes": [],
+            "functionCalls": [],
+            "repeatsOutput": false,
+            "outputChars": 0,
+            "fields": [
+              "access_programs",
+              "background",
+              "completed_at",
+              "created_at",
+              "error",
+              "frequency_penalty",
+              "id",
+              "incomplete_details",
+              "instructions",
+              "max_output_tokens",
+              "max_tool_calls",
+              "metadata",
+              "model",
+              "moderation",
+              "object",
+              "output",
+              "parallel_tool_calls",
+              "presence_penalty",
+              "previous_response_id",
+              "prompt_cache_key",
+              "prompt_cache_retention",
+              "reasoning",
+              "safety_identifier",
+              "service_tier",
+              "status",
+              "store",
+              "temperature",
+              "text",
+              "tool_choice",
+              "tool_usage",
+              "tools",
+              "top_logprobs",
+              "top_p",
+              "truncation",
+              "usage",
+              "user"
+            ],
+            "usage": {
+              "inputTokens": 168,
+              "outputTokens": 64,
+              "totalTokens": 232,
+              "cachedTokens": 0,
+              "reasoningTokens": 0
+            }
+          },
+          "failure": null
+        },
+        "upstream": [
+          {
+            "method": "POST",
+            "path": "/v1/responses",
+            "status": 200,
+            "ms": 1995,
+            "headers": [
+              "access-control-expose-headers",
+              "alt-svc",
+              "cf-cache-status",
+              "cf-ray",
+              "date",
+              "server",
+              "set-cookie",
+              "strict-transport-security",
+              "x-codex-safety-buffering-enabled",
+              "x-codex-safety-buffering-faster-model",
+              "x-codex-turn-state",
+              "x-content-type-options",
+              "x-models-etag",
+              "x-oai-request-id",
+              "x-openai-proxy-wasm"
+            ],
+            "values": {},
+            "chunks": {
+              "count": 44,
+              "bytes": 21057,
+              "min": 27,
+              "max": 4272,
+              "median": 251,
+              "firstChunkMs": 1997,
+              "sizes": [
+                4272,
+                334,
+                753,
+                250,
+                28,
+                222,
+                250,
+                250,
+                28,
+                223,
+                251,
+                251,
+                251,
+                251,
+                251,
+                251,
+                1506,
+                253,
+                251,
+                28,
+                223,
+                253,
+                251,
+                28,
+                223,
+                251,
+                1508,
+                253,
+                753,
+                252,
+                28,
+                475,
+                251,
+                251,
+                252,
+                28,
+                223,
+                252,
+                28,
+                223,
+                251,
+                1203,
+                27,
+                3416
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "structure": "tool-item",
+        "toolChoice": "required",
+        "outcome": "draft",
+        "via": "tool",
+        "draft": {
+          "bodyChars": 49,
+          "ownerNotesChars": 56,
+          "needsOwnerInput": 1,
+          "suspectedInstructions": false,
+          "contextRefs": 0
+        },
+        "ms": 4589,
+        "events": {
+          "counts": {
+            "response.created": 1,
+            "response.in_progress": 1,
+            "response.output_item.added": 1,
+            "response.function_call_arguments.delta": 58,
+            "response.metadata": 1,
+            "response.function_call_arguments.done": 1,
+            "response.output_item.done": 1,
+            "response.completed": 1
+          },
+          "deltas": 58,
+          "deltaChars": 240,
+          "firstDeltaMs": 3202,
+          "model": "gpt-6.1-sol",
+          "completed": {
+            "status": "completed",
+            "outputTypes": [],
+            "functionCalls": [],
+            "repeatsOutput": false,
+            "outputChars": 0,
+            "fields": [
+              "access_programs",
+              "background",
+              "completed_at",
+              "created_at",
+              "error",
+              "frequency_penalty",
+              "id",
+              "incomplete_details",
+              "instructions",
+              "max_output_tokens",
+              "max_tool_calls",
+              "metadata",
+              "model",
+              "moderation",
+              "object",
+              "output",
+              "parallel_tool_calls",
+              "presence_penalty",
+              "previous_response_id",
+              "prompt_cache_key",
+              "prompt_cache_retention",
+              "reasoning",
+              "safety_identifier",
+              "service_tier",
+              "status",
+              "store",
+              "temperature",
+              "text",
+              "tool_choice",
+              "tool_usage",
+              "tools",
+              "top_logprobs",
+              "top_p",
+              "truncation",
+              "usage",
+              "user"
+            ],
+            "usage": {
+              "inputTokens": 249,
+              "outputTokens": 72,
+              "totalTokens": 321,
+              "cachedTokens": 0,
+              "reasoningTokens": 0
+            }
+          },
+          "failure": null
+        },
+        "upstream": [
+          {
+            "method": "POST",
+            "path": "/v1/responses",
+            "status": 200,
+            "ms": 1160,
+            "headers": [
+              "access-control-expose-headers",
+              "alt-svc",
+              "cf-cache-status",
+              "cf-ray",
+              "date",
+              "server",
+              "set-cookie",
+              "strict-transport-security",
+              "x-codex-safety-buffering-enabled",
+              "x-codex-safety-buffering-faster-model",
+              "x-codex-turn-state",
+              "x-content-type-options",
+              "x-models-etag",
+              "x-oai-request-id",
+              "x-openai-proxy-wasm"
+            ],
+            "values": {},
+            "chunks": {
+              "count": 25,
+              "bytes": 23136,
+              "min": 250,
+              "max": 4092,
+              "median": 504,
+              "firstChunkMs": 1162,
+              "sizes": [
+                4092,
+                311,
+                1003,
+                250,
+                1504,
+                251,
+                251,
+                2010,
+                253,
+                251,
+                251,
+                251,
+                1255,
+                251,
+                1761,
+                251,
+                1757,
+                504,
+                502,
+                1006,
+                754,
+                251,
+                744,
+                564,
+                2858
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "structure": "tool-top-level",
+        "toolChoice": "function:submit_draft",
+        "outcome": "draft",
+        "via": "tool",
+        "draft": {
+          "bodyChars": 60,
+          "ownerNotesChars": 56,
+          "needsOwnerInput": 1,
+          "suspectedInstructions": false,
+          "contextRefs": 0
+        },
+        "ms": 4971,
+        "events": {
+          "counts": {
+            "response.created": 1,
+            "response.in_progress": 1,
+            "response.output_item.added": 1,
+            "response.function_call_arguments.delta": 59,
+            "response.metadata": 1,
+            "response.function_call_arguments.done": 1,
+            "response.output_item.done": 1,
+            "response.completed": 1
+          },
+          "deltas": 59,
+          "deltaChars": 251,
+          "firstDeltaMs": 3224,
+          "model": "gpt-6.1-sol",
+          "completed": {
+            "status": "completed",
+            "outputTypes": [],
+            "functionCalls": [],
+            "repeatsOutput": false,
+            "outputChars": 0,
+            "fields": [
+              "access_programs",
+              "background",
+              "completed_at",
+              "created_at",
+              "error",
+              "frequency_penalty",
+              "id",
+              "incomplete_details",
+              "instructions",
+              "max_output_tokens",
+              "max_tool_calls",
+              "metadata",
+              "model",
+              "moderation",
+              "object",
+              "output",
+              "parallel_tool_calls",
+              "presence_penalty",
+              "previous_response_id",
+              "prompt_cache_key",
+              "prompt_cache_retention",
+              "reasoning",
+              "safety_identifier",
+              "service_tier",
+              "status",
+              "store",
+              "temperature",
+              "text",
+              "tool_choice",
+              "tool_usage",
+              "tools",
+              "top_logprobs",
+              "top_p",
+              "truncation",
+              "usage",
+              "user"
+            ],
+            "usage": {
+              "inputTokens": 167,
+              "outputTokens": 73,
+              "totalTokens": 240,
+              "cachedTokens": 0,
+              "reasoningTokens": 0
+            }
+          },
+          "failure": null
+        },
+        "upstream": [
+          {
+            "method": "POST",
+            "path": "/v1/responses",
+            "status": 200,
+            "ms": 1014,
+            "headers": [
+              "access-control-expose-headers",
+              "alt-svc",
+              "cf-cache-status",
+              "cf-ray",
+              "date",
+              "server",
+              "set-cookie",
+              "strict-transport-security",
+              "x-codex-safety-buffering-enabled",
+              "x-codex-safety-buffering-faster-model",
+              "x-codex-turn-state",
+              "x-content-type-options",
+              "x-models-etag",
+              "x-oai-request-id",
+              "x-openai-proxy-wasm"
+            ],
+            "values": {},
+            "chunks": {
+              "count": 39,
+              "bytes": 24082,
+              "min": 26,
+              "max": 4773,
+              "median": 251,
+              "firstChunkMs": 1016,
+              "sizes": [
+                2098,
+                2056,
+                311,
+                251,
+                250,
+                28,
+                224,
+                250,
+                250,
+                751,
+                28,
+                223,
+                502,
+                1506,
+                755,
+                755,
+                251,
+                251,
+                251,
+                753,
+                28,
+                223,
+                251,
+                502,
+                253,
+                753,
+                253,
+                251,
+                251,
+                1757,
+                504,
+                1508,
+                28,
+                223,
+                251,
+                252,
+                251,
+                26,
+                4773
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "transfer": {
+      "exitCode": 0,
+      "result": true,
+      "desktopForgot": true,
+      "childStructure": "text-format",
+      "accepted": true,
+      "refreshed": true,
+      "rotated": true,
+      "planUsage": "enabled",
+      "code": null,
+      "detail": null,
+      "status": null,
+      "apiCode": null,
+      "draft": {
+        "outcome": "draft",
+        "ms": 9752,
+        "deltas": 56,
+        "via": "text"
+      },
+      "refresh": {
+        "status": 200,
+        "ms": 1437,
+        "shape": {
+          "fields": [
+            "access_token",
+            "earliest_refresh_at",
+            "expires_in",
+            "id_token",
+            "refresh_token",
+            "scope",
+            "token_type"
+          ],
+          "types": {
+            "access_token": "string",
+            "earliest_refresh_at": "number",
+            "expires_in": "number",
+            "id_token": "string",
+            "refresh_token": "string",
+            "scope": "string",
+            "token_type": "string"
+          },
+          "tokenType": "Bearer",
+          "expiresIn": 3600,
+          "scopes": [
+            "chatgpt.tokens.use.direct",
+            "email",
+            "offline_access",
+            "openid",
+            "profile",
+            "resource.invoke"
+          ],
+          "earliestRefreshAt": {
+            "type": "number",
+            "unit": "s",
+            "inS": 3240
+          },
+          "accessToken": {
+            "format": "jwt",
+            "length": 2106,
+            "alg": "RS256",
+            "typ": "(withheld)",
+            "kid": true,
+            "claims": [
+              "aud",
+              "client_id",
+              "exp",
+              "https://api.openai.com/auth",
+              "iat",
+              "iss",
+              "jti",
+              "nbf",
+              "scope",
+              "sub"
+            ],
+            "audType": "string"
+          },
+          "refreshToken": {
+            "format": "opaque",
+            "length": 211
+          },
+          "idToken": {
+            "format": "jwt",
+            "length": 1096,
+            "alg": "RS256",
+            "typ": "JWT",
+            "kid": true,
+            "claims": [
+              "at_hash",
+              "aud",
+              "auth_time",
+              "email",
+              "email_verified",
+              "exp",
+              "https://api.openai.com/auth",
+              "iat",
+              "iss",
+              "jti",
+              "name",
+              "sid",
+              "sub"
+            ],
+            "audType": "array"
+          }
+        }
+      },
+      "revoked": true,
+      "revocation": [
+        200
+      ],
+      "afterRevoke": {
+        "refresh": {
+          "accepted": false,
+          "code": "REAUTH_REQUIRED",
+          "status": 400,
+          "apiCode": "invalid_grant"
+        },
+        "models": {
+          "status": 401,
+          "code": "ADMISSION_REFUSED"
+        },
+        "refreshShape": {
+          "fields": [
+            "error",
+            "error_description",
+            "error_reason"
+          ],
+          "types": {
+            "error": "string",
+            "error_description": "string",
+            "error_reason": "string"
+          },
+          "error": {
+            "code": "invalid_grant"
+          },
+          "description": true
+        }
+      }
+    },
+    "apiKey": {
+      "present": false
+    },
+    "revocation": {
+      "issued": true,
+      "orphan": null,
+      "accessOnly": false,
+      "transfer": "yes",
+      "fallback": null,
+      "deleted": [],
+      "remaining": []
+    },
+    "lines": [
+      "signin: ok",
+      "text.format: ok",
+      "submit_draft: ok",
+      "transfer: ok",
+      "revoked: yes"
+    ],
+    "ms": {
+      "signIn": 16875,
+      "drafts": 26273,
+      "transfer": 12907,
+      "apiKey": 33,
+      "total": 57580
+    },
+    "authCalls": [
+      {
+        "kind": "discovery",
+        "status": 200,
+        "ms": 221,
+        "headers": [
+          "alt-svc",
+          "cache-control",
+          "cdn-cache-control",
+          "cf-cache-status",
+          "cf-ray",
+          "cloudflare-cdn-cache-control",
+          "content-encoding",
+          "content-type",
+          "date",
+          "nel",
+          "openai-processing-ms",
+          "openai-version",
+          "report-to",
+          "server",
+          "set-cookie",
+          "strict-transport-security",
+          "timing-allow-origin",
+          "x-content-type-options",
+          "x-openai-proxy-wasm",
+          "x-request-id"
+        ],
+        "requestId": "hmac:aaAtMktAEd-Af-6lOfxnV5"
+      },
+      {
+        "kind": "token",
+        "status": 200,
+        "ms": 1207,
+        "headers": [
+          "alt-svc",
+          "cache-control",
+          "cf-cache-status",
+          "cf-ray",
+          "content-encoding",
+          "content-type",
+          "date",
+          "nel",
+          "openai-processing-ms",
+          "openai-version",
+          "pragma",
+          "report-to",
+          "server",
+          "set-cookie",
+          "strict-transport-security",
+          "timing-allow-origin",
+          "x-content-type-options",
+          "x-openai-proxy-wasm",
+          "x-request-id"
+        ],
+        "requestId": "hmac:uRh-CyKU4y_NzOtudyTEs0"
+      },
+      {
+        "kind": "jwks",
+        "status": 200,
+        "ms": 39,
+        "headers": [
+          "alt-svc",
+          "cf-ray",
+          "content-encoding",
+          "content-type",
+          "date",
+          "nel",
+          "report-to",
+          "server",
+          "set-cookie",
+          "strict-transport-security",
+          "timing-allow-origin",
+          "x-content-type-options"
+        ]
+      }
+    ],
+    "brokered": [
+      {
+        "method": "GET",
+        "path": "/v1/models",
+        "fields": [],
+        "headerNames": [
+          "accept",
+          "authorization",
+          "user-agent",
+          "x-stainless-retry-count"
+        ],
+        "verdict": "ok",
+        "status": 200,
+        "frames": 140
+      },
+      {
+        "method": "POST",
+        "path": "/v1/responses",
+        "fields": [
+          "input",
+          "instructions",
+          "model",
+          "store",
+          "stream",
+          "text"
+        ],
+        "headerNames": [
+          "accept",
+          "authorization",
+          "content-type",
+          "user-agent",
+          "x-stainless-retry-count"
+        ],
+        "verdict": "ok",
+        "status": 200,
+        "frames": 9
+      },
+      {
+        "method": "POST",
+        "path": "/v1/responses",
+        "fields": [
+          "input",
+          "instructions",
+          "model",
+          "store",
+          "stream",
+          "tool_choice",
+          "tools"
+        ],
+        "headerNames": [
+          "accept",
+          "authorization",
+          "content-type",
+          "user-agent",
+          "x-stainless-retry-count"
+        ],
+        "verdict": "ok",
+        "status": 200,
+        "frames": 7
+      },
+      {
+        "method": "POST",
+        "path": "/v1/responses",
+        "fields": [
+          "input",
+          "instructions",
+          "model",
+          "store",
+          "stream",
+          "tool_choice"
+        ],
+        "headerNames": [
+          "accept",
+          "authorization",
+          "content-type",
+          "user-agent",
+          "x-stainless-retry-count"
+        ],
+        "verdict": "ok",
+        "status": 200,
+        "frames": 7
+      },
+      {
+        "method": "POST",
+        "path": "/v1/responses",
+        "fields": [
+          "input",
+          "instructions",
+          "model",
+          "store",
+          "stream",
+          "tool_choice",
+          "tools"
+        ],
+        "headerNames": [
+          "accept",
+          "authorization",
+          "content-type",
+          "user-agent",
+          "x-stainless-retry-count"
+        ],
+        "verdict": "ok",
+        "status": 200,
+        "frames": 7
+      }
+    ],
+    "withheld": 2
+  }
+}

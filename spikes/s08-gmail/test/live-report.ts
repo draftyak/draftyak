@@ -57,13 +57,17 @@ const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\
 const wordsOf = (words: readonly string[], flags: string): RegExp =>
 	new RegExp(`(?<![\\p{L}\\p{N}])${words.map(escaped).join("\\s+")}(?![\\p{L}\\p{N}])`, flags);
 
+const BOILERPLATE = new Set(["google", "gmail", "account", "draftyak", "spike"]);
+
 // Refuses with every problem at once, naming JSON paths, never the values. `names` are the test
 // account's name as Google shows it: no line may hold it in any case, nor a word of it of three
 // or more letters as written.
 export function parseObservations(value: unknown, names: readonly string[] = []): Observations {
 	const patterns = names.flatMap((name) => {
 		const words = name.split(/\s+/).filter((word) => word !== "");
-		const parts = words.filter((word) => word.length >= 3).map((word) => wordsOf([word], "u"));
+		const parts = words
+			.filter((word) => word.length >= 3 && !BOILERPLATE.has(word.toLowerCase()))
+			.map((word) => wordsOf([word], "u"));
 		return words.length === 0 ? [] : [wordsOf(words, "iu"), ...parts];
 	});
 	const named = (input: string): boolean => patterns.some((pattern) => pattern.test(input));
@@ -274,7 +278,11 @@ export interface ScheduledSummary extends Open {
 export interface RevokeSummary extends Open {
 	readonly refreshAfter: string;
 	readonly entriesLeft: readonly string[];
+	readonly cleanupBasis?: "owner-confirmed-client-deletion";
 }
+
+export const clientDeletedCode = (code: string): boolean =>
+	code === "invalid_client" || code === "deleted_client";
 
 // Deleting a client ends every grant it holds, which covers a grant with no refresh token to try.
 // The steps save any other grant only once a refresh confirmed it ended.
@@ -302,7 +310,11 @@ export function grantStatus(state: State): Readonly<Record<"agent" | "drop" | "s
 			agent === undefined ? undefined : (agent.fullGrant?.refreshAfter ?? "no-grant"),
 		),
 		drop: grantState(drop?.finalRefresh),
-		standard: grantState(revoke?.refreshAfter),
+		standard:
+			revoke?.cleanupBasis === "owner-confirmed-client-deletion" &&
+			clientDeletedCode(revoke.refreshAfter)
+				? `owner-confirmed client deletion (${revoke.refreshAfter}); token refusal not proved`
+				: grantState(revoke?.refreshAfter),
 	};
 }
 
@@ -385,7 +397,9 @@ export function buildReport(state: State, observations: Observations): Report {
 	const revoked =
 		(agent.fullGrant === null || ended(agent.fullGrant.refreshAfter, clientsDeleted)) &&
 		ended(drop.finalRefresh, clientsDeleted) &&
-		revoke.refreshAfter === "invalid_grant" &&
+		(revoke.refreshAfter === "invalid_grant" ||
+			(clientDeletedCode(revoke.refreshAfter) &&
+				revoke.cleanupBasis === "owner-confirmed-client-deletion")) &&
 		revoke.entriesLeft.length === 0 &&
 		clientsDeleted;
 	const acceptance: Acceptance = {
@@ -416,6 +430,12 @@ export function buildReport(state: State, observations: Observations): Report {
 	};
 	const lines = [
 		...acceptanceLines(acceptance),
+		...(revoke.cleanupBasis === "owner-confirmed-client-deletion" &&
+		clientDeletedCode(revoke.refreshAfter)
+			? [
+					`cleanup basis: owner-confirmed deletion of both clients (${revoke.refreshAfter}); token refusal not proved`,
+				]
+			: []),
 		`bcc: the To copy: ${observations.bccInToCopy}; the sent copy keeps it: ${
 			send.bcc.sentCopyHasBcc ? "yes" : "no"
 		}; other copies: ${send.bcc.otherCopies}`,
