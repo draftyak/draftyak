@@ -340,6 +340,52 @@ describe("bundled request verification", () => {
 				);
 		},
 	);
+	it.each(AI_HTTP_PROFILES)("rejects inherited optional header names for %s", (id) => {
+		const { candidate, binding } = base(id);
+		for (const name of [
+			"constructor",
+			"Constructor",
+			"CONSTRUCTOR",
+			"__proto__",
+			"prototype",
+			"toString",
+			"toLocaleString",
+			"valueOf",
+			"hasOwnProperty",
+			"isPrototypeOf",
+			"propertyIsEnumerable",
+			"__defineGetter__",
+			"__defineSetter__",
+			"__lookupGetter__",
+			"__lookupSetter__",
+			"toJSON",
+		]) {
+			expect(() =>
+				verifyAiRequest(
+					registry,
+					id,
+					{ ...candidate, headers: [...candidate.headers, [name, "DYTEST-header-canary"]] },
+					binding,
+				),
+			).toThrow(AiVerificationError);
+		}
+	});
+	it.each(["messages-api-v1", "responses-api-v1"] as const)(
+		"preserves an explicitly listed optional header for %s",
+		(id) => {
+			const { candidate, binding } = base(id);
+			const checked = verifyAiRequest(
+				registry,
+				id,
+				{ ...candidate, headers: [...candidate.headers, ["Accept", "application/json"]] },
+				binding,
+			);
+			expect(snapshotVerifiedAiRequest(checked).headers).toContainEqual([
+				"accept",
+				"application/json",
+			]);
+		},
+	);
 	it("refuses nested schema metadata, extra turns and executable schemas", () => {
 		for (const id of AI_HTTP_PROFILES) {
 			const { candidate, binding, body } = base(id);
