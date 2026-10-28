@@ -58,6 +58,9 @@ function fixture(name: string): string {
 
 function productionConfig(scope: Scope): Record<string, unknown> {
 	const config = object(JSON.parse(text(path.join(root, "biome.json"))));
+	const includes = object(config.files).includes;
+	if (!Array.isArray(includes)) return refuse();
+	expect(includes.at(-1)).toBe(outboxGlob);
 	const overrides = config.overrides;
 	if (!Array.isArray(overrides)) return refuse();
 	const target = overrides.filter((entry: unknown) => {
@@ -330,11 +333,17 @@ it("flags each banned name used as a string or plain template key", { timeout: 4
 	expect(hitLines(result)).toHaveLength(6);
 });
 
-it("has no nested Biome configuration on the path to the outbox", () => {
+it("has no Biome configuration or ignore file on the path to the outbox", () => {
 	for (const directory of ["apps", "apps/hub", "apps/hub/src"]) {
 		const names = readdirSync(path.join(root, directory)).map((name) => name.toLowerCase());
-		expect(names.filter((name) => /^biome\.jsonc?$/.test(name))).toEqual([]);
+		expect(names.filter((name) => /^(?:biome\.jsonc?|\.gitignore|\.ignore)$/.test(name))).toEqual(
+			[],
+		);
 	}
+});
+
+it("keeps an escaped timer spelling in the rule's limitation example", () => {
+	expect(text(path.join(root, rulePath))).toContain(String.raw`set\u0054imeout`);
 });
 
 it("exposes the absolute-path plugin-includes trap instead of accepting a silent scope loss", {

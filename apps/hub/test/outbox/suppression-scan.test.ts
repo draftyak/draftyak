@@ -364,6 +364,15 @@ test.each(gitignoreSamples())(
 	},
 );
 
+test.each([".git", ".svn", ".hg", ".yarn", ".DS_Store"])(
+	"refuses a folder Biome always skips: %s",
+	(name) => {
+		const { outbox } = fixture();
+		source(outbox, `nested/${name}/value.ts`);
+		refused(() => assertOutboxSuppressions(outbox));
+	},
+);
+
 test.each(["biome.json", "biome.jsonc", "BIOME.JSON", ".gitignore", ".ignore"])(
 	"refuses a nested Biome configuration or ignore file: %s",
 	(name) => {
@@ -447,6 +456,44 @@ test("refuses an absence that a second look doesn't confirm", () => {
 		return undefined;
 	});
 	refused(() => assertOutboxSuppressions(outbox, { allowMissingRoot: true }));
+});
+
+test("refuses ENOENT followed by EACCES while confirming a missing root", () => {
+	const { outbox } = fixture(false);
+	let rootCalls = 0;
+	onLstat((target, call) => {
+		if (target !== outbox) return undefined;
+		rootCalls = call;
+		throw Object.assign(new Error("DYTEST private lstat failure"), {
+			code: call === 1 ? "ENOENT" : "EACCES",
+		});
+	});
+	refused(() => assertOutboxSuppressions(outbox, { allowMissingRoot: true }));
+	assert.equal(rootCalls, 2);
+});
+
+test("refuses a parent that changes only at the final missing-root check", () => {
+	const { root, outbox } = fixture(false);
+	let parentCalls = 0;
+	onLstat((target, call, actual) => {
+		if (target !== root) return undefined;
+		parentCalls = call;
+		return call === 3 ? changed(actual(target)) : undefined;
+	});
+	refused(() => assertOutboxSuppressions(outbox, { allowMissingRoot: true }));
+	assert.equal(parentCalls, 3);
+});
+
+test("refuses a parent whose canonical path changes only when absence is confirmed", () => {
+	const { root, outbox } = fixture(false);
+	const realpath = fs.realpathSync.native;
+	let calls = 0;
+	vi.spyOn(fs.realpathSync, "native").mockImplementation(((target: PathLike, options?: unknown) => {
+		if (String(target) === root && ++calls === 2) return path.join(root, "changed");
+		return Reflect.apply(realpath, fs.realpathSync, [target, options]);
+	}) as typeof fs.realpathSync.native);
+	refused(() => assertOutboxSuppressions(outbox, { allowMissingRoot: true }));
+	assert.equal(calls, 2);
 });
 
 test("refuses a source whose identity changes between listing and opening", () => {
