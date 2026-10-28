@@ -8,7 +8,6 @@ import { ResponsesError } from "./shared.ts";
 export const API_URL = "https://api.openai.com/v1/responses";
 export const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type Effort = (typeof EFFORTS)[number];
-z.config({ jitless: true });
 // The shared contextRefs uniqueness metadata is not supported by strict Structured Outputs.
 // The protocol parser still normalizes/deduplicates refs and validates every returned field.
 const wireSchema = z.toJSONSchema(DraftOutputV1, {
@@ -50,13 +49,17 @@ export interface ResponsesRequest {
 
 export function buildRequest(input: DraftRequest, settings: Settings = {}): ResponsesRequest {
 	try {
-		const parsed = aiProviderV1.tools.ai_draft_generate.input.safeParse({
-			model: input.model,
-			system: input.system,
-			prompt: input.prompt,
-			contextIds: input.contextIds,
-		});
-		if (!parsed.success || (settings.effort !== undefined && !EFFORTS.includes(settings.effort)))
+		const effort = settings.effort;
+		const parsed = aiProviderV1.tools.ai_draft_generate.input.safeParse(
+			{
+				model: input.model,
+				system: input.system,
+				prompt: input.prompt,
+				contextIds: input.contextIds,
+			},
+			{ jitless: true },
+		);
+		if (!parsed.success || (effort !== undefined && !EFFORTS.includes(effort)))
 			throw new ResponsesError("INVALID_INPUT");
 		return {
 			method: "POST",
@@ -67,7 +70,7 @@ export function buildRequest(input: DraftRequest, settings: Settings = {}): Resp
 				instructions: parsed.data.system,
 				input: [{ role: "user", content: parsed.data.prompt }],
 				text: { format: JSON.parse(formatJson) as RequestBody["text"]["format"] },
-				...(settings.effort === undefined ? {} : { reasoning: { effort: settings.effort } }),
+				...(effort === undefined ? {} : { reasoning: { effort } }),
 				stream: true,
 				store: false,
 			},
