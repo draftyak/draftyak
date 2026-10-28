@@ -134,14 +134,21 @@ describe("bounded clock admission", () => {
 				},
 			},
 		],
+		["prototype fake", Object.create(AbortSignal.prototype)],
+		["prototype proxy", new Proxy({}, { getPrototypeOf: () => AbortSignal.prototype })],
+		["native signal proxy", new Proxy(new AbortController().signal, {})],
 		["null", null],
 	] as const)("refuses a %s signal before creating a native timer", (_name, signal) => {
 		let timers = 0;
+		const handles: ReturnType<typeof setTimeout>[] = [];
 		let thrown: unknown;
 		let returned: Promise<void> | undefined;
 		const hook = createHook({
-			init(_id, type) {
-				if (type === "Timeout") timers++;
+			init(_id, type, _trigger, resource) {
+				if (type === "Timeout") {
+					timers++;
+					handles.push(resource as ReturnType<typeof setTimeout>);
+				}
 			},
 		});
 		hook.enable();
@@ -152,11 +159,51 @@ describe("bounded clock admission", () => {
 		} finally {
 			hook.disable();
 			void returned?.catch(() => {});
+			for (const handle of handles) clearTimeout(handle);
 		}
 		expect(thrown).toBeInstanceOf(TypeError);
 		expect((thrown as Error).message).toBe("Clock wait signal must be an AbortSignal");
 		expect(returned).toBeUndefined();
 		expect(timers).toBe(0);
+	});
+
+	it("isolates a real signal's patched listeners while preserving cancellation and reason", async () => {
+		const controller = new AbortController();
+		let listeners = 0;
+		const poisonedListener = (): never => {
+			listeners++;
+			throw new Error("Synthetic listener failure");
+		};
+		Object.defineProperties(controller.signal, {
+			addEventListener: { value: poisonedListener },
+			removeEventListener: { value: poisonedListener },
+		});
+		const reason = new Error("Synthetic abort reason");
+		const handles: ReturnType<typeof setTimeout>[] = [];
+		const hook = createHook({
+			init(_id, type, _trigger, resource) {
+				if (type === "Timeout") handles.push(resource as ReturnType<typeof setTimeout>);
+			},
+		});
+		let pending: Promise<void>;
+		try {
+			hook.enable();
+			try {
+				pending = systemClock.after(100, controller.signal);
+			} finally {
+				hook.disable();
+			}
+			const rejected = pending.catch((error: unknown) => error);
+			controller.abort(reason);
+			const error = await rejected;
+			expect(error).toMatchObject({ name: "AbortError" });
+			expect((error as Error).cause).toBe(reason);
+			expect(listeners).toBe(0);
+			expect(handles).toHaveLength(1);
+		} finally {
+			controller.abort();
+			for (const handle of handles) clearTimeout(handle);
+		}
 	});
 
 	it("observes a real native Timeout for an accepted zero wait", async () => {

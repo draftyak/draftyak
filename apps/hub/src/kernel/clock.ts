@@ -24,10 +24,15 @@ export const systemClock: TimerClock = Object.freeze({
 	monotonicMs: () => performance.now(),
 	after: (ms: number, signal?: AbortSignal) => {
 		const wait = checkWait(ms);
-		// Node arms the timer before it touches the signal, so refuse a non-signal first.
-		if (signal !== undefined && !(signal instanceof AbortSignal)) {
-			throw new TypeError("Clock wait signal must be an AbortSignal");
+		// Node arms the timer before it subscribes to the signal. Validate and isolate it first.
+		let timerSignal: AbortSignal | undefined;
+		if (signal !== undefined) {
+			try {
+				timerSignal = AbortSignal.any([signal]);
+			} catch {
+				throw new TypeError("Clock wait signal must be an AbortSignal");
+			}
 		}
-		return delay(wait, undefined, { signal });
+		return delay(wait, undefined, { signal: timerSignal });
 	},
 });
