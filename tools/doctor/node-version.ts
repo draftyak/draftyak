@@ -1,4 +1,10 @@
-import { readFileSync } from "node:fs";
+let runtimePolicy: { minimum?: unknown } | null = null;
+try {
+	runtimePolicy = (await import("@draftyak/fetch-node/versions.json", { with: { type: "json" } }))
+		.default;
+} catch {
+	// Keep unavailable policy failures inside the fixed diagnostic boundary.
+}
 
 const refused = () => new Error("Runtime policy unavailable");
 function parts(value: unknown): readonly [number, number, number] | undefined {
@@ -9,24 +15,16 @@ function parts(value: unknown): readonly [number, number, number] | undefined {
 	return result.every(Number.isSafeInteger) ? result : undefined;
 }
 
-/** Builtins only: the CLI checks this policy before loading diagnostics. */
+/** The canonical JSON policy loads before any diagnostic implementation. */
 export interface NodePolicy {
 	readonly minimum: string;
 	readonly classify: (version: unknown) => "full" | "unsupported";
 }
 
 export function loadNodePolicy(): NodePolicy {
-	let value: { minimum?: string } | null;
-	try {
-		value = JSON.parse(
-			readFileSync(new URL("../fetch-node/versions.json", import.meta.url), "utf8"),
-		);
-	} catch {
-		throw refused();
-	}
-	const minimum = value?.minimum as string;
+	const minimum = runtimePolicy?.minimum;
 	const floor = parts(minimum);
-	if (!floor || minimum.startsWith("v")) throw refused();
+	if (typeof minimum !== "string" || !floor || minimum.startsWith("v")) throw refused();
 	return Object.freeze({
 		minimum,
 		classify(version: unknown): "full" | "unsupported" {

@@ -2,13 +2,29 @@
   "name": "@draftyak/doctor",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/doctor.d.ts",
+      "default": "./doctor.ts"
+    },
+    "./diagnostics": {
+      "types": "./dist/diagnostics.d.ts",
+      "default": "./diagnostics.ts"
+    },
+    "./node-policy": {
+      "types": "./dist/node-version.d.ts",
+      "default": "./node-version.ts"
+    }
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.declarations.json",
     "doctor": "node --disable-sigusr1 doctor.ts",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:heavy": "vitest run --mode heavy"
   },
   "dependencies": {
+    "@draftyak/fetch-node": "workspace:*",
     "@draftyak/protocol": "workspace:*"
   }
 }

@@ -739,11 +739,64 @@ test("importing the TypeScript entry does not run the command", () => {
 	assert.equal(result.stderr, "");
 });
 
-test("builtin-only version gate refuses a simulated older runtime before diagnostic loading", async () => {
+test("public library exports load inertly and refuse private subpaths", () => {
+	const result = spawnSync(
+		process.execPath,
+		[
+			"--disable-sigusr1",
+			"--input-type=module",
+			"--eval",
+			`
+			const { runDoctor } = await import("@draftyak/doctor");
+			const { loadNodePolicy } = await import("@draftyak/doctor/node-policy");
+			const { diagnose } = await import("@draftyak/doctor/diagnostics");
+			let privateRefused = false;
+			try { await import("@draftyak/doctor/probe.ts"); }
+			catch (error) { privateRefused = error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED"; }
+			process.stdout.write(JSON.stringify({
+				runDoctor: typeof runDoctor, diagnose: typeof diagnose,
+				policy: loadNodePolicy().classify(process.version), privateRefused
+			}));
+		`,
+		],
+		{
+			cwd: path.dirname(cli),
+			env: {},
+			encoding: "utf8",
+			timeout: 10_000,
+			maxBuffer: 16_384,
+			windowsHide: true,
+			shell: false,
+		},
+	);
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(result.stderr, "");
+	assert.deepEqual(JSON.parse(result.stdout), {
+		runDoctor: "function",
+		diagnose: "function",
+		policy: "full",
+		privateRefused: true,
+	});
+});
+
+async function policyPackage(directory: string): Promise<string> {
+	const metadata = path.join(directory, "node_modules", "@draftyak", "fetch-node");
+	await mkdir(metadata, { recursive: true });
+	await writeFile(
+		path.join(metadata, "package.json"),
+		JSON.stringify({
+			name: "@draftyak/fetch-node",
+			type: "module",
+			exports: { "./versions.json": "./policy.json" },
+		}),
+	);
+	return path.join(metadata, "policy.json");
+}
+
+test("canonical package policy refuses older Node before diagnostic loading and keeps policy failures fixed", async () => {
 	const directory = path.join(root, "bootstrap", "doctor");
-	const metadata = path.join(root, "bootstrap", "fetch-node");
 	await mkdir(directory, { recursive: true });
-	await mkdir(metadata);
+	const metadata = await policyPackage(directory);
 	for (const name of ["doctor.ts", "node-version.ts"])
 		await writeFile(
 			path.join(directory, name),
@@ -753,7 +806,7 @@ test("builtin-only version gate refuses a simulated older runtime before diagnos
 		path.join(directory, "diagnostics.ts"),
 		"this is intentionally invalid JavaScript",
 	);
-	await writeFile(path.join(metadata, "versions.json"), '{"minimum":"26.5.1","bundled":"26.12.0"}');
+	await writeFile(metadata, '{"minimum":"26.5.1","bundled":"26.12.0"}');
 	const preload = path.join(root, "simulate-old-version.ts");
 	await writeFile(preload, 'Object.defineProperty(process, "version", { value: "v23.6.0" });');
 	const result = spawnSync(
@@ -777,7 +830,7 @@ test("builtin-only version gate refuses a simulated older runtime before diagnos
 	assert.equal(result.stderr, "");
 	assert.equal(entry(JSON.parse(result.stdout), "node_version").code, "NODE_UNSUPPORTED");
 	assert.equal(result.stdout.includes(root), false);
-	await writeFile(path.join(metadata, "versions.json"), "invalid metadata");
+	await writeFile(metadata, "invalid metadata");
 	const invalid = spawnSync(
 		process.execPath,
 		["--disable-sigusr1", path.join(directory, "doctor.ts")],
@@ -793,11 +846,24 @@ test("builtin-only version gate refuses a simulated older runtime before diagnos
 	assert.equal(invalid.status, 2);
 	assert.equal(invalid.stdout, "");
 	assert.equal(invalid.stderr, "Doctor runtime policy or implementation is unavailable.\n");
-	const nextMajor = Number(process.versions.node.split(".")[0]) + 1;
-	await writeFile(
-		path.join(metadata, "versions.json"),
-		JSON.stringify({ minimum: `${nextMajor}.0.0` }),
+	await rm(metadata);
+	const missing = spawnSync(
+		process.execPath,
+		["--disable-sigusr1", path.join(directory, "doctor.ts")],
+		{
+			env: {},
+			encoding: "utf8",
+			timeout: 10_000,
+			maxBuffer: 16_384,
+			windowsHide: true,
+			shell: false,
+		},
 	);
+	assert.equal(missing.status, 2);
+	assert.equal(missing.stdout, "");
+	assert.equal(missing.stderr, "Doctor runtime policy or implementation is unavailable.\n");
+	const nextMajor = Number(process.versions.node.split(".")[0]) + 1;
+	await writeFile(metadata, JSON.stringify({ minimum: `${nextMajor}.0.0` }));
 	const raised = spawnSync(
 		process.execPath,
 		["--disable-sigusr1", path.join(directory, "doctor.ts")],
@@ -817,9 +883,8 @@ test("builtin-only version gate refuses a simulated older runtime before diagnos
 
 test("loadable entries without main metadata refuse unsupported Node before diagnostics and stay inert on import", async () => {
 	const directory = path.join(root, "legacy-main", "doctor");
-	const metadata = path.join(root, "legacy-main", "fetch-node");
 	await mkdir(directory, { recursive: true });
-	await mkdir(metadata);
+	const metadata = await policyPackage(directory);
 	const source = await readFile(cli, "utf8");
 	const binding = "const main = import.meta.main;";
 	assert.equal(source.split(binding).length, 2);
@@ -835,7 +900,7 @@ test("loadable entries without main metadata refuse unsupported Node before diag
 		path.join(directory, "diagnostics.ts"),
 		"this is intentionally invalid JavaScript",
 	);
-	await writeFile(path.join(metadata, "versions.json"), '{"minimum":"26.5.1"}');
+	await writeFile(metadata, '{"minimum":"26.5.1"}');
 	const preload = path.join(root, "legacy-main", "unsupported.ts");
 	await writeFile(preload, 'Object.defineProperty(process, "version", { value: "v23.6.0" });');
 	const alias = path.join(root, "legacy-main-alias");
