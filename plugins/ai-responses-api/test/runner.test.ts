@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { PluginErrorCode } from "@draftyak/protocol/errors";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -11,6 +12,7 @@ import {
 } from "../src/index.ts";
 import {
 	CONSUMER_TIMEOUT_MS,
+	completedResponse,
 	MAX_ERROR_BYTES,
 	MAX_EVENT_BYTES,
 	MAX_FORWARDED_BYTES,
@@ -223,6 +225,196 @@ describe("injected completed-response transport", () => {
 				controller.signal,
 			),
 		).rejects.toMatchObject({ code: "ABORTED", message: "responses: ABORTED" });
+	});
+});
+
+describe("monotonic completed transport deadline", () => {
+	beforeEach(() => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(() => {
+				throw new Error("Global fetch forbidden");
+			}),
+		);
+	});
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+	it("refuses a late fetch success before the timeout callback runs", async () => {
+		let monotonic = 100;
+		vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+		const fetch = vi.fn<ResponsesFetch>(async () => {
+			monotonic += CONSUMER_TIMEOUT_MS + 1;
+			return wire(terminal());
+		});
+		await expect(createCompletedTransport(fetch)(buildRequest(input), {})).rejects.toMatchObject({
+			code: "TRANSIENT",
+			message: "responses: TRANSIENT",
+		});
+		expect(fetch).toHaveBeenCalledTimes(1);
+		expect(globalThis.fetch).not.toHaveBeenCalled();
+	});
+	it("does not start queued SDK work after the deadline", async () => {
+		let monotonic = 100;
+		vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+		const fetch = vi.fn<ResponsesFetch>(async () => wire(terminal()));
+		const result = createCompletedTransport(fetch)(buildRequest(input), {});
+		monotonic += CONSUMER_TIMEOUT_MS;
+		await expect(result).rejects.toMatchObject(fault);
+		expect(fetch).not.toHaveBeenCalled();
+	});
+	it("cancels a late SDK response before assigning body ownership", async () => {
+		let monotonic = 100;
+		vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+		let cancels = 0;
+		let reads = 0;
+		const body = new ReadableStream<Uint8Array>(
+			{
+				pull() {
+					reads++;
+					throw new Error(CANARY);
+				},
+				cancel() {
+					cancels++;
+				},
+			},
+			{ highWaterMark: 0 },
+		);
+		const response = new Response(body, { headers });
+		await expect(
+			createCompletedTransport(async () => {
+				monotonic += CONSUMER_TIMEOUT_MS;
+				return response;
+			})(buildRequest(input), {}),
+		).rejects.toMatchObject(fault);
+		expect(cancels).toBe(1);
+		expect(reads).toBe(0);
+	});
+	it.each([CONSUMER_TIMEOUT_MS - 0.5, CONSUMER_TIMEOUT_MS, CONSUMER_TIMEOUT_MS + 1])(
+		"checks an awaited body result at monotonic elapsed %f",
+		async (elapsed) => {
+			let monotonic = 100;
+			vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+			let reads = 0;
+			const body = new ReadableStream<Uint8Array>(
+				{
+					pull(sink) {
+						if (++reads === 1) {
+							monotonic = 100 + elapsed;
+							sink.enqueue(encoder.encode(terminal()));
+						} else sink.close();
+					},
+				},
+				{ highWaterMark: 0 },
+			);
+			const result = run(new Response(body, { headers }));
+			if (elapsed >= CONSUMER_TIMEOUT_MS) await expect(result).rejects.toMatchObject(fault);
+			else await expect(result).resolves.toMatchObject({ kind: "draft", output: draft });
+		},
+	);
+	it("checks a late EOF after an otherwise on-time terminal", async () => {
+		let monotonic = 100;
+		vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+		let reads = 0;
+		const body = new ReadableStream<Uint8Array>(
+			{
+				pull(sink) {
+					if (++reads === 1) sink.enqueue(encoder.encode(terminal()));
+					else {
+						monotonic += CONSUMER_TIMEOUT_MS;
+						sink.close();
+					}
+				},
+			},
+			{ highWaterMark: 0 },
+		);
+		await expect(run(new Response(body, { headers }))).rejects.toMatchObject(fault);
+	});
+	it("checks elapsed time after parsing an event", async () => {
+		let monotonic = 100;
+		vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+		const data = JSON.stringify(completed());
+		const original = JSON.parse;
+		const parse = vi.spyOn(JSON, "parse").mockImplementation((text, reviver) => {
+			const value = original(text, reviver);
+			if (text === data) monotonic += CONSUMER_TIMEOUT_MS;
+			return value;
+		});
+		await expect(run(wire(`data: ${data}\n\n`))).rejects.toMatchObject(fault);
+		expect(parse).toHaveBeenCalledWith(data);
+	});
+	it.each([CONSUMER_TIMEOUT_MS - 0.5, CONSUMER_TIMEOUT_MS])(
+		"checks the final result after cleanup reaches monotonic elapsed %f",
+		async (elapsed) => {
+			let monotonic = 100;
+			vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+			const result = completedResponse(async (signal) => {
+				signal.addEventListener(
+					"abort",
+					() => {
+						monotonic = 100 + elapsed;
+					},
+					{ once: true },
+				);
+				return wire(terminal());
+			});
+			if (elapsed >= CONSUMER_TIMEOUT_MS) await expect(result).rejects.toMatchObject(fault);
+			else await expect(result).resolves.toEqual(message());
+		},
+	);
+	it.each([CONSUMER_TIMEOUT_MS - 0.5, CONSUMER_TIMEOUT_MS, CONSUMER_TIMEOUT_MS + 1])(
+		"maps a coded fetch failure at monotonic elapsed %f",
+		async (elapsed) => {
+			let monotonic = 100;
+			vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+			const result: unknown = await createCompletedTransport(async () => {
+				monotonic = 100 + elapsed;
+				throw { code: "RATE_LIMITED", retryAfterMs: 7, detail: CANARY };
+			})(buildRequest(input), {}).catch((error: unknown) => error);
+			if (elapsed >= CONSUMER_TIMEOUT_MS) {
+				expect(result).toMatchObject(fault);
+				expect(result).not.toHaveProperty("retryAfterMs");
+			} else expect(result).toMatchObject({ code: "RATE_LIMITED", retryAfterMs: 7 });
+			expect(result).not.toHaveProperty("detail");
+		},
+	);
+	it("preserves an on-time coded SSE error despite normal iterator abort cleanup", async () => {
+		vi.spyOn(performance, "now").mockReturnValue(100);
+		await expect(
+			run(
+				wire(
+					event({ type: "error", code: "rate_limit_exceeded", retryAfterMs: 7, message: CANARY }),
+				),
+			),
+		).rejects.toMatchObject({ code: "RATE_LIMITED", retryAfterMs: 7 });
+	});
+	it("lets actual caller cancellation dominate a late coded error", async () => {
+		let monotonic = 100;
+		vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+		const caller = new AbortController();
+		await expect(
+			createCompletedTransport(async () => {
+				monotonic += CONSUMER_TIMEOUT_MS;
+				caller.abort(CANARY);
+				throw { code: "RATE_LIMITED", retryAfterMs: 7 };
+			})(buildRequest(input), { signal: caller.signal }),
+		).rejects.toMatchObject({ code: "ABORTED" });
+	});
+	it.each([-86_400_000, 86_400_000])("ignores a wall-clock shift of %i", async (shift) => {
+		vi.spyOn(performance, "now").mockReturnValue(100);
+		let wall = 1_000_000;
+		vi.spyOn(Date, "now").mockImplementation(() => wall);
+		await expect(
+			generateDraft(
+				input,
+				{},
+				createCompletedTransport(async () => {
+					wall += shift;
+					return wire(terminal());
+				}),
+			),
+		).resolves.toMatchObject({ kind: "draft", output: draft });
 	});
 });
 

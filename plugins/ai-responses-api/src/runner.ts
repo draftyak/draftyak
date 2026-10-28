@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import type { DraftOutcome, DraftRequest } from "@draftyak/protocol/ai-provider-v1";
 import { _iterSSEMessages } from "openai/core/streaming";
 import { buildRequest, type ResponsesRequest, type Settings } from "./request.ts";
@@ -55,6 +56,8 @@ export async function completedResponse(
 	send: (signal: AbortSignal) => Promise<Response>,
 	caller?: AbortSignal,
 ): Promise<unknown> {
+	const deadline = performance.now() + CONSUMER_TIMEOUT_MS;
+	const expired = (): boolean => performance.now() >= deadline;
 	if (caller?.aborted) throw new ResponsesError("ABORTED");
 	const controller = new AbortController();
 	let response: Response | undefined;
@@ -88,9 +91,10 @@ export async function completedResponse(
 	caller?.addEventListener("abort", abort, { once: true });
 	const timer = setTimeout(abort, CONSUMER_TIMEOUT_MS);
 	const read = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
-		if (++reads > MAX_WIRE_READS || controller.signal.aborted || !reader) throw transient();
+		if (++reads > MAX_WIRE_READS || controller.signal.aborted || expired() || !reader)
+			throw transient();
 		const next = await Promise.race([reader.read(), interrupted]);
-		if (controller.signal.aborted) throw transient();
+		if (controller.signal.aborted || expired()) throw transient();
 		if (next.done) ended = true;
 		else if (!(next.value instanceof Uint8Array)) throw transient();
 		return next;
@@ -98,9 +102,12 @@ export async function completedResponse(
 	try {
 		response = await Promise.race([
 			Promise.resolve()
-				.then(() => send(controller.signal))
+				.then(() => {
+					if (controller.signal.aborted || expired()) throw transient();
+					return send(controller.signal);
+				})
 				.then((received) => {
-					if (controller.signal.aborted) {
+					if (controller.signal.aborted || expired()) {
 						cancelBody(received);
 						throw transient();
 					}
@@ -108,7 +115,7 @@ export async function completedResponse(
 				}),
 			interrupted,
 		]);
-		if (controller.signal.aborted) throw transient();
+		if (controller.signal.aborted || expired()) throw transient();
 		const status = response.status;
 		const headers = response.headers;
 		const body = response.body;
@@ -129,12 +136,14 @@ export async function completedResponse(
 				text += utf8.decode(next.value, { stream: true });
 			}
 			text += utf8.decode();
+			if (expired()) throw transient();
 			let error: unknown;
 			try {
 				error = JSON.parse(text);
 			} catch {
 				// The known HTTP status still maps to a content-free canonical error.
 			}
+			if (expired()) throw transient();
 			throw normalizeError({
 				status,
 				headers,
@@ -181,7 +190,7 @@ export async function completedResponse(
 			{
 				async pull(sink) {
 					try {
-						if (controller.signal.aborted) throw transient();
+						if (controller.signal.aborted || expired()) throw transient();
 						if (!pending || offset === pending.byteLength) {
 							const next = await read();
 							if (next.done) {
@@ -198,6 +207,7 @@ export async function completedResponse(
 						const chunk = pending.slice(offset, offset + MAX_FORWARDED_BYTES);
 						scan(chunk);
 						utf8.decode(chunk, { stream: true });
+						if (expired()) throw transient();
 						offset += chunk.byteLength;
 						sink.enqueue(chunk);
 					} catch {
@@ -217,7 +227,9 @@ export async function completedResponse(
 		let events = 0;
 		try {
 			for (;;) {
+				if (expired()) throw transient();
 				const next = await Promise.race([messages.next(), interrupted]);
+				if (expired()) throw transient();
 				if (next.done) break;
 				const sse = next.value;
 				if (
@@ -227,12 +239,14 @@ export async function completedResponse(
 					done
 				)
 					throw transient();
+				if (expired()) throw transient();
 				if (sse.data === "[DONE]") {
 					if (!hasTerminal) throw transient();
 					done = true;
 					continue;
 				}
 				const event: unknown = JSON.parse(sse.data);
+				if (expired()) throw transient();
 				if (
 					!record(event) ||
 					typeof event.type !== "string" ||
@@ -257,10 +271,14 @@ export async function completedResponse(
 			controller.abort();
 			void messages.return().catch(() => undefined);
 		}
-		if (!hasTerminal || caller?.aborted || !ended || wireFailed) throw transient();
+		if (!hasTerminal || caller?.aborted || !ended || wireFailed || expired()) throw transient();
 		return terminal;
 	} catch (error) {
-		throw caller?.aborted ? new ResponsesError("ABORTED") : normalizeError(error);
+		throw caller?.aborted
+			? new ResponsesError("ABORTED")
+			: expired()
+				? transient()
+				: normalizeError(error);
 	} finally {
 		clearTimeout(timer);
 		caller?.removeEventListener("abort", abort);
