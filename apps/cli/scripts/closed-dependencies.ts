@@ -162,16 +162,12 @@ export class ClosedDependencies {
 		}
 		if (!linked) return refuse();
 		const root = realpathSync(linked);
-		const previous = this.#packages.get(root);
-		const manifest = previous?.manifest ?? json(root, path.join(root, "package.json"));
-		if (manifest.name !== name) refuse();
 		if (declared === "workspace:*") {
 			const relative = path.relative(this.#workspace, root).replaceAll(path.sep, "/");
 			if (!/^(?:apps|packages|plugins|tools)\/[^/]+$/.test(relative)) refuse();
 			if (realpathSync(path.dirname(root)) !== path.dirname(root)) refuse();
 		} else {
 			if (!/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(declared)) refuse();
-			if (manifest.version !== declared) refuse();
 			const store = path.join(this.#workspace, "node_modules/.pnpm");
 			const relative = path.relative(store, root).replaceAll(path.sep, "/");
 			const folder = relative.split("/")[0] ?? "";
@@ -188,6 +184,10 @@ export class ClosedDependencies {
 				refuse();
 			this.#locked(name, declared);
 		}
+		const previous = this.#packages.get(root);
+		const manifest = previous?.manifest ?? json(root, path.join(root, "package.json"));
+		if (manifest.name !== name) refuse();
+		if (declared !== "workspace:*" && manifest.version !== declared) refuse();
 		if (previous) return previous;
 		if (this.#packages.size >= 64) refuse();
 		const dependency = { root, name, manifest, cli: false };
