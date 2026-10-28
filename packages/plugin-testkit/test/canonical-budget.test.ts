@@ -6,6 +6,11 @@ import { createMockHub, type MockHub } from "../src/index.ts";
 import { toolFixture } from "./fixtures/tool/plugin.ts";
 
 const epoch = 1_800_000_000_000;
+let monotonic = 0;
+function at(timestamp: number): void {
+	vi.setSystemTime(timestamp);
+	monotonic = timestamp - epoch;
+}
 const cases = [
 	{
 		kind: "calendar.freebusy",
@@ -36,11 +41,13 @@ type Spec = (typeof cases)[number];
 const hubs: MockHub[] = [];
 afterEach(async () => {
 	await Promise.all(hubs.splice(0).map((hub) => hub.close()));
+	vi.restoreAllMocks();
 	vi.useRealTimers();
 });
 function clock(): void {
 	vi.useFakeTimers({ toFake: ["Date"] });
-	vi.setSystemTime(epoch);
+	at(epoch);
+	vi.spyOn(performance, "now").mockImplementation(() => monotonic);
 }
 function fixture(
 	invoke: (spec: Spec, context: PluginContext) => Promise<unknown>,
@@ -92,9 +99,9 @@ it.each(cases)(
 	async (spec) => {
 		clock();
 		for (const elapsed of [spec.budget - 1, spec.budget]) {
-			vi.setSystemTime(epoch);
+			at(epoch);
 			const { hub, dispatched } = fixture(async (current) => {
-				vi.setSystemTime(epoch + elapsed);
+				at(epoch + elapsed);
 				return current.value;
 			});
 			const result = hub.call(spec.kind, spec.args, forged);
@@ -109,9 +116,9 @@ it.each(cases)(
 	async (spec) => {
 		clock();
 		for (const elapsed of [spec.budget - 1, spec.budget]) {
-			vi.setSystemTime(epoch);
+			at(epoch);
 			const { hub, dispatched } = fixture(async (current, context) => {
-				vi.setSystemTime(epoch + elapsed);
+				at(epoch + elapsed);
 				await (await context.fetch("secret://calendarUrl")).text();
 				return current.value;
 			});
@@ -136,7 +143,7 @@ it.each(cases)(
 				return current.value;
 			},
 			() => {
-				vi.setSystemTime(epoch + spec.budget);
+				at(epoch + spec.budget);
 				return new Response(
 					new ReadableStream(
 						{
@@ -173,7 +180,7 @@ it.each(cases)(
 						{
 							pull(controller) {
 								reads++;
-								vi.setSystemTime(epoch + spec.budget);
+								at(epoch + spec.budget);
 								if (reads === 1) controller.enqueue(new TextEncoder().encode("late"));
 								else controller.close();
 							},

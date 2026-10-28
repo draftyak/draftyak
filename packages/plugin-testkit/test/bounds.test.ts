@@ -69,6 +69,8 @@ it("enforces actual bytes against a lower declared rule cap even when Content-Le
 it("accepts exactly 33554432 tool response bytes and refuses the first excess byte", {
 	timeout: 20_000,
 }, async () => {
+	// This case measures byte admission, independent of the runner's stream-processing speed.
+	vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
 	for (const size of [33_554_432, 33_554_433]) {
 		const fake = createToolUpstream({ oversizeBytes: size });
 		const hub = track(
@@ -94,7 +96,7 @@ it("accepts exactly 33554432 tool response bytes and refuses the first excess by
 it("returns a fixed timeout before a bounded slow response can be admitted", async () => {
 	// Host time moves only after dispatch, so a busy runner can't use up the 5 ms budget first.
 	// The upstream's delay runs on real time, so it stays far beyond that budget.
-	vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+	vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
 	const fake = createToolUpstream({ slowMs: 30_000 });
 	const dispatched = Promise.withResolvers<void>();
 	const hub = track(

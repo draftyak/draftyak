@@ -1195,34 +1195,64 @@
           "additionalProperties": false
         },
         "from": {
+          "maxItems": 100,
           "type": "array",
           "items": {
             "$ref": "#/$defs/draftyak.entities.Mailbox"
           }
+        },
+        "fromTruncated": {
+          "description": "Set when the hub cut the from list: it keeps the first 100 items of a longer one, in the message's order, and a result with a smaller budget, such as message_get's, may keep fewer.",
+          "type": "boolean",
+          "const": true
         },
         "replyTo": {
+          "maxItems": 100,
           "type": "array",
           "items": {
             "$ref": "#/$defs/draftyak.entities.Mailbox"
           }
+        },
+        "replyToTruncated": {
+          "description": "Set when the hub cut the replyTo list: it keeps the first 100 items of a longer one, in the message's order, and a result with a smaller budget, such as message_get's, may keep fewer.",
+          "type": "boolean",
+          "const": true
         },
         "to": {
+          "maxItems": 100,
           "type": "array",
           "items": {
             "$ref": "#/$defs/draftyak.entities.Mailbox"
           }
+        },
+        "toTruncated": {
+          "description": "Set when the hub cut the to list: it keeps the first 100 items of a longer one, in the message's order, and a result with a smaller budget, such as message_get's, may keep fewer.",
+          "type": "boolean",
+          "const": true
         },
         "cc": {
+          "maxItems": 100,
           "type": "array",
           "items": {
             "$ref": "#/$defs/draftyak.entities.Mailbox"
           }
         },
+        "ccTruncated": {
+          "description": "Set when the hub cut the cc list: it keeps the first 100 items of a longer one, in the message's order, and a result with a smaller budget, such as message_get's, may keep fewer.",
+          "type": "boolean",
+          "const": true
+        },
         "bcc": {
+          "maxItems": 100,
           "type": "array",
           "items": {
             "$ref": "#/$defs/draftyak.entities.Mailbox"
           }
+        },
+        "bccTruncated": {
+          "description": "Set when the hub cut the bcc list: it keeps the first 100 items of a longer one, in the message's order, and a result with a smaller budget, such as message_get's, may keep fewer.",
+          "type": "boolean",
+          "const": true
         },
         "subject": {
           "type": "object",
@@ -1281,10 +1311,16 @@
           "$ref": "#/$defs/draftyak.entities.DmarcResult"
         },
         "attachments": {
+          "maxItems": 100,
           "type": "array",
           "items": {
             "$ref": "#/$defs/draftyak.entities.AttachmentMeta"
           }
+        },
+        "attachmentsTruncated": {
+          "description": "Set when the hub cut the attachments list: it keeps the first 100 items of a longer one, in the message's order, and a result with a smaller budget, such as message_get's, may keep fewer.",
+          "type": "boolean",
+          "const": true
         },
         "body": {
           "type": "object",
