@@ -17,7 +17,7 @@
           "type": "string",
           "minLength": 26,
           "maxLength": 26,
-          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
           "description": "A ULID: 26 upper-case Crockford base32 characters."
         }
       },
@@ -31,7 +31,7 @@
       "type": "string",
       "minLength": 26,
       "maxLength": 26,
-      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
       "description": "A ULID: 26 upper-case Crockford base32 characters."
     },
     "toolClass": {
@@ -85,7 +85,7 @@
               "type": "string",
               "minLength": 64,
               "maxLength": 64,
-              "pattern": "^[0-9a-f]{64}$",
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
               "description": "A SHA-256 digest as 64 lower-case hex characters."
             },
             "validForMs": {
@@ -144,7 +144,7 @@
               "type": "string",
               "minLength": 64,
               "maxLength": 64,
-              "pattern": "^[0-9a-f]{64}$",
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
               "description": "A SHA-256 digest as 64 lower-case hex characters."
             },
             "validForMs": {
@@ -176,25 +176,25 @@
                   "type": "string",
                   "minLength": 50,
                   "maxLength": 50,
-                  "pattern": "^draftyak:\\/\\/conversation\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                  "pattern": "^draftyak:\\/\\/conversation\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
                 },
                 {
                   "type": "string",
                   "minLength": 45,
                   "maxLength": 45,
-                  "pattern": "^draftyak:\\/\\/message\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                  "pattern": "^draftyak:\\/\\/message\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
                 },
                 {
                   "type": "string",
                   "minLength": 43,
                   "maxLength": 43,
-                  "pattern": "^draftyak:\\/\\/draft\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                  "pattern": "^draftyak:\\/\\/draft\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
                 },
                 {
                   "type": "string",
                   "minLength": 50,
                   "maxLength": 50,
-                  "pattern": "^draftyak:\\/\\/send-request\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                  "pattern": "^draftyak:\\/\\/send-request\\/[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])"
                 }
               ]
             }

@@ -8,7 +8,9 @@ import {
 	type HostErrorCode,
 	type HostFetchParams,
 	type HostNotification,
+	type HostSaveAs,
 	HostStreamChunk,
+	type LookupPermit,
 } from "@draftyak/protocol/host-channel";
 import { MAX_INLINE_BYTES } from "@draftyak/protocol/normalized-change";
 import { type HostChannel, HostError } from "./host.ts";
@@ -16,7 +18,7 @@ import { type HostChannel, HostError } from "./host.ts";
 export interface HostFetchInit extends Omit<RequestInit, "body"> {
 	readonly body?: BodyInit | Bytes | null;
 	readonly sendTicket?: unknown;
-	readonly saveAs?: "blob";
+	readonly saveAs?: HostSaveAs;
 	readonly stream?: boolean;
 }
 export interface HostResponse extends Response {
@@ -169,13 +171,23 @@ function streamRouter(host: HostChannel): StreamRouter {
 	return router;
 }
 
-export function hostFetch(host: HostChannel, defaultSignal?: AbortSignal): HostFetch {
+export function hostFetch(
+	host: HostChannel,
+	defaultSignal?: AbortSignal,
+	// Internal per-call binding, not a public fetch option or native authorization.
+	lookupScope?: Readonly<{ lookupPermit?: LookupPermit }>,
+): HostFetch {
+	const scoped = lookupScope !== undefined;
+	const lookupPermit = lookupScope?.lookupPermit;
 	return async (input, init = {}) => {
+		if (scoped && (lookupPermit === undefined || defaultSignal?.aborted))
+			throw new HostError("DENIED");
 		const { sendTicket, saveAs, stream, body, ...requestInit } = init;
 		const reference = bodyReference(body) ? body : undefined;
 		const url = input instanceof Request ? input.url : input.toString();
-		// Request's URL parser cannot represent the hub's opaque secret references.
-		const secret = url.startsWith("secret://");
+		// Request's URL parser cannot represent the hub's opaque secret references. A Request input
+		// is already parsed and keeps its own method, headers, body and signal.
+		const secret = !(input instanceof Request) && url.startsWith("secret://");
 		const request = new Request(secret ? "https://secret.invalid/" : input, {
 			...requestInit,
 			...(reference ? {} : body === undefined ? {} : { body: body as BodyInit }),
@@ -193,9 +205,11 @@ export function hostFetch(host: HostChannel, defaultSignal?: AbortSignal): HostF
 				? { body: reference }
 				: await boundedBody(request, signal).then((value) => (value ? { body: value } : {}))),
 			...(sendTicket === undefined ? {} : { sendTicket }),
-			...(saveAs ? { saveAs } : {}),
+			...(saveAs === undefined ? {} : { saveAs }),
 			...(stream === undefined ? {} : { stream }),
+			...(lookupPermit === undefined ? {} : { lookupPermit }),
 		};
+		if (signal.aborted) throw new HostError("DENIED");
 		let streamId: string | undefined;
 		let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
 		let total = 0;
@@ -241,11 +255,20 @@ export function hostFetch(host: HostChannel, defaultSignal?: AbortSignal): HostF
 			lease = streamRouter(host).acquire(consume, abort);
 			signal.addEventListener("abort", onAbort, { once: true });
 			if (signal.aborted) abort();
-			if (finished) throw failure;
+			if (finished || signal.aborted) throw failure ?? new HostError("DENIED");
 			const result = await host.request("host/fetch", params, {
 				signal: AbortSignal.any([signal, requestAbort.signal]),
 			});
-			if (finished) throw failure;
+			if (finished || signal.aborted) throw failure ?? new HostError("DENIED");
+			if (typeof saveAs === "object") {
+				const success = result.status >= 200 && result.status < 300;
+				if (
+					result.streamId ||
+					!result.body ||
+					(success ? !("ref" in result.body) : !("base64" in result.body))
+				)
+					throw new HostError("BAD_REQUEST");
+			}
 			let responseBody: BodyInit | null = null;
 			if (result.streamId) {
 				streamId = result.streamId;
@@ -278,6 +301,7 @@ export function hostFetch(host: HostChannel, defaultSignal?: AbortSignal): HostF
 					value: Object.freeze({ ref: result.body.ref }),
 					enumerable: true,
 				});
+			if (signal.aborted) throw new HostError("DENIED");
 			return response;
 		} catch (error) {
 			dispose();

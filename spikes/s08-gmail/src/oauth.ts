@@ -298,10 +298,13 @@ export function browserCommand(
 	return { command: "xdg-open", args: [href] };
 }
 
-export function openSystemBrowser(url: string): void {
+export function openSystemBrowser(
+	url: string,
+	diagnostic: (line: string) => void = () => {},
+): void {
 	const { command, args } = browserCommand(url);
 	spawn(command, args, { detached: true, stdio: "ignore" })
-		.once("error", () => {})
+		.once("error", () => diagnostic("couldn't open the browser"))
 		.unref();
 }
 

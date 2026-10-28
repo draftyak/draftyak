@@ -6,6 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
+    "maxSize": 1048576,
     "includes": [
       "**",
       "!**/fixtures",
@@ -15,7 +16,8 @@
       "!spikes/*/vectors",
       "!**/*.lock.json",
       "!spec/**/*.schema.json",
-      "!spikes/sched-clock/grit-check"
+      "!spikes/sched-clock/grit-check",
+      "apps/hub/src/outbox/**"
     ]
   },
   "formatter": {
@@ -31,5 +33,11 @@
       "indentStyle": "space",
       "indentWidth": 2
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["apps/hub/src/outbox/**"],
+      "plugins": ["./security/no-outbox-timers.grit"]
+    }
+  ]
 }

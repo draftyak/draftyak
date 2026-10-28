@@ -72,7 +72,7 @@ The hash binds the pairs, not their order: the same pairs in any order hash alik
 - A definition the protocol registers with an ID uses the `$defs` key `draftyak.<module>.<Export>`, where `<module>` is the `@draftyak/protocol/<module>` entry point that defines it. An ID is never renamed or reused. Re-exporting a definition keeps its owner's ID. Each schema includes shared definitions under those IDs, so a key can appear in several files, not necessarily the file named after its module: `draftyak.tool-v1.IanaZone` is in `schemas/entities-v1.schema.json`, not `schemas/tool-v1.schema.json`. The root `anyOf` of `entities-v1.schema.json` lists only `draftyak.entities.*` definitions.
 - `schemas/tool-v1.schema.json` is the exception: it is tool-v1's literal document, and its hash is the declaration's `schemaDigest`. Its `$defs` keep the names specified by [tool-v1](extensions/tool-v1.md); changing those names changes the digest every tool plugin declares.
 - A schema describes a document as it arrives, before any default is filled in: a field with a default may be left out, and an object that drops unknown members accepts them.
-- Patterns are ECMA-262 regular expressions with explicit ASCII classes, never `\d`, `\w`, `\s` or `\b`, whose meaning other engines widen to Unicode. `^` and `$` anchor the whole string; where `$` also matches before a final line feed, as in Python's `re`, a validator checks the whole string instead. Fixed-length strings, such as ULIDs, hashes and instants, also carry `minLength` and `maxLength`.
+- Patterns are ECMA-262 regular expressions with explicit ASCII classes, never `\d`, `\w`, `\s` or `\b`, whose meaning other engines widen to Unicode. The sole exception is the exporter-added strict-end sequence `$(?![\s\S])`: the `\s`/`\S` union matches every character regardless of the engine's whitespace class, so its negative lookahead requires the actual end at that `$`. No other shorthand or lookaround gains an exception. `^` and `$` anchor the whole string outside inline multiline scopes; where `$` also matches before a final line feed, as in Python's `re`, each real non-multiline end anchor uses this strict-end guard. Scoped `m` activation, deactivation and restoration retain the original line-boundary assertions, while outer non-multiline anchors remain strict. A line feed explicitly consumed by the original pattern remains valid. Fixed-length strings, such as ULIDs, hashes and instants, also carry `minLength` and `maxLength`.
 
 ## Index
 
@@ -84,6 +84,7 @@ These checked-in contracts remain draft until the M1 gate. A dash means the cont
 | Flags, severities and acknowledgement | [Flags v1](flags-v1.md) | [Flags v1](schemas/flags-v1.schema.json) | [Flags](vectors/flags/) |
 | Stored and displayed entities | — | [Entities v1](schemas/entities-v1.schema.json) | — |
 | Pairing and confirmation | [Pairing v1](pairing-v1.md) | — | [Pairing](vectors/pairing/) |
+| Native device API | [Device API v1](device-api-v1.md) | [Device API v1](schemas/device-api-v1.schema.json) | [Device API](vectors/device-api/) |
 | Broker send tickets | [Channel v1](extensions/channel-v1.md) | [Broker ticket v1](schemas/broker-ticket-v1.schema.json) | [Send tickets](vectors/send-ticket/) |
 | Channel extension | [Channel v1](extensions/channel-v1.md) | [Channel v1](schemas/channel-v1.schema.json) | — |
 | Normalized channel changes | [Channel v1](extensions/channel-v1.md) | [Normalized change v1](schemas/normalized-change-v1.schema.json) | — |
@@ -99,3 +100,5 @@ These checked-in contracts remain draft until the M1 gate. A dash means the cont
 | MCP surface | [MCP surface v1](mcp-surface-v1.md) | [MCP surface v1](schemas/mcp-surface-v1.schema.json) | — |
 | Signed sessions | [Approval v1: session statement](approval-v1.md#agent-session-statement) | [Session v1](schemas/agent-session-v1.schema.json), [Session review v1](schemas/agent-session-review-v1.schema.json) | [Session statements](vectors/statements/agent-session.v1.json) |
 | Host channel | [Host channel v1](host-channel-v1.md) | [Host channel v1](schemas/host-channel-v1.schema.json) | - |
+| Decoded JSON-member blobs | [Host fetch storage](host-channel-v1.md#decoded-json-member-blobs) | [Host channel v1](schemas/host-channel-v1.schema.json) | [Host fetch](vectors/host-channel/) |
+| Lookup grant membership | [Parent-granted lookups](host-channel-v1.md#parent-granted-lookup-membership) | [Host channel v1](schemas/host-channel-v1.schema.json) | [Lookup permits](vectors/host-channel/lookup-permit.json) |

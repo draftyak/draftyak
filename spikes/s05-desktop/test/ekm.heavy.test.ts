@@ -21,16 +21,9 @@ import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { connect, createServer, type TLSSocket } from "node:tls";
-import {
-	docker,
-	needDocker,
-	runInDocker,
-	skipOrFail,
-	stageForDocker,
-	writeEvidence,
-} from "@draftyak/spike-kit";
+import { docker, needDocker, runInDocker, skipOrFail, stageForDocker } from "@draftyak/spike-kit";
 import { afterAll, describe, expect, it, type TestContext } from "vitest";
-import { codeFingerprint } from "./app.ts";
+import { codeFingerprint, writeCodeEvidence } from "./app.ts";
 import { itemAccess, KEYCHAIN_PROMPTS } from "./keychain-access.ts";
 
 // Plan section 7, pairing step 6; M0.36's hub stand-in pins the same literals.
@@ -942,11 +935,11 @@ afterAll(async () => {
 	]);
 	const { cargo, ekm, native, fallback, docker: linux } = parts;
 	const keyring = { ...(native ? { native } : {}), fallback, ...(linux ? { docker: linux } : {}) };
-	// Evidence the other files of the run wrote isn't a code change (S1's rule).
+	// Reuse the machine sample, but recheck root-wide provenance before each write.
 	const print = await codeFingerprint();
 	const record = async (name: string, data: Record<string, unknown>): Promise<void> => {
 		const file = path.join(evidenceDir, name);
-		console.log(`evidence: ${await writeEvidence(file, data, { fingerprint: print })}`);
+		console.log(`evidence: ${await writeCodeEvidence(file, data, print)}`);
 	};
 	await record(`ekm-${process.platform}-${process.arch}.json`, {
 		toolchain,

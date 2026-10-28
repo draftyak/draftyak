@@ -18,18 +18,18 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
-import { skipOrFail, writeEvidence } from "@draftyak/spike-kit";
+import { skipOrFail } from "@draftyak/spike-kit";
 import { buildArgv, buildExecArgv, flagName } from "@draftyak/spike-s02-plugin-sandbox/src/argv.ts";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import { type Staged, stageSidecar, tauriDir } from "../tauri-app/scripts/stage-sidecar.ts";
 import {
-	codeFingerprint,
 	hubNode,
 	killAll,
 	App as PosixApp,
 	goneWithin as posixGoneWithin,
 	processes as posixProcesses,
 	stillOurs,
+	writeCodeEvidence,
 } from "./app.ts";
 
 const windows = process.platform === "win32";
@@ -399,9 +399,7 @@ afterAll(async () => {
 		return;
 	}
 	const file = path.join(spikeDir, "evidence", `sidecar-${staged.prebuild.target}.json`);
-	const written = await writeEvidence(file, evidence(staged), {
-		fingerprint: await codeFingerprint(),
-	});
+	const written = await writeCodeEvidence(file, evidence(staged));
 	console.log(`evidence: ${path.relative(spikeDir, written)}`);
 }, 120_000);
 

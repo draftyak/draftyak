@@ -123,6 +123,18 @@ Every lookup also needs an active consent for the account, the tool instance and
 
 ## Egress
 
+Canonical kind lookups use the parent-granted membership contract in
+[Host channel v1](../host-channel-v1.md#parent-granted-lookup-membership): the parent
+binds a fresh permit to each native admitted lookup and the SDK echoes it on fetch.
+Active grant B selects B's native account/policy, four-attempt budget and absolute
+5 s or 15 s deadline; it does not prove which internal callback originated work or
+isolate memory/data across calls in the same process. Retired grants do not revive
+when another lookup is active. A well-formed token or SDK scope alone authorizes
+nothing. Missing, retired, foreign or exhausted grants cannot dispatch, and no
+unbound/current-call fallback exists. Canonical tool entries/digests are unchanged;
+runtime consumers require actual host-contract conformance. Probe/setup/re-probe
+admission and finite native resource bounds remain separate consumer prerequisites.
+
 A tool plugin's egress rules follow the `tool-*` profile. Each rule is:
 
 | Member | Value |

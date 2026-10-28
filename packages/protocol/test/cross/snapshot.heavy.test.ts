@@ -9,6 +9,7 @@ import {
 } from "../../scripts/vectors/snapshot.ts";
 import { canonicalize } from "../../src/jcs.ts";
 import {
+	checkCurrentSendSnapshot,
 	contentHash,
 	fingerprint,
 	SendSnapshotV1,
@@ -70,6 +71,7 @@ describe("cross-language send snapshots", () => {
 		async function compare(value: unknown, valid: boolean): Promise<void> {
 			const parsed = SendSnapshotV1.safeParse(value);
 			expect(parsed.success).toBe(valid);
+			expect(checkCurrentSendSnapshot(value)).toBe(valid);
 			const answer = await checker.run("snapshot", {
 				snapshotJson: JSON.stringify(value),
 				iat: SNAPSHOT_IAT,
@@ -93,9 +95,10 @@ describe("cross-language send snapshots", () => {
 			fc.asyncProperty(
 				text,
 				fc.boolean(),
+				fc.boolean(),
 				fc.integer({ min: 1, max: 10000 }),
 				fc.constantFrom(...invalid),
-				async (body, chat, revision, bad) => {
+				async (body, chat, shared, revision, bad) => {
 					const value = structuredClone(exampleSnapshot()) as unknown as Record<string, unknown>;
 					value.body = {
 						text: body.replaceAll("\r", "\n").normalize("NFC"),
@@ -115,6 +118,7 @@ describe("cross-language send snapshots", () => {
 							channelName: "engineering",
 							channelType: "public",
 							external: false,
+							shared,
 							memberCount: revision,
 							broadcast: false,
 						};
