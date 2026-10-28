@@ -41,6 +41,7 @@ class Refusal extends Error {
 		this.code = code;
 	}
 }
+class QuestionUnavailable extends Refusal {}
 function header(value: string): string {
 	if (!value.isWellFormed()) throw new Refusal();
 	const encoded =
@@ -205,7 +206,7 @@ export async function startBridge(
 							const state = pending.get(params.requestState);
 							pending.delete(params.requestState);
 							if (!state || state.method !== method || state.digest !== paramsDigest(params))
-								throw new Refusal();
+								throw new QuestionUnavailable();
 							retry = true;
 						} else if (params.inputResponses !== undefined) throw new Refusal();
 					} else if (params.requestState !== undefined || params.inputResponses !== undefined)
@@ -260,7 +261,10 @@ export async function startBridge(
 							id,
 							error: {
 								code: error instanceof Refusal ? error.code : -32603,
-								message: "DraftYak MCP request refused.",
+								message:
+									error instanceof QuestionUnavailable
+										? "The previous question is no longer available. This answer was not relayed. Run the original request again."
+										: "DraftYak MCP request refused.",
 							},
 						});
 				} finally {
