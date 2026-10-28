@@ -411,6 +411,16 @@ importers:
 
   tools/fetch-node: {}
 
+  tools/mcp-conformance:
+    dependencies:
+      '@draftyak/bounded-files':
+        specifier: workspace:*
+        version: link:../../packages/bounded-files
+    devDependencies:
+      '@modelcontextprotocol/conformance':
+        specifier: 0.2.0-alpha.12
+        version: 0.2.0-alpha.12(@cfworker/json-schema@4.1.1)
+
   tools/vendor-guard: {}
 
   tools/verify: {}

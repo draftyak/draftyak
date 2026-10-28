@@ -1,0 +1,15 @@
+{
+  "name": "@draftyak/mcp-conformance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/conformance": "0.2.0-alpha.12"
+  },
+  "dependencies": {
+    "@draftyak/bounded-files": "workspace:*"
+  }
+}
