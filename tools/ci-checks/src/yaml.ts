@@ -2,7 +2,8 @@
 // sequences, plain and quoted scalars, literal block scalars and comments, with LF or CRLF line
 // breaks. Anything else throws (anchors, aliases, tags, flow mappings, folded or multi-line
 // scalars, other line breaks and non-ASCII whitespace), so a policy check fails rather than read a
-// file differently from GitHub.
+// file differently from GitHub. `__proto__` keys throw too, as a plain object takes one as its
+// prototype rather than an entry, and so do tabs before a value, which YAML reads as separation.
 
 export type Yaml = null | boolean | number | string | Yaml[] | { [key: string]: Yaml };
 export type YamlPath = readonly (string | number)[];
@@ -99,8 +100,15 @@ export function parseYaml(source: string): YamlDocument {
 			if (/^["']/.test(rest)) [value, rest] = quoted(rest, no);
 			else {
 				const raw = /^[^,[\]{}#'"]*/.exec(rest)?.[0] ?? "";
-				if (raw.trim() === "" || /:(?: |$)/.test(raw)) fail("unsupported flow sequence item", no);
-				value = resolve(raw.trim());
+				const plain = raw.trim();
+				if (
+					plain === "" ||
+					/:(?:[ \t]|$)/.test(raw) ||
+					/^(?:[&*!%@`|>]|[?:-](?:[ \t]|$))/.test(plain)
+				) {
+					fail("unsupported flow sequence item", no);
+				}
+				value = resolve(plain);
 				rest = rest.slice(raw.length);
 			}
 			out.push(record([...path, out.length], value, no));
@@ -136,6 +144,7 @@ export function parseYaml(source: string): YamlDocument {
 	}
 
 	function value(rest: string, indent: number, path: YamlPath, no: number, inMap: boolean): Yaml {
+		if (rest.startsWith("\t")) fail("tabs before a value are not supported", no);
 		if (rest === "" || rest.startsWith("#")) {
 			const next = peek();
 			if (next && next.indent > indent) return node(next.indent, path);
@@ -150,9 +159,10 @@ export function parseYaml(source: string): YamlDocument {
 			const [text, after] = quoted(rest, no);
 			return record(path, text, no, comment(after, no));
 		}
-		if (/^(?:[{>&*!%@`,\]}?:]|-(?: |$))/.test(rest)) fail("unsupported YAML syntax", no);
+		if (/^(?:[{>&*!%@`,\]}?:]|-(?:[ \t]|$))/.test(rest)) fail("unsupported YAML syntax", no);
 		const hash = rest.search(/\s#/);
 		const raw = hash < 0 ? rest : rest.slice(0, hash).trimEnd();
+		if (raw.includes(":\t")) fail("tabs before a value are not supported", no);
 		if (/: |:$/.test(raw)) fail("plain scalars can't contain ': '", no);
 		const next = peek();
 		if (next && next.indent > indent) fail("multi-line plain scalars are not supported", next.no);
@@ -172,6 +182,7 @@ export function parseYaml(source: string): YamlDocument {
 			}
 			const match = keyPattern.exec(text) ?? fail("expected `key: value`", no);
 			const key = match[1] ?? match[2] ?? match[3] ?? "";
+			if (key === "__proto__") fail("__proto__ keys are not supported", no);
 			if (Object.hasOwn(out, key)) fail(`duplicate key ${key}`, no);
 			out[key] = value(text.slice(match[0].length), indent, [...path, key], no, true);
 		}

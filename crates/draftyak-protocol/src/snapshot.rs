@@ -120,6 +120,13 @@ pub struct Chat {
     pub channel_name: String,
     pub channel_type: ChatChannelType,
     pub external: bool,
+    /// Legacy absence is preserved; current send admission requires an explicit sharing fact.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub shared: Option<bool>,
     pub member_count: u64,
     #[serde(
         default,
@@ -243,6 +250,13 @@ impl SendSnapshotV1 {
 pub fn parse_snapshot(bytes: &[u8]) -> Result<SendSnapshotV1, SnapshotError> {
     serde_json::from_value(parse_strict(bytes).map_err(|_| SnapshotError::Invalid)?)
         .map_err(|_| SnapshotError::Invalid)
+}
+/// Structural current-send admission, without enriching or rewriting legacy signed snapshots.
+pub fn check_current_send_snapshot(snapshot: &SendSnapshotV1) -> bool {
+    match snapshot.0.kind {
+        Kind::Email => true,
+        Kind::Chat => snapshot.chat().is_some_and(|chat| chat.shared.is_some()),
+    }
 }
 pub fn check_body_text(text: &str) -> bool {
     !text.contains('\r') && is_nfc(text)

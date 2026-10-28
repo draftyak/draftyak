@@ -50,9 +50,11 @@ import {
 // Plan §1: L3 listens on 127.0.0.1:47615 behind the owner's TLS proxy; Funnel forwards there.
 export const LIVE_PORT = 47615;
 export const SERVER_NAME = "draftyak-spike";
-// Short-lived access tokens, so a client's refresh and the rotation show within its step.
+// Short-lived access tokens provide a refresh opportunity; only observed grants count.
 export const LIVE_ACCESS_TOKEN_TTL: number = 10 * 60;
 const MINUTE = 60_000;
+export const CLEANUP_CONFIRM_MS: number = 30 * MINUTE;
+export const LIVE_CLEANUP_MS: number = 45 * MINUTE;
 
 export interface StepPlan {
 	readonly client: ClientName;
@@ -177,6 +179,7 @@ export function instructions(client: ClientName, mcpUrl: string): string[] {
 
 // The owner's clean-up, while the AS still runs: a client that revokes its tokens reaches it.
 export const CLEANUP_STEPS: readonly string[] = [
+	"Before removal: allow up to 10 minutes total to request/observe refresh, with one further accounts-list ask per client. Already observed refreshes count; an accounts result alone is not refresh evidence. Skip remaining attempts when needed to stop Funnel within 2 h 30 min of its start.",
 	"1. claude.ai: Customize > Connectors, then Remove on DraftYak S4 spike (or its three-dot menu).",
 	"2. ChatGPT: remove the DraftYak S4 spike plugin.",
 	`3. Your terminal, in the folder you used: claude mcp remove ${SERVER_NAME}`,
@@ -251,13 +254,14 @@ export function summary(rows: readonly Row[], notes: readonly string[] = []): st
 			row.outcome.padEnd(9),
 			row.era.padEnd(5),
 			(row.registration.join("+") || "-").padEnd(9),
+			`refreshes ${row.token.refreshes}${row.token.refreshes === 0 ? " (not observed)" : ""}`,
 			`prompts ${yes(row.surfaces.prompts)}, resources ${yes(row.surfaces.resources)}, completion ${yes(row.surfaces.completion)}, elicitation ${yes(row.surfaces.elicitation)}, apps ${yes(row.surfaces.apps)}`,
 			`DCR fallback verified: ${row.dcrFallbackVerified}`,
 			row.reason,
 		].join(" | "),
 	);
 	return [
-		"client       | outcome   | era   | via       | surfaces used | DCR | reason",
+		"client       | outcome   | era   | via       | refresh grants observed | surfaces used | DCR | reason",
 		...lines,
 		...notes,
 	];
@@ -786,13 +790,13 @@ export async function startLiveSession(options: LiveOptions): Promise<LiveSessio
 		cleanupView = {
 			steps: CLEANUP_STEPS,
 			awaitingOwner: true,
-			status: "Waiting for you to remove the connectors.",
+			status: "Request/observe refresh before removal, then remove the connectors.",
 		};
 		const steps = CLEANUP_STEPS.map((line) => `  ${line}`);
 		print(["", "Clean-up (the console shows the same):", ...steps].join("\n"));
 		const confirmed = await waitFor(
 			() => cleanedUp,
-			cleanup.confirmMs ?? 20 * MINUTE,
+			cleanup.confirmMs ?? CLEANUP_CONFIRM_MS,
 			cleanup.signal,
 		);
 		cleanupView = {

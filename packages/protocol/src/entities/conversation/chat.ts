@@ -9,6 +9,7 @@ export const ChatConversation: z.ZodObject<
 			name: z.ZodNullable<UntrustedTextSchema>;
 			type: typeof ChatChannelType;
 			external: z.ZodBoolean;
+			shared: z.ZodBoolean;
 			memberCount: z.ZodInt;
 			channelArchived: z.ZodBoolean;
 			member: z.ZodBoolean;
@@ -22,6 +23,7 @@ export const ChatConversation: z.ZodObject<
 		name: untrustedText(256).nullable(),
 		type: ChatChannelType,
 		external: z.boolean(),
+		shared: z.boolean(),
 		memberCount: z.int().min(0),
 		channelArchived: z.boolean(),
 		member: z.boolean(),
@@ -30,7 +32,8 @@ export const ChatConversation: z.ZodObject<
 		id: "draftyak.entities.ChatConversation",
 		description:
 			"A channel or direct message as the provider last described it: name is null for a " +
-			"direct message; external when shared with another organization; channelArchived is " +
+			"direct message; external when shared with another organization; shared records " +
+			"provider-established organization/workspace sharing; channelArchived is " +
 			"the provider's archive, archived the hub's; member whether the owner still belongs.",
 	});
 export type ChatConversation = z.infer<typeof ChatConversation>;

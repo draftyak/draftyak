@@ -1,0 +1,389 @@
+{
+  "format": "draftyak.vectors.host-channel.v1",
+  "description": "Decoded JSON-member request validation and native projection conformance cases.",
+  "requests": [
+    {
+      "id": "raw",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "raw"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "data",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "data"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "stream-false",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "raw"
+        },
+        "stream": false
+      },
+      "valid": true
+    },
+    {
+      "id": "raw-blob-unchanged",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": "blob"
+      },
+      "valid": true
+    },
+    {
+      "id": "ordinary-head-unchanged",
+      "params": {
+        "method": "HEAD",
+        "url": "https://mail.example.invalid/message",
+        "headers": []
+      },
+      "valid": true
+    },
+    {
+      "id": "stream-true",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "raw"
+        },
+        "stream": true
+      },
+      "valid": false
+    },
+    {
+      "id": "head",
+      "params": {
+        "method": "HEAD",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "raw"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "post",
+      "params": {
+        "method": "POST",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "raw"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "wrong-case",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "RAW"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "nested",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "body.raw"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-member",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unknown-kind",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "json",
+          "member": "raw"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "extra-option",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "raw",
+          "fallback": "blob"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "null",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": null
+      },
+      "valid": false
+    }
+  ],
+  "projection": [
+    {
+      "id": "empty",
+      "member": "raw",
+      "json": "{\"raw\":\"\"}",
+      "decodedHex": ""
+    },
+    {
+      "id": "raw-unpadded",
+      "member": "raw",
+      "json": "{\"raw\":\"Zg\"}",
+      "decodedHex": "66"
+    },
+    {
+      "id": "raw-padded",
+      "member": "raw",
+      "json": "{\"raw\":\"Zg==\"}",
+      "decodedHex": "66"
+    },
+    {
+      "id": "data-unpadded",
+      "member": "data",
+      "json": "{\"data\":\"Zm8\"}",
+      "decodedHex": "666f"
+    },
+    {
+      "id": "data-padded",
+      "member": "data",
+      "json": "{\"data\":\"Zm8=\"}",
+      "decodedHex": "666f"
+    },
+    {
+      "id": "full-group",
+      "member": "raw",
+      "json": "{\"raw\":\"Zm9v\"}",
+      "decodedHex": "666f6f"
+    },
+    {
+      "id": "url-alphabet",
+      "member": "data",
+      "json": "{\"data\":\"-_8\"}",
+      "decodedHex": "fbff"
+    },
+    {
+      "id": "escaped-member",
+      "member": "raw",
+      "json": "{\"r\\u0061w\":\"Zg\"}",
+      "decodedHex": "66"
+    },
+    {
+      "id": "escaped-value",
+      "member": "raw",
+      "json": "{\"raw\":\"\\u005ag\"}",
+      "decodedHex": "66"
+    },
+    {
+      "id": "encoding-0",
+      "member": "raw",
+      "json": "{\"raw\":\"Zg=\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "encoding-1",
+      "member": "raw",
+      "json": "{\"raw\":\"Zg===\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "encoding-2",
+      "member": "raw",
+      "json": "{\"raw\":\"Z=g=\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "encoding-3",
+      "member": "raw",
+      "json": "{\"raw\":\"Z\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "encoding-4",
+      "member": "raw",
+      "json": "{\"raw\":\"AB\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "encoding-5",
+      "member": "raw",
+      "json": "{\"raw\":\"ABC\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "encoding-6",
+      "member": "raw",
+      "json": "{\"raw\":\"Zg==x\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "encoding-7",
+      "member": "raw",
+      "json": "{\"raw\":\"Zg\\n\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "encoding-8",
+      "member": "raw",
+      "json": "{\"raw\":\"+/8=\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "document-0",
+      "member": "raw",
+      "json": "{}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "document-1",
+      "member": "raw",
+      "json": "{\"data\":\"Zg\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "document-2",
+      "member": "raw",
+      "json": "{\"nested\":{\"raw\":\"Zg\"}}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "document-3",
+      "member": "raw",
+      "json": "{\"raw\":0}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "document-4",
+      "member": "raw",
+      "json": "{\"raw\":null}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "document-5",
+      "member": "raw",
+      "json": "{\"raw\":\"Zg\",\"raw\":\"Zg\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "document-6",
+      "member": "raw",
+      "json": "{\"raw\":\"Zg\",\"r\\u0061w\":\"Zg\"}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "document-7",
+      "member": "raw",
+      "json": "{\"raw\":\"Zg\",\"other\":{\"x\":1,\"\\u0078\":2}}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "document-8",
+      "member": "raw",
+      "json": "{\"raw\":\"Zg\"} {}",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "document-9",
+      "member": "raw",
+      "json": "[{\"raw\":\"Zg\"}]",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "document-10",
+      "member": "raw",
+      "json": "{\"raw\":\"Zg\"",
+      "error": "BAD_REQUEST"
+    },
+    {
+      "id": "invalid-utf8",
+      "member": "raw",
+      "entityHex": "7b22726177223a22c080227d",
+      "error": "BAD_REQUEST"
+    }
+  ],
+  "boundaries": [
+    {
+      "counter": "compressedEntityBytes",
+      "maximum": 50331648
+    },
+    {
+      "counter": "decompressedEntityBytes",
+      "maximum": 50331648
+    },
+    {
+      "counter": "decodedBytes",
+      "maximum": 33554432
+    },
+    {
+      "counter": "containerDepth",
+      "maximum": 64
+    },
+    {
+      "counter": "valueNodes",
+      "maximum": 65536
+    },
+    {
+      "counter": "non2xxInlineBytes",
+      "maximum": 65536
+    }
+  ],
+  "boundaryRule": "Each maximum is inclusive; one above returns TOO_LARGE without a committed reference. Stricter existing limits win."
+}
