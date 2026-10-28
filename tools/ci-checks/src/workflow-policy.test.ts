@@ -100,6 +100,106 @@ describe("workflow policy", () => {
 		);
 	});
 
+	it.each(["__proto__", '"__proto__"', "'__proto__'"])("refuses a job keyed %s", (id) => {
+		const source = workflow(pr, [...checkout, ...run("github.event.pull_request.title")]).replace(
+			"  a:\n",
+			"  a:\n    name: required\n    permissions: write-all\n",
+		);
+		const problems = checkWorkflow("x.yml", source, toolchain).join("\n");
+		for (const problem of ["protected check name", "job permissions", "run must not expand"]) {
+			expect(problems).toContain(problem);
+		}
+		expect(checkWorkflow("x.yml", source.replace("  a:\n", `  ${id}:\n`), toolchain)).toEqual([
+			"x.yml: line 9: __proto__ keys are not supported",
+		]);
+	});
+
+	// Each workflow puts `sep` before a value on the given line; without a tab there, it has the
+	// given problem.
+	const withOn = (on: string): string => workflow(pr).replace("on:\n  pull_request:\n", `${on}\n`);
+	it.each([
+		[
+			"an on event",
+			(sep: string) => withOn(`on: ${sep}pull_request_target`),
+			1,
+			"pull_request_target is not allowed",
+		],
+		[
+			"another on event",
+			(sep: string) => withOn(`on: ${sep}workflow_run`),
+			1,
+			"workflow_run is not allowed",
+		],
+		[
+			"an on flow sequence",
+			(sep: string) => withOn(`on: ${sep}[push, workflow_run]`),
+			1,
+			"workflow_run is not allowed",
+		],
+		[
+			"an on flow mapping",
+			(sep: string) => withOn(`on: ${sep}{pull_request_target}`),
+			1,
+			"unsupported YAML syntax",
+		],
+		[
+			"an on sequence item",
+			(sep: string) => withOn(`on:\n  - ${sep}pull_request_target`),
+			2,
+			"pull_request_target is not allowed",
+		],
+		[
+			"an on flow sequence with push",
+			(sep: string) => withOn(`on: ${sep}[push, pull_request]`),
+			1,
+			"push may only run on the branches main or spikes-run/**",
+		],
+		[
+			"the jobs",
+			(sep: string) =>
+				workflow(pr).replace(/^jobs:[\s\S]*/m, `jobs: ${sep}{"a":{"runs-on":"ubuntu-24.04"}}`),
+			8,
+			"unsupported YAML syntax",
+		],
+		[
+			"the steps",
+			(sep: string) =>
+				workflow(pr, []).replace("    steps:", `    steps: ${sep}[{"uses":"actions/checkout@v7"}]`),
+			11,
+			"unsupported flow sequence item",
+		],
+	] as const)("refuses a tab before %s", (_, source, line, problem) => {
+		expect(checkWorkflow("x.yml", source(""), toolchain).join("\n")).toContain(problem);
+		expect(checkWorkflow("x.yml", source("\t"), toolchain)).toEqual([
+			`x.yml: line ${line}: tabs before a value are not supported`,
+		]);
+	});
+
+	it.each([
+		["run", `echo "\${{ github.event.pull_request.title }}"`, "run must not expand"],
+		["uses", "someone/thing@main", "uses must be owner/repo@<40-hex SHA>"],
+	])("refuses a tab after a step's %s key", (key, value, problem) => {
+		const source = (sep: string): string => workflow(pr, [`- ${key}:${sep}${value}`]);
+		expect(checkWorkflow("x.yml", source(" "), toolchain).join("\n")).toContain(problem);
+		for (const sep of ["\t", " \t", "\t "]) {
+			expect(checkWorkflow("x.yml", source(sep), toolchain)).toEqual([
+				"x.yml: line 12: tabs before a value are not supported",
+			]);
+		}
+	});
+
+	it("refuses a step in a flow sequence with a space or a tab after its key", () => {
+		for (const sep of [" ", "\t"]) {
+			const source = workflow(pr, []).replace(
+				"    steps:",
+				`    steps: [uses:${sep}someone/thing@main]`,
+			);
+			expect(checkWorkflow("x.yml", source, toolchain)).toEqual([
+				"x.yml: line 11: unsupported flow sequence item",
+			]);
+		}
+	});
+
 	it.each(["branches", "branches-ignore", "paths", "paths-ignore"])(
 		"refuses top-level PR %s filters on required workflows",
 		(filter) => {
