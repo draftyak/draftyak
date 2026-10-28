@@ -72,6 +72,9 @@ function prepare(files: Readonly<Record<string, string>> = {}): Fixture {
 	mkdirSync(path.dirname(tooling), { recursive: true });
 	symlinkSync(path.dirname(require.resolve("typescript/package.json")), tooling, "junction");
 	links.push(tooling);
+	const bundler = path.join(workspace, "node_modules/rolldown");
+	symlinkSync(path.dirname(require.resolve("rolldown/package.json")), bundler, "junction");
+	links.push(bundler);
 	const nodeTypes = path.join(workspace, "node_modules/@types/node");
 	mkdirSync(path.dirname(nodeTypes), { recursive: true });
 	symlinkSync(path.dirname(require.resolve("@types/node/package.json")), nodeTypes, "junction");
