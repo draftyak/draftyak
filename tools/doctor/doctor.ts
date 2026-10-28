@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadNodePolicy } from "./node-version.ts";
 
-/** Check the builtin-only policy before importing the diagnostic implementation. */
+/** Check the canonical runtime policy before importing the diagnostic implementation. */
 export async function runDoctor(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
 	try {
 		const policy = loadNodePolicy();
