@@ -1,0 +1,3 @@
+# @draftyak/fake-commercial
+
+Private and test-only: hub tests load these extension modules to run the same suites with and without commercial-style modules. `modules/commercial/` holds one benign counterpart for each of the eight extension points, plus an admin operation and device routes; `modules/hostile/` holds variants that try to skip approval, widen access, receive data classes a backup target refused, break audit delivery or reach core. Production code never imports this package. Each module is one self-contained `.mjs` file with no imports, because the hub loads a module's pinned bytes from a `data:` URL.

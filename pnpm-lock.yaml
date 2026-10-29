@@ -60,6 +60,9 @@ importers:
         specifier: 0.2.2
         version: 0.2.2
     devDependencies:
+      '@draftyak/fake-commercial':
+        specifier: workspace:*
+        version: link:../../packages/fake-commercial
       '@draftyak/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -85,6 +88,12 @@ importers:
       tsdown:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)
+
+  packages/fake-commercial:
+    devDependencies:
+      '@draftyak/extensions':
+        specifier: workspace:*
+        version: link:../extensions
 
   packages/fakes:
     dependencies:
