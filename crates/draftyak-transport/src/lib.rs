@@ -107,6 +107,7 @@ mod codec {
     }
 }
 pub mod payload;
+pub mod sidecar;
 pub mod tls;
 pub mod websocket;
 pub use codec::{CodecError, RefusalCode};
