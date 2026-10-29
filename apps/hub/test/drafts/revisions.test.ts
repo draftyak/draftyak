@@ -3,6 +3,7 @@ import { flagsHash } from "@draftyak/protocol/flags";
 import { jcsSha256 } from "@draftyak/protocol/hash";
 import { canonicalize } from "@draftyak/protocol/jcs";
 import { afterEach, describe, expect, it } from "vitest";
+import { NativeDraftRevisions } from "../../src/drafts/revisions.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import { HubStore, type SqlTransaction } from "../../src/store/store.ts";
 import { revisionFixture } from "./revision-fixture.ts";
@@ -255,5 +256,66 @@ describe("encrypted immutable native revision storage", () => {
 			"Draft revision unavailable",
 		);
 		expect(f.create(input).draft.rev).toBe(1);
+	});
+	it("ignores method shadows when enforcing real transaction ownership", async () => {
+		const f = await fixture(),
+			foreign = new HubStore(f.options),
+			input = f.make();
+		f.stores.push(foreign);
+		let calls = 0;
+		Object.defineProperty(f.revisions, "assertTransaction", {
+			value: () => {
+				calls++;
+			},
+		});
+		expect(() => foreign.write((tx) => f.revisions.createInTransaction(tx, input))).toThrow(
+			"Draft revision unavailable",
+		);
+		expect(calls).toBe(0);
+		expect(f.create(input).draft.rev).toBe(1);
+	});
+	it("ignores method shadows for keyed history checks and native read state", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			current = f.create(input);
+		let calls = 0;
+		Object.defineProperties(f.revisions, {
+			read: {
+				value: () => {
+					calls++;
+					return current;
+				},
+			},
+			checkMac: {
+				value: () => {
+					calls++;
+				},
+			},
+			sign: {
+				value: () => {
+					calls++;
+					return "0".repeat(64);
+				},
+			},
+		});
+		const other = new NativeDraftRevisions(f.store, f.audit, f.key, f.clock);
+		f.services.push(other);
+		expect(f.revisions.current(f.bind(input))).toEqual(other.current(f.bind(input)));
+		expect(calls).toBe(0);
+		f.store.write((tx) => {
+			const row = tx.get<{ payload: string }>(
+				"SELECT payload FROM native_draft_revisions WHERE draft_id=? AND rev=1",
+				[input.draftId],
+			);
+			if (!row) throw new Error("missing history");
+			const payload = JSON.parse(row.payload);
+			payload.author.id = newId();
+			tx.run("UPDATE native_draft_revisions SET payload=? WHERE draft_id=? AND rev=1", [
+				canonicalize(payload),
+				input.draftId,
+			]);
+		});
+		expect(() => f.revisions.current(f.bind(input))).toThrow("Draft revision unavailable");
+		expect(calls).toBe(0);
 	});
 });
