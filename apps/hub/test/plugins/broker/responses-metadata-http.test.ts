@@ -221,30 +221,81 @@ describe("Responses metadata through native HTTP and public integration APIs", (
 		expect(remote.seen.sni).toEqual(["api.openai.com"]);
 		expect(JSON.stringify(result)).not.toContain(f.secret);
 	});
-	it.each(["configured", "input"] as const)(
-		"binds the actual probe GET path to the %s model",
-		async (source) => {
-			const f = await fixture(),
-				model = source === "input" ? "DYTEST-model/2026" : "DYTEST-configured";
+	it("binds the actual probe GET path only to the explicit input model", async () => {
+		const f = await fixture(),
+			model = "DYTEST-model/2026";
+		const binding: ResponsesMetadataBindingWithoutNetwork = {
+			operation: "ai_probe",
+			configuration: { ...listBinding().configuration, model: "DYTEST-configured" },
+			input: { model },
+		};
+		const remote = await peer((response) => response.end(JSON.stringify({ id: model })));
+		const result = await localTls(remote, () =>
+			f.execute(candidate(`/${encodeURIComponent(model)}`), binding),
+		);
+		expect(result.status).toBe(200);
+		expect(remote.seen.paths).toEqual([`/v1/models/${encodeURIComponent(model)}`]);
+		expect(remote.seen.methods).toEqual(["GET"]);
+		expect(remote.seen.bodies).toEqual([""]);
+		expect(remote.seen.headers[0]).toMatchObject({
+			accept: "application/json",
+			authorization: `Bearer ${f.secret}`,
+			host: "api.openai.com",
+		});
+		expect(remote.seen.sni).toEqual(["api.openai.com"]);
+	});
+	it.each([false, true])(
+		"lists models for a model-less native probe with configured model=%s",
+		async (configured) => {
+			const f = await fixture();
 			const binding: ResponsesMetadataBindingWithoutNetwork = {
 				operation: "ai_probe",
-				configuration: { ...listBinding().configuration, model: "DYTEST-configured" },
-				input: source === "input" ? { model } : {},
+				configuration: {
+					...listBinding().configuration,
+					...(configured ? { model: "DYTEST-configured" } : {}),
+				},
+				input: {},
 			};
-			const remote = await peer((response) => response.end(JSON.stringify({ id: model })));
-			const result = await localTls(remote, () =>
-				f.execute(candidate(`/${encodeURIComponent(model)}`), binding),
+			const remote = await peer((response) => response.end('{"object":"list","data":[]}'));
+			const result = localTls(remote, () => f.execute(candidate(), binding)).catch(
+				(error: unknown) => {
+					// A native binding refusal must happen before a socket or credential header is sent.
+					expect(remote.seen.connections).toBe(0);
+					expect(remote.seen.applicationBytes).toBe(0);
+					throw error;
+				},
 			);
-			expect(result.status).toBe(200);
-			expect(remote.seen.paths).toEqual([`/v1/models/${encodeURIComponent(model)}`]);
+			await expect(result).resolves.toMatchObject({ status: 200 });
 			expect(remote.seen.methods).toEqual(["GET"]);
+			expect(remote.seen.paths).toEqual(["/v1/models"]);
 			expect(remote.seen.bodies).toEqual([""]);
+			expect(remote.seen.sni).toEqual(["api.openai.com"]);
 			expect(remote.seen.headers[0]).toMatchObject({
 				accept: "application/json",
 				authorization: `Bearer ${f.secret}`,
 				host: "api.openai.com",
 			});
-			expect(remote.seen.sni).toEqual(["api.openai.com"]);
+		},
+	);
+	it.each(["configured-model path", "body"])(
+		"refuses a model-less probe with a %s before HTTP",
+		async (invalid) => {
+			const f = await fixture();
+			const binding: ResponsesMetadataBindingWithoutNetwork = {
+				operation: "ai_probe",
+				configuration: { ...listBinding().configuration, model: "DYTEST-configured" },
+				input: {},
+			};
+			const input =
+				invalid === "body"
+					? { ...candidate(), body: Buffer.from("{}") }
+					: candidate("/DYTEST-configured");
+			const remote = await peer((response) => response.end("unsafe"));
+			await expect(localTls(remote, () => f.execute(input, binding))).rejects.toThrow(
+				ProviderHttpError,
+			);
+			expect(remote.seen.connections).toBe(0);
+			expect(remote.seen.applicationBytes).toBe(0);
 		},
 	);
 	it.each(["operation", "model", "headers"])(
