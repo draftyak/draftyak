@@ -156,7 +156,7 @@ jobs:
           if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then
             filters+=("--filter=!./packages/create-plugin")
           fi
-          node tools/verify/turbo.ts run test:heavy "${filters[@]}"
+          node tools/verify/turbo.ts run test:heavy --concurrency=1 "${filters[@]}"
 
   windows:
     needs: changes

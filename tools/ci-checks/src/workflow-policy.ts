@@ -58,7 +58,26 @@ const ciControls: Readonly<Record<string, YamlMap>> = {
 	},
 	required: { needs: ["changes", "cheap", "full", "windows"], if: "always()" },
 };
+const ciChangesOutputs: YamlMap = {
+	areas: `\${{ steps.areas.outputs.areas }}`,
+	"docs-only": `\${{ steps.areas.outputs.docs-only }}`,
+	rust: `\${{ steps.areas.outputs.rust }}`,
+	spikes: `\${{ steps.areas.outputs.spikes }}`,
+	heavy: `\${{ steps.areas.outputs.heavy }}`,
+	"template-smoke": `\${{ steps.areas.outputs.template-smoke }}`,
+	source: `\${{ steps.source.outputs.source }}`,
+};
 const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
+	changes: [
+		{
+			id: "areas",
+			env: {
+				BASE_SHA: `\${{ github.event.pull_request.base.sha || github.event.before }}`,
+				HEAD_SHA: `\${{ github.event.pull_request.head.sha || github.sha }}`,
+			},
+			run: "node tools/ci-checks/src/changes.ts",
+		},
+	],
 	cheap: [
 		{
 			if: "needs.changes.outputs.docs-only == 'true'",
@@ -92,7 +111,7 @@ const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
 				'if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then',
 				'  filters+=("--filter=!./packages/create-plugin")',
 				"fi",
-				`node tools/verify/turbo.ts run test:heavy "\${filters[@]}"`,
+				`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
 				"",
 			].join("\n"),
 		},
@@ -196,7 +215,15 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 			const step = Object.fromEntries(
 				Object.entries(steps[index] ?? {}).filter(([key]) => key !== "name"),
 			);
-			if (matches.length !== 1 || index <= previous || !isDeepStrictEqual(step, expected)) {
+			const duplicateId =
+				typeof expected.id === "string" &&
+				steps.filter((step) => step.id === expected.id).length !== 1;
+			if (
+				matches.length !== 1 ||
+				index <= previous ||
+				duplicateId ||
+				!isDeepStrictEqual(step, expected)
+			) {
 				report(
 					["jobs", job, "steps"],
 					`must preserve ${job} command and its execution controls: ${expected.run}`,
@@ -284,6 +311,9 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	if (file === ".github/workflows/ci.yml") {
 		if (!isDeepStrictEqual(workflow.defaults, { run: { shell: "bash" } })) {
 			report(["defaults"], "must preserve the CI execution shell");
+		}
+		if (!isDeepStrictEqual(asMap(asMap(workflow.jobs).changes).outputs, ciChangesOutputs)) {
+			report(["jobs", "changes", "outputs"], "must preserve classifier job output mappings");
 		}
 		for (const [job, controls] of Object.entries(ciControls)) {
 			const definition = asMap(asMap(workflow.jobs)[job]);
