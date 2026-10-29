@@ -12,6 +12,7 @@ import {
 	snapshotVerifiedAiRequest,
 	verifyCapturedAiRequest,
 } from "../../../../src/plugins/broker/ai/index.ts";
+import { captureResponsesMetadataBinding } from "../../../../src/plugins/broker/ai/responses-metadata.ts";
 import { builtinRegistrations } from "../../../../src/plugins/broker/ai/verifiers.ts";
 
 const registry = createBuiltinAiProfileRegistry();
@@ -67,19 +68,51 @@ describe("native Responses metadata binding", () => {
 			expect(result.headers.every(Object.isFrozen)).toBe(true);
 		}
 	});
-	it("binds probe to the actual configured model when no input override exists", () => {
+	it.each([
+		["unconfigured", configuration],
+		["configured", { ...configuration, model: "gpt-configured" }],
+	] as const)(
+		"routes a model-less Responses probe to the catalogue with %s configuration",
+		(_label, nativeConfiguration) => {
+			const { candidate } = list();
+			const binding: ResponsesMetadataBindingWithoutNetwork = {
+				operation: "ai_probe",
+				configuration: nativeConfiguration,
+				input: {},
+			};
+			const capturedBinding = captureResponsesMetadataBinding(binding);
+			expect(capturedBinding.operation).toBe("ai_probe");
+			expect(capturedBinding.input).toEqual({});
+			expect(checked(candidate, binding)).toMatchObject({
+				method: "GET",
+				url: `${origin}/models`,
+				body: new Uint8Array(0),
+			});
+		},
+	);
+	it("retrieves only the current probe input model and refuses cross-request targets", () => {
 		const { candidate } = list();
 		const binding: ResponsesMetadataBindingWithoutNetwork = {
 			operation: "ai_probe",
-			configuration: { ...configuration, model: "model-2026" },
-			input: {},
+			configuration: { ...configuration, model: "gpt-configured" },
+			input: { model: "requested-model" },
 		};
-		expect(checked({ ...candidate, url: `${origin}/models/model-2026` }, binding).method).toBe(
-			"GET",
+		expect(checked({ ...candidate, url: `${origin}/models/requested-model` }, binding).url).toBe(
+			`${origin}/models/requested-model`,
 		);
-		expect(() => checked({ ...candidate, url: `${origin}/models/other-model` }, binding)).toThrow(
-			AiVerificationError,
-		);
+		for (const url of [
+			candidate.url,
+			`${origin}/models/gpt-configured`,
+			`${origin}/models/other-request-model`,
+		])
+			expect(() => checked({ ...candidate, url }, binding)).toThrow(AiVerificationError);
+		const withoutInput = { ...binding, input: {} };
+		expect(() =>
+			checked({ ...candidate, url: `${origin}/models/gpt-configured` }, withoutInput),
+		).toThrow(AiVerificationError);
+		expect(() =>
+			checked({ ...candidate, url: `${origin}/models/requested-model` }, withoutInput),
+		).toThrow(AiVerificationError);
 	});
 	it.each([
 		["model/with%name?x#fragment", "model%2Fwith%25name%3Fx%23fragment"],
@@ -95,7 +128,7 @@ describe("native Responses metadata binding", () => {
 		const result = checked({ ...candidate, url: `${origin}/models/${encoded}` }, binding);
 		expect(result.url).toBe(`${origin}/models/${encoded}`);
 	});
-	it("refuses a probe without a real selected model and validates shared ModelId rules", () => {
+	it("validates explicit ModelId values and refuses invented probe targets", () => {
 		const { candidate } = list();
 		const probe = { operation: "ai_probe", configuration, input: {} };
 		expect(() => checked({ ...candidate, url: `${origin}/models/default-model` }, probe)).toThrow(

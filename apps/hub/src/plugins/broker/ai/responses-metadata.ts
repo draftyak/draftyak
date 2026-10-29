@@ -43,8 +43,8 @@ export function captureResponsesMetadataBinding(
 export function responsesMetadataEndpoint(binding: ResponsesMetadataBindingWithoutNetwork): string {
 	const root = `${binding.configuration.endpoint}/models`;
 	if (binding.operation === "ai_models_list") return root;
-	const model = binding.input.model ?? binding.configuration.model;
-	if (model === undefined) refuse();
+	const model = binding.input.model;
+	if (model === undefined) return root;
 	const endpoint = `${root}/${encodeURIComponent(model)}`;
 	// Dot segments have no canonical single-segment representation in a URL.
 	if (new URL(endpoint).href !== endpoint) refuse();
