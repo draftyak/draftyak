@@ -9,6 +9,15 @@ export {
 	type AuditInput,
 } from "./audit/chain.ts";
 export {
+	Authorizer,
+	assertAuthorizerStore,
+	type ConfirmationTarget,
+	type RouteGrant,
+} from "./authz/authorizer.ts";
+export { AuthzError, type AuthzErrorCode, deviceApiError } from "./authz/errors.ts";
+export { type NativeDevicePeer, NativeDeviceTls } from "./authz/native-peer.ts";
+export { cliConfirmPinScope, pairConfirmPinScope, revokePinScope } from "./authz/scopes.ts";
+export {
 	type CredentialBinding,
 	type CredentialDescriptor,
 	CredentialError,
@@ -58,6 +67,16 @@ export {
 	type SendPolicyDecision,
 	startExtensions,
 } from "./extensions/index.ts";
+export {
+	type ApproverConfirmation,
+	type AuthorityState,
+	DEVICE_MIGRATIONS,
+	type DeviceFacts,
+	type DeviceGrant,
+	DeviceRegistry,
+	type RevocationActor,
+} from "./identity/devices.ts";
+export { DevicePairingAuthority } from "./identity/devices-pairing.ts";
 export { HubIdentity } from "./identity/hub-key.ts";
 export {
 	PinError,
