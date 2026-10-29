@@ -1,4 +1,5 @@
 import dns from "node:dns";
+import { createRequire } from "node:module";
 import net from "node:net";
 import tls from "node:tls";
 import { expect, it } from "vitest";
@@ -8,11 +9,75 @@ it("refuses non-loopback native destinations before the underlying operation", (
 	const guard = requireLoopbackNetworkGuard();
 	let calls = 0;
 	const connect = guard.restrictConnect(() => ++calls);
-	for (const address of ["192.0.2.1", "2001:db8::1", "localhost", undefined, 1])
+	for (const address of [
+		"192.0.2.1",
+		"2001:db8::1",
+		"localhost",
+		undefined,
+		1,
+		"127.0.0.256",
+		"127.00.0.1",
+		"126.255.255.255",
+		"::2",
+		"::",
+		"::1%1",
+		"0::1::",
+	])
 		expect(connect({}, address, 9)).toBe(guard.denialCode);
 	expect(calls).toBe(0);
 	expect(connect({}, "127.0.0.1", 9)).toBe(1);
 	expect(connect({}, "::1", 9)).toBe(2);
+	for (const address of ["127.0.0.2", "127.255.255.255", "0:0:0:0:0:0:0:1", "0::1", "::0001"])
+		expect(guard.loopbackAddress(address)).toBe(true);
+});
+
+it("refuses frozen fake exports and replaced cache entries without trusting their checks", () => {
+	const guard = requireLoopbackNetworkGuard(),
+		require = createRequire(import.meta.url);
+	const path = require.resolve("./loopback-preload.cjs"),
+		original = Object.getOwnPropertyDescriptor(require.cache, path);
+	if (!original || !("value" in original)) throw new Error("Startup module missing");
+	const module = original.value,
+		exports = Object.getOwnPropertyDescriptor(module, "exports");
+	if (!exports) throw new Error("Startup exports missing");
+	let calls = 0;
+	try {
+		Object.defineProperty(module, "exports", {
+			...exports,
+			value: Object.freeze({
+				assertActive: () => {
+					calls++;
+				},
+			}),
+		});
+		expect(() => requireLoopbackNetworkGuard()).toThrow("startup network guard cache");
+		expect(calls).toBe(0);
+		Object.defineProperty(module, "exports", exports);
+		Object.defineProperty(require.cache, path, {
+			...original,
+			value: Object.freeze({ exports: guard }),
+		});
+		expect(() => requireLoopbackNetworkGuard()).toThrow("startup network guard cache");
+	} finally {
+		Object.defineProperty(module, "exports", exports);
+		Object.defineProperty(require.cache, path, original);
+	}
+	guard.assertActive();
+});
+
+it("refuses genuine late installation while retaining the restrictive startup guard", () => {
+	const guard = requireLoopbackNetworkGuard(),
+		require = createRequire(import.meta.url);
+	const path = require.resolve("./loopback-preload.cjs"),
+		original = Object.getOwnPropertyDescriptor(require.cache, path);
+	if (!original) throw new Error("Startup module missing");
+	try {
+		Reflect.deleteProperty(require.cache, path);
+		expect(() => require(path)).toThrow("requires startup preloading");
+	} finally {
+		Object.defineProperty(require.cache, path, original);
+	}
+	expect(requireLoopbackNetworkGuard()).toBe(guard);
 });
 
 it("denies all native DNS paths including retained resolver functions", async () => {
