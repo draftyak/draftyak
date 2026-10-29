@@ -12,6 +12,123 @@ import {
 import { createRecorder } from "../src/recorder.ts";
 
 const START = Date.UTC(2026, 9, 19, 8);
+
+describe.each([
+	["generic", createMessagesApiFake],
+	["draft", createMessagesApiDraftFake],
+] as const)("Messages metadata routes (%s)", (_name, create) => {
+	it.each([
+		"/v1/models?limit=100",
+		"/v1/models?limit=100&after_id=claude-model-1",
+		"/v1/models?after_id=opaque%2Fcursor%2Bvalue&limit=100",
+		"/v1/models/claude-model-1",
+		"/v1/models/opaque:@!$&'()*+,;=",
+		"/v1/models/opaque%2F%3F%25%23%2B",
+	])("serves a scripted GET %s from the existing queue", async (target) => {
+		const expected = { deliberately: "opaque metadata fixture" };
+		const fake = create({ steps: [{ kind: "json", body: expected }] });
+		const response = await fake.fetch(target);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual(expected);
+		expect(fake.pending()).toBe(0);
+		expect(fake.recorder.takeRequests()).toMatchObject([{ method: "GET", target, bodyLength: 0 }]);
+	});
+
+	it.each([
+		"/v1/models",
+		"/v1/models?limit=99",
+		"/v1/models?limit=100&limit=100",
+		"/v1/models?limit=100&after_id=",
+		"/v1/models?limit=100&after_id=x&after_id=y",
+		"/v1/models?limit=100&unknown=x",
+		"/v1/models?%6cimit=100",
+		"/v1/%6dodels?limit=100",
+		"/v1/extra/../models?limit=100",
+		"/v1/models/",
+		"/v1/models/.",
+		"/v1/models/%2e%2e",
+		"/v1/models/a/b",
+		"/v1/models/a\\b",
+		"/v1/models/a?extra=1",
+		"/v1/models/a#fragment",
+		"/v1/models/a%GG",
+		"/v1/models/a%FF",
+		`/v1/models/${"a".repeat(4096)}`,
+	])("refuses raw target %s before reserving a step", async (target) => {
+		const fake = create({ steps: [{ kind: "json", body: { slot: 1 } }] });
+		expect((await fake.fetch(target)).status).toBe(404);
+		expect(fake.pending()).toBe(1);
+		expect(await (await fake.fetch("/v1/models?limit=100")).json()).toEqual({ slot: 1 });
+	});
+
+	it.each(["POST", "PUT", "DELETE"])(
+		"refuses metadata method %s before dequeue",
+		async (method) => {
+			const fake = create({ steps: [{ kind: "json", body: { slot: 1 } }] });
+			const response = await fake.fetch("/v1/models?limit=100", { method });
+			expect([response.status, response.headers.get("allow"), fake.pending()]).toEqual([
+				405,
+				"GET",
+				1,
+			]);
+		},
+	);
+
+	it("shares one ordered GET/POST queue and preserves deliberately malformed metadata", async () => {
+		const fake = create({
+			steps: [
+				{ kind: "json", body: { slot: 1 } },
+				{ kind: "json", body: { slot: 2 } },
+				{ kind: "raw", body: '{"broken":', contentType: "application/json" },
+			],
+		});
+		expect(await (await fake.fetch("/v1/models?limit=100")).json()).toEqual({ slot: 1 });
+		const request = {
+			...REQUEST,
+			output_config: { effort: "high", format: { type: "json_schema", schema: {} } },
+		};
+		expect(
+			await (
+				await fake.fetch("/v1/messages?beta=true", post({ body: JSON.stringify(request) }))
+			).json(),
+		).toEqual({ slot: 2 });
+		expect(await (await fake.fetch("/v1/models/claude-model-1")).text()).toBe('{"broken":');
+		expect(fake.pending()).toBe(0);
+		expect((await fake.fetch("/v1/models?limit=100")).status).toBe(503);
+	});
+
+	it("reserves a metadata step before its delay while POST takes the following step", async () => {
+		const controller = new AbortController();
+		const fake = create({
+			steps: [
+				{ kind: "json", body: { slot: 1 }, delayMs: Infinity },
+				{ kind: "json", body: { slot: 2 } },
+			],
+		});
+		const first = fake.fetch("/v1/models?limit=100", { signal: controller.signal }).then(
+			() => ({ kind: "returned" }),
+			() => ({ kind: "aborted" }),
+		);
+		try {
+			await setImmediate();
+			expect(fake.pending()).toBe(1);
+			const request = {
+				...REQUEST,
+				output_config: { effort: "high", format: { type: "json_schema", schema: {} } },
+			};
+			expect(
+				await (await fake.fetch("/v1/messages", post({ body: JSON.stringify(request) }))).json(),
+			).toEqual({ slot: 2 });
+			expect(fake.pending()).toBe(0);
+			controller.abort();
+			expect(await first).toEqual({ kind: "aborted" });
+		} finally {
+			controller.abort();
+			await first;
+		}
+	});
+});
+
 const DRAFT = {
 	body: "Synthetic reply with café and 🦬.",
 	ownerNotes: "Synthetic note.",
