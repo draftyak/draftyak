@@ -85,6 +85,7 @@ These checked-in contracts remain draft until the M1 gate. A dash means the cont
 | Stored and displayed entities | — | [Entities v1](schemas/entities-v1.schema.json) | — |
 | Pairing and confirmation | [Pairing v1](pairing-v1.md) | — | [Pairing](vectors/pairing/) |
 | Native device API | [Device API v1](device-api-v1.md) | [Device API v1](schemas/device-api-v1.schema.json) | [Device API](vectors/device-api/) |
+| Gmail code relay | [OAuth relay v1](oauth-relay-v1.md) | [OAuth relay v1](schemas/oauth-relay-v1.schema.json) | [OAuth relay](vectors/oauth-relay/) |
 | Broker send tickets | [Channel v1](extensions/channel-v1.md) | [Broker ticket v1](schemas/broker-ticket-v1.schema.json) | [Send tickets](vectors/send-ticket/) |
 | Channel extension | [Channel v1](extensions/channel-v1.md) | [Channel v1](schemas/channel-v1.schema.json) | — |
 | Normalized channel changes | [Channel v1](extensions/channel-v1.md) | [Normalized change v1](schemas/normalized-change-v1.schema.json) | — |

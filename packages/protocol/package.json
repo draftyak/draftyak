@@ -69,6 +69,7 @@
     "./mcp/tools": "./src/mcp/tools.ts",
     "./mcp/views": "./src/mcp/views.ts",
     "./normalized-change": "./src/normalized-change.ts",
+    "./oauth-relay": "./src/oauth-relay.ts",
     "./pairing": "./src/pairing.ts",
     "./plugin-argv": {
       "node": "./src/plugin-argv.ts"
@@ -359,6 +360,10 @@
       "./normalized-change": {
         "types": "./dist/normalized-change.d.mts",
         "default": "./dist/normalized-change.mjs"
+      },
+      "./oauth-relay": {
+        "types": "./dist/oauth-relay.d.mts",
+        "default": "./dist/oauth-relay.mjs"
       },
       "./pairing": {
         "types": "./dist/pairing.d.mts",

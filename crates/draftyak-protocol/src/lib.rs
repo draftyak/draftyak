@@ -5,6 +5,7 @@ pub mod flags;
 pub mod hash;
 pub mod hub_runtime;
 pub mod jcs;
+pub mod oauth_relay;
 pub mod schedule;
 pub mod scheduled_summary;
 pub mod sign;

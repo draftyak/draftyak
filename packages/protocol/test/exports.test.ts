@@ -76,6 +76,7 @@ const publicModules = [
 	"mcp/tools",
 	"mcp/views",
 	"normalized-change",
+	"oauth-relay",
 	"pairing",
 	"scalars",
 	"schedule",
