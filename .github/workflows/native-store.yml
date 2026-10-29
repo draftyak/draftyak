@@ -1,0 +1,68 @@
+name: Native macOS store
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Open owner PR into m2
+        required: true
+        type: string
+      head:
+        description: Exact current PR head (40 lowercase hex characters)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  DO_NOT_TRACK: '1'
+  TURBO_TELEMETRY_DISABLED: '1'
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  native-store:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'draftyak/draftyak' && github.actor == 'nicksavov' && github.triggering_actor == 'nicksavov' && github.ref == 'refs/heads/m0' }}
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Check out trusted controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Admit the exact owner PR head
+        id: source
+        env:
+          NATIVE_STORE_PR: ${{ inputs.pr }}
+          NATIVE_STORE_HEAD: ${{ inputs.head }}
+        run: node tools/ci-checks/src/native-store.ts admit
+      - name: Check out admitted source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: draftyak/draftyak
+          ref: ${{ steps.source.outputs.head }}
+          path: source
+          persist-credentials: false
+      - name: Verify the source checkout
+        env:
+          NATIVE_STORE_PR: ${{ steps.source.outputs.pr }}
+          NATIVE_STORE_HEAD: ${{ steps.source.outputs.head }}
+        run: node tools/ci-checks/src/native-store.ts verify-source
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - name: Install locked source dependencies
+        working-directory: source
+        run: pnpm install --frozen-lockfile
+      - name: Run and verify the native store case
+        env:
+          NATIVE_STORE_PR: ${{ steps.source.outputs.pr }}
+          NATIVE_STORE_HEAD: ${{ steps.source.outputs.head }}
+        run: node tools/ci-checks/src/native-store.ts run
