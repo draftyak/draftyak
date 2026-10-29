@@ -1,4 +1,4 @@
-import { jsonCopy } from "@draftyak/protocol/host-channel";
+import { jsonCopy, LOOKUP_PERMIT_META_KEY } from "@draftyak/protocol/host-channel";
 import { validateManifest } from "@draftyak/protocol/manifest";
 import {
 	type CanonicalToolName,
@@ -7,6 +7,7 @@ import {
 } from "@draftyak/protocol/tool-v1";
 import { createMockHost } from "./host.ts";
 import { createInMemory } from "./in-memory.ts";
+import { createProcess } from "./process.ts";
 import { type MockHub, MockHubError, type MockHubOptions } from "./types.ts";
 
 function freeze<T>(value: T): T {
@@ -17,12 +18,15 @@ function freeze<T>(value: T): T {
 	return value;
 }
 
-/** In-memory policy fixtures only. Process dispatch belongs to the process-mode adapter. */
+/** Trusted fixture policy shared by in-memory and retained process transports. */
 export function createMockHub(options: MockHubOptions): MockHub {
-	if (options.mode !== "in-memory") throw new MockHubError("PROCESS_MODE_UNAVAILABLE");
 	const checked = validateManifest(options.plugin.manifest);
 	if (!checked.ok) throw new MockHubError(checked.problems[0]?.code ?? "MANIFEST_INVALID");
 	const manifest = freeze(checked.manifest);
+	if (options.mode !== "in-memory" && options.mode !== "process")
+		throw new MockHubError("MODE_UNAVAILABLE");
+	if (options.mode === "process" && manifest.kind === "tool")
+		throw new MockHubError("PROCESS_KIND_UNAVAILABLE");
 	const entry = options.plugin.entry;
 	if (
 		entry.plugin !== manifest.id ||
@@ -54,8 +58,17 @@ export function createMockHub(options: MockHubOptions): MockHub {
 		upstreams: options.upstreams,
 		...(options.secrets ? { secrets: options.secrets } : {}),
 	});
-	const memory = createInMemory(entry, bridge.host, manifest.kind === "tool");
+	const memory =
+		options.mode === "process"
+			? createProcess(options.plugin, bridge.host, {
+					plugin: manifest.id,
+					instance:
+						(typeof instance === "string" ? instance : instance?.id) ??
+						"00000000000000000000000001",
+				})
+			: createInMemory(entry, bridge.host, manifest.kind === "tool");
 	let closed = false;
+	let closing: Promise<void> | undefined;
 	const available = (): void => {
 		if (closed || bridge.host.disabled)
 			throw new MockHubError(closed ? "HOST_CLOSED" : "PLUGIN_DISABLED");
@@ -82,23 +95,40 @@ export function createMockHub(options: MockHubOptions): MockHub {
 			if (manifest.kind === "tool" && !kind && !["tool_describe", "tool_probe"].includes(name))
 				throw new MockHubError("TOOL_NAME_UNDECLARED");
 			const params = jsonCopy({ name, arguments: args, _meta: metadata });
-			return bridge.lookup(async (signal) => {
-				const result = await memory.request("tools/call", params, signal);
-				if (manifest.kind === "tool") {
-					const outcome = checkToolResult(
-						name as CanonicalToolName,
-						result,
-						kind ? { maxBytes: kind.output.maxBytes } : {},
-					);
-					if (outcome.status === "refused") throw new MockHubError(outcome.refusal);
-				}
-				return result;
-			}, kind?.kind);
+			return bridge.lookup(
+				async (signal, permit) => {
+					const admitted =
+						permit === undefined
+							? params
+							: {
+									...params,
+									_meta: { ...params._meta, [LOOKUP_PERMIT_META_KEY]: permit },
+								};
+					const result = await memory.request("tools/call", admitted, signal);
+					if (manifest.kind === "tool") {
+						const outcome = checkToolResult(
+							name as CanonicalToolName,
+							result,
+							kind ? { maxBytes: kind.output.maxBytes } : {},
+						);
+						if (outcome.status === "refused") throw new MockHubError(outcome.refusal);
+					}
+					return result;
+				},
+				kind?.kind,
+				params.arguments,
+			);
 		},
-		async close() {
-			if (closed) return;
+		close() {
+			if (closing) return closing;
+			const outcome = Promise.withResolvers<void>();
+			closing = outcome.promise;
 			closed = true;
-			bridge.host.close();
+			void (async () => {
+				bridge.host.close();
+				if ("close" in memory && typeof memory.close === "function") await memory.close();
+			})().then(outcome.resolve, outcome.reject);
+			return closing;
 		},
 	};
 	return Object.freeze(hub);

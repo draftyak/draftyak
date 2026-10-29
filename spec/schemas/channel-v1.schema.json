@@ -501,6 +501,9 @@
                       "external": {
                         "type": "boolean"
                       },
+                      "shared": {
+                        "type": "boolean"
+                      },
                       "memberCount": {
                         "type": "integer",
                         "minimum": 0,
@@ -518,6 +521,7 @@
                       "channelId",
                       "type",
                       "external",
+                      "shared",
                       "memberCount",
                       "archived",
                       "member"

@@ -249,7 +249,7 @@ describe("plugin MCP serving", () => {
 		);
 	});
 
-	it("returns an ordinary handler record as matching structured and text content", async () => {
+	it("returns an ordinary handler record as structured content with one fixed text block", async () => {
 		await withConnection(
 			entry([
 				{
@@ -267,10 +267,9 @@ describe("plugin MCP serving", () => {
 				expect(reply.result).toMatchObject({
 					structuredContent: { echoed: { count: 7 }, complete: true },
 				});
-				const content = reply.result?.content as { type: string; text: string }[];
-				expect(content).toHaveLength(1);
-				expect(content[0]?.type).toBe("text");
-				expect(JSON.parse(content[0]?.text ?? "")).toEqual(reply.result?.structuredContent);
+				expect(reply.result?.content).toEqual([
+					{ type: "text", text: "Result in structuredContent." },
+				]);
 				expect(reply.result?.isError).not.toBe(true);
 			},
 		);

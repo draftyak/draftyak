@@ -6,6 +6,8 @@ import { Base64Url } from "./scalars.ts";
 
 export const HOST_FRAME_TAG = "\u001e";
 export const HOST_MAX_FRAME_BYTES = 1_048_576;
+// The smallest ws.message frame (one-character socketId, empty data) is 80 bytes.
+export const HOST_MAX_WS_DATA_LENGTH: number = HOST_MAX_FRAME_BYTES - 80;
 export const HOST_MAX_HEADER_BYTES = 16_384;
 export const HOST_MAX_ACTIVE_REQUESTS = 16;
 export const HOST_REQUEST_TIMEOUT_MS = 30_000;
@@ -15,12 +17,21 @@ export const HOST_JSON_MEMBER_MAX_DECODED_BYTES = 33_554_432;
 export const HOST_JSON_MEMBER_MAX_DEPTH = 64;
 export const HOST_JSON_MEMBER_MAX_NODES = 65_536;
 export const HOST_JSON_MEMBER_MAX_ERROR_BYTES = 65_536;
+export const LOOKUP_PERMIT_META_KEY = "io.github.draftyak/lookup-permit";
+
+// Exactly 32 bytes, including the canonical zero unused bits of the last character.
+export const LookupPermit: z.ZodString = Base64Url.length(43).meta({
+	description: "A parent-issued lookup grant: 32 bytes as canonical unpadded base64url.",
+});
+export type LookupPermit = z.infer<typeof LookupPermit>;
 
 const NO_LINE_BREAK = { not: { pattern: "[\\u000a\\u000d\\u2028\\u2029]" } };
 function singleLine(schema: z.ZodString): z.ZodString {
 	return schema.refine((text) => !/[\r\n\u2028\u2029]/.test(text)).meta(NO_LINE_BREAK);
 }
 const Text = singleLine(z.string().max(8192));
+// JSON escaping keeps line breaks off the wire; the frame bound decides the exact size.
+const WsData = z.string().max(HOST_MAX_WS_DATA_LENGTH);
 const Id = singleLine(
 	z
 		.string()
@@ -72,12 +83,14 @@ export interface HostFetchParams {
 	readonly sendTicket?: unknown;
 	readonly saveAs?: HostSaveAs;
 	readonly stream?: boolean;
+	readonly lookupPermit?: LookupPermit;
 }
 const fetchFields = {
 	url: Text.min(1),
 	headers: HostHeaders,
 	body: Bytes.optional(),
 	sendTicket: z.unknown().optional(),
+	lookupPermit: LookupPermit.optional(),
 };
 export const HostFetchParams: z.ZodType<HostFetchParams> = z.union([
 	z.strictObject({
@@ -227,7 +240,7 @@ export const HostNotification: z.ZodType<HostNotification> = z.union([
 	z.strictObject({
 		jsonrpc: z.literal("2.0"),
 		method: z.literal("host/ws.message"),
-		params: z.strictObject({ socketId: Id, data: Text }),
+		params: z.strictObject({ socketId: Id, data: WsData }),
 	}),
 ]);
 export const HostMessage: z.ZodType<HostRequest | HostReply | HostNotification> = z.union([

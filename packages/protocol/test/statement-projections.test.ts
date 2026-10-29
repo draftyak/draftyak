@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { exampleSnapshot, SNAPSHOT_IAT, scheduleAt } from "../scripts/vectors/snapshot.ts";
+import {
+	exampleSnapshot,
+	SNAPSHOT_IAT,
+	scheduleAt,
+	snapshotVectors,
+} from "../scripts/vectors/snapshot.ts";
 import { example } from "../scripts/vectors/statements/send.ts";
 import { type Flag, FlagsError, flagsHash } from "../src/flags.ts";
-import { sendWindow } from "../src/snapshot.ts";
+import { contentHash, SendSnapshotV1, sendWindow } from "../src/snapshot.ts";
 import {
 	baseFields,
 	checkFlagsAcked,
@@ -27,6 +32,54 @@ function changingFlags(): Flag[] {
 }
 
 describe("statement checks use one validated caller projection", () => {
+	it("refuses only legacy chat admission even with its matching hash and exact window", () => {
+		const legacy = SendSnapshotV1.parse(
+			snapshotVectors().find((vector) => vector.id === "chat-thread")?.snapshot,
+		);
+		if (legacy.kind !== "chat") throw new Error("expected legacy chat fixture");
+		for (const shared of [undefined, false, true]) {
+			const snapshot =
+				shared === undefined
+					? legacy
+					: SendSnapshotV1.parse({ ...legacy, chat: { ...legacy.chat, shared } });
+			const window = sendWindow(snapshot, SNAPSHOT_IAT);
+			const statement = SendStatement.parse({
+				...example(),
+				contentHash: contentHash(snapshot),
+				...window,
+			});
+			expect(statement.contentHash).toBe(contentHash(snapshot));
+			expect(statement.notBefore).toBe(window.notBefore ?? null);
+			expect(statement.deliverBy).toBe(window.deliverBy);
+			expect(checkSendWindow(statement, snapshot)).toBe(shared !== undefined);
+		}
+	});
+
+	it("uses the same strict current snapshot projection for window calculation", () => {
+		const legacy = SendSnapshotV1.parse(
+			snapshotVectors().find((vector) => vector.id === "chat-thread")?.snapshot,
+		);
+		if (legacy.kind !== "chat") throw new Error("expected chat fixture");
+		const stable = { ...legacy, chat: { ...legacy.chat, shared: false } };
+		const statement = SendStatement.parse({
+			...example(),
+			contentHash: contentHash(stable),
+			...sendWindow(stable, SNAPSHOT_IAT),
+		});
+		let reads = 0;
+		const snapshot = {
+			...stable,
+			chat: {
+				...stable.chat,
+				get shared() {
+					return ++reads === 1 ? false : undefined;
+				},
+			},
+		};
+		expect(checkSendWindow(statement, snapshot)).toBe(true);
+		expect(reads).toBe(1);
+	});
+
 	it("keeps acknowledgement requirements from the flag value that was validated", () => {
 		expect(requiredAckCodes(changingFlags())).toEqual(["NEW_RECIPIENT"]);
 	});

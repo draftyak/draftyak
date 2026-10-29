@@ -672,6 +672,9 @@
             "external": {
               "type": "boolean"
             },
+            "shared": {
+              "type": "boolean"
+            },
             "memberCount": {
               "type": "integer",
               "minimum": 0,
@@ -727,7 +730,7 @@
     }
   ],
   "title": "SendSnapshotV1",
-  "description": "The exact frozen send content. Body and footer are Unicode 17 NFC with LF line endings; claim-time MIME fields are absent.",
+  "description": "The exact frozen send content. Body and footer are Unicode 17 NFC with LF line endings; claim-time MIME fields are absent. Legacy sharing-field absence is preserved without authorizing a current send.",
   "$defs": {
     "draftyak.normalized-change.MediaType": {
       "type": "string",

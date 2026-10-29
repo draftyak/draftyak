@@ -124,6 +124,8 @@ export interface SnapshotChat {
 	readonly channelName: string;
 	readonly channelType: ChatChannelType;
 	readonly external: boolean;
+	/** Absent only on legacy snapshots; current send admission requires an explicit sharing fact. */
+	readonly shared?: boolean;
 	readonly memberCount: number;
 	readonly threadTs?: string;
 	readonly broadcast: boolean;
@@ -145,6 +147,11 @@ export type SendSnapshotV1 = SnapshotBase &
 	(
 		| { readonly kind: "email"; readonly email: SnapshotEmail }
 		| { readonly kind: "chat"; readonly conversation: string; readonly chat: SnapshotChat }
+	);
+export type CurrentSendSnapshotV1 = SendSnapshotV1 &
+	(
+		| { readonly kind: "email" }
+		| { readonly kind: "chat"; readonly chat: SnapshotChat & { readonly shared: boolean } }
 	);
 const fields = {
 	v: z.literal(1),
@@ -207,43 +214,64 @@ const email = z
 	.meta({
 		anyOf: ["to", "cc", "bcc"].map((name) => ({ properties: { [name]: { minItems: 1 } } })),
 	});
-const chat = z
-	.strictObject({
-		channelId: ProviderId,
-		channelName: line(256),
-		channelType: ChatChannelType,
-		external: z.boolean(),
-		memberCount: z.int().min(0),
-		threadTs: ProviderId.optional(),
-		broadcast: z.boolean(),
-	})
-	.refine((value) => value.threadTs !== undefined || !value.broadcast, {
-		message: "broadcast needs a thread",
-	})
-	.meta({
-		anyOf: [{ properties: { broadcast: { const: false } } }, { required: ["threadTs"] }],
-	});
-export const SendSnapshotV1: z.ZodType<SendSnapshotV1> = z
-	.discriminatedUnion("kind", [
-		z.strictObject({ ...fields, kind: z.literal("email"), email }),
-		z.strictObject({ ...fields, kind: z.literal("chat"), conversation: Ulid, chat }),
-	])
-	.superRefine((snapshot, context) => {
-		function inspect(value: unknown, path: (string | number)[]): void {
-			if (value === undefined) {
-				context.addIssue({ code: "custom", message: "undefined member", path });
-			} else if (value !== null && typeof value === "object") {
-				for (const [key, child] of Object.entries(value))
-					inspect(child, [...path, Array.isArray(value) ? Number(key) : key]);
+const chatSchema = <Shared extends z.ZodType>(shared: Shared) =>
+	z
+		.strictObject({
+			channelId: ProviderId,
+			channelName: line(256),
+			channelType: ChatChannelType,
+			external: z.boolean(),
+			shared,
+			memberCount: z.int().min(0),
+			threadTs: ProviderId.optional(),
+			broadcast: z.boolean(),
+		})
+		.refine((value) => value.threadTs !== undefined || !value.broadcast, {
+			message: "broadcast needs a thread",
+		})
+		.meta({
+			anyOf: [{ properties: { broadcast: { const: false } } }, { required: ["threadTs"] }],
+		});
+const snapshotSchema = <Chat extends SnapshotChat>(chat: z.ZodType<Chat>) =>
+	z
+		.discriminatedUnion("kind", [
+			z.strictObject({ ...fields, kind: z.literal("email"), email }),
+			z.strictObject({ ...fields, kind: z.literal("chat"), conversation: Ulid, chat }),
+		])
+		.superRefine((snapshot, context) => {
+			function inspect(value: unknown, path: (string | number)[]): void {
+				if (value === undefined) {
+					context.addIssue({ code: "custom", message: "undefined member", path });
+				} else if (value !== null && typeof value === "object") {
+					for (const [key, child] of Object.entries(value))
+						inspect(child, [...path, Array.isArray(value) ? Number(key) : key]);
+				}
 			}
-		}
-		inspect(snapshot, []);
-	})
-	.meta({
-		title: "SendSnapshotV1",
-		description:
-			"The exact frozen send content. Body and footer are Unicode 17 NFC with LF line endings; claim-time MIME fields are absent.",
-	});
+			inspect(snapshot, []);
+		});
+export const SendSnapshotV1: z.ZodType<SendSnapshotV1> = snapshotSchema(
+	chatSchema(z.boolean().optional()),
+).meta({
+	title: "SendSnapshotV1",
+	description:
+		"The exact frozen send content. Body and footer are Unicode 17 NFC with LF line endings; claim-time MIME fields are absent. Legacy sharing-field absence is preserved without authorizing a current send.",
+});
+
+/** Structural current-send admission; it never inserts a sharing fact into legacy signed bytes. */
+export const CurrentSendSnapshotV1: z.ZodType<CurrentSendSnapshotV1> = snapshotSchema(
+	chatSchema(z.boolean()),
+).meta({
+	title: "CurrentSendSnapshotV1",
+	description: "Current sends require the explicit frozen chat sharing fact; email is unchanged.",
+});
+
+export function checkCurrentSendSnapshot(snapshot: unknown): snapshot is CurrentSendSnapshotV1 {
+	try {
+		return CurrentSendSnapshotV1.safeParse(snapshot).success;
+	} catch {
+		return false;
+	}
+}
 
 export function contentHash(snapshot: SendSnapshotV1): string {
 	const result = SendSnapshotV1.safeParse(snapshot);

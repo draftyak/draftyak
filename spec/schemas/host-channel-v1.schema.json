@@ -103,6 +103,13 @@
                       ]
                     },
                     "sendTicket": {},
+                    "lookupPermit": {
+                      "type": "string",
+                      "minLength": 43,
+                      "maxLength": 43,
+                      "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$(?![\\s\\S])",
+                      "description": "A parent-issued lookup grant: 32 bytes as canonical unpadded base64url."
+                    },
                     "method": {
                       "type": "string",
                       "enum": [
@@ -207,6 +214,13 @@
                       ]
                     },
                     "sendTicket": {},
+                    "lookupPermit": {
+                      "type": "string",
+                      "minLength": 43,
+                      "maxLength": 43,
+                      "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$(?![\\s\\S])",
+                      "description": "A parent-issued lookup grant: 32 bytes as canonical unpadded base64url."
+                    },
                     "method": {
                       "type": "string",
                       "const": "GET"
@@ -899,10 +913,7 @@
                 },
                 "data": {
                   "type": "string",
-                  "maxLength": 8192,
-                  "not": {
-                    "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
-                  }
+                  "maxLength": 1048496
                 }
               },
               "required": [
