@@ -33,7 +33,7 @@ const RUST_CRYPTO: &[(&str, &str)] = &[
     ("block-buffer", "0.12.1"),
     ("const-oid", "0.10.2"),
     ("cpufeatures", "0.3.1"),
-    ("crypto-bigint", "0.7.5"),
+    ("crypto-bigint", "0.7.10"),
     ("crypto-common", "0.2.2"),
     ("der", "0.8.2"),
     ("digest", "0.11.3"),
