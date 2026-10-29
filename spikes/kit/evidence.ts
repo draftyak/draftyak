@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PINNED_IMAGE } from "./docker.ts";
 import { exec, sleep } from "./exec.ts";
+import { evidenceStatusArgs } from "./provenance.ts";
 import { gitEnv } from "./repo.ts";
 
 export interface MachineLoad {
@@ -25,25 +26,7 @@ export interface Fingerprint {
 
 const round1 = (value: number): number => Math.round(value * 10) / 10;
 
-// Include non-ignored untracked inputs, even outside cwd. A recorder may exempt only exact JSON
-// outputs it writes, never an evidence directory: that directory can also hold executable inputs.
-export function evidenceStatusArgs(
-	cwd: string,
-	generatedOutputs: readonly string[] = [],
-): string[] {
-	const exclusions = generatedOutputs.map((file) => {
-		const output = path.resolve(cwd, file);
-		if (path.basename(path.dirname(output)) !== "evidence" || path.extname(output) !== ".json") {
-			throw new Error("generated output must be an exact evidence/*.json file");
-		}
-		const relative = path.relative(cwd, output).split(path.sep).join("/");
-		if (relative.startsWith("../") || path.isAbsolute(relative)) {
-			throw new Error("generated output must be inside cwd");
-		}
-		return `:(exclude,literal)${relative}`;
-	});
-	return ["status", "--porcelain", "--untracked-files=all", "--", ":/", ...exclusions];
-}
+export { evidenceStatusArgs } from "./provenance.ts";
 
 // Busy share of all cores over `ms` (os.loadavg() is always 0 on Windows).
 export async function sampleCpu(ms = 1000): Promise<number> {
@@ -78,6 +61,21 @@ export async function concurrentBuilds(): Promise<number | null> {
 	return listing.stdout.split(/\r?\n/).filter((line) => BUILD_TOOLS.has(name(line))).length;
 }
 
+// The commit and dirty state fingerprint() records for the repository at `cwd`; null where git
+// can't tell.
+export async function sourceState(cwd: string): Promise<Pick<Fingerprint, "commit" | "dirty">> {
+	const git = (...args: string[]) => exec("git", ["-C", cwd, ...args], { env: gitEnv() });
+	const [head, status] = await Promise.all([
+		git("rev-parse", "HEAD").catch(() => null),
+		git(...evidenceStatusArgs(cwd)).catch(() => null),
+	]);
+	const sha = head?.code === 0 ? head.stdout.trim() : "";
+	return {
+		commit: /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sha) ? sha : null,
+		dirty: status?.code === 0 ? status.stdout.trim() !== "" : null,
+	};
+}
+
 // OS build, Node, commit, machine load and concurrent builds, recorded with every evidence file.
 export async function fingerprint(
 	options: { readonly cwd?: string; readonly sampleMs?: number } = {},
@@ -89,13 +87,7 @@ export async function fingerprint(
 		memoryUsedPercent: round1(100 * (1 - os.freemem() / os.totalmem())),
 		concurrentBuilds: await concurrentBuilds(),
 	};
-	const cwd = options.cwd ?? process.cwd();
-	const git = (...args: string[]) => exec("git", ["-C", cwd, ...args], { env: gitEnv() });
-	const [head, status] = await Promise.all([
-		git("rev-parse", "HEAD").catch(() => null),
-		git(...evidenceStatusArgs(cwd)).catch(() => null),
-	]);
-	const sha = head?.code === 0 ? head.stdout.trim() : "";
+	const { commit, dirty } = await sourceState(options.cwd ?? process.cwd());
 	return {
 		os: {
 			platform: process.platform,
@@ -104,8 +96,8 @@ export async function fingerprint(
 			osVersion: os.release(),
 		},
 		node: { nodeVersion: process.versions.node, v8Version: process.versions.v8 },
-		commit: /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sha) ? sha : null,
-		dirty: status?.code === 0 ? status.stdout.trim() !== "" : null,
+		commit,
+		dirty,
 		load,
 	};
 }

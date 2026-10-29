@@ -43,7 +43,7 @@ function fixture(): { root: string; cli: string } {
 		path.join(root, "workspace/tsconfig.base.json"),
 	);
 	const require = createRequire(import.meta.url);
-	for (const name of ["typescript", "@types/node"]) {
+	for (const name of ["typescript", "@types/node", "rolldown"]) {
 		const target = realpathSync(path.dirname(require.resolve(`${name}/package.json`)));
 		const link = path.join(cli, "node_modules", name);
 		mkdirSync(path.dirname(link), { recursive: true });

@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod device_api;
 pub mod flags;
 pub mod hash;
 pub mod jcs;

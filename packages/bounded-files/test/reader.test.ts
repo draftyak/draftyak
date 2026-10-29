@@ -66,7 +66,7 @@ test("keeps exact maximum and expected-size neighbors distinct", () => {
 });
 
 test("returns independent exact bytes across multiple chunks", () => {
-	const body = Buffer.alloc(131_073, 0xa5),
+	const body = Buffer.from(Array.from({ length: 131_073 }, (_, index) => (index % 251) ^ 0xa5)),
 		{ file } = fixture(body);
 	const result = readBoundedRegularFile(file, { maximum: body.length, expectedSize: body.length });
 	assert.deepEqual(result, body);
@@ -119,6 +119,56 @@ test("refuses directory junctions or symlinks instead of canonicalizing through 
 	}
 });
 
+function sameEntry(a: string, b: string): boolean {
+	try {
+		const left = lstatSync(a, { bigint: true }),
+			right = lstatSync(b, { bigint: true });
+		return left.dev === right.dev && left.ino === right.ino && left.ino !== 0n;
+	} catch {
+		return false;
+	}
+}
+
+test("refuses case-variant spellings of the file and an ancestor", (context) => {
+	const { root, file } = fixture();
+	const upper = path.join(path.dirname(root), path.basename(root).toUpperCase());
+	const folds = sameEntry(upper, root) && realpathSync.native(upper) === root;
+	if (process.platform !== "win32" && !folds)
+		context.skip("case variants are distinct names or keep their spelling on this filesystem");
+	assert.deepEqual(readBoundedRegularFile(file, { maximum: 1024 }), Buffer.from("synthetic"));
+	for (const variant of [
+		path.join(root, path.basename(file).toLowerCase()),
+		path.join(upper, path.basename(file)),
+		path.join(upper, "PRIVATE_missing.bin"),
+	])
+		refused(() => readBoundedRegularFile(variant, { maximum: 1024 }), "path");
+});
+
+test("refuses a lowercase drive letter", (context) => {
+	if (process.platform !== "win32") context.skip("drive letters exist only on Windows");
+	const { root, file } = fixture();
+	assert.match(root, /^[A-Z]:\\/);
+	const lower = (name: string) => name.charAt(0).toLowerCase() + name.slice(1);
+	for (const variant of [lower(file), lower(path.join(root, "PRIVATE_missing.bin"))])
+		refused(() => readBoundedRegularFile(variant, { maximum: 1024 }), "path");
+});
+
+test("refuses an 8.3 short-name ancestor where the volume provides one", (context) => {
+	if (process.platform !== "win32") context.skip("8.3 short names exist only on Windows volumes");
+	const { root } = fixture();
+	const long = path.join(root, "longdirectoryname"),
+		short = path.join(root, "LONGDI~1");
+	mkdirSync(long);
+	writeFileSync(path.join(long, "input.bin"), "synthetic");
+	if (!sameEntry(short, long)) context.skip("this volume creates no 8.3 short names");
+	assert.deepEqual(
+		readBoundedRegularFile(path.join(long, "input.bin"), { maximum: 1024 }),
+		Buffer.from("synthetic"),
+	);
+	for (const variant of [path.join(short, "input.bin"), path.join(short, "PRIVATE_missing.bin")])
+		refused(() => readBoundedRegularFile(variant, { maximum: 1024 }), "path");
+});
+
 // Each subprocess owns its filesystem interception; no global mock survives a case.
 const mutations = `
 import assert from 'node:assert/strict';
@@ -133,17 +183,34 @@ const parent=path.join(root,'parent'),moved=path.join(root,'moved'),replacement=
 fs.mkdirSync(parent);
 fs.mkdirSync(replacement);
 const file=path.join(parent,'PRIVATE_INPUT_CANARY.bin'),old=path.join(parent,'old.bin');
-const body=Buffer.alloc(effect==='chunks'?131073:9,0xa5);
+const rewrite={'same-tick-whole':{at:0,from:0},'same-tick-write':{at:65536,from:0},'same-tick-tail':{at:131072,from:65536}}[effect],sameTick=rewrite!==undefined;
+// A 251-byte period never aligns with a chunk offset, so no two chunks hold the same bytes.
+const pattern=(length,seed)=>Buffer.from(Array.from({length},(_,i)=>(i%251)^seed));
+const body=pattern(effect==='chunks'||sameTick?131073:9,0xa5),rewritten=pattern(body.length,0x5a);
 fs.writeFileSync(file,body);
 if(effect==='streams'){
  fs.writeFileSync(file+':extra',Buffer.from('STREAM_CANARY'));
  assert.deepEqual(fs.readFileSync(file+':extra'),Buffer.from('STREAM_CANARY'));
  if(process.platform==='win32')assert.deepEqual(fs.readFileSync(file+'::$DATA'),body);
 }
-const native={open:fs.openSync,close:fs.closeSync,lstat:fs.lstatSync,read:fs.readSync,fstat:fs.fstatSync};
+// Pinned timestamps stand in for one coarse clock tick. Respelled native names stand in for
+// case-only renames, which Windows refuses for ancestors of an open file.
+const tick=fs.lstatSync(file,{bigint:true}),writer=sameTick?fs.openSync(file,'r+'):undefined;
+const respell={'chain-spelling':'chain','chain-respelled':'chain','file-spelling':'file','file-respelled':'file'}[effect];
+const native={open:fs.openSync,close:fs.closeSync,lstat:fs.lstatSync,read:fs.readSync,fstat:fs.fstatSync,realpath:fs.realpathSync.native};
 const readerFds=new Set();
 let opens=0,closes=0,metadata=0,mutated=false,probe=false,offset=0,substituted=false,readerFd,openedSnapshot;
+let second=false,eof=false,spellings=0,rewrote=false;
 const refused=(run,code)=>assert.throws(run,error=>error instanceof BoundedFileError&&error.code===code&&error.message==='Bounded file operation refused.'&&!error.message.includes('PRIVATE'));
+const pin=stat=>{
+ if(sameTick&&stat.ino===tick.ino)for(const field of ['mtimeNs','ctimeNs'])Object.defineProperty(stat,field,{value:tick[field]});
+ return stat;
+};
+const spelled=name=>{
+ if(respell==='chain'&&(name===parent||name.startsWith(parent+path.sep)))return path.join(root,'PARENT')+name.slice(parent.length);
+ if(respell==='file'&&name===file)return path.join(parent,'private_input_canary.bin');
+ return name;
+};
 if(effect==='parent-swap')assert.deepEqual(readBoundedRegularFile(file,{maximum:body.length}),body);
 try{
  fs.lstatSync=(...args)=>{
@@ -160,7 +227,13 @@ try{
   }
   const stat=native.lstat(...args);
   if(effect==='zero-inode'&&args[0]===file)Object.defineProperty(stat,'ino',{value:0n});
-  return stat;
+  return pin(stat);
+ };
+ fs.fstatSync=(...args)=>pin(native.fstat(...args));
+ fs.realpathSync.native=(...args)=>{
+  if(args[0]===file)spellings++;
+  const real=native.realpath(...args);
+  return effect.endsWith('-spelling')||eof?spelled(real):real;
  };
  fs.openSync=(...args)=>{
   const reader=typeof args[1]==='number'&&(args[1]&(fs.constants.O_WRONLY|fs.constants.O_RDWR))===0;
@@ -170,7 +243,12 @@ try{
  fs.closeSync=fd=>{if(readerFds.delete(fd))closes++;return native.close(fd);};
  fs.readSync=(fd,buffer,start,length,position)=>{
   assert.equal(typeof position,'number');assert(length<=65536);
+  if(sameTick&&!rewrote&&position===rewrite.at){
+   rewrote=true;const tail=rewritten.subarray(rewrite.from);
+   assert.equal(fs.writeSync(writer,tail,0,tail.length,rewrite.from),tail.length);
+  }
   if(effect==='chunks'){
+   if(probe&&!second&&position===0){second=true;offset=0;}
    assert.equal(position,offset);
    const count=native.read(fd,buffer,start,Math.min(length,4093),position);offset+=count;
    if(count===0)probe=true;
@@ -186,6 +264,7 @@ try{
    if(effect==='timestamps')fs.utimesSync(file,new Date(0),new Date(0));
   }
   const count=native.read(fd,buffer,start,length,position);
+  if(position===body.length&&count===0)eof=true;
   if(effect==='parent-swap'&&position===body.length){assert.equal(count,0);probe=true;}
   if(effect==='growth'){
    if(position===0)fs.appendFileSync(file,'x');
@@ -211,15 +290,27 @@ try{
   for(const options of [undefined,{},null,[],{maximum:0},{maximum:-1},{maximum:1.5},{maximum:NaN},{maximum:Infinity},{maximum:536870913},{maximum:4,minimum:-1},{maximum:4,minimum:5},{maximum:4,minimum:0.5},{maximum:4,expectedSize:-1},{maximum:4,expectedSize:5},{maximum:4,expectedSize:0.5},{maximum:4,minimum:2,expectedSize:1}])refused(()=>readBoundedRegularFile(file,options),'bounds');
   assert.equal(opens,0);assert.equal(metadata,0);assert.equal(closes,0);
  }else if(effect==='chunks'){
-  assert.deepEqual(readBoundedRegularFile(file,{maximum:body.length}),body);assert(probe);assert.equal(offset,body.length);
+  assert.deepEqual(readBoundedRegularFile(file,{maximum:body.length}),body);assert(probe);assert(second);assert.equal(offset,body.length);
+ }else if(effect.endsWith('-spelling')){
+  refused(()=>readBoundedRegularFile(file,{maximum:1024}),'path');
+  assert.equal(spellings,respell==='file'?1:0,'ancestors are refused before the file is examined');
+  assert.equal(opens,0);assert.equal(closes,0);
+ }else if(effect.endsWith('-respelled')){
+  refused(()=>readBoundedRegularFile(file,{maximum:1024}),'path');
+  assert(eof);assert.equal(spellings,respell==='file'?2:1,'ancestors are rechecked before the file name');
+ }else if(effect==='same-tick-whole'){
+  assert.deepEqual(readBoundedRegularFile(file,{maximum:body.length}),rewritten);assert(rewrote);
+ }else if(sameTick){
+  refused(()=>readBoundedRegularFile(file,{maximum:body.length}),'file');assert(rewrote);
  }else{
   refused(()=>readBoundedRegularFile(file,{maximum:body.length}),effect==='parent-swap'?'path':'file');
   assert(mutated);if(effect==='growth'||effect==='parent-swap')assert(probe);
   if(effect==='parent-swap'&&process.platform==='win32')assert(substituted);
  }
- if(!['bounds','paths','zero-inode','streams'].includes(effect)){assert.equal(opens,1);assert.equal(closes,1);}
+ if(!['bounds','paths','zero-inode','streams','chain-spelling','file-spelling'].includes(effect)){assert.equal(opens,1);assert.equal(closes,1);}
 }finally{
- fs.openSync=native.open;fs.closeSync=native.close;fs.lstatSync=native.lstat;fs.readSync=native.read;syncBuiltinESMExports();
+ fs.openSync=native.open;fs.closeSync=native.close;fs.lstatSync=native.lstat;fs.fstatSync=native.fstat;fs.readSync=native.read;fs.realpathSync.native=native.realpath;syncBuiltinESMExports();
+ if(writer!==undefined)native.close(writer);
  assert.equal(path.dirname(root),fs.realpathSync.native(tmpdir()));assert(path.basename(root).startsWith('draftyak-bounded-mutate-'));assert.equal(fs.realpathSync.native(root),root);assert.equal(native.lstat(root).isSymbolicLink(),false);fs.rmSync(root,{recursive:true,force:true});
 }
 `;
@@ -229,13 +320,20 @@ for (const [effect, description] of [
 	["paths", "validates canonical path spelling before filesystem access"],
 	["streams", "refuses Windows stream aliases before I/O and preserves POSIX colon files"],
 	["zero-inode", "refuses an unidentifiable native file before open"],
-	["chunks", "uses bounded positional short reads and a real EOF probe"],
+	["chunks", "uses bounded positional short reads, a real EOF probe and a matching second pass"],
 	["open-replace", "refuses a same-byte replacement between metadata and open"],
 	["read-replace", "refuses a same-byte replacement of an open file's name"],
 	["truncate", "refuses truncation during a read"],
 	["growth", "detects a real extra byte beyond the frozen size"],
 	["timestamps", "refuses changed timestamps even when bytes and size match"],
+	["same-tick-write", "refuses a same-size in-place write that leaves every timestamp unchanged"],
+	["same-tick-tail", "refuses a same-tick write that changes only bytes after the first chunk"],
+	["same-tick-whole", "returns one whole version when a same-tick write precedes the first chunk"],
 	["parent-swap", "refuses changed ancestor identity while the open file remains the same"],
+	["chain-spelling", "refuses an ancestor's differing native spelling before examining the file"],
+	["file-spelling", "refuses the file's differing native spelling before opening it"],
+	["chain-respelled", "refuses an ancestor respelled during the read before the file's recheck"],
+	["file-respelled", "refuses a file name respelled during the read"],
 ] as const) {
 	test(description, () => {
 		const child = spawnSync(

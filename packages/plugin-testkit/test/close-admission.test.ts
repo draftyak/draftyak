@@ -18,8 +18,12 @@ it("refuses a lookup closed after its inner interruption check before final admi
 			queueMicrotask(() =>
 				queueMicrotask(() =>
 					queueMicrotask(() => {
-						bridge.host.close();
-						closed = true;
+						queueMicrotask(() =>
+							queueMicrotask(() => {
+								bridge.host.close();
+								closed = true;
+							}),
+						);
 					}),
 				),
 			);

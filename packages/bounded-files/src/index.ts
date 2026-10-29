@@ -29,6 +29,7 @@ export interface BoundedReadOptions {
 }
 
 const hardMaximum = 512 * 1024 * 1024;
+const chunkLimit = 64 * 1024;
 
 function refuse(code: BoundedFileCode): never {
 	throw new BoundedFileError(code);
@@ -137,6 +138,13 @@ function sameSnapshot(a: BigIntStats, b: BigIntStats): boolean {
 	);
 }
 
+function readChunk(fd: number, target: Buffer, at: number, position: number, size: number): number {
+	const wanted = Math.min(chunkLimit, size - position);
+	const count = readSync(fd, target, at, wanted, position);
+	if (!Number.isSafeInteger(count) || count < 1 || count > wanted) refuse("file");
+	return count;
+}
+
 /** Read one bounded canonical regular-file snapshot; no discovery, retries or link following. */
 export function readBoundedRegularFile(raw: unknown, options: BoundedReadOptions): Buffer {
 	let fd: number | undefined;
@@ -162,15 +170,17 @@ export function readBoundedRegularFile(raw: unknown, options: BoundedReadOptions
 		const opened = fstatSync(fd, { bigint: true });
 		regular(opened);
 		if (!sameSnapshot(before, opened)) refuse("file");
-		const bytes = Buffer.alloc(Number(opened.size));
-		let offset = 0;
-		while (offset < bytes.length) {
-			const wanted = Math.min(64 * 1024, bytes.length - offset);
-			const count = readSync(fd, bytes, offset, wanted, offset);
-			if (!Number.isSafeInteger(count) || count < 1 || count > wanted) refuse("file");
+		const size = Number(opened.size);
+		const bytes = Buffer.alloc(size);
+		for (let offset = 0; offset < size; ) offset += readChunk(fd, bytes, offset, offset, size);
+		if (readSync(fd, Buffer.alloc(1), 0, 1, size) !== 0) refuse("file");
+		// Timestamps miss same-size in-place writes within one tick; a second pass must match.
+		const again = Buffer.alloc(Math.min(chunkLimit, size));
+		for (let offset = 0; offset < size; ) {
+			const count = readChunk(fd, again, 0, offset, size);
+			if (!again.subarray(0, count).equals(bytes.subarray(offset, offset + count))) refuse("file");
 			offset += count;
 		}
-		if (readSync(fd, Buffer.alloc(1), 0, 1, offset) !== 0) refuse("file");
 		const after = fstatSync(fd, { bigint: true }),
 			named = lstatSync(name, { bigint: true });
 		regular(after);

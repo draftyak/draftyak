@@ -1,14 +1,20 @@
 // node src/record.ts [vitest args]: the heavy suite with strict skips, recording this machine's
 // evidence/load-<host>.json, the matrix and bench-<host>.json. Other local heavy runs (verify:m0)
 // leave evidence alone.
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import path from "node:path";
-import { type Fingerprint, fingerprint, writeEvidence } from "@draftyak/spike-kit";
+import {
+	EvidenceProvenance,
+	type Fingerprint,
+	fingerprint,
+	writeEvidence,
+} from "@draftyak/spike-kit";
 import {
 	evidenceDir,
 	type HostLoads,
 	installedBasis,
 	type LoadRun,
+	MATRIX,
 	writeMatrix,
 } from "./matrix.ts";
 import { hostTarget, spikeDir } from "./prebuilds.ts";
@@ -33,21 +39,28 @@ export function selectedNodes(
 	throw new Error(`DRAFTYAK_NODES is both, minimum or bundled, not "${value}"`);
 }
 
-// Tracked changes anywhere in the repository but <dir>/evidence; null when git can't tell. GIT_*
-// variables from a hook or `rebase -x` would point git at another repository.
+const provenance = new EvidenceProvenance(spikeDir);
+
+// Root-wide inputs, exempting only unchanged successful outputs owned by this process.
 export function codeChanged(dir: string = spikeDir): boolean | null {
-	const env = Object.fromEntries(
-		Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)),
-	);
-	const args = ["status", "--porcelain", "--untracked-files=no", "--", ":/", ":(exclude)evidence"];
-	const status = spawnSync("git", args, { cwd: dir, encoding: "utf8", env, windowsHide: true });
-	return status.status === 0 ? status.stdout.trim() !== "" : null;
+	return path.resolve(dir) === path.resolve(spikeDir)
+		? provenance.dirty()
+		: new EvidenceProvenance(dir).dirty();
 }
 
-// One record run writes several evidence files, and those written first aren't code changes.
-export async function codeFingerprint(): Promise<Fingerprint> {
-	const print = await fingerprint({ cwd: spikeDir });
-	return { ...print, dirty: codeChanged() ?? print.dirty };
+export function codeFingerprint(): Promise<Fingerprint> {
+	return provenance.fingerprint(() => fingerprint({ cwd: spikeDir }));
+}
+
+export async function writeCodeEvidence(
+	file: string,
+	data: Readonly<Record<string, unknown>>,
+	print?: Fingerprint,
+): Promise<string> {
+	const sampled = print ?? (await codeFingerprint());
+	return provenance.write(file, () =>
+		writeEvidence(file, data, { fingerprint: { ...sampled, dirty: codeChanged() } }),
+	);
 }
 
 export type Planned = Pick<LoadRun, "target" | "nodeVersion" | "via">;
@@ -70,8 +83,12 @@ export async function writeLoadEvidence(
 	const host = hostTarget();
 	const data: HostLoads = { host, package: pkg, napiExpected, runs };
 	const file = path.join(evidenceDir, `load-${host}.json`);
-	const written = [await writeEvidence(file, data, { fingerprint: print })];
-	const matrix = env.CI ? null : await writeMatrix(evidenceDir, print);
+	const written = [await writeCodeEvidence(file, data, print)];
+	const matrix = env.CI
+		? null
+		: await provenance.write(path.join(evidenceDir, MATRIX), () =>
+				writeMatrix(evidenceDir, { ...print, dirty: codeChanged() }),
+			);
 	return matrix === null ? written : [...written, matrix];
 }
 
