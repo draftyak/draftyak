@@ -1,4 +1,6 @@
+import { spawnSync } from "node:child_process";
 import {
+	existsSync,
 	linkSync,
 	mkdirSync,
 	mkdtempSync,
@@ -9,13 +11,13 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, type TestContext } from "vitest";
 import { defineExtensionModule, type HubModule } from "../src/module.ts";
 import { approvalCount } from "../src/points/send-policy.ts";
 import { isMigrationDirectoryPath, migrationNumber } from "../src/validation.ts";
 
-// macOS's os.tmpdir() sits under the /var -> /private/var link, which the alias guard refuses.
-const temporaryRoot = realpathSync(os.tmpdir());
+// The folder guard refuses macOS's /var -> /private/var link and the 8.3 TEMP of Windows runners.
+const temporaryRoot = realpathSync.native(os.tmpdir());
 const temporary: string[] = [];
 const directory = (): string => {
 	const root = mkdtempSync(path.join(temporaryRoot, "draftyak-extension-contract-"));
@@ -45,6 +47,17 @@ const refused = (value: unknown): void => {
 	expect(() => defineExtensionModule(value as HubModule)).toThrow(
 		/^Extension module definition refused$/,
 	);
+};
+function skipped(context: TestContext, reason: string): never {
+	console.warn(`Skipped: ${reason}`);
+	return context.skip(reason);
+}
+const volumeGuidPath = (folder: string): string | undefined => {
+	const listing = spawnSync("mountvol", [`${folder.slice(0, 2)}\\`, "/L"], {
+		encoding: "utf8",
+		windowsHide: true,
+	});
+	return /\\\\\?\\Volume\{[0-9a-f-]+\}\\/i.exec(listing.stdout ?? "")?.[0];
 };
 
 describe("module metadata", () => {
@@ -135,9 +148,7 @@ describe("migration folder declarations", () => {
 		const root = directory();
 		writeFileSync(path.join(root, "0001_initial.sql"), "THIS IS NOT SQL; PRIVATE_CANARY");
 		writeFileSync(path.join(root, "0002_more_tables.sql"), "BEGIN; COMMIT;");
-		expect(defineExtensionModule(definition({ migrations: root })).migrations?.toLowerCase()).toBe(
-			root.toLowerCase(),
-		);
+		expect(defineExtensionModule(definition({ migrations: root })).migrations).toBe(root);
 	});
 	it.each([
 		"initial.sql",
@@ -184,18 +195,98 @@ describe("migration folder declarations", () => {
 		expect(defineExtensionModule(definition({ migrations: canonical })).migrations).toBe(canonical);
 		refused(definition({ migrations: path.join(alias, "migrations") }));
 	});
+	it("refuses a volume GUID junction as the folder or a parent folder", (context) => {
+		if (process.platform !== "win32") skipped(context, "volume GUID junctions are Windows-only");
+		const root = directory();
+		const volume = volumeGuidPath(root);
+		if (volume === undefined) skipped(context, "mountvol reported no volume GUID path");
+		const actual = path.join(root, "actual");
+		const canonical = path.join(actual, "migrations");
+		mkdirSync(canonical, { recursive: true });
+		writeFileSync(path.join(canonical, "0001_initial.sql"), "");
+		expect(defineExtensionModule(definition({ migrations: canonical })).migrations).toBe(canonical);
+		const parent = path.join(root, "parent");
+		const folder = path.join(root, "folder");
+		try {
+			symlinkSync(path.join(volume, actual.slice(3)), parent, "junction");
+			symlinkSync(path.join(volume, canonical.slice(3)), folder, "junction");
+		} catch {
+			skipped(context, "this account cannot create a volume GUID junction");
+		}
+		for (const alias of [path.join(parent, "migrations"), folder]) {
+			expect(realpathSync.native(alias)).toBe(canonical);
+			refused(definition({ migrations: alias }));
+		}
+	});
+	it("refuses parent junctions that only lowercase to their target (U+212A, U+212B)", (context) => {
+		if (process.platform !== "win32") skipped(context, "junctions are Windows-only");
+		const root = directory();
+		for (const [alias, name] of [
+			["\u212Aparent", "kparent"],
+			["\u212Bparent", "\u00E5parent"],
+		] as const) {
+			const canonical = path.join(root, name, "migrations");
+			mkdirSync(canonical, { recursive: true });
+			expect(defineExtensionModule(definition({ migrations: canonical })).migrations).toBe(
+				canonical,
+			);
+			symlinkSync(path.join(root, name), path.join(root, alias), "junction");
+			const migrations = path.join(root, alias, "migrations");
+			expect(migrations.toLowerCase()).toBe(canonical.toLowerCase());
+			refused(definition({ migrations }));
+		}
+	});
+	it("refuses 8.3 short spellings of the folder and of a parent folder", (context) => {
+		if (process.platform !== "win32") skipped(context, "8.3 names are Windows-only");
+		const root = directory();
+		const folder = path.join(root, "longmigrationfolder");
+		const nested = path.join(root, "longparentfolder", "migrations");
+		for (const migrations of [folder, nested]) {
+			mkdirSync(migrations, { recursive: true });
+			writeFileSync(path.join(migrations, "0001_initial.sql"), "");
+			expect(defineExtensionModule(definition({ migrations })).migrations).toBe(migrations);
+		}
+		const short = [path.join(root, "LONGMI~1"), path.join(root, "LONGPA~1", "migrations")];
+		if (!short.every((alias) => existsSync(alias)))
+			skipped(context, "this volume has no 8.3 names");
+		expect(short.map((alias) => realpathSync.native(alias))).toEqual([folder, nested]);
+		for (const alias of short) refused(definition({ migrations: alias }));
+	});
+	it("refuses case-variant spellings of the folder, a parent folder and the drive", (context) => {
+		const root = directory();
+		const canonical = path.join(root, "parent", "migrations");
+		mkdirSync(canonical, { recursive: true });
+		writeFileSync(path.join(canonical, "0001_initial.sql"), "");
+		expect(defineExtensionModule(definition({ migrations: canonical })).migrations).toBe(canonical);
+		const variants = [
+			path.join(root, "parent", "MIGRATIONS"),
+			path.join(root, "PARENT", "migrations"),
+		];
+		if (process.platform === "win32")
+			variants.push(`${canonical.charAt(0).toLowerCase()}${canonical.slice(1)}`);
+		if (!variants.every((variant) => existsSync(variant)))
+			skipped(context, "this file system is case-sensitive");
+		for (const variant of variants) {
+			expect(realpathSync.native(variant)).toBe(canonical);
+			refused(definition({ migrations: variant }));
+		}
+	});
 	it("refuses linked migration files and hard links", () => {
 		const root = directory();
 		const target = path.join(root, "target.sql");
 		writeFileSync(target, "PRIVATE_CANARY");
-		const migrations = path.join(root, "migrations");
-		mkdirSync(migrations);
-		symlinkSync(target, path.join(migrations, "0001_link.sql"), "file");
-		refused(definition({ migrations }));
-		const other = path.join(root, "hardlinks");
-		mkdirSync(other);
-		linkSync(target, path.join(other, "0001_link.sql"));
-		refused(definition({ migrations: other }));
+		const linkAfterAccepting = (name: string, link: (file: string) => void): void => {
+			const migrations = path.join(root, name);
+			const file = path.join(migrations, "0001_link.sql");
+			mkdirSync(migrations);
+			writeFileSync(file, "");
+			expect(defineExtensionModule(definition({ migrations })).migrations).toBe(migrations);
+			rmSync(file);
+			link(file);
+			refused(definition({ migrations }));
+		};
+		linkAfterAccepting("migrations", (file) => symlinkSync(target, file, "file"));
+		linkAfterAccepting("hardlinks", (file) => linkSync(target, file));
 	});
 	it("bounds the folder scan", () => {
 		const root = directory();
