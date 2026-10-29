@@ -357,3 +357,5 @@ export function checkedFileRecord(
 		refuse("file");
 	return Object.freeze({ path: name, sha256: digest, byteLength: size });
 }
+
+export { isKnownSyncedPath } from "./synced-path.ts";
