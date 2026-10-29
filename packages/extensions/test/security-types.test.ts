@@ -60,9 +60,17 @@ function forbiddenCapabilities(registry: ExtensionRegistry<"example">): void {
 function synchronousTransactions(
 	database: ModuleDatabase<"example">,
 	query: { limit(count: number): unknown; then(resolve: (rows: number) => void): void },
+	objectWork: () => object,
 ): void {
 	// @ts-expect-error An explicit unknown result cannot admit a Promise.
 	database.transaction<unknown>(async () => 1);
+	// @ts-expect-error An explicit unknown result cannot admit a callback typed to return object.
+	database.transaction<unknown>((): object => Promise.resolve(1));
+	// @ts-expect-error An explicit unknown result cannot admit a callback typed to return {}.
+	// biome-ignore lint/complexity/noBannedTypes: the empty object type is the case under test.
+	database.transaction<unknown>((): {} => Promise.resolve(1));
+	// @ts-expect-error An explicit unknown result cannot admit a function typed to return object.
+	database.transaction<unknown>(objectWork);
 	// @ts-expect-error An explicit void result cannot admit a Promise.
 	database.transaction<void>(async () => {});
 	// @ts-expect-error An explicit object result cannot admit a Promise.
@@ -81,6 +89,22 @@ function synchronousTransactions(
 	database.transaction(() => JSON.parse("1"));
 	// @ts-expect-error A thenable that is not a PromiseLike is refused too.
 	database.transaction(() => query);
+	// @ts-expect-error An explicit object result cannot admit a thenable that fits it.
+	database.transaction<{ a: number }>(() => Object.assign(Promise.resolve(1), { a: 1 }));
+	// @ts-expect-error An explicit record result cannot admit a thenable that fits it.
+	database.transaction<Record<string, unknown>>(() => query);
+	// @ts-expect-error A callback annotated with a record result that a thenable fits is refused.
+	database.transaction((): Record<string, unknown> => query);
+	// An annotated object result can hide a thenable; the native adapter must refuse one at runtime.
+	const annotated = database.transaction((): { a: number } => ({ a: 1 }));
+	expectTypeOf(annotated).toEqualTypeOf<{ a: number }>();
+	// biome-ignore lint/suspicious/noThenProperty: a data column named then is the case under test.
+	expectTypeOf(database.transaction(() => ({ then: "column" }))).toEqualTypeOf<{ then: string }>();
+	expectTypeOf(database.transaction(() => null)).toEqualTypeOf<null>();
+	const id = <T>(value: T): T => value;
+	expectTypeOf(database.transaction(() => [1, 2] as const)).toEqualTypeOf<readonly [1, 2]>();
+	// @ts-expect-error A const tuple result stays readonly inside a generic call.
+	id(database.transaction(() => [1, 2] as const)).push(1);
 	expectTypeOf(
 		database.transaction((tables) => tables.insert("ext_example_rows", { id: 1 })),
 	).toEqualTypeOf<number>();
