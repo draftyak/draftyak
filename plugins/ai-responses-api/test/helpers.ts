@@ -1,5 +1,15 @@
+import type { ServerResponse } from "node:http";
+import { fileURLToPath } from "node:url";
+import type {
+	AiCandidateRequest,
+	AiRequestBindingWithoutNetwork,
+	ProviderHttpStream,
+	ResponsesMetadataBindingWithoutNetwork,
+} from "@draftyak/hub";
 import type { DraftOutputV1 } from "@draftyak/protocol/draft-output";
+import type { HostStreamChunk } from "@draftyak/protocol/host-channel";
 import type { HostHandler, MemoryHost, PluginServerOptions, StdioHost } from "@draftyak/sdk";
+import type { ResponsesFetch } from "../src/client.ts";
 import type { DraftRequest } from "../src/index.ts";
 
 export const input: DraftRequest = {
@@ -138,4 +148,304 @@ export function streamBytes(host: MemoryHost, streamId: string, bytes: Uint8Arra
 		method: "host/stream.chunk",
 		params: { streamId, sequence, base64: "", done: true },
 	});
+}
+
+export interface NativeProviderFixture {
+	readonly caller: AbortController;
+	readonly handler: HostHandler;
+	readonly fetch: ResponsesFetch;
+	readonly streams: ProviderHttpStream[];
+	readonly notifications: HostStreamChunk[];
+	readonly candidates: AiCandidateRequest[];
+	readonly seen: {
+		methods: string[];
+		paths: string[];
+		bodies: string[];
+		credentialMatched: boolean[];
+		sni: string[];
+	};
+	readonly pendingAcks: (() => void)[];
+	readonly bodyWritten: Promise<void>;
+	readonly peerClosed: Promise<void>;
+	useHost(host: MemoryHost): void;
+	run<T>(work: () => Promise<T>): Promise<T>;
+	acknowledge(): void;
+	generation(): number;
+	rotate(): void;
+	snapshot(
+		candidate: AiCandidateRequest,
+	): ReturnType<typeof import("@draftyak/hub").snapshotVerifiedAiRequest>;
+	close(): Promise<void>;
+}
+
+/** Controlled component fixture; it does not establish a production caller or transport ACK. */
+export async function nativeProviderFixture(options: {
+	readonly binding: AiRequestBindingWithoutNetwork | ResponsesMetadataBindingWithoutNetwork;
+	readonly reply: (response: ServerResponse) => void;
+	readonly holdAck?: "all" | "terminal";
+	readonly manualStart?: boolean;
+	readonly mutate?: (candidate: AiCandidateRequest) => AiCandidateRequest;
+}): Promise<NativeProviderFixture> {
+	const [
+		{ randomBytes },
+		fs,
+		os,
+		path,
+		https,
+		tlsModule,
+		hub,
+		sdk,
+		fixture,
+		storeFixture,
+		ids,
+		network,
+	] = await Promise.all([
+		import("node:crypto"),
+		import("node:fs"),
+		import("node:os"),
+		import("node:path"),
+		import("node:https"),
+		import("node:tls"),
+		import("@draftyak/hub"),
+		import("@draftyak/sdk"),
+		import("../../../apps/hub/test/plugins/broker/tls-fixture.ts"),
+		import("../../../apps/hub/test/store/helpers.ts"),
+		import("../../../apps/hub/src/kernel/ids.ts"),
+		import("../../../apps/hub/src/plugins/broker/network/test-context.ts"),
+	]);
+	const certificate = await fixture.createTlsFixture(["api.openai.com"]);
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "draftyak-responses-native-"));
+	const key = new hub.MasterKey(randomBytes(32));
+	const auditKey = key.derive("audit");
+	const audit = new hub.AuditChain(auditKey);
+	auditKey.fill(0);
+	let store: InstanceType<typeof hub.HubStore> | undefined;
+	let broker: ReturnType<typeof hub.createProviderHttpBroker> | undefined;
+	let server: ReturnType<typeof https.createServer> | undefined;
+	let closed = false;
+	const caller = new AbortController();
+	const streams: ProviderHttpStream[] = [];
+	const notifications: HostStreamChunk[] = [];
+	const candidates: AiCandidateRequest[] = [];
+	const pendingAcks: (() => void)[] = [];
+	const sockets = new Set<import("node:net").Socket>();
+	const bodyWritten = Promise.withResolvers<void>();
+	const peerClosed = Promise.withResolvers<void>();
+	let host: MemoryHost | undefined;
+	const close = async (): Promise<void> => {
+		if (closed) return;
+		closed = true;
+		caller.abort();
+		for (const stream of streams) stream.cancel();
+		for (const ack of pendingAcks.splice(0)) ack();
+		broker?.close();
+		await Promise.allSettled(streams.map((stream) => stream.completion));
+		host?.close();
+		const stopped = server?.listening
+			? new Promise<void>((resolve, reject) =>
+					server?.close((error) => (error ? reject(error) : resolve())),
+				)
+			: Promise.resolve();
+		for (const socket of sockets) socket.destroy();
+		await stopped;
+		store?.close();
+		audit.destroy();
+		key.destroy();
+		certificate.key.fill(0);
+		if (
+			path.dirname(directory) !== path.resolve(os.tmpdir()) ||
+			!path.basename(directory).startsWith("draftyak-responses-native-")
+		)
+			throw new Error("Fixture cleanup boundary refused");
+		fs.rmSync(directory, { recursive: true, force: true });
+	};
+	try {
+		store = new hub.HubStore({
+			filename: path.join(directory, "hub.db"),
+			nativeBinding: storeFixture.nativeBinding,
+			masterKey: key,
+			create: true,
+			migrations: {
+				audit: path.join(storeFixture.migrations, "audit"),
+				credentials: fileURLToPath(
+					new URL("../../../apps/hub/src/credentials/migrations/", import.meta.url),
+				),
+			},
+		});
+		await store.migrate("audit");
+		await store.migrate("credentials");
+		const vault = new hub.CredentialVault(store, audit);
+		const registry = hub.createBuiltinAiProfileRegistry();
+		const credential = {
+			ownerKind: "provider" as const,
+			ownerId: ids.newId(),
+			kind: "provider-key" as const,
+		};
+		let secret = `DYTEST-${randomBytes(20).toString("hex")}`;
+		const reference = store.write((tx) =>
+			vault.createInTransaction(tx, credential, { kind: "provider-key", key: secret }),
+		);
+		const policy = { deniedAddresses: [], deniedPorts: [] };
+		const pin = { address: "8.8.8.8", family: 4 as const };
+		broker = hub.createProviderHttpBroker({ vault, registry, networkPolicy: policy });
+		const actualBroker = broker;
+		const seen = {
+			methods: [] as string[],
+			paths: [] as string[],
+			bodies: [] as string[],
+			credentialMatched: [] as boolean[],
+			sni: [] as string[],
+		};
+		server = https.createServer(
+			{
+				key: certificate.key,
+				cert: certificate.cert,
+				SNICallback(name, callback) {
+					seen.sni.push(name);
+					callback(
+						null,
+						tlsModule.createSecureContext({ key: certificate.key, cert: certificate.cert }),
+					);
+				},
+			},
+			(request, response) => {
+				seen.methods.push(request.method ?? "");
+				seen.paths.push(request.url ?? "");
+				seen.credentialMatched.push(request.headers.authorization === `Bearer ${secret}`);
+				const chunks: Buffer[] = [];
+				request.on("data", (bytes: Buffer) => chunks.push(bytes));
+				request.once("end", () => {
+					seen.bodies.push(Buffer.concat(chunks).toString());
+					response.once("finish", () => bodyWritten.resolve());
+					options.reply(response);
+				});
+			},
+		);
+		server.on("connection", (socket) => {
+			sockets.add(socket);
+			socket.once("close", () => {
+				sockets.delete(socket);
+				peerClosed.resolve();
+			});
+		});
+		await new Promise<void>((resolve, reject) => {
+			server?.once("error", reject);
+			server?.listen(0, "127.0.0.1", resolve);
+		});
+		const port = (server.address() as import("node:net").AddressInfo).port;
+		let destination: MemoryHost;
+		const handler: HostHandler = async (method, raw, perHttpSignal) => {
+			if (method !== "host/fetch") throw new Error("Unexpected native fixture request");
+			if (perHttpSignal === caller.signal) throw new Error("Expected distinct HTTP request scope");
+			const { HostFetchParams } = await import("@draftyak/protocol/host-channel");
+			const params = HostFetchParams.parse(raw);
+			if (params.stream !== true || (params.body && !("base64" in params.body)))
+				throw new Error("Expected stream and inline request bytes");
+			let candidate: AiCandidateRequest = {
+				method: params.method,
+				url: params.url,
+				headers: params.headers,
+				body:
+					params.body && "base64" in params.body
+						? Buffer.from(params.body.base64, "base64url")
+						: new Uint8Array(),
+			};
+			if (options.mutate) candidate = options.mutate(candidate);
+			candidates.push(candidate);
+			const handle = actualBroker.stream(
+				"responses-api-v1",
+				candidate,
+				options.binding,
+				reference,
+				credential,
+				caller.signal,
+				async (notification) => {
+					if (notification.method !== "host/stream.chunk")
+						throw new Error("Unexpected native notification");
+					notifications.push(notification.params);
+					destination.notify(notification);
+					if (
+						options.holdAck === "all" ||
+						(options.holdAck === "terminal" && notification.params.done)
+					)
+						await new Promise<void>((resolve) => pendingAcks.push(resolve));
+				},
+			);
+			streams.push(handle);
+			void handle.completion.catch(() => undefined);
+			const response = await handle.response;
+			if (!options.manualStart) setImmediate(() => handle.start());
+			return response;
+		};
+		host = sdk.memoryHost(handler);
+		destination = host;
+		const context = sdk.createPluginContext(
+			{ plugin: "@draftyak/ai-responses-api" },
+			host,
+			caller.signal,
+		);
+		return {
+			caller,
+			handler,
+			streams,
+			notifications,
+			candidates,
+			seen,
+			pendingAcks,
+			bodyWritten: bodyWritten.promise,
+			peerClosed: peerClosed.promise,
+			fetch: (input, init) => context.fetch(input, { ...init, stream: true }),
+			useHost(value) {
+				destination = value;
+			},
+			run(work) {
+				return network.withNetworkTestHooks(
+					{
+						ca: certificate.ca,
+						resolve: async (name) => {
+							if (name !== "api.openai.com") throw new Error("Unexpected fixture origin");
+							return [pin];
+						},
+						dial: (address, requestedPort) => {
+							if (address.address !== pin.address || requestedPort !== 443)
+								throw new Error("Unexpected pinned fixture destination");
+							return { address: "127.0.0.1", family: 4, port };
+						},
+					},
+					work,
+				);
+			},
+			acknowledge() {
+				pendingAcks.shift()?.();
+			},
+			generation() {
+				return vault.describe(reference, credential).generation;
+			},
+			rotate() {
+				secret = `DYTEST-${randomBytes(20).toString("hex")}`;
+				store?.write((tx) =>
+					vault.replaceInTransaction(tx, reference, credential, {
+						kind: "provider-key",
+						key: secret,
+					}),
+				);
+			},
+			snapshot(candidate) {
+				const captured =
+					"operation" in options.binding
+						? hub.captureResponsesMetadataInputs(candidate, options.binding)
+						: hub.captureAiRequestInputs(candidate, options.binding);
+				return hub.snapshotVerifiedAiRequest(
+					hub.verifyCapturedAiRequest(registry, "responses-api-v1", captured, {
+						answers: [pin],
+						policy,
+					}),
+				);
+			},
+			close,
+		};
+	} catch (error) {
+		await close();
+		throw error;
+	}
 }
