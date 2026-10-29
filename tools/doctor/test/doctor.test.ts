@@ -689,6 +689,55 @@ test("CLI emits a clean report and supports the PowerShell/Git Bash leading sepa
 	assert.equal(result.stderr, "");
 });
 
+test.each(["report", "help", "unsupported"] as const)(
+	"an explicit report sink preserves stdout isolation for %s",
+	(kind) => {
+		const args = kind === "help" ? ["--help"] : ["--data-dir", root];
+		const result = spawnSync(
+			process.execPath,
+			[
+				"--disable-sigusr1",
+				"--input-type=module",
+				"--eval",
+				`
+				if (${JSON.stringify(kind)} === "unsupported")
+					Object.defineProperty(process, "version", { value: "v23.6.0" });
+				const { runDoctor } = await import(${JSON.stringify(pathToFileURL(cli).href)});
+				const reports = [];
+				const code = await runDoctor(${JSON.stringify(args)}, text => reports.push(text));
+				process.stderr.write(JSON.stringify({ code, reports }));
+				process.exitCode = code;
+			`,
+			],
+			{
+				env: {},
+				encoding: "utf8",
+				timeout: 10_000,
+				maxBuffer: 16_384,
+				windowsHide: true,
+				shell: false,
+			},
+		);
+		assert.equal(result.stdout, "", "doctor report leaked to stdout");
+		const captured = JSON.parse(result.stderr) as { code: number; reports: string[] };
+		assert.equal(result.status, kind === "unsupported" ? 1 : 0);
+		assert.equal(captured.code, result.status);
+		assert.equal(captured.reports.length, 1);
+		const report = captured.reports[0];
+		assert.ok(report);
+		assert.equal(report.includes(root), false);
+		if (kind === "help") assert.ok(report.startsWith("Usage:"));
+		else {
+			const parsed = JSON.parse(report) as DoctorReport;
+			assert.equal(parsed.format, "draftyak-doctor-v1");
+			assert.equal(
+				entry(parsed, "node_version").code,
+				kind === "unsupported" ? "NODE_UNSUPPORTED" : "NODE_FULL",
+			);
+		}
+	},
+);
+
 test("CLI without explicit signal hardening fails without printing its arguments", () => {
 	const result = run(["--data-dir", root], []);
 	assert.equal(result.status, 1);

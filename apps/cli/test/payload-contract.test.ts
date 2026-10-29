@@ -5,6 +5,13 @@ import { main } from "../src/main.ts";
 import { CLI_PAYLOAD, isCliExitCode } from "../src/payload-contract.ts";
 import { record } from "../src/records.ts";
 
+vi.mock("@draftyak/doctor/node-policy", () => ({
+	loadNodePolicy: () => ({ classify: () => "full" }),
+}));
+vi.mock("@draftyak/doctor/diagnostics", () => ({
+	diagnose: async () => ({ summary: "warn" }),
+}));
+
 afterEach(() => vi.restoreAllMocks());
 
 it("exports the fixed inert payload handoff", () => {
@@ -26,12 +33,14 @@ it("exports the fixed inert payload handoff", () => {
 		expect(isCliExitCode(value)).toBe(false);
 });
 
-it("discovers only the implemented help command in the fixed source directory", async () => {
+it("discovers the implemented doctor and help commands in the fixed source directory", async () => {
 	const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 	const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-	expect(commandNames()).toEqual(["help"]);
+	expect(commandNames()).toEqual(["doctor", "help"]);
 	expect(await main([])).toBe(0);
-	expect(stderr).toHaveBeenCalledExactlyOnceWith("Usage: draftyak <command>\nCommands:\nhelp\n");
+	expect(stderr).toHaveBeenCalledExactlyOnceWith(
+		"Usage: draftyak <command>\nCommands:\ndoctor\nhelp\n",
+	);
 	expect(stdout).not.toHaveBeenCalled();
 });
 
@@ -43,10 +52,14 @@ it("returns unknown MCP failure without sharing diagnostics with stdout", async 
 	expect(stdout).not.toHaveBeenCalled();
 });
 
-it("keeps the doctor mechanism explicitly unavailable without fabricated checks", async () => {
-	expect(await loadDoctorChecks()).toEqual([]);
-	expect(await runDoctorChecks("local")).toEqual({ available: false, checks: [], exitCode: 1 });
-	expect(await runDoctorChecks("public")).toEqual({ available: false, checks: [], exitCode: 1 });
+it("discovers the offline check and returns fixed statuses in both modes", async () => {
+	expect((await loadDoctorChecks()).map((check) => check.id)).toEqual(["offline"]);
+	for (const mode of ["local", "public"] as const)
+		expect(await runDoctorChecks(mode)).toEqual({
+			available: true,
+			checks: [{ id: "offline", status: "warn" }],
+			exitCode: 0,
+		});
 });
 
 it.each([null, undefined, { name: "help", extra: 1 }, Object.create({ name: "help" })])(

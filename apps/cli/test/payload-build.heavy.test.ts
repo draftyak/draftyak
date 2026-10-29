@@ -15,6 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, expect, it } from "vitest";
+import { isolateKernelFixture } from "./kernel-fixture.ts";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspace = path.resolve(packageRoot, "../..");
@@ -38,6 +39,7 @@ function fixture(): { root: string; cli: string } {
 	mkdirSync(cli, { recursive: true });
 	for (const name of ["src", "scripts", "package.json", "tsconfig.json", "tsconfig.build.json"])
 		cpSync(path.join(packageRoot, name), path.join(cli, name), { recursive: true });
+	isolateKernelFixture(cli);
 	cpSync(
 		path.join(workspace, "tsconfig.base.json"),
 		path.join(root, "workspace/tsconfig.base.json"),
