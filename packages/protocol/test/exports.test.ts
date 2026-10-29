@@ -61,6 +61,7 @@ const publicModules = [
 	"manifest/auth-fields",
 	"manifest/egress",
 	"manifest/json",
+	"manifest/responses-http",
 	"manifest/runtime",
 	"manifest/text",
 	"manifest/tool",
