@@ -6,10 +6,13 @@ pub mod login;
 pub mod pair_confirm;
 pub mod send;
 use crate::{jcs::parse_strict, sign};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
-fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Option<T> {
-    serde_json::from_value(value).ok()
+/// `value` as a `T` that writes it back unchanged. Serde also reads a struct from an array and an
+/// enum from a one-member map, at any depth; the TypeScript schemas take only the written form.
+pub(crate) fn decode<T: DeserializeOwned + Serialize>(value: &Value) -> Option<T> {
+    let decoded = serde_json::from_value::<T>(value.clone()).ok()?;
+    (serde_json::to_value(&decoded).ok()? == *value).then_some(decoded)
 }
 macro_rules! register_statements {
     ($($module:ident::$variant:ident($name:ident) => $typ:literal),* $(,)?) => {
@@ -19,7 +22,7 @@ macro_rules! register_statements {
         pub enum Statement { $($variant($module::$name)),* }
         pub fn parse_statement(typ: &str, bytes: &[u8]) -> Option<Statement> {
             let value = parse_strict(bytes).ok()?;
-            match typ { $($typ => decode(value).map(Statement::$variant),)* _ => None }
+            match typ { $($typ => decode(&value).map(Statement::$variant),)* _ => None }
         }
     }
 }

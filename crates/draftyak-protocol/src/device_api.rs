@@ -11,6 +11,7 @@ use crate::{
         admin::ADMIN_KINDS,
         agent_session::AgentSessionReviewSubject,
         common::{MAX_SAFE, id, key, sha},
+        decode,
         pair_confirm::{ConfirmationPreset, DeviceCapability, can_confirm},
         send::{check_flags_acked, check_send_window},
     },
@@ -159,12 +160,12 @@ fn ids(value: &Value, min: usize, max: usize) -> bool {
     })
 }
 fn capabilities(value: &Value, empty: bool) -> bool {
-    serde_json::from_value::<Vec<DeviceCapability>>(value.clone()).is_ok_and(|caps| {
+    decode::<Vec<DeviceCapability>>(value).is_some_and(|caps| {
         (empty || !caps.is_empty()) && caps.windows(2).all(|pair| pair[0] < pair[1])
     })
 }
 fn preset(value: &Value) -> Option<ConfirmationPreset> {
-    serde_json::from_value(value.clone()).ok()
+    decode(value)
 }
 fn cursor(value: &Value) -> bool {
     value
@@ -194,7 +195,7 @@ fn display_name(s: &str) -> bool {
         && s.chars().any(|c| !blank(c) && !joiner(c))
 }
 fn flags_acked(value: &Value) -> bool {
-    serde_json::from_value::<Vec<FlagCode>>(value.clone()).is_ok_and(|codes| {
+    decode::<Vec<FlagCode>>(value).is_some_and(|codes| {
         codes
             .windows(2)
             .all(|pair| pair[0].as_str() < pair[1].as_str())
@@ -214,7 +215,8 @@ fn typed_statement(value: &Value, typ: &str) -> Option<Statement> {
     }
     statements::parse_statement(typ, &statement_bytes(value)?)
 }
-fn send_review(value: &Value) -> bool {
+/// The snapshot and flags of a strict send review.
+fn send_review(value: &Value) -> Option<(SendSnapshotV1, Vec<Flag>)> {
     if !shape(
         value,
         &[
@@ -229,15 +231,11 @@ fn send_review(value: &Value) -> bool {
             "expiresAt",
         ],
     ) {
-        return false;
+        return None;
     }
-    let Ok(snapshot) = serde_json::from_value::<SendSnapshotV1>(value["snapshot"].clone()) else {
-        return false;
-    };
-    let Ok(flags) = serde_json::from_value::<Vec<Flag>>(value["flags"].clone()) else {
-        return false;
-    };
-    is_text(value, "id", id)
+    let snapshot: SendSnapshotV1 = decode(&value["snapshot"])?;
+    let flags: Vec<Flag> = decode(&value["flags"])?;
+    let valid = is_text(value, "id", id)
         && content_hash(&snapshot).is_ok_and(|h| value["contentHash"] == h)
         && flags_hash(&flags).is_ok_and(|h| value["flagsHash"] == h)
         && [
@@ -270,7 +268,8 @@ fn send_review(value: &Value) -> bool {
             ]
             .contains(&text(value, "stateReason")))
         && ids(&value["requiredUsers"], 1, usize::MAX)
-        && safe(&value["expiresAt"])
+        && safe(&value["expiresAt"]);
+    valid.then_some((snapshot, flags))
 }
 /// The pairing SAS (`spec/pairing-v1.md` section 9): exactly six ASCII digits.
 fn sas(s: &str) -> bool {
@@ -324,7 +323,7 @@ fn operation_review(value: &Value) -> bool {
         && value["remainingMs"].as_u64().is_some_and(|v| v <= 120_000)
 }
 fn agent_subject(value: &Value) -> Option<AgentSessionReviewSubject> {
-    serde_json::from_value(value.clone()).ok()
+    decode(value)
 }
 fn operation_request(value: &Value) -> bool {
     if value["kind"] == "pair-confirm" {
@@ -440,7 +439,7 @@ pub fn check_schema(name: &str, value: &Value) -> bool {
                 && DEVICE_TYPES.contains(&text(value, "kind"))
                 && is_text(value, "id", id)
         }
-        "SendReview" => send_review(value),
+        "SendReview" => send_review(value).is_some(),
         "PairConfirmSubject" => pair_subject(value),
         "AgentSessionReviewSubject" => agent_subject(value).is_some(),
         "AdminAccountSubject" => admin::account_subject(value),
@@ -560,14 +559,7 @@ pub fn check_challenge(
     };
     match statement {
         Statement::Send(s) => {
-            if !send_review(review) {
-                return false;
-            }
-            let Ok(snapshot) = serde_json::from_value::<SendSnapshotV1>(review["snapshot"].clone())
-            else {
-                return false;
-            };
-            let Ok(flags) = serde_json::from_value::<Vec<Flag>>(review["flags"].clone()) else {
+            let Some((snapshot, flags)) = send_review(review) else {
                 return false;
             };
             s.hub == text(context, "hub")
@@ -624,6 +616,9 @@ pub fn route_allows(name: &str, peer: &Value, operation: Option<&Value>) -> bool
     let Some(r) = route(name) else {
         return false;
     };
+    let Some(held) = decode::<Vec<DeviceCapability>>(&peer["capabilities"]) else {
+        return false;
+    };
     if !shape(
         peer,
         &[
@@ -643,8 +638,7 @@ pub fn route_allows(name: &str, peer: &Value, operation: Option<&Value>) -> bool
         || !(peer["confirmedEpoch"].is_null() || safe(&peer["confirmedEpoch"]))
         || !peer["sidecarClaim"].is_boolean()
         || !peer["bootstrapDone"].is_boolean()
-        || !serde_json::from_value::<Vec<DeviceCapability>>(peer["capabilities"].clone())
-            .is_ok_and(|caps| caps.iter().enumerate().all(|(i, c)| !caps[..i].contains(c)))
+        || !held.iter().enumerate().all(|(i, c)| !held[..i].contains(c))
     {
         return false;
     }
@@ -703,10 +697,7 @@ pub fn route_allows(name: &str, peer: &Value, operation: Option<&Value>) -> bool
         let Some(preset) = preset(&op["preset"]) else {
             return false;
         };
-        let Ok(caps) = serde_json::from_value::<Vec<DeviceCapability>>(caps.clone()) else {
-            return false;
-        };
-        return can_confirm(&caps, preset);
+        return can_confirm(&held, preset);
     }
     true
 }

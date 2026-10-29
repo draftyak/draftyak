@@ -296,6 +296,24 @@ fn registered_types_and_freshness() {
     ] {
         assert!(statements::parse_statement(typ, b"{}").is_none());
     }
+    // Signature checks refuse a positional statement before parse_statement sees it.
+    let read: Vec<&str> = statements::TYPES
+        .iter()
+        .zip(documents())
+        .filter(|(typ, document)| {
+            let document: Value = serde_json::from_str(document).unwrap();
+            let positional = document["cases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|case| case["id"] == "positional")
+                .unwrap();
+            statements::parse_statement(typ, &hex(positional["receivedHex"].as_str().unwrap()))
+                .is_some()
+        })
+        .map(|(typ, _)| *typ)
+        .collect();
+    assert!(read.is_empty(), "{read:?}");
     let document: Value = serde_json::from_str(&documents()[0]).unwrap();
     let body = statements::parse_statement(
         "approval.send.v1",

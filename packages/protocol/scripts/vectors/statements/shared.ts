@@ -154,6 +154,8 @@ export async function typedVectors(
 		await signed("duplicate-member", base, false, {
 			text: `{"v":2,${canonicalize(base).slice(1)}`,
 		});
+		// Each example lists its members in declared order, which a by-position decoder reads.
+		await signed("positional", Object.values(base), false);
 		if (Object.hasOwn(base, "epoch")) {
 			await signed("fraction", { ...base, epoch: 1.5 }, false);
 			await signed("unsafe-integer", { ...base, epoch: 2 ** 53 }, false);
