@@ -2,15 +2,35 @@
 
 // Install before DNS consumers initialize; never ship this test-only preload.
 if (process.env.NODE_ENV !== "test") throw new Error("Test network preload requires NODE_ENV=test");
+if (module.isPreloading !== true) throw new Error("Test network guard requires startup preloading");
 const tcp = process.binding("tcp_wrap");
 const cares = process.binding("cares_wrap");
 const denialCode = process.binding("uv").UV_EACCES;
 if (!Number.isInteger(denialCode) || denialCode >= 0)
 	throw new Error("Native denial code unavailable");
 const key = Symbol.for("draftyak.test.loopback-network");
-if (Object.hasOwn(globalThis, key)) throw new Error("Test network preload already installed");
+if (Object.hasOwn(tcp, key)) throw new Error("Test network preload already installed");
 const entries = [];
-const loopbackAddress = (address) => address === "127.0.0.1" || address === "::1";
+const loopbackAddress = (address) => {
+	if (typeof address !== "string" || address.length > 45) return false;
+	if (/^127(?:\.(?:0|[1-9][0-9]{0,2})){3}$/.test(address))
+		return address.split(".").every((part) => Number(part) <= 255);
+	if (!/^[0-9a-fA-F:]+$/.test(address)) return false;
+	const halves = address.split("::");
+	if (halves.length > 2) return false;
+	const words = (part) => (part === "" ? [] : part.split(":"));
+	const left = words(halves[0]),
+		right = halves.length === 2 ? words(halves[1]) : [];
+	if (![...left, ...right].every((word) => /^[0-9a-fA-F]{1,4}$/.test(word))) return false;
+	const missing = 8 - left.length - right.length;
+	if (halves.length === 1 ? missing !== 0 : missing < 1) return false;
+	const expanded = [...left, ...Array(missing).fill("0"), ...right].map((word) =>
+		Number.parseInt(word, 16),
+	);
+	return (
+		expanded.length === 8 && expanded.slice(0, 7).every((word) => word === 0) && expanded[7] === 1
+	);
+};
 function restrictConnect(original) {
 	return function (...args) {
 		if (!loopbackAddress(args[1])) return denialCode;
@@ -59,6 +79,17 @@ function assertActive() {
 			throw new Error("Test DNS native denial proof failed");
 	}
 }
-const guard = Object.freeze({ assertActive, loopbackAddress, restrictConnect, denialCode });
-Object.defineProperty(globalThis, key, { value: guard, configurable: false, writable: false });
+const nativeEntries = Object.freeze(entries.map((entry) => Object.freeze(entry)));
+const guard = Object.freeze({
+	assertActive,
+	loopbackAddress,
+	restrictConnect,
+	denialCode,
+	nativeEntries,
+});
+Object.defineProperty(tcp, key, {
+	value: Object.freeze({ guard, module }),
+	configurable: false,
+	writable: false,
+});
 module.exports = guard;
