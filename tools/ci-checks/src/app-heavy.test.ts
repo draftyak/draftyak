@@ -14,6 +14,16 @@ const manifest = (name: string): string =>
 function fixture(files: Record<string, string> = {}): string {
 	const root = mkdtempSync(path.join(tmpdir(), "draftyak-app-heavy-"));
 	roots.push(root);
+	const importers = [
+		".",
+		...Object.keys(files)
+			.filter((file) => file.endsWith("/package.json"))
+			.map((file) => path.posix.dirname(file)),
+	];
+	writeFileSync(
+		path.join(root, "pnpm-lock.yaml"),
+		`lockfileVersion: '9.0'\nimporters:\n${importers.map((folder) => `  ${JSON.stringify(folder)}: {}\n`).join("")}`,
+	);
 	for (const [file, content] of Object.entries(files)) {
 		mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
 		writeFileSync(path.join(root, file), content);

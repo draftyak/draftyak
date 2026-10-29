@@ -38,6 +38,10 @@ function exercise(files: string[], fail = false): { status: number | null; calls
 		}
 		mkdirSync(path.join(root, "packages", "create-plugin"), { recursive: true });
 		writeFileSync(path.join(root, "packages", "create-plugin", "package.json"), "{}");
+		writeFileSync(
+			path.join(root, "pnpm-lock.yaml"),
+			"lockfileVersion: '9.0'\nimporters:\n  .: {}\n  apps/cli: {}\n  apps/hub: {}\n  packages/create-plugin: {}\n",
+		);
 		const selected = classify(files, root, () => []);
 		const capture = path.join(root, "capture.mjs");
 		const output = path.join(root, "calls.jsonl");
@@ -106,6 +110,7 @@ describe("actual selected-heavy workflow application arguments", () => {
 						"tools/verify/turbo.ts",
 						"run",
 						"test:heavy",
+						"--concurrency=1",
 						`--filter=...{./apps/${app}}`,
 						"--filter=!./packages/create-plugin",
 					],
@@ -123,6 +128,7 @@ describe("actual selected-heavy workflow application arguments", () => {
 						"tools/verify/turbo.ts",
 						"run",
 						"test:heavy",
+						"--concurrency=1",
 						"--filter=./apps/cli",
 						"--filter=./apps/hub",
 					],
