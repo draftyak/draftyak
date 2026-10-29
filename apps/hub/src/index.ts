@@ -18,7 +18,21 @@ export {
 	type CredentialValue,
 	CredentialVault,
 } from "./credentials/vault.ts";
+export {
+	type FrozenRevisionFacts,
+	type FrozenRevisionProof,
+	NativeDraftFreeze,
+} from "./drafts/freeze.ts";
 export { normalizeDraftBody, normalizeDraftContent } from "./drafts/normalize.ts";
+export {
+	type DraftAppend,
+	type DraftBinding,
+	type DraftCreation,
+	DraftRevisionError,
+	type ModelBodyAppend,
+	NativeDraftRevisions,
+	type NativeRevision,
+} from "./drafts/revisions.ts";
 export {
 	EVENT_KINDS,
 	EVENT_MIGRATIONS,
