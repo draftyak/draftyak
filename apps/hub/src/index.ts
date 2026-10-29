@@ -93,6 +93,18 @@ export {
 export { isKnownSyncedPath } from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
 export {
+	type ClaimPermit,
+	createHubLifecycle,
+	HUB_DRAIN_MS,
+	type HubLifecycle,
+	HubLifecycleError,
+	type HubLifecycleErrorCode,
+	type HubLifecycleSession,
+	type HubState,
+	type HubStopReport,
+	type MaintenanceLease,
+} from "./lifecycle/state.ts";
+export {
 	type AiCandidateRequest,
 	type AiProfileRegistry,
 	type AiRequestBinding,
