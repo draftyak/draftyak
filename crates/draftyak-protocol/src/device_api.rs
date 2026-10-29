@@ -270,6 +270,10 @@ fn send_review(value: &Value) -> bool {
         && ids(&value["requiredUsers"], 1, usize::MAX)
         && safe(&value["expiresAt"])
 }
+/// The pairing SAS (`spec/pairing-v1.md` section 9): exactly six ASCII digits.
+fn sas(s: &str) -> bool {
+    s.len() == 6 && s.bytes().all(|b| b.is_ascii_digit())
+}
 fn pair_subject(value: &Value) -> bool {
     shape(
         value,
@@ -281,6 +285,7 @@ fn pair_subject(value: &Value) -> bool {
             "signingKey",
             "preset",
             "capabilities",
+            "sas",
         ],
     ) && is_text(value, "candidate", id)
         && is_text(value, "name", display_name)
@@ -289,6 +294,7 @@ fn pair_subject(value: &Value) -> bool {
         && is_text(value, "signingKey", key)
         && preset(&value["preset"])
             .is_some_and(|p| json!(p.capabilities()) == value["capabilities"])
+        && is_text(value, "sas", sas)
 }
 fn operation_review(value: &Value) -> bool {
     shape(

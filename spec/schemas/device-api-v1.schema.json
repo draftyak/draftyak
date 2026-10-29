@@ -1620,6 +1620,13 @@
         },
         "capabilities": {
           "$ref": "#/$defs/draftyak.entities.DeviceCapabilities"
+        },
+        "sas": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^[0-9]{6}$(?![\\s\\S])",
+          "description": "A pairing SAS: six ASCII digits, leading zeros kept."
         }
       },
       "required": [
@@ -1629,7 +1636,8 @@
         "transportSpkiSha256",
         "signingKey",
         "preset",
-        "capabilities"
+        "capabilities",
+        "sas"
       ],
       "additionalProperties": false
     },

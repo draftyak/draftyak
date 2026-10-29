@@ -9,7 +9,7 @@ import { uniqueItems } from "../entities/fields.ts";
 import { OutboxState, StateReason } from "../entities/outbox.ts";
 import { type Flag, Flags, flagsHash } from "../flags.ts";
 import { jcsSha256 } from "../hash.ts";
-import { DisplayName, PairingRole } from "../pairing.ts";
+import { DisplayName, PairingRole, PairingSas } from "../pairing.ts";
 import { Sha256Hex, Ulid, UtcMs } from "../scalars.ts";
 import { contentHash, SendSnapshotV1 } from "../snapshot.ts";
 import { ADMIN_KINDS, AgentSessionReviewSubject, SigningKey } from "../statements.ts";
@@ -77,6 +77,7 @@ export interface PairConfirmSubject {
 	readonly signingKey: string;
 	readonly preset: ConfirmationPreset;
 	readonly capabilities: readonly DeviceCapability[];
+	readonly sas: string;
 }
 export const PairConfirmSubject: z.ZodType<PairConfirmSubject> = z
 	.strictObject({
@@ -87,6 +88,7 @@ export const PairConfirmSubject: z.ZodType<PairConfirmSubject> = z
 		signingKey: SigningKey,
 		preset: ConfirmationPreset,
 		capabilities: DeviceCapabilities,
+		sas: PairingSas,
 	})
 	.refine(
 		(value) =>
