@@ -13,7 +13,18 @@ import {
 	type PinnedAddress,
 	validateEgressAnswers,
 } from "../network/index.ts";
-import { copyBytes, fields, text, vector } from "./boundary.ts";
+import { copyBytes, copyEmptyBytes, fields, record, text, vector } from "./boundary.ts";
+import {
+	type AiRequestLifecycle,
+	failAiRequestCapture,
+	type MessagesMetadataReservation,
+	messagesMetadataLifecycle,
+	reserveMessagesMetadata,
+} from "./messages-metadata.ts";
+import {
+	captureResponsesMetadataBinding,
+	responsesMetadataEndpoint,
+} from "./responses-metadata.ts";
 import {
 	type AiCandidateRequest,
 	type AiProviderSettings,
@@ -21,6 +32,8 @@ import {
 	type AiRequestBindingWithoutNetwork,
 	type AiRequestSnapshot,
 	type CapturedAiRequestInputs,
+	type MessagesMetadataBindingWithoutNetwork,
+	type ResponsesMetadataBindingWithoutNetwork,
 	refuse,
 	type VerifiedAiRequest,
 } from "./types.ts";
@@ -34,18 +47,41 @@ export interface AiVerifierInput {
 export interface AiProfileRegistration {
 	readonly profile: AiProfile;
 	readonly verify: (input: AiVerifierInput) => void;
+	readonly verifyMetadata?: (input: AiMetadataVerifierInput) => void;
+}
+export interface AiMetadataVerifierInput {
+	readonly method: "GET";
+	readonly url: string;
+	readonly body: Uint8Array;
+	readonly headers: ReadonlyMap<string, string>;
+	readonly binding: ResponsesMetadataBindingWithoutNetwork | MessagesMetadataBindingWithoutNetwork;
 }
 declare const profileRegistry: unique symbol;
 export interface AiProfileRegistry {
 	readonly [profileRegistry]: true;
 }
 
-const registries = new WeakMap<object, ReadonlyMap<AiProfile, AiProfileRegistration["verify"]>>();
-const captures = new WeakMap<
-	object,
-	{ candidate: AiCandidateRequest; binding: AiRequestBindingWithoutNetwork }
->();
+const registries = new WeakMap<object, ReadonlyMap<AiProfile, AiProfileRegistration>>();
+type Capture =
+	| {
+			readonly kind: "draft";
+			readonly candidate: AiCandidateRequest;
+			readonly binding: AiRequestBindingWithoutNetwork;
+	  }
+	| {
+			readonly kind: "metadata";
+			readonly candidate: AiCandidateRequest;
+			readonly binding: ResponsesMetadataBindingWithoutNetwork;
+	  }
+	| {
+			readonly kind: "messages";
+			readonly candidate: AiCandidateRequest;
+			readonly binding: MessagesMetadataBindingWithoutNetwork;
+			readonly reservation: MessagesMetadataReservation;
+	  };
+const captures = new WeakMap<object, Capture>();
 const verified = new WeakMap<object, AiRequestSnapshot>();
+const lifecycles = new WeakMap<object, AiRequestLifecycle>();
 
 function profile(value: unknown): AiProfile {
 	if (typeof value !== "string" || !(AI_HTTP_PROFILES as readonly string[]).includes(value))
@@ -58,12 +94,14 @@ export function createAiProfileRegistry(
 	registrations: readonly AiProfileRegistration[],
 ): AiProfileRegistry {
 	try {
-		const table = new Map<AiProfile, AiProfileRegistration["verify"]>();
+		const table = new Map<AiProfile, AiProfileRegistration>();
 		for (const raw of vector(registrations, AI_HTTP_PROFILES.length)) {
-			const entry = fields(raw, ["profile", "verify"]);
+			const entry = fields(raw, ["profile", "verify", "verifyMetadata"], ["profile", "verify"]);
 			const id = profile(entry.profile);
 			if (table.has(id) || typeof entry.verify !== "function") refuse();
-			table.set(id, entry.verify as AiProfileRegistration["verify"]);
+			if (Object.hasOwn(entry, "verifyMetadata") && typeof entry.verifyMetadata !== "function")
+				refuse();
+			table.set(id, Object.freeze(entry) as unknown as AiProfileRegistration);
 		}
 		if (AI_HTTP_PROFILES.some((id) => !table.has(id))) refuse();
 		const handle = Object.freeze(Object.create(null)) as AiProfileRegistry;
@@ -140,6 +178,10 @@ export function captureAiRequestInputs(
 	binding: unknown,
 ): CapturedAiRequestInputs {
 	try {
+		if (Object.hasOwn(record(binding), "operation"))
+			return Object.hasOwn(record(binding), "call")
+				? captureMessagesMetadataInputs(candidate, binding)
+				: captureResponsesMetadataInputs(candidate, binding);
 		const value = fields(candidate, ["method", "url", "headers", "body"]);
 		if (value.method !== "POST") refuse();
 		const source = fields(binding, ["draft", "settings", "endpoint"]);
@@ -172,7 +214,64 @@ export function captureAiRequestInputs(
 			body: copyBytes(value.body),
 		});
 		const handle = Object.freeze(Object.create(null)) as CapturedAiRequestInputs;
-		captures.set(handle, { candidate: snapshot, binding: capturedBinding });
+		captures.set(handle, { kind: "draft", candidate: snapshot, binding: capturedBinding });
+		return handle;
+	} catch {
+		failAiRequestCapture(binding);
+		return refuse();
+	}
+}
+
+export function captureMessagesMetadataInputs(
+	candidate: unknown,
+	binding: unknown,
+): CapturedAiRequestInputs {
+	try {
+		const reserved = reserveMessagesMetadata(binding);
+		const value = fields(
+			candidate,
+			["method", "url", "headers", "body"],
+			["method", "url", "headers"],
+		);
+		if (value.method !== "GET" || text(value.url, 2048) !== reserved.reservation.url) refuse();
+		const snapshot: AiCandidateRequest = Object.freeze({
+			method: "GET",
+			url: reserved.reservation.url,
+			headers: captureHeaders(value.headers),
+			body: Object.hasOwn(value, "body") ? copyEmptyBytes(value.body) : new Uint8Array(0),
+		});
+		const handle = Object.freeze(Object.create(null)) as CapturedAiRequestInputs;
+		captures.set(handle, { kind: "messages", candidate: snapshot, ...reserved });
+		return handle;
+	} catch {
+		failAiRequestCapture(binding);
+		return refuse();
+	}
+}
+
+/** Native operation/config/input are captured separately from the plugin's HTTP candidate. */
+export function captureResponsesMetadataInputs(
+	candidate: unknown,
+	binding: unknown,
+): CapturedAiRequestInputs {
+	try {
+		const value = fields(
+			candidate,
+			["method", "url", "headers", "body"],
+			["method", "url", "headers"],
+		);
+		if (value.method !== "GET") refuse();
+		const native = captureResponsesMetadataBinding(binding);
+		const endpoint = responsesMetadataEndpoint(native);
+		if (text(value.url, 2048) !== endpoint) refuse();
+		const snapshot: AiCandidateRequest = Object.freeze({
+			method: "GET",
+			url: endpoint,
+			headers: captureHeaders(value.headers),
+			body: Object.hasOwn(value, "body") ? copyEmptyBytes(value.body) : new Uint8Array(0),
+		});
+		const handle = Object.freeze(Object.create(null)) as CapturedAiRequestInputs;
+		captures.set(handle, { kind: "metadata", candidate: snapshot, binding: native });
 		return handle;
 	} catch {
 		return refuse();
@@ -187,7 +286,12 @@ function captured(raw: unknown) {
 }
 
 export function aiRequestEndpoint(handle: CapturedAiRequestInputs): string {
-	return captured(handle).binding.endpoint;
+	const source = captured(handle);
+	return source.kind === "draft"
+		? source.binding.endpoint
+		: source.kind === "metadata"
+			? responsesMetadataEndpoint(source.binding)
+			: source.reservation.url;
 }
 
 function routing(
@@ -232,28 +336,63 @@ export function verifyCapturedAiRequest(
 	try {
 		const selected = profile(id);
 		const table = registries.get(registry);
-		const verifier = table?.get(selected);
-		if (!verifier) refuse();
-		const { candidate, binding } = captured(input);
+		const registration = table?.get(selected);
+		if (!registration) refuse();
+		const source = captured(input);
+		const { candidate } = source;
+		if (
+			source.kind !== "draft" &&
+			(selected !==
+				(source.kind === "metadata" ? source.binding.configuration.profile : "messages-api-v1") ||
+				!registration.verifyMetadata)
+		)
+			refuse();
 		const facts = fields(network, ["answers", "policy"]);
-		routing(binding.endpoint, binding.settings, {
-			answers: facts.answers as readonly PinnedAddress[],
-			policy: facts.policy as EgressPolicy,
-		});
-		const body = parseStrict(candidate.body);
-		verifier({ body, headers: new Map(candidate.headers), binding });
+		routing(
+			aiRequestEndpoint(input),
+			source.kind === "draft" ? source.binding.settings : { kind: "responses" },
+			{
+				answers: facts.answers as readonly PinnedAddress[],
+				policy: facts.policy as EgressPolicy,
+			},
+		);
+		if (source.kind === "draft") {
+			const body = parseStrict(candidate.body);
+			registration.verify({ body, headers: new Map(candidate.headers), binding: source.binding });
+		} else {
+			registration.verifyMetadata?.({
+				method: "GET",
+				url: candidate.url,
+				body: Uint8Array.from(candidate.body),
+				headers: new Map(candidate.headers),
+				binding: source.binding,
+			});
+		}
 		const handle = Object.freeze(Object.create(null)) as VerifiedAiRequest;
 		verified.set(handle, {
 			profile: selected,
-			method: "POST",
+			method: source.kind === "draft" ? "POST" : "GET",
 			url: candidate.url,
 			headers: candidate.headers,
 			body: candidate.body,
 		});
+		if (source.kind === "messages")
+			lifecycles.set(handle, messagesMetadataLifecycle(source.reservation));
 		return handle;
 	} catch {
+		if (input !== null && typeof input === "object") {
+			const source = captures.get(input);
+			if (source?.kind === "messages") failAiRequestCapture(source.binding);
+		}
 		return refuse();
 	}
+}
+
+export function verifiedAiRequestLifecycle(
+	handle: VerifiedAiRequest,
+): AiRequestLifecycle | undefined {
+	if (handle === null || typeof handle !== "object" || !verified.has(handle)) refuse();
+	return lifecycles.get(handle);
 }
 
 export function verifyAiRequest(

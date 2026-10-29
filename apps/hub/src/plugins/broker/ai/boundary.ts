@@ -53,7 +53,7 @@ export function text(value: unknown, maximum: number): string {
 	return value;
 }
 
-export function copyBytes(value: unknown): Uint8Array {
+function copyByteRange(value: unknown, minimum: number, maximum: number): Uint8Array {
 	if (
 		isProxy(value) ||
 		!(value instanceof Uint8Array) ||
@@ -71,12 +71,23 @@ export function copyBytes(value: unknown): Uint8Array {
 	const length = Object.getOwnPropertyDescriptor(prototype, "byteLength")?.get?.call(
 		value,
 	) as number;
-	if (buffer instanceof SharedArrayBuffer || length === 0 || length > MAX_AI_REQUEST_BYTES)
-		refuse();
+	if (buffer instanceof SharedArrayBuffer || length < minimum || length > maximum) refuse();
 	const output = new Uint8Array(length);
 	// Read native typed-array slots, never a caller's iterator, constructor or accessor.
 	Uint8Array.prototype.set.call(output, new Uint8Array(buffer, offset, length));
 	return output;
+}
+
+export function copyBytes(value: unknown): Uint8Array {
+	return copyByteRange(value, 1, MAX_AI_REQUEST_BYTES);
+}
+
+export function copyEmptyBytes(value: unknown): Uint8Array {
+	return copyByteRange(value, 0, 0);
+}
+
+export function copyBoundedBytes(value: unknown, maximum: number): Uint8Array {
+	return copyByteRange(value, 0, maximum);
 }
 
 export function exactBody(actual: unknown, expected: unknown): void {

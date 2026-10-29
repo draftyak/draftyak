@@ -30,6 +30,35 @@ export interface AiRequestBinding {
 	readonly policy: EgressPolicy;
 }
 export type AiRequestBindingWithoutNetwork = Omit<AiRequestBinding, "answers" | "policy">;
+
+/** Captured from the native provider invocation, never from host/fetch fields. */
+export interface ResponsesMetadataBindingWithoutNetwork {
+	readonly operation: "ai_models_list" | "ai_probe";
+	readonly configuration: {
+		readonly profile: "responses-api-v1";
+		readonly endpoint: "https://api.openai.com/v1";
+		readonly model?: string;
+	};
+	readonly input: Readonly<{ readonly model?: string }>;
+}
+
+declare const messagesCall: unique symbol;
+export interface MessagesMetadataCall {
+	readonly [messagesCall]: true;
+}
+export interface MessagesMetadataCallBinding {
+	readonly operation: "ai_models_list" | "ai_probe";
+	readonly configuration: {
+		readonly profile: "messages-api-v1";
+		readonly endpoint: "https://api.anthropic.com";
+		readonly model?: string;
+	};
+	readonly input: Readonly<{ readonly model?: string }>;
+}
+export interface MessagesMetadataBindingWithoutNetwork {
+	readonly operation: "ai_models_list" | "ai_probe";
+	readonly call: MessagesMetadataCall;
+}
 declare const capturedInputs: unique symbol;
 export interface CapturedAiRequestInputs {
 	readonly [capturedInputs]: true;
@@ -44,7 +73,7 @@ export interface AiCandidateRequest {
 
 export interface AiRequestSnapshot {
 	readonly profile: AiProfile;
-	readonly method: "POST";
+	readonly method: "GET" | "POST";
 	readonly url: string;
 	readonly headers: HeaderList;
 	readonly body: Uint8Array;
