@@ -293,6 +293,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "draftyak-desktop-pairing"
+version = "0.0.0"
+
+[[package]]
 name = "draftyak-protocol"
 version = "0.0.0"
 dependencies = [
