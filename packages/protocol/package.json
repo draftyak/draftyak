@@ -54,6 +54,7 @@
     "./manifest/auth-fields": "./src/manifest/auth-fields.ts",
     "./manifest/egress": "./src/manifest/egress.ts",
     "./manifest/json": "./src/manifest/json.ts",
+    "./manifest/responses-http": "./src/manifest/responses-http.ts",
     "./manifest/runtime": "./src/manifest/runtime.ts",
     "./manifest/text": "./src/manifest/text.ts",
     "./manifest/tool": "./src/manifest/tool.ts",
@@ -298,6 +299,10 @@
       "./manifest/json": {
         "types": "./dist/manifest/json.d.mts",
         "default": "./dist/manifest/json.mjs"
+      },
+      "./manifest/responses-http": {
+        "types": "./dist/manifest/responses-http.d.mts",
+        "default": "./dist/manifest/responses-http.mjs"
       },
       "./manifest/runtime": {
         "types": "./dist/manifest/runtime.d.mts",
