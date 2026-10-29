@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { isPromise } from "node:util/types";
 import { sha256Hex } from "@draftyak/protocol/hash";
 import {
 	HOST_FRAME_TAG,
@@ -38,12 +39,20 @@ import {
 import { HostError } from "@draftyak/sdk";
 import { Client } from "@modelcontextprotocol/client";
 import {
+	isSpecType,
 	type JSONRPCMessage,
 	parseJSONRPCMessage,
 	type Transport,
 } from "@modelcontextprotocol/server";
 import { MCP_VERSION } from "./in-memory.ts";
-import { type MockHost, MockHubError, type MockPlugin } from "./types.ts";
+import {
+	copyMockCallOptions,
+	type MockCallOptions,
+	type MockHost,
+	MockHubError,
+	type MockPlugin,
+	type MockProgressNotification,
+} from "./types.ts";
 
 export interface ProcessPluginFiles {
 	readonly directory: string;
@@ -65,6 +74,18 @@ const CLOSE_MS = 5_000;
 const PACK_BYTES = 64 * 1024 ** 2;
 const FILE_BYTES = 16 * 1024 ** 2;
 const FILE_COUNT = 128;
+function frozenReceipt<T>(value: T): T {
+	const pending: object[] = [];
+	if (value && typeof value === "object") pending.push(value);
+	while (pending.length) {
+		const current = pending.pop();
+		if (!current) continue;
+		for (const child of Object.values(current))
+			if (child && typeof child === "object") pending.push(child);
+		Object.freeze(current);
+	}
+	return value;
+}
 const fold = (value: string): string =>
 	process.platform === "win32" ? value.toLowerCase() : value;
 function fail(code: string): never {
@@ -247,6 +268,7 @@ export function createProcess(
 		method: string,
 		params?: Record<string, unknown>,
 		signal?: AbortSignal,
+		options?: MockCallOptions,
 	): Promise<Record<string, unknown>>;
 	close(): Promise<void>;
 } {
@@ -272,6 +294,13 @@ export function createProcess(
 	let discovery: Record<string, unknown> | undefined;
 	let discoveryId: string | number | undefined;
 	let scope: (<T>(action: () => T) => T) | undefined;
+	let progressObserver:
+		| {
+				readonly token: string | number;
+				readonly callback: NonNullable<MockCallOptions["onProgress"]>;
+				requestId?: string | number;
+		  }
+		| undefined;
 	const stop = new AbortController();
 	const activeHosts = new Map<string, AbortController>();
 	let unsubscribe: (() => void) | undefined;
@@ -285,6 +314,7 @@ export function createProcess(
 	let tail = Promise.resolve();
 	let admitted = 0;
 	const teardown = async (): Promise<void> => {
+		progressObserver = undefined;
 		if (closing) return closing;
 		closed = true;
 		closing = Promise.resolve()
@@ -355,6 +385,7 @@ export function createProcess(
 		return closing;
 	};
 	const failed = (code: string): void => {
+		progressObserver = undefined;
 		if (closed) return;
 		const error = new MockHubError(code);
 		stop.abort(error);
@@ -436,7 +467,43 @@ export function createProcess(
 			return;
 		}
 		const message = parseJSONRPCMessage(value);
+		let observerFailed = false;
+		const observing = progressObserver;
+		if (
+			observing?.requestId !== undefined &&
+			"method" in message &&
+			message.method === "notifications/progress" &&
+			!("id" in message) &&
+			isSpecType.ProgressNotification({ method: message.method, params: message.params })
+		) {
+			const params = message.params as {
+				progressToken: string | number;
+				progress: number;
+				total?: number;
+			};
+			if (
+				params.progressToken === observing.token &&
+				Number.isFinite(params.progress) &&
+				(params.total === undefined || Number.isFinite(params.total))
+			) {
+				const notification = frozenReceipt(jsonCopy(message)) as MockProgressNotification;
+				try {
+					const completion: unknown = observing.callback(notification);
+					if (isPromise(completion)) {
+						void Promise.prototype.then.call(
+							completion,
+							() => {},
+							() => {},
+						);
+						observerFailed = true;
+					}
+				} catch {
+					observerFailed = true;
+				}
+			}
+		}
 		if ("id" in message && message.id !== undefined && !("method" in message)) {
+			if (progressObserver?.requestId === message.id) progressObserver = undefined;
 			const pending = waiting.get(message.id);
 			if (pending) {
 				waiting.delete(message.id);
@@ -456,7 +523,11 @@ export function createProcess(
 			if (message.id === discoveryId && "result" in message)
 				discovery = jsonCopy(message.result) as Record<string, unknown>;
 		}
-		transport.onmessage?.(message);
+		try {
+			transport.onmessage?.(message);
+		} finally {
+			if (observerFailed) failed("PROCESS_PROGRESS_OBSERVER_FAILED");
+		}
 	};
 	const transport: Transport = {
 		async start() {
@@ -475,6 +546,13 @@ export function createProcess(
 			}
 			if ("method" in message && message.method === "server/discover" && "id" in message)
 				discoveryId = message.id;
+			if (
+				"method" in message &&
+				message.method === "tools/call" &&
+				requestId !== undefined &&
+				progressObserver
+			)
+				progressObserver.requestId = requestId;
 			try {
 				await write(message, false);
 			} catch (error) {
@@ -661,7 +739,7 @@ export function createProcess(
 		}
 	}
 	return {
-		async request(method, params = {}, signal) {
+		async request(method, params = {}, signal, optionsForCall) {
 			if (closed) fail("PROCESS_CLOSED");
 			if (signal?.aborted) throw new HostError("DENIED");
 			if (!["server/discover", "tools/list", "tools/call"].includes(method))
@@ -669,6 +747,22 @@ export function createProcess(
 			const deadline = performance.now() + HOST_REQUEST_TIMEOUT_MS;
 			const snapshot = AsyncLocalStorage.snapshot();
 			const copied = jsonCopy(params);
+			const callOptions = copyMockCallOptions(optionsForCall);
+			const callback = callOptions?.onProgress;
+			const metadata = copied._meta;
+			const token =
+				metadata && typeof metadata === "object" && !Array.isArray(metadata)
+					? (metadata as Record<string, unknown>).progressToken
+					: undefined;
+			if (callback && (method !== "tools/call" || !isSpecType.ProgressToken(token)))
+				fail("PROCESS_PROGRESS_INVALID");
+			const observer = callback
+				? {
+						token: token as string | number,
+						callback,
+						requestId: undefined as string | number | undefined,
+					}
+				: undefined;
 			if (admitted >= HOST_MAX_ACTIVE_REQUESTS) fail("PROCESS_REQUEST_LIMIT");
 			admitted++;
 			let connected: Client;
@@ -693,6 +787,7 @@ export function createProcess(
 				if (performance.now() >= deadline) fail("PROCESS_REQUEST_TIMEOUT");
 				running = true;
 				scope = snapshot;
+				progressObserver = observer;
 				const result =
 					method === "tools/call"
 						? connected.callTool(copied as { name: string; arguments?: Record<string, unknown> })
@@ -701,12 +796,14 @@ export function createProcess(
 					await bounded(result, deadline - performance.now(), "PROCESS_REQUEST_TIMEOUT", signal),
 				) as Record<string, unknown>;
 			} catch (error) {
+				if (progressObserver === observer) progressObserver = undefined;
 				if (running) await teardown();
 				if (error instanceof MockHubError) throw error;
 				if (error instanceof HostError) throw error;
 				return fail("PROCESS_REQUEST_REFUSED");
 			} finally {
 				if (running) {
+					if (progressObserver === observer) progressObserver = undefined;
 					scope = undefined;
 					for (const active of activeHosts.values()) active.abort();
 				}
