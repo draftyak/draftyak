@@ -307,7 +307,7 @@ fn sha(text: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
-fn provider(text: &str) -> bool {
+pub(crate) fn provider(text: &str) -> bool {
     !text.is_empty() && text.len() <= 256 && text.bytes().all(|byte| (b'!'..=b'~').contains(&byte))
 }
 fn visible_local(ch: char) -> bool {
@@ -341,7 +341,7 @@ fn domain(text: &str, dotted: bool, max_label: bool) -> bool {
                     .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
         })
 }
-fn address(text: &str) -> bool {
+pub(crate) fn address(text: &str) -> bool {
     let Some((local, host)) = text.rsplit_once('@') else {
         return false;
     };

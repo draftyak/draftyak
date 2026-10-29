@@ -2,6 +2,11 @@ import * as z from "zod";
 import { canConfirm, DeviceCapability } from "../entities/device.ts";
 import { canonicalize, parseStrict } from "../jcs.ts";
 import { ADMIN_KINDS, AgentSessionReviewSubject } from "../statements.ts";
+import {
+	AdminAccountSubject,
+	AdminDataBackupSubject,
+	AdminDeviceCapabilitiesSubject,
+} from "./admin.ts";
 import { copyByteView } from "./bytes.ts";
 import { Challenge, ChallengeRequest } from "./challenge.ts";
 import {
@@ -302,6 +307,9 @@ export const DEVICE_API_SCHEMAS: Readonly<Record<string, z.ZodType>> = Object.fr
 	PairConfirmSubject,
 	OperationReview,
 	AgentSessionReviewSubject,
+	AdminAccountSubject,
+	AdminDeviceCapabilitiesSubject,
+	AdminDataBackupSubject,
 	ChallengeRequest,
 	Challenge,
 	SignedEnvelope,
@@ -448,6 +456,7 @@ export function routeAllows(
 			routeId === "challenge" &&
 			o.kind !== "approval.send.v1" &&
 			o.kind !== "pair-confirm.v1" &&
+			o.kind !== "admin.v1" &&
 			o.kind !== "agent-session.v1"
 		)
 			return false;

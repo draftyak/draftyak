@@ -427,7 +427,7 @@ export function apiCases(): ApiCase[] {
 	schema("OperationReview", change(pair.review, "digest", "f".repeat(64)), false, "digest");
 	schema("OperationReview", change(pair.review, "remainingMs", 120001), false, "lifetime-120001");
 	schema("OperationReview", change(pair.review, "remainingMs", 0), true, "lifetime-zero");
-	for (const kind of ["login.v1", "consent.v1", "admin.v1", "unknown.v1"])
+	for (const kind of ["login.v1", "consent.v1", "unknown.v1"])
 		schema("ChallengeRequest", { kind, id: id.op }, false, `deferred-${kind}`);
 	for (const [label, request] of [
 		["missing-acks", { kind: "approval.send.v1", id: id.outbox }],
