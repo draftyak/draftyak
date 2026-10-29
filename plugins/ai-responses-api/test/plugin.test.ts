@@ -1,9 +1,18 @@
 import { spawnSync } from "node:child_process";
 import { setImmediate } from "node:timers/promises";
+import type { AiRequestBindingWithoutNetwork } from "@draftyak/hub";
 import type { HostFetchParams } from "@draftyak/protocol/host-channel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPlugin } from "../src/plugin.ts";
-import { CANARY, draft, input, message, mountedProvider, streamBytes } from "./helpers.ts";
+import {
+	CANARY,
+	draft,
+	input,
+	message,
+	mountedProvider,
+	nativeProviderFixture,
+	streamBytes,
+} from "./helpers.ts";
 
 const encoded = (value: unknown): string =>
 	Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -21,6 +30,249 @@ beforeEach(() => {
 		vi.fn(() => {
 			throw new Error("Global fetch forbidden");
 		}),
+	);
+});
+
+describe("native provider composition", () => {
+	const binding: AiRequestBindingWithoutNetwork = {
+		draft: {
+			model: "gpt-synthetic",
+			system: "Draft a plain-text reply.",
+			prompt: "Synthetic thread; propose Tuesday.",
+			contextIds: ["c1"],
+		},
+		settings: { kind: "responses" as const, effort: "low" as const },
+		endpoint: "https://api.openai.com/v1/responses",
+	};
+	it("mounts the actual SDK POST through the public verifier, credential vault and pinned TLS broker", async () => {
+		const native = await nativeProviderFixture({
+			binding,
+			holdAck: "terminal",
+			reply(response) {
+				response.setHeader("content-type", "text/event-stream");
+				response.end(terminal(message()));
+			},
+		});
+		try {
+			const generation = native.generation();
+			await mountedProvider(
+				native.handler,
+				async (ask, host) => {
+					native.useHost(host);
+					const result = await native.run(() =>
+						ask("tools/call", { name: "ai_draft_generate", arguments: input }),
+					);
+					expect(result.result?.isError).not.toBe(true);
+					expect(result.result?.structuredContent).toMatchObject({ kind: "draft", output: draft });
+				},
+				{ instance: { id: "native-fixture-instance", config: { effort: "low" } } },
+			);
+			expect(native.candidates).toHaveLength(1);
+			const candidate = native.candidates[0];
+			if (!candidate) throw new Error("Expected recorded SDK request");
+			const verified = native.snapshot(candidate);
+			expect(verified).toMatchObject({
+				profile: "responses-api-v1",
+				method: "POST",
+				url: binding.endpoint,
+			});
+			const posted = JSON.parse(native.seen.bodies[0] ?? "");
+			expect(posted).toMatchObject({
+				model: binding.draft.model,
+				instructions: binding.draft.system,
+				input: [{ role: "user", content: binding.draft.prompt }],
+				reasoning: { effort: "low" },
+				stream: true,
+				store: false,
+			});
+			expect(posted.text.format).toMatchObject({
+				type: "json_schema",
+				name: "draft_output",
+				strict: true,
+			});
+			expect(native.seen.methods).toEqual(["POST"]);
+			expect(native.seen.paths).toEqual(["/v1/responses"]);
+			expect(native.seen.sni).toEqual(["api.openai.com"]);
+			expect(native.seen.credentialMatched).toEqual([true]);
+			expect(native.notifications.at(-1)).toMatchObject({ done: true });
+			expect(native.pendingAcks).toHaveLength(1);
+			const stream = native.streams[0];
+			if (!stream) throw new Error("Expected native stream");
+			let completed = false;
+			void stream.completion.then(
+				() => {
+					completed = true;
+				},
+				() => {},
+			);
+			await setImmediate();
+			expect(completed).toBe(false);
+			// This controlled ACK follows the real consumer outcome, not buffered preparation.
+			native.acknowledge();
+			await stream.completion;
+			expect(native.generation()).toBe(generation);
+		} finally {
+			await native.close();
+		}
+	});
+
+	it.each([
+		["ai_models_list", {}, "configured-only", "/v1/models"],
+		["ai_probe", {}, "configured-only", "/v1/models"],
+		[
+			"ai_probe",
+			{ model: "org/model?x#z" },
+			"different-configured",
+			"/v1/models/org%2Fmodel%3Fx%23z",
+		],
+	] as const)(
+		"uses actual native metadata selection for %s with input %j",
+		async (operation, args, configured, expectedPath) => {
+			const model = "model" in args ? args.model : undefined;
+			const native = await nativeProviderFixture({
+				binding: {
+					operation,
+					configuration: {
+						profile: "responses-api-v1",
+						endpoint: "https://api.openai.com/v1",
+						model: configured,
+					},
+					input: args,
+				},
+				reply(response) {
+					response.setHeader("content-type", "application/json");
+					response.end(
+						JSON.stringify(
+							model === undefined
+								? { object: "list", data: [{ object: "model", id: "listed-model" }] }
+								: { object: "model", id: model },
+						),
+					);
+				},
+			});
+			try {
+				await mountedProvider(native.handler, async (ask, host) => {
+					native.useHost(host);
+					const result = await native.run(() =>
+						ask("tools/call", { name: operation, arguments: args }),
+					);
+					expect(result.result?.isError).not.toBe(true);
+					expect(result.result?.structuredContent).toEqual(
+						operation === "ai_models_list"
+							? { models: [{ id: "listed-model" }] }
+							: { status: "ok" },
+					);
+				});
+				expect(native.seen.methods).toEqual(["GET"]);
+				expect(native.seen.paths).toEqual([expectedPath]);
+				expect(native.seen.bodies).toEqual([""]);
+				expect(native.seen.credentialMatched).toEqual([true]);
+				const candidate = native.candidates[0];
+				if (!candidate) throw new Error("Expected recorded metadata request");
+				expect(native.snapshot(candidate).body.byteLength).toBe(0);
+				await Promise.all(native.streams.map((stream) => stream.completion));
+			} finally {
+				await native.close();
+			}
+		},
+	);
+
+	it.each(["model", "instructions", "prompt", "effort", "schema", "extra-header", "extra-body"])(
+		"the actual broker refuses changed SDK %s independently of the trusted invocation",
+		async (changed) => {
+			const native = await nativeProviderFixture({
+				binding,
+				reply(response) {
+					response.end("must not reach peer");
+				},
+				mutate(candidate) {
+					if (changed === "extra-header")
+						return {
+							...candidate,
+							headers: [...candidate.headers, ["x-not-allowed", "DYTEST-extra"]],
+						};
+					const value = JSON.parse(Buffer.from(candidate.body).toString());
+					if (changed === "model") value.model = "different-model";
+					if (changed === "instructions") value.instructions = "DYTEST-changed-system";
+					if (changed === "prompt") value.input[0].content = "DYTEST-changed-prompt";
+					if (changed === "effort") value.reasoning.effort = "high";
+					if (changed === "schema") value.text.format.schema.additionalProperties = true;
+					if (changed === "extra-body") value.metadata = { label: "DYTEST-extra" };
+					return { ...candidate, body: Buffer.from(JSON.stringify(value)) };
+				},
+			});
+			try {
+				await mountedProvider(
+					native.handler,
+					async (ask, host) => {
+						native.useHost(host);
+						const result = await native.run(() =>
+							ask("tools/call", { name: "ai_draft_generate", arguments: input }),
+						);
+						expect(result.result).toMatchObject({
+							isError: true,
+							structuredContent: { code: "TRANSIENT" },
+						});
+					},
+					{ instance: { id: "native-fixture-instance", config: { effort: "low" } } },
+				);
+				expect(native.seen.methods).toEqual([]);
+				expect(native.candidates).toHaveLength(1);
+				expect(() =>
+					native.snapshot(native.candidates[0] as import("@draftyak/hub").AiCandidateRequest),
+				).toThrow();
+			} finally {
+				await native.close();
+			}
+		},
+	);
+	it.each(["different-model-path", "body", "extra-header"])(
+		"the broker refuses changed SDK metadata %s against native invocation inputs",
+		async (changed) => {
+			const model = "pinned-model";
+			const native = await nativeProviderFixture({
+				binding: {
+					operation: "ai_probe",
+					configuration: {
+						profile: "responses-api-v1",
+						endpoint: "https://api.openai.com/v1",
+						model: "different-configured",
+					},
+					input: { model },
+				},
+				reply(response) {
+					response.end("must not reach peer");
+				},
+				mutate(candidate) {
+					if (changed === "different-model-path")
+						return { ...candidate, url: "https://api.openai.com/v1/models/different-model" };
+					if (changed === "body") return { ...candidate, body: Buffer.from("{}") };
+					return {
+						...candidate,
+						headers: [...candidate.headers, ["x-not-allowed", "DYTEST-extra"]],
+					};
+				},
+			});
+			try {
+				await mountedProvider(native.handler, async (ask, host) => {
+					native.useHost(host);
+					const result = await native.run(() =>
+						ask("tools/call", { name: "ai_probe", arguments: { model } }),
+					);
+					expect(result.result).toMatchObject({
+						isError: true,
+						structuredContent: { code: "TRANSIENT" },
+					});
+				});
+				expect(native.seen.methods).toEqual([]);
+				expect(native.candidates).toHaveLength(1);
+				expect(() =>
+					native.snapshot(native.candidates[0] as import("@draftyak/hub").AiCandidateRequest),
+				).toThrow();
+			} finally {
+				await native.close();
+			}
+		},
 	);
 });
 afterEach(() => {

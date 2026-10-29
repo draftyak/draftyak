@@ -1,5 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "resolveJsonModule": true },
+  "compilerOptions": {
+    "resolveJsonModule": true,
+    "paths": {
+      "better-sqlite3-multiple-ciphers": [
+        "../../apps/hub/node_modules/better-sqlite3-multiple-ciphers/index.d.ts"
+      ]
+    }
+  },
   "include": ["**/*.ts"]
 }

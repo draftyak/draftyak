@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
+import { setImmediate as nextTurn } from "node:timers/promises";
+import type { AiRequestBindingWithoutNetwork } from "@draftyak/hub";
 import { APIConnectionError } from "openai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClient, EFFORTS, ResponsesError, type ResponsesFetch } from "../src/index.ts";
-import { CANARY, input } from "./helpers.ts";
+import { CANARY, input, message, nativeProviderFixture } from "./helpers.ts";
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -36,6 +38,206 @@ function child(code: string, env: Record<string, string> = {}, flags: string[] =
 const factoryUrl = new URL("../src/client.ts", import.meta.url).href;
 const requestUrl = new URL("../src/request.ts", import.meta.url).href;
 const indexUrl = new URL("../src/index.ts", import.meta.url).href;
+
+describe("native SDK lifecycle", () => {
+	function binding(): AiRequestBindingWithoutNetwork {
+		return {
+			draft: {
+				model: "gpt-synthetic",
+				system: "Draft a plain-text reply.",
+				prompt: "Synthetic thread; propose Tuesday.",
+				contextIds: ["c1"],
+			},
+			settings: { kind: "responses", effort: "low" },
+			endpoint: "https://api.openai.com/v1/responses",
+		};
+	}
+	const terminal = (): Uint8Array =>
+		new TextEncoder().encode(
+			`data: ${JSON.stringify({ type: "response.completed", response: message() })}\n\n`,
+		);
+
+	it("returns native headers before start and waits for controlled ACKs after actual body delivery", async () => {
+		const global = noGlobalFetch();
+		const bytes = terminal();
+		const native = await nativeProviderFixture({
+			binding: binding(),
+			manualStart: true,
+			holdAck: "all",
+			reply(response) {
+				response.setHeader("content-type", "text/event-stream");
+				response.end(bytes);
+			},
+		});
+		try {
+			await native.run(async () => {
+				const response = await createClient(native.fetch).send(
+					input,
+					{ effort: "low" },
+					native.caller.signal,
+				);
+				const stream = native.streams[0];
+				if (!stream) throw new Error("Expected native stream");
+				let completion = "pending";
+				const finished = stream.completion.then(
+					() => {
+						completion = "completed";
+					},
+					() => {
+						completion = "refused";
+					},
+				);
+				await native.bodyWritten;
+				await nextTurn();
+				expect(response.status).toBe(200);
+				expect(response.bodyUsed).toBe(false);
+				expect(native.notifications).toEqual([]);
+				expect(completion).toBe("pending");
+				const reader = response.body?.getReader();
+				if (!reader) throw new Error("Expected native response body");
+				stream.start();
+				const received: Uint8Array[] = [];
+				let readFrames = 0;
+				let next = await reader.read();
+				while (!next.done) {
+					if (!next.value.byteLength) throw new Error("Expected delivered bytes");
+					received.push(next.value);
+					const frame = native.notifications[readFrames++];
+					if (!frame) throw new Error("Expected delivered native frame");
+					expect(Buffer.from(frame.base64, "base64url")).toEqual(Buffer.from(next.value));
+					expect(native.pendingAcks).toHaveLength(1);
+					expect(completion).toBe("pending");
+					if (readFrames === 1) {
+						expect(native.notifications).toHaveLength(1);
+						await nextTurn();
+						expect(native.notifications).toHaveLength(1);
+						expect(completion).toBe("pending");
+					}
+					if (frame.done) {
+						expect((await reader.read()).done).toBe(true);
+						break;
+					}
+					// This fixture ACK follows the actual reader receipt, not notification preparation.
+					native.acknowledge();
+					next = await reader.read();
+				}
+				expect(readFrames).toBeGreaterThan(0);
+				expect(Buffer.concat(received)).toEqual(Buffer.from(bytes));
+				expect(native.notifications.at(-1)).toMatchObject({ done: true });
+				await nextTurn();
+				expect(native.pendingAcks).toHaveLength(1);
+				expect(completion).toBe("pending");
+				native.acknowledge();
+				await finished;
+				expect(completion).toBe("completed");
+				expect(native.pendingAcks).toEqual([]);
+				expect(native.notifications.map(({ sequence }) => sequence)).toEqual(
+					native.notifications.map((_frame, index) => index),
+				);
+				expect(native.seen.methods).toEqual(["POST"]);
+				expect(native.seen.paths).toEqual(["/v1/responses"]);
+				expect(native.seen.credentialMatched).toEqual([true]);
+				expect(native.seen.sni).toEqual(["api.openai.com"]);
+				expect(global).not.toHaveBeenCalled();
+				reader.releaseLock();
+			});
+		} finally {
+			await native.close();
+		}
+	});
+
+	it("propagates original caller abort after headers into a pending native body without retry", async () => {
+		const global = noGlobalFetch();
+		const native = await nativeProviderFixture({
+			binding: binding(),
+			reply(response) {
+				response.setHeader("content-type", "text/event-stream");
+				response.flushHeaders();
+			},
+		});
+		try {
+			await native.run(async () => {
+				const response = await createClient(native.fetch).send(
+					input,
+					{ effort: "low" },
+					native.caller.signal,
+				);
+				const stream = native.streams[0];
+				const reader = response.body?.getReader();
+				if (!stream || !reader) throw new Error("Expected native streamed response");
+				expect(response.status).toBe(200);
+				expect(native.caller.signal.aborted).toBe(false);
+				await nextTurn();
+				const read = reader.read();
+				void read.catch(() => undefined);
+				native.caller.abort(CANARY);
+				await expect(read).rejects.toMatchObject({ code: "DENIED" });
+				await expect(stream.completion).rejects.toMatchObject({ code: "PROVIDER_HTTP_REFUSED" });
+				await native.peerClosed;
+				await nextTurn();
+				expect(native.caller.signal.aborted).toBe(true);
+				expect(native.streams).toHaveLength(1);
+				expect(native.candidates).toHaveLength(1);
+				expect(native.seen.methods).toEqual(["POST"]);
+				expect(native.seen.credentialMatched).toEqual([true]);
+				expect(global).not.toHaveBeenCalled();
+				reader.releaseLock();
+			});
+		} finally {
+			await native.close();
+		}
+	});
+
+	it("retires an old vault generation after body delivery while the original caller stays live", async () => {
+		const global = noGlobalFetch();
+		const bytes = terminal();
+		const native = await nativeProviderFixture({
+			binding: binding(),
+			reply(response) {
+				response.setHeader("content-type", "text/event-stream");
+				response.write(bytes.subarray(0, Math.floor(bytes.length / 2)));
+			},
+		});
+		try {
+			await native.run(async () => {
+				const response = await createClient(native.fetch).send(
+					input,
+					{ effort: "low" },
+					native.caller.signal,
+				);
+				const stream = native.streams[0];
+				const reader = response.body?.getReader();
+				if (!stream || !reader) throw new Error("Expected native streamed response");
+				const first = await reader.read();
+				if (first.done || !first.value.byteLength)
+					throw new Error("Expected delivered native bytes");
+				expect(Buffer.from(first.value)).toEqual(
+					Buffer.from(bytes.subarray(0, first.value.length)),
+				);
+				await nextTurn();
+				const generation = native.generation();
+				const read = reader.read();
+				void read.catch(() => undefined);
+				native.rotate();
+				expect(native.generation()).toBe(generation + 1);
+				expect(native.caller.signal.aborted).toBe(false);
+				await expect(read).rejects.toMatchObject({ code: "DENIED" });
+				await expect(stream.completion).rejects.toMatchObject({ code: "PROVIDER_HTTP_REFUSED" });
+				await native.peerClosed;
+				await nextTurn();
+				expect(native.caller.signal.aborted).toBe(false);
+				expect(native.streams).toHaveLength(1);
+				expect(native.candidates).toHaveLength(1);
+				expect(native.seen.methods).toEqual(["POST"]);
+				expect(native.seen.credentialMatched).toEqual([true]);
+				expect(global).not.toHaveBeenCalled();
+				reader.releaseLock();
+			});
+		} finally {
+			await native.close();
+		}
+	});
+});
 
 describe("pinned injected-fetch Responses SDK", () => {
 	it.each([undefined, null, {}, "fetch", 7])(
