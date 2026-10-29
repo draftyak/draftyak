@@ -38,6 +38,9 @@ importers:
 
   apps/hub:
     dependencies:
+      '@draftyak/bounded-files':
+        specifier: workspace:*
+        version: link:../../packages/bounded-files
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
