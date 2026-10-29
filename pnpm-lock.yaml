@@ -421,6 +421,22 @@ importers:
         specifier: 0.2.0-alpha.12
         version: 0.2.0-alpha.12(@cfworker/json-schema@4.1.1)
 
+  tools/mcpb:
+    dependencies:
+      '@draftyak/bounded-files':
+        specifier: workspace:*
+        version: link:../../packages/bounded-files
+      '@draftyak/cli':
+        specifier: workspace:*
+        version: link:../../apps/cli
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+    devDependencies:
+      '@cfworker/json-schema':
+        specifier: 4.1.1
+        version: 4.1.1
+
   tools/vendor-guard: {}
 
   tools/verify: {}
