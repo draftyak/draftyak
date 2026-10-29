@@ -51,6 +51,8 @@ export interface CompatibleFake extends Fake {
 	enqueue(...steps: readonly CompatibleStep[]): void;
 	/** Steps not yet taken by a request that reached the app. */
 	pending(): number;
+	/** Completion requests the fake answered itself: a refused draft (400) or no step left (503). */
+	refusals(): number;
 }
 
 // The compatible core's own request cap, so its largest request still arrives whole.
@@ -77,6 +79,7 @@ function listings(model: string, models: readonly string[] | undefined) {
 	const ids: string[] = [];
 	if (models === undefined) ids.push(model);
 	else {
+		if (!Array.isArray(models)) throw new TypeError("Compatible fake models are an array of ids");
 		if (models.length > MAX_MODELS) throw new RangeError("Compatible fake model listing limit");
 		for (const id of models) {
 			if (ids.length === MAX_MODELS) throw new RangeError("Compatible fake model listing limit");
@@ -131,7 +134,10 @@ function releasing(base: Faults): Faults {
  * `GET /v1/models` and `GET /api/tags` list the models, or send the `listing` step, and take no
  * step. Any other target gets 404, another method 405, and a request after the script runs out
  * 503. Steps are wire fixtures: nothing here verifies, accepts or authorizes a request, and a step
- * may break every limit its consumer enforces.
+ * may break every limit its consumer enforces. That 503 and the draft fake's 400 look scripted to
+ * the core, so a test expecting TRANSIENT or INVALID_INPUT also asserts that refusals() is 0 and
+ * that pending() shows its step taken: an Ollama core also reads the fake's own 404 as
+ * INVALID_INPUT, and refusals() does not count it.
  */
 export function createCompatibleFake(options: CompatibleFakeOptions = {}): CompatibleFake {
 	return createCompatible(options, false);
@@ -142,8 +148,10 @@ export function createCompatibleFake(options: CompatibleFakeOptions = {}): Compa
  * application/json in strict UTF-8 with no byte order mark, holding exactly `model` (the
  * option's), `messages` (system text, then user text), `stream: false` and either
  * `response_format` (json_object, or strict json_schema draft_output_v1) on /v1/chat/completions
- * or an object `format`, the schema, on /api/chat. The request still takes its step first, so a
- * refused one uses it up and gets a fixed 400.
+ * or an object `format`, the schema, on /api/chat. Only that structure is checked, not the schema,
+ * the prompt texts, the format the core's configuration picks, an earlier duplicate member, the
+ * media type's spelling or other headers: the hub's chat-completions-v1 verifier is the exact
+ * check. The request still takes its step first, so a refused one uses it up and gets a fixed 400.
  */
 export function createCompatibleDraftFake(options: CompatibleFakeOptions = {}): CompatibleFake {
 	return createCompatible(options, true);
@@ -157,6 +165,11 @@ function createCompatible(options: CompatibleFakeOptions, strict: boolean): Comp
 	const scripted = options.listing === undefined ? undefined : prepareStep(options.listing);
 	const script = createScript();
 	script.enqueue(...(options.steps ?? []));
+	let refusals = 0;
+	const refuse = (status: number, error: string): Response => {
+		refusals++;
+		return failure(status, error);
+	};
 	const handler = async (request: Request): Promise<Response> => {
 		const entry = ROUTES.get(rawTarget(request));
 		if (entry === undefined) return failure(404, "not_found");
@@ -167,9 +180,9 @@ function createCompatible(options: CompatibleFakeOptions, strict: boolean): Comp
 			return new Response(listing[route], { headers: { "content-type": "application/json" } });
 		}
 		const step = script.take();
-		if (step === undefined) return failure(503, "script_exhausted");
+		if (step === undefined) return refuse(503, "script_exhausted");
 		if (strict && !(await acceptsDraft(request, route, model)))
-			return failure(400, "request_refused");
+			return refuse(400, "request_refused");
 		return await deliver(step, request);
 	};
 	const app = new Hono();
@@ -184,5 +197,9 @@ function createCompatible(options: CompatibleFakeOptions, strict: boolean): Comp
 		maxRequestBodyBytes: MAX_REQUEST_BYTES,
 	});
 	// Extend the createFake result itself, so resolveFakeTransport still recognizes it.
-	return Object.assign(fake, { enqueue: script.enqueue, pending: script.pending });
+	return Object.assign(fake, {
+		enqueue: script.enqueue,
+		pending: script.pending,
+		refusals: () => refusals,
+	});
 }
