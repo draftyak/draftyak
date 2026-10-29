@@ -151,6 +151,7 @@ describe("compatible wire formats", () => {
 		["a non-ASCII id", { models: ["dytest-é"] }, TypeError],
 		["a 257-character id", { models: ["x".repeat(257)] }, TypeError],
 		["a non-string id", { models: [7 as unknown as string] }, TypeError],
+		["a string of ids", { models: "dytest" as unknown as readonly string[] }, TypeError],
 		["an invalid model", { model: "dytest model" }, TypeError],
 	] as const)("refuses a listing with %s when the fake is made", (_name, options, error) => {
 		expect(() => createCompatibleFake(options)).toThrow(error);
@@ -167,7 +168,7 @@ describe("compatible wire formats", () => {
 		expect(() => createCompatibleFake({ models: ids })).toThrow("model listing limit");
 	});
 
-	it("sends a scripted listing, snapshotted when the fake is made, on both routes and every request", async () => {
+	it("sends a scripted listing on both routes and every request, unchanged by writes to its input or a sent chunk", async () => {
 		const text = '{"object":"list","data":[{"id":"dytest bad id","object":"model"}';
 		const bytes = encoder.encode(text);
 		const fake = createCompatibleFake({
@@ -176,6 +177,11 @@ describe("compatible wire formats", () => {
 			steps: [reply({ order: 1 })],
 		});
 		bytes.fill(0x21);
+		const reader = readerOf(await fake.fetch(TAGS));
+		const { value: chunk } = await reader.read();
+		expect(chunk).toEqual(encoder.encode(text));
+		chunk?.fill(0x21);
+		await reader.cancel();
 		for (const path of [MODELS, TAGS, MODELS]) {
 			const response = await fake.fetch(path);
 			expect([
@@ -199,9 +205,25 @@ describe("compatible wire formats", () => {
 			"allows a body",
 		],
 		["models and a listing", { models: [COMPATIBLE_MODEL], listing: reply({}) }, "not both"],
+		[
+			"a listing with a Trailer",
+			{ listing: { kind: "raw", body: "{}", headers: { Trailer: "x-dytest" } } },
+			"framing headers",
+		],
 	] as const)("refuses %s when the fake is made", (_name, options, message) => {
 		expect(() => createCompatibleFake(options)).toThrow(message);
 		expect(() => createCompatibleDraftFake(options)).toThrow(message);
+	});
+
+	it("stamps Date from the clock over a step's or listing's own", async () => {
+		const headers = { date: httpDate(0) };
+		const fake = createCompatibleFake({
+			clock: manualClock(START),
+			listing: { kind: "json", body: LISTED, headers },
+			steps: [{ kind: "json", body: {}, headers }],
+		});
+		for (const response of [await fake.fetch(CHAT, post()), await fake.fetch(MODELS)])
+			expect(response.headers.get("date")).toBe(httpDate(START));
 	});
 
 	it("builds each dialect's completed, non-streamed default reply", () => {
@@ -446,7 +468,7 @@ describe("routes, hosts and records", () => {
 			expect(await response.json()).toEqual({
 				error: status === 404 ? "not_found" : "method_not_allowed",
 			});
-		expect(fake.pending()).toBe(1);
+		expect([fake.pending(), fake.refusals()]).toEqual([1, 0]);
 		expect(fake.recorder.takeRequests().map((entry) => [entry.method, entry.target])).toEqual([
 			[method, target],
 		]);
@@ -511,12 +533,14 @@ describe("routes, hosts and records", () => {
 			const empty = await fake.fetch(path, post());
 			expect([empty.status, await empty.json()]).toEqual([503, { error: "script_exhausted" }]);
 		}
-		expect(fake.pending()).toBe(0);
+		expect([fake.pending(), fake.refusals()]).toEqual([0, 2]);
 		fake.enqueue(reply(chatCompletionBody()), reply(ollamaChatBody()));
 		expect(fake.pending()).toBe(2);
 		expect(await json(fake.fetch(CHAT, post()))).toEqual(chatCompletionBody());
 		expect(await json(fake.fetch(OLLAMA, post()))).toEqual(ollamaChatBody());
+		expect(fake.refusals()).toBe(2);
 		expect((await fake.fetch(CHAT, post())).status).toBe(503);
+		expect(fake.refusals()).toBe(3);
 	});
 
 	it("is exported from the package root and subpath and resolves as a genuine fake transport", async () => {
@@ -624,6 +648,11 @@ describe("script admission", () => {
 			"byte limit",
 		],
 		["a number as raw body", { kind: "raw", body: 7 as unknown as string }, "text or bytes"],
+		[
+			"a number as content type",
+			{ kind: "raw", body: "x", contentType: 7 as unknown as string },
+			"contentType is text",
+		],
 		["an unknown kind", { kind: "sse", body: "" } as unknown as CompatibleStep, "step kind"],
 		[
 			"an invalid header name",
@@ -640,6 +669,7 @@ describe("script admission", () => {
 			{ kind: "raw", body: "x", headers: { "Transfer-Encoding": "chunked" } },
 			"framing headers",
 		],
+		["Trailer", { kind: "json", body: {}, headers: { trailer: "x-dytest" } }, "framing headers"],
 	];
 
 	it.each(invalid)("refuses a step with %s and adds none of its batch", (_name, step, error) => {
@@ -668,6 +698,28 @@ describe("script admission", () => {
 			count++;
 		}
 		expect(count).toBe(65_536);
+	});
+
+	it("checks a body's size before encoding or copying it, as a step and as a listing", () => {
+		const text = "x".repeat(16 * 1_024 * 1_024 + 1);
+		// A copy keeps its one real byte, so only the check before copying refuses it.
+		const bytes = Object.defineProperty(new Uint8Array(1), "byteLength", {
+			value: 16 * 1_024 * 1_024 + 1,
+		});
+		const fake = createCompatibleFake({ steps: [reply({ order: 1 })] });
+		const encode = vi.spyOn(TextEncoder.prototype, "encode");
+		try {
+			for (const body of [text, bytes]) {
+				expect(() => fake.enqueue({ kind: "raw", body })).toThrow("byte limit");
+				expect(() => createCompatibleFake({ listing: { kind: "raw", body } })).toThrow(
+					"byte limit",
+				);
+			}
+			const encoded = encode.mock.calls.some(([input]) => input === text);
+			expect([encoded, fake.pending()]).toEqual([false, 1]);
+		} finally {
+			encode.mockRestore();
+		}
 	});
 
 	it("holds at most 1,024 steps and refuses a batch past them", () => {
@@ -719,6 +771,21 @@ describe("script admission", () => {
 			abort.abort(new Error("DYTEST stop"));
 			await rejected;
 		}
+	});
+
+	it("keeps a scripted listing within the per-step byte limit and outside the queued budget", async () => {
+		const large = "x".repeat(16 * 1_024 * 1_024);
+		const fake = createCompatibleFake({
+			listing: { kind: "raw", body: large },
+			steps: Array.from({ length: 4 }, (): CompatibleStep => ({ kind: "raw", body: large })),
+		});
+		expect(fake.pending()).toBe(4);
+		expect(() => fake.enqueue({ kind: "raw", body: "x" })).toThrow("byte limit");
+		const listed = await (await fake.fetch(MODELS)).text();
+		expect([listed.length, listed === large, fake.pending()]).toEqual([large.length, true, 4]);
+		expect(() => createCompatibleFake({ listing: { kind: "raw", body: `${large}x` } })).toThrow(
+			"byte limit",
+		);
 	});
 });
 
@@ -1102,7 +1169,7 @@ describe("slow and cancellable responses", () => {
 		}
 	});
 
-	it.each(["header", "chunk", "cancel", "latency"] as const)(
+	it.each(["header", "listing", "chunk", "cancel", "latency"] as const)(
 		"clears the timer of a pending %s wait when it ends",
 		async (mode) => {
 			const originalDelay = timerPromises.setTimeout;
@@ -1128,14 +1195,20 @@ describe("slow and cancellable responses", () => {
 			const controller = new AbortController();
 			const reason = new Error(`DYTEST ${mode} stopped`);
 			const step: CompatibleStep =
-				mode === "header"
+				mode === "header" || mode === "listing"
 					? { kind: "json", body: {}, delayMs: Infinity }
 					: { kind: "raw", body: "abc", chunkBytes: 1, chunkDelayMs: Infinity };
-			const fake = createCompatibleFake({ clock: manualClock(START), steps: [step] });
+			const fake = createCompatibleFake(
+				mode === "listing"
+					? { clock: manualClock(START), listing: step, steps: [reply({})] }
+					: { clock: manualClock(START), steps: [step] },
+			);
 			if (mode === "latency") fake.faults.add({ kind: "latency", ms: Infinity });
 			try {
-				if (mode === "header" || mode === "latency") {
-					const pending = fake.fetch(CHAT, post({ signal: controller.signal }));
+				if (mode === "header" || mode === "listing" || mode === "latency") {
+					const init = { signal: controller.signal };
+					const pending =
+						mode === "listing" ? fake.fetch(MODELS, init) : fake.fetch(CHAT, post(init));
 					const rejected = expect(pending).rejects.toBe(reason);
 					await settle(() => armed.size === 1);
 					expect(armed.size).toBe(1);
@@ -1235,6 +1308,23 @@ describe("draft-request fixture", () => {
 		const response = await fake.fetch(path, request(value));
 		expect([response.status, await response.json()]).toEqual([200, { reserved: 1 }]);
 		expect(fake.pending()).toBe(1);
+	});
+
+	it("checks only the structure, leaving schema, prompt and header content to the hub", async () => {
+		const fake = createCompatibleDraftFake({ steps: steps() });
+		const schemaless = {
+			...SCHEMA_REQUEST,
+			messages: [{ role: "system", content: "DYTEST other instructions." }, USER],
+			response_format: {
+				type: "json_schema",
+				json_schema: { ...SCHEMA_FORMAT.json_schema, schema: {} },
+			},
+		};
+		const headers = { "content-type": "application/json", authorization: "Bearer DYTEST-token" };
+		expect((await fake.fetch(CHAT, request(schemaless, { headers }))).status).toBe(200);
+		const format = { type: "array" };
+		expect((await fake.fetch(OLLAMA, request({ ...OLLAMA_REQUEST, format }))).status).toBe(200);
+		expect(fake.refusals()).toBe(0);
 	});
 
 	it("requires exactly the configured model, which the listings name", async () => {
@@ -1455,6 +1545,25 @@ describe("draft-request fixture", () => {
 			503,
 			{ error: "script_exhausted" },
 		]);
+	});
+
+	it("tells its own 400 and 503 from the same scripted answers only by refusals()", async () => {
+		const exhausted = { error: "script_exhausted" };
+		const fake = createCompatibleDraftFake({
+			steps: [
+				{ kind: "json", status: 400, body: refused },
+				{ kind: "json", status: 503, body: exhausted },
+			],
+		});
+		const answer = async (path: string, value: unknown) => {
+			const response = await fake.fetch(path, request(value));
+			return [response.status, await response.json(), fake.pending(), fake.refusals()];
+		};
+		expect(await answer(CHAT, SCHEMA_REQUEST)).toEqual([400, refused, 1, 0]);
+		expect(await answer(OLLAMA, OLLAMA_REQUEST)).toEqual([503, exhausted, 0, 0]);
+		fake.enqueue(reply({ reserved: 3 }));
+		expect(await answer(CHAT, { ...SCHEMA_REQUEST, tools: [] })).toEqual([400, refused, 0, 1]);
+		expect(await answer(OLLAMA, OLLAMA_REQUEST)).toEqual([503, exhausted, 0, 2]);
 	});
 
 	it("keeps before and after fault ownership for draft requests", async () => {

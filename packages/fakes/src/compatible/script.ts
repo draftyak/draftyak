@@ -3,7 +3,7 @@ import { checkDelay, wait } from "../faults.ts";
 interface Delivery {
 	/** 200 by default; any status from 200 to 599 that allows a body. */
 	readonly status?: number;
-	/** Any header but Content-Length and Transfer-Encoding, which the server sets. */
+	/** Any header but Content-Length, Transfer-Encoding and Trailer; Date comes from the clock. */
 	readonly headers?: HeadersInit;
 	/** Wait before the response headers; Infinity waits until the request aborts. */
 	readonly delayMs?: number;
@@ -51,7 +51,8 @@ const MAX_QUEUED_BYTES = 64 * 1_024 * 1_024;
 const MAX_CHUNK = 65_536;
 const MAX_CHUNKS = 65_536;
 const NO_BODY = new Set([204, 205, 304]);
-const FRAMING = ["content-length", "transfer-encoding"];
+// The server owns framing: over loopback, a Trailer on a body it sizes becomes a 500.
+const FRAMING = ["content-length", "transfer-encoding", "trailer"];
 const encoder = new TextEncoder();
 
 function json(value: unknown): string {
@@ -95,13 +96,16 @@ function prepare(step: CompatibleStep, available: number): Prepared {
 		contentType = "application/json";
 	} else if (kind === "raw") {
 		bytes = bytesOf(step.body, cap);
-		contentType = step.contentType ?? "application/json";
+		const type = step.contentType;
+		if (type !== undefined && typeof type !== "string")
+			throw new TypeError("A raw compatible step's contentType is text");
+		contentType = type ?? "application/json";
 	} else throw new TypeError("Unknown compatible step kind");
 	if (Math.ceil(bytes.byteLength / chunkBytes) > MAX_CHUNKS)
 		throw new RangeError("Compatible fake chunk work limit");
 	const headers = new Headers(step.headers);
 	if (FRAMING.some((name) => headers.has(name)))
-		throw new TypeError("The fake sets a compatible step's framing headers");
+		throw new TypeError("A compatible step leaves its framing headers to the server");
 	if (!headers.has("content-type")) headers.set("content-type", contentType);
 	return { bytes, status, headers: [...headers], delayMs, chunkBytes, chunkDelayMs };
 }
