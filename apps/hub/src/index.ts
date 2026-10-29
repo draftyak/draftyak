@@ -46,6 +46,18 @@ export {
 	type EventPurgeProgress,
 	type EventRecord,
 } from "./events/log.ts";
+export {
+	ExtensionError,
+	type ExtensionErrorCode,
+	type ExtensionHost,
+	type ExtensionLogEntry,
+	type ExtensionModuleInfo,
+	type ExtensionStartOptions,
+	type ProviderService,
+	type RegisteredProvider,
+	type SendPolicyDecision,
+	startExtensions,
+} from "./extensions/index.ts";
 export { HubIdentity } from "./identity/hub-key.ts";
 export {
 	PinError,

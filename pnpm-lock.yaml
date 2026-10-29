@@ -41,6 +41,9 @@ importers:
       '@draftyak/bounded-files':
         specifier: workspace:*
         version: link:../../packages/bounded-files
+      '@draftyak/extensions':
+        specifier: workspace:*
+        version: link:../../packages/extensions
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
