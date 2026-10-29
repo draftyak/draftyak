@@ -11,7 +11,9 @@ const [
 	{ canonicalize },
 	{ toBase64Url },
 	{ signStatement },
+	{ auditHeadTag },
 	{ assertAuthorizerStore },
+	{ deviceApiError },
 	{ NativeDeviceTls },
 	{ cliConfirmPinScope, pairConfirmPinScope, revokePinScope },
 	{ advanceEpochForRestore, confirmForRecovery },
@@ -34,7 +36,9 @@ const [
 	import("@draftyak/protocol/jcs"),
 	import("@draftyak/protocol/scalars"),
 	import("@draftyak/protocol/sign"),
+	import("../../src/audit/head.ts"),
 	import("../../src/authz/authorizer.ts"),
+	import("../../src/authz/errors.ts"),
 	import("../../src/authz/native-peer.ts"),
 	import("../../src/authz/scopes.ts"),
 	import("../../src/identity/devices.ts"),
@@ -73,7 +77,12 @@ it("native TLS plus sidecar proof is pending until a real PIN atomically install
 	});
 	const proof = await f.pins.verify(owner(f), PIN, "authz.test");
 	f.store.write((tx) => f.pins.consume(tx, proof, owner(f), "authz.test"));
-	expect(auditActions(f)).toEqual(["device.claimed", "pin.initialized", "device.bootstrapped"]);
+	expect(auditActions(f)).toEqual([
+		"device.claimed",
+		"pin.initialized",
+		"device.bootstrapped",
+		"pin.verified",
+	]);
 	await expect(f.registry.bootstrap(id, PIN)).rejects.toThrow("BOOTSTRAP_DONE");
 });
 
@@ -300,13 +309,48 @@ function confirmation(
 		signature: signStatement("pair-confirm.v1", body, approver.privateKey),
 	};
 }
+// A forged audit head fails every PIN write until the real head is restored.
+async function unrecordedAnswers(scope: string): Promise<string[]> {
+	const head = f.store.read((db) =>
+		db.get<{ audit_seq: number; audit_head: string; audit_tag: string }>(
+			"SELECT audit_seq,audit_head,audit_tag FROM main.audit_meta",
+		),
+	);
+	if (!head) throw new Error("Missing test chain head");
+	const key = randomBytes(32),
+		forged = auditHeadTag(key, head.audit_seq, head.audit_head);
+	key.fill(0);
+	f.store.write((tx) => tx.run("UPDATE main.audit_meta SET audit_tag=?", [forged]));
+	const answers: string[] = [];
+	try {
+		for (const pin of [PIN, "999999"])
+			answers.push(
+				await f.pins.verify(owner(f), pin, scope).then((proof) => {
+					f.pins.discard(proof);
+					return "PROOF";
+				}, deviceApiError),
+			);
+	} finally {
+		f.store.write((tx) => tx.run("UPDATE main.audit_meta SET audit_tag=?", [head.audit_tag]));
+	}
+	return answers;
+}
 
 it("restore voids old rights and real signed confirmation plus scoped PIN rechecks the pending record", async () => {
 	const first = await bootstrap(f),
 		second = await restored(first);
 	const nonce = toBase64Url(randomBytes(16)),
 		input = confirmation(first, second, nonce);
+	const recorded = auditActions(f).length;
+	expect(await unrecordedAnswers(pairConfirmPinScope(nonce))).toEqual([
+		"UNAVAILABLE",
+		"UNAVAILABLE",
+	]);
+	f.store.read((db) => {
+		expect(() => f.authorizer.requirePeerDevice(db, first.peer, "read")).toThrow("DEVICE_PENDING");
+	});
 	const proof = await f.pins.verify(owner(f), PIN, pairConfirmPinScope(nonce));
+	expect(auditActions(f).slice(recorded)).toEqual(["pin.failed", "pin.verified"]);
 	f.store.write((tx) => {
 		expect(() =>
 			f.registry.confirmByApprover(tx, { ...input, candidate: idOf(second) }, proof),
