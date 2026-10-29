@@ -5,5 +5,10 @@ const config: UserConfig = defineConfig({
 	format: "esm",
 	platform: "node",
 	dts: { generator: "oxc" },
+	copy: [
+		{ from: "src/jobs/jobs-migrations/*.sql", to: "dist/jobs-migrations" },
+		{ from: "src/events/events-migrations/*.sql", to: "dist/events-migrations" },
+		{ from: "src/store/migrations/audit/*.sql", to: "dist/store/migrations/audit" },
+	],
 });
 export default config;
