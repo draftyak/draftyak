@@ -9,6 +9,7 @@
     "./channel-v1": "./src/channel-v1.ts",
     "./data-class": "./src/data-class.ts",
     "./date-pattern": "./src/date-pattern.ts",
+    "./device-api": "./src/device-api.ts",
     "./digests": "./src/digests.ts",
     "./draft-output": "./src/draft-output.ts",
     "./draft-output-text": "./src/draft-output-text.ts",
@@ -115,6 +116,10 @@
       "./date-pattern": {
         "types": "./dist/date-pattern.d.mts",
         "default": "./dist/date-pattern.mjs"
+      },
+      "./device-api": {
+        "types": "./dist/device-api.d.mts",
+        "default": "./dist/device-api.mjs"
       },
       "./digests": {
         "types": "./dist/digests.d.mts",

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stdioFixture } from "./stdio-fixture.ts";
+import { STDIO_FIXTURE_STARTUP_MS } from "./stdio-readiness.ts";
 
 const fixture = new URL("./fixtures/stdio-diagnostics.ts", import.meta.url);
 function details(error: Error) {
@@ -37,7 +38,9 @@ describe("stdio fixture failure diagnosis", () => {
 		try {
 			const response = peer.ask("server/discover");
 			const failure = rejected(response);
-			await expect.poll(() => peer.stderr()).toContain("waiting for startup");
+			await expect
+				.poll(() => peer.stderr(), { timeout: STDIO_FIXTURE_STARTUP_MS })
+				.toContain("waiting for startup");
 			expect(delay).toBe(3000);
 			now = 3000;
 			fire?.();

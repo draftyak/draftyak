@@ -1,0 +1,24 @@
+{
+  "$schema": "../../node_modules/turbo/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/vendor-guard/src/**",
+        "$TURBO_ROOT$/tools/vendor-guard/rules/**",
+        "$TURBO_ROOT$/tools/vendor-guard/allow.json",
+        "$TURBO_ROOT$/.gitignore"
+      ]
+    },
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/vendor-guard/src/**",
+        "$TURBO_ROOT$/tools/vendor-guard/rules/**",
+        "$TURBO_ROOT$/tools/vendor-guard/allow.json",
+        "$TURBO_ROOT$/.gitignore"
+      ]
+    }
+  }
+}

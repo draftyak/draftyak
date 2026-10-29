@@ -19,17 +19,10 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
-import {
-	acquireBenchLock,
-	cacheDir,
-	type Fingerprint,
-	fingerprint,
-	skipOrFail,
-	writeEvidence,
-} from "@draftyak/spike-kit";
+import { acquireBenchLock, cacheDir, skipOrFail } from "@draftyak/spike-kit";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import { type Staged, stageSidecar, tauriDir } from "../tauri-app/scripts/stage-sidecar.ts";
-import { goneWithin, App as Launched, stillOurs } from "./app.ts";
+import { goneWithin, App as Launched, stillOurs, writeCodeEvidence } from "./app.ts";
 
 const spikeDir = path.resolve(import.meta.dirname, "..");
 const targetDir = path.join(tauriDir, "target");
@@ -373,23 +366,9 @@ afterAll(async () => {
 		},
 		...results,
 	};
-	const written = await writeEvidence(file, data, { fingerprint: await codeFingerprint() });
+	const written = await writeCodeEvidence(file, data);
 	console.log(`evidence: ${path.relative(spikeDir, written)}`);
 }, 120_000);
-
-// One heavy run writes several evidence files, and those written before this one aren't code
-// changes, so the tree counts as dirty only outside evidence/ (S1's rule).
-async function codeFingerprint(): Promise<Fingerprint> {
-	const print = await fingerprint({ cwd: spikeDir });
-	const env = Object.fromEntries(
-		Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)),
-	);
-	const args = ["status", "--porcelain", "--untracked-files=no", "--", ":/", ":(exclude)evidence"];
-	const status = await execFileAsync("git", args, { cwd: spikeDir, env, windowsHide: true }).catch(
-		() => null,
-	);
-	return { ...print, dirty: status === null ? print.dirty : status.stdout.trim() !== "" };
-}
 
 describe("S5c tray, autostart and approval window on Windows", {
 	tags: ["requires:windows", "requires:tauri-desktop"],

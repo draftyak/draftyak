@@ -29,6 +29,9 @@ importers:
 
   apps/cli:
     devDependencies:
+      rolldown:
+        specifier: 1.2.14
+        version: 1.2.14
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -51,6 +54,9 @@ importers:
         specifier: 0.2.2
         version: 0.2.2
     devDependencies:
+      '@draftyak/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       tsdown:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)

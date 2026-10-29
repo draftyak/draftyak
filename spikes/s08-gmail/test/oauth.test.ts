@@ -1,4 +1,6 @@
+import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { request as httpRequest } from "node:http";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +25,12 @@ import {
 } from "../src/oauth.ts";
 import { type FakeGmail, startFakeGmail } from "./fake-gmail.ts";
 import { type FakeOAuth, fakeBrowser, startFakeOAuth, TokenRegistry } from "./fake-google-oauth.ts";
+import { liveSession } from "./live-session.ts";
+
+vi.mock("node:child_process", async (original) => ({
+	...(await original<typeof import("node:child_process")>()),
+	spawn: vi.fn(),
+}));
 
 // Synthetic credentials made at run time; nothing shaped like a Google client ID or secret.
 const clientId = `client-${randomBytes(6).toString("hex")}.test.invalid`;
@@ -288,6 +296,27 @@ describe("connect, against fake Google OAuth and fake Gmail", () => {
 });
 
 describe("the system browser and the Testing-mode horizon", () => {
+	it("reports a launcher error once with fixed wording and never its secret-bearing details", () => {
+		const child = Object.assign(new EventEmitter(), { unref: vi.fn() });
+		vi.mocked(spawn).mockReturnValue(child as unknown as ReturnType<typeof spawn>);
+		const lines: string[] = [];
+		const url = "https://accounts.google.com/o/oauth2/v2/auth?private=planted-secret";
+		const session = liveSession(
+			{ DRAFTYAK_S8_SESSION: path.resolve("synthetic-session") },
+			(line) => lines.push(line),
+		);
+		session.openBrowser(url);
+		expect(lines).toEqual([]);
+		expect(spawn).toHaveBeenLastCalledWith(browserCommand(url).command, browserCommand(url).args, {
+			detached: true,
+			stdio: "ignore",
+		});
+		expect(child.unref).toHaveBeenCalledOnce();
+		child.emit("error", new Error(`${url} owner@example.invalid planted-secret`));
+		expect(lines).toEqual(["couldn't open the browser"]);
+		expect(child.listenerCount("error")).toBe(0);
+	});
+
 	it("opens https URLs with a native program by its full path and no shell", () => {
 		const url = "https://accounts.google.com/o/oauth2/v2/auth?a=1&b=2";
 		const windows = browserCommand(url, "win32");

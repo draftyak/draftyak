@@ -689,10 +689,15 @@ describe("spikes.yml", () => {
 		expect(steps.find(uses("pnpm/action-setup"))?.with).toEqual({ cache: expression(onMain) });
 	});
 
-	it("reads exactly the matrix keys that plan emits", () => {
+	it("reads every execution matrix key, leaving the billing rate to local planning", () => {
 		const read = new Set([...source.matchAll(/\bmatrix\.(\w+)/g)].map((match) => match[1]));
 		const [entry] = plan({ spikes: ["kit"], os: ["ubuntu-24.04"], node: "both" }).entries;
-		expect([...read].sort()).toEqual(Object.keys(entry ?? {}).sort());
+		expect(entry?.rate).toBe(1);
+		expect([...read].sort()).toEqual(
+			Object.keys(entry ?? {})
+				.filter((key) => key !== "rate")
+				.sort(),
+		);
 	});
 
 	it("installs xauth with xvfb, since xvfb-run needs it and recommends are off", () => {
