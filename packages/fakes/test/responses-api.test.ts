@@ -41,6 +41,171 @@ const completed = (text = JSON.stringify(draft)) => ({
 	],
 });
 
+describe("scripted Responses model metadata", () => {
+	const answer: ResponsesApiStep = { kind: "json", body: { scripted: true } };
+
+	it("serves opaque model-list and retrieve scripts through the same queue", async () => {
+		const listed = { data: "deliberately not a model catalogue" };
+		const retrieved = { id: "a-different-scripted-id", arbitrary: [false, null] };
+		const recorder = createRecorder({ headerValues: ["accept"] });
+		const fake = createResponsesApiFake({
+			recorder,
+			steps: [
+				{ kind: "json", body: listed },
+				{ kind: "json", body: retrieved },
+			],
+		});
+		expect(
+			await (await fake.fetch("/v1/models", { headers: { accept: "application/json" } })).json(),
+		).toEqual(listed);
+		expect(fake.pending()).toBe(1);
+		expect(await (await fake.fetch("/v1/models/gpt-synthetic")).json()).toEqual(retrieved);
+		expect(fake.pending()).toBe(0);
+		const records = recorder.takeRequests();
+		expect(
+			records.map(({ method, target, bodyLength }) => ({ method, target, bodyLength })),
+		).toEqual([
+			{ method: "GET", target: "/v1/models", bodyLength: 0 },
+			{ method: "GET", target: "/v1/models/gpt-synthetic", bodyLength: 0 },
+		]);
+		expect(records[0]?.headers).toEqual({ accept: "application/json" });
+		expect(records[1]?.headers).toEqual({});
+	});
+
+	it("serves metadata through the strict draft fake without draft-body admission", async () => {
+		const fake = createResponsesApiDraftFake({ steps: [answer] });
+		expect(await (await fake.fetch("/v1/models")).json()).toEqual({ scripted: true });
+		expect(fake.pending()).toBe(0);
+	});
+
+	it("admits the canonical encoded model segment and preserves its raw target", async () => {
+		const target = "/v1/models/gpt%2Fsynthetic%3Fquery%25%23%2B";
+		const fake = createResponsesApiFake({ steps: [answer] });
+		expect(await (await fake.fetch(target)).json()).toEqual({ scripted: true });
+		expect(fake.recorder.takeRequests()[0]?.target).toBe(target);
+	});
+
+	it("refuses malformed model escaping without consuming a script", async () => {
+		const fake = createResponsesApiFake({ steps: [answer] });
+		expect((await fake.fetch("/v1/models/gpt%FF")).status).toBe(404);
+		expect(fake.pending()).toBe(1);
+		expect(await (await fake.fetch("/v1/models/gpt-synthetic")).json()).toEqual({ scripted: true });
+	});
+
+	it("rejects other noncanonical metadata targets before queue admission", async () => {
+		for (const target of [
+			"/v1/models?",
+			"/v1/models?after=synthetic",
+			"/v1/models#fragment",
+			"/v1/models/",
+			"/v1/models//synthetic",
+			"/v1/models/.",
+			"/v1/models/..",
+			"/v1/models/%2E",
+			"/v1/models/%2E%2E",
+			"/v1/models/./synthetic",
+			"/v1/models/../synthetic",
+			"/v1/models/gpt%",
+			"/v1/models/%FF",
+			"/v1/models/%ED%A0%80",
+			"/v1/models/gpt?query=synthetic",
+			"/v1/models/gpt#fragment",
+			"/v1/models/gpt/extra",
+			"/v1/%6Dodels",
+		]) {
+			const fake = createResponsesApiFake({ steps: [answer] });
+			const request = withTarget(new Request(`https://${RESPONSES_API_HOST}/v1/models`), target);
+			expect((await fake.handler(request)).status).toBe(404);
+			expect(request.bodyUsed).toBe(false);
+			expect((await fake.fetch(target)).status).toBe(404);
+			expect(fake.pending()).toBe(1);
+			expect(await (await fake.fetch("/v1/models")).json()).toEqual({ scripted: true });
+			expect((await fake.fetch(target)).status).toBe(404);
+		}
+	});
+
+	it("refuses wrong metadata methods before consuming or exhausting scripts", async () => {
+		for (const target of ["/v1/models", "/v1/models/gpt-synthetic"]) {
+			for (const method of ["POST", "PUT", "PATCH", "DELETE", "HEAD"]) {
+				const fake = createResponsesApiFake({ steps: [answer] });
+				expect((await fake.fetch(target, { method })).status).toBe(405);
+				expect(fake.pending()).toBe(1);
+				expect(await (await fake.fetch(target)).json()).toEqual({ scripted: true });
+				expect((await fake.fetch(target, { method })).status).toBe(405);
+			}
+		}
+	});
+
+	it("exhaustion refuses metadata instead of synthesizing a model response", async () => {
+		const fake = createResponsesApiFake();
+		const response = await fake.fetch("/v1/models");
+		expect(response.status).toBe(503);
+		expect(await response.json()).toMatchObject({ error: { code: "script_exhausted" } });
+		fake.enqueue(answer);
+		expect(await (await fake.fetch("/v1/models/gpt-synthetic")).json()).toEqual({ scripted: true });
+	});
+
+	it("retains malformed raw metadata and its content type unchanged", async () => {
+		const fake = createResponsesApiFake({
+			steps: [{ kind: "raw", body: "{not-json", contentType: "text/synthetic" }],
+		});
+		const response = await fake.fetch("/v1/models");
+		expect(response.headers.get("content-type")).toBe("text/synthetic");
+		expect(await response.text()).toBe("{not-json");
+	});
+
+	it("preserves pre-app and after-app metadata fault ownership and recording", async () => {
+		const fake = createResponsesApiFake({
+			steps: [
+				{ kind: "json", body: { reserved: 1 } },
+				{ kind: "json", body: { reserved: 2 } },
+			],
+		});
+		fake.faults.add({ kind: "rate-limit", retryAfter: 3 });
+		const before = await fake.fetch("/v1/models");
+		expect(before.status).toBe(429);
+		expect(before.headers.get("retry-after")).toBe("3");
+		await before.arrayBuffer();
+		expect(fake.pending()).toBe(2);
+		fake.faults.add({ kind: "server-error", after: true });
+		const after = await fake.fetch("/v1/models/gpt-synthetic");
+		expect(after.status).toBe(503);
+		await after.arrayBuffer();
+		expect(fake.pending()).toBe(1);
+		expect(await (await fake.fetch("/v1/models")).json()).toEqual({ reserved: 2 });
+		expect(
+			fake.recorder.takeRequests().map(({ method, bodyLength }) => ({ method, bodyLength })),
+		).toEqual([
+			{ method: "GET", bodyLength: 0 },
+			{ method: "GET", bodyLength: 0 },
+			{ method: "GET", bodyLength: 0 },
+		]);
+	});
+
+	it("reserves delayed metadata before awaits and keeps the next script available", async () => {
+		const fake = createResponsesApiFake({
+			steps: [
+				{ kind: "json", body: { reserved: 1 }, delayMs: Infinity },
+				{ kind: "json", body: { reserved: 2 } },
+			],
+		});
+		const controller = new AbortController();
+		const pending = fake.fetch("/v1/models", { signal: controller.signal });
+		const rejection = expect(pending).rejects.toBe("DYTEST metadata abort");
+		try {
+			await setImmediate();
+			expect(fake.pending()).toBe(1);
+			expect(await (await fake.fetch("/v1/models/gpt-synthetic")).json()).toEqual({ reserved: 2 });
+			expect(fake.pending()).toBe(0);
+			controller.abort("DYTEST metadata abort");
+			await rejection;
+		} finally {
+			controller.abort("DYTEST metadata abort");
+			await Promise.allSettled([pending]);
+		}
+	});
+});
+
 describe("shared intake and public request-handler composition", () => {
 	const cap = 1_048_576;
 	const answer: ResponsesApiStep = { kind: "json", body: { synthetic: true } };
