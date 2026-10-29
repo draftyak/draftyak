@@ -1,9 +1,10 @@
 import { accessSync, constants } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { ConfigEnv, ViteUserConfig } from "vitest/config";
 import { heavyVitestConfig } from "../../vitest.shared.ts";
 
 export default function config(env: ConfigEnv): ViteUserConfig {
-	return heavyVitestConfig(env, {
+	const config = heavyVitestConfig(env, {
 		"temp-file-scan": {
 			description: "reading live SQLite temporary files on Windows or Linux /proc",
 			detect: () => {
@@ -18,4 +19,12 @@ export default function config(env: ConfigEnv): ViteUserConfig {
 			},
 		},
 	});
+	config.test = {
+		...config.test,
+		execArgv: [
+			"--require",
+			fileURLToPath(new URL("./test/helpers/loopback-preload.cjs", import.meta.url)),
+		],
+	};
+	return config;
 }
