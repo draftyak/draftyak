@@ -1,4 +1,5 @@
 import { createToolUpstream } from "@draftyak/fakes";
+import { LOOKUP_PERMIT_META_KEY } from "@draftyak/protocol/host-channel";
 import { afterEach, expect, it } from "vitest";
 import { createMockHub, type MockHub } from "../src/index.ts";
 import { toolFixture } from "./fixtures/tool/plugin.ts";
@@ -99,15 +100,31 @@ it("accounts concurrent independent lookups separately across asynchronous handl
 	expect(fake.recorder.takeRequests()).toHaveLength(8);
 	expect(hub.host.denials).toEqual([]);
 });
-it("retires captured lookup authority so deferred host work cannot outlive its call", async () => {
+it("retires A's permit so deferred work cannot borrow an overlapping B lookup", async () => {
 	const fake = createToolUpstream();
 	const release = Promise.withResolvers<void>();
 	let late: Promise<unknown> | undefined;
 	let hub: MockHub;
-	const plugin = toolFixture(async () => {
+	const plugin = toolFixture(async (input, context, metadata) => {
+		if ((input as { topic: string }).topic === "second") {
+			await expect(
+				hub.host.request("host/fetch", { method: "GET", url: "secret://calendarUrl", headers: [] }),
+			).rejects.toMatchObject({ code: "DENIED" });
+			release.resolve();
+			expect(await late).toMatchObject({ code: "DENIED" });
+			await (await context.fetch("secret://calendarUrl")).arrayBuffer();
+			return { entries: [] };
+		}
+		const permit = metadata[LOOKUP_PERMIT_META_KEY];
+		if (typeof permit !== "string") throw new Error("fixture permit");
 		late = release.promise
 			.then(() =>
-				hub.host.request("host/fetch", { method: "GET", url: "secret://calendarUrl", headers: [] }),
+				hub.host.request("host/fetch", {
+					method: "GET",
+					url: "secret://calendarUrl",
+					headers: [],
+					lookupPermit: permit,
+				}),
 			)
 			.catch((error: unknown) => error);
 		return { entries: [] };
@@ -123,11 +140,14 @@ it("retires captured lookup authority so deferred host work cannot outlive its c
 	expect((await hub.call("kb.lookup", { topic: "test" })).structuredContent).toEqual({
 		entries: [],
 	});
-	release.resolve();
-	expect(await late).toMatchObject({ code: "DENIED" });
-	expect(hub.host.denials[0]?.reason).toBe("LOOKUP_REQUIRED");
-	expect(hub.host.denials[0]?.lookup).not.toBeNull();
-	expect(fake.recorder.takeRequests()).toEqual([]);
+	expect((await hub.call("kb.lookup", { topic: "second" })).structuredContent).toEqual({
+		entries: [],
+	});
+	expect(hub.host.denials).toMatchObject([
+		{ reason: "LOOKUP_REQUIRED", lookup: null },
+		{ reason: "LOOKUP_REQUIRED", lookup: null },
+	]);
+	expect(fake.recorder.takeRequests()).toHaveLength(1);
 });
 it("cancels pending upstream work when the host closes", async () => {
 	const fake = createToolUpstream({ slowMs: Infinity });

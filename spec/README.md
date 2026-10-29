@@ -84,6 +84,7 @@ These checked-in contracts remain draft until the M1 gate. A dash means the cont
 | Flags, severities and acknowledgement | [Flags v1](flags-v1.md) | [Flags v1](schemas/flags-v1.schema.json) | [Flags](vectors/flags/) |
 | Stored and displayed entities | — | [Entities v1](schemas/entities-v1.schema.json) | — |
 | Pairing and confirmation | [Pairing v1](pairing-v1.md) | — | [Pairing](vectors/pairing/) |
+| Native device API | [Device API v1](device-api-v1.md) | [Device API v1](schemas/device-api-v1.schema.json) | [Device API](vectors/device-api/) |
 | Broker send tickets | [Channel v1](extensions/channel-v1.md) | [Broker ticket v1](schemas/broker-ticket-v1.schema.json) | [Send tickets](vectors/send-ticket/) |
 | Channel extension | [Channel v1](extensions/channel-v1.md) | [Channel v1](schemas/channel-v1.schema.json) | — |
 | Normalized channel changes | [Channel v1](extensions/channel-v1.md) | [Normalized change v1](schemas/normalized-change-v1.schema.json) | — |
@@ -100,3 +101,4 @@ These checked-in contracts remain draft until the M1 gate. A dash means the cont
 | Signed sessions | [Approval v1: session statement](approval-v1.md#agent-session-statement) | [Session v1](schemas/agent-session-v1.schema.json), [Session review v1](schemas/agent-session-review-v1.schema.json) | [Session statements](vectors/statements/agent-session.v1.json) |
 | Host channel | [Host channel v1](host-channel-v1.md) | [Host channel v1](schemas/host-channel-v1.schema.json) | - |
 | Decoded JSON-member blobs | [Host fetch storage](host-channel-v1.md#decoded-json-member-blobs) | [Host channel v1](schemas/host-channel-v1.schema.json) | [Host fetch](vectors/host-channel/) |
+| Lookup grant membership | [Parent-granted lookups](host-channel-v1.md#parent-granted-lookup-membership) | [Host channel v1](schemas/host-channel-v1.schema.json) | [Lookup permits](vectors/host-channel/lookup-permit.json) |

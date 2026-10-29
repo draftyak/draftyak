@@ -141,6 +141,8 @@ it("uses native buffer keying and pins every reported open setting", () => {
 			cipher: "chacha20",
 			journal_mode: "wal",
 			synchronous: 2,
+			fullfsync: 1,
+			checkpoint_fullfsync: 1,
 			busy_timeout: 5000,
 			foreign_keys: 1,
 			recursive_triggers: 1,

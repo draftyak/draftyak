@@ -95,6 +95,22 @@ const { mailbox } = fixtures;
 const untrusted = (text: string) => ({ untrusted: true, text });
 
 describe("entities", () => {
+	it("requires an explicit sharing fact without conflating it with external status", () => {
+		const { shared: _, ...legacy } = fixtures.chatConversation;
+		agree(
+			"ChatConversation",
+			[
+				{ ...fixtures.chatConversation, external: false, shared: true },
+				{ ...fixtures.chatConversation, external: true, shared: false },
+			],
+			[legacy, ...each(fixtures.chatConversation, "shared", [null, "false", 0, [], {}])],
+		);
+		expect(
+			entities.ChatConversation.safeParse({ ...fixtures.chatConversation, shared: undefined })
+				.success,
+		).toBe(false);
+	});
+
 	it("accept §3-shaped samples and refuse unknown or missing members, in zod and JSON Schema", () => {
 		for (const [name, accepted] of Object.entries(fixtures.samples)) {
 			agree(
@@ -400,6 +416,33 @@ describe("entities", () => {
 		for (const sample of nfd) expect(entities.DraftContent.safeParse(sample).success).toBe(false);
 		const nfc = { ...emailDraftContent, body: "Caf\u{e9} \u{ac00}" };
 		expect(entities.DraftContent.safeParse(nfc).success).toBe(true);
+	});
+
+	it("hold at most 100 of each mailbox list and of attachments, and mark a list the hub cut", () => {
+		const { emailMessage } = fixtures;
+		const lists = ["from", "replyTo", "to", "cc", "bcc", "attachments"] as const;
+		const holding = (list: (typeof lists)[number], count: number, marker?: unknown) => ({
+			...emailMessage,
+			[list]:
+				list === "attachments"
+					? Array(count).fill(emailMessage.attachments[0])
+					: Array.from({ length: count }, (_, n) => mailbox(`ana${n}@example.org`)),
+			...(marker === undefined ? {} : { [`${list}Truncated`]: marker }),
+		});
+		agree(
+			"EmailMessage",
+			lists.flatMap((list) => [
+				holding(list, 100),
+				holding(list, 100, true),
+				// A result with a smaller budget, such as message_get's, keeps fewer and says so.
+				holding(list, 1, true),
+			]),
+			lists.flatMap((list) => [
+				holding(list, 101),
+				holding(list, 101, true),
+				...[false, "true", 1, null].map((marker) => holding(list, 1, marker)),
+			]),
+		);
 	});
 
 	it("refuse text that isn't well-formed Unicode, which JSON Schema can't express", () => {

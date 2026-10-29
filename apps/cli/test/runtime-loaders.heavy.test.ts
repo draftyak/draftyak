@@ -76,7 +76,7 @@ function fixture(files: Readonly<Record<string, string>>): Fixture {
 		path.join(workspace, "tsconfig.base.json"),
 		path.join(root, "workspace/tsconfig.base.json"),
 	);
-	for (const name of ["typescript", "@types/node"]) {
+	for (const name of ["typescript", "@types/node", "rolldown"]) {
 		const target = realpathSync(path.dirname(require.resolve(`${name}/package.json`)));
 		const link = path.join(source, "node_modules", name);
 		mkdirSync(path.dirname(link), { recursive: true });

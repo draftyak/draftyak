@@ -239,6 +239,98 @@
       }
     },
     {
+      "id": "chat-shared-false",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": "01JAZ3W3B6Q8M2V0G5T9K4X7RG",
+        "kind": "chat",
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "now"
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        },
+        "chat": {
+          "channelId": "C123",
+          "channelName": "engineering",
+          "channelType": "public",
+          "external": false,
+          "memberCount": 5,
+          "broadcast": false,
+          "shared": false
+        }
+      },
+      "iat": 1792342800000,
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c2263686174223a7b2262726f616463617374223a66616c73652c226368616e6e656c4964223a2243313233222c226368616e6e656c4e616d65223a22656e67696e656572696e67222c226368616e6e656c54797065223a227075626c6963222c2265787465726e616c223a66616c73652c226d656d626572436f756e74223a352c22736861726564223a66616c73657d2c22636f6e766572736174696f6e223a2230314a415a335733423651384d325630473554394b3458375247222c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a2263686174222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b226b696e64223a226e6f77227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "contentHash": "a84c480731f6ceee92f4fb987bcb78bebebcbd13d2b74c65cfb72b429ace9b3c",
+      "fingerprint": "A84C4807",
+      "window": {
+        "deliverBy": 1792343700000
+      }
+    },
+    {
+      "id": "chat-shared-true",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": "01JAZ3W3B6Q8M2V0G5T9K4X7RG",
+        "kind": "chat",
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "now"
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        },
+        "chat": {
+          "channelId": "C123",
+          "channelName": "engineering",
+          "channelType": "public",
+          "external": false,
+          "memberCount": 5,
+          "broadcast": false,
+          "shared": true
+        }
+      },
+      "iat": 1792342800000,
+      "canonicalHex": "7b226163636f756e74223a2230314a415a335733423651384d325630473554394b3458375244222c226174746163686d656e7473223a5b5d2c22626f6479223a7b22666f6f746572223a225c6e53656e74207769746820447261667459616b222c2274657874223a2248656c6c6f2c20636166c3a92e5c6e227d2c2263686174223a7b2262726f616463617374223a66616c73652c226368616e6e656c4964223a2243313233222c226368616e6e656c4e616d65223a22656e67696e656572696e67222c226368616e6e656c54797065223a227075626c6963222c2265787465726e616c223a66616c73652c226d656d626572436f756e74223a352c22736861726564223a747275657d2c22636f6e766572736174696f6e223a2230314a415a335733423651384d325630473554394b3458375247222c2265706f6368223a312c22687562223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226b696e64223a2263686174222c226f7574626f78223a2230314a415a335733423651384d325630473554394b3458375243222c227363686564756c65223a7b226b696e64223a226e6f77227d2c22736f75726365223a7b22617574686f7273223a5b7b226964223a2230314a415a335733423651384d325630473554394b3458375246222c226b696e64223a226f776e6572227d5d2c226472616674223a2230314a415a335733423651384d325630473554394b3458375245222c22726576223a317d2c2276223a317d",
+      "contentHash": "68d932451da8321361f492114c3aa0d4e3591784c1a5416b9303a72392006f55",
+      "fingerprint": "68D93245",
+      "window": {
+        "deliverBy": 1792343700000
+      }
+    },
+    {
       "id": "idn-a-label",
       "snapshot": {
         "v": 1,
@@ -9542,6 +9634,211 @@
       "window": {
         "deliverBy": 1792343700000
       }
+    },
+    {
+      "id": "chat-shared-null",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": "01JAZ3W3B6Q8M2V0G5T9K4X7RG",
+        "kind": "chat",
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "now"
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        },
+        "chat": {
+          "channelId": "C123",
+          "channelName": "engineering",
+          "channelType": "public",
+          "external": false,
+          "memberCount": 5,
+          "broadcast": false,
+          "shared": null
+        }
+      },
+      "iat": 1792342800000,
+      "error": "SNAPSHOT_INVALID"
+    },
+    {
+      "id": "chat-shared-string",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": "01JAZ3W3B6Q8M2V0G5T9K4X7RG",
+        "kind": "chat",
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "now"
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        },
+        "chat": {
+          "channelId": "C123",
+          "channelName": "engineering",
+          "channelType": "public",
+          "external": false,
+          "memberCount": 5,
+          "broadcast": false,
+          "shared": "false"
+        }
+      },
+      "iat": 1792342800000,
+      "error": "SNAPSHOT_INVALID"
+    },
+    {
+      "id": "chat-shared-number",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": "01JAZ3W3B6Q8M2V0G5T9K4X7RG",
+        "kind": "chat",
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "now"
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        },
+        "chat": {
+          "channelId": "C123",
+          "channelName": "engineering",
+          "channelType": "public",
+          "external": false,
+          "memberCount": 5,
+          "broadcast": false,
+          "shared": 0
+        }
+      },
+      "iat": 1792342800000,
+      "error": "SNAPSHOT_INVALID"
+    },
+    {
+      "id": "chat-shared-array",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": "01JAZ3W3B6Q8M2V0G5T9K4X7RG",
+        "kind": "chat",
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "now"
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        },
+        "chat": {
+          "channelId": "C123",
+          "channelName": "engineering",
+          "channelType": "public",
+          "external": false,
+          "memberCount": 5,
+          "broadcast": false,
+          "shared": []
+        }
+      },
+      "iat": 1792342800000,
+      "error": "SNAPSHOT_INVALID"
+    },
+    {
+      "id": "chat-shared-object",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": "01JAZ3W3B6Q8M2V0G5T9K4X7RG",
+        "kind": "chat",
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "now"
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        },
+        "chat": {
+          "channelId": "C123",
+          "channelName": "engineering",
+          "channelType": "public",
+          "external": false,
+          "memberCount": 5,
+          "broadcast": false,
+          "shared": {}
+        }
+      },
+      "iat": 1792342800000,
+      "error": "SNAPSHOT_INVALID"
     }
   ]
 }
