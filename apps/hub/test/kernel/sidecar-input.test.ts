@@ -3,7 +3,7 @@ import { getEventListeners } from "node:events";
 import { readFileSync } from "node:fs";
 import { Readable, Writable } from "node:stream";
 import { inspect } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MasterKey } from "../../src/kernel/master-key.ts";
 import {
 	type InitialMaterial,
@@ -75,17 +75,29 @@ const zero = (data: Uint8Array): boolean => data.every((byte) => byte === 0);
 interface Harness {
 	readonly input: SidecarInput;
 	readonly source: Readable;
+	/** The signal the receiver derived from the caller's, the only one it may listen on. */
+	readonly derived: AbortSignal | undefined;
 	/** Every chunk fed, kept to inspect the receiver's erasure of consumed views. */
 	readonly fed: Buffer[];
 	feed(...chunks: Buffer[]): Promise<void>;
 }
 
 function open(options?: SidecarInputOptions, source: Readable = quietSource()): Harness {
-	const input = receiveSidecarInput(source, options);
+	const any = vi.spyOn(AbortSignal, "any");
+	let input: SidecarInput;
+	let derived: AbortSignal | undefined;
+	try {
+		input = receiveSidecarInput(source, options);
+		const [result] = any.mock.results;
+		if (result?.type === "return") derived = result.value;
+	} finally {
+		any.mockRestore();
+	}
 	const fed: Buffer[] = [];
 	return {
 		input,
 		source,
+		derived,
 		fed,
 		async feed(...chunks) {
 			for (const chunk of chunks) {
@@ -104,6 +116,11 @@ async function opened(options?: SidecarInputOptions): Promise<Harness & { values
 	await harness.input.initialReady;
 	return { ...harness, values };
 }
+
+const abortListeners = (caller: AbortSignal, { derived }: Harness): number[] => [
+	getEventListeners(caller, "abort").length,
+	derived === undefined ? -1 : getEventListeners(derived, "abort").length,
+];
 
 interface Tracked<T> {
 	status: "pending" | "fulfilled" | "rejected";
@@ -398,6 +415,141 @@ describe("sidecar input admission", () => {
 		expect(diverted).toBe(0);
 		await input.dispose();
 		release(material);
+	});
+});
+
+describe("sidecar input signal isolation", () => {
+	const forgeries: readonly (readonly [string, (calls: string[]) => AbortSignal])[] = [
+		["a forged signal", () => Object.create(AbortSignal.prototype)],
+		[
+			"a forged signal with its own aborted false",
+			() => Object.create(AbortSignal.prototype, { aborted: { value: false } }),
+		],
+		[
+			"a forged signal with its own aborted false and listener methods",
+			(calls) =>
+				Object.create(AbortSignal.prototype, {
+					aborted: { value: false },
+					addEventListener: { value: () => calls.push("addEventListener") },
+					removeEventListener: { value: () => calls.push("removeEventListener") },
+				}),
+		],
+	];
+
+	it.each(forgeries)("refuses %s before allocating or listening", async (_label, forge) => {
+		const calls: string[] = [];
+		const signal = forge(calls);
+		const source = quietSource();
+		let thrown: unknown;
+		const observation = await observeAllocations(async () => {
+			try {
+				receiveSidecarInput(source, { signal });
+			} catch (error) {
+				thrown = error;
+			}
+		});
+		expect(refusal(thrown)).toBe(SIDECAR_INPUT_OPTIONS);
+		expect([observation.owned.length, observation.others]).toEqual([0, 0]);
+		expect(calls).toEqual([]);
+		const events = ["data", "readable", "end", "error", "close"];
+		expect(events.map((event) => source.listenerCount(event))).toEqual([0, 0, 0, 0, 0]);
+		expect([source.destroyed, source.readableFlowing, source.readableDidRead]).toEqual([
+			false,
+			null,
+			false,
+		]);
+	});
+
+	const patches: readonly (readonly [string, (signal: AbortSignal, calls: string[]) => void])[] = [
+		[
+			"its own throwing addEventListener",
+			(signal, calls) =>
+				Object.defineProperty(signal, "addEventListener", {
+					value: () => {
+						calls.push("addEventListener");
+						throw new Error("synthetic");
+					},
+				}),
+		],
+		[
+			"its own throwing removeEventListener",
+			(signal, calls) =>
+				Object.defineProperty(signal, "removeEventListener", {
+					value: () => {
+						calls.push("removeEventListener");
+						throw new Error("synthetic");
+					},
+				}),
+		],
+		[
+			"an aborted getter that throws on its second read",
+			(signal, calls) =>
+				Object.defineProperty(signal, "aborted", {
+					get: () => {
+						calls.push("aborted");
+						if (calls.length > 1) throw new Error("synthetic");
+						return false;
+					},
+				}),
+		],
+	];
+	const ends: readonly (readonly [
+		string,
+		(harness: Harness, controller: AbortController) => void,
+		SidecarStop,
+	])[] = [
+		["disposal", (h) => void h.input.dispose(), stop("disposed")],
+		["cancellation", (_h, controller) => controller.abort(), stop("cancelled")],
+		[
+			"a stream error",
+			(h) => h.source.destroy(new Error("synthetic")),
+			stop("fault", SIDECAR_INPUT_IO),
+		],
+	];
+
+	describe.each(patches)("with a live signal carrying %s", (_patch, patch) => {
+		it.each(ends)("stops, drains and destroys the input on %s", async (_label, end, expected) => {
+			const controller = new AbortController();
+			const calls: string[] = [];
+			patch(controller.signal, calls);
+			const harness = open({ signal: controller.signal });
+			const { input, source } = harness;
+			const ready = track(input.initialReady);
+			const waiting = track(input.nextControl());
+			const closed = track(input.closed);
+			const chunks = [frame(synthetic().payload), frame(RESUME)];
+			for (const chunk of chunks) source.push(chunk);
+			expect(abortListeners(controller.signal, harness)).toEqual([0, 1]);
+			end(harness, controller);
+			await tick();
+			await tick();
+			expect(waiting.value).toEqual(expected);
+			expect(refusal(ready.error)).toBe(expected.code ?? SIDECAR_INPUT_STOPPED);
+			expect(closed.status).toBe(expected.code === undefined ? "fulfilled" : "rejected");
+			if (closed.status === "rejected") expect(refusal(closed.error)).toBe(SIDECAR_INPUT_IO);
+			expect(input.state).toBe("closed");
+			expect(chunks.every(zero)).toBe(true);
+			expect(source.readableLength).toBe(0);
+			expect(source.destroyed).toBe(true);
+			const events = ["readable", "end", "error", "close"];
+			expect(events.map((event) => source.listenerCount(event))).toEqual([0, 0, 0, 0]);
+			expect(abortListeners(controller.signal, harness)).toEqual([0, 0]);
+			expect(calls).toEqual([]);
+		});
+	});
+
+	it("stops at once for an already aborted signal whose own aborted says false", async () => {
+		const controller = new AbortController();
+		controller.abort();
+		Object.defineProperty(controller.signal, "aborted", { value: false });
+		const harness = open({ signal: controller.signal });
+		const { input, source } = harness;
+		expect(input.state).toBe("closing");
+		await expect(input.terminal).resolves.toEqual(stop("cancelled"));
+		await expectRejected(input.initialReady, SIDECAR_INPUT_STOPPED);
+		await input.closed;
+		expect(source.destroyed).toBe(true);
+		expect(abortListeners(controller.signal, harness)).toEqual([0, 0]);
 	});
 });
 
@@ -884,9 +1036,11 @@ describe("sidecar input stops", () => {
 			const { input, feed, source } = harness;
 			const waiting = pending ? input.nextControl() : undefined;
 			if (!pending) await feed(frame(RESUME), frame(RESUME));
+			expect(abortListeners(controller.signal, harness)).toEqual([0, 1]);
 			trigger(harness, controller);
 			const terminal = await input.terminal;
 			expect(terminal).toEqual(expected);
+			expect(abortListeners(controller.signal, harness)).toEqual([0, 0]);
 			expect(Object.isFrozen(terminal)).toBe(true);
 			if (waiting) expect(await waiting).toBe(terminal);
 			expect(await input.nextControl()).toBe(terminal);
@@ -967,6 +1121,7 @@ describe("sidecar input stops", () => {
 			const { input, source } = harness;
 			const ready = track(input.initialReady);
 			const waiting = (await stage(harness)).waiting ?? input.nextControl();
+			expect(abortListeners(controller.signal, harness)).toEqual([0, 1]);
 			if (action === "cancellation") controller.abort();
 			else void input.dispose();
 			const terminal = await input.terminal;
@@ -979,7 +1134,7 @@ describe("sidecar input stops", () => {
 			if (ready.status === "rejected") expect(refusal(ready.error)).toBe(SIDECAR_INPUT_STOPPED);
 			expect(source.destroyed).toBe(true);
 			expect(input.state).toBe("closed");
-			expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+			expect(abortListeners(controller.signal, harness)).toEqual([0, 0]);
 			const events = ["readable", "end", "error", "close"];
 			expect(events.map((event) => source.listenerCount(event))).toEqual([0, 0, 0, 0]);
 		});
@@ -1050,12 +1205,13 @@ describe("sidecar input stops", () => {
 	it("stops at once for an already aborted signal", async () => {
 		const controller = new AbortController();
 		controller.abort();
-		const { input, source } = open({ signal: controller.signal });
+		const harness = open({ signal: controller.signal });
+		const { input, source } = harness;
 		await expect(input.terminal).resolves.toEqual(stop("cancelled"));
 		await expectRejected(input.initialReady, SIDECAR_INPUT_STOPPED);
 		await input.closed;
 		expect(source.destroyed).toBe(true);
-		expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+		expect(abortListeners(controller.signal, harness)).toEqual([0, 0]);
 	});
 });
 
