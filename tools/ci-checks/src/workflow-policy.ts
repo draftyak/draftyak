@@ -126,6 +126,54 @@ const readOnly = (permissions: Yaml | undefined): boolean => {
 	return Object.keys(map).join() === "contents" && map.contents === "read";
 };
 
+const labelsFile = ".github/workflows/labels.yml";
+// The sole write-permission exception pins the whole execution context, including every step.
+// A one-line condition retains the parser's refusal of folded and multiline scalars.
+const labelsContract: Yaml = {
+	name: "Sync approved labels",
+	on: { workflow_dispatch: null },
+	permissions: { contents: "read" },
+	env: { DO_NOT_TRACK: "1", TURBO_TELEMETRY_DISABLED: "1" },
+	jobs: {
+		"sync-labels": {
+			if: `\${{ github.event_name == 'workflow_dispatch' && github.repository == 'draftyak/draftyak' && github.actor == 'nicksavov' && github.triggering_actor == 'nicksavov' && github.ref == 'refs/heads/m11' }}`,
+			permissions: { contents: "read", issues: "write" },
+			"runs-on": "ubuntu-24.04",
+			steps: [
+				{
+					name: "Check out source",
+					uses: `actions/checkout@${actionPins["actions/checkout"]?.[0]}`,
+					with: { ref: `\${{ github.sha }}`, "persist-credentials": false },
+				},
+				{
+					name: "Set up pnpm",
+					uses: `pnpm/action-setup@${actionPins["pnpm/action-setup"]?.[0]}`,
+				},
+				{
+					name: "Set up Node",
+					uses: `actions/setup-node@${actionPins["actions/setup-node"]?.[0]}`,
+					with: { "node-version-file": ".node-version" },
+				},
+				{ name: "Install locked dependencies", run: "pnpm install --frozen-lockfile" },
+				{
+					name: "Validate metadata",
+					run: "pnpm --filter @draftyak/launch-checks --fail-if-no-match metadata",
+				},
+				{
+					name: "Validate issue drafts and labels",
+					run: "pnpm --filter @draftyak/launch-checks --fail-if-no-match issues",
+				},
+				{
+					name: "Synchronize approved labels",
+					id: "sync-approved-labels",
+					env: { GH_TOKEN: `\${{ github.token }}` },
+					run: "node tools/launch-checks/src/issues-cli.ts --sync-labels",
+				},
+			],
+		},
+	},
+};
+
 // Problems in one workflow file, as `file:line: message`.
 export function checkWorkflow(file: string, source: string, rustToolchain: string): string[] {
 	let doc: YamlDocument;
@@ -158,6 +206,10 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 		}
 	};
 	const workflow = asMap(doc.value);
+	const reviewedLabels = file === labelsFile && isDeepStrictEqual(doc.value, labelsContract);
+	if (file === labelsFile && !reviewedLabels) {
+		report([], "labels.yml must exactly match the reviewed owner-only labels contract");
+	}
 	if (file === ".github/workflows/ci.yml") {
 		const checkFailurePolicy = (value: Yaml, at: YamlPath): void => {
 			if (Array.isArray(value)) {
@@ -207,15 +259,26 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	if (events.includes("push")) {
 		const push = asMap(asMap(on).push);
 		const branches = asList(push.branches);
+		const hasTags = Object.hasOwn(push, "tags");
+		const m10Tags =
+			hasTags &&
+			(file === ".github/workflows/release.yml" || file === ".github/workflows/mobile.yml") &&
+			Array.isArray(push.tags) &&
+			push.tags.length === 1 &&
+			push.tags[0] === "m10-rc-*";
 		const filters = Object.keys(push).filter(
-			(key) => !["branches", "paths", "paths-ignore"].includes(key),
+			(key) => !["branches", "paths", "paths-ignore", "tags"].includes(key),
 		);
 		if (
 			filters.length > 0 ||
-			branches.length === 0 ||
+			(hasTags && !m10Tags) ||
+			(branches.length === 0 && (Object.hasOwn(push, "branches") || !m10Tags)) ||
 			branches.some((b) => !pushBranches.has(String(b)))
 		) {
-			report(["on", "push"], "push may only run on the branches main or spikes-run/**");
+			report(
+				["on", "push"],
+				"push may only run on the branches main or spikes-run/**, or the single m10-rc-* tag pattern in release.yml or mobile.yml",
+			);
 		}
 	}
 	if (file === ".github/workflows/ci.yml") {
@@ -284,7 +347,11 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				report(["jobs", job, "name"], "protected check name belongs to its required workflow job");
 			}
 		}
-		if (Object.hasOwn(jobMap, "permissions") && !readOnly(jobMap.permissions)) {
+		if (
+			Object.hasOwn(jobMap, "permissions") &&
+			!readOnly(jobMap.permissions) &&
+			!(reviewedLabels && job === "sync-labels")
+		) {
 			report(["jobs", job, "permissions"], "job permissions may only be `contents: read`");
 		}
 		for (const [index, value] of asList(jobMap.steps).entries()) {

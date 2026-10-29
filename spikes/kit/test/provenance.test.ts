@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
-import { evidenceStatusArgs, fingerprint } from "../evidence.ts";
+import { evidenceStatusArgs, fingerprint, sourceState } from "../evidence.ts";
 import { gitEnv } from "../repo.ts";
 
 it("isolates explicit pathspec semantics from every inherited pathspec flag and key casing", () => {
@@ -30,8 +30,7 @@ it.each(["untracked", "staged"])(
 			const env = gitEnv();
 			const initialized = spawnSync("git", ["init", "-q"], { cwd: repo, env });
 			expect(initialized.status).toBe(0);
-			const dirty = async (): Promise<boolean | null> =>
-				(await fingerprint({ cwd, sampleMs: 0 })).dirty;
+			const dirty = async (): Promise<boolean | null> => (await sourceState(cwd)).dirty;
 			expect(await dirty()).toBe(false);
 			const input = path.join(repo, "source.ts");
 			fs.writeFileSync(input, "export {};\n");
@@ -73,8 +72,7 @@ it("fingerprints non-ignored untracked source, tests and fixtures across the rep
 		const env = { ...gitEnv(), GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: "1" };
 		const initialized = spawnSync("git", ["init", "-q"], { cwd: repo, env });
 		expect(initialized.status).toBe(0);
-		const dirty = async (): Promise<boolean | null> =>
-			(await fingerprint({ cwd, sampleMs: 0 })).dirty;
+		const dirty = async (): Promise<boolean | null> => (await sourceState(cwd)).dirty;
 		expect(await dirty()).toBe(false);
 		for (const file of [
 			"spike/src/new.ts",
@@ -95,7 +93,35 @@ it("fingerprints non-ignored untracked source, tests and fixtures across the rep
 		fs.mkdirSync(path.join(repo, "ignored-output"));
 		fs.writeFileSync(path.join(repo, "ignored-output", "generated.json"), "{}\n");
 		expect(await dirty()).toBe(false);
-		expect((await fingerprint({ cwd: root, sampleMs: 0 })).dirty).toBeNull();
+		expect((await sourceState(root)).dirty).toBeNull();
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+}, 30_000);
+
+it("records the cwd's commit and dirty state in fingerprint(), null outside a repository", async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "dy-kit-provenance-print-"));
+	try {
+		const repo = path.join(root, "repo");
+		const cwd = path.join(repo, "spike");
+		fs.mkdirSync(cwd, { recursive: true });
+		const config = path.join(root, "gitconfig");
+		fs.writeFileSync(config, "[maintenance]\n\tauto = false\n");
+		const env = { ...gitEnv(), GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: "1" };
+		const git = (...args: string[]) => spawnSync("git", args, { cwd: repo, env, encoding: "utf8" });
+		expect(git("init", "-q").status).toBe(0);
+		const identity = ["-c", "user.name=kit", "-c", "user.email=kit@example.invalid"];
+		expect(git(...identity, "commit", "-q", "--allow-empty", "-m", "base").status).toBe(0);
+		const head = git("rev-parse", "HEAD").stdout.trim();
+		fs.writeFileSync(path.join(cwd, "new.ts"), "export {};\n");
+		// Concurrent: each call lists processes, which takes seconds on a busy Windows machine.
+		const [inside, outside] = await Promise.all([
+			fingerprint({ cwd, sampleMs: 0 }),
+			fingerprint({ cwd: root, sampleMs: 0 }),
+		]);
+		expect(Object.keys(inside)).toEqual(["os", "node", "commit", "dirty", "load"]);
+		expect(inside).toMatchObject({ commit: head, dirty: true });
+		expect(outside).toMatchObject({ commit: null, dirty: null });
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}

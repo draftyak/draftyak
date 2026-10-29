@@ -37,6 +37,52 @@ const workflow = (on: string[], steps = checkout, permissions = ["contents: read
 const pr = ["pull_request:"];
 const run = (expression: string): string[] => ["- run: |", `    echo "\${{ ${expression} }}"`];
 
+// The reviewed source contract, with a one-line condition within the current YAML subset.
+const labelsFixture = `name: Sync approved labels
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  DO_NOT_TRACK: '1'
+  TURBO_TELEMETRY_DISABLED: '1'
+jobs:
+  sync-labels:
+    if: \${{ github.event_name == 'workflow_dispatch' && github.repository == 'draftyak/draftyak' && github.actor == 'nicksavov' && github.triggering_actor == 'nicksavov' && github.ref == 'refs/heads/m11' }}
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: \${{ github.sha }}
+          persist-credentials: false
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Validate metadata
+        run: pnpm --filter @draftyak/launch-checks --fail-if-no-match metadata
+      - name: Validate issue drafts and labels
+        run: pnpm --filter @draftyak/launch-checks --fail-if-no-match issues
+      - name: Synchronize approved labels
+        id: sync-approved-labels
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: node tools/launch-checks/src/issues-cli.ts --sync-labels
+`;
+const labelsFile = ".github/workflows/labels.yml";
+const labelsChange = (before: string, after: string): string => {
+	if (!labelsFixture.includes(before)) throw new Error(`missing labels fixture anchor: ${before}`);
+	return labelsFixture.replace(before, after);
+};
+
 describe("workflow policy", () => {
 	it.each(["&evt pull_request_target", "!event pull_request_target", "!!str workflow_run"])(
 		"refuses unsupported unquoted flow event %s",
@@ -98,6 +144,106 @@ describe("workflow policy", () => {
 		expect(checkWorkflow("x.yml", source, toolchain).join("\n")).toContain(
 			"unreviewed computed job name",
 		);
+	});
+
+	it.each(["__proto__", '"__proto__"', "'__proto__'"])("refuses a job keyed %s", (id) => {
+		const source = workflow(pr, [...checkout, ...run("github.event.pull_request.title")]).replace(
+			"  a:\n",
+			"  a:\n    name: required\n    permissions: write-all\n",
+		);
+		const problems = checkWorkflow("x.yml", source, toolchain).join("\n");
+		for (const problem of ["protected check name", "job permissions", "run must not expand"]) {
+			expect(problems).toContain(problem);
+		}
+		expect(checkWorkflow("x.yml", source.replace("  a:\n", `  ${id}:\n`), toolchain)).toEqual([
+			"x.yml: line 9: __proto__ keys are not supported",
+		]);
+	});
+
+	// Each workflow puts `sep` before a value on the given line; without a tab there, it has the
+	// given problem.
+	const withOn = (on: string): string => workflow(pr).replace("on:\n  pull_request:\n", `${on}\n`);
+	it.each([
+		[
+			"an on event",
+			(sep: string) => withOn(`on: ${sep}pull_request_target`),
+			1,
+			"pull_request_target is not allowed",
+		],
+		[
+			"another on event",
+			(sep: string) => withOn(`on: ${sep}workflow_run`),
+			1,
+			"workflow_run is not allowed",
+		],
+		[
+			"an on flow sequence",
+			(sep: string) => withOn(`on: ${sep}[push, workflow_run]`),
+			1,
+			"workflow_run is not allowed",
+		],
+		[
+			"an on flow mapping",
+			(sep: string) => withOn(`on: ${sep}{pull_request_target}`),
+			1,
+			"unsupported YAML syntax",
+		],
+		[
+			"an on sequence item",
+			(sep: string) => withOn(`on:\n  - ${sep}pull_request_target`),
+			2,
+			"pull_request_target is not allowed",
+		],
+		[
+			"an on flow sequence with push",
+			(sep: string) => withOn(`on: ${sep}[push, pull_request]`),
+			1,
+			"push may only run on the branches main or spikes-run/**",
+		],
+		[
+			"the jobs",
+			(sep: string) =>
+				workflow(pr).replace(/^jobs:[\s\S]*/m, `jobs: ${sep}{"a":{"runs-on":"ubuntu-24.04"}}`),
+			8,
+			"unsupported YAML syntax",
+		],
+		[
+			"the steps",
+			(sep: string) =>
+				workflow(pr, []).replace("    steps:", `    steps: ${sep}[{"uses":"actions/checkout@v7"}]`),
+			11,
+			"unsupported flow sequence item",
+		],
+	] as const)("refuses a tab before %s", (_, source, line, problem) => {
+		expect(checkWorkflow("x.yml", source(""), toolchain).join("\n")).toContain(problem);
+		expect(checkWorkflow("x.yml", source("\t"), toolchain)).toEqual([
+			`x.yml: line ${line}: tabs before a value are not supported`,
+		]);
+	});
+
+	it.each([
+		["run", `echo "\${{ github.event.pull_request.title }}"`, "run must not expand"],
+		["uses", "someone/thing@main", "uses must be owner/repo@<40-hex SHA>"],
+	])("refuses a tab after a step's %s key", (key, value, problem) => {
+		const source = (sep: string): string => workflow(pr, [`- ${key}:${sep}${value}`]);
+		expect(checkWorkflow("x.yml", source(" "), toolchain).join("\n")).toContain(problem);
+		for (const sep of ["\t", " \t", "\t "]) {
+			expect(checkWorkflow("x.yml", source(sep), toolchain)).toEqual([
+				"x.yml: line 12: tabs before a value are not supported",
+			]);
+		}
+	});
+
+	it("refuses a step in a flow sequence with a space or a tab after its key", () => {
+		for (const sep of [" ", "\t"]) {
+			const source = workflow(pr, []).replace(
+				"    steps:",
+				`    steps: [uses:${sep}someone/thing@main]`,
+			);
+			expect(checkWorkflow("x.yml", source, toolchain)).toEqual([
+				"x.yml: line 11: unsupported flow sequence item",
+			]);
+		}
 	});
 
 	it.each(["branches", "branches-ignore", "paths", "paths-ignore"])(
@@ -682,6 +828,545 @@ describe("workflow policy", () => {
 			[...steps, ...run("github.event_name"), ...run("github.sha")],
 		).replace("    runs-on:", "    permissions:\n      contents: read\n    runs-on:");
 		expect(checkWorkflow("x.yml", source, "1.95.0")).toEqual([]);
+	});
+
+	describe("M10 candidate tag filters", () => {
+		const candidateFiles = [".github/workflows/release.yml", ".github/workflows/mobile.yml"];
+		const tags = "  tags: ['m10-rc-*']";
+		const tagged = (extra: string[] = [], steps = checkout): string =>
+			workflow(["push:", tags, ...extra], steps);
+
+		it.each(candidateFiles)(
+			"admits the exact tag filter and existing events/branches in %s",
+			(file) => {
+				for (const on of [
+					["push:", tags],
+					["push:", "  tags:", "    - 'm10-rc-*'"],
+					["push:", "  branches: [main]", tags],
+					["push:", "  branches: ['spikes-run/**']", tags],
+					["push:", "  branches: [main, 'spikes-run/**']", tags],
+					["push:", "  branches: [main]"],
+					["push:", "  branches: ['spikes-run/**']"],
+					[
+						"push:",
+						tags,
+						"workflow_dispatch:",
+						"pull_request:",
+						"schedule:",
+						"  - cron: '0 0 * * 0'",
+					],
+				]) {
+					expect(checkWorkflow(file, workflow(on), toolchain), on.join("\n")).toEqual([]);
+				}
+				expect(checkWorkflow(file, tagged(["  paths: ['apps/**']"]), toolchain)).toEqual([]);
+				expect(checkWorkflow(file, tagged(["  paths-ignore: ['docs/**']"]), toolchain)).toEqual([]);
+			},
+		);
+
+		it.each(candidateFiles)("admits quoted own tag keys in %s", (file) => {
+			for (const key of ["'tags'", '"tags"']) {
+				const source = workflow(["push:", `  ${key}: ['m10-rc-*']`]);
+				expect(checkWorkflow(file, source, toolchain)).toEqual([]);
+			}
+		});
+
+		it.each(candidateFiles)("refuses prototype and duplicate tag fields in %s", (file) => {
+			for (const key of ["__proto__", "'__proto__'", '"__proto__"']) {
+				const inherited = [`  ${key}:`, "    tags: ['m10-rc-*']"];
+				for (const fields of [
+					inherited,
+					["  branches: [main]", ...inherited],
+					[...inherited, ...inherited],
+				]) {
+					expect(checkWorkflow(file, workflow(["push:", ...fields]), toolchain)).not.toEqual([]);
+				}
+			}
+			for (const key of ["tags", "'tags'", '"tags"']) {
+				const source = workflow(["push:", tags, `  ${key}: ['m10-rc-*']`]);
+				expect(checkWorkflow(file, source, toolchain)).not.toEqual([]);
+			}
+		});
+
+		it.each([
+			"x.yml",
+			".github/workflows/ci.yml",
+			".github/workflows/spikes.yml",
+			".github/workflows/release.yaml",
+			".github/workflows/mobile.yaml",
+			".github/workflows/Release.yml",
+			".github/workflows/Mobile.yml",
+			".github/workflows/release-extra.yml",
+			".github/workflows/subdir/release.yml",
+			"./.github/workflows/release.yml",
+			"release.yml",
+			"mobile.yml",
+		])("refuses the candidate tag pattern in another exact filename: %s", (file) => {
+			for (const extra of [[], ["  branches: [main]"]]) {
+				expect(checkWorkflow(file, tagged(extra), toolchain).join("\n")).toContain(
+					"push may only run",
+				);
+			}
+		});
+
+		it.each(candidateFiles)(
+			"refuses broad, wrong, extra and malformed tag patterns in %s",
+			(file) => {
+				for (const value of [
+					"['*']",
+					"['**']",
+					"['v*']",
+					"['m10-*']",
+					"['m10-rc-**']",
+					"['m10-rc-1']",
+					"['!m10-rc-*']",
+					"['m10-rc-*', 'v*']",
+					"['m10-rc-*', 'm10-rc-*']",
+					"['m10-rc-*', 'm10-rc-1']",
+					"['m10-rc-* ']",
+					`['\${{ inputs.tag }}']`,
+					"[]",
+					"'m10-rc-*'",
+					"null",
+					"true",
+					"42",
+					"[42]",
+					"[null]",
+				]) {
+					for (const branches of [[], ["  branches: [main]"]]) {
+						const source = workflow(["push:", `  tags: ${value}`, ...branches]);
+						expect(checkWorkflow(file, source, toolchain).join("\n"), value).toContain(
+							"push may only run",
+						);
+					}
+				}
+			},
+		);
+
+		it.each(candidateFiles)("retains branch validation beside valid tags in %s", (file) => {
+			for (const value of [
+				"[m10]",
+				"[main, m10]",
+				"['*']",
+				"['main*']",
+				"['refs/heads/main']",
+				"['spikes-run/*']",
+				"[]",
+				"main",
+				"null",
+				"[true]",
+				"[42]",
+			]) {
+				expect(
+					checkWorkflow(file, tagged([`  branches: ${value}`]), toolchain).join("\n"),
+					value,
+				).toContain("push may only run");
+			}
+		});
+
+		it.each(candidateFiles)("refuses a map masquerading as the one-tag list in %s", (file) => {
+			for (const branches of [[], ["  branches: [main]"]]) {
+				const source = workflow([
+					"push:",
+					"  tags:",
+					"    0: 'm10-rc-*'",
+					"    length: 1",
+					...branches,
+				]);
+				expect(checkWorkflow(file, source, toolchain).join("\n")).toContain("push may only run");
+			}
+		});
+
+		it.each(candidateFiles)(
+			"refuses ignored filters, extra filters and unfiltered pushes in %s",
+			(file) => {
+				for (const filter of ["tags-ignore: ['*']", "branches-ignore: [m10]", "unknown: [main]"]) {
+					expect(checkWorkflow(file, tagged([`  ${filter}`]), toolchain).join("\n")).toContain(
+						"push may only run",
+					);
+				}
+				for (const on of [
+					["push:"],
+					["push:", "  paths: ['apps/**']"],
+					["push:", "  paths-ignore: ['docs/**']"],
+					["push:", "  tags-ignore: ['v*']"],
+					["push:", "  branches-ignore: [m10]"],
+				]) {
+					expect(checkWorkflow(file, workflow(on), toolchain).join("\n")).toContain(
+						"push may only run",
+					);
+				}
+				for (const on of ["push", "[push]", "[push, workflow_dispatch]"]) {
+					const source = workflow(["push:"]).replace("on:\n  push:", `on: ${on}`);
+					expect(checkWorkflow(file, source, toolchain).join("\n")).toContain("push may only run");
+				}
+			},
+		);
+
+		it.each(candidateFiles)(
+			"retains security and artifact refusals with permitted tags in %s",
+			(file) => {
+				const source = tagged();
+				const upload = (path: string): string =>
+					tagged([], [`- uses: ${pin("actions/upload-artifact")}`, "  with:", `    path: ${path}`]);
+				for (const [changed, problem] of [
+					[
+						source.replace("permissions:\n  contents: read", "permissions:\n  contents: write"),
+						"exactly `contents: read`",
+					],
+					[
+						source.replace("    runs-on:", "    permissions: write-all\n    runs-on:"),
+						"job permissions may only be",
+					],
+					[source.replace("  DO_NOT_TRACK: '1'\n", ""), "DO_NOT_TRACK"],
+					[tagged(["pull_request_target:"]), "pull_request_target is not allowed"],
+					[tagged(["workflow_run:"]), "workflow_run is not allowed"],
+					[tagged([], ["- uses: actions/checkout@v7"]), "40-hex SHA"],
+					[tagged([], [`- uses: actions/checkout@${sha}`]), "# v7.0.1"],
+					[tagged([], [`- uses: ${pin("actions/checkout")}`]), "persist-credentials"],
+					[tagged([], run("github.event.pull_request.title")), "through env"],
+					[tagged([], run("inputs.name")), "through env"],
+					[upload("app.apk"), "never an installable build"],
+					[upload(`\${{ runner.temp }}/ci-verification.json`), "fixed CI receipt"],
+				]) {
+					expect(checkWorkflow(file, changed ?? "", toolchain).join("\n")).toContain(problem);
+				}
+				expect(checkWorkflow(file, upload("spikes/*/evidence/"), toolchain)).toEqual([]);
+			},
+		);
+	});
+
+	describe("the exact labels contract", () => {
+		it("admits the reviewed seven-step source without executing future commands", () => {
+			expect(checkWorkflow(labelsFile, labelsFixture, toolchain)).toEqual([]);
+		});
+
+		it("accepts comments, CRLF and reordered mappings with identical parsed values", () => {
+			for (const source of [
+				labelsChange(
+					"      contents: read\n      issues: write",
+					"      issues: write\n      contents: read",
+				),
+				labelsFixture.replaceAll("\n", "\r\n"),
+				`# labels\n${labelsFixture}`,
+			])
+				expect(checkWorkflow(labelsFile, source, toolchain)).toEqual([]);
+		});
+
+		it.each([
+			"labels.yml",
+			".github/workflows/labels.yaml",
+			".github/workflows/Labels.yml",
+			".github/workflows/labels-extra.yml",
+			".github/workflows/subdir/labels.yml",
+			"./.github/workflows/labels.yml",
+			".github/workflows/ci.yml",
+			".github/workflows/release.yml",
+			".github/workflows/mobile.yml",
+			".github/workflows/x.yml",
+		])("does not grant label writes to another exact filename: %s", (file) => {
+			expect(checkWorkflow(file, labelsFixture, toolchain)).not.toEqual([]);
+		});
+
+		it.each(["x.yml", ".github/workflows/release.yml", ".github/workflows/mobile.yml"])(
+			"keeps ordinary read-only workflows accepted in %s",
+			(file) => {
+				for (const events of [
+					pr,
+					["workflow_dispatch:"],
+					["schedule:", "  - cron: '0 0 * * 0'"],
+					["push:", "  branches: [main]"],
+					["push:", "  branches: ['spikes-run/**']"],
+				]) {
+					const source = workflow(events).replace(
+						"    runs-on:",
+						"    permissions:\n      contents: read\n    runs-on:",
+					);
+					expect(checkWorkflow(file, source, toolchain)).toEqual([]);
+				}
+				expect(checkWorkflow(file, labelsChange("      issues: write\n", ""), toolchain)).toEqual(
+					[],
+				);
+			},
+		);
+
+		it("requires the contract even when labels.yml is read-only", () => {
+			expect(checkWorkflow(labelsFile, workflow(["workflow_dispatch:"]), toolchain)).not.toEqual(
+				[],
+			);
+			expect(
+				checkWorkflow(labelsFile, labelsChange("      issues: write\n", ""), toolchain),
+			).not.toEqual([]);
+		});
+
+		it.each([
+			["another job", "  sync-labels:", "  another-job:"],
+			[
+				"extra job",
+				"jobs:",
+				"jobs:\n  extra:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo extra",
+			],
+			["no dispatch", "  workflow_dispatch:", "  pull_request:"],
+			["push event", "  workflow_dispatch:", "  workflow_dispatch:\n  push:\n    branches: [main]"],
+			[
+				"schedule event",
+				"  workflow_dispatch:",
+				"  workflow_dispatch:\n  schedule:\n    - cron: '0 0 * * 0'",
+			],
+			["workflow call", "  workflow_dispatch:", "  workflow_dispatch:\n  workflow_call:"],
+			["forbidden event", "  workflow_dispatch:", "  workflow_dispatch:\n  pull_request_target:"],
+			["empty inputs", "  workflow_dispatch:", "  workflow_dispatch:\n    inputs:"],
+			[
+				"ref input",
+				"  workflow_dispatch:",
+				"  workflow_dispatch:\n    inputs:\n      ref:\n        type: string",
+			],
+			[
+				"dispatch extra property",
+				"  workflow_dispatch:",
+				"  workflow_dispatch:\n    unexpected: true",
+			],
+			["event scalar", "on:\n  workflow_dispatch:", "on: workflow_dispatch"],
+			["event list", "on:\n  workflow_dispatch:", "on: [workflow_dispatch]"],
+			["guard missing", "    if:", "    other-condition:"],
+			["event guard", "github.event_name == 'workflow_dispatch'", "github.event_name == 'push'"],
+			[
+				"repository guard",
+				"github.repository == 'draftyak/draftyak'",
+				"github.repository == 'draftyak/other'",
+			],
+			["original actor", "github.actor == 'nicksavov'", "github.actor == 'other-owner'"],
+			[
+				"rerun actor",
+				"github.triggering_actor == 'nicksavov'",
+				"github.triggering_actor == 'other-owner'",
+			],
+			["rerun guard missing", " && github.triggering_actor == 'nicksavov'", ""],
+			["main ref", "refs/heads/m11", "refs/heads/main"],
+			["tag ref", "refs/heads/m11", "refs/tags/m11"],
+			["item ref", "refs/heads/m11", "refs/heads/m11-12-labels"],
+			["weakened guard", " && github.repository", " || github.repository"],
+			[
+				"guard suffix",
+				"github.ref == 'refs/heads/m11' }}",
+				"github.ref == 'refs/heads/m11' || always() }}",
+			],
+			["top write", "permissions:\n  contents: read", "permissions:\n  contents: write"],
+			[
+				"top issues write",
+				"permissions:\n  contents: read",
+				"permissions:\n  contents: read\n  issues: write",
+			],
+			["job contents write", "      contents: read", "      contents: write"],
+			["job extra write", "      issues: write", "      issues: write\n      actions: write"],
+			[
+				"job scalar write",
+				"    permissions:\n      contents: read\n      issues: write",
+				"    permissions: write-all",
+			],
+			["wrong runner", "runs-on: ubuntu-24.04", "runs-on: self-hosted"],
+			["checkout moving ref", `ref: \${{ github.sha }}`, "ref: m11"],
+			["checkout input ref", `ref: \${{ github.sha }}`, `ref: \${{ inputs.ref }}`],
+			["checkout credentials", "persist-credentials: false", "persist-credentials: true"],
+			["checkout credential string", "persist-credentials: false", "persist-credentials: 'false'"],
+			[
+				"checkout alternate token",
+				"          persist-credentials: false",
+				`          persist-credentials: false\n          token: \${{ secrets.ALTERNATE_TOKEN }}`,
+			],
+			["Node override", "node-version-file: .node-version", "node-version: '26'"],
+			[
+				"pnpm override",
+				"      - name: Set up Node",
+				"        with:\n          version: '11'\n      - name: Set up Node",
+			],
+			["unlocked install", "run: pnpm install --frozen-lockfile", "run: pnpm install"],
+			[
+				"metadata omitted",
+				"run: pnpm --filter @draftyak/launch-checks --fail-if-no-match metadata",
+				"run: echo validated",
+			],
+			[
+				"issues omitted",
+				"run: pnpm --filter @draftyak/launch-checks --fail-if-no-match issues",
+				"run: echo validated",
+			],
+			["metadata masked", "--fail-if-no-match metadata", "--fail-if-no-match metadata || true"],
+			[
+				"wrong CLI",
+				"node tools/launch-checks/src/issues-cli.ts --sync-labels",
+				"node tools/launch-checks/src/other.ts --sync-labels",
+			],
+			[
+				"extra CLI argument",
+				"issues-cli.ts --sync-labels",
+				"issues-cli.ts --sync-labels --repo other",
+			],
+			[
+				"mutating command masked",
+				"issues-cli.ts --sync-labels",
+				"issues-cli.ts --sync-labels || true",
+			],
+			["step id", "id: sync-approved-labels", "id: another-step"],
+			["missing final token", `          GH_TOKEN: \${{ github.token }}\n`, ""],
+			["PAT token", `GH_TOKEN: \${{ github.token }}`, `GH_TOKEN: \${{ secrets.ALTERNATE_TOKEN }}`],
+			["token context", `GH_TOKEN: \${{ github.token }}`, `GH_TOKEN: \${{ github.event.token }}`],
+			[
+				"extra token",
+				`GH_TOKEN: \${{ github.token }}`,
+				`GH_TOKEN: \${{ github.token }}\n          GITHUB_TOKEN: \${{ github.token }}`,
+			],
+			[
+				"token command",
+				"run: node tools/launch-checks/src/issues-cli.ts --sync-labels",
+				`run: node tools/launch-checks/src/issues-cli.ts --sync-labels \${{ github.token }}`,
+			],
+			[
+				"workflow token",
+				"env:\n  DO_NOT_TRACK",
+				`env:\n  GH_TOKEN: \${{ github.token }}\n  DO_NOT_TRACK`,
+			],
+			["job token", "    runs-on:", `    env:\n      GH_TOKEN: \${{ github.token }}\n    runs-on:`],
+			["workflow shell default", "jobs:", "defaults:\n  run:\n    shell: sh\njobs:"],
+			[
+				"workflow directory default",
+				"jobs:",
+				"defaults:\n  run:\n    working-directory: other\njobs:",
+			],
+			["workflow environment", "jobs:", "environment: other\njobs:"],
+			["workflow shell environment", "  DO_NOT_TRACK:", "  BASH_ENV: override.sh\n  DO_NOT_TRACK:"],
+			["workflow path environment", "  DO_NOT_TRACK:", "  PATH: other\n  DO_NOT_TRACK:"],
+			["workflow token host", "  DO_NOT_TRACK:", "  GH_HOST: other.invalid\n  DO_NOT_TRACK:"],
+			["telemetry off removed", "  DO_NOT_TRACK: '1'\n", ""],
+			["step name changed", "name: Validate metadata", "name: Other validation"],
+			["workflow name changed", "name: Sync approved labels", "name: Other labels"],
+		])("refuses a changed labels contract: %s", (_name, before, after) => {
+			expect(
+				checkWorkflow(labelsFile, labelsChange(before ?? "", after ?? ""), toolchain),
+			).not.toEqual([]);
+		});
+
+		it.each([
+			"defaults:\n      run:\n        shell: sh",
+			"defaults:\n      run:\n        working-directory: other",
+			"environment: other",
+			"continue-on-error: false",
+			"continue-on-error: true",
+			"container: other",
+			"strategy:\n      matrix:\n        node: [26]",
+			"needs: other",
+			"env:\n      NODE_OPTIONS: --import=other.mjs",
+		])("refuses effective job execution overrides: %s", (field) => {
+			expect(
+				checkWorkflow(
+					labelsFile,
+					labelsChange("    runs-on:", `    ${field}\n    runs-on:`),
+					toolchain,
+				),
+			).not.toEqual([]);
+		});
+
+		it.each([
+			"Check out source",
+			"Set up pnpm",
+			"Set up Node",
+			"Install locked dependencies",
+			"Validate metadata",
+			"Validate issue drafts and labels",
+			"Synchronize approved labels",
+		])("pins execution fields and token placement at the %s step", (name) => {
+			for (const extra of [
+				"if: false",
+				"if: always()",
+				"continue-on-error: true",
+				"continue-on-error: false",
+				"shell: sh",
+				"working-directory: other",
+				"environment: other",
+				`env:\n          GH_TOKEN: \${{ github.token }}`,
+				"env:\n          BASH_ENV: other.sh",
+				"run: echo extra",
+				`uses: ${pin("actions/cache")}`,
+			]) {
+				const source = labelsChange(
+					`      - name: ${name}`,
+					`      - name: ${name}\n        ${extra}`,
+				);
+				expect(checkWorkflow(labelsFile, source, toolchain), `${name}: ${extra}`).not.toEqual([]);
+			}
+		});
+
+		it("requires exactly seven ordered steps without artifacts or an earlier token step", () => {
+			for (const extra of [
+				"      - run: echo extra\n",
+				`      - uses: ${pin("actions/upload-artifact")}\n        with:\n          path: spikes/*/evidence/\n`,
+				`      - uses: ${pin("actions/upload-artifact")}\n        with:\n          path: app.apk\n`,
+				`      - env:\n          GH_TOKEN: \${{ github.token }}\n        run: echo earlier\n`,
+			]) {
+				for (const source of [
+					labelsFixture + extra,
+					labelsChange("    steps:\n", `    steps:\n${extra}`),
+				]) {
+					expect(checkWorkflow(labelsFile, source, toolchain)).not.toEqual([]);
+				}
+			}
+			const install =
+				"      - name: Install locked dependencies\n        run: pnpm install --frozen-lockfile\n";
+			expect(checkWorkflow(labelsFile, labelsChange(install, ""), toolchain)).not.toEqual([]);
+			const reordered = labelsFixture
+				.replace(install, "")
+				.replace("      - name: Check out source", `${install}      - name: Check out source`);
+			expect(checkWorkflow(labelsFile, reordered, toolchain)).not.toEqual([]);
+		});
+
+		it.each(["actions/checkout", "pnpm/action-setup", "actions/setup-node"])(
+			"retains existing action pins and version comments for %s",
+			(action) => {
+				for (const changed of [
+					`${action}@v1`,
+					`${action}@${"a".repeat(40)} # v1`,
+					`${action}@${actionPins[action]?.[0]}`,
+					`${action}@${actionPins[action]?.[0]} # v0`,
+					pin("actions/cache"),
+				])
+					expect(
+						checkWorkflow(labelsFile, labelsChange(pin(action), changed), toolchain),
+					).not.toEqual([]);
+			},
+		);
+
+		it.each(
+			["__proto__", "'__proto__'", '"__proto__"', "extra"].flatMap((key) => [
+				{
+					name: `${key} job`,
+					source: labelsChange(
+						"jobs:\n",
+						`jobs:\n  ${key}:\n    permissions: write-all\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo extra\n`,
+					),
+				},
+				{
+					name: `${key} environment entry`,
+					source: labelsChange("env:\n", `env:\n  ${key}: \${{ github.token }}\n`),
+				},
+				{
+					name: `${key} action input`,
+					source: labelsChange(
+						"          persist-credentials: false\n",
+						`          persist-credentials: false\n          ${key}: x\n`,
+					),
+				},
+			]),
+		)("refuses extra labels fields under $name", ({ source }) => {
+			expect(checkWorkflow(labelsFile, source, toolchain)).not.toEqual([]);
+		});
+
+		it("retains parser refusal of folded conditions, aliases and duplicate keys", () => {
+			for (const source of [
+				labelsChange("    if: ", "    if: >-\n      "),
+				labelsChange("jobs:", "jobs: &jobs"),
+				labelsChange("  sync-labels:", "  sync-labels:\n  sync-labels:"),
+			])
+				expect(checkWorkflow(labelsFile, source, toolchain)).not.toEqual([]);
+		});
 	});
 
 	it.each([
