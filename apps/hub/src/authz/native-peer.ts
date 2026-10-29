@@ -58,6 +58,8 @@ export class NativeDeviceTls {
 	readonly #server!: Server;
 	readonly #connections = new Set<Connection>();
 	#closed = false;
+	#started: Promise<void> | undefined;
+	#closing: Promise<void> | undefined;
 	constructor(
 		registry: DeviceRegistry,
 		identity: HubIdentity,
@@ -130,8 +132,8 @@ export class NativeDeviceTls {
 		}
 	}
 	async listen(): Promise<number> {
-		if (this.#closed || this.#server.listening) return refused();
-		await new Promise<void>((resolve, reject) => {
+		if (this.#closed || this.#started) return refused();
+		this.#started = new Promise<void>((resolve, reject) => {
 			const failed = (): void => {
 				reject(new AuthzError("UNAVAILABLE"));
 			};
@@ -141,17 +143,23 @@ export class NativeDeviceTls {
 				resolve();
 			});
 		});
+		await this.#started;
 		const address = this.#server.address();
-		if (!address || typeof address === "string") return refused();
+		if (this.#closed || !address || typeof address === "string") return refused();
 		return address.port;
 	}
-	async close(): Promise<void> {
-		if (this.#closed) return;
+	/** All calls share one shutdown: it awaits a pending listen, then the listener's close. */
+	close(): Promise<void> {
+		this.#closing ??= this.#shutdown();
+		return this.#closing;
+	}
+	async #shutdown(): Promise<void> {
 		this.#closed = true;
 		for (const bound of this.#connections) {
 			bound.active = false;
 			bound.socket.destroy();
 		}
+		await this.#started?.catch(() => {});
 		if (this.#server.listening)
 			await new Promise<void>((resolve) => this.#server.close(() => resolve()));
 	}
