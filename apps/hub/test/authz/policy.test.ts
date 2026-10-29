@@ -13,6 +13,8 @@ import {
 	type PeerFacts,
 	parsePreset,
 } from "../../src/authz/decide.ts";
+import { AuthzError, deviceApiError } from "../../src/authz/errors.ts";
+import { PinError } from "../../src/identity/pin.ts";
 
 // Pure policy vectors are not authenticated peers and never grant runtime authority.
 const peer: PeerFacts = {
@@ -122,4 +124,32 @@ it("postponed kinds remain closed even for a desktop admin or native CLI", () =>
 				"PRINCIPAL_REFUSED",
 			);
 	}
+});
+
+it("answers each PIN refusal with its device API code", () => {
+	const codes = ["PIN_REQUIRED", "PIN_INVALID", "PIN_LOCKED", "PIN_BUSY", "PIN_CHANGED"] as const;
+	expect(
+		Object.fromEntries(codes.map((code) => [code, deviceApiError(new PinError(code))])),
+	).toEqual({
+		PIN_REQUIRED: "UNAVAILABLE",
+		PIN_INVALID: "PIN_INVALID",
+		PIN_LOCKED: "PIN_LOCKED",
+		PIN_BUSY: "UNAVAILABLE",
+		PIN_CHANGED: "PIN_INVALID",
+	});
+});
+
+it("answers a done bootstrap STALE and a refused bootstrap FORBIDDEN", () => {
+	const claimant = { ...peer, confirmedEpoch: null, capabilities: [], sidecarClaim: true };
+	const answer = (facts: PeerFacts) => {
+		const code = decideRoute(facts, "bootstrap");
+		return code === undefined ? "ALLOWED" : deviceApiError(new AuthzError(code));
+	};
+	expect(
+		[
+			{ ...claimant, bootstrapDone: false },
+			{ ...claimant, bootstrapDone: true },
+			{ ...claimant, sidecarClaim: false, bootstrapDone: false },
+		].map(answer),
+	).toEqual(["ALLOWED", "STALE", "FORBIDDEN"]);
 });
