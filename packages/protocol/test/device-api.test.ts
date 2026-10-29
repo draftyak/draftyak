@@ -292,7 +292,7 @@ describe("device API authorization and strict wire forms", () => {
 		expect(api.requiredCapability("security.pin-change")).toBe("admin");
 		for (const kind of ["unknown", "__proto__", "constructor", "hub-key-rotate.v1"])
 			expect(api.requiredCapability(kind)).toBeUndefined();
-		for (const kind of ["login.v1", "admin.v1", "consent.v1"])
+		for (const kind of ["login.v1", "consent.v1"])
 			expect(api.ChallengeRequest.safeParse({ kind, id: SNAPSHOT_IDS.op }).success).toBe(false);
 	});
 	it("refuses operation-kind, preset and ID substitution", () => {

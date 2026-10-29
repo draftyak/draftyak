@@ -13,6 +13,13 @@ import { DisplayName, PairingRole, PairingSas } from "../pairing.ts";
 import { Sha256Hex, Ulid, UtcMs } from "../scalars.ts";
 import { contentHash, SendSnapshotV1 } from "../snapshot.ts";
 import { ADMIN_KINDS, AgentSessionReviewSubject, SigningKey } from "../statements.ts";
+import {
+	AdminAccountSubject,
+	AdminDataBackupSubject,
+	AdminDeviceCapabilitiesSubject,
+	type AdminOperationReview,
+	type AdminReviewKind,
+} from "./admin.ts";
 import { presetFitsRole } from "./common.ts";
 
 export type OperationRequest =
@@ -113,7 +120,7 @@ export interface AgentSessionReview {
 	readonly expiresAt: number;
 	readonly remainingMs: number;
 }
-export type OperationReview = PairConfirmationReview | AgentSessionReview;
+export type OperationReview = PairConfirmationReview | AgentSessionReview | AdminOperationReview;
 const pairReview = z.strictObject({
 	id: Ulid,
 	kind: z.literal("pair-confirm"),
@@ -130,8 +137,24 @@ const agentSessionReview = z.strictObject({
 	expiresAt: UtcMs,
 	remainingMs: z.int().min(0).max(120_000),
 });
+const adminReview = <K extends AdminReviewKind, S extends z.ZodType>(kind: K, subject: S) =>
+	z.strictObject({
+		id: Ulid,
+		kind: z.literal(kind),
+		digest: Sha256Hex,
+		subject,
+		expiresAt: UtcMs,
+		remainingMs: z.int().min(0).max(120_000),
+	});
 export const OperationReview: z.ZodType<OperationReview> = z
-	.discriminatedUnion("kind", [pairReview, agentSessionReview])
+	.discriminatedUnion("kind", [
+		pairReview,
+		agentSessionReview,
+		adminReview("account.disconnect", AdminAccountSubject),
+		adminReview("account.mode-full", AdminAccountSubject),
+		adminReview("security.device-capabilities", AdminDeviceCapabilitiesSubject),
+		adminReview("data.backup", AdminDataBackupSubject),
+	])
 	.refine(
 		(value) => {
 			try {

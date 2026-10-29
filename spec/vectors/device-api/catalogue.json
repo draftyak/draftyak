@@ -264,7 +264,8 @@
     "security.device-capabilities": "admin",
     "security.pin-change": "admin",
     "security.key-rotate": "admin",
-    "data.export": "admin"
+    "data.export": "admin",
+    "data.backup": "admin"
   },
   "presets": {
     "desktop": [

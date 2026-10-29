@@ -16,7 +16,7 @@ export const ADMIN_GROUPS = {
 		"access.advertised-addresses-set",
 	],
 	security: ["security.device-capabilities", "security.pin-change", "security.key-rotate"],
-	data: ["data.export"],
+	data: ["data.export", "data.backup"],
 	sms: [],
 } as const;
 export type AdminKind = (typeof ADMIN_GROUPS)[keyof typeof ADMIN_GROUPS][number];

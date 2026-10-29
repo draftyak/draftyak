@@ -18,6 +18,8 @@ use crate::{
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
+pub mod admin;
+
 pub const STATEMENT_BYTES: usize = 16_384;
 pub const FRAME_BYTES: usize = 65_536;
 
@@ -311,6 +313,10 @@ fn operation_review(value: &Value) -> bool {
         && match text(value, "kind") {
             "pair-confirm" => pair_subject(&value["subject"]),
             "agent-session" => agent_subject(&value["subject"]).is_some(),
+            "account.disconnect" => admin::account_subject(&value["subject"]),
+            "account.mode-full" => admin::account_subject(&value["subject"]),
+            "security.device-capabilities" => admin::device_capabilities_subject(&value["subject"]),
+            "data.backup" => admin::data_backup_subject(&value["subject"]),
             _ => false,
         }
         && jcs_sha256(&value["subject"]).is_ok_and(|h| value["digest"] == h)
@@ -338,14 +344,20 @@ fn challenge_request(value: &Value) -> bool {
                 shape(value, &["kind", "id", "flagsAcked"]) && flags_acked(&value["flagsAcked"])
             }
             "pair-confirm.v1" | "agent-session.v1" => shape(value, &["kind", "id"]),
+            "admin.v1" => shape(value, &["kind", "id"]),
             _ => false,
         }
 }
 fn challenge(value: &Value) -> bool {
     shape(value, &["kind", "id", "statement"])
         && is_text(value, "id", id)
-        && ["approval.send.v1", "pair-confirm.v1", "agent-session.v1"]
-            .contains(&text(value, "kind"))
+        && [
+            "approval.send.v1",
+            "pair-confirm.v1",
+            "agent-session.v1",
+            "admin.v1",
+        ]
+        .contains(&text(value, "kind"))
         && typed_statement(&value["statement"], text(value, "kind")).is_some()
 }
 fn envelope(value: &Value, typ: Option<&str>) -> bool {
@@ -431,6 +443,9 @@ pub fn check_schema(name: &str, value: &Value) -> bool {
         "SendReview" => send_review(value),
         "PairConfirmSubject" => pair_subject(value),
         "AgentSessionReviewSubject" => agent_subject(value).is_some(),
+        "AdminAccountSubject" => admin::account_subject(value),
+        "AdminDeviceCapabilitiesSubject" => admin::device_capabilities_subject(value),
+        "AdminDataBackupSubject" => admin::data_backup_subject(value),
         "OperationReview" => operation_review(value),
         "ChallengeRequest" => challenge_request(value),
         "Challenge" => challenge(value),
@@ -591,6 +606,17 @@ pub fn check_challenge(
                 && s.device == text(context, "device")
                 && s.matches_pending(text(review, "id"), &subject)
         }
+        Statement::Admin(s) => {
+            operation_review(review)
+                && admin::ADMIN_REVIEW_KINDS.contains(&text(review, "kind"))
+                && s.hub == text(context, "hub")
+                && s.device == text(context, "device")
+                && s.op == text(request, "id")
+                && s.kind == text(review, "kind")
+                && s.digest == text(review, "digest")
+                && (review["kind"] != "security.device-capabilities"
+                    || s.device != text(&review["subject"], "device"))
+        }
         _ => false,
     }
 }
@@ -648,7 +674,13 @@ pub fn route_allows(name: &str, peer: &Value, operation: Option<&Value>) -> bool
         return false;
     }
     if name == "challenge"
-        && !["approval.send.v1", "pair-confirm.v1", "agent-session.v1"].contains(&text(op, "kind"))
+        && ![
+            "approval.send.v1",
+            "pair-confirm.v1",
+            "agent-session.v1",
+            "admin.v1",
+        ]
+        .contains(&text(op, "kind"))
     {
         return false;
     }
