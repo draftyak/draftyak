@@ -359,7 +359,8 @@
           "organize",
           "approve",
           "admin"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": true
     },
@@ -381,6 +382,7 @@
           "approve",
           "admin"
         ],
+        "sas": "004917",
         "unexpected": true
       },
       "valid": false
@@ -405,9 +407,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -433,9 +436,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000,
         "unexpected": true
@@ -3797,7 +3801,8 @@
           "organize",
           "approve",
           "admin"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": true
     },
@@ -3825,9 +3830,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -3856,7 +3862,8 @@
           "read",
           "draft",
           "organize"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": true
     },
@@ -3882,9 +3889,10 @@
             "read",
             "draft",
             "organize"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "94b385e6c890c5103a8673d4eba938a801c54dc7a3443b227e60484eb28373c0",
+        "digest": "8a41b97e50fcc21408f30d5aa4ec48dab665089c5fd395c79aeb45e816f7f7b4",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -3912,7 +3920,8 @@
         "capabilities": [
           "read",
           "draft"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": true
     },
@@ -3937,9 +3946,10 @@
           "capabilities": [
             "read",
             "draft"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "d31ac70ab93cb3e831ec70880b12b67c9319940a24be82b2f903a9d0dbe7ec71",
+        "digest": "a3fc047b638b64e6a1cca7cb1a5f5627f5991010ffc21caf91356a7e7c17320b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -3966,7 +3976,8 @@
         "preset": "desktop",
         "capabilities": [
           "read"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": false
     },
@@ -3987,7 +3998,8 @@
           "organize",
           "approve",
           "admin"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": false
     },
@@ -4008,7 +4020,8 @@
           "organize",
           "approve",
           "admin"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": false
     },
@@ -4029,7 +4042,670 @@
           "organize",
           "approve",
           "admin"
+        ],
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-missing",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
         ]
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-five-digits",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "04917"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-seven-digits",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "0049170"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-number",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": 4917
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-letter",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "00491x"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-fullwidth-digits",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "００４９１７"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-suffix-\"\\r\"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "004917\r"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-last-\"\\r\"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "00491\r"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-suffix-\"\\n\"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "004917\n"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-last-\"\\n\"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "00491\n"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-suffix-\" \"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "004917 "
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-last-\" \"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "00491 "
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-suffix-\" \"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "004917 "
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-last-\" \"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "00491 "
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-zeros",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "000000"
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationReview-sas-not-digested",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "pair-confirm",
+        "subject": {
+          "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+          "name": "Test device",
+          "role": "device",
+          "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+          "preset": "desktop",
+          "capabilities": [
+            "read",
+            "draft",
+            "organize",
+            "approve",
+            "admin"
+          ],
+          "sas": "000000"
+        },
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationReview-sas-digested",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "pair-confirm",
+        "subject": {
+          "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+          "name": "Test device",
+          "role": "device",
+          "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+          "preset": "desktop",
+          "capabilities": [
+            "read",
+            "draft",
+            "organize",
+            "approve",
+            "admin"
+          ],
+          "sas": "000000"
+        },
+        "digest": "774c214ccd3f72e54555f8d32d29d61aa30db3878a3fdec80cfa0e2421cc0b09",
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": true
+    },
+    {
+      "id": "DeviceStatus-sas-member",
+      "action": "schema",
+      "schema": "DeviceStatus",
+      "value": {
+        "deviceId": "01JAZ3W3B6Q8M2V0G5T9K4X7RH",
+        "epoch": 0,
+        "confirmed": false,
+        "capabilities": [],
+        "testUpstreams": false,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "BootstrapRequest-sas-member",
+      "action": "schema",
+      "schema": "BootstrapRequest",
+      "value": {
+        "pin": "123456",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "BootstrapStatus-sas-member",
+      "action": "schema",
+      "schema": "BootstrapStatus",
+      "value": {
+        "deviceId": "01JAZ3W3B6Q8M2V0G5T9K4X7RH",
+        "epoch": 1,
+        "confirmed": true,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "testUpstreams": true,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairingWindowRequest-sas-member",
+      "action": "schema",
+      "schema": "PairingWindowRequest",
+      "value": {
+        "role": "device",
+        "pin": "123456",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairingWindow-sas-member",
+      "action": "schema",
+      "schema": "PairingWindow",
+      "value": {
+        "pairingCode": "draftyak-pair:v1:test",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-sas-member",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "pair-confirm",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RM"
+        ],
+        "preset": "desktop",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationCreated-sas-member",
+      "action": "schema",
+      "schema": "OperationCreated",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "SyncPause-sas-member",
+      "action": "schema",
+      "schema": "SyncPause",
+      "value": {
+        "paused": false,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "Accepted-sas-member",
+      "action": "schema",
+      "schema": "Accepted",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "SendReview-sas-member",
+      "action": "schema",
+      "schema": "SendReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationReview-sas-member",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "pair-confirm",
+        "subject": {
+          "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+          "name": "Test device",
+          "role": "device",
+          "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+          "preset": "desktop",
+          "capabilities": [
+            "read",
+            "draft",
+            "organize",
+            "approve",
+            "admin"
+          ],
+          "sas": "004917"
+        },
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "ChallengeRequest-sas-member",
+      "action": "schema",
+      "schema": "ChallengeRequest",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT"
+        ],
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "Challenge-sas-member",
+      "action": "schema",
+      "schema": "Challenge",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiTkVXX1JFQ0lQSUVOVCJdLCJmbGFnc0hhc2giOiI5ODQ3OTYyM2U1ZjM5ZDdhNjE1YWExNmFlMGNjNmNiY2U5NzYyMTliZjEwNjZhMDFmNWZmNjhjN2YwNWY0OTBlIiwiaHViIjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImlhdCI6MTc5MjM0MjgwMDAwMCwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwibm90QmVmb3JlIjpudWxsLCJvdXRib3giOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsInYiOjF9",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "SignedEnvelope-sas-member",
+      "action": "schema",
+      "schema": "SignedEnvelope",
+      "value": {
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiTkVXX1JFQ0lQSUVOVCJdLCJmbGFnc0hhc2giOiI5ODQ3OTYyM2U1ZjM5ZDdhNjE1YWExNmFlMGNjNmNiY2U5NzYyMTliZjEwNjZhMDFmNWZmNjhjN2YwNWY0OTBlIiwiaHViIjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImlhdCI6MTc5MjM0MjgwMDAwMCwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwibm90QmVmb3JlIjpudWxsLCJvdXRib3giOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsInYiOjF9",
+        "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "pin": "123456",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "EventsRequest-sas-member",
+      "action": "schema",
+      "schema": "EventsRequest",
+      "value": {
+        "after": null,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "EventFrame-sas-member",
+      "action": "schema",
+      "schema": "EventFrame",
+      "value": {
+        "type": "ready",
+        "cursor": "",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "ApiError-sas-member",
+      "action": "schema",
+      "schema": "ApiError",
+      "value": {
+        "code": "INVALID_REQUEST",
+        "sas": "004917"
       },
       "valid": false
     },
@@ -4345,7 +5021,8 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
         "digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "expiresAt": 1792342920000,
@@ -4373,9 +5050,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120001
       },
@@ -4401,9 +5079,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 0
       },
@@ -4992,9 +5671,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6005,9 +6685,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6045,9 +6726,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6085,9 +6767,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6125,9 +6808,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6165,9 +6849,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6205,9 +6890,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6245,9 +6931,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6285,9 +6972,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6325,9 +7013,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7405,9 +8094,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7445,9 +8135,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7485,9 +8176,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7525,9 +8217,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7565,9 +8258,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7605,9 +8299,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7722,9 +8417,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "b3e827a3e04abb07c1a5a49ff680559a620d33b1922d960db1103bd1310f8970",
+        "digest": "418234c613473bc2d552d5c15db992aacc59603e0c758bd8194088072f3e40fa",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7762,9 +8458,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "806693ea43721dd0fad74f7fe0d79e405971a1c8e15f1abaa849a9341cd0f4e1",
+        "digest": "8d81a0f4e705862736ef7cdea4fcd2c9da16733cff8dabf02fc167be39a564df",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7802,9 +8499,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "71640a553d931d59e99fff27d7b3437455836f694f74d1410917d05338fe1cc7",
+        "digest": "a1297816727ce5d61c1bfb27313efe639620b016727259c91944ac91c705ed2d",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7842,9 +8540,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "3e0df4aae480d3681889b748c7ed9e986f2bbd2c8c1dcd0ba539ea6a4238b6d2",
+        "digest": "cff0a4443fdb636ec6c25e3b91ce5bab4db1b2dff8e01c68ab18857259efa924",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7882,9 +8581,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "48cd9d1d04402571249f1485ee01700a2b3599a363a6a84091f870dd10d65e90",
+        "digest": "c73d204df9e81adfbea6834f6dbe241bae72e3fb1fbb9ab372bbfebb64a58b58",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7920,9 +8620,10 @@
             "read",
             "draft",
             "organize"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "658ef8fe191c05aa0121bb8465ced22a210908930b76e31b6b32372c20dc2765",
+        "digest": "0b57c7659b52cdd7f356177ad57beae4d6acc44ec4b98d2d5d36e1ecc8dc8ebc",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -12381,9 +13082,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -12409,9 +13111,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -12438,9 +13141,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },

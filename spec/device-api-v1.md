@@ -81,10 +81,13 @@ the owner as enforced by the consuming approval service.
 
 OperationReview is `{id,kind,digest,subject,expiresAt,remainingMs}`. Its digest is
 SHA-256 of the subject's JCS and remainingMs is 0–120,000. Pair-confirm's
-subject is `{candidate,name,role,transportSpkiSha256,signingKey,preset,capabilities}`.
+subject is `{candidate,name,role,transportSpkiSha256,signingKey,preset,capabilities,sas}`.
 Its exact capability array equals its preset and its role fits that preset.
 The signing key must be a canonical P-256 approval SPKI.
-The comparison-code line is added by the separate pairing contract.
+`sas` is the hub's comparison code for the candidate, from the reveal that held
+([Pairing v1](pairing-v1.md) section 9): exactly six ASCII digits, leading zeros
+kept. The digest covers it; the signed `pair-confirm.v1` statement doesn't carry
+it. No other request, answer or frame of this API carries it.
 
 The `agent-session` review uses the existing strict `AgentSessionReviewSubject`:
 `{principal,account,toolClass,authorization}`. Principal is a grant or token ULID;

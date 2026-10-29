@@ -57,6 +57,7 @@ function pairFixture() {
 		signingKey: key,
 		preset: "desktop",
 		capabilities: [...CONFIRMATION_PRESETS.desktop],
+		sas: "004917",
 	};
 	const review = {
 		id: SNAPSHOT_IDS.op,

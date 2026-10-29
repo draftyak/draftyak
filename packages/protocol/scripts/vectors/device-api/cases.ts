@@ -37,6 +37,8 @@ function publicPoint(scalar: number): string {
 }
 export const publicKey: string = publicPoint(1);
 const otherKey = publicPoint(2);
+// A pairing SAS with leading zeros, as the hub shows it for the fixture's candidate.
+export const reviewSas = "004917";
 export function sendFixture(scheduled = false): ObjectValue {
 	const snapshot = {
 		...exampleSnapshot(),
@@ -88,6 +90,7 @@ export function pairFixture(preset: keyof typeof presets = "desktop"): ObjectVal
 		signingKey: publicKey,
 		preset,
 		capabilities: presets[preset],
+		sas: reviewSas,
 	};
 	const review = {
 		id: id.op,
@@ -379,6 +382,42 @@ export function apiCases(): ApiCase[] {
 			false,
 			`${field}-${String(replacement)}`,
 		);
+	for (const [label, sas] of [
+		["missing", undefined],
+		["five-digits", "04917"],
+		["seven-digits", "0049170"],
+		["number", 4917],
+		["letter", "00491x"],
+		["fullwidth-digits", "００４９１７"],
+		...["\r", "\n", "\u2028", "\u2029"].flatMap((end) => [
+			[`suffix-${JSON.stringify(end)}`, `${reviewSas}${end}`],
+			[`last-${JSON.stringify(end)}`, `${reviewSas.slice(0, 5)}${end}`],
+		]),
+	] as const)
+		schema(
+			"PairConfirmSubject",
+			change(fixtures.PairConfirmSubject, "sas", sas),
+			false,
+			`sas-${label}`,
+		);
+	schema(
+		"PairConfirmSubject",
+		change(fixtures.PairConfirmSubject, "sas", "000000"),
+		true,
+		"sas-zeros",
+	);
+	const otherSas = change(pair.review, "subject.sas", "000000") as ObjectValue;
+	schema("OperationReview", otherSas, false, "sas-not-digested");
+	schema(
+		"OperationReview",
+		{ ...otherSas, digest: jcsSha256(otherSas.subject) },
+		true,
+		"sas-digested",
+	);
+	// The hub's SAS reaches a device only in the pair-confirm review's subject.
+	for (const [name, value] of Object.entries(fixtures))
+		if (name !== "PairConfirmSubject")
+			schema(name, { ...(value as ObjectValue), sas: reviewSas }, false, "sas-member");
 	for (const [field, replacement] of [
 		["contentHash", "f".repeat(64)],
 		["flagsHash", "f".repeat(64)],
