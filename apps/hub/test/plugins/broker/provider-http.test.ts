@@ -5,7 +5,13 @@ import { createServer } from "node:https";
 import type { AddressInfo, Socket } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { HOST_MAX_ACTIVE_REQUESTS, HOST_REQUEST_TIMEOUT_MS } from "@draftyak/protocol/host-channel";
+import {
+	HOST_MAX_ACTIVE_REQUESTS,
+	HOST_MAX_STREAM_BYTES,
+	HOST_REQUEST_TIMEOUT_MS,
+	type HostNotification,
+	HostStreamChunk,
+} from "@draftyak/protocol/host-channel";
 import { MAX_INLINE_BYTES } from "@draftyak/protocol/normalized-change";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AuditChain } from "../../../src/audit/chain.ts";
@@ -21,6 +27,7 @@ import {
 import {
 	createProviderHttpBroker,
 	ProviderHttpError,
+	type ProviderStreamSink,
 } from "../../../src/plugins/broker/provider-http.ts";
 import { HubStore } from "../../../src/store/store.ts";
 import { migrations, nativeBinding } from "../../store/helpers.ts";
@@ -31,6 +38,7 @@ const cleanups: (() => void | Promise<void>)[] = [];
 beforeAll(async () => {
 	tls = await createTlsFixture();
 });
+
 afterEach(async () => {
 	vi.restoreAllMocks();
 	for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -525,4 +533,306 @@ describe("native provider HTTP transport", () => {
 		expect(errors.every((error) => error instanceof ProviderHttpError)).toBe(true);
 		await expect(f.execute()).rejects.toThrow(ProviderHttpError);
 	});
+});
+
+describe("native provider stream lifecycle", () => {
+	function stream(f: Awaited<ReturnType<typeof fixture>>, port: number, sink: ProviderStreamSink) {
+		const input = inputs();
+		return withNetworkTestHooks(hooks(port), () =>
+			f.broker.stream(
+				"chat-completions-v1",
+				input.candidate,
+				input.binding,
+				f.reference,
+				f.credential,
+				new AbortController().signal,
+				sink,
+			),
+		);
+	}
+	it.each(["cancel", "revoke", "close", "deadline"])(
+		"closes a real idle socket on %s after the prior output acknowledgment completed",
+		async (cause) => {
+			const f = await fixture(),
+				first = deferred<void>(),
+				stopped = deferred<void>();
+			const remote = await peer((_, response) => {
+				response.once("close", () => stopped.resolve());
+				response.write(Buffer.alloc(4096, 120));
+			});
+			if (cause === "deadline") {
+				const nativeSetTimeout = globalThis.setTimeout;
+				vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+					handler: () => void,
+					delay: number,
+				) =>
+					nativeSetTimeout(
+						handler,
+						delay === HOST_REQUEST_TIMEOUT_MS ? 500 : delay,
+					)) as typeof setTimeout);
+			}
+			const handle = stream(f, remote.port, async () => {
+				first.resolve();
+			});
+			await handle.response;
+			handle.start();
+			await first.promise;
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			const rejected = expect(handle.completion).rejects.toThrow(ProviderHttpError);
+			if (cause === "cancel") handle.cancel();
+			if (cause === "close") f.broker.close();
+			if (cause === "revoke")
+				f.store.write((tx) =>
+					f.vault.invalidateInTransaction(tx, f.reference, f.credential, "revoke"),
+				);
+			await rejected;
+			let timeout: ReturnType<typeof setTimeout> | undefined;
+			const closed = await Promise.race([
+				stopped.promise.then(() => true),
+				new Promise<boolean>((resolve) => {
+					timeout = setTimeout(() => resolve(false), 1000);
+				}),
+			]);
+			if (timeout) clearTimeout(timeout);
+			expect(closed).toBe(true);
+		},
+	);
+	it("keeps the credential lease until the terminal notification acknowledgment", async () => {
+		const f = await fixture(),
+			terminal = deferred<void>(),
+			acknowledgment = deferred<void>();
+		const remote = await peer((_, response) => response.end("DYTEST-finished"));
+		let signal: AbortSignal | undefined,
+			completed = false;
+		const handle = stream(f, remote.port, async (notification, useSignal) => {
+			if (notification.method === "host/stream.chunk" && notification.params.done) {
+				signal = useSignal;
+				terminal.resolve();
+				await acknowledgment.promise;
+			}
+		});
+		await handle.response;
+		handle.start();
+		await terminal.promise;
+		void handle.completion.then(
+			() => {
+				completed = true;
+			},
+			() => {
+				completed = true;
+			},
+		);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(completed).toBe(false);
+		const rejected = expect(handle.completion).rejects.toThrow(ProviderHttpError);
+		f.store.write((tx) => f.vault.invalidateInTransaction(tx, f.reference, f.credential, "revoke"));
+		await rejected;
+		expect(signal?.aborted).toBe(true);
+		acknowledgment.resolve();
+	});
+	it("delivers a fixed terminal error after start when upstream fails after headers but before start", async () => {
+		const f = await fixture(),
+			destroy = deferred<void>(),
+			stopped = deferred<void>();
+		const remote = await peer((_, response) => {
+			response.flushHeaders();
+			response.once("close", () => stopped.resolve());
+			void destroy.promise.then(() => response.destroy());
+		});
+		const notifications: HostNotification[] = [];
+		const handle = stream(f, remote.port, async (notification) => {
+			notifications.push(notification);
+		});
+		await handle.response;
+		destroy.resolve();
+		await stopped.promise;
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(notifications).toEqual([]);
+		handle.start();
+		await expect(handle.completion).rejects.toThrow(ProviderHttpError);
+		expect(notifications).toHaveLength(1);
+		expect(notifications[0]?.params).toMatchObject({
+			sequence: 0,
+			base64: "",
+			done: true,
+			error: "DENIED",
+		});
+	});
+	it("sends nothing before start and waits for each output acknowledgment", async () => {
+		const f = await fixture(),
+			first = deferred<void>(),
+			acknowledgment = deferred<void>();
+		const remote = await peer((_, response) => response.end(Buffer.alloc(160_000, 120)));
+		const notifications: HostNotification[] = [];
+		const handle = stream(f, remote.port, async (notification) => {
+			notifications.push(notification);
+			first.resolve();
+			if (notifications.length === 1) await acknowledgment.promise;
+		});
+		const result = await handle.response;
+		expect(result.streamId).toBeTypeOf("string");
+		expect(result).not.toHaveProperty("body");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(notifications).toEqual([]);
+		handle.start();
+		await first.promise;
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(notifications).toHaveLength(1);
+		acknowledgment.resolve();
+		await handle.completion;
+		let bytes = 0;
+		for (const [index, notification] of notifications.entries()) {
+			if (notification.method !== "host/stream.chunk") throw new Error("Unexpected notification");
+			const chunk = HostStreamChunk.parse(notification.params),
+				decoded = Buffer.from(chunk.base64, "base64url");
+			expect(chunk.sequence).toBe(index);
+			expect(chunk.streamId).toBe(result.streamId);
+			expect(decoded.length).toBeLessThanOrEqual(MAX_INLINE_BYTES);
+			bytes += decoded.length;
+		}
+		expect(bytes).toBe(160_000);
+		expect(notifications.at(-1)?.params).toMatchObject({ done: true });
+	});
+	it("holds the generation lease through a paused sink and aborts on replacement", async () => {
+		const f = await fixture(),
+			first = deferred<void>(),
+			acknowledgment = deferred<void>(),
+			stopped = deferred<void>();
+		const remote = await peer((_, response) => {
+			response.once("close", () => stopped.resolve());
+			response.end(Buffer.alloc(160_000, 120));
+		});
+		let calls = 0,
+			observed: AbortSignal | undefined;
+		const handle = stream(f, remote.port, async (_, signal) => {
+			calls++;
+			observed = signal;
+			first.resolve();
+			await acknowledgment.promise;
+		});
+		await handle.response;
+		handle.start();
+		await first.promise;
+		const rejected = expect(handle.completion).rejects.toThrow(ProviderHttpError);
+		f.store.write((tx) =>
+			f.vault.replaceInTransaction(tx, f.reference, f.credential, {
+				kind: "provider-key",
+				key: "DYTEST-replaced",
+			}),
+		);
+		await rejected;
+		await stopped.promise;
+		expect(observed?.aborted).toBe(true);
+		expect(calls).toBe(1);
+		acknowledgment.resolve();
+		expect(f.vault.describe(f.reference, f.credential).generation).toBe(2);
+	});
+	it.each(["cancel", "close"])(
+		"settles and releases admission when a sink ignores %s",
+		async (cause) => {
+			const f = await fixture();
+			const remote = await peer((_, response) => response.write(Buffer.alloc(80_000, 120)));
+			for (
+				let index = 0;
+				index < (cause === "cancel" ? HOST_MAX_ACTIVE_REQUESTS + 1 : 1);
+				index++
+			) {
+				const first = deferred<void>(),
+					acknowledgment = deferred<void>();
+				const handle = stream(f, remote.port, async () => {
+					first.resolve();
+					await acknowledgment.promise;
+				});
+				await handle.response;
+				handle.start();
+				await first.promise;
+				const rejected = expect(handle.completion).rejects.toThrow(ProviderHttpError);
+				if (cause === "cancel") handle.cancel();
+				else f.broker.close();
+				await rejected;
+				acknowledgment.resolve();
+			}
+			expect(remote.seen.connections).toBe(cause === "cancel" ? HOST_MAX_ACTIVE_REQUESTS + 1 : 1);
+		},
+	);
+	it("bounds waiting for start by the total deadline without early notifications", async () => {
+		const f = await fixture(),
+			stopped = deferred<void>();
+		const remote = await peer((_, response) => {
+			response.once("close", () => stopped.resolve());
+			response.write(Buffer.alloc(80_000, 120));
+		});
+		const nativeSetTimeout = globalThis.setTimeout;
+		vi.spyOn(globalThis, "setTimeout").mockImplementation(((handler: () => void, delay: number) =>
+			nativeSetTimeout(
+				handler,
+				delay === HOST_REQUEST_TIMEOUT_MS ? 500 : delay,
+			)) as typeof setTimeout);
+		const notifications: HostNotification[] = [];
+		const handle = stream(f, remote.port, async (notification) => {
+			notifications.push(notification);
+		});
+		await handle.response;
+		await expect(handle.completion).rejects.toThrow(ProviderHttpError);
+		await stopped.promise;
+		expect(notifications).toEqual([]);
+	});
+	it("refuses a credential split across TCP and output chunk boundaries", async () => {
+		const f = await fixture(),
+			first = deferred<void>();
+		const prefix = "x".repeat(80_000),
+			split = Math.floor(f.secret.length / 2);
+		const remote = await peer((_, response) => {
+			response.write(prefix + f.secret.slice(0, split));
+			void first.promise.then(() => response.end(f.secret.slice(split)));
+		});
+		const notifications: HostNotification[] = [];
+		let emitted = 0;
+		const handle = stream(f, remote.port, async (notification) => {
+			notifications.push(notification);
+			if (notification.method === "host/stream.chunk")
+				emitted += Buffer.from(notification.params.base64, "base64url").length;
+			if (emitted >= prefix.length + split - (f.secret.length - 1)) first.resolve();
+		});
+		await handle.response;
+		handle.start();
+		await expect(handle.completion).rejects.toThrow(ProviderHttpError);
+		const chunks = notifications.map((notification) => {
+			if (notification.method !== "host/stream.chunk") throw new Error("Unexpected notification");
+			return notification.params;
+		});
+		const actual = chunks
+			.map((chunk) => Buffer.from(chunk.base64, "base64url").toString())
+			.join("");
+		expect(actual).not.toContain(f.secret);
+		expect(actual).not.toContain(f.secret.slice(0, split));
+		expect(chunks.at(-1)).toMatchObject({ done: true, error: "DENIED", base64: "" });
+	});
+	it.each([HOST_MAX_STREAM_BYTES, HOST_MAX_STREAM_BYTES + 1])(
+		"enforces the actual total stream byte boundary at %s",
+		async (size) => {
+			const f = await fixture();
+			const remote = await peer((_, response) => response.end(Buffer.alloc(size, 120)));
+			let total = 0,
+				terminal: unknown;
+			const handle = stream(f, remote.port, async (notification) => {
+				if (notification.method !== "host/stream.chunk") throw new Error("Unexpected notification");
+				const chunk = HostStreamChunk.parse(notification.params);
+				total += Buffer.from(chunk.base64, "base64url").length;
+				if (chunk.done) terminal = chunk;
+			});
+			await handle.response;
+			handle.start();
+			if (size === HOST_MAX_STREAM_BYTES) {
+				await handle.completion;
+				expect(total).toBe(size);
+				expect(terminal).toMatchObject({ done: true });
+			} else {
+				await expect(handle.completion).rejects.toThrow(ProviderHttpError);
+				expect(total).toBeLessThanOrEqual(HOST_MAX_STREAM_BYTES);
+				expect(terminal).toMatchObject({ done: true, error: "DENIED" });
+			}
+		},
+	);
 });
