@@ -127,8 +127,8 @@ function optionSignal(options: unknown): AbortSignal | undefined {
 		if (options === undefined) signal = undefined;
 		else if (typeof options === "object" && options !== null)
 			signal = (options as { readonly signal?: unknown }).signal;
-		// The aborted getter brand-checks the signal, so a forged one throws here.
-		if (signal instanceof AbortSignal && typeof signal.aborted === "boolean") return signal;
+		// AbortSignal.any brand-checks the signal; only the derived one is used after this.
+		if (signal instanceof AbortSignal) return AbortSignal.any([signal]);
 	} catch {
 		signal = null;
 	}
