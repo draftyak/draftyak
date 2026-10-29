@@ -387,17 +387,22 @@ function argumentsFor(argv: readonly string[]): CliOptions {
 	return options;
 }
 
-export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+export async function main(
+	argv: readonly string[] = process.argv.slice(2),
+	writeReport: (text: string) => void = (text) => {
+		process.stdout.write(text);
+	},
+): Promise<number> {
 	try {
 		const options = argumentsFor(argv);
 		if (options.help) {
-			process.stdout.write(
+			writeReport(
 				"Usage: node --disable-sigusr1 tools/doctor/doctor.ts [--data-dir <absolute-directory>]\n",
 			);
 			return 0;
 		}
 		const report = await diagnose(options);
-		process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+		writeReport(`${JSON.stringify(report, null, 2)}\n`);
 		return report.summary === "fail" ? 1 : 0;
 	} catch {
 		process.stderr.write("Doctor request refused; arguments are unavailable.\n");

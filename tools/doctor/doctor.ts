@@ -3,11 +3,16 @@ import { fileURLToPath } from "node:url";
 import { loadNodePolicy } from "./node-version.ts";
 
 /** Check the canonical runtime policy before importing the diagnostic implementation. */
-export async function runDoctor(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+export async function runDoctor(
+	argv: readonly string[] = process.argv.slice(2),
+	writeReport: (text: string) => void = (text) => {
+		process.stdout.write(text);
+	},
+): Promise<number> {
 	try {
 		const policy = loadNodePolicy();
 		if (policy.classify(process.version) !== "full") {
-			process.stdout.write(
+			writeReport(
 				`${JSON.stringify({
 					format: "draftyak-doctor-v1",
 					summary: "fail",
@@ -24,7 +29,7 @@ export async function runDoctor(argv: readonly string[] = process.argv.slice(2))
 			return 1;
 		}
 		const { main } = await import("./diagnostics.ts");
-		return await main(argv);
+		return await main(argv, writeReport);
 	} catch {
 		process.stderr.write("Doctor runtime policy or implementation is unavailable.\n");
 		return 2;

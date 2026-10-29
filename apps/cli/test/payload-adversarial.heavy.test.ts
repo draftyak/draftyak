@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { isolateKernelFixture } from "./kernel-fixture.ts";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const repositoryRoot = path.resolve(packageRoot, "../..");
@@ -64,6 +65,7 @@ function prepare(files: Readonly<Record<string, string>> = {}): Fixture {
 		cpSync(path.join(packageRoot, directory), path.join(source, directory), { recursive: true });
 	for (const filename of ["package.json", "tsconfig.json", "tsconfig.build.json"])
 		cpSync(path.join(packageRoot, filename), path.join(source, filename));
+	isolateKernelFixture(source);
 	cpSync(
 		path.join(repositoryRoot, "tsconfig.base.json"),
 		path.join(workspace, "tsconfig.base.json"),
