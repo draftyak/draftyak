@@ -207,12 +207,18 @@ export class NativeDraftRevisions {
 		this.#clock = clock;
 	}
 	now(): number {
+		return this.#now();
+	}
+	#now(): number {
 		const at = this.#clock.wallMs();
 		if (this.#destroyed || !UtcMs.safeParse(at).success) throw revisionUnavailable();
 		return at;
 	}
 	/** Shared internal authentication for revision and freeze rows, under distinct domains. */
 	sign(domain: "header" | "revision" | "freeze", value: unknown): string {
+		return this.#sign(domain, value);
+	}
+	#sign(domain: "header" | "revision" | "freeze", value: unknown): string {
 		if (this.#destroyed) throw revisionUnavailable();
 		return createHmac("sha256", this.#key)
 			.update(`draftyak/draft-${domain}/v1\n`)
@@ -220,13 +226,19 @@ export class NativeDraftRevisions {
 			.digest("hex");
 	}
 	checkMac(domain: "header" | "revision" | "freeze", value: unknown, mac: string): void {
+		this.#checkMac(domain, value, mac);
+	}
+	#checkMac(domain: "header" | "revision" | "freeze", value: unknown, mac: string): void {
 		if (
 			!Sha256Hex.safeParse(mac).success ||
-			!timingSafeEqual(Buffer.from(mac, "hex"), Buffer.from(this.sign(domain, value), "hex"))
+			!timingSafeEqual(Buffer.from(mac, "hex"), Buffer.from(this.#sign(domain, value), "hex"))
 		)
 			throw revisionUnavailable();
 	}
 	assertTransaction(tx: SqlTransaction): void {
+		this.#assertTransaction(tx);
+	}
+	#assertTransaction(tx: SqlTransaction): void {
 		if (this.#destroyed) throw revisionUnavailable();
 		assertStoreTransaction(this.#store, tx);
 		verifyAudit.call(this.#audit, tx);
@@ -235,6 +247,9 @@ export class NativeDraftRevisions {
 		return this.#store === other.#store;
 	}
 	read<T>(work: (db: SqlReader) => T): T {
+		return this.#read(work);
+	}
+	#read<T>(work: (db: SqlReader) => T): T {
 		if (this.#destroyed) throw revisionUnavailable();
 		return readStore.call(this.#store, (db: SqlReader) => {
 			verifyAudit.call(this.#audit, db);
@@ -249,8 +264,11 @@ export class NativeDraftRevisions {
 		}) as T;
 	}
 	auditInTransaction(tx: SqlTransaction, action: string, refs: Record<string, string>): number {
-		this.assertTransaction(tx);
-		const at = this.now();
+		return this.#auditInTransaction(tx, action, refs);
+	}
+	#auditInTransaction(tx: SqlTransaction, action: string, refs: Record<string, string>): number {
+		this.#assertTransaction(tx);
+		const at = this.#now();
 		appendAudit.call(this.#audit, tx, {
 			id: newId(at),
 			at,
@@ -275,7 +293,7 @@ export class NativeDraftRevisions {
 		)
 			throw revisionUnavailable();
 		const { mac, ...signed } = row;
-		this.checkMac("header", signed, mac);
+		this.#checkMac("header", signed, mac);
 		const latest = db.get<{ seq: number }>(
 			"SELECT seq FROM main.audit_events WHERE refs=? ORDER BY seq DESC LIMIT 1",
 			[canonicalize({ draft: row.id })],
@@ -330,7 +348,7 @@ export class NativeDraftRevisions {
 				)
 					throw revisionUnavailable();
 				const { mac, ...signed } = row;
-				this.checkMac("revision", { binding: bound, ...signed }, mac);
+				this.#checkMac("revision", { binding: bound, ...signed }, mac);
 				const revision = DraftRevision.parse(JSON.parse(row.payload));
 				if (
 					canonicalize(revision) !== row.payload ||
@@ -375,14 +393,14 @@ export class NativeDraftRevisions {
 	current(bound: DraftBinding): NativeRevision {
 		try {
 			const captured = captureDraftBinding(bound);
-			return this.read((db) => this.#facts(db, captured));
+			return this.#read((db) => this.#facts(db, captured));
 		} catch {
 			throw revisionUnavailable();
 		}
 	}
 	currentInTransaction(tx: SqlTransaction, bound: DraftBinding): NativeRevision {
 		try {
-			this.assertTransaction(tx);
+			this.#assertTransaction(tx);
 			return this.#facts(tx, captureDraftBinding(bound));
 		} catch {
 			throw revisionUnavailable();
@@ -399,7 +417,7 @@ export class NativeDraftRevisions {
 			)
 				throw revisionUnavailable();
 			const captured = captureDraftBinding(bound);
-			return this.read((db) => {
+			return this.#read((db) => {
 				const header = this.#header(db, captured);
 				return immutableDraftData(this.#history(db, header, afterRev, limit).page);
 			});
@@ -408,9 +426,9 @@ export class NativeDraftRevisions {
 		}
 	}
 	#saveHeader(tx: SqlTransaction, header: Header, action: string, insert: boolean): void {
-		const audit_seq = this.auditInTransaction(tx, action, { draft: header.draft.id }),
+		const audit_seq = this.#auditInTransaction(tx, action, { draft: header.draft.id }),
 			row = { id: header.draft.id, payload: canonicalize(header), audit_seq },
-			mac = this.sign("header", row);
+			mac = this.#sign("header", row);
 		if (insert)
 			tx.run("INSERT INTO main.native_drafts(id,payload,audit_seq,mac) VALUES(?,?,?,?)", [
 				row.id,
@@ -451,18 +469,18 @@ export class NativeDraftRevisions {
 				row.rev,
 				row.payload,
 				previous,
-				this.sign("revision", { binding: bound, ...row }),
+				this.#sign("revision", { binding: bound, ...row }),
 			],
 		);
 	}
 	createInTransaction(tx: SqlTransaction, input: DraftCreation): NativeRevision {
 		try {
-			this.assertTransaction(tx);
+			this.#assertTransaction(tx);
 			const data = draftRecord(input, [...bindingKeys, "author", "content", "flags"]),
 				bound = asBinding(data),
 				content = normalizeDraftContent(data.content),
 				author = DraftAuthor.parse(data.author),
-				at = this.now();
+				at = this.#now();
 			if (content.channel !== bound.channel) throw revisionUnavailable();
 			if (
 				tx.get("SELECT 1 FROM main.audit_events WHERE json_extract(refs,'$.draft')=? LIMIT 1", [
@@ -497,7 +515,7 @@ export class NativeDraftRevisions {
 	}
 	appendInTransaction(tx: SqlTransaction, input: DraftAppend): NativeRevision {
 		try {
-			this.assertTransaction(tx);
+			this.#assertTransaction(tx);
 			const data = draftRecord(input, [
 					...bindingKeys,
 					"expectedRev",
@@ -514,7 +532,7 @@ export class NativeDraftRevisions {
 				current.draft.rev >= 10000
 			)
 				throw revisionUnavailable();
-			const at = this.now(),
+			const at = this.#now(),
 				content = normalizeDraftContent(data.content),
 				author = DraftAuthor.parse(data.author);
 			if (
@@ -548,7 +566,7 @@ export class NativeDraftRevisions {
 	}
 	appendModelBodyInTransaction(tx: SqlTransaction, input: ModelBodyAppend): NativeRevision {
 		try {
-			this.assertTransaction(tx);
+			this.#assertTransaction(tx);
 			const data = draftRecord(input, [...bindingKeys, "expectedRev", "author", "body", "flags"]),
 				bound = asBinding(data),
 				current = this.#facts(tx, bound),
@@ -562,7 +580,7 @@ export class NativeDraftRevisions {
 					]),
 				).values(),
 			];
-			return this.appendInTransaction(tx, {
+			return NativeDraftRevisions.prototype.appendInTransaction.call(this, tx, {
 				...bound,
 				expectedRev: data.expectedRev as number,
 				author,
@@ -582,7 +600,7 @@ export class NativeDraftRevisions {
 		lockId: string | null,
 	): NativeRevision {
 		try {
-			this.assertTransaction(tx);
+			this.#assertTransaction(tx);
 			const current = this.#facts(tx, captureDraftBinding(bound));
 			if (
 				current.draft.rev !== expectedRev ||
@@ -591,7 +609,7 @@ export class NativeDraftRevisions {
 				!(lockId === null || Ulid.safeParse(lockId).success)
 			)
 				throw revisionUnavailable();
-			const at = this.now();
+			const at = this.#now();
 			if (at < current.draft.updatedAt) throw revisionUnavailable();
 			this.#saveHeader(
 				tx,
