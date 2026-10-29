@@ -64,6 +64,9 @@ importers:
       '@draftyak/sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@modelcontextprotocol/client':
+        specifier: 2.3.1
+        version: 2.3.1
       '@modelcontextprotocol/server':
         specifier: 2.3.1
         version: 2.3.1
