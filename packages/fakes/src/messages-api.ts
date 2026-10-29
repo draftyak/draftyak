@@ -61,7 +61,44 @@ const MAX_BYTES = 16 * 1_024 * 1_024;
 const MAX_QUEUED_BYTES = 64 * 1_024 * 1_024;
 const MAX_CHUNKS = 65_536;
 const MAX_REQUEST_BYTES = 1_024 * 1_024;
+const MAX_METADATA_TARGET = 4_096;
 const encoder = new TextEncoder();
+
+// URI spelling is separate from model admission. These fixtures also exercise malformed
+// metadata, so an opaque path segment or cursor does not assert that a model exists.
+function metadataComponent(value: string, query = false): boolean {
+	const spelling = query
+		? /^(?:[A-Za-z\d._~!$'()*+,;=:@/?-]|%[A-Fa-f\d]{2})+$/
+		: /^(?:[A-Za-z\d._~!$&'()*+,;=:@-]|%[A-Fa-f\d]{2})+$/;
+	if (!spelling.test(value)) return false;
+	try {
+		const decoded = decodeURIComponent(query ? value.replaceAll("+", " ") : value);
+		return decoded.isWellFormed() && (query || (decoded !== "." && decoded !== ".."));
+	} catch {
+		return false;
+	}
+}
+
+function metadataTarget(target: string): boolean {
+	if (target.length > MAX_METADATA_TARGET) return false;
+	const question = target.indexOf("?");
+	if (question === -1)
+		return (
+			target.startsWith("/v1/models/") && metadataComponent(target.slice("/v1/models/".length))
+		);
+	if (target.slice(0, question) !== "/v1/models") return false;
+	const pairs = target.slice(question + 1).split("&");
+	if (pairs.length < 1 || pairs.length > 2) return false;
+	let limit = false;
+	let cursor = false;
+	for (const pair of pairs) {
+		if (pair === "limit=100" && !limit) limit = true;
+		else if (pair.startsWith("after_id=") && !cursor && metadataComponent(pair.slice(9), true))
+			cursor = true;
+		else return false;
+	}
+	return limit;
+}
 
 function json(value: unknown): string {
 	const encoded = JSON.stringify(value);
@@ -283,7 +320,8 @@ async function acceptsDraft(request: Request): Promise<boolean> {
 /**
  * A finite scripted Messages endpoint. Its vendor-shaped host is logical: fetch stays in memory,
  * and listen binds only the shared fake's ephemeral 127.0.0.1 server. Nothing calls a vendor.
- * Exact POST /v1/messages and /v1/messages?beta=true reserve the next step at app admission,
+ * Exact POST /v1/messages and /v1/messages?beta=true, and the client's GET model-list/page/retrieve
+ * targets reserve the same next step at app admission,
  * after shared bounded intake. Pre-app Faults may bypass or delay admission; recorder order
  * remains original arrival order. Scripts produce wire fixtures, never native authorization.
  */
@@ -295,6 +333,7 @@ export function createMessagesApiFake(options: MessagesApiOptions = {}): Message
  * Adds the closed DraftYak Messages draft-request shape to the generic scripted fixture.
  * Schema contents remain opaque; no native pin, prompt, credential, header or model authority
  * is checked. Matching POSTs reserve a step before validation; invalid input returns a fixed 400.
+ * Model GETs retain arbitrary scripted replies and do not run the draft-body validator.
  * JSON accepts only an optional UTF-8 charset; decoding is fatal, with JSON.parse's last-member
  * semantics. Both factories use shared 1 MiB intake before redirect/application cloning.
  * The app's chunk check is defensive after buffering, not an original-ingress chunk limit.
@@ -353,7 +392,9 @@ function createMessagesApi(options: MessagesApiOptions, strict: boolean): Messag
 		{
 			async fetch(request) {
 				const target = rawTarget(request);
-				if (target !== "/v1/messages" && target !== "/v1/messages?beta=true") {
+				const draft = target === "/v1/messages" || target === "/v1/messages?beta=true";
+				const method = draft ? "POST" : metadataTarget(target) ? "GET" : undefined;
+				if (method === undefined) {
 					return Response.json(
 						{
 							type: "error",
@@ -362,13 +403,13 @@ function createMessagesApi(options: MessagesApiOptions, strict: boolean): Messag
 						{ status: 404 },
 					);
 				}
-				if (request.method !== "POST") {
+				if (request.method !== method) {
 					return Response.json(
 						{
 							type: "error",
-							error: { type: "invalid_request_error", message: "Synthetic POST only" },
+							error: { type: "invalid_request_error", message: `Synthetic ${method} only` },
 						},
-						{ status: 405, headers: { allow: "POST" } },
+						{ status: 405, headers: { allow: method } },
 					);
 				}
 				const step = queue.shift();
@@ -382,7 +423,7 @@ function createMessagesApi(options: MessagesApiOptions, strict: boolean): Messag
 					);
 				}
 				queuedBytes -= step.bytes.byteLength;
-				if (strict) {
+				if (strict && draft) {
 					if (!(await acceptsDraft(request))) {
 						return Response.json(
 							{
