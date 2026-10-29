@@ -7,7 +7,7 @@ import path from "node:path";
 import type { TLSSocket } from "node:tls";
 import { headersSha256, sha256Hex } from "@draftyak/protocol/hash";
 import type { TicketedRequest } from "@draftyak/protocol/send-ticket";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { AuditChain } from "../../src/audit/chain.ts";
 import { type CredentialBinding, CredentialVault } from "../../src/credentials/vault.ts";
 import { systemClock } from "../../src/kernel/clock.ts";
@@ -21,13 +21,14 @@ import {
 	withNetworkTestHooks,
 } from "../../src/plugins/broker/network/test-context.ts";
 import { HubStore } from "../../src/store/store.ts";
+import { requireLoopbackNetworkGuard } from "../helpers/loopback-network.ts";
 import { createTlsFixture } from "../plugins/broker/tls-fixture.ts";
 import { migrations, nativeBinding } from "../store/helpers.ts";
 
 // A hook is not a network sandbox. Refuse before creating fixtures unless the actual
 // process denies every non-loopback destination independently of the resolver hooks.
 function requireLoopbackIsolation(): void {
-	throw new Error("Native HTTP fixture execution requires a qualified independent loopback guard");
+	requireLoopbackNetworkGuard().assertActive();
 }
 let http: typeof import("../../src/outbox/http-send.ts");
 const createNativeHttpSendTransport = (
@@ -46,7 +47,11 @@ beforeAll(async () => {
 	http = await import("../../src/outbox/http-send.ts");
 	tls = await createTlsFixture(["slack.com", "gmail.googleapis.com"]);
 });
-afterAll(() => tls?.key.fill(0));
+beforeEach(() => requireLoopbackIsolation());
+afterAll(() => {
+	requireLoopbackIsolation();
+	tls?.key.fill(0);
+});
 const deferred = <T>() => {
 	let resolve: (value: T) => void = () => undefined;
 	const promise = new Promise<T>((yes) => {
@@ -65,6 +70,7 @@ const fixtures: {
 	servers: Server[];
 }[] = [];
 afterEach(async () => {
+	requireLoopbackIsolation();
 	for (const f of fixtures.splice(0)) {
 		for (const transport of f.transports) transport.close();
 		for (const server of f.servers) {
@@ -78,6 +84,7 @@ afterEach(async () => {
 		f.key.destroy();
 		rmSync(f.dir, { recursive: true, force: true });
 	}
+	requireLoopbackIsolation();
 });
 async function fixture(kind: "slack-token" | "gmail-oauth" = "slack-token", expired = false) {
 	const dir = mkdtempSync(path.join(os.tmpdir(), "draftyak-ticket-http-")),

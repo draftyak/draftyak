@@ -685,4 +685,18 @@ describe("native encrypted send-ticket transaction kernel", () => {
 		);
 		expect(f.ledger.recordOutcome(dispatch.dispatch, "FAILED").state).toBe("FAILED");
 	});
+	it("reads actual stored generation again after native write preparation without an abort notification", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			ticket = f.insert(input),
+			dispatch = f.ledger.beginDispatch(f.ledger.redeem(f.request(ticket, input)));
+		f.ledger.prepareDispatchWrite(dispatch.dispatch);
+		f.store.write((tx) =>
+			tx.run("UPDATE credentials SET generation=generation+1 WHERE id=?", [f.reference]),
+		);
+		expect(() => f.ledger.assertDispatchWriteCurrent(dispatch.dispatch)).toThrow(
+			"Send ticket unavailable",
+		);
+		expect(f.ledger.recordOutcome(dispatch.dispatch, "FAILED").state).toBe("FAILED");
+	});
 });
