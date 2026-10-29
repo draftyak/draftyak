@@ -17,6 +17,7 @@ import {
 	ResourceReadRequest,
 	snapshotMcpParams,
 } from "../src/mcp.ts";
+import { PAIRING_PREFIX } from "../src/pairing.ts";
 import { exportSpki } from "../src/sign.ts";
 import { contentHash } from "../src/snapshot.ts";
 import * as statements from "../src/statements.ts";
@@ -172,6 +173,9 @@ describe("device API authorization and strict wire forms", () => {
 		expect(
 			frameSchema.validate({ type: "event", cursor: "", kind: "outbox.changed", ids: [] }).valid,
 		).toBe(true);
+	});
+	it("keeps a prefix the pairingCode pattern can hold unescaped", () => {
+		expect(PAIRING_PREFIX).toMatch(/^[\w:-]+$/);
 	});
 	it("permits pending status only for known non-revoked device peers", () => {
 		expect(api.DeviceStatus.safeParse(status).success).toBe(true);

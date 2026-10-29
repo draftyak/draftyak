@@ -14,6 +14,7 @@ export function example(signer: string, other: string): Record<string, unknown> 
 }
 async function extra(base: Record<string, unknown>, signed: SignVector): Promise<void> {
 	await signed("unknown-key-use", { ...base, keyUse: "unregistered-test-key-use" }, false);
+	await signed("object-form-key-use", { ...base, keyUse: { identity: null } }, false);
 }
 export const generate = (context: VectorContext): Promise<VectorFile[]> =>
 	typedVectors("hub-key-rotate.v1", context, example, extra);

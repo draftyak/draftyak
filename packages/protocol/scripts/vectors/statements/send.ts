@@ -46,6 +46,7 @@ async function extra(
 	});
 	await signed("duplicate-ack", { ...base, flagsAcked: ["NEW_RECIPIENT", "NEW_RECIPIENT"] }, false);
 	await signed("unknown-ack", { ...base, flagsAcked: ["UNKNOWN"] }, false);
+	await signed("object-form-ack", { ...base, flagsAcked: [{ NEW_RECIPIENT: null }] }, false);
 	await signed(
 		"missing-not-before",
 		Object.fromEntries(Object.entries(base).filter(([name]) => name !== "notBefore")),
