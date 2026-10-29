@@ -37,8 +37,23 @@ export {
 export { isKnownSyncedPath } from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
 export {
+	type AiCandidateRequest,
 	type AiProfileRegistry,
+	type AiRequestBinding,
+	type AiRequestBindingWithoutNetwork,
+	aiRequestEndpoint,
+	beginMessagesMetadataCall,
+	captureAiRequestInputs,
+	captureResponsesMetadataInputs,
+	closeMessagesMetadataCall,
 	createBuiltinAiProfileRegistry,
+	type MessagesMetadataBindingWithoutNetwork,
+	type MessagesMetadataCall,
+	type MessagesMetadataCallBinding,
+	type ResponsesMetadataBindingWithoutNetwork,
+	snapshotVerifiedAiRequest,
+	verifyAiRequest,
+	verifyCapturedAiRequest,
 } from "./plugins/broker/ai/index.ts";
 export {
 	type AddressFacts,
@@ -63,5 +78,7 @@ export {
 	createProviderHttpBroker,
 	type ProviderHttpBroker,
 	ProviderHttpError,
+	type ProviderHttpStream,
+	type ProviderStreamSink,
 } from "./plugins/broker/provider-http.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";
