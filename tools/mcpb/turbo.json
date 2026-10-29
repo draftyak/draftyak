@@ -1,0 +1,14 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/protocol/src/**",
+        "$TURBO_ROOT$/tools/fetch-node/versions.json",
+        "$TURBO_ROOT$/LICENSE",
+        "$TURBO_ROOT$/NOTICE"
+      ]
+    }
+  }
+}

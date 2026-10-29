@@ -1,0 +1,18 @@
+{
+  "name": "@draftyak/mcpb",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@draftyak/bounded-files": "workspace:*",
+    "@draftyak/cli": "workspace:*",
+    "@draftyak/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@cfworker/json-schema": "4.1.1"
+  }
+}
