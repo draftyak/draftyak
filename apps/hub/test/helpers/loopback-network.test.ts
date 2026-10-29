@@ -1,7 +1,9 @@
 import dns from "node:dns";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import net from "node:net";
 import tls from "node:tls";
+import { runInNewContext } from "node:vm";
 import { expect, it } from "vitest";
 import { requireLoopbackNetworkGuard } from "./loopback-network.ts";
 
@@ -78,6 +80,61 @@ it("refuses genuine late installation while retaining the restrictive startup gu
 		Object.defineProperty(require.cache, path, original);
 	}
 	expect(requireLoopbackNetworkGuard()).toBe(guard);
+});
+
+it("refuses first installation outside startup before touching any native operation", () => {
+	const guard = requireLoopbackNetworkGuard();
+	// Evaluate only the pinned first-party preload with inert native objects. This
+	// represents first late load without removing any actual installed restriction.
+	const source = readFileSync(new URL("./loopback-preload.cjs", import.meta.url), "utf8");
+	class TCP {
+		connect() {
+			return -13;
+		}
+		connect6() {
+			return -13;
+		}
+	}
+	class ChannelWrap {}
+	for (const name of [
+		"getHostByAddr",
+		"queryA",
+		"queryAny",
+		"queryAaaa",
+		"queryCaa",
+		"queryCname",
+		"queryMx",
+		"queryNaptr",
+		"queryNs",
+		"queryPtr",
+		"querySrv",
+		"querySoa",
+		"queryTlsa",
+		"queryTxt",
+	])
+		Object.defineProperty(ChannelWrap.prototype, name, {
+			value: () => -13,
+			writable: true,
+			configurable: true,
+		});
+	let bindings = 0;
+	const sandbox = {
+		module: { isPreloading: false, exports: {} },
+		process: {
+			env: { NODE_ENV: "test", VITEST: "true" },
+			binding(name: string) {
+				bindings++;
+				if (name === "tcp_wrap") return { TCP };
+				if (name === "cares_wrap")
+					return { ChannelWrap, getaddrinfo: () => -13, getnameinfo: () => -13 };
+				if (name === "uv") return { UV_EACCES: -13 };
+				throw new Error("Unexpected inert binding");
+			},
+		},
+	};
+	expect(() => runInNewContext(source, sandbox)).toThrow("requires startup preloading");
+	expect(bindings).toBe(0);
+	guard.assertActive();
 });
 
 it("denies all native DNS paths including retained resolver functions", async () => {
