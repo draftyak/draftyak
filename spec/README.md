@@ -102,3 +102,5 @@ These checked-in contracts remain draft until the M1 gate. A dash means the cont
 | Host channel | [Host channel v1](host-channel-v1.md) | [Host channel v1](schemas/host-channel-v1.schema.json) | - |
 | Decoded JSON-member blobs | [Host fetch storage](host-channel-v1.md#decoded-json-member-blobs) | [Host channel v1](schemas/host-channel-v1.schema.json) | [Host fetch](vectors/host-channel/) |
 | Lookup grant membership | [Parent-granted lookups](host-channel-v1.md#parent-granted-lookup-membership) | [Host channel v1](schemas/host-channel-v1.schema.json) | [Lookup permits](vectors/host-channel/lookup-permit.json) |
+| Scheduling status and routes | [Hub runtime v1](hub-runtime-v1.md) | [Hub runtime v1](schemas/hub-runtime-v1.schema.json) | [Hub runtime](vectors/hub-runtime/) |
+| Tray and Quit summary | [Scheduled summary v1](scheduled-summary-v1.md) | [Scheduled summary v1](schemas/scheduled-summary-v1.schema.json) | [Scheduled summary](vectors/scheduled-summary/) |
