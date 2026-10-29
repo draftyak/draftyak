@@ -359,8 +359,19 @@ describe("workflow policy", () => {
 		],
 		[
 			"heavy command replacement",
-			`node tools/verify/turbo.ts run test:heavy "\${filters[@]}"`,
+			`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
 			"echo heavy-suite-disabled",
+		],
+		[
+			"heavy serial flag removal",
+			`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
+			`node tools/verify/turbo.ts run test:heavy "\${filters[@]}"`,
+		],
+		["heavy parallel execution", "test:heavy --concurrency=1", "test:heavy --concurrency=2"],
+		[
+			"heavy echo prefix",
+			`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
+			`echo node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
 		],
 		[
 			"heavy filter removal",
