@@ -1,0 +1,38 @@
+language js
+
+// Plan section 3: no timer is derived from notBefore. Node fires any delay over 2^31-1 ms after
+// 1 ms, so outbox code waits only through clock.after(ms), which refuses anything over 15 s.
+// Banned in outbox code:
+// - setTimeout, setInterval, getBuiltinModule and createRequire as names anywhere (identifier,
+//   member, key or type member), and strings or plain template literals equal to them;
+// - AbortSignal (timeout), Atomics (wait, waitAsync), globalThis and global as values; AbortSignal
+//   stays usable as a type;
+// - module sources, strings and plain template literals naming timers, node:timers,
+//   timers/promises or node:timers/promises: imports, re-exports, require, import().
+// It matches source spelling only. It can't follow a timer through a variable or another module,
+// an escaped name or string (set\u0054imeout, "node:t\imers") or a name built at run time
+// (concatenation, Function, vm, a computed import()). The claim's two-clock check, not this rule,
+// is what keeps a send from going early.
+pattern banned_string() {
+	r"[\"'`](?:(?:node:)?timers(?:/promises)?|setTimeout|setInterval|getBuiltinModule|createRequire)[\"'`]"
+}
+
+or {
+	`setTimeout` as $hit,
+	`setInterval` as $hit,
+	`getBuiltinModule` as $hit,
+	`createRequire` as $hit,
+	JsIdentifierExpression(name=$name) as $hit where {
+		$name <: or {
+			`AbortSignal`,
+			`Atomics`,
+			`globalThis`,
+			`global`
+		}
+	},
+	JsModuleSource() as $hit where { $hit <: banned_string() },
+	JsStringLiteralExpression() as $hit where { $hit <: banned_string() },
+	JsTemplateExpression() as $hit where { $hit <: banned_string() }
+} where {
+	register_diagnostic(span=$hit, message="Raw timer in outbox code: wait with clock.after(ms), which refuses anything over 15 s.", severity="error")
+}

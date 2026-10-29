@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Fingerprint, fingerprint, writeEvidence } from "@draftyak/spike-kit";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Clock } from "../src/api.ts";
 import type { ChannelType } from "../src/reduce.ts";
 import { FakeSlack, fakeToken, messageEvent, OWNER, TEAM } from "./fake-slack.ts";
@@ -402,10 +402,10 @@ function manyConversations(slack: FakeSlack): void {
 	}
 }
 
-async function until(done: () => boolean): Promise<void> {
-	const deadline = Date.now() + 3000;
+async function until(done: () => boolean, now: () => number = Date.now): Promise<void> {
+	const deadline = now() + 3000;
 	while (!done()) {
-		if (Date.now() >= deadline) throw new Error("synthetic socket condition did not settle");
+		if (now() >= deadline) throw new Error("synthetic socket condition did not settle");
 		await new Promise<void>((resolve) => setTimeout(resolve, 5));
 	}
 }
@@ -526,17 +526,42 @@ describe("rehearsal: the S6 live procedure against FakeSlack", () => {
 		const fixture = await setUp();
 		const slack = fixture.fake;
 		manyConversations(slack);
-		const result = await runLive(
-			options(fixture, {
-				waits: { ...WAITS, eventsMs: 1200, checkMs: 1, remindMs: 10_000, pollerMs: 20 },
-				cue: (step) => {
-					if (step === "uninstall") {
-						slack.fail("auth.test", 50, "token_revoked");
-						revocationEvents(slack);
-					} else if (step === "delete") slack.fail("apps.connections.open", 50, "invalid_auth");
-				},
-			}),
-		);
+		let released = false;
+		let result: LiveResult;
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			result = await runLive(
+				options(fixture, {
+					waits: { ...WAITS, eventsMs: 1200, checkMs: 0, remindMs: 10_000, pollerMs: 20 },
+					say: (line) => {
+						fixture.lines.push(line);
+						// Advance only after a whole batch of real reads, without adding message events.
+						if (
+							!released &&
+							line.startsWith("message.im: ") &&
+							slack.requests.filter(
+								({ method, params }) =>
+									method === "conversations.history" &&
+									params.oldest !== undefined &&
+									params.limit === "100",
+							).length > 200
+						) {
+							released = true;
+							vi.advanceTimersByTime(1200);
+						}
+					},
+					cue: (step) => {
+						if (step === "uninstall") {
+							slack.fail("auth.test", 50, "token_revoked");
+							revocationEvents(slack);
+						} else if (step === "delete") slack.fail("apps.connections.open", 50, "invalid_auth");
+					},
+				}),
+			);
+		} finally {
+			vi.useRealTimers();
+		}
+		expect(released).toBe(true);
 		const sent =
 			Number(at(result.data, "sentChecks")) +
 			slack.requests.filter(
@@ -913,30 +938,79 @@ describe("rehearsal: the S6 live procedure against FakeSlack", () => {
 	it("a gap beyond the first 100 state examples still prevents a delivery failure verdict", async () => {
 		const fixture = await setUp();
 		const slack = fixture.fake;
+		const realNow = Date.now.bind(Date);
 		let driven: Promise<void> = Promise.resolve();
-		const result = await runLive(
-			options(fixture, {
-				expect: ["im", "mpim"],
-				keepApp: true,
-				waits: { ...WAITS, eventsMs: 1600, checkMs: 10_000 },
-				cue: () => {
-					send(slack, ["im"]);
-					post(slack, "mpim");
-					driven = (async () => {
-						for (let index = 0; index < 35; index++) {
+		let drivenFailure: unknown;
+		let refreshes = 0;
+		let lateGapObserved = false;
+		let clockReleased = false;
+		let result: LiveResult;
+		const releaseClock = () => {
+			if (!clockReleased) {
+				clockReleased = true;
+				vi.advanceTimersByTime(1600);
+			}
+		};
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			result = await runLive(
+				options(fixture, {
+					expect: ["im", "mpim"],
+					keepApp: true,
+					waits: { ...WAITS, eventsMs: 1600, checkMs: 10_000 },
+					say: (line) => {
+						fixture.lines.push(line);
+						if (refreshes === 35 && line === "socket: closed:1006") {
+							lateGapObserved = true;
+							// The real close is recorded before the event deadline can end the session.
+							releaseClock();
+						}
+					},
+					cue: (step) => {
+						if (step !== "send") return;
+						send(slack, ["im"]);
+						post(slack, "mpim");
+						driven = (async () => {
+							for (let index = 0; index < 35; index++) {
+								const current = slack.live().at(-1);
+								if (!current) throw new Error("fake connection missing");
+								slack.disconnect(current, "warning", null);
+								await until(
+									() =>
+										current.closedCode === 1000 &&
+										slack.live().some(({ id }) => id > current.id) &&
+										fixture.lines.filter((line) => line === "socket: closed:1000").length ===
+											index + 1,
+									realNow,
+								);
+								refreshes++;
+							}
+							expect(
+								fixture.lines.filter((line) => line.startsWith("socket: ")).length,
+							).toBeGreaterThan(100);
 							const current = slack.live().at(-1);
 							if (!current) throw new Error("fake connection missing");
-							slack.disconnect(current, "warning", null);
-							await until(() => current.closedCode !== null);
-						}
-						const current = slack.live().at(-1);
-						if (!current) throw new Error("fake connection missing");
-						slack.terminate(current);
-					})();
-				},
-			}),
-		);
-		await driven;
+							slack.terminate(current);
+							await until(() => lateGapObserved, realNow);
+						})().catch((error: unknown) => {
+							drivenFailure = error;
+							// Let runLive finish cleanup before reporting a failed real transition.
+							releaseClock();
+						});
+					},
+				}),
+			);
+			await driven;
+			if (drivenFailure !== undefined) throw drivenFailure;
+		} finally {
+			try {
+				await driven;
+			} finally {
+				vi.useRealTimers();
+			}
+		}
+		expect(refreshes).toBe(35);
+		expect(lateGapObserved).toBe(true);
 		expect(result.verdicts[1]).toBe(
 			"message.mpim: not confirmed (socket continuity was interrupted or unknown)",
 		);
