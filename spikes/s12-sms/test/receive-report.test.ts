@@ -497,7 +497,7 @@ describe("the report validator", () => {
 			["hooks", ".slack", ".com/services/Tsynthetic/", "a".repeat(20)].join(""),
 			"secret-slack",
 		],
-	])("refuses %s after spaces and decoded line breaks without quoting it", (_, text, rule) => {
+	])("refuses %s after spaces, line breaks and escapes without quoting it", (_, text, rule) => {
 		for (const separator of [" ", "\n", "\r", "\t"]) {
 			const report = bodyReport(`DYTEST-${separator}${text}`);
 			const checked = checkReport(bytes(report));
@@ -522,9 +522,14 @@ describe("the report validator", () => {
 			ok: false,
 			problems: [{ path: "$", rule: `vendor-file rule ${rule}` }],
 		});
+		// pnpm guard reads string escapes decoded, so evidence holding these would fail it.
 		for (const literal of ["\\n", "\\r", "\\t"]) {
 			const report = bodyReport(`DYTEST-${literal}${text}`);
-			expect(checkReport(bytes(report)), literal).toEqual({ ok: true, report });
+			expect(validate(report), literal).toEqual([]);
+			expect(checkReport(bytes(report)), literal).toEqual({
+				ok: false,
+				problems: [{ path: "$", rule: `vendor-file rule ${rule}` }],
+			});
 		}
 	});
 });
