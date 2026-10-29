@@ -175,6 +175,31 @@ importers:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)
 
+  plugins/ai-messages-api:
+    dependencies:
+      '@anthropic-ai/sdk':
+        specifier: 0.135.0
+        version: 0.135.0(zod@4.6.7)
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@draftyak/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@draftyak/hub':
+        specifier: workspace:*
+        version: link:../../apps/hub
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
   plugins/ai-responses-api:
     dependencies:
       '@draftyak/protocol':
