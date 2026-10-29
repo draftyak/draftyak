@@ -383,6 +383,22 @@ export class CredentialVault {
 			throw unavailable();
 		}
 	}
+	/** Native transaction composition; storage currentness does not grant account authority. */
+	describeInTransaction(
+		tx: SqlTransaction,
+		reference: string,
+		owner: CredentialBinding,
+	): CredentialDescriptor {
+		try {
+			assertStoreTransaction(this.#store, tx);
+			const bound = binding(owner),
+				row = saved(tx, reference, bound);
+			if (row.status !== "active") throw unavailable();
+			return Object.freeze({ reference, generation: row.generation, binding: bound });
+		} catch {
+			throw unavailable();
+		}
+	}
 	async #serialized<T>(reference: string, signal: AbortSignal, work: () => Promise<T>): Promise<T> {
 		signal.throwIfAborted();
 		let lock = this.#coordination.locks.get(reference);
