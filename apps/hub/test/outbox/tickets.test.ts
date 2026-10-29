@@ -10,6 +10,7 @@ import { AuditChain } from "../../src/audit/chain.ts";
 import { type CredentialBinding, CredentialVault } from "../../src/credentials/vault.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import { MasterKey } from "../../src/kernel/master-key.ts";
+import { createNativeHttpSendTransport } from "../../src/outbox/http-send.ts";
 import {
 	MAX_SEND_BODY_BYTES,
 	type SendTicketInsert,
@@ -598,5 +599,90 @@ describe("native encrypted send-ticket transaction kernel", () => {
 				]),
 			)?.state,
 		).toBe("REDEEMED");
+	});
+	it("acquires exactly one native write right across real ledger facades", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			ticket = f.insert(input),
+			dispatch = f.ledger.beginDispatch(f.ledger.redeem(f.request(ticket, input))),
+			other = new SendTicketLedger(f.store, f.audit, f.vault, f.key, f.clock);
+		const actual = other.prepareDispatchWrite(dispatch.dispatch);
+		expect(actual.body).toEqual(input.body);
+		expect(actual.ticket).toEqual(ticket);
+		expect(actual.credential.generation).toBe(1);
+		expect(() => f.ledger.prepareDispatchWrite(dispatch.dispatch)).toThrow(
+			"Send ticket unavailable",
+		);
+		expect(f.ledger.getAttempt(input.outboxId)?.state).toBe("SENDING");
+		f.ledger.recordOutcome(dispatch.dispatch, "UNKNOWN");
+		other.destroy();
+	});
+	it.each(["expiry", "rotation"] as const)(
+		"rechecks %s immediately before native write acquisition",
+		async (change) => {
+			const f = await fixture(),
+				input = f.make(),
+				ticket = f.insert(input),
+				dispatch = f.ledger.beginDispatch(f.ledger.redeem(f.request(ticket, input)));
+			if (change === "expiry") f.time.mono += 60_001;
+			else
+				f.store.write((tx) =>
+					f.vault.replaceInTransaction(tx, f.reference, f.owner, {
+						kind: "slack-token",
+						accessToken: `DYTEST-${randomBytes(20).toString("hex")}`,
+						expiresAt: null,
+					}),
+				);
+			expect(() => f.ledger.prepareDispatchWrite(dispatch.dispatch)).toThrow(
+				"Send ticket unavailable",
+			);
+			expect(() => f.ledger.prepareDispatchWrite(dispatch.dispatch)).toThrow(
+				"Send ticket unavailable",
+			);
+			expect(f.ledger.recordOutcome(dispatch.dispatch, "FAILED").state).toBe("FAILED");
+		},
+	);
+	it("write expiry cannot erase a later native outcome or create another write right", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			ticket = f.insert(input),
+			dispatch = f.ledger.beginDispatch(f.ledger.redeem(f.request(ticket, input)));
+		f.ledger.prepareDispatchWrite(dispatch.dispatch);
+		f.time.wall += 60_001;
+		f.time.mono += 60_001;
+		// This is ledger persistence only; the HTTP path requires genuine native classification.
+		expect(f.ledger.recordOutcome(dispatch.dispatch, "SENT").state).toBe("SENT");
+		expect(() => f.ledger.prepareDispatchWrite(dispatch.dispatch)).toThrow(
+			"Send ticket unavailable",
+		);
+	});
+	it("pins native transport composition to the ledger's actual vault instance", async () => {
+		const f = await fixture(),
+			foreign = await fixture();
+		expect(() => f.ledger.assertVault(f.vault)).not.toThrow();
+		expect(() => f.ledger.assertVault(foreign.vault)).toThrow("Send ticket unavailable");
+		expect(() =>
+			createNativeHttpSendTransport({
+				ledger: f.ledger,
+				vault: foreign.vault,
+				networkPolicy: { deniedAddresses: [], deniedPorts: [] },
+			}),
+		).toThrow("Send request unavailable");
+	});
+	it("rechecks native write currentness after preparation before bytes can be written", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			ticket = f.insert(input),
+			dispatch = f.ledger.beginDispatch(f.ledger.redeem(f.request(ticket, input)));
+		expect(() => f.ledger.assertDispatchWriteCurrent(dispatch.dispatch)).toThrow(
+			"Send ticket unavailable",
+		);
+		f.ledger.prepareDispatchWrite(dispatch.dispatch);
+		expect(() => f.ledger.assertDispatchWriteCurrent(dispatch.dispatch)).not.toThrow();
+		f.time.mono += 60_001;
+		expect(() => f.ledger.assertDispatchWriteCurrent(dispatch.dispatch)).toThrow(
+			"Send ticket unavailable",
+		);
+		expect(f.ledger.recordOutcome(dispatch.dispatch, "FAILED").state).toBe("FAILED");
 	});
 });

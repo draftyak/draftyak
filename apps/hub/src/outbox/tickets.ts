@@ -7,7 +7,7 @@ import {
 	ticketMismatch,
 } from "@draftyak/protocol/send-ticket";
 import type { AuditChain } from "../audit/chain.ts";
-import type { CredentialBinding, CredentialVault } from "../credentials/vault.ts";
+import { type CredentialBinding, CredentialVault } from "../credentials/vault.ts";
 import { type Clock, systemClock } from "../kernel/clock.ts";
 import type { MasterKey } from "../kernel/master-key.ts";
 import type { HubStore, SqlTransaction } from "../store/store.ts";
@@ -53,11 +53,18 @@ interface Lease {
 	readonly id: string;
 	readonly expiresMono: number;
 	readonly issuedAt: number;
+	readonly issuedMono: number;
 	readonly exp: number;
+	readonly credential: {
+		readonly reference: string;
+		readonly generation: number;
+		readonly binding: CredentialBinding;
+	};
 }
 interface Coordinator {
 	readonly redemptions: WeakMap<SendRedemption, Lease>;
 	readonly dispatches: WeakMap<SendDispatch, Lease>;
+	readonly writes: WeakSet<SendDispatch>;
 }
 const coordinators = new WeakMap<HubStore, Coordinator>();
 const stateFromStorage = SendTicketStorage.prototype.find;
@@ -148,6 +155,7 @@ function presented(input: unknown): { id?: string; ticket?: unknown; request?: T
 export class SendTicketLedger {
 	readonly #storage: SendTicketStorage;
 	readonly #coordinator: Coordinator;
+	readonly #vault: CredentialVault;
 	constructor(
 		store: HubStore,
 		audit: AuditChain,
@@ -156,9 +164,10 @@ export class SendTicketLedger {
 		clock: Clock = systemClock,
 	) {
 		this.#storage = new SendTicketStorage(store, audit, vault, masterKey, clock);
+		this.#vault = vault;
 		let shared = coordinators.get(store);
 		if (!shared) {
-			shared = { redemptions: new WeakMap(), dispatches: new WeakMap() };
+			shared = { redemptions: new WeakMap(), dispatches: new WeakMap(), writes: new WeakSet() };
 			// A recovered ticket never becomes a fresh lease. A possibly effective attempt remains
 			// UNKNOWN until provider-specific reconciliation; this core has no automatic retry path.
 			try {
@@ -190,6 +199,14 @@ export class SendTicketLedger {
 		}
 		this.#coordinator = shared;
 	}
+	/** Native composition pin; copied references/generations do not identify this vault instance. */
+	assertVault(vault: CredentialVault): void {
+		try {
+			if (vault !== this.#vault) throw unavailable();
+		} catch {
+			throw unavailable();
+		}
+	}
 	#lease(row: StoredAttempt): Lease {
 		const payload = this.#storage.payload(row),
 			now = this.#storage.now();
@@ -198,7 +215,13 @@ export class SendTicketLedger {
 			id: row.id,
 			expiresMono: payload.issuedMonotonic + payload.ticket.exp - payload.issuedAt,
 			issuedAt: payload.issuedAt,
+			issuedMono: payload.issuedMonotonic,
 			exp: payload.ticket.exp,
+			credential: {
+				reference: payload.credentialReference,
+				generation: payload.credentialGeneration,
+				binding: credentialOwner(payload),
+			},
 		};
 	}
 	#current(tx: SqlTransaction, row: StoredAttempt, lease?: Lease): void {
@@ -295,6 +318,64 @@ export class SendTicketLedger {
 					binding: Object.freeze(credentialOwner(payload)),
 				}),
 			});
+		} catch {
+			throw unavailable();
+		}
+	}
+	/** Acquire one current write right immediately before actual native request end. */
+	prepareDispatchWrite(dispatch: SendDispatch): NativeDispatchRequest {
+		const lease = this.#coordinator.dispatches.get(dispatch);
+		if (!lease || this.#coordinator.writes.has(dispatch)) throw unavailable();
+		// A failed preparation consumes the in-process write right too. Recovery never reopens it.
+		this.#coordinator.writes.add(dispatch);
+		try {
+			const row = this.#storage.write((tx) => {
+				const current = this.#storage.find(tx, "id", lease.id);
+				if (current?.state !== "SENDING") throw unavailable();
+				this.#current(tx, current, lease);
+				return current;
+			});
+			const payload = this.#storage.payload(row);
+			return Object.freeze({
+				dispatch,
+				ticket: Object.freeze(payload.ticket),
+				method: payload.ticket.method,
+				url: payload.ticket.url,
+				contentType: payload.ticket.contentType,
+				headers: payload.headers,
+				body: copyBody(row.body),
+				credential: Object.freeze({
+					reference: payload.credentialReference,
+					generation: payload.credentialGeneration,
+					binding: Object.freeze(credentialOwner(payload)),
+				}),
+			});
+		} catch {
+			throw unavailable();
+		}
+	}
+	/** Final small native check after rendering/header work and immediately before request end. */
+	assertDispatchWriteCurrent(dispatch: SendDispatch): void {
+		try {
+			const lease = this.#coordinator.dispatches.get(dispatch);
+			if (!lease || !this.#coordinator.writes.has(dispatch)) throw unavailable();
+			if (
+				CredentialVault.prototype.describe.call(
+					this.#vault,
+					lease.credential.reference,
+					lease.credential.binding,
+				).generation !== lease.credential.generation
+			)
+				throw unavailable();
+			const now = this.#storage.now(),
+				mono = this.#storage.monotonic();
+			if (
+				now < lease.issuedAt ||
+				now > lease.exp ||
+				mono < lease.issuedMono ||
+				mono > lease.expiresMono
+			)
+				throw unavailable();
 		} catch {
 			throw unavailable();
 		}
