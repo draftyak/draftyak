@@ -82,6 +82,22 @@ const labelsChange = (before: string, after: string): string => {
 	if (!labelsFixture.includes(before)) throw new Error(`missing labels fixture anchor: ${before}`);
 	return labelsFixture.replace(before, after);
 };
+const classifierChange = (before: string, after: string): string => {
+	const source = read(".github/workflows/ci.yml").replaceAll("\r\n", "\n");
+	const end = source.indexOf("\n  cheap:");
+	const prefix = source.slice(0, end);
+	if (end < 0 || !prefix.includes(before)) throw new Error("missing classifier fixture anchor");
+	return prefix.replace(before, after) + source.slice(end);
+};
+const classifierOutputs = [
+	["areas", `\${{ steps.areas.outputs.areas }}`],
+	["docs-only", `\${{ steps.areas.outputs.docs-only }}`],
+	["rust", `\${{ steps.areas.outputs.rust }}`],
+	["spikes", `\${{ steps.areas.outputs.spikes }}`],
+	["heavy", "''"],
+	["template-smoke", "'false'"],
+	["source", `\${{ steps.source.outputs.source }}`],
+] as const;
 
 describe("workflow policy", () => {
 	it.each(["&evt pull_request_target", "!event pull_request_target", "!!str workflow_run"])(
@@ -103,6 +119,92 @@ describe("workflow policy", () => {
 
 	it.each(files)("%s follows the policy", (file) => {
 		expect(checkWorkflow(file, read(file), toolchain)).toEqual([]);
+	});
+
+	it.each(classifierOutputs)("refuses changed classifier job output: %s", (name, value) => {
+		for (const replacement of [
+			"''",
+			"'true'",
+			`\${{ steps.other.outputs.${name} }}`,
+			`\${{ steps.areas.outputs.unknown }}`,
+		]) {
+			if (replacement === value) continue;
+			const mutated = classifierChange(`      ${name}: ${value}`, `      ${name}: ${replacement}`);
+			expect(checkWorkflow(".github/workflows/ci.yml", mutated, toolchain).join("\n")).toContain(
+				"must preserve classifier job output mappings",
+			);
+		}
+	});
+
+	it.each(classifierOutputs)("refuses a missing classifier job output: %s", (name, value) => {
+		const mutated = classifierChange(`      ${name}: ${value}\n`, "");
+		expect(checkWorkflow(".github/workflows/ci.yml", mutated, toolchain).join("\n")).toContain(
+			"must preserve classifier job output mappings",
+		);
+	});
+
+	it.each([
+		["missing mapping", "    outputs:\n", "    ignored:\n"],
+		["null mapping", "    outputs:\n", "    outputs: null\n    ignored:\n"],
+		["extra output", "    outputs:\n", "    outputs:\n      extra: 'false'\n"],
+	])("refuses %s on the classifier job", (_, before, after) => {
+		const mutated = classifierChange(before, after);
+		expect(checkWorkflow(".github/workflows/ci.yml", mutated, toolchain).join("\n")).toContain(
+			"must preserve classifier job output mappings",
+		);
+	});
+
+	it.each([
+		["renamed ID", "      - id: areas", "      - id: other"],
+		["missing ID", "      - id: areas\n        env:", "      - env:"],
+		[
+			"duplicate ID",
+			"      - id: areas",
+			"      - id: areas\n        run: echo classifier-disabled\n      - id: areas",
+		],
+		[
+			"replaced command",
+			"run: node tools/ci-checks/src/changes.ts",
+			"run: echo classifier-disabled",
+		],
+		[
+			"echoed command",
+			"run: node tools/ci-checks/src/changes.ts",
+			"run: echo node tools/ci-checks/src/changes.ts",
+		],
+		["condition", "      - id: areas", "      - id: areas\n        if: false"],
+		["shell", "      - id: areas", "      - id: areas\n        shell: echo {0}"],
+		[
+			"working directory",
+			"      - id: areas",
+			"      - id: areas\n        working-directory: elsewhere",
+		],
+		["soft failure", "      - id: areas", "      - id: areas\n        continue-on-error: true"],
+		[
+			"base revision",
+			`BASE_SHA: \${{ github.event.pull_request.base.sha || github.event.before }}`,
+			`BASE_SHA: \${{ github.event.pull_request.head.sha || github.sha }}`,
+		],
+		[
+			"head revision",
+			`HEAD_SHA: \${{ github.event.pull_request.head.sha || github.sha }}`,
+			"HEAD_SHA: HEAD",
+		],
+		[
+			"missing base revision",
+			`          BASE_SHA: \${{ github.event.pull_request.base.sha || github.event.before }}\n`,
+			"",
+		],
+		[
+			"extra environment",
+			"      - id: areas\n        env:",
+			"      - id: areas\n        env:\n          EXTRA: value",
+		],
+	])("refuses changed classifier producer: %s", (_, before, after) => {
+		const mutated = classifierChange(before, after);
+		expect(checkWorkflow(".github/workflows/ci.yml", mutated, toolchain).join("\n")).toContain(
+			"must preserve changes command and its execution controls",
+		);
 	});
 
 	it.each([
