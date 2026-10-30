@@ -93,6 +93,13 @@ export {
 export { isKnownSyncedPath } from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
 export {
+	type HubSession,
+	HubSessionError,
+	type HubSessionErrorCode,
+	type HubSessionOptions,
+	openHubSession,
+} from "./lifecycle/session.ts";
+export {
 	type ClaimPermit,
 	createHubLifecycle,
 	HUB_DRAIN_MS,
