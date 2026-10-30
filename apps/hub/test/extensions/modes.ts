@@ -40,7 +40,7 @@ export function installModule(f: Fixture, module: FakeModule): ModuleEntry {
 	};
 }
 
-/** "free" writes no config.json, so no module loads; "fake-commercial" loads the commercial set. */
+/** "free" removes the fixture's config.json; "fake-commercial" loads the commercial set. */
 export function startMode(
 	f: Fixture,
 	mode: ExtensionMode,
@@ -48,6 +48,7 @@ export function startMode(
 ): Promise<ExtensionHost> {
 	if (mode === "fake-commercial")
 		f.config(COMMERCIAL_MODULES.map((item) => installModule(f, item)));
+	else rmSync(path.join(f.dir, "config.json"), { force: true });
 	return f.start(options);
 }
 
