@@ -1,10 +1,11 @@
 //! The validated types read directly through serde, from JSON text and from a parsed value, on
 //! their own and as a field of a caller's struct, take what the shared vectors take: never a
 //! struct written as an array, an enum written as a one-member map or a member written twice.
-//! Snapshots and flags read directly refuse with their bare codes.
+//! Snapshots and flags read directly refuse with their bare codes, and each type refuses a value
+//! nested deeper than `parse_strict` takes without reading past that depth.
 use draftyak_protocol::{
     flags::Flag,
-    jcs::parse_strict,
+    jcs::{JCS_MAX_DEPTH, JcsError, parse_strict},
     snapshot::SendSnapshotV1,
     statements::{
         admin::AdminStatement,
@@ -16,9 +17,16 @@ use draftyak_protocol::{
         send::SendStatement,
     },
 };
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use serde_json::{Value, json};
-use std::fmt::Debug;
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{
+        DeserializeOwned, IntoDeserializer, Visitor,
+        value::{MapDeserializer, SeqDeserializer},
+    },
+    forward_to_deserialize_any,
+};
+use serde_json::{Map, Value, json};
+use std::{cell::Cell, fmt::Debug, mem::ManuallyDrop};
 
 fn vectors(file: &str) -> Vec<Value> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -294,4 +302,174 @@ fn snapshots_and_flags_read_directly_refuse_with_their_bare_codes() {
             ("severity", json!("PRIVATE_CANARY")),
         ],
     );
+}
+
+/// A value each type read directly takes: a snapshot, a flag, a login statement, a hub key
+/// rotation and a review subject.
+fn taken() -> [Value; 5] {
+    let snapshot = vectors("snapshot/snapshots.json")
+        .into_iter()
+        .find(|case| case.get("error").is_none())
+        .unwrap();
+    let flags = vectors("flags/flags-hash.json")
+        .into_iter()
+        .find(|case| case.get("error").is_none() && case["flags"].get(0).is_some())
+        .unwrap();
+    let statement = |typ: &str| {
+        let case = vectors(&format!("statements/{typ}.json"))
+            .into_iter()
+            .find(|case| case["valid"] == true)
+            .unwrap();
+        parse_strict(&hex(case["receivedHex"].as_str().unwrap())).unwrap()
+    };
+    let subject = schema_cases("AgentSessionReviewSubject")
+        .into_iter()
+        .find(|case| case["valid"] == true)
+        .unwrap();
+    [
+        snapshot["snapshot"].clone(),
+        flags["flags"][0].clone(),
+        statement("login.v1"),
+        statement("hub-key-rotate.v1"),
+        subject["value"].clone(),
+    ]
+}
+/// `inner` held by an array, or by an object as its one member.
+fn holding(inner: Value, objects: bool) -> Value {
+    if objects {
+        Value::Object(Map::from_iter([("nested".to_owned(), inner)]))
+    } else {
+        Value::Array(vec![inner])
+    }
+}
+/// `valid` with a member it doesn't know holding arrays, or objects, nested `levels` deep around
+/// a null, built without recursing: an object nested `levels + 1` deep.
+fn nested(valid: &Value, levels: usize, objects: bool) -> Value {
+    let mut value = valid.clone();
+    value["nested"] = (0..levels).fold(Value::Null, |inner, _| holding(inner, objects));
+    value
+}
+/// Arrays, or objects of one member, nested `levels` deep around a null, handed to a reader one
+/// value at a time, counting the values it reads.
+#[derive(Clone, Copy)]
+struct Nested<'a> {
+    levels: usize,
+    objects: bool,
+    read: &'a Cell<usize>,
+}
+impl<'de> Deserializer<'de> for Nested<'_> {
+    type Error = serde::de::value::Error;
+    fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
+        self.read.set(self.read.get() + 1);
+        let Some(levels) = self.levels.checked_sub(1) else {
+            return visitor.visit_unit();
+        };
+        let inner = Nested { levels, ..self };
+        if self.objects {
+            visitor.visit_map(MapDeserializer::new(std::iter::once(("nested", inner))))
+        } else {
+            visitor.visit_seq(SeqDeserializer::new(std::iter::once(inner)))
+        }
+    }
+    forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf
+        option unit unit_struct newtype_struct seq tuple tuple_struct map struct enum identifier
+        ignored_any
+    }
+}
+impl<'de> IntoDeserializer<'de> for Nested<'_> {
+    type Deserializer = Self;
+    fn into_deserializer(self) -> Self {
+        self
+    }
+}
+/// How many values `T` reads of [`Nested`] containers `levels` deep, the same on its own and as
+/// a caller's field, before refusing them with the bare `code`.
+fn read<T: DeserializeOwned + Debug>(code: &str, levels: usize, objects: bool) -> usize {
+    let read = Cell::new(0);
+    let nested = Nested {
+        levels,
+        objects,
+        read: &read,
+    };
+    let alone = T::deserialize(nested);
+    let alone_read = read.replace(0);
+    let field = MapDeserializer::new(std::iter::once(("value", nested)));
+    let field = Field::<T>::deserialize(field).map(|field| field.value);
+    assert_eq!(read.get(), alone_read, "{code}");
+    for refused in [alone, field] {
+        assert_eq!(refused.unwrap_err().to_string(), code);
+    }
+    alone_read
+}
+/// `T` refusing `valid` with a member nested as deep as `parse_strict` takes for that member, as
+/// it did before, and one level deeper before reading what that level holds: with the bare `code`
+/// from a value, from its text and as a caller's field.
+fn bounded<T: DeserializeOwned + Debug>(code: &str, valid: &Value) {
+    serde_json::from_value::<T>(valid.clone()).unwrap();
+    for objects in [false, true] {
+        let at = nested(valid, JCS_MAX_DEPTH - 1, objects);
+        let past = nested(valid, JCS_MAX_DEPTH, objects);
+        assert!(parse_strict(&bytes(&at)).is_ok(), "{code}");
+        assert_eq!(parse_strict(&bytes(&past)).unwrap_err(), JcsError::TooDeep);
+        for value in [at, past] {
+            let text = serde_json::from_slice::<T>(&bytes(&value)).unwrap_err();
+            assert!(text.to_string().starts_with(code), "{text}");
+            let field = serde_json::from_value::<Field<T>>(json!({ "value": value }));
+            let alone = serde_json::from_value::<T>(value);
+            for refused in [field.map(|field| field.value), alone] {
+                assert_eq!(refused.unwrap_err().to_string(), code);
+            }
+        }
+        // Read whole at the depth `parse_strict` takes; one level deeper, not what the deepest holds.
+        for levels in [JCS_MAX_DEPTH, JCS_MAX_DEPTH + 1] {
+            assert_eq!(read::<T>(code, levels, objects), JCS_MAX_DEPTH + 1);
+        }
+    }
+}
+
+#[test]
+fn values_nested_as_deep_as_parse_strict_takes_are_read_as_before_and_deeper_ones_refused() {
+    let [snapshot, flag, login, rotation, subject] = taken();
+    bounded::<SendSnapshotV1>("SNAPSHOT_INVALID", &snapshot);
+    bounded::<Flag>("FLAGS_INVALID", &flag);
+    bounded::<LoginStatement>("STATEMENT_INVALID", &login);
+    bounded::<HubKeyRotateStatement>("STATEMENT_INVALID", &rotation);
+    bounded::<AgentSessionReviewSubject>("STATEMENT_INVALID", &subject);
+}
+
+/// `T` refusing `valid` with a member nested far deeper than `parse_strict` takes with the bare
+/// `code`, on its own and as a caller's field, reading no deeper than `parse_strict` would.
+fn far<T: DeserializeOwned + Debug>(code: &str, valid: &Value) {
+    let levels = 100_000;
+    // Never dropped: dropping arrays nested this deep recurses through each of them.
+    let field = ManuallyDrop::new(Value::Object(Map::from_iter([(
+        "value".to_owned(),
+        nested(valid, levels, false),
+    )])));
+    let alone = T::deserialize(&field["value"]);
+    let decoded = Field::<T>::deserialize(&*field).map(|field| field.value);
+    for refused in [alone, decoded] {
+        assert_eq!(refused.unwrap_err().to_string(), code);
+    }
+    for objects in [false, true] {
+        assert_eq!(read::<T>(code, levels, objects), JCS_MAX_DEPTH + 1);
+    }
+}
+
+#[test]
+fn values_nested_far_deeper_are_refused_without_overflowing_a_small_stack() {
+    let [snapshot, flag, login, rotation, subject] = taken();
+    std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(move || {
+            far::<SendSnapshotV1>("SNAPSHOT_INVALID", &snapshot);
+            far::<Flag>("FLAGS_INVALID", &flag);
+            far::<LoginStatement>("STATEMENT_INVALID", &login);
+            far::<HubKeyRotateStatement>("STATEMENT_INVALID", &rotation);
+            far::<AgentSessionReviewSubject>("STATEMENT_INVALID", &subject);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
 }

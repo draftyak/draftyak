@@ -5,7 +5,10 @@ pub mod hub_key_rotate;
 pub mod login;
 pub mod pair_confirm;
 pub mod send;
-use crate::{jcs::parse_strict, sign};
+use crate::{
+    jcs::{JCS_MAX_DEPTH, parse_strict},
+    sign,
+};
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{self, DeserializeOwned, DeserializeSeed, MapAccess, SeqAccess, Visitor},
@@ -23,14 +26,29 @@ pub(crate) fn decode_from<'de, D: Deserializer<'de>, T: DeserializeOwned + Seria
     code: &'static str,
 ) -> Result<T, D::Error> {
     decoder
-        .deserialize_any(Received)
+        .deserialize_any(Received { depth: 0 })
         .ok()
         .and_then(|value| decode(&value))
         .ok_or_else(|| de::Error::custom(code))
 }
 // A `Value` that refuses a member name written twice, as the derives do; serde_json's keeps the
-// last one.
-struct Received;
+// last one. A container nested deeper than `parse_strict` takes is refused before what it holds
+// is read, so no input recurses past that depth.
+#[derive(Clone, Copy)]
+struct Received {
+    depth: usize,
+}
+impl Received {
+    // The seed for what a container opened at this depth holds.
+    fn inside<E: de::Error>(self) -> Result<Self, E> {
+        if self.depth >= JCS_MAX_DEPTH {
+            return Err(E::custom("too deep"));
+        }
+        Ok(Self {
+            depth: self.depth + 1,
+        })
+    }
+}
 impl<'de> DeserializeSeed<'de> for Received {
     type Value = Value;
     fn deserialize<D: Deserializer<'de>>(self, decoder: D) -> Result<Value, D::Error> {
@@ -66,19 +84,21 @@ impl<'de> Visitor<'de> for Received {
         Ok(Value::Null)
     }
     fn visit_seq<A: SeqAccess<'de>>(self, mut items: A) -> Result<Value, A::Error> {
+        let inside = self.inside::<A::Error>()?;
         let mut array = Vec::new();
-        while let Some(item) = items.next_element_seed(Received)? {
+        while let Some(item) = items.next_element_seed(inside)? {
             array.push(item);
         }
         Ok(Value::Array(array))
     }
     fn visit_map<A: MapAccess<'de>>(self, mut members: A) -> Result<Value, A::Error> {
+        let inside = self.inside::<A::Error>()?;
         let mut object = Map::new();
         while let Some(name) = members.next_key::<String>()? {
             if object.contains_key(&name) {
                 return Err(de::Error::custom("duplicate member"));
             }
-            let value = members.next_value_seed(Received)?;
+            let value = members.next_value_seed(inside)?;
             object.insert(name, value);
         }
         Ok(Value::Object(object))
