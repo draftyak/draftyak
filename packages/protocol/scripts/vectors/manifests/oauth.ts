@@ -90,12 +90,10 @@ export function issuerOAuthCases(): ManifestCase[] {
 	refused("resource-origin", ["auth/resource", "https://api.example.com"]);
 	refused("resource-fragment", ["auth/resource", "https://api.example.com/v1#x"]);
 	refused("resource-userinfo", ["auth/resource", "https://user@api.example.com/v1"]);
+	refused("resource-query", ["auth/resource", "https://api.example.com/v1?tenant=1"]);
+	refused("resource-single-label", ["auth/resource", "https://api/v1"]);
 	add("private-issuer", "MANIFEST_INVALID", false, ["auth/issuer", "https://auth.internal"]);
 	add("private-resource", "MANIFEST_INVALID", false, ["auth/resource", "https://api.local/v1"]);
-	add("resource-query", "MANIFEST_INVALID", false, [
-		"auth/resource",
-		"https://api.example.com/v1?tenant=1",
-	]);
 	add("resource-port-443", "MANIFEST_INVALID", false, [
 		"auth/resource",
 		"https://api.example.com:443/v1",
