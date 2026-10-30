@@ -393,6 +393,8 @@ it.each(["cancel", "timeout", "close"] as const)(
 		}
 		const controller = new AbortController(),
 			pending = fetcher.fetch(CLIENT, "cimd", controller.signal);
+		// Observe rejection while request setup yields; the assertion below keeps the original promise.
+		void pending.catch(() => {});
 		while (!requests[0]?.req.ended) await new Promise((resolve) => setImmediate(resolve));
 		if (reason === "cancel") controller.abort();
 		if (reason === "close") fetcher.close();
