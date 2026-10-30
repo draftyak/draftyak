@@ -37,6 +37,8 @@ function publicPoint(scalar: number): string {
 }
 export const publicKey: string = publicPoint(1);
 const otherKey = publicPoint(2);
+// A pairing SAS with leading zeros, as the hub shows it for the fixture's candidate.
+export const reviewSas = "004917";
 export function sendFixture(scheduled = false): ObjectValue {
 	const snapshot = {
 		...exampleSnapshot(),
@@ -88,6 +90,7 @@ export function pairFixture(preset: keyof typeof presets = "desktop"): ObjectVal
 		signingKey: publicKey,
 		preset,
 		capabilities: presets[preset],
+		sas: reviewSas,
 	};
 	const review = {
 		id: id.op,
@@ -182,11 +185,44 @@ function changeStatement(fixture: ObjectValue, field: string, replacement: unkno
 	member(copy, "challenge").statement = encoded(change(statement, field, replacement));
 	return copy;
 }
+// Each statement's own members in declared order, the array a by-position decoder would read.
+const declaredMembers: Record<string, readonly string[]> = {
+	"approval.send.v1": [
+		"outbox",
+		"contentHash",
+		"flagsHash",
+		"flagsAcked",
+		"notBefore",
+		"deliverBy",
+	],
+	"pair-confirm.v1": ["candidate", "role", "transportSpkiSha256", "signingKey", "capabilities"],
+	"login.v1": ["login", "digest"],
+	"agent-session.v1": ["session", "principal", "account", "toolClass", "authorization"],
+	"admin.v1": ["op", "kind", "digest"],
+};
+function positional(kind: string, statement: unknown): string {
+	const value = JSON.parse(Buffer.from(statement as string, "base64url").toString("utf8"));
+	const names = [...Object.keys(statementBase()), ...(declaredMembers[kind] ?? [])];
+	if (
+		names.length !== Object.keys(value).length ||
+		!names.every((name) => Object.hasOwn(value, name))
+	)
+		throw Error(`positional ${kind} statement`);
+	return encoded(names.map((name) => value[name]));
+}
 // Decimal suffixes avoid letters outside Crockford's alphabet and remain distinct.
 const ids = Array.from(
 	{ length: 101 },
 	(_, n) => `01JAZ3W3B6Q8M2V0G5T9K${n.toString().padStart(5, "0")}`,
 );
+// The IDs a request of each admin kind with a review subject names: the account or device the
+// subject describes, or none for Back up now. Every other admin kind takes up to 100.
+const requestIds: Readonly<Record<string, number>> = {
+	"account.disconnect": 1,
+	"account.mode-full": 1,
+	"security.device-capabilities": 1,
+	"data.backup": 0,
+};
 export function apiCases(): ApiCase[] {
 	const cases: ApiCase[] = [];
 	const add = (name: string, action: string, fields: ObjectValue, valid = false): void => {
@@ -272,6 +308,7 @@ export function apiCases(): ApiCase[] {
 		["reordered", ["draft", "read"]],
 		["duplicate", ["read", "read"]],
 		["host", ["host:sms"]],
+		["object-form", [{ read: null }, "draft"]],
 	] as const)
 		schema("DeviceStatus", { ...confirmed, capabilities }, false, label);
 	schema("DeviceStatus", confirmed, true, "confirmed");
@@ -327,8 +364,35 @@ export function apiCases(): ApiCase[] {
 			`code-${length}`,
 		);
 	schema("PairingWindow", { pairingCode: "other:v1:test" }, false, "prefix");
+	schema(
+		"PairingWindow",
+		{ pairingCode: "other:draftyak-pair:v1:test" },
+		false,
+		"prefix-not-at-start",
+	);
+	// Only at the very start and in its own case: an m or an i flag on the pattern would pass these.
+	schema(
+		"PairingWindow",
+		{ pairingCode: "other\ndraftyak-pair:v1:test" },
+		false,
+		"prefix-after-line-break",
+	);
+	schema("PairingWindow", { pairingCode: "DRAFTYAK-PAIR:V1:test" }, false, "prefix-upper-case");
 	for (const kind of adminKinds)
-		schema("OperationRequest", { kind, ids: ids.slice(0, 100) }, true, kind);
+		schema(
+			"OperationRequest",
+			{ kind, ids: ids.slice(0, 100) },
+			!Object.hasOwn(requestIds, kind),
+			kind,
+		);
+	for (const [kind, count] of Object.entries(requestIds))
+		for (const length of [0, 1, 2])
+			schema(
+				"OperationRequest",
+				{ kind, ids: ids.slice(0, length) },
+				length === count,
+				`${kind}-count-${length}`,
+			);
 	schema("OperationRequest", { kind: "data.export", ids: [] }, true, "empty-admin-ids");
 	for (const kind of ["login", "consent", "agent-session", "unknown"])
 		schema("OperationRequest", { kind, ids: [id.op] }, false, `kind-${kind}`);
@@ -356,6 +420,12 @@ export function apiCases(): ApiCase[] {
 		false,
 		"unknown-preset",
 	);
+	schema(
+		"OperationRequest",
+		{ kind: "pair-confirm", ids: [id.candidate], preset: { desktop: null } },
+		false,
+		"object-form-preset",
+	);
 	for (const preset of ["desktop", "mobile", "cli"] as const) {
 		const fixture = pairFixture(preset);
 		schema("PairConfirmSubject", member(fixture, "review").subject, true, preset);
@@ -373,22 +443,88 @@ export function apiCases(): ApiCase[] {
 			false,
 			`${field}-${String(replacement)}`,
 		);
+	schema(
+		"PairConfirmSubject",
+		change(fixtures.PairConfirmSubject, "preset", { desktop: null }),
+		false,
+		"object-form-preset",
+	);
+	for (const [label, sas] of [
+		["missing", undefined],
+		["five-digits", "04917"],
+		["seven-digits", "0049170"],
+		["number", 4917],
+		["letter", "00491x"],
+		["fullwidth-digits", "００４９１７"],
+		...["\r", "\n", "\u2028", "\u2029"].flatMap((end) => [
+			[`suffix-${JSON.stringify(end)}`, `${reviewSas}${end}`],
+			[`last-${JSON.stringify(end)}`, `${reviewSas.slice(0, 5)}${end}`],
+		]),
+	] as const)
+		schema(
+			"PairConfirmSubject",
+			change(fixtures.PairConfirmSubject, "sas", sas),
+			false,
+			`sas-${label}`,
+		);
+	schema(
+		"PairConfirmSubject",
+		change(fixtures.PairConfirmSubject, "sas", "000000"),
+		true,
+		"sas-zeros",
+	);
+	const otherSas = change(pair.review, "subject.sas", "000000") as ObjectValue;
+	schema("OperationReview", otherSas, false, "sas-not-digested");
+	schema(
+		"OperationReview",
+		{ ...otherSas, digest: jcsSha256(otherSas.subject) },
+		true,
+		"sas-digested",
+	);
+	// The hub's SAS reaches a device only in the pair-confirm review's subject.
+	for (const [name, value] of Object.entries(fixtures))
+		if (name !== "PairConfirmSubject")
+			schema(name, { ...(value as ObjectValue), sas: reviewSas }, false, "sas-member");
 	for (const [field, replacement] of [
 		["contentHash", "f".repeat(64)],
 		["flagsHash", "f".repeat(64)],
 	] as const)
 		schema("SendReview", change(send.review, field, replacement), false, field);
+	// The hashes stay those of the object forms, so only the form refuses each.
+	const reviewFlags = member(send, "review").flags as ObjectValue[];
+	for (const [label, path, replacement] of [
+		["positional-flags", "flags", reviewFlags.map((flag) => [flag.code, flag.severity])],
+		[
+			"object-form-flag-code",
+			"flags",
+			reviewFlags.map((flag) => ({ ...flag, code: { [flag.code as string]: null } })),
+		],
+		[
+			"positional-snapshot-body",
+			"snapshot.body",
+			Object.values(member(member(member(send, "review"), "snapshot"), "body")),
+		],
+		["object-form-snapshot-kind", "snapshot.kind", { email: null }],
+	] as const)
+		schema("SendReview", change(send.review, path, replacement), false, label);
 	schema("SendReview", change(send.review, "requiredUsers", ids), true, "101-required-users");
 	schema("OperationReview", change(pair.review, "digest", "f".repeat(64)), false, "digest");
 	schema("OperationReview", change(pair.review, "remainingMs", 120001), false, "lifetime-120001");
 	schema("OperationReview", change(pair.review, "remainingMs", 0), true, "lifetime-zero");
-	for (const kind of ["login.v1", "consent.v1", "admin.v1", "unknown.v1"])
+	for (const kind of ["login.v1", "consent.v1", "unknown.v1"])
 		schema("ChallengeRequest", { kind, id: id.op }, false, `deferred-${kind}`);
 	for (const [label, request] of [
 		["missing-acks", { kind: "approval.send.v1", id: id.outbox }],
 		["code", { ...member(send, "request"), code: "123456" }],
 		["reordered", { ...member(send, "request"), flagsAcked: ["NEW_RECIPIENT", "EXTERNAL_LINK"] }],
 		["duplicate", { ...member(send, "request"), flagsAcked: ["NEW_RECIPIENT", "NEW_RECIPIENT"] }],
+		[
+			"object-form-acks",
+			{
+				...member(send, "request"),
+				flagsAcked: [{ EXTERNAL_LINK: null }, { NEW_RECIPIENT: null }],
+			},
+		],
 	] as const)
 		schema("ChallengeRequest", request, false, label);
 	schema("ChallengeRequest", pair.request, true, "pair-confirm");
@@ -412,6 +548,32 @@ export function apiCases(): ApiCase[] {
 	] as const) {
 		schema("Challenge", { ...sendChallenge, statement }, false, label);
 		schema("SignedEnvelope", { ...envelope, statement }, label === "wrong-type", label);
+	}
+	// Each typed statement re-sent as an array: on its signed route, as a challenge member and in a
+	// challenge whose other members all match it.
+	for (const [route, kind, statement] of [
+		["send-approval", "approval.send.v1", sendChallenge.statement],
+		["pair-confirmation", "pair-confirm.v1", pairChallenge.statement],
+		["login", "login.v1", loginEnvelope.statement],
+		["agent-session", "agent-session.v1", member(agentSessionFixture(), "challenge").statement],
+		["admin", "admin.v1", adminEnvelope.statement],
+	] as const) {
+		const array = positional(kind, statement);
+		add(`request-${route}-positional-statement`, "request", {
+			route,
+			value: { ...envelope, statement: array },
+		});
+		if (kind !== "login.v1")
+			schema("Challenge", { kind, id: id.op, statement: array }, false, `positional-${kind}`);
+	}
+	for (const [name, kind, fixture] of [
+		["send", "approval.send.v1", send],
+		["pair", "pair-confirm.v1", pair],
+		["agent", "agent-session.v1", agentSessionFixture()],
+	] as const) {
+		const copy = clone(fixture);
+		member(copy, "challenge").statement = positional(kind, member(copy, "challenge").statement);
+		add(`${name}-challenge-positional-statement`, "challenge", copy);
 	}
 	for (const length of [63, 64, 65])
 		schema(
@@ -455,6 +617,34 @@ export function apiCases(): ApiCase[] {
 		"challenge",
 		change(send, "request.flagsAcked", []) as ObjectValue,
 	);
+	// One code beyond the signed list still covers every required flag; only equality refuses it.
+	const ackedSuperset = change(
+		send,
+		"request.flagsAcked",
+		[...(member(send, "request").flagsAcked as string[]), "REPLY_TO_REDIRECT"].toSorted(),
+	) as ObjectValue;
+	schema("ChallengeRequest", member(ackedSuperset, "request"), true, "acknowledgement-superset");
+	add("send-requested-acknowledgements-superset", "challenge", ackedSuperset);
+	const signedSuperset = changeStatement(send, "flagsAcked", [
+		"EXTERNAL_LINK",
+		"NEW_RECIPIENT",
+		"REPLY_TO_REDIRECT",
+	]);
+	schema("Challenge", member(signedSuperset, "challenge"), true, "signed-acknowledgement-superset");
+	// Lists of equal length that both cover every required flag: only equality refuses them.
+	const sameLength = change(signedSuperset, "request.flagsAcked", [
+		"DMARC_FAIL",
+		"EXTERNAL_LINK",
+		"NEW_RECIPIENT",
+	]) as ObjectValue;
+	schema("ChallengeRequest", member(sameLength, "request"), true, "acknowledgement-same-length");
+	add("send-acknowledgements-same-length-differ", "challenge", sameLength);
+	const objectFormAcks = changeStatement(send, "flagsAcked", [
+		{ EXTERNAL_LINK: null },
+		{ NEW_RECIPIENT: null },
+	]);
+	schema("Challenge", member(objectFormAcks, "challenge"), false, "object-form-acks");
+	add("send-statement-object-form-acks", "challenge", objectFormAcks);
 	for (const [kind, fixture] of [
 		["send", send],
 		["pair", pair],
@@ -494,6 +684,8 @@ export function apiCases(): ApiCase[] {
 		["flagsAcked", []],
 		["flagsAcked", ["NEW_RECIPIENT", "EXTERNAL_LINK"]],
 		["flagsAcked", ["EXTERNAL_LINK", "EXTERNAL_LINK"]],
+		// A signed superset still covers every required flag; only equality refuses it.
+		["flagsAcked", ["EXTERNAL_LINK", "NEW_RECIPIENT", "REPLY_TO_REDIRECT"]],
 		["notBefore", SNAPSHOT_IAT],
 		["deliverBy", SNAPSHOT_IAT + 1],
 		["epoch", 2],
@@ -619,6 +811,10 @@ export function apiCases(): ApiCase[] {
 	add("access-status-pending-host", "access", {
 		route: "status",
 		peer: { ...peer, role: "host:sms", confirmedEpoch: null, capabilities: [] },
+	});
+	add("access-status-object-form-capability", "access", {
+		route: "status",
+		peer: { ...peer, capabilities: [{ read: null }, ...presets.desktop.slice(1)] },
 	});
 	for (const patch of [{ sidecarClaim: false }, { bootstrapDone: true }, { confirmedEpoch: 1 }])
 		add(`access-bootstrap-${Object.keys(patch)[0]}`, "access", {
@@ -891,6 +1087,13 @@ export function apiCases(): ApiCase[] {
 			false,
 			`missing-${field}`,
 		);
+	for (const [label, subject] of [
+		["positional", Object.values(subjectOf(session))],
+		["positional-principal", change(subjectOf(session), "principal", ["grant", id.author])],
+		["object-form-tool-class", change(subjectOf(session), "toolClass", { read: null })],
+		["positional-authorization", change(subjectOf(session), "authorization", ["session", 900_000])],
+	] as const)
+		schema("AgentSessionReviewSubject", subject, false, label);
 	schema(
 		"OperationReview",
 		{ ...member(session, "review"), extra: true },

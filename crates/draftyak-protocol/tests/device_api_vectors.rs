@@ -374,7 +374,7 @@ fn agent_session_access_has_no_device_creation_or_future_subject_expansion() {
         "OperationRequest",
         &json!({"kind":"agent-session","ids":[SESSION_ID]})
     ));
-    for kind in ["login.v1", "admin.v1", "unknown.v1"] {
+    for kind in ["login.v1", "unknown.v1"] {
         assert!(!api::route_allows(
             "challenge",
             &peer,

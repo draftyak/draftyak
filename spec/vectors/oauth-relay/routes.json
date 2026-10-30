@@ -1,0 +1,915 @@
+{
+  "format": "draftyak.vectors.oauth-relay.v1",
+  "description": "The three Gmail code relay routes and their admission cases. A case's peer is the device API's peer form; valid says whether the route admits it.",
+  "routes": [
+    {
+      "id": "client",
+      "method": "POST",
+      "path": "/device/v1/accounts/gmail/flow/client",
+      "role": "device",
+      "confirmation": "confirmed",
+      "capability": "admin",
+      "request": "GmailFlowClientRequest",
+      "requestBytes": 32768,
+      "responseBytes": 8192,
+      "response": "GmailFlowView"
+    },
+    {
+      "id": "authorize",
+      "method": "POST",
+      "path": "/device/v1/accounts/gmail/flow/authorize",
+      "role": "device",
+      "confirmation": "confirmed",
+      "capability": "admin",
+      "request": "GmailFlowAuthorizeRequest",
+      "requestBytes": 512,
+      "responseBytes": 8192,
+      "response": "GmailFlowAuthorization"
+    },
+    {
+      "id": "relay",
+      "method": "POST",
+      "path": "/device/v1/accounts/gmail/flow/relay",
+      "role": "device",
+      "confirmation": "confirmed",
+      "capability": "admin",
+      "request": "GmailFlowRelayRequest",
+      "requestBytes": 2048,
+      "responseBytes": 8192,
+      "response": "GmailFlowView"
+    }
+  ],
+  "cases": [
+    {
+      "id": "access-client-confirmed-admin",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-client-admin-only",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-client-missing-admin",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-client-no-capabilities",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-client-pending",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": null,
+        "capabilities": [],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-client-pending-holding-admin",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": null,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-client-earlier-epoch",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-client-revoked",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": true,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-client-unknown-device",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": false,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-client-host-role",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "host:sms",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-authorize-confirmed-admin",
+      "action": "access",
+      "route": "authorize",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-authorize-admin-only",
+      "action": "access",
+      "route": "authorize",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-authorize-missing-admin",
+      "action": "access",
+      "route": "authorize",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-authorize-no-capabilities",
+      "action": "access",
+      "route": "authorize",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-authorize-pending",
+      "action": "access",
+      "route": "authorize",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": null,
+        "capabilities": [],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-authorize-pending-holding-admin",
+      "action": "access",
+      "route": "authorize",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": null,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-authorize-earlier-epoch",
+      "action": "access",
+      "route": "authorize",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-authorize-revoked",
+      "action": "access",
+      "route": "authorize",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": true,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-authorize-unknown-device",
+      "action": "access",
+      "route": "authorize",
+      "peer": {
+        "role": "device",
+        "known": false,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-authorize-host-role",
+      "action": "access",
+      "route": "authorize",
+      "peer": {
+        "role": "host:sms",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-relay-confirmed-admin",
+      "action": "access",
+      "route": "relay",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-relay-admin-only",
+      "action": "access",
+      "route": "relay",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-relay-missing-admin",
+      "action": "access",
+      "route": "relay",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-relay-no-capabilities",
+      "action": "access",
+      "route": "relay",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-relay-pending",
+      "action": "access",
+      "route": "relay",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": null,
+        "capabilities": [],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-relay-pending-holding-admin",
+      "action": "access",
+      "route": "relay",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": null,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-relay-earlier-epoch",
+      "action": "access",
+      "route": "relay",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-relay-revoked",
+      "action": "access",
+      "route": "relay",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": true,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-relay-unknown-device",
+      "action": "access",
+      "route": "relay",
+      "peer": {
+        "role": "device",
+        "known": false,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-relay-host-role",
+      "action": "access",
+      "route": "relay",
+      "peer": {
+        "role": "host:sms",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-unknown-route",
+      "action": "access",
+      "route": "start",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-unknown-member",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false,
+        "extra": true
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-missing-member",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-repeated-capability",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "admin",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-unknown-capability",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "admin",
+          "unknown"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-tagged-capability",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "admin",
+          {
+            "read": null
+          }
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-tagged-admin",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          {
+            "admin": null
+          }
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-known-number",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": 1,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-revoked-zero",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": 0,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-null-epochs",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": null,
+        "confirmedEpoch": null,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-sidecar-claim-string",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": "false",
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-bootstrap-done-null",
+      "action": "access",
+      "route": "client",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 2,
+        "confirmedEpoch": 2,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": null
+      },
+      "valid": false
+    },
+    {
+      "id": "access-peer-null",
+      "action": "access",
+      "route": "client",
+      "peer": null,
+      "valid": false
+    }
+  ]
+}

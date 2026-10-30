@@ -480,7 +480,7 @@ describe("transactions", () => {
 			refusedNow("database", () =>
 				alpha.transaction((tables) => {
 					tables.insert("ext_alpha_rows", { id: "b" });
-					return result;
+					return result as never;
 				}),
 			);
 		expect(hooks).toEqual([]);

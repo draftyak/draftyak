@@ -277,20 +277,36 @@ export function claimBytes(
 	secret: Uint8Array,
 	name = "DYTEST desktop",
 ): Uint8Array {
+	const exchange = claimExchange(client, secret, name);
+	exchange.reveal.fill(0);
+	return exchange.claim;
+}
+export function claimExchange(
+	client: TestDevice,
+	secret: Uint8Array,
+	name = "DYTEST desktop",
+): { claim: Uint8Array; reveal: Uint8Array } {
 	const window = { ...sidecarWindowSecrets(secret), role: "device" as const };
 	const ekm = pairingEkm(client.socket, window.pid);
+	const nd = randomBytes(16);
 	try {
-		return Buffer.from(
+		const claim = Buffer.from(
 			JSON.stringify(
 				makePairingClaim(
 					window,
 					{ name, transportSpkiSha256: client.transportSpkiSha256, signingKey: client.signingKey },
 					ekm,
+					nd,
 				),
 			),
 		);
+		return {
+			claim,
+			reveal: Buffer.from(JSON.stringify({ pid: window.pid, nd: nd.toString("base64url") })),
+		};
 	} finally {
 		ekm.fill(0);
+		nd.fill(0);
 	}
 }
 export function sidecar(
@@ -302,13 +318,15 @@ export function sidecar(
 export function admit(f: NativeFixture, client: TestDevice): string {
 	const secret = randomBytes(16),
 		authority = sidecar(f, secret);
+	const exchange = claimExchange(client, secret);
 	try {
-		const recorded = f.store.write((tx) =>
-			authority.claim(tx, client.peer, claimBytes(client, secret)),
-		);
+		f.store.write((tx) => authority.claim(tx, client.peer, exchange.claim));
+		const recorded = f.store.write((tx) => authority.reveal(tx, client.peer, exchange.reveal));
 		client.id = recorded.deviceId;
 		return recorded.deviceId;
 	} finally {
+		exchange.claim.fill(0);
+		exchange.reveal.fill(0);
 		secret.fill(0);
 	}
 }

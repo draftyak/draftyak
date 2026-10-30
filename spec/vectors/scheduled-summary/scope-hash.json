@@ -1,0 +1,1760 @@
+{
+  "format": "draftyak.vectors.scheduled-summary.v1",
+  "description": "scopeHash() is the SHA-256 of the JCS of the scope. Each change edits one bound member of the base scope and has its own hash; each refusal is a scope scopeHash() refuses. Only the hub computes these, so only TypeScript reads this file.",
+  "scope": {
+    "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+    "epoch": 1,
+    "scheduling": {
+      "mode": "sidecar",
+      "scheduler": "running",
+      "syncPaused": false
+    },
+    "pendingApprovalCount": 21,
+    "pendingApprovalIds": [
+      "01JAZ3W3B6Q8M2V0G5T9S00000",
+      "01JAZ3W3B6Q8M2V0G5T9S00001",
+      "01JAZ3W3B6Q8M2V0G5T9S00002",
+      "01JAZ3W3B6Q8M2V0G5T9S00003",
+      "01JAZ3W3B6Q8M2V0G5T9S00004",
+      "01JAZ3W3B6Q8M2V0G5T9S00005",
+      "01JAZ3W3B6Q8M2V0G5T9S00006",
+      "01JAZ3W3B6Q8M2V0G5T9S00007",
+      "01JAZ3W3B6Q8M2V0G5T9S00008",
+      "01JAZ3W3B6Q8M2V0G5T9S00009",
+      "01JAZ3W3B6Q8M2V0G5T9S00010",
+      "01JAZ3W3B6Q8M2V0G5T9S00011",
+      "01JAZ3W3B6Q8M2V0G5T9S00012",
+      "01JAZ3W3B6Q8M2V0G5T9S00013",
+      "01JAZ3W3B6Q8M2V0G5T9S00014",
+      "01JAZ3W3B6Q8M2V0G5T9S00015",
+      "01JAZ3W3B6Q8M2V0G5T9S00016",
+      "01JAZ3W3B6Q8M2V0G5T9S00017",
+      "01JAZ3W3B6Q8M2V0G5T9S00018",
+      "01JAZ3W3B6Q8M2V0G5T9S00019"
+    ],
+    "scheduledCount": 6,
+    "items": [
+      {
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+        "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+        "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+        "state": "SCHEDULED"
+      },
+      {
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+        "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+        "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+        "state": "SCHEDULED"
+      },
+      {
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+        "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+        "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+        "state": "SCHEDULED"
+      },
+      {
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+        "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+        "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+        "state": "SCHEDULED"
+      },
+      {
+        "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+        "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+        "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+        "state": "SCHEDULED"
+      }
+    ]
+  },
+  "scopeHash": "a30ee06845592654b0a6d9e19bb8c5a6cc89f6f02f8a7af461503e0184d22fdd",
+  "changes": [
+    {
+      "id": "hub",
+      "member": "hub",
+      "scope": {
+        "hub": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "7d9a6cea2cb32a0bc3ff6b94d737e36c3050fe35dd0c4da00549a75bc10fc3ba"
+    },
+    {
+      "id": "owner",
+      "member": "owner",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RH",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "40a9a691993ce1cbaa3b65a3989e1ce65b3dacbc0393581898080158b21dc631"
+    },
+    {
+      "id": "epoch-zero",
+      "member": "epoch",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 0,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "63127984f5861d34754e2d622dddb08db5d8c65d3ce2dcb2d6333b5e17387aaf"
+    },
+    {
+      "id": "mode",
+      "member": "scheduling.mode",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "service",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "4490f9dc07a3301076c86b1bb32b0c64bb11b2f05686f744aef9b6ccc10938e0"
+    },
+    {
+      "id": "scheduler",
+      "member": "scheduling.scheduler",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "unavailable",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "78b75548f4618eec5f16ef467977aa026f0a7712733c91166bd40415d062bbb5"
+    },
+    {
+      "id": "sync-paused",
+      "member": "scheduling.syncPaused",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": true
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "683f845e850b2fe5fe5a586aa19819c936d776cca3d84620f9f0d2b9f14758b3"
+    },
+    {
+      "id": "pending-count",
+      "member": "pendingApprovalCount",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 22,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "17f354133ac7a4ae77a496f57db7ead4e4a89f4a377c53f4840e5c66b45cf28c"
+    },
+    {
+      "id": "pending-id",
+      "member": "pendingApprovalIds",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00021"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "b6b4a454ae3c5ce5706f9dd10416d9d4ea36bcee4bc1f75c2fa89b1300479d7f"
+    },
+    {
+      "id": "scheduled-count",
+      "member": "scheduledCount",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 7,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "8b884e0b5227cd92e5fc0c553db7098605bdb0402f8c2a42b42d2e923908d0bc"
+    },
+    {
+      "id": "item-outbox",
+      "member": "items.outboxId",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00046",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "df7d5d009ba5726b4b173a2853873842375af739a9d3f9e3c73d777d79d6b1d4"
+    },
+    {
+      "id": "item-content",
+      "member": "items.contentHash",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "e53d7999931e756bee40b926f07b44191759ecf6e3a9d4c9aa543e0a2ad1833b",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "5172840cff4def40a03db4f70808373fea8663082b9331c8d02a268bd8de109c"
+    },
+    {
+      "id": "item-flags",
+      "member": "items.flagsHash",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "6cc79ee76ead91162428151b851f589527deeca72e98889e1d66f48c7a19d3be",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "cf5bb75606be92f9d26c6a220770df6e961c61cbf52b70f08df098a1d4dccc65"
+    },
+    {
+      "id": "item-state",
+      "member": "items.state",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SENDING"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "ab82604a73f9f42ac68a1704441cb21eda738d29844e4ece643bdc60e623a5a4"
+    },
+    {
+      "id": "item-order",
+      "member": "items",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          }
+        ]
+      },
+      "scopeHash": "eb8da1368a8bdff84b2a1731be28762a25eac6d4a538410255a907cf07f31fc1"
+    }
+  ],
+  "refusals": [
+    {
+      "id": "item-display-field",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED",
+            "destination": "Recipient@example.test"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "unknown-member",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ],
+        "alias": "work"
+      }
+    },
+    {
+      "id": "epoch-negative",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": -1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hub-upper",
+      "scope": {
+        "hub": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pending-length",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 2,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pending-descending",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00019",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00000"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "items-length",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 4,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "item-duplicate",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "item-state-unknown",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "QUEUED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "scheduling-without-sync-paused",
+      "scope": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "owner": "01JAZ3W3B6Q8M2V0G5T9K4X7RF",
+        "epoch": 1,
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running"
+        },
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "contentHash": "913bea5c2f5b94d7eede7a4ddec9110d312682917cbc114eb4f729a26428d02c",
+            "flagsHash": "648fc395a2215207d954aa46adab3d248c19b6e7d4a0ac461ad62bb90d8fcbf1",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "contentHash": "1ef0ae7bbe4ce6c99ab744fe8c27582178d69c660538ef6a4b201cf5a944e17a",
+            "flagsHash": "94296deeaec62e3fcc7224582fed45cffbb3b311e1f0c98e6f8b290fa9bda11c",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "contentHash": "3460ebae1c45bfd069074b365281354cfdf41b82ffb05c7eedd6775446fcd3a4",
+            "flagsHash": "aae52d45edea53b14bde4e60ba253b520d28c85ef7d5be16ee9143bfb5b208ad",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "contentHash": "971212bd7810de3b6630bf22a40a0e85d0360ee99f74e58e6b1ed8668b157501",
+            "flagsHash": "54e2e5980234526c75f35436c343fb7556c774db5f8cb47a236908f16905d567",
+            "state": "SCHEDULED"
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "contentHash": "e0dcca0b30e52954e73320830b86f921d458d03e8f5d137fb4b5a1bfc4d3b2ab",
+            "flagsHash": "e69bcf21e574b23f3ca9c5c538e15d72c1965075646e2ab233e01bdc6dd5b53b",
+            "state": "SCHEDULED"
+          }
+        ]
+      }
+    }
+  ]
+}

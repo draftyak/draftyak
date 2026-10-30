@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { TLSSocket } from "node:tls";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { NativeDevicePeer } from "../../src/authz/native-peer.ts";
 import type { VerifiedCandidate } from "../../src/identity/devices-pairing.ts";
 import { requireLoopbackNetworkGuard } from "../helpers/loopback-network.ts";
@@ -20,6 +20,7 @@ const { makePairingClaim, pairingEkm, sidecarWindowSecrets } = await import(
 const {
 	bootstrap,
 	claimBytes,
+	claimExchange,
 	closeFixture,
 	device,
 	fixture: createFixture,
@@ -117,11 +118,13 @@ function snapshot(f: NativeFixture) {
 }
 
 function record(f: NativeFixture, client: TestDevice, current: ReturnType<typeof window>) {
-	const bytes = claimBytes(client, current.secret);
+	const exchange = claimExchange(client, current.secret);
 	try {
-		return f.store.write((tx) => current.pairer.claim(tx, client.peer, bytes));
+		f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim));
+		return f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal));
 	} finally {
-		bytes.fill(0);
+		exchange.claim.fill(0);
+		exchange.reveal.fill(0);
 	}
 }
 
@@ -286,6 +289,7 @@ it("binds a valid sidecar claim to the actual exporter and client SPKI", async (
 						signingKey: first.signingKey,
 					},
 					a,
+					randomBytes(16),
 				),
 			),
 		);
@@ -294,7 +298,8 @@ it("binds a valid sidecar claim to the actual exporter and client SPKI", async (
 		b.fill(0);
 		actual.fill(0);
 	}
-	const bytes = claimBytes(first, current.secret);
+	const exchange = claimExchange(first, current.secret);
+	const bytes = exchange.claim;
 	const before = snapshot(f);
 	try {
 		refusal(
@@ -307,7 +312,11 @@ it("binds a valid sidecar claim to the actual exporter and client SPKI", async (
 			"CANDIDATE_INVALID",
 		);
 		expect(snapshot(f)).toEqual(before);
-		const candidate = f.store.write((tx) => current.pairer.claim(tx, first.peer, bytes));
+		const answer = f.store.write((tx) => current.pairer.claim(tx, first.peer, bytes));
+		expect(answer.nh).toMatch(/^[A-Za-z0-9_-]{22}$/);
+		expect(snapshot(f)).toEqual(before);
+		const candidate = f.store.write((tx) => current.pairer.reveal(tx, first.peer, exchange.reveal));
+		expect(candidate).toEqual({ deviceId: answer.deviceId, epoch: answer.epoch });
 		expect(snapshot(f).devices).toBe(1);
 		expect(snapshot(f).bootstrapDone).toBe(false);
 		expect(snapshot(f).ownerAssigned).toBe(false);
@@ -317,6 +326,7 @@ it("binds a valid sidecar claim to the actual exporter and client SPKI", async (
 		});
 	} finally {
 		bytes.fill(0);
+		exchange.reveal.fill(0);
 		wrongSpki.fill(0);
 	}
 });
@@ -348,6 +358,206 @@ it("retires the old sidecar window before accepting a new window claim", async (
 	}
 });
 
+it("keeps a held claim after malformed, wrong-window and other-connection reveals", async () => {
+	const f = await fixture();
+	const client = await device(f);
+	const otherConnection = await device(f, client);
+	const current = window(f);
+	const exchange = claimExchange(client, current.secret);
+	try {
+		const before = snapshot(f);
+		const answer = f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim));
+		expect(snapshot(f)).toEqual(before);
+		refusal(
+			() => f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim)),
+			"CANDIDATE_INVALID",
+		);
+		for (const malformed of [Buffer.from("{"), Buffer.alloc(1025), Buffer.from([0xc3])]) {
+			refusal(
+				() => f.store.write((tx) => current.pairer.reveal(tx, client.peer, malformed)),
+				"CANDIDATE_INVALID",
+			);
+			expect(snapshot(f)).toEqual(before);
+		}
+		const reveal = JSON.parse(Buffer.from(exchange.reveal).toString()) as {
+			pid: string;
+			nd: string;
+		};
+		const wrongPid = Buffer.from(reveal.pid, "base64url");
+		wrongPid[0] = (wrongPid[0] ?? 0) ^ 1;
+		refusal(
+			() =>
+				f.store.write((tx) =>
+					current.pairer.reveal(
+						tx,
+						client.peer,
+						Buffer.from(JSON.stringify({ ...reveal, pid: wrongPid.toString("base64url") })),
+					),
+				),
+			"CANDIDATE_INVALID",
+		);
+		refusal(
+			() => f.store.write((tx) => current.pairer.reveal(tx, otherConnection.peer, exchange.reveal)),
+			"CANDIDATE_INVALID",
+		);
+		expect(snapshot(f)).toEqual(before);
+		const recorded = f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal));
+		expect(recorded).toEqual({ deviceId: answer.deviceId, epoch: answer.epoch });
+		expect(snapshot(f).devices).toBe(1);
+		const after = snapshot(f);
+		refusal(
+			() => f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal)),
+			"CANDIDATE_INVALID",
+		);
+		expect(snapshot(f)).toEqual(after);
+	} finally {
+		exchange.claim.fill(0);
+		exchange.reveal.fill(0);
+	}
+});
+
+it("consumes a held claim on its first commitment comparison, including a mismatch", async () => {
+	const f = await fixture();
+	const client = await device(f);
+	const current = window(f);
+	const exchange = claimExchange(client, current.secret);
+	try {
+		const before = snapshot(f);
+		f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim));
+		const reveal = JSON.parse(Buffer.from(exchange.reveal).toString()) as {
+			pid: string;
+			nd: string;
+		};
+		const wrongNonce = Buffer.from(reveal.nd, "base64url");
+		wrongNonce[0] = (wrongNonce[0] ?? 0) ^ 1;
+		const wrongReveal = Buffer.from(
+			JSON.stringify({ ...reveal, nd: wrongNonce.toString("base64url") }),
+		);
+		refusal(
+			() => f.store.write((tx) => current.pairer.reveal(tx, client.peer, wrongReveal)),
+			"CANDIDATE_INVALID",
+		);
+		refusal(
+			() => f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal)),
+			"CANDIDATE_INVALID",
+		);
+		refusal(
+			() => f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim)),
+			"CANDIDATE_INVALID",
+		);
+		window(f);
+		const replacement = sidecar(f, current.secret);
+		refusal(
+			() => f.store.write((tx) => replacement.claim(tx, client.peer, exchange.claim)),
+			"CANDIDATE_INVALID",
+		);
+		expect(snapshot(f)).toEqual(before);
+		wrongNonce.fill(0);
+		wrongReveal.fill(0);
+	} finally {
+		exchange.claim.fill(0);
+		exchange.reveal.fill(0);
+	}
+});
+
+it("does not reopen or transfer a held claim when the same bootstrap secret is reused", async () => {
+	const f = await fixture();
+	const client = await device(f);
+	const current = window(f);
+	const exchange = claimExchange(client, current.secret);
+	try {
+		const before = snapshot(f);
+		f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim));
+		const replacement = sidecar(f, current.secret);
+		for (const authority of [current.pairer, replacement]) {
+			refusal(
+				() => f.store.write((tx) => authority.claim(tx, client.peer, exchange.claim)),
+				"CANDIDATE_INVALID",
+			);
+			refusal(
+				() => f.store.write((tx) => authority.reveal(tx, client.peer, exchange.reveal)),
+				"CANDIDATE_INVALID",
+			);
+		}
+		expect(snapshot(f)).toEqual(before);
+	} finally {
+		exchange.claim.fill(0);
+		exchange.reveal.fill(0);
+	}
+});
+
+it("refuses a claim at the original window deadline without reopening that bootstrap secret", async () => {
+	const f = await fixture();
+	const client = await device(f);
+	const started = performance.now();
+	const clock = vi.spyOn(performance, "now").mockReturnValue(started);
+	const current = window(f);
+	const exchange = claimExchange(client, current.secret);
+	try {
+		const before = snapshot(f);
+		clock.mockReturnValue(started + 300_000);
+		refusal(
+			() => f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim)),
+			"CANDIDATE_INVALID",
+		);
+		clock.mockRestore();
+		const replacement = sidecar(f, current.secret);
+		refusal(
+			() => f.store.write((tx) => replacement.claim(tx, client.peer, exchange.claim)),
+			"CANDIDATE_INVALID",
+		);
+		expect(snapshot(f)).toEqual(before);
+	} finally {
+		clock.mockRestore();
+		exchange.claim.fill(0);
+		exchange.reveal.fill(0);
+	}
+});
+
+it.each(["closed", "replaced", "epoch", "expired", "disconnected"])(
+	"discards a held claim when its authority is %s",
+	async (reason) => {
+		const f = await fixture();
+		const client = await device(f);
+		const started = performance.now();
+		let clock: { mockRestore(): void; mockReturnValue(value: number): unknown } | undefined =
+			reason === "expired" ? vi.spyOn(performance, "now").mockReturnValue(started) : undefined;
+		const current = window(f);
+		const exchange = claimExchange(client, current.secret);
+		try {
+			f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim));
+			if (reason === "closed") current.pairer.close();
+			if (reason === "replaced") window(f);
+			if (reason === "epoch") f.store.write((tx) => advanceEpochForRestore(f.registry, tx));
+			if (reason === "expired") clock?.mockReturnValue(started + 300_000);
+			if (reason === "disconnected") {
+				const native = server(client);
+				client.socket.destroy();
+				await bounded(Promise.all([closed(client.socket), closed(native)]));
+			}
+			const before = snapshot(f);
+			expect(() =>
+				f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal)),
+			).toThrow(AuthzError);
+			const replacement = sidecar(f, current.secret);
+			refusal(
+				() => f.store.write((tx) => replacement.claim(tx, client.peer, exchange.claim)),
+				"CANDIDATE_INVALID",
+			);
+			clock?.mockRestore();
+			clock = undefined;
+			expect(() =>
+				f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal)),
+			).toThrow(AuthzError);
+			expect(snapshot(f)).toEqual(before);
+		} finally {
+			clock?.mockRestore();
+			exchange.claim.fill(0);
+			exchange.reveal.fill(0);
+		}
+	},
+);
+
 it("refuses an unused old-window wire claim after an actual epoch advance", async () => {
 	const f = await fixture();
 	const client = await device(f);
@@ -360,6 +570,12 @@ it("refuses an unused old-window wire claim after an actual epoch advance", asyn
 	try {
 		refusal(
 			() => f.store.write((tx) => old.pairer.claim(tx, client.peer, bytes)),
+			"CANDIDATE_INVALID",
+		);
+		expect(snapshot(f)).toEqual(before);
+		const sameWindow = sidecar(f, old.secret);
+		refusal(
+			() => f.store.write((tx) => sameWindow.claim(tx, client.peer, bytes)),
 			"CANDIDATE_INVALID",
 		);
 		expect(snapshot(f)).toEqual(before);

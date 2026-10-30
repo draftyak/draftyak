@@ -24,6 +24,7 @@ const [
 		auditActions,
 		bootstrap,
 		claimBytes,
+		claimExchange,
 		closeFixture,
 		device,
 		fixture,
@@ -161,6 +162,10 @@ it("binds proofs to the actual native TLS exporter and certificate, closes after
 	f.store.write((tx) => {
 		expect(() => authority.claim(tx, first.peer, wrongConnection)).toThrow("CANDIDATE_INVALID");
 	});
+	const replacement = sidecar(f, secret);
+	f.store.write((tx) => {
+		expect(() => replacement.claim(tx, first.peer, wrongConnection)).toThrow("CANDIDATE_INVALID");
+	});
 	expect(auditActions(f)).toEqual([]);
 	secret.fill(0);
 });
@@ -176,16 +181,21 @@ it("requires actual store/master-key root binding, replaces old windows and cons
 	}
 	const first = sidecar(f, secret),
 		replacement = sidecar(f, secret),
-		bytes = claimBytes(client, secret);
+		exchange = claimExchange(client, secret),
+		bytes = exchange.claim;
 	f.store.write((tx) => {
 		expect(() => first.claim(tx, client.peer, bytes)).toThrow("CANDIDATE_INVALID");
 	});
-	const id = f.store.write((tx) => replacement.claim(tx, client.peer, bytes)).deviceId;
+	const answer = f.store.write((tx) => replacement.claim(tx, client.peer, bytes));
+	expect(f.store.read((db) => f.registry.facts(db, answer.deviceId))).toBeUndefined();
+	const id = f.store.write((tx) => replacement.reveal(tx, client.peer, exchange.reveal)).deviceId;
 	f.store.write((tx) => {
 		expect(() => replacement.claim(tx, client.peer, bytes)).toThrow("CANDIDATE_INVALID");
 	});
 	expect(f.store.read((db) => f.registry.facts(db, id)?.storedCapabilities)).toEqual([]);
 	expect(() => replacement.claimPairing()).toThrow("KIND_UNAVAILABLE");
+	bytes.fill(0);
+	exchange.reveal.fill(0);
 	secret.fill(0);
 });
 

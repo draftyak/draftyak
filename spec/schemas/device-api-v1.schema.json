@@ -259,6 +259,15 @@
       "additionalProperties": false
     },
     {
+      "$ref": "#/$defs/draftyak.device-api.AdminAccountSubject"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.AdminDeviceCapabilitiesSubject"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.AdminDataBackupSubject"
+    },
+    {
       "$ref": "#/$defs/draftyak.device-api.ChallengeRequest"
     },
     {
@@ -417,8 +426,7 @@
         "pairingCode": {
           "type": "string",
           "maxLength": 1000,
-          "format": "starts_with",
-          "pattern": "^draftyak-pair:v1:.*"
+          "pattern": "^draftyak-pair:v1:"
         }
       },
       "required": [
@@ -437,8 +445,6 @@
                 "plugin.install",
                 "plugin.upgrade",
                 "account.connect",
-                "account.disconnect",
-                "account.mode-full",
                 "policy.routing-loosen",
                 "policy.auto-draft-enable",
                 "tool.instance-create",
@@ -451,7 +457,6 @@
                 "access.exposure-enable",
                 "access.bind-address-add",
                 "access.advertised-addresses-set",
-                "security.device-capabilities",
                 "security.pin-change",
                 "security.key-rotate",
                 "data.export"
@@ -468,6 +473,64 @@
                 "description": "A ULID: 26 upper-case Crockford base32 characters."
               },
               "uniqueItems": true
+            }
+          },
+          "required": [
+            "kind",
+            "ids"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "account.disconnect",
+                "account.mode-full",
+                "security.device-capabilities"
+              ]
+            },
+            "ids": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                }
+              ],
+              "items": false,
+              "minItems": 1,
+              "maxItems": 1
+            }
+          },
+          "required": [
+            "kind",
+            "ids"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "data.backup"
+            },
+            "ids": {
+              "maxItems": 0,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 26,
+                "maxLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "description": "A ULID: 26 upper-case Crockford base32 characters."
+              }
             }
           },
           "required": [
@@ -1621,6 +1684,13 @@
         },
         "capabilities": {
           "$ref": "#/$defs/draftyak.entities.DeviceCapabilities"
+        },
+        "sas": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^[0-9]{6}$(?![\\s\\S])",
+          "description": "A pairing SAS: six ASCII digits, leading zeros kept."
         }
       },
       "required": [
@@ -1630,7 +1700,8 @@
         "transportSpkiSha256",
         "signingKey",
         "preset",
-        "capabilities"
+        "capabilities",
+        "sas"
       ],
       "additionalProperties": false
     },
@@ -1978,8 +2049,352 @@
             "remainingMs"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "kind": {
+              "type": "string",
+              "const": "account.disconnect"
+            },
+            "digest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "subject": {
+              "$ref": "#/$defs/draftyak.device-api.AdminAccountSubject"
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "remainingMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 120000
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "digest",
+            "subject",
+            "expiresAt",
+            "remainingMs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "kind": {
+              "type": "string",
+              "const": "account.mode-full"
+            },
+            "digest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "subject": {
+              "$ref": "#/$defs/draftyak.device-api.AdminAccountSubject"
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "remainingMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 120000
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "digest",
+            "subject",
+            "expiresAt",
+            "remainingMs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "kind": {
+              "type": "string",
+              "const": "security.device-capabilities"
+            },
+            "digest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "subject": {
+              "$ref": "#/$defs/draftyak.device-api.AdminDeviceCapabilitiesSubject"
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "remainingMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 120000
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "digest",
+            "subject",
+            "expiresAt",
+            "remainingMs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "kind": {
+              "type": "string",
+              "const": "data.backup"
+            },
+            "digest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "subject": {
+              "$ref": "#/$defs/draftyak.device-api.AdminDataBackupSubject"
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "remainingMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 120000
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "digest",
+            "subject",
+            "expiresAt",
+            "remainingMs"
+          ],
+          "additionalProperties": false
         }
       ]
+    },
+    "draftyak.device-api.AdminAccountSubject": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "channel": {
+              "type": "string",
+              "const": "email"
+            },
+            "account": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "alias": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
+              "description": "An owner-chosen account alias.",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "address": {
+              "$ref": "#/$defs/draftyak.entities.EmailAddress"
+            }
+          },
+          "required": [
+            "channel",
+            "account",
+            "alias",
+            "createdAt",
+            "address"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "channel": {
+              "type": "string",
+              "const": "chat"
+            },
+            "account": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "alias": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
+              "description": "An owner-chosen account alias.",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "teamId": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "selfUserId": {
+              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+            }
+          },
+          "required": [
+            "channel",
+            "account",
+            "alias",
+            "createdAt",
+            "teamId",
+            "selfUserId"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "The account an account.disconnect or account.mode-full operation acts on: the owner's alias for it, the identity only its provider sets (the mailbox address, or the workspace and user ids) and when it was connected."
+    },
+    "draftyak.device-api.AdminDeviceCapabilitiesSubject": {
+      "type": "object",
+      "properties": {
+        "device": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "name": {
+          "$ref": "#/$defs/draftyak.pairing.DisplayName"
+        },
+        "transportSpkiSha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+          "description": "A SHA-256 digest as 64 lower-case hex characters."
+        },
+        "signingKey": {
+          "$ref": "#/$defs/draftyak.entities.PublicKeySpki"
+        },
+        "pairedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+        },
+        "current": {
+          "$ref": "#/$defs/draftyak.entities.DeviceCapabilities"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/draftyak.entities.DeviceCapabilities"
+        }
+      },
+      "required": [
+        "device",
+        "name",
+        "transportSpkiSha256",
+        "signingKey",
+        "pairedAt",
+        "current",
+        "capabilities"
+      ],
+      "additionalProperties": false,
+      "description": "The device a security.device-capabilities operation widens: its id, name, transport pin, approval key and pairing time, the capabilities it holds and the set it will hold. Both sets are in canonical order; the new set strictly contains the held one, never adds approve, and adds admin only to a device that holds approve. JSON Schema can't state these rules."
+    },
+    "draftyak.device-api.AdminDataBackupSubject": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "const": "backup"
+        }
+      },
+      "required": [
+        "scope"
+      ],
+      "additionalProperties": false,
+      "description": "A data.backup operation: Back up now's encrypted hub backup. Its save location is chosen natively and isn't part of the record."
     },
     "draftyak.device-api.ChallengeRequest": {
       "oneOf": [
@@ -2039,6 +2454,27 @@
             "kind": {
               "type": "string",
               "const": "agent-session.v1"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "admin.v1"
             },
             "id": {
               "type": "string",
@@ -2140,6 +2576,33 @@
             "kind": {
               "type": "string",
               "const": "agent-session.v1"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "statement": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 21846
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "statement"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "admin.v1"
             },
             "id": {
               "type": "string",

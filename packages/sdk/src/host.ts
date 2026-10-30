@@ -48,7 +48,17 @@ export function memoryHost(handler: HostHandler): MemoryHost {
 	}>();
 	return {
 		async request(method, params, options = {}) {
-			if (closed || options.signal?.aborted) throw new HostError("DENIED");
+			if (closed) throw new HostError("DENIED");
+			let signal: AbortSignal | undefined;
+			try {
+				const requestedSignal = options.signal;
+				if (requestedSignal !== undefined && !(requestedSignal instanceof AbortSignal))
+					throw new HostError("BAD_REQUEST");
+				signal = requestedSignal === undefined ? undefined : AbortSignal.any([requestedSignal]);
+			} catch {
+				throw new HostError("BAD_REQUEST");
+			}
+			if (signal?.aborted) throw new HostError("DENIED");
 			if (active.size >= HOST_MAX_ACTIVE_REQUESTS) throw new HostError("TOO_LARGE");
 			let parsed: unknown;
 			try {
@@ -64,7 +74,7 @@ export function memoryHost(handler: HostHandler): MemoryHost {
 				throw new HostError("BAD_REQUEST");
 			}
 			const abort = (): void => controller.abort(new HostError("DENIED"));
-			options.signal?.addEventListener("abort", abort, { once: true });
+			signal?.addEventListener("abort", abort, { once: true });
 			const timer = setTimeout(() => controller.abort(new HostError("TIMEOUT")), timeoutMs);
 			try {
 				const value = await Promise.race([
@@ -86,7 +96,7 @@ export function memoryHost(handler: HostHandler): MemoryHost {
 				}
 			} finally {
 				clearTimeout(timer);
-				options.signal?.removeEventListener("abort", abort);
+				signal?.removeEventListener("abort", abort);
 				active.delete(controller);
 			}
 		},

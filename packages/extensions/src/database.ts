@@ -16,9 +16,39 @@ export interface ModuleTables<Id extends string> {
 	delete(table: ModuleTable<Id>, equals: ModuleRow): number;
 }
 
+/** A type literal, not an interface, so it fits Record<string, unknown> and similar results. */
+type Thenable = { then(...args: never[]): unknown };
+/** No defined then, callable or data: the native adapter refuses any result with its own then. */
+type NotThenable = { readonly then?: never };
+declare const unresolved: unique symbol;
+/**
+ * Only never and any fit. Unknown maps here, not to never: a Result still being inferred is
+ * unknown, and a never callback return type makes const tuples lose readonly in generic calls.
+ */
+type Unresolved = { readonly [unresolved]: never };
+
+/**
+ * Never for any, thenables and results a Promise or thenable fits, except Unresolved for unknown;
+ * other results, primitives included, refuse a defined then.
+ */
+type SynchronousResult<Result> = Result extends Thenable
+	? never
+	: unknown extends Result
+		? 0 extends 1 & Result
+			? never
+			: Unresolved
+		: Promise<never> extends Result
+			? never
+			: Thenable extends Result
+				? never
+				: Result extends void
+					? // biome-ignore lint/suspicious/noConfusingVoidType: a bare void return would accept a Promise.
+						undefined | void
+					: Result extends null
+						? Result
+						: Result & NotThenable;
+
 /** Own SQLite3MC file only; no SQL, schema access, native connection or transaction control. */
 export interface ModuleDatabase<Id extends string = string> extends ModuleTables<Id> {
-	transaction<Result>(
-		work: (tables: ModuleTables<Id>) => Result extends PromiseLike<unknown> ? never : Result,
-	): Result;
+	transaction<Result>(work: (tables: ModuleTables<Id>) => SynchronousResult<Result>): Result;
 }

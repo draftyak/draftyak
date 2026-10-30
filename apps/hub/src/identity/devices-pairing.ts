@@ -1,8 +1,13 @@
+import { randomBytes } from "node:crypto";
 import { types } from "node:util";
 import {
+	type PairingClaim,
+	type PairingResult,
 	readPairingClaim,
+	readPairingReveal,
 	sidecarWindowSecrets,
 	verifyPairingClaim,
+	verifyPairingReveal,
 } from "@draftyak/protocol/pairing";
 import { fromBase64Url } from "@draftyak/protocol/scalars";
 import { AuthzError } from "../authz/errors.ts";
@@ -27,6 +32,11 @@ interface Candidate {
 	readonly epoch: number;
 	readonly evidence: CandidateEvidence;
 }
+interface PendingClaim {
+	readonly claim: PairingClaim;
+	readonly peer: NativeDevicePeer;
+	readonly answer: PairingResult;
+}
 const candidates = new WeakMap<VerifiedCandidate, Candidate>();
 const state = function (this: DeviceRegistry, reader: SqlReader) {
 	return DeviceRegistry.prototype.state.call(this, reader);
@@ -42,6 +52,7 @@ const currentState = function (this: DeviceRegistry) {
 	return DeviceRegistry.prototype.currentState.call(this);
 };
 const active = new WeakMap<DeviceRegistry, DevicePairingAuthority>();
+const spentWindows = new WeakMap<DeviceRegistry, Set<string>>();
 const refuse = (): never => {
 	throw new AuthzError("CANDIDATE_INVALID");
 };
@@ -89,8 +100,10 @@ export class DevicePairingAuthority {
 	readonly #window: { pid: string; sec: string; role: "device" };
 	readonly #started = performance.now();
 	readonly #epoch: number;
+	readonly #spent: Set<string>;
 	#attempts = 0;
 	#closed = false;
+	#pending: PendingClaim | undefined;
 	constructor(
 		registry: DeviceRegistry,
 		store: HubStore,
@@ -105,26 +118,38 @@ export class DevicePairingAuthority {
 		if (secret.length !== 16) throw new AuthzError("CANDIDATE_INVALID");
 		this.#registry = registry;
 		this.#epoch = currentState.call(registry).epoch;
-		active.get(registry)?.close();
-		active.set(registry, this);
 		try {
 			this.#window = { ...sidecarWindowSecrets(secret), role: "device" };
 		} finally {
 			secret.fill(0);
 		}
+		let spent = spentWindows.get(registry);
+		if (!spent) {
+			spent = new Set();
+			spentWindows.set(registry, spent);
+		}
+		this.#spent = spent;
+		const previous = active.get(registry);
+		if (previous && previous.#window.pid === this.#window.pid) {
+			this.#started = previous.#started;
+			this.#epoch = previous.#epoch;
+			this.#attempts = previous.#attempts;
+			this.#closed = previous.#closed;
+			previous.#closed = true;
+			previous.#pending = undefined;
+		} else previous?.close();
+		this.#closed ||= spent.has(this.#window.pid);
+		active.set(registry, this);
 	}
-	claim(tx: SqlTransaction, peer: NativeDevicePeer, body: Uint8Array): CandidateRecord {
+	claim(tx: SqlTransaction, peer: NativeDevicePeer, body: Uint8Array): PairingResult {
 		const current = state.call(this.#registry, tx);
 		if (current.epoch !== this.#epoch) return refuse();
 		const elapsed = performance.now() - this.#started;
-		if (
-			this.#closed ||
-			active.get(this.#registry) !== this ||
-			elapsed < 0 ||
-			elapsed > 300_000 ||
-			this.#attempts >= 3
-		)
+		if (elapsed < 0 || elapsed >= 300_000) {
+			this.close();
 			return refuse();
+		}
+		if (this.#closed || active.get(this.#registry) !== this || this.#attempts >= 3) return refuse();
 		if (current.bootstrapDone) throw new AuthzError("BOOTSTRAP_DONE");
 		let claim: ReturnType<typeof readPairingClaim>;
 		try {
@@ -140,12 +165,54 @@ export class DevicePairingAuthority {
 		try {
 			if (verifyPairingClaim(claim, this.#window, { ekm, clientSpkiSha256: spki })) {
 				this.#attempts++;
+				if (this.#attempts >= 3) this.close();
 				return refuse();
 			}
 		} finally {
 			ekm.fill(0);
 		}
 		this.#closed = true;
+		this.#spent.add(this.#window.pid);
+		const answer = Object.freeze({
+			deviceId: newId(),
+			epoch: current.epoch,
+			nh: randomBytes(16).toString("base64url"),
+		});
+		this.#pending = Object.freeze({ claim: Object.freeze(claim), peer, answer });
+		return answer;
+	}
+	reveal(tx: SqlTransaction, peer: NativeDevicePeer, body: Uint8Array): CandidateRecord {
+		const current = state.call(this.#registry, tx);
+		const elapsed = performance.now() - this.#started;
+		if (
+			active.get(this.#registry) !== this ||
+			current.epoch !== this.#epoch ||
+			current.bootstrapDone ||
+			elapsed < 0 ||
+			elapsed >= 300_000
+		) {
+			this.close();
+			return refuse();
+		}
+		const pending = this.#pending;
+		if (!pending || pending.peer !== peer) return refuse();
+		let reveal: ReturnType<typeof readPairingReveal>;
+		try {
+			reveal = readPairingReveal(copyBytes(body, 1024));
+		} catch {
+			return refuse();
+		}
+		if (reveal.pid !== pending.claim.pid) return refuse();
+		let spki: string;
+		try {
+			spki = nativePeerSpki(this.#registry, peer);
+		} catch (error) {
+			this.close();
+			throw error;
+		}
+		this.#pending = undefined;
+		if (spki !== pending.claim.transportSpkiSha256 || verifyPairingReveal(reveal, pending.claim))
+			return refuse();
 		const proof = Object.freeze(Object.create(null)) as VerifiedCandidate;
 		candidates.set(proof, {
 			registry: this.#registry,
@@ -153,12 +220,12 @@ export class DevicePairingAuthority {
 			peer,
 			epoch: current.epoch,
 			evidence: Object.freeze({
-				deviceId: newId(),
+				deviceId: pending.answer.deviceId,
 				window: "sidecar",
 				role: "device",
-				name: claim.name,
+				name: pending.claim.name,
 				transportSpkiSha256: spki,
-				signingKey: claim.signingKey,
+				signingKey: pending.claim.signingKey,
 			}),
 		});
 		return record.call(this.#registry, tx, proof);
@@ -169,5 +236,7 @@ export class DevicePairingAuthority {
 	}
 	close(): void {
 		this.#closed = true;
+		this.#pending = undefined;
+		this.#spent.add(this.#window.pid);
 	}
 }
