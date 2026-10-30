@@ -52,6 +52,8 @@ export function memoryHost(handler: HostHandler): MemoryHost {
 			let signal: AbortSignal | undefined;
 			try {
 				const requestedSignal = options.signal;
+				if (requestedSignal !== undefined && !(requestedSignal instanceof AbortSignal))
+					throw new HostError("BAD_REQUEST");
 				signal = requestedSignal === undefined ? undefined : AbortSignal.any([requestedSignal]);
 			} catch {
 				throw new HostError("BAD_REQUEST");
