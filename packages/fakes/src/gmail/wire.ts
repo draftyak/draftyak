@@ -273,6 +273,20 @@ export function project(value: unknown, fields: string | null): unknown {
 	}
 	const selection = parse(0);
 	check(at === fields.length);
+	const unions = new WeakMap<Selection, WeakMap<Selection, Selection>>();
+	function union(left: Selection, right: Selection): Selection {
+		let rights = unions.get(left);
+		if (!rights) {
+			rights = new WeakMap();
+			unions.set(left, rights);
+		}
+		let merged = rights.get(right);
+		if (!merged) {
+			merged = mergeSelections(left, right);
+			rights.set(right, merged);
+		}
+		return merged;
+	}
 	function select(data: unknown, wanted: Selection): unknown {
 		if (Array.isArray(data)) return data.map((x) => select(x, wanted));
 		if (!data || typeof data !== "object") return data;
@@ -288,7 +302,7 @@ export function project(value: unknown, fields: string | null): unknown {
 							? wildcard
 							: wildcard === undefined
 								? exact
-								: mergeSelections(exact, wildcard);
+								: union(exact, wildcard);
 				output[name] = child === null ? v : select(v, child as Selection);
 			}
 		return output;
