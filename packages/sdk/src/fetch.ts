@@ -280,8 +280,7 @@ export function hostFetch(
 						for (const chunk of early) consume(chunk);
 					},
 					cancel() {
-						finished = true;
-						dispose();
+						abort();
 					},
 				});
 			} else if (result.body && "base64" in result.body) {
