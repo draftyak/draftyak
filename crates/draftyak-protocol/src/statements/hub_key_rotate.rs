@@ -15,7 +15,7 @@ pub struct HubKeyRotateStatement {
     pub new_key: String,
     pub iat: u64,
 }
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct Wire {
     v: u8,
@@ -27,8 +27,7 @@ struct Wire {
 }
 impl<'de> Deserialize<'de> for HubKeyRotateStatement {
     fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        let w = Wire::deserialize(decoder)
-            .map_err(|_| serde::de::Error::custom("STATEMENT_INVALID"))?;
+        let w: Wire = super::decode_from(decoder, "STATEMENT_INVALID")?;
         let s = Self {
             v: w.v,
             hub: w.hub,
