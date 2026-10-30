@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { POLICY_TIMEOUT_MS } from "../../src/extensions/policy.ts";
 import { MAX_LISTENERS, MODULE_TIMEOUT_MS } from "../../src/extensions/registry.ts";
 import {
 	blockNativeClose,
@@ -577,6 +578,76 @@ describe("host lifecycle", () => {
 		symlinkSync(target, alias, "junction");
 		await refused("config", f.start({ dataDirectory: alias }));
 	});
+});
+
+describe("the deadline clock captured at start", () => {
+	const shared = globalThis as Record<symbol, unknown>;
+	const gate = Symbol.for("draftyak.test.gate");
+	let release = (): void => undefined;
+	beforeEach(() => {
+		shared[gate] = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		f.config([
+			f.module(
+				"alpha",
+				'registry.sendPolicy({ id: "gated", async evaluate() { await globalThis[Symbol.for("draftyak.test.gate")]; return { kind: "require", approvals: 2 }; } });',
+				{ provides: ["sendPolicy"] },
+			),
+		]);
+	});
+	afterEach(() => {
+		release();
+		delete shared[gate];
+	});
+
+	it("denies a result that arrives past two seconds on the default monotonic clock", async () => {
+		const reading = performance.now.bind(performance);
+		let skew = 0;
+		const now = vi.spyOn(performance, "now").mockImplementation(() => reading() + skew);
+		try {
+			const host = await f.start();
+			const decision = host.evaluateSendPolicy(input);
+			await flush();
+			skew = POLICY_TIMEOUT_MS + 1;
+			release();
+			expect(await decision).toEqual({ kind: "deny", policies: ["alpha/gated"] });
+			// With the skew now steady, the same policy is in time again.
+			expect(await host.evaluateSendPolicy(input)).toEqual({
+				kind: "require",
+				approvals: 2,
+				roles: [],
+			});
+		} finally {
+			now.mockRestore();
+		}
+	});
+
+	it.each(["after", "monotonicMs"] as const)(
+		"keeps the supplied clock's %s from start when the clock object changes later",
+		async (member) => {
+			const clock = manualClock();
+			const host = await f.start({ clock });
+			// Either replacement would deny if it were used: a timer that has already ended, or a
+			// reading that moves past the bound each time it is read.
+			const reads: string[] = [];
+			if (member === "after")
+				clock.after = async () => {
+					reads.push(member);
+				};
+			else
+				clock.monotonicMs = () => {
+					reads.push(member);
+					return reads.length * (POLICY_TIMEOUT_MS + 1);
+				};
+			const decision = host.evaluateSendPolicy(input);
+			await flush();
+			release();
+			expect(await decision).toEqual({ kind: "require", approvals: 2, roles: [] });
+			expect(reads).toEqual([]);
+			expect(clock.waits).toEqual([MODULE_TIMEOUT_MS, MODULE_TIMEOUT_MS, POLICY_TIMEOUT_MS]);
+		},
+	);
 });
 
 it("delivers only an ids-only, frozen event to listeners and isolates their failures", async () => {

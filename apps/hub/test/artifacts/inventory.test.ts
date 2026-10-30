@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import * as nativeFs from "node:fs";
 import {
 	appendFile,
+	chmod,
 	cp,
 	link,
 	lstat,
@@ -42,6 +43,7 @@ const control = vi.hoisted(() => ({
 	readError: "",
 	closeError: "",
 	held: new Map<string, unknown>(),
+	heldTimes: new Map<string, object | undefined>(),
 	afterFileClose: undefined as (() => void) | undefined,
 	afterLstat: undefined as ((name: string) => Promise<void>) | undefined,
 	afterOpendir: undefined as ((name: string) => Promise<void>) | undefined,
@@ -92,6 +94,7 @@ vi.mock("node:fs", async (original) => {
 
 vi.mock("node:fs/promises", async (original) => {
 	const actual = await original<typeof import("node:fs/promises")>();
+	const time = /^(?:a|m|c|birth)time(?:Ms|Ns)$/;
 	return {
 		...actual,
 		lstat: async (...args: Parameters<typeof actual.lstat>) => {
@@ -100,6 +103,14 @@ vi.mock("node:fs/promises", async (original) => {
 			const stat = await actual.lstat(...args);
 			const hook = control.afterLstat;
 			if (hook) await hook(name);
+			// A name with held times keeps its first times; its identity, links, mode and size stay live.
+			if (control.heldTimes.has(name)) {
+				const first = control.heldTimes.get(name) ?? stat;
+				control.heldTimes.set(name, first);
+				for (const key of Object.keys(stat))
+					if (time.test(key)) Reflect.set(stat, key, Reflect.get(first, key));
+				return stat;
+			}
 			// A held name keeps reporting its first stat, as if later changes fell in the same clock tick.
 			if (!control.held.has(name)) return stat;
 			if (control.held.get(name) === undefined) control.held.set(name, stat);
@@ -173,6 +184,7 @@ function reset(): void {
 	control.readError = "";
 	control.closeError = "";
 	control.held.clear();
+	control.heldTimes.clear();
 	control.afterFileClose = undefined;
 	control.afterLstat = undefined;
 	control.afterOpendir = undefined;
@@ -205,11 +217,11 @@ function refused(result: Promise<unknown>) {
 }
 
 /**
- * Directory times use a coarse clock: wait until a write beside the bundle, which changes none of
- * its directories, is stamped after the directory's.
+ * Times use a coarse clock: wait until a write beside the bundle, which changes none of its
+ * directories, is stamped after the target's.
  */
-async function waitForLaterStamp(bundle: InstalledBundle, directory: string): Promise<void> {
-	const before = await lstat(directory, { bigint: true });
+async function waitForLaterStamp(bundle: InstalledBundle, target: string): Promise<void> {
+	const before = await lstat(target, { bigint: true });
 	const probe = path.join(path.dirname(bundle.directory), "clock-probe");
 	for (;;) {
 		await writeFile(probe, "DYTEST-clock");
@@ -653,6 +665,52 @@ describe("exact native bundle trees", () => {
 		expect(await verifyBundle(bundle)).toBe(path.join(bundle.directory, lock.entry));
 	});
 
+	it("rechecks each listing's directory before that listing closes", async () => {
+		const original = await fixture({
+			"index.mjs": content["index.mjs"],
+			"other.bin": content["nested/payload.bin"],
+		});
+		const container = path.dirname(original.directory);
+		const outer = path.join(container, "outer");
+		await mkdir(outer);
+		const bundle = { ...original, directory: path.join(outer, "bundle") };
+		await rename(original.directory, bundle.directory);
+		const decoy = path.join(container, "decoy");
+		const parked = path.join(container, "parked");
+		await cp(outer, decoy, { recursive: true });
+		const unlisted = path.join(bundle.directory, "unlisted.mjs");
+		await writeFile(unlisted, "DYTEST-unlisted");
+		let decoyIn = false;
+		let swaps = 0;
+		const swap = async () => {
+			await rename(outer, decoyIn ? decoy : parked);
+			await rename(decoyIn ? parked : decoy, outer);
+			decoyIn = !decoyIn;
+			swaps++;
+		};
+		// The decoy parent comes in after the root's snapshot and again after the next look at the
+		// root, and the real parent returns as each root listing closes. No rename happens while a
+		// listing is open, so only a recheck made before the close sees the decoy that was listed.
+		let looks = 0;
+		control.afterLstat = async (name) => {
+			if (name === bundle.directory && [2, 3].includes(++looks) && !decoyIn) await swap();
+		};
+		control.afterClose = async (name) => {
+			if (name === bundle.directory && decoyIn) await swap();
+		};
+		await refused(verifyBundle(bundle));
+		control.afterLstat = undefined;
+		control.afterClose = undefined;
+		expect([swaps, decoyIn]).toEqual([2, false]);
+		expect((await readdir(bundle.directory)).sort()).toEqual([
+			"index.mjs",
+			"other.bin",
+			"unlisted.mjs",
+		]);
+		await unlink(unlisted);
+		expect(await verifyBundle(bundle)).toBe(path.join(bundle.directory, lock.entry));
+	});
+
 	it("detects an extra native file added after the root enumeration has closed", async () => {
 		const bundle = await fixture();
 		const extra = path.join(bundle.directory, "late.bin");
@@ -794,6 +852,105 @@ describe("exact native bundle trees", () => {
 		expect(changed).toBe(true);
 		control.afterClose = undefined;
 		await unlink(alias);
+		expect(await verifyBundle(bundle)).toBe(path.join(bundle.directory, lock.entry));
+	});
+
+	// Each change keeps the member's identity and comes after the walk has read it. The root's times
+	// are held, and the member's too unless they are the field, so only that field can show it.
+	const fields: readonly [
+		string,
+		string,
+		boolean,
+		(bundle: InstalledBundle, target: string) => Promise<() => Promise<void>>,
+	][] = [
+		[
+			"size",
+			"one byte appended",
+			true,
+			async (_, target) => {
+				await appendFile(target, Buffer.from([0]));
+				return () => writeFile(target, content["index.mjs"]);
+			},
+		],
+		[
+			"link count",
+			"a hardlink made outside the root",
+			true,
+			async (bundle, target) => {
+				const alias = path.join(path.dirname(bundle.directory), "late-link.mjs");
+				await link(target, alias);
+				return () => unlink(alias);
+			},
+		],
+		[
+			"mode",
+			"made read-only",
+			true,
+			async (_, target) => {
+				const { mode } = nativeFs.lstatSync(target);
+				await chmod(target, 0o444);
+				return () => chmod(target, mode & 0o777);
+			},
+		],
+		[
+			"times",
+			"the same size rewritten in place once the clock has moved",
+			false,
+			async (bundle, target) => {
+				await waitForLaterStamp(bundle, target);
+				const bytes = Buffer.alloc(content["index.mjs"].length, 0x61);
+				await writeFile(target, bytes, { flag: "r+" });
+				return () => writeFile(target, content["index.mjs"]);
+			},
+		],
+	];
+	for (const [field, label, holdTimes, change] of fields) {
+		it(`rechecks each verified file's ${field} after the walk: ${label}`, async () => {
+			const bundle = await fixture();
+			const target = path.join(bundle.directory, "index.mjs");
+			control.heldTimes.set(bundle.directory, undefined);
+			if (holdTimes) control.heldTimes.set(target, undefined);
+			let restore: (() => Promise<void>) | undefined;
+			control.afterClose = async (name) => {
+				if (name === bundle.directory && !restore) restore = await change(bundle, target);
+			};
+			try {
+				await refused(verifyBundle(bundle));
+				expect(restore).toBeDefined();
+			} finally {
+				control.heldTimes.clear();
+				control.afterClose = undefined;
+				await restore?.();
+			}
+			expect(await verifyBundle(bundle)).toBe(path.join(bundle.directory, lock.entry));
+		});
+	}
+
+	it("rechecks a nested directory on its second listing: replaced by one holding the same files", async () => {
+		const bundle = await fixture();
+		const container = path.dirname(bundle.directory);
+		const nested = path.join(bundle.directory, "nested");
+		const members = ["empty.bin", "payload.bin"];
+		// The same files move into the new directory, so they keep their identities and only their
+		// times and the root's change; with those held, only the nested directory's identity shows it.
+		control.heldTimes.set(bundle.directory, undefined);
+		for (const member of members) control.heldTimes.set(path.join(nested, member), undefined);
+		let changed = false;
+		control.afterClose = async (name) => {
+			if (name !== bundle.directory || changed) return;
+			const replacement = path.join(container, "replacement");
+			await mkdir(replacement);
+			for (const member of members)
+				await rename(path.join(nested, member), path.join(replacement, member));
+			await rename(nested, path.join(container, "retired"));
+			await rename(replacement, nested);
+			changed = true;
+		};
+		await refused(verifyBundle(bundle));
+		expect(changed).toBe(true);
+		control.heldTimes.clear();
+		control.afterClose = undefined;
+		// The tree still holds exactly the listed files, so the identity change alone was refused.
 		expect(await verifyBundle(bundle)).toBe(path.join(bundle.directory, lock.entry));
 	});
 
