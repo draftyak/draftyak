@@ -902,11 +902,29 @@ describe("the received bytes of a claim or a reveal", () => {
 		({ name, read, body, cap }) => {
 			// Spaces around the view, so only the size check can refuse the whole buffer.
 			const backing = new Uint8Array(cap + 14).fill(0x20);
-			backing.set(utf8(body.padEnd(cap)), 7);
+			backing.set(utf8(body.padStart(cap)), 7);
 			expect(outcome(() => read(backing.subarray(7, cap + 7)))).toBe("accepted");
 			expect(outcome(() => read(backing))).toBe(code(name));
 		},
 	);
+
+	it.each(readers)("refuse a UTF-8 BOM before a $name body", ({ name, read, body }) => {
+		const encoded = utf8(body);
+		const bytes = new Uint8Array(encoded.length + 3);
+		bytes.set([0xef, 0xbb, 0xbf]);
+		bytes.set(encoded, 3);
+		expect(outcome(() => read(bytes))).toBe(code(name));
+	});
+
+	it("refuses an invalid UTF-8 byte in a claim's name", () => {
+		const name = "DYTEST-invalid-utf8";
+		const body = canonicalize(makePairingClaim(window, { ...device, name }, ekm, nd));
+		const offset = body.indexOf(name);
+		expect(offset).toBeGreaterThanOrEqual(0);
+		const bytes = utf8(body);
+		bytes[utf8(body.slice(0, offset)).length] = 0xff;
+		expect(outcome(() => readPairingClaim(bytes))).toBe("PAIR_CLAIM_INVALID");
+	});
 });
 
 describe("the SAS's delivery", () => {
