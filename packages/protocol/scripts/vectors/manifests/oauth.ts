@@ -1,9 +1,10 @@
+import type { PluginAuth } from "../../../src/manifest/auth.ts";
 import { issuerOAuth } from "../../../src/manifest/auth-issuer.ts";
 import { validateManifest } from "../../../src/manifest.ts";
 import type { VectorFile } from "../../vectors.ts";
 import { community, type ManifestCase, manifestCases } from "./core.ts";
 
-const auth = {
+export const issuerAuth: Extract<PluginAuth, { kind: typeof issuerOAuth.shape.kind.value }> = {
 	kind: issuerOAuth.shape.kind.value,
 	scopes: ["openid", "profile", "email", "offline_access"],
 	requiredGrantedScopes: ["openid"],
@@ -17,7 +18,7 @@ const base = {
 	kind: "ai-provider",
 	contract: { extension: "io.github.draftyak/ai-provider", version: 1 },
 	egress: { profile: "responses-plan-v1" },
-	auth,
+	auth: issuerAuth,
 };
 
 const absent = Symbol("absent");
@@ -116,7 +117,7 @@ export function issuerOAuthCases(): ManifestCase[] {
 	if (tool === undefined) throw new Error("manifest vector tool-auth-oauth");
 	cases.push({
 		id: "issuer-oauth-tool",
-		manifest: patched(tool.manifest, ["auth", auth]),
+		manifest: patched(tool.manifest, ["auth", issuerAuth]),
 		code: "MANIFEST_POLICY_INVALID",
 		structural: false,
 	});
