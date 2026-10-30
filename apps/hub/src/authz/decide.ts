@@ -241,6 +241,8 @@ const unavailableKinds: ReadonlySet<string> = new Set([
 	"access.grant-widen",
 	"access.cimd-host-add",
 	"access.exposure-enable",
+	"ai.credential-connect",
+	"ai.credential-disconnect",
 ]);
 /** Postponed in the pilot; the decisions read private copies of these sets. */
 export const PILOT_UNAVAILABLE_ROUTES: ReadonlySet<string> = new Set(unavailableRoutes);
