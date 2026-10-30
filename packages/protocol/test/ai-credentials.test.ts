@@ -99,6 +99,8 @@ describe("issuer OAuth", () => {
 			"issuer-oauth-http-endpoint",
 			"issuer-oauth-http-issuer",
 			"issuer-oauth-http-resource",
+			"issuer-oauth-resource-query",
+			"issuer-oauth-resource-single-label",
 		]) {
 			expect(cases.get(id)?.code, id).toBe("MANIFEST_INVALID");
 			expect(cases.get(id)?.structural, id).toBe(true);

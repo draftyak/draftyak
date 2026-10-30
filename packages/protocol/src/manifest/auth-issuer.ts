@@ -23,10 +23,12 @@ const issuer: z.ZodString = wholeString(
 		}),
 );
 const resource: z.ZodString = wholeString(
-	SendUrl.refine((value) => !value.includes("?") && publicHost(value)).meta({
-		description:
-			"A canonical https URL on a public DNS name, with no query: the API the grant is for.",
-	}),
+	SendUrl.regex(new RegExp(`^https:[/][/]${DNS_NAME}[:/][^?]*$`))
+		.refine(publicHost)
+		.meta({
+			description:
+				"A canonical https URL on a public DNS name, with no query: the API the grant is for.",
+		}),
 );
 
 // The endpoints come from the issuer's discovery document at run time.
