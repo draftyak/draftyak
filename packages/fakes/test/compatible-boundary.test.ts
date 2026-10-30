@@ -152,6 +152,11 @@ describe("compatible wire formats", () => {
 		["a 257-character id", { models: ["x".repeat(257)] }, TypeError],
 		["a non-string id", { models: [7 as unknown as string] }, TypeError],
 		["a string of ids", { models: "dytest" as unknown as readonly string[] }, TypeError],
+		[
+			"a Set of ids",
+			{ models: new Set(["dytest-model:1"]) as unknown as readonly string[] },
+			TypeError,
+		],
 		["an invalid model", { model: "dytest model" }, TypeError],
 	] as const)("refuses a listing with %s when the fake is made", (_name, options, error) => {
 		expect(() => createCompatibleFake(options)).toThrow(error);
@@ -651,6 +656,11 @@ describe("script admission", () => {
 		[
 			"a number as content type",
 			{ kind: "raw", body: "x", contentType: 7 as unknown as string },
+			"contentType is text",
+		],
+		[
+			"null as content type",
+			{ kind: "raw", body: "x", contentType: null as unknown as string },
 			"contentType is text",
 		],
 		["an unknown kind", { kind: "sse", body: "" } as unknown as CompatibleStep, "step kind"],
@@ -1169,7 +1179,7 @@ describe("slow and cancellable responses", () => {
 		}
 	});
 
-	it.each(["header", "listing", "chunk", "cancel", "latency"] as const)(
+	it.each(["header", "listing", "listing-chunk", "chunk", "cancel", "latency"] as const)(
 		"clears the timer of a pending %s wait when it ends",
 		async (mode) => {
 			const originalDelay = timerPromises.setTimeout;
@@ -1199,7 +1209,7 @@ describe("slow and cancellable responses", () => {
 					? { kind: "json", body: {}, delayMs: Infinity }
 					: { kind: "raw", body: "abc", chunkBytes: 1, chunkDelayMs: Infinity };
 			const fake = createCompatibleFake(
-				mode === "listing"
+				mode === "listing" || mode === "listing-chunk"
 					? { clock: manualClock(START), listing: step, steps: [reply({})] }
 					: { clock: manualClock(START), steps: [step] },
 			);
@@ -1216,11 +1226,17 @@ describe("slow and cancellable responses", () => {
 					controller.abort(reason);
 					await rejected;
 				} else {
-					const reader = readerOf(await fake.fetch(CHAT, post({ signal: controller.signal })));
+					const init = { signal: controller.signal };
+					const reader = readerOf(
+						await (mode === "listing-chunk"
+							? fake.fetch(MODELS, init)
+							: fake.fetch(CHAT, post(init))),
+					);
 					expect((await reader.read()).value).toEqual(encoder.encode("a"));
 					const next = reader.read();
 					await settle(() => armed.size === 1);
 					expect(armed.size).toBe(1);
+					expect(fake.pending()).toBe(mode === "listing-chunk" ? 1 : 0);
 					if (mode === "cancel") {
 						await reader.cancel("DYTEST cancelled");
 						expect(await next).toEqual({ done: true, value: undefined });
