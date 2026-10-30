@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
 	copyFileSync,
@@ -139,7 +140,7 @@ interface Content {
 	connect(filename?: string): SqliteDatabase;
 }
 
-async function withContent<T>(test: (content: Content) => T): Promise<T> {
+async function withContent<T>(use: (content: Content) => T): Promise<T> {
 	const dir = mkdtempSync(path.join(tmpdir(), "draftyak-deleted-"));
 	const migrations = path.join(dir, "content");
 	const filename = path.join(dir, "draftyak.db");
@@ -162,7 +163,7 @@ async function withContent<T>(test: (content: Content) => T): Promise<T> {
 			connections.push(db);
 			return db;
 		};
-		return test({ dir, filename, store, connect });
+		return use({ dir, filename, store, connect });
 	} finally {
 		try {
 			for (const db of connections) if (db.open) db.close();
@@ -237,6 +238,7 @@ it("keeps a deleted row in older -wal frames through a PASSIVE checkpoint until 
 		copyFileSync(filename, stolen);
 		copyFileSync(wal, `${stolen}-wal`);
 		truncateSync(`${stolen}-wal`, insertEnd);
+		const insertFrames = readFileSync(`${stolen}-wal`);
 		const copy = connect(stolen);
 		expect(copy.prepare("SELECT body FROM messages WHERE id = 'canary'").pluck().get()).toContain(
 			canaries.body.toUpperCase(),
@@ -245,6 +247,7 @@ it("keeps a deleted row in older -wal frames through a PASSIVE checkpoint until 
 		// Opening rewrites page 1 (auto_vacuum), so the -wal is read after the open.
 		const other = connect();
 		const frames = readFileSync(wal);
+		expect(frames.subarray(0, insertEnd).equals(insertFrames)).toBe(true);
 		const [passive] = other.pragma("wal_checkpoint(PASSIVE)") as Checkpoint[];
 		other.close();
 		expect(passive?.log).toBeGreaterThan(0);
@@ -335,8 +338,24 @@ it("creates the database, -wal and -shm at exactly 0600 on ext4", {
 	await expectOwnerOnlyFiles((dir) => expect(statfsSync(dir).type).toBe(0xef53));
 });
 
+// Node's statfs gives no file system name, so on macOS it comes from mount's
+// "<device> on <mount point> (<type>, ...)" lines, matched to the folder by device.
+function macFileSystem(dir: string): string | undefined {
+	const { dev } = statSync(dir);
+	for (const line of execFileSync("/sbin/mount", { encoding: "utf8" }).split("\n")) {
+		const [, mountPoint, type] = / on (.+) \(([^,)]+)/.exec(line) ?? [];
+		if (mountPoint === undefined) continue;
+		try {
+			if (statSync(mountPoint).dev === dev) return type;
+		} catch {
+			// Skip a mount point this process cannot stat.
+		}
+	}
+	return undefined;
+}
+
 it("creates the database, -wal and -shm at exactly 0600 on macOS", {
 	tags: ["requires:macos"],
 }, async () => {
-	await expectOwnerOnlyFiles();
+	await expectOwnerOnlyFiles((dir) => expect(macFileSystem(dir)).toBe("apfs"));
 });

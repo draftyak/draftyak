@@ -21,7 +21,14 @@ export default function config(env: ConfigEnv): ViteUserConfig {
 		},
 		ext4: {
 			description: "an ext4 temporary folder (statfs type 0xEF53, which ext2 and ext3 share)",
-			detect: () => statfsSync(tmpdir()).type === 0xef53,
+			detect: () => {
+				if (process.platform !== "linux") return false;
+				try {
+					return statfsSync(tmpdir()).type === 0xef53;
+				} catch {
+					return false;
+				}
+			},
 		},
 	});
 	config.test = {
