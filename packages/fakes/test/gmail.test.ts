@@ -1556,6 +1556,88 @@ describe("reusable Gmail fake", () => {
 		expect((await call(fake, `/messages?fields=${encodeURIComponent(fields)}`)).status).toBe(400);
 	});
 
+	it("keeps wildcard unions independent across different history row keys", async () => {
+		const fake = create();
+		const checkpoint = fake.historyId;
+		fake.addMessage({ id: "m1", threadId: "t1", raw: raw(), labelIds: ["INBOX"] });
+		fake.setLabels("m1", ["INBOX", "STARRED"]);
+		const complete = await json<{ history: { id: string }[] }>(
+			call(fake, `/history?startHistoryId=${checkpoint}`),
+		);
+		const fields = "history(*(message(id)),messagesAdded(*(threadId)))";
+		expect(
+			await json(
+				call(fake, `/history?startHistoryId=${checkpoint}&fields=${encodeURIComponent(fields)}`),
+			),
+		).toEqual({
+			history: [
+				{
+					id: complete.history[0]?.id,
+					messages: [{}],
+					messagesAdded: [{ message: { id: "m1", threadId: "t1" } }],
+				},
+				{
+					id: complete.history[1]?.id,
+					messages: [{}],
+					labelsAdded: [{ message: { id: "m1" } }],
+				},
+			],
+		});
+	});
+
+	it("preserves complete payloads when another wildcard narrows children", async () => {
+		const fake = create({ messages: [{ id: "m1", raw: raw() }] });
+		const complete = await json(call(fake, "/messages/m1?format=full"));
+		const fields = "payload,*(headers)";
+		expect(
+			await json(call(fake, `/messages/m1?format=full&fields=${encodeURIComponent(fields)}`)),
+		).toEqual(complete);
+	});
+
+	it("projects wildcard grandchildren without retaining unrelated body fields", async () => {
+		const fake = create({ messages: [{ id: "m1", raw: raw() }] });
+		const complete = await json<{ payload: { headers: { name: string }[] } }>(
+			call(fake, "/messages/m1?format=full"),
+		);
+		const fields = "payload(*(name))";
+		expect(
+			await json(call(fake, `/messages/m1?format=full&fields=${encodeURIComponent(fields)}`)),
+		).toEqual({
+			payload: {
+				mimeType: "text/plain",
+				headers: complete.payload.headers.map(({ name }) => ({ name })),
+				body: {},
+			},
+		});
+	});
+
+	it("unions exact and wildcard header children without narrowing either", async () => {
+		const fake = create({ messages: [{ id: "m1", raw: raw() }] });
+		const complete = await json<{ payload: { headers: unknown[] } }>(
+			call(fake, "/messages/m1?format=full"),
+		);
+		const fields = "*(headers(name)),payload(headers(value))";
+		expect(
+			await json(call(fake, `/messages/m1?format=full&fields=${encodeURIComponent(fields)}`)),
+		).toEqual({ ...complete, payload: { headers: complete.payload.headers } });
+	});
+
+	it("unions slash paths with sibling payload fields", async () => {
+		const fake = create({ messages: [{ id: "m1", raw: raw() }] });
+		const complete = await json<{ payload: { headers: { name: string }[] } }>(
+			call(fake, "/messages/m1?format=full"),
+		);
+		const fields = "payload/headers/name,payload(mimeType)";
+		expect(
+			await json(call(fake, `/messages/m1?format=full&fields=${encodeURIComponent(fields)}`)),
+		).toEqual({
+			payload: {
+				mimeType: "text/plain",
+				headers: complete.payload.headers.map(({ name }) => ({ name })),
+			},
+		});
+	});
+
 	it("copies fixture input and output without exposing mutable mailbox state", async () => {
 		const mime = raw();
 		const labels = ["INBOX"];
