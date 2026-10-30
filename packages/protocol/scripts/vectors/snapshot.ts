@@ -247,8 +247,14 @@ export function snapshotVectors(): SnapshotVector[] {
 		["wrong-channel-field", ["chat"], null],
 		["unknown-kind", ["kind"], "sms"],
 		["empty-authors", ["source", "authors"], []],
+		["positional-body", ["body"], Object.values(base.body)],
+		["object-form-kind", ["kind"], { email: null }],
+		["positional-schedule", ["schedule"], ["now"]],
+		["positional-author", ["source", "authors", "0"], ["owner", SNAPSHOT_IDS.author]],
+		["object-form-author-kind", ["source", "authors", "0", "kind"], { owner: null }],
 	];
 	for (const [id, path, value] of bad) result.push(rejected(id, changed(path, value)));
+	result.push(rejected("positional", Object.values(base)));
 	const scheduled = scheduleAt(SNAPSHOT_IAT);
 	result.push(
 		accepted("shared-zone-alias", { ...base, schedule: scheduleAt(SNAPSHOT_IAT, "EST") }),
