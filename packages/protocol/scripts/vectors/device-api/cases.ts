@@ -1,8 +1,10 @@
 import { createECDH, createPublicKey } from "node:crypto";
-import { flagsHash } from "../../../src/flags.ts";
+import { SendReview } from "../../../src/device-api.ts";
+import { type Flag, flagsHash } from "../../../src/flags.ts";
 import { jcsSha256 } from "../../../src/hash.ts";
 import { canonicalize } from "../../../src/jcs.ts";
 import { contentHash, SendSnapshotV1, sendWindow } from "../../../src/snapshot.ts";
+import { requiredAckCodes } from "../../../src/statements.ts";
 import type { VectorFile } from "../../vectors.ts";
 import { exampleSnapshot, SNAPSHOT_IAT, SNAPSHOT_IDS, scheduleAt } from "../snapshot.ts";
 import { statementBase } from "../statements/shared.ts";
@@ -40,14 +42,88 @@ const otherKey = publicPoint(2);
 // A pairing SAS with leading zeros, as the hub shows it for the fixture's candidate.
 export const reviewSas = "004917";
 export function sendFixture(scheduled = false): ObjectValue {
-	const snapshot = {
-		...exampleSnapshot(),
-		...(scheduled ? { schedule: scheduleAt(SNAPSHOT_IAT + 60000) } : {}),
-	};
-	const flags = [
-		{ code: "NEW_RECIPIENT" as const, severity: "ack" as const },
-		{ code: "EXTERNAL_LINK" as const, severity: "ack" as const },
+	return sendFixtureOf(
+		{
+			...exampleSnapshot(),
+			...(scheduled ? { schedule: scheduleAt(SNAPSHOT_IAT + 60000) } : {}),
+		},
+		[
+			{ code: "NEW_RECIPIENT", severity: "ack" },
+			{ code: "EXTERNAL_LINK", severity: "ack" },
+		],
+	);
+}
+// Between them, every optional snapshot member, attachments and flags with details. Each review
+// parses to itself, so both languages check every member as written.
+function richSendFixture(kind: "chat" | "email-reply"): ObjectValue {
+	const base = exampleSnapshot();
+	if (base.kind !== "email") throw Error("the example snapshot is an email");
+	const { email, ...common } = base;
+	const attachments = [
+		{ filename: "notes.txt", contentType: "text/plain", size: 23, sha256: "c".repeat(64) },
+		{ filename: "photo.jpg", contentType: "image/jpeg", size: 48213, sha256: "d".repeat(64) },
 	];
+	const fixture =
+		kind === "chat"
+			? sendFixtureOf(
+					{
+						...common,
+						kind: "chat",
+						conversation: id.conversation,
+						chat: {
+							channelId: "C123",
+							channelName: "engineering",
+							channelType: "private",
+							external: true,
+							shared: true,
+							memberCount: 12,
+							threadTs: "1792000000.000001",
+							broadcast: true,
+						},
+						attachments,
+						schedule: scheduleAt(SNAPSHOT_IAT + 3_600_000, "America/Chicago", 3600),
+					},
+					[
+						{ code: "MASS_MENTION", severity: "ack", detail: "@channel" },
+						{ code: "EXTERNAL_LINK", severity: "ack", detail: "example.net" },
+						{ code: "TOOL_INSTRUCTIONS", severity: "advisory", detail: "kb.lookup" },
+						{ code: "AGENT_AUTHORED", severity: "ack" },
+					],
+				)
+			: sendFixtureOf(
+					{
+						...common,
+						email: {
+							...email,
+							to: [...email.to, "Second@example.test"],
+							cc: ["Copy@example.test"],
+							bcc: ["Blind@example.test"],
+							subject: "Re: A frozen reply",
+							threadId: "thread-1",
+							inReplyTo: "<message@example.test>",
+							references: ["<first@example.test>", "<message@example.test>"],
+						},
+						render: {
+							method: "POST",
+							url: "https://hello.example/v1/messages",
+							headersSha256: "b".repeat(64),
+							bodySha256: "c".repeat(64),
+						},
+						attachments,
+					},
+					[
+						{ code: "NEW_RECIPIENT", severity: "ack", detail: "Second@example.test" },
+						{ code: "NEW_RECIPIENT", severity: "ack", detail: "Copy@example.test" },
+						{ code: "ATTACHMENT_ADDED_BY_AGENT", severity: "ack", detail: "photo.jpg" },
+						{ code: "TOOL_CONTEXT_USED", severity: "info", detail: "calendar.freebusy" },
+						{ code: "SUSPECTED_INSTRUCTIONS", severity: "advisory" },
+					],
+				);
+	if (canonicalize(SendReview.parse(fixture.review)) !== canonicalize(fixture.review))
+		throw Error(`the ${kind} review doesn't parse to itself`);
+	return fixture;
+}
+function sendFixtureOf(snapshot: SendSnapshotV1, flags: readonly Flag[]): ObjectValue {
 	const review = {
 		id: id.outbox,
 		snapshot,
@@ -62,7 +138,7 @@ export function sendFixture(scheduled = false): ObjectValue {
 	const request = {
 		kind: "approval.send.v1",
 		id: id.outbox,
-		flagsAcked: ["EXTERNAL_LINK", "NEW_RECIPIENT"],
+		flagsAcked: requiredAckCodes(flags),
 	};
 	const window = sendWindow(snapshot, SNAPSHOT_IAT);
 	const statement = {
@@ -593,6 +669,11 @@ export function apiCases(): ApiCase[] {
 		add(`statement-length-${length}`, "length", { length }, length <= 16384);
 	add("send-challenge-matching", "challenge", send, true);
 	add("send-challenge-scheduled", "challenge", sendFixture(true), true);
+	for (const kind of ["chat", "email-reply"] as const) {
+		const rich = richSendFixture(kind);
+		schema("SendReview", rich.review, true, `rich-${kind}`);
+		add(`send-challenge-rich-${kind}`, "challenge", rich, true);
+	}
 	const sendZero = change(send, "review.snapshot.epoch", 0) as ObjectValue;
 	member(sendZero, "review").contentHash = contentHash(
 		SendSnapshotV1.parse(member(member(sendZero, "review"), "snapshot")),
