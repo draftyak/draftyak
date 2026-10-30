@@ -29,6 +29,10 @@ describe("the ai admin group", () => {
 		expect(groups[groups.indexOf("ai") + 1]).toBe("sms");
 		expect(ADMIN_GROUPS.ai).toEqual(aiKinds);
 	});
+	it("keeps every ai kind in the ai group and every other kind out of it", () => {
+		for (const [group, kinds] of Object.entries(ADMIN_GROUPS))
+			for (const kind of kinds) expect(kind.startsWith("ai."), kind).toBe(group === "ai");
+	});
 	for (const kind of aiKinds)
 		it(`signs ${kind} as an admin kind that no review admits yet`, () => {
 			const vector = adminCases.find((item) => item.id === `kind-${kind}`);
