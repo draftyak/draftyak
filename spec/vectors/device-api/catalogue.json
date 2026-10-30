@@ -265,7 +265,9 @@
     "security.pin-change": "admin",
     "security.key-rotate": "admin",
     "data.export": "admin",
-    "data.backup": "admin"
+    "data.backup": "admin",
+    "ai.credential-connect": "admin",
+    "ai.credential-disconnect": "admin"
   },
   "presets": {
     "desktop": [
