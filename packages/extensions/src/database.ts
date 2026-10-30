@@ -18,8 +18,8 @@ export interface ModuleTables<Id extends string> {
 
 /** A type literal, not an interface, so it fits Record<string, unknown> and similar results. */
 type Thenable = { then(...args: never[]): unknown };
-/** A data column may be named then; a callable then would make the result a thenable. */
-type NotThenable = { readonly then?: ModuleValue | boolean | undefined };
+/** No defined then, callable or data: the native adapter refuses any result with its own then. */
+type NotThenable = { readonly then?: never };
 declare const unresolved: unique symbol;
 /**
  * Only never and any fit. Unknown maps here, not to never: a Result still being inferred is
@@ -29,7 +29,7 @@ type Unresolved = { readonly [unresolved]: never };
 
 /**
  * Never for any, thenables and results a Promise or thenable fits, except Unresolved for unknown;
- * objects refuse a callable then.
+ * other results, primitives included, refuse a defined then.
  */
 type SynchronousResult<Result> = Result extends Thenable
 	? never
@@ -44,9 +44,9 @@ type SynchronousResult<Result> = Result extends Thenable
 				: Result extends void
 					? // biome-ignore lint/suspicious/noConfusingVoidType: a bare void return would accept a Promise.
 						undefined | void
-					: Result extends object
-						? Result & NotThenable
-						: Result;
+					: Result extends null
+						? Result
+						: Result & NotThenable;
 
 /** Own SQLite3MC file only; no SQL, schema access, native connection or transaction control. */
 export interface ModuleDatabase<Id extends string = string> extends ModuleTables<Id> {

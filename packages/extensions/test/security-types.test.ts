@@ -61,6 +61,7 @@ function synchronousTransactions(
 	database: ModuleDatabase<"example">,
 	query: { limit(count: number): unknown; then(resolve: (rows: number) => void): void },
 	objectWork: () => object,
+	callableColumn: { then: ((resolve: (rows: number) => void) => void) & string },
 ): void {
 	// @ts-expect-error An explicit unknown result cannot admit a Promise.
 	database.transaction<unknown>(async () => 1);
@@ -95,11 +96,20 @@ function synchronousTransactions(
 	database.transaction<Record<string, unknown>>(() => query);
 	// @ts-expect-error A callback annotated with a record result that a thenable fits is refused.
 	database.transaction((): Record<string, unknown> => query);
+	// @ts-expect-error An explicit primitive result cannot admit a thenable that fits it.
+	database.transaction<number>(() => Object.assign(1, query));
+	// @ts-expect-error An explicit union with a primitive cannot admit a thenable that fits it.
+	database.transaction<string | { a: number }>(() => Object.assign("a", query));
+	// @ts-expect-error A then typed as both callable and a column value is refused.
+	database.transaction<ModuleRow>(() => callableColumn);
+	// @ts-expect-error A data column named then is refused; the native adapter refuses any own then.
+	// biome-ignore lint/suspicious/noThenProperty: a data column named then is the case under test.
+	database.transaction(() => ({ then: "column" }));
 	// An annotated object result can hide a thenable; the native adapter must refuse one at runtime.
 	const annotated = database.transaction((): { a: number } => ({ a: 1 }));
 	expectTypeOf(annotated).toEqualTypeOf<{ a: number }>();
-	// biome-ignore lint/suspicious/noThenProperty: a data column named then is the case under test.
-	expectTypeOf(database.transaction(() => ({ then: "column" }))).toEqualTypeOf<{ then: string }>();
+	// So can a callback typed any under an explicit unknown result.
+	expectTypeOf(database.transaction<unknown>(() => JSON.parse("1"))).toEqualTypeOf<unknown>();
 	expectTypeOf(database.transaction(() => null)).toEqualTypeOf<null>();
 	const id = <T>(value: T): T => value;
 	expectTypeOf(database.transaction(() => [1, 2] as const)).toEqualTypeOf<readonly [1, 2]>();
