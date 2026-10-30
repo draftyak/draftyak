@@ -68,9 +68,15 @@ export function issuerOAuthCases(): ManifestCase[] {
 	]);
 	refused("unknown-kind", ["auth/kind", "oauth2-agent"]);
 	refused("duplicate-scope", ["auth/scopes", ["openid", "openid"]]);
+	refused("duplicate-required-scope", ["auth/requiredGrantedScopes", ["openid", "openid"]]);
 	refused("missing-issuer", ["auth/issuer", absent]);
 	refused("issuer-not-string", ["auth/issuer", 443]);
 	refused("http-issuer", ["auth/issuer", "http://auth.example.com"]);
+	refused("issuer-text-before-scheme", [
+		"auth/issuer",
+		"http://evil.example/https://auth.example.com",
+	]);
+	refused("issuer-leading-space", ["auth/issuer", " https://auth.example.com"]);
 	refused("issuer-slash", ["auth/issuer", "https://auth.example.com/"]);
 	refused("issuer-path", ["auth/issuer", "https://auth.example.com/oauth"]);
 	refused("issuer-port", ["auth/issuer", "https://auth.example.com:8443"]);
