@@ -1,4 +1,5 @@
 import { rawTarget, splitTarget } from "../target.ts";
+import { type GmailField, type GmailFieldResponse, gmailFieldSchemas } from "./fields-schema.ts";
 
 export const MAX_GMAIL_RAW_BYTES = 36_700_160;
 export const MAX_GMAIL_WIRE_BYTES: number = 50 * 1024 * 1024;
@@ -236,11 +237,36 @@ function mergeSelections(left: Selection, right: Selection): Selection {
 	}
 	return result;
 }
-export function project(value: unknown, fields: string | null): unknown {
-	if (!fields) return value;
+export function compileGmailProjection(
+	fields: string | null,
+	response: GmailFieldResponse,
+): (value: unknown) => unknown {
+	if (!fields) return (value) => value;
+	check(fields.length <= 2048);
 	let at = 0,
 		count = 0;
-	function parse(depth: number): Selection {
+	function descend(alternatives: readonly GmailField[], names: readonly string[]): GmailField[] {
+		let current = alternatives;
+		for (const name of names) {
+			const children: GmailField[] = [];
+			let object = false;
+			for (let field of current) {
+				while (field !== null && "items" in field) field = field.items;
+				if (field === null || !Object.hasOwn(gmailFieldSchemas, field.ref)) continue;
+				const properties = gmailFieldSchemas[field.ref];
+				check(properties);
+				object = true;
+				if (name === "*") children.push(...Object.values(properties));
+				else if (Object.hasOwn(properties, name)) children.push(properties[name] as GmailField);
+			}
+			// A wildcard may traverse heterogeneous object siblings; scalar siblings
+			// keep their existing projection. Each following name must still resolve.
+			check(name === "*" ? object : children.length > 0);
+			current = [...new Set(children)];
+		}
+		return [...current];
+	}
+	function parse(depth: number, alternatives: readonly GmailField[]): Selection {
 		check(depth < 8);
 		let result: Selection = Object.create(null);
 		for (;;) {
@@ -253,10 +279,11 @@ export function project(value: unknown, fields: string | null): unknown {
 					++count <= 64,
 			);
 			check(names.every((n) => !["__proto__", "constructor", "prototype"].includes(n)));
+			const children = descend(alternatives, names);
 			let child: Selection | null = null;
 			if (fields?.[at] === "(") {
 				at++;
-				child = parse(depth + 1);
+				child = parse(depth + 1, children);
 				check(fields?.[at++] === ")");
 			}
 			let branch: Selection = Object.create(null);
@@ -271,7 +298,7 @@ export function project(value: unknown, fields: string | null): unknown {
 			at++;
 		}
 	}
-	const selection = parse(0);
+	const selection = parse(0, [{ ref: response }]);
 	check(at === fields.length);
 	const unions = new WeakMap<Selection, WeakMap<Selection, Selection>>();
 	function union(left: Selection, right: Selection): Selection {
@@ -307,5 +334,5 @@ export function project(value: unknown, fields: string | null): unknown {
 			}
 		return output;
 	}
-	return select(value, selection);
+	return (value) => select(value, selection);
 }
