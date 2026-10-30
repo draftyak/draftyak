@@ -229,10 +229,10 @@ function outboundHeaders(verified: AiRequestSnapshot, key: string): Record<strin
 		if (headers.authorization !== "Bearer brokered" || headers["x-api-key"] !== undefined)
 			throw refused();
 		headers.authorization = `Bearer ${key}`;
-	} else {
+	} else if (verified.profile === "chat-completions-v1") {
 		if (headers.authorization !== undefined || headers["x-api-key"] !== undefined) throw refused();
 		headers.authorization = `Bearer ${key}`;
-	}
+	} else throw refused();
 	// The host protocol transports decoded bytes. Do not admit an unbounded decompression path.
 	headers["accept-encoding"] = "identity";
 	return headers;
