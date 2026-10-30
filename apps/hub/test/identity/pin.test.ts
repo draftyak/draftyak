@@ -12,6 +12,13 @@ let f: Awaited<ReturnType<typeof fixture>>;
 let audit: AuditChain;
 let pins: PinService;
 let wall: number;
+let mono: number;
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+const elapse = (ms: number) => {
+	wall += ms;
+	mono += ms;
+};
 const user = newId(1);
 const pinRow = () =>
 	f.store.read((db) =>
@@ -25,9 +32,30 @@ const auditActions = () =>
 		.jsonl.trim()
 		.split("\n")
 		.map((line) => JSON.parse(line).action);
+const lockOut = async (service: PinService = pins) => {
+	for (let count = 0; count < 4; count++)
+		await expect(service.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
+	await expect(service.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+};
+const withOtherConnection = async (run: (other: PinService) => Promise<void>) => {
+	const otherStore = new HubStore({ filename: f.filename, masterKey: f.key, nativeBinding });
+	const key = f.key.derive("audit");
+	const otherAudit = new AuditChain(key);
+	key.fill(0);
+	const otherPins = new PinService(otherStore, otherAudit, { wallMs: () => wall });
+	try {
+		await run(otherPins);
+	} finally {
+		otherPins.lock();
+		otherAudit.destroy();
+		otherStore.close();
+	}
+};
 beforeEach(async () => {
 	f = await fixture();
 	wall = 1_800_000_000_000;
+	mono = 1_000;
+	vi.spyOn(performance, "now").mockImplementation(() => mono);
 	const clock: PinWallClock = { wallMs: () => wall };
 	const subkey = f.key.derive("audit");
 	audit = new AuditChain(subkey);
@@ -112,7 +140,7 @@ it("counts concurrent failures without lost updates and locks for fifteen minute
 	).toBe(4);
 	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_LOCKED");
 	await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
-	wall += 900_001;
+	elapse(900_001);
 	const proof = await pins.verify(user, "738294", "approval:n1");
 	f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
 	expect(
@@ -477,9 +505,9 @@ it("accounts for concurrent failed PINs across two genuine encrypted connections
 			),
 		);
 		expect(row).toEqual({ failures: 5, locked_until: wall + 900_000 });
-		wall += 899_999;
+		elapse(899_999);
 		await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
-		wall++;
+		elapse(1);
 		const proof = await otherPins.verify(user, "738294", "approval:n1");
 		otherStore.write((tx) => otherPins.consume(tx, proof, user, "approval:n1"));
 		expect(
@@ -695,7 +723,7 @@ it("replaces native failures with fixed PIN errors and rolls back unsuccessful a
 		await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
 	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_LOCKED");
 	await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
-	wall += 900_001;
+	elapse(900_001);
 	const pending = pins.verify(user, "738294", "approval:n1");
 	f.store.close();
 	await expect(pending).rejects.toMatchObject(refused);
@@ -720,7 +748,7 @@ it("counts a failure that could not be recorded once recording recovers", async 
 	f.store.write((tx) => tx.run("UPDATE main.audit_meta SET audit_tag=?", [head.audit_tag]));
 	await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
 	expect(pinRow()).toEqual({ failures: 5, locked_until: wall + 900_000 });
-	wall += 900_001;
+	elapse(900_001);
 	const proof = await pins.verify(user, "738294", "approval:n1");
 	f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
 	expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
@@ -766,7 +794,7 @@ it("keeps a failure pending through a failed COMMIT until a committed write reco
 	commitFault(false);
 	await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
 	expect(pinRow()).toEqual({ failures: 5, locked_until: wall + 900_000 });
-	wall += 900_001;
+	elapse(900_001);
 	const proof = await pins.verify(user, "738294", "approval:n1");
 	f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
 	expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
@@ -938,7 +966,7 @@ it("keeps a failure pending past a lock set through another connection, then rec
 		otherAudit.destroy();
 		otherStore.close();
 	}
-	wall += 900_001;
+	elapse(900_001);
 	pins.discard(await pins.verify(user, "738294", "approval:n1"));
 	pins.discard(await pins.verify(user, "738294", "approval:n1"));
 	expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
@@ -962,7 +990,7 @@ it.each([900_000, 900_001])(
 			await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
 		await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_LOCKED");
 		expect(pinRow()).toEqual({ failures: 5, locked_until: wall + 900_000 });
-		wall += elapsedMs;
+		elapse(elapsedMs);
 		await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
 		expect(pinRow()).toEqual({ failures: 1, locked_until: 0 });
 		const proof = await pins.verify(user, "738294", "approval:n1");
@@ -980,6 +1008,104 @@ it.each([900_000, 900_001])(
 		]);
 	},
 );
+
+it.each([
+	["keeps time", 0, 0, 0],
+	["was slow at the lock and is then corrected forward", -HOUR, 0, HOUR],
+	["was fast at the lock and is then corrected back", DAY, 0, -DAY],
+	["jumps forward during the lock", 0, 300_000, DAY],
+	["jumps back during the lock", 0, 300_000, -DAY],
+])(
+	"locks for fifteen minutes of elapsed time when the wall clock %s",
+	async (_, skew, before, jump) => {
+		wall += skew;
+		await lockOut();
+		expect(pinRow()).toEqual({ failures: 5, locked_until: wall + 900_000 });
+		elapse(before);
+		wall += jump;
+		await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+		elapse(899_999 - before);
+		await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+		elapse(1);
+		const proof = await pins.verify(user, "738294", "approval:n1");
+		f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
+		expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
+		expect(auditActions()).toEqual([
+			"pin.initialized",
+			"pin.failed",
+			"pin.failed",
+			"pin.failed",
+			"pin.failed",
+			"pin.locked",
+			"pin.verified",
+		]);
+	},
+);
+
+it.each([
+	["an unchanged wall clock", 0, 600_000],
+	["a fast wall clock since corrected", DAY, 900_000],
+])(
+	"after a restart holds the lock for its persisted deadline's remaining time, at most fifteen minutes, with %s",
+	async (_, skew, remaining) => {
+		wall += skew;
+		await lockOut();
+		wall -= skew;
+		elapse(300_000);
+		// A restart loses the service's lock state and starts the monotonic clock again.
+		pins.lock();
+		mono = 0;
+		pins = new PinService(f.store, audit, { wallMs: () => wall });
+		await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+		// From its first check, the restarted service counts the rest on the monotonic clock.
+		wall += DAY;
+		elapse(remaining - 1);
+		await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+		elapse(1);
+		const proof = await pins.verify(user, "738294", "approval:n1");
+		f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
+		expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
+	},
+);
+
+it("after a restart ends a lock once a corrected slow wall clock has passed its persisted deadline", async () => {
+	wall -= HOUR;
+	await lockOut();
+	wall += HOUR;
+	elapse(300_000);
+	pins.lock();
+	mono = 0;
+	pins = new PinService(f.store, audit, { wallMs: () => wall });
+	const proof = await pins.verify(user, "738294", "approval:n1");
+	f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
+	expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
+});
+
+it("holds a lock set through another connection after this service's own lock has ended", async () => {
+	await lockOut();
+	elapse(900_000);
+	pins.discard(await pins.verify(user, "738294", "approval:n1"));
+	await withOtherConnection(async (other) => {
+		await lockOut(other);
+		await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+		elapse(899_999);
+		await expect(pins.verify(user, "738294", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+		elapse(1);
+		pins.discard(await pins.verify(user, "738294", "approval:n1"));
+	});
+});
+
+it("refuses an outstanding proof once its PIN locks, even if the wall clock was slow at the lock", async () => {
+	const proof = await pins.verify(user, "738294", "approval:n1");
+	await withOtherConnection(async (other) => {
+		wall -= HOUR;
+		await lockOut(other);
+		wall += HOUR + 1_000;
+	});
+	expect(() => f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"))).toThrow(
+		"PIN_CHANGED",
+	);
+});
 
 it("writes complete merged ID-only AuditEvent records for PIN state changes", async () => {
 	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");

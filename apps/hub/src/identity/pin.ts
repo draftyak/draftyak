@@ -16,7 +16,7 @@ export interface PinWallClock {
 }
 const systemWallClock: PinWallClock = Object.freeze({ wallMs: () => Date.now() });
 const utcMs = (value: number): number => UtcMs.parse(value);
-// Ephemeral proof lifetime uses this process's monotonic clock, never a caller-supplied one.
+// Proof lifetimes and lockouts use this process's monotonic clock, never a caller-supplied one.
 const monotonicMs = (): number => performance.now();
 
 interface PinRow {
@@ -41,6 +41,10 @@ interface InitialPin {
 	wall: number;
 	mono: number;
 }
+interface LockClock {
+	until: number;
+	mono: number;
+}
 export interface PinInitialization {
 	readonly __pinInitialization: never;
 }
@@ -57,7 +61,7 @@ export class PinError extends Error {
 }
 const pinFailure = (error: unknown): PinError =>
 	error instanceof PinError ? error : new PinError("PIN_REQUIRED");
-function proofTime(clock: PinWallClock): { wall: number; mono: number } {
+function readClocks(clock: PinWallClock): { wall: number; mono: number } {
 	const wall = utcMs(clock.wallMs());
 	const mono = monotonicMs();
 	if (!Number.isFinite(mono) || mono < 0 || mono > Number.MAX_SAFE_INTEGER)
@@ -108,6 +112,7 @@ const materialDigest = (row: Pick<PinRow, "salt" | "hash" | "version">): Buffer 
 		.digest();
 const MAX_PROOFS = 128;
 const PROOF_TTL = 30_000;
+const LOCK_MS = 15 * 60_000;
 
 async function hashPin(pin: string, salt: Uint8Array): Promise<Buffer> {
 	const input = Buffer.from(pin, "utf8");
@@ -131,6 +136,7 @@ export class PinService {
 	readonly #proofs = new Map<PinProof, Authorization>();
 	readonly #initial = new Map<PinInitialization, InitialPin>();
 	readonly #unrecorded = new Set<string>();
+	readonly #locks = new Map<string, LockClock>();
 	#inFlight = 0;
 	#locked = false;
 	constructor(store: HubStore, audit: AuditChain, clock: PinWallClock = systemWallClock) {
@@ -177,7 +183,7 @@ export class PinService {
 				user,
 				salt,
 				hash,
-				...proofTime(this.#clock),
+				...readClocks(this.#clock),
 			});
 			return prepared;
 		} catch (error) {
@@ -233,17 +239,19 @@ export class PinService {
 				| undefined;
 			if (!initial) throw new PinError("PIN_REQUIRED");
 			const original = initial;
-			if (initial.locked_until > utcMs(this.#clock.wallMs())) throw new PinError("PIN_LOCKED");
+			if (this.#held(user, initial.locked_until, readClocks(this.#clock)))
+				throw new PinError("PIN_LOCKED");
 			derived = validPin(pin) ? await hashPin(pin, initial.salt) : undefined;
 			if (this.#locked) throw new PinError("PIN_REQUIRED");
 			if (this.#proofs.size >= MAX_PROOFS) throw new PinError("PIN_BUSY");
 			const matches = derived !== undefined && timingSafeEqual(derived, initial.hash);
 			const pending = this.#unrecorded.has(user);
 			let recorded = false;
+			let locked: LockClock | undefined;
 			let outcome: "PIN_CHANGED" | "PIN_LOCKED" | "PIN_INVALID" | null;
 			try {
 				outcome = writeStore.call(this.#store, (tx: SqlTransaction) => {
-					const now = utcMs(this.#clock.wallMs());
+					const now = readClocks(this.#clock);
 					const row = readPin(tx, user);
 					if (!row) return "PIN_CHANGED" as const;
 					try {
@@ -253,19 +261,20 @@ export class PinService {
 							!timingSafeEqual(row.salt, original.salt)
 						)
 							return "PIN_CHANGED" as const;
-						if (row.locked_until > now) return "PIN_LOCKED" as const;
+						if (this.#held(user, row.locked_until, now)) return "PIN_LOCKED" as const;
 						const failures = row.locked_until > 0 ? 0 : row.failures;
 						// A match runs the same update and append, so it commits only where a failure would.
 						const attempt = (prior: number, failed: boolean) => {
 							const count = prior + 1;
-							const lock = count >= 5 ? utcMs(now + 15 * 60_000) : 0;
+							const lock = count >= 5 ? utcMs(now.wall + LOCK_MS) : 0;
 							tx.run(
 								"UPDATE main.approval_pins SET failures=?,locked_until=? WHERE user_id=? AND version=?",
 								failed ? [count, lock, user, row.version] : [0, 0, user, row.version],
 							);
+							locked = failed && count >= 5 ? { until: lock, mono: now.mono + LOCK_MS } : undefined;
 							appendAudit.call(this.#audit, tx, {
 								id: newId(),
-								at: now,
+								at: now.wall,
 								action: !failed ? "pin.verified" : count >= 5 ? "pin.locked" : "pin.failed",
 								actor: { kind: "hub", id: null },
 								refs: { user },
@@ -289,13 +298,14 @@ export class PinService {
 				throw error;
 			}
 			if (recorded) this.#unrecorded.delete(user);
+			if (locked) this.#locks.set(user, locked);
 			if (outcome !== null) throw new PinError(outcome);
 			const proof = Object.freeze(Object.create(null)) as PinProof;
 			this.#proofs.set(proof, {
 				user,
 				scope,
 				version: initial.version,
-				...proofTime(this.#clock),
+				...readClocks(this.#clock),
 				material: materialDigest(initial),
 			});
 			return proof;
@@ -321,10 +331,11 @@ export class PinService {
 			let material: Buffer | undefined;
 			try {
 				material = materialDigest(row);
+				// The proof's own verification cleared any lock, so a lock now was set after it.
 				if (
 					row.version !== record.version ||
 					!timingSafeEqual(material, record.material) ||
-					row.locked_until > utcMs(this.#clock.wallMs())
+					row.locked_until !== 0
 				)
 					throw new PinError("PIN_CHANGED");
 			} finally {
@@ -350,13 +361,23 @@ export class PinService {
 	}
 	#fresh(record: Pick<Authorization, "wall" | "mono">): boolean {
 		try {
-			const now = proofTime(this.#clock);
+			const now = readClocks(this.#clock);
 			const wall = now.wall - record.wall;
 			const mono = now.mono - record.mono;
 			return wall >= 0 && wall <= PROOF_TTL && mono >= 0 && mono <= PROOF_TTL;
 		} catch {
 			return false;
 		}
+	}
+	// A lock this service wrote lasts LOCK_MS of monotonic time. Any other lock (another connection,
+	// or from before a restart) keeps its persisted deadline's remaining wall time, at most LOCK_MS.
+	#held(user: string, until: number, now: { wall: number; mono: number }): boolean {
+		let lock = this.#locks.get(user);
+		if (lock?.until !== until) {
+			lock = { until, mono: now.mono + Math.min(until - now.wall, LOCK_MS) };
+			this.#locks.set(user, lock);
+		}
+		return now.mono < lock.mono;
 	}
 	#sweep(): void {
 		for (const [proof, record] of this.#proofs)
