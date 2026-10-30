@@ -1491,6 +1491,71 @@ describe("reusable Gmail fake", () => {
 		}
 	});
 
+	it.each([
+		"messages(id),messages(threadId)",
+		"messages(threadId),messages(id)",
+		"messages/id,messages/threadId",
+		"messages(threadId),messages/id",
+		"messages(id,threadId),messages(id)",
+		"messages(id),messages(id,threadId)",
+	])("unions repeated Gmail field selections: %s", async (fields) => {
+		const fake = create({ messages: [{ id: "m1", threadId: "t1", raw: raw() }] });
+		expect(await json(call(fake, `/messages?fields=${encodeURIComponent(fields)}`))).toEqual({
+			messages: [{ id: "m1", threadId: "t1" }],
+		});
+	});
+
+	it("unions nested selections across message and header arrays", async () => {
+		const fake = create({ messages: [{ id: "m1", threadId: "t1", raw: raw() }] });
+		const message = await json<{ payload: { headers: unknown[] } }>(
+			call(fake, "/messages/m1?format=metadata"),
+		);
+		const fields = "messages(id,payload(headers(name))),messages(threadId,payload(headers(value)))";
+		expect(
+			await json(call(fake, `/threads/t1?format=metadata&fields=${encodeURIComponent(fields)}`)),
+		).toEqual({ messages: [{ id: "m1", threadId: "t1", payload: message.payload }] });
+	});
+
+	it.each([
+		"payload,payload/headers/name",
+		"payload/headers/name,payload",
+		"payload,payload(headers(name))",
+		"payload(headers(name)),payload",
+		"payload(headers),payload(headers(name))",
+		"payload(headers(name)),payload(headers)",
+		"payload(*(name)),payload(headers(value))",
+		"payload(headers(value)),payload(*(name))",
+	])("preserves complete parents and unions wildcard children: %s", async (fields) => {
+		const fake = create({ messages: [{ id: "m1", raw: raw() }] });
+		const complete = await json<{ payload: unknown }>(call(fake, "/messages/m1?format=metadata"));
+		expect(
+			await json(call(fake, `/messages/m1?format=metadata&fields=${encodeURIComponent(fields)}`)),
+		).toEqual({ payload: complete.payload });
+	});
+
+	it.each(["*,payload/headers/name", "payload/headers/name,*"])(
+		"does not narrow a complete wildcard selection: %s",
+		async (fields) => {
+			const fake = create({ messages: [{ id: "m1", raw: raw() }] });
+			const complete = await json(call(fake, "/messages/m1?format=metadata"));
+			expect(
+				await json(call(fake, `/messages/m1?format=metadata&fields=${encodeURIComponent(fields)}`)),
+			).toEqual(complete);
+		},
+	);
+
+	it.each([
+		"messages,messages(",
+		"messages,messages(__proto__)",
+		"messages,messages(constructor)",
+		"messages,messages//id",
+		`messages,messages(${"payload(".repeat(8)}id${")".repeat(8)})`,
+		`messages,${Array.from({ length: 64 }, () => "messages/id").join(",")}`,
+	])("validates every selector even after a complete parent: %s", async (fields) => {
+		const fake = create({ messages: [{ id: "m1", raw: raw() }] });
+		expect((await call(fake, `/messages?fields=${encodeURIComponent(fields)}`)).status).toBe(400);
+	});
+
 	it("copies fixture input and output without exposing mutable mailbox state", async () => {
 		const mime = raw();
 		const labels = ["INBOX"];
