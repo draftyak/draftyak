@@ -125,6 +125,14 @@ export {
 	openHubSession,
 } from "./lifecycle/session.ts";
 export {
+	bindSidecarShutdown,
+	SIDECAR_SHUTDOWN_MS,
+	SidecarShutdownError,
+	type SidecarShutdownErrorCode,
+	type SidecarShutdownOptions,
+	type SidecarShutdownReport,
+} from "./lifecycle/sidecar-stop.ts";
+export {
 	type ClaimPermit,
 	createHubLifecycle,
 	HUB_DRAIN_MS,
