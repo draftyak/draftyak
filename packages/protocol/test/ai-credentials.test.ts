@@ -138,9 +138,14 @@ describe("issuer OAuth", () => {
 			"issuer-oauth-http-issuer",
 			"issuer-oauth-issuer-text-before-scheme",
 			"issuer-oauth-issuer-leading-space",
+			"issuer-oauth-issuer-port-443",
+			"issuer-oauth-issuer-homograph",
+			"issuer-oauth-issuer-single-label",
+			"issuer-oauth-issuer-trailing-dot",
 			"issuer-oauth-http-resource",
 			"issuer-oauth-resource-query",
 			"issuer-oauth-resource-single-label",
+			"issuer-oauth-resource-long-label",
 		]) {
 			expect(cases.get(id)?.code, id).toBe("MANIFEST_INVALID");
 			expect(cases.get(id)?.structural, id).toBe(true);

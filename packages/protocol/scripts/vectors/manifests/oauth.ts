@@ -39,6 +39,7 @@ const otherAuth: PluginAuth[] = [
 ];
 
 const absent = Symbol("absent");
+const cyrillicA = String.fromCodePoint(0x430);
 type Patch = readonly [path: string, value: unknown];
 
 function patched(source: unknown, ...patches: Patch[]): unknown {
@@ -98,11 +99,15 @@ export function issuerOAuthCases(): ManifestCase[] {
 	refused("issuer-slash", ["auth/issuer", "https://auth.example.com/"]);
 	refused("issuer-path", ["auth/issuer", "https://auth.example.com/oauth"]);
 	refused("issuer-port", ["auth/issuer", "https://auth.example.com:8443"]);
+	refused("issuer-port-443", ["auth/issuer", "https://auth.example.com:443"]);
 	refused("issuer-userinfo", ["auth/issuer", "https://user@auth.example.com"]);
 	refused("issuer-query", ["auth/issuer", "https://auth.example.com?tenant=1"]);
 	refused("issuer-fragment", ["auth/issuer", "https://auth.example.com#top"]);
 	refused("issuer-upper-case", ["auth/issuer", "https://Auth.example.com"]);
+	refused("issuer-homograph", ["auth/issuer", `https://${cyrillicA}uth.example.com`]);
 	refused("issuer-ip", ["auth/issuer", "https://192.0.2.1"]);
+	refused("issuer-single-label", ["auth/issuer", "https://auth"]);
+	refused("issuer-trailing-dot", ["auth/issuer", "https://auth.example.com."]);
 	refused("issuer-line-feed", ["auth/issuer", "https://auth.example.com\n"]);
 	refused("issuer-too-long", [
 		"auth/issuer",
@@ -116,6 +121,7 @@ export function issuerOAuthCases(): ManifestCase[] {
 	refused("resource-userinfo", ["auth/resource", "https://user@api.example.com/v1"]);
 	refused("resource-query", ["auth/resource", "https://api.example.com/v1?tenant=1"]);
 	refused("resource-single-label", ["auth/resource", "https://api/v1"]);
+	refused("resource-long-label", ["auth/resource", `https://api.${"a".repeat(64)}.com/v1`]);
 	add("private-issuer", "MANIFEST_INVALID", false, ["auth/issuer", "https://auth.internal"]);
 	add("private-resource", "MANIFEST_INVALID", false, ["auth/resource", "https://api.local/v1"]);
 	add("resource-port-443", "MANIFEST_INVALID", false, [
