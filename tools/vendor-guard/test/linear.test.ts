@@ -122,8 +122,8 @@ describe("every pattern", () => {
 });
 
 describe("unpacking", () => {
-	const header = (size: string): string =>
-		`${"a".padEnd(124, "\0")}${size.padEnd(12, "\0")}${"\0".repeat(121)}ustar${"\0".repeat(250)}`;
+	const header = (size: string, sum = ""): string =>
+		`${"a".padEnd(124, "\0")}${size.padEnd(12, "\0")}${"\0".repeat(12)}${sum.padEnd(8, "\0")}${"\0".repeat(101)}ustar${"\0".repeat(250)}`;
 	const markers = (start: string, units: readonly string[]): Line[] =>
 		units.map(
 			(unit): Line =>
@@ -162,7 +162,12 @@ describe("unpacking", () => {
 			markers("MZ", ["PK\u0005\u0006", "PK\u0001\u0002\u0000\u0000PK\u0005\u0006"]),
 			"",
 		],
-		["a tar", markers("", [header("0"), header("1"), `${header("777")}a`]), ""],
+		[
+			"a tar",
+			// The last: a checksum in every block, none of them right.
+			markers("", [header("0"), header("1"), `${header("777")}a`, header("0", "0000000")]),
+			"",
+		],
 	])("stays linear on %s full of its markers", (_kind, family, name) => {
 		expect(
 			tooSlow((input) => unpack(Buffer.from(input, "latin1"), CAPS, name), family),

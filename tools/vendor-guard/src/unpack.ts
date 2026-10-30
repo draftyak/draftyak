@@ -141,6 +141,7 @@ interface Zip {
 
 const LOCAL = 0x04034b50;
 const CENTRAL = 0x02014b50;
+const LOCATOR = 0x07064b50;
 const LOCAL_MAGIC = [0x50, 0x4b, 0x03, 0x04];
 const END_MAGIC = [0x50, 0x4b, 0x05, 0x06];
 const ZIP_LOCAL = Buffer.from(LOCAL_MAGIC);
@@ -173,9 +174,17 @@ function endSignatures(bytes: Buffer): number[] {
 	return found;
 }
 
-// A zip after other data: an end record in the last 64 KiB naming a central directory.
+// Whether a zip64 locator sits just before the end record at `end`, where zip64 readers look for
+// one: it leads them to another central directory.
+const zip64 = (bytes: Buffer, end: number): boolean =>
+	end >= 20 && bytes.readUInt32LE(end - 20) === LOCATOR;
+
+// A zip after other data: an end record in the last 64 KiB naming a central directory, or with a
+// zip64 locator before it.
 function zipAfterData(bytes: Buffer): boolean {
-	return endSignatures(bytes).some((end) => directory(bytes, end) !== undefined);
+	return endSignatures(bytes).some(
+		(end) => zip64(bytes, end) || directory(bytes, end) !== undefined,
+	);
 }
 
 // A zip's end record where the format puts it: the last one whose comment reaches the file's end.
@@ -188,8 +197,10 @@ function zipEnd(bytes: Buffer): number | undefined {
 // The entries that the central directory of the end record at `end` lists, each checked against
 // its local header as a streaming reader sees it. Zip64 archives aren't read, nor entries that hold
 // more data in all than the archive: they share it, and the scan would inflate it over and over.
-// `whole`: look for local headers no entry covers from the file's start, not its first entry.
-function archive(bytes: Buffer, end: number, label: string, state: State, whole: boolean): Zip {
+// `main`: the end record that ends the file. Its central directory must end where it starts, as
+// only zip64 records go between them; and in a file that starts with a local header, local headers
+// no entry covers are looked for from the file's start, not its first entry.
+function archive(bytes: Buffer, end: number, label: string, state: State, main: boolean): Zip {
 	const count = bytes.readUInt16LE(end + 10);
 	if (count === 0xffff || bytes.readUInt32LE(end + 16) === 0xffffffff) {
 		throw unreadable(label, "zip64");
@@ -244,10 +255,13 @@ function archive(bytes: Buffer, end: number, label: string, state: State, whole:
 	if (at + 4 <= end && bytes.readUInt32LE(at) === CENTRAL) {
 		throw unreadable(label, "more entries than its end record counts");
 	}
+	if (main && at < end) {
+		throw unreadable(label, "data between its central directory and end record");
+	}
 	// A local header that no listed entry's data covers: a streaming reader would extract it.
 	spans.sort(([a], [b]) => a - b);
 	const begins = Math.min(first, spans[0]?.[0] ?? first);
-	let covered = whole ? 0 : begins;
+	let covered = main && startsWith(bytes, LOCAL_MAGIC) ? 0 : begins;
 	spans.push([first, first]);
 	for (const [from, to] of spans) {
 		if (from > covered && bytes.subarray(covered, from).includes(ZIP_LOCAL)) {
@@ -262,12 +276,14 @@ function archive(bytes: Buffer, end: number, label: string, state: State, whole:
 // that names a central directory, such as one in the comment, which other zip readers may take.
 function zipArchives(bytes: Buffer, label: string, state: State): Zip {
 	try {
+		const ends = endSignatures(bytes);
+		if (ends.some((end) => zip64(bytes, end))) throw unreadable(label, "zip64");
 		const main = zipEnd(bytes);
 		if (main === undefined) throw unreadable(label, "no end record at its end");
-		const zip = archive(bytes, main, label, state, startsWith(bytes, LOCAL_MAGIC));
+		const zip = archive(bytes, main, label, state, true);
 		let entries = zip.entries;
 		const seen = new Set([directory(bytes, main)?.[0]]);
-		for (const end of endSignatures(bytes)) {
+		for (const end of ends) {
 			const found = directory(bytes, end);
 			if (found === undefined || seen.has(found[0])) continue;
 			seen.add(found[0]);
@@ -311,6 +327,15 @@ function tarHeader(bytes: Buffer, at: number): boolean {
 		signed += byte < 0x80 ? byte : byte - 256;
 	}
 	return stored === unsigned || stored === signed;
+}
+
+// Whether any block holds a tar header: GNU tar skips blocks that don't, a damaged first one too,
+// and extracts from the first that does.
+function hasTarHeader(bytes: Buffer): boolean {
+	for (let at = 0; at + 512 <= bytes.length; at += 512) {
+		if (tarHeader(bytes, at)) return true;
+	}
+	return false;
 }
 
 const BLOCK = Buffer.alloc(512);
@@ -927,7 +952,9 @@ function open(
 	const gzip = startsWith(bytes, GZIP);
 	const zstd = isZstd(bytes);
 	const zip = startsWith(bytes, LOCAL_MAGIC) || startsWith(bytes, END_MAGIC);
-	const tar = !gzip && !zstd && !zip && tarHeader(bytes, 0);
+	// GNU tar reads what it doesn't decompress, a zip too, as a tar; the walk fails at the first
+	// block that is neither zeros nor a header.
+	const tar = !gzip && !zstd && hasTarHeader(bytes);
 	// Readers take a PDF's header anywhere, or do without one, so any file named one and any binary
 	// file is looked through for streams. A PDF holds binary data, so text that only quotes PDF
 	// syntax, as code may, is one only by its name.

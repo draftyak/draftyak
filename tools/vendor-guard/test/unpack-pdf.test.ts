@@ -261,6 +261,19 @@ describe("PDF streams", () => {
 		expect(read(header("/Length", "/Title (1 0 obj << ) /Length"))).toEqual({ found: [], problem });
 	});
 
+	it("fail where a dictionary nests over 64 levels deep, however deep", () => {
+		// The stream's dictionary, with `levels - 1` more nested in it.
+		const nested = (levels: number): Buffer =>
+			pdfPage(
+				`/Filter /FlateDecode /A ${"<< /A ".repeat(levels - 1)}${">> ".repeat(levels - 1)}`,
+				packed,
+			);
+		expect(read(nested(64))).toEqual(inStream);
+		const problem = refused("the PDF", "a stream it can't parse");
+		expect(read(nested(65))).toEqual({ found: [], problem });
+		expect(read(nested(100_000))).toEqual({ found: [], problem });
+	});
+
 	it("are found wherever the header is, or without one, in any binary file", () => {
 		expect(read(Buffer.concat([noise(3000), pdf(MARK)]), "scan.bin")).toEqual(inStream);
 		expect(read(pdfPage("/Filter /FlateDecode", packed, { header: "" }), "scan.bin")).toEqual(
@@ -282,6 +295,9 @@ describe("PDF streams", () => {
 		expect(read(locked("/Encrypt"))).toEqual({ found: [], problem });
 		const plain = Buffer.from("%PDF-1.4\ntrailer << /Root 1 0 R /Encrypt 2 0 R >>\n%%EOF\n");
 		expect(read(plain, "plain.pdf")).toEqual({ found: [], problem });
+		// A binary file, not named a PDF, with a PDF header and no stream.
+		const marked = plain.toString("latin1").replace("\n", "\n%\xe2\xe3\xcf\xd3\n");
+		expect(read(Buffer.from(marked, "latin1"), "scan.bin")).toEqual({ found: [], problem });
 		expect(read(locked("/Encr#79pt"))).toEqual({ found: [], problem });
 		expect(read(locked("/#45#6e#63rypt"), "scan.bin")).toEqual({ found: [], problem });
 		const tail = "\nendobj\ntrailer << /Root 1 0 R /Encrypt 5 0 R >>\n%%EOF\n";

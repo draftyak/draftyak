@@ -56,12 +56,44 @@ describe("a zip archive", () => {
 			]),
 			(copy) => copy.writeUInt16LE(0xfff0, centralOf(copy) + 28),
 		);
+		// What zip64 readers look for just before an end record, and follow to another listing.
+		const locator = Buffer.alloc(20);
+		locator.writeUInt32LE(0x07064b50, 0);
+		locator.writeUInt32LE(1, 16);
+		const located = Buffer.concat([good.subarray(0, end), locator, good.subarray(end)]);
 		const cases: [string, Buffer, string][] = [
 			["a count of 0xFFFF", edited(good, (copy) => copy.writeUInt16LE(0xffff, end + 10)), "zip64"],
 			[
 				"an offset of 0xFFFFFFFF",
 				edited(good, (copy) => copy.writeUInt32LE(0xffffffff, end + 16)),
 				"zip64",
+			],
+			["a zip64 locator before its end record", located, "zip64"],
+			[
+				"a zip64 locator in its listing's comment",
+				edited(located, (copy) => {
+					copy.writeUInt16LE(locator.length, central + 32);
+					copy.writeUInt32LE(end + locator.length - central, end + locator.length + 12);
+				}),
+				"zip64",
+			],
+			[
+				"a zip64 locator before an end record in its comment",
+				zip([{ name: "a.txt", data: text }], Buffer.concat([locator, zip([]), Buffer.from("x")])),
+				"zip64",
+			],
+			[
+				"a zip64 archive after other data",
+				Buffer.concat([
+					noise(64),
+					edited(located, (copy) => copy.writeUInt32LE(0xffffffff, end + locator.length + 16)),
+				]),
+				"zip64",
+			],
+			[
+				"other data before its end record",
+				Buffer.concat([good.subarray(0, end), Buffer.from("more"), good.subarray(end)]),
+				"data between its central directory and end record",
 			],
 			[
 				"a central directory at offset 3, of size 1",
@@ -185,9 +217,11 @@ describe("a zip archive", () => {
 		expect(read(zip(entries))).toEqual({ found: ["zip entry 2"] });
 	});
 
-	it("has an entry named .pdf read as one, though all text", () => {
-		const archive = zip([{ name: "docs/report.pdf", data: textPdf(MARK) }]);
-		expect(read(archive)).toEqual({ found: ["PDF stream 1 in zip entry 1"] });
+	it("has an entry named .pdf read as one, though all text, stored or deflated", () => {
+		for (const method of [0, 8]) {
+			const archive = zip([{ name: "docs/report.pdf", data: textPdf(MARK), method }]);
+			expect(read(archive), `method ${method}`).toEqual({ found: ["PDF stream 1 in zip entry 1"] });
+		}
 	});
 
 	it("fails where listings that overlap add up past what the content may expand to", () => {
@@ -384,17 +418,42 @@ describe("a tar archive", () => {
 				Buffer.concat([tarEntry("a.txt", "ok\n"), close, entry, close]),
 				inGzip(2),
 			],
+			[
+				"after a zero block at its start",
+				Buffer.concat([Buffer.alloc(512), entry, close]),
+				inGzip(1),
+			],
 		];
 		for (const [name, bytes, found] of cases) expect(read(bytes), name).toEqual({ found });
 	});
 
 	it("fails on a block that isn't a header, data cut off, laid out otherwise, or in a type that holds none", () => {
 		const first = tarEntry("a.txt", "ok\n");
+		// The first header with a byte of its name changed, so its checksum fails.
+		const damaged = edited(first, (copy) => copy.writeUInt8(0x62, 0));
+		// A zip that holds the entry in its comment, on a block boundary.
+		const bare = zip([{ name: "a.txt", data: "ok\n" }]);
+		const pad = Buffer.alloc((512 - (bare.length % 512)) % 512);
 		const cases: [string, Buffer, string][] = [
 			[
 				"a garbage block before an entry",
 				Buffer.concat([first, noise(512), entry, close]),
 				"a damaged header at byte 1024",
+			],
+			[
+				"a garbage block first",
+				Buffer.concat([noise(512), entry, close]),
+				"a damaged header at byte 0",
+			],
+			[
+				"a first header whose checksum fails",
+				Buffer.concat([damaged, entry, close]),
+				"a damaged header at byte 0",
+			],
+			[
+				"a zip before an entry",
+				zip([{ name: "a.txt", data: "ok\n" }], Buffer.concat([pad, entry, close])),
+				"a damaged header at byte 0",
 			],
 			[
 				"a garbage block after the end",

@@ -124,4 +124,25 @@ describe("the scan budget", () => {
 			{ file: "escaped.gz", line: 1, column: 1, rule: "too-large", reason: over(many.length) },
 		]);
 	});
+
+	it("counts both readings of a \\0 before an octal digit, failing a flood of them just over twice the cap but not just under", () => {
+		const repo = tempRepo();
+		// Each line costs its length plus LINE_COST three times: as written, read as an octal escape,
+		// and read as NUL and a digit.
+		const cost = 3 * ("\\01".length + LINE_COST);
+		// What a file this small may read; its own bytes' readings take less than 4 Ki of it.
+		const budget = 2 * CAPS.min;
+		const under = Math.floor((budget - 2 ** 12) / cost);
+		const past = Math.floor(budget / cost) + 1;
+		const flood = (line: string, count: number): Buffer => gzipSync(`${line}\n`.repeat(count));
+		const refused = flood("\\01", past);
+		repo.write("past.gz", refused);
+		repo.write("under.gz", flood("\\01", under));
+		// As many lines of the same length, which only the octal reading changes.
+		repo.write("octal.gz", flood("\\11", past));
+		const { findings } = scanFiles(repo.dir, ["octal.gz", "past.gz", "under.gz"]);
+		expect(findings).toEqual([
+			{ file: "past.gz", line: 1, column: 1, rule: "too-large", reason: over(refused.length) },
+		]);
+	});
 });
