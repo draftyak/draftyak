@@ -333,3 +333,183 @@ describe("the route table", () => {
 		]);
 	});
 });
+
+describe("peer member admission", () => {
+	const confirmed = () => ({
+		role: "device",
+		known: true,
+		revoked: false,
+		epoch: 2,
+		confirmedEpoch: 2,
+		capabilities: ["admin"],
+		sidecarClaim: false,
+		bootstrapDone: false,
+	});
+	const members = [
+		"role",
+		"known",
+		"revoked",
+		"epoch",
+		"confirmedEpoch",
+		"capabilities",
+		"sidecarClaim",
+		"bootstrapDone",
+	] as const;
+
+	it("admits own data members on plain and null-prototype peers", () => {
+		for (const { id } of relay.OAUTH_RELAY_ROUTES) {
+			expect(relay.oauthRelayRouteAllows(id, confirmed())).toBe(true);
+			expect(relay.oauthRelayRouteAllows(id, Object.assign(Object.create(null), confirmed()))).toBe(
+				true,
+			);
+		}
+	});
+
+	it("refuses a peer whose complete authority comes from its prototype", () => {
+		for (const { id } of relay.OAUTH_RELAY_ROUTES)
+			expect(relay.oauthRelayRouteAllows(id, Object.create(confirmed()))).toBe(false);
+	});
+
+	it.each(members)("refuses inherited %s even when every other member is own data", (name) => {
+		for (const { id } of relay.OAUTH_RELAY_ROUTES) {
+			const peer = confirmed();
+			const inherited = { [name]: peer[name] };
+			Reflect.deleteProperty(peer, name);
+			Object.setPrototypeOf(peer, inherited);
+			expect(relay.oauthRelayRouteAllows(id, peer)).toBe(false);
+		}
+	});
+
+	it.each(members)("refuses accessor %s without executing its getter", (name) => {
+		for (const { id } of relay.OAUTH_RELAY_ROUTES) {
+			const peer = confirmed();
+			const value = peer[name];
+			let reads = 0;
+			Object.defineProperty(peer, name, {
+				enumerable: true,
+				get() {
+					reads++;
+					return value;
+				},
+			});
+			expect(relay.oauthRelayRouteAllows(id, peer)).toBe(false);
+			expect(reads).toBe(0);
+		}
+	});
+
+	it.each(members)("refuses non-enumerable %s", (name) => {
+		for (const { id } of relay.OAUTH_RELAY_ROUTES) {
+			const peer = confirmed();
+			Object.defineProperty(peer, name, { enumerable: false });
+			expect(relay.oauthRelayRouteAllows(id, peer)).toBe(false);
+		}
+	});
+
+	it("refuses proxy peers without running property traps", () => {
+		for (const { id } of relay.OAUTH_RELAY_ROUTES) {
+			let traps = 0;
+			const peer = new Proxy(confirmed(), {
+				get(target, name, receiver) {
+					traps++;
+					return Reflect.get(target, name, receiver);
+				},
+				getOwnPropertyDescriptor(target, name) {
+					traps++;
+					return Reflect.getOwnPropertyDescriptor(target, name);
+				},
+				ownKeys(target) {
+					traps++;
+					return Reflect.ownKeys(target);
+				},
+			});
+			expect(relay.oauthRelayRouteAllows(id, peer)).toBe(false);
+			expect(traps).toBe(0);
+		}
+	});
+
+	it("refuses capability getters before they can change the peer", () => {
+		for (const { id } of relay.OAUTH_RELAY_ROUTES) {
+			const peer = confirmed();
+			let reads = 0;
+			Object.defineProperty(peer.capabilities, "0", {
+				get() {
+					reads++;
+					peer.revoked = true;
+					return "admin";
+				},
+			});
+			expect(relay.oauthRelayRouteAllows(id, peer)).toBe(false);
+			expect(reads).toBe(0);
+			expect(peer.revoked).toBe(false);
+		}
+	});
+
+	it("refuses inherited capability entries without reading them", () => {
+		for (const { id } of relay.OAUTH_RELAY_ROUTES) {
+			const peer = confirmed();
+			peer.capabilities = new Array<string>(1);
+			const inherited = Object.create(Array.prototype);
+			let reads = 0;
+			Object.defineProperty(inherited, "0", {
+				get() {
+					reads++;
+					return "admin";
+				},
+			});
+			Object.setPrototypeOf(peer.capabilities, inherited);
+			expect(relay.oauthRelayRouteAllows(id, peer)).toBe(false);
+			expect(reads).toBe(0);
+		}
+	});
+
+	it("refuses proxy capability arrays without running their traps", () => {
+		for (const { id } of relay.OAUTH_RELAY_ROUTES) {
+			const peer = confirmed();
+			let traps = 0;
+			peer.capabilities = new Proxy(peer.capabilities, {
+				get(target, name, receiver) {
+					traps++;
+					return Reflect.get(target, name, receiver);
+				},
+				getOwnPropertyDescriptor(target, name) {
+					traps++;
+					return Reflect.getOwnPropertyDescriptor(target, name);
+				},
+			});
+			expect(relay.oauthRelayRouteAllows(id, peer)).toBe(false);
+			expect(traps).toBe(0);
+		}
+	});
+
+	it("bounds capability length before inspecting any entries", () => {
+		for (const { id } of relay.OAUTH_RELAY_ROUTES) {
+			const peer = confirmed();
+			peer.capabilities = new Array<string>(100);
+			let reads = 0;
+			Object.defineProperty(peer.capabilities, "0", {
+				get() {
+					reads++;
+					return "admin";
+				},
+			});
+			expect(relay.oauthRelayRouteAllows(id, peer)).toBe(false);
+			expect(reads).toBe(0);
+		}
+	});
+
+	it("copies native capability entries without consulting custom array methods", () => {
+		for (const { id } of relay.OAUTH_RELAY_ROUTES) {
+			const peer = confirmed();
+			let calls = 0;
+			Object.defineProperty(peer.capabilities, Symbol.iterator, {
+				value() {
+					calls++;
+					throw new Error("DYTEST custom capability iterator");
+				},
+			});
+			Object.defineProperty(peer.capabilities, "0", { enumerable: false });
+			expect(relay.oauthRelayRouteAllows(id, peer)).toBe(true);
+			expect(calls).toBe(0);
+		}
+	});
+});
