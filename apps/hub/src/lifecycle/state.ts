@@ -24,7 +24,7 @@ export class HubLifecycleError extends Error {
 
 /** The opened hub services; the lifecycle closes them once, after the drain and the stop steps. */
 export interface HubLifecycleSession {
-	close(): void;
+	close(): void | Promise<void>;
 }
 /** Taken before a claim transaction and held until the attempt's outcome is durable. */
 export interface ClaimPermit {
@@ -164,7 +164,7 @@ export function createHubLifecycle(options: { readonly clock: TimerClock }): Hub
 		}
 		await openAttempt;
 		try {
-			session?.close();
+			await session?.close();
 		} catch {
 			failures++;
 		}
