@@ -12,7 +12,7 @@ admin_groups! {
  tools => ["tool.instance-create","tool.secret-set","tool.enable","tool.posture-no-train"],
  access => ["access.token-mint","access.grant-widen","access.cimd-host-add","access.exposure-enable","access.bind-address-add","access.advertised-addresses-set"],
  security => ["security.device-capabilities","security.pin-change","security.key-rotate"],
- data => ["data.export"],
+ data => ["data.export","data.backup"],
  sms => [],
 }
 device_statement!(AdminStatement,Wire,{op:String,kind:String,digest:String},|s:&AdminStatement|id(&s.op)&&ADMIN_KINDS.contains(&s.kind.as_str())&&sha(&s.digest));

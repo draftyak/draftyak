@@ -4,6 +4,7 @@
 
 mod device_api;
 mod jcs_sign;
+mod oauth_relay;
 mod schedule;
 mod snapshot;
 mod statements;
@@ -19,6 +20,7 @@ type Command = fn(&Map<String, Value>) -> Result<Value, String>;
 const AREAS: &[&[(&str, Command)]] = &[
     device_api::COMMANDS,
     jcs_sign::COMMANDS,
+    oauth_relay::COMMANDS,
     schedule::COMMANDS,
     snapshot::COMMANDS,
     statements::COMMANDS,

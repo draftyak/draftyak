@@ -44,6 +44,12 @@ async function extra(base: Record<string, unknown>, signed: SignVector): Promise
 	await signed("host-role-refused", { ...base, role: "host:sms" }, false);
 	await signed("host-capability-refused", { ...base, capabilities: ["host:sms"] }, false);
 	await signed("unknown-role", { ...base, role: "unregistered-test-role" }, false);
+	await signed("object-form-role", { ...base, role: { device: null } }, false);
+	await signed(
+		"object-form-capability",
+		{ ...base, capabilities: [{ read: null }, "draft", "organize", "approve", "admin"] },
+		false,
+	);
 	await signed("duplicate-capability", { ...base, capabilities: ["read", "read"] }, false);
 	await signed(
 		"unknown-capability",

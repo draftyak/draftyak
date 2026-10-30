@@ -1,0 +1,1485 @@
+{
+  "format": "draftyak.vectors.hub-runtime.v1",
+  "description": "The closed catalogue of the two scheduling routes, and their admission, length, request and response cases. A request case without receivedHex has no body; padToBytes appends legal JSON whitespace to the received answer; cap cases test a length alone.",
+  "routes": [
+    {
+      "id": "scheduling",
+      "method": "GET",
+      "path": "/device/v1/scheduling",
+      "role": "device",
+      "capability": "read",
+      "confirmation": "confirmed",
+      "request": "none",
+      "requestBytes": 0,
+      "responseBytes": 4096,
+      "response": "SchedulingStatus"
+    },
+    {
+      "id": "scheduling-outbox",
+      "method": "GET",
+      "path": "/device/v1/scheduling/outbox",
+      "role": "device",
+      "capability": "read",
+      "confirmation": "confirmed",
+      "request": "none",
+      "requestBytes": 0,
+      "responseBytes": 8192,
+      "response": "ScheduledSummary"
+    }
+  ],
+  "cases": [
+    {
+      "id": "access-scheduling-confirmed-read",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-scheduling-read-only",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-scheduling-epoch-zero",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 0,
+        "confirmedEpoch": 0,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-scheduling-missing-read",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-no-capabilities",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-pending",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": null,
+        "capabilities": [],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-pending-with-read",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": null,
+        "capabilities": [
+          "read"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-old-epoch",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 0,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-revoked",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": true,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-unknown",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": false,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-host-role",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "host:sms",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-repeated-capability",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "read"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-unknown-capability",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "host:sms"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-unknown-member",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false,
+        "extra": true
+      },
+      "valid": false
+    },
+    {
+      "id": "cap-scheduling-request-0",
+      "action": "cap",
+      "route": "scheduling",
+      "direction": "request",
+      "length": 0,
+      "valid": true
+    },
+    {
+      "id": "cap-scheduling-request-1",
+      "action": "cap",
+      "route": "scheduling",
+      "direction": "request",
+      "length": 1,
+      "valid": false
+    },
+    {
+      "id": "cap-scheduling-response-4096",
+      "action": "cap",
+      "route": "scheduling",
+      "direction": "response",
+      "length": 4096,
+      "valid": true
+    },
+    {
+      "id": "cap-scheduling-response-4097",
+      "action": "cap",
+      "route": "scheduling",
+      "direction": "response",
+      "length": 4097,
+      "valid": false
+    },
+    {
+      "id": "request-scheduling-absent",
+      "action": "request",
+      "route": "scheduling",
+      "present": false,
+      "valid": true
+    },
+    {
+      "id": "request-scheduling-body-empty",
+      "action": "request",
+      "route": "scheduling",
+      "receivedHex": "",
+      "valid": false
+    },
+    {
+      "id": "request-scheduling-body-null",
+      "action": "request",
+      "route": "scheduling",
+      "receivedHex": "6e756c6c",
+      "valid": false
+    },
+    {
+      "id": "request-scheduling-body-object",
+      "action": "request",
+      "route": "scheduling",
+      "receivedHex": "7b7d",
+      "valid": false
+    },
+    {
+      "id": "response-scheduling-base",
+      "action": "response",
+      "route": "scheduling",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": false
+      },
+      "valid": true
+    },
+    {
+      "id": "response-scheduling-received-4096",
+      "action": "response",
+      "route": "scheduling",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": false
+      },
+      "padToBytes": 4096,
+      "valid": true
+    },
+    {
+      "id": "response-scheduling-received-4097",
+      "action": "response",
+      "route": "scheduling",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": false
+      },
+      "padToBytes": 4097,
+      "valid": false
+    },
+    {
+      "id": "response-scheduling-duplicate-member",
+      "action": "response",
+      "route": "scheduling",
+      "receivedHex": "7b226d6f6465223a2273696465636172222c227363686564756c6572223a2272756e6e696e67222c2273796e63506175736564223a66616c73652c2273796e63506175736564223a66616c73657d",
+      "valid": false
+    },
+    {
+      "id": "response-scheduling-trailing-text",
+      "action": "response",
+      "route": "scheduling",
+      "receivedHex": "7b226d6f6465223a2273696465636172222c227363686564756c6572223a2272756e6e696e67222c2273796e63506175736564223a66616c73657d78",
+      "valid": false
+    },
+    {
+      "id": "response-scheduling-other-answer",
+      "action": "response",
+      "route": "scheduling",
+      "value": {
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "scopeHash": "a30ee06845592654b0a6d9e19bb8c5a6cc89f6f02f8a7af461503e0184d22fdd",
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792346400000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T13:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792347300000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792350000000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T14:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792350900000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792353600000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T15:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792354500000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792357200000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T16:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792358100000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792360800000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T17:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792361700000
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-confirmed-read",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-scheduling-outbox-read-only",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-scheduling-outbox-epoch-zero",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 0,
+        "confirmedEpoch": 0,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": true
+    },
+    {
+      "id": "access-scheduling-outbox-missing-read",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-no-capabilities",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-pending",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": null,
+        "capabilities": [],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-pending-with-read",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": null,
+        "capabilities": [
+          "read"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-old-epoch",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 0,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-revoked",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": true,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-unknown",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": false,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-host-role",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "host:sms",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-repeated-capability",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "read"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-unknown-capability",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "host:sms"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-unknown-member",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false,
+        "extra": true
+      },
+      "valid": false
+    },
+    {
+      "id": "cap-scheduling-outbox-request-0",
+      "action": "cap",
+      "route": "scheduling-outbox",
+      "direction": "request",
+      "length": 0,
+      "valid": true
+    },
+    {
+      "id": "cap-scheduling-outbox-request-1",
+      "action": "cap",
+      "route": "scheduling-outbox",
+      "direction": "request",
+      "length": 1,
+      "valid": false
+    },
+    {
+      "id": "cap-scheduling-outbox-response-8192",
+      "action": "cap",
+      "route": "scheduling-outbox",
+      "direction": "response",
+      "length": 8192,
+      "valid": true
+    },
+    {
+      "id": "cap-scheduling-outbox-response-8193",
+      "action": "cap",
+      "route": "scheduling-outbox",
+      "direction": "response",
+      "length": 8193,
+      "valid": false
+    },
+    {
+      "id": "request-scheduling-outbox-absent",
+      "action": "request",
+      "route": "scheduling-outbox",
+      "present": false,
+      "valid": true
+    },
+    {
+      "id": "request-scheduling-outbox-body-empty",
+      "action": "request",
+      "route": "scheduling-outbox",
+      "receivedHex": "",
+      "valid": false
+    },
+    {
+      "id": "request-scheduling-outbox-body-null",
+      "action": "request",
+      "route": "scheduling-outbox",
+      "receivedHex": "6e756c6c",
+      "valid": false
+    },
+    {
+      "id": "request-scheduling-outbox-body-object",
+      "action": "request",
+      "route": "scheduling-outbox",
+      "receivedHex": "7b7d",
+      "valid": false
+    },
+    {
+      "id": "response-scheduling-outbox-base",
+      "action": "response",
+      "route": "scheduling-outbox",
+      "value": {
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "scopeHash": "a30ee06845592654b0a6d9e19bb8c5a6cc89f6f02f8a7af461503e0184d22fdd",
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792346400000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T13:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792347300000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792350000000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T14:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792350900000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792353600000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T15:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792354500000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792357200000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T16:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792358100000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792360800000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T17:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792361700000
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "response-scheduling-outbox-received-8192",
+      "action": "response",
+      "route": "scheduling-outbox",
+      "value": {
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "scopeHash": "a30ee06845592654b0a6d9e19bb8c5a6cc89f6f02f8a7af461503e0184d22fdd",
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792346400000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T13:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792347300000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792350000000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T14:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792350900000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792353600000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T15:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792354500000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792357200000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T16:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792358100000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792360800000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T17:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792361700000
+          }
+        ]
+      },
+      "padToBytes": 8192,
+      "valid": true
+    },
+    {
+      "id": "response-scheduling-outbox-received-8193",
+      "action": "response",
+      "route": "scheduling-outbox",
+      "value": {
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "running",
+          "syncPaused": false
+        },
+        "scopeHash": "a30ee06845592654b0a6d9e19bb8c5a6cc89f6f02f8a7af461503e0184d22fdd",
+        "pendingApprovalCount": 21,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 6,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792346400000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T13:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792347300000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792350000000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T14:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792350900000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792353600000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T15:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792354500000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792357200000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T16:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792358100000
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+            "alias": "work",
+            "destination": "Recipient@example.test",
+            "destinationTruncated": false,
+            "moreRecipients": 0,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 1792360800000,
+              "zone": "America/Chicago",
+              "localWallTime": "2026-10-18T17:00-05:00",
+              "latenessSec": 900,
+              "holdIfNewInbound": true
+            },
+            "deliverBy": 1792361700000
+          }
+        ]
+      },
+      "padToBytes": 8193,
+      "valid": false
+    },
+    {
+      "id": "response-scheduling-outbox-duplicate-member",
+      "action": "response",
+      "route": "scheduling-outbox",
+      "receivedHex": "7b227363686564756c696e67223a7b226d6f6465223a2273696465636172222c227363686564756c6572223a2272756e6e696e67222c2273796e63506175736564223a66616c73652c2273796e63506175736564223a66616c73657d2c2273636f706548617368223a2261333065653036383435353932363534623061366439653139626238633561366363383966366630326638613761663436313530336530313834643232666464222c2270656e64696e67417070726f76616c436f756e74223a32312c2270656e64696e67417070726f76616c496473223a5b2230314a415a335733423651384d32563047355439533030303030222c2230314a415a335733423651384d32563047355439533030303031222c2230314a415a335733423651384d32563047355439533030303032222c2230314a415a335733423651384d32563047355439533030303033222c2230314a415a335733423651384d32563047355439533030303034222c2230314a415a335733423651384d32563047355439533030303035222c2230314a415a335733423651384d32563047355439533030303036222c2230314a415a335733423651384d32563047355439533030303037222c2230314a415a335733423651384d32563047355439533030303038222c2230314a415a335733423651384d32563047355439533030303039222c2230314a415a335733423651384d32563047355439533030303130222c2230314a415a335733423651384d32563047355439533030303131222c2230314a415a335733423651384d32563047355439533030303132222c2230314a415a335733423651384d32563047355439533030303133222c2230314a415a335733423651384d32563047355439533030303134222c2230314a415a335733423651384d32563047355439533030303135222c2230314a415a335733423651384d32563047355439533030303136222c2230314a415a335733423651384d32563047355439533030303137222c2230314a415a335733423651384d32563047355439533030303138222c2230314a415a335733423651384d32563047355439533030303139225d2c227363686564756c6564436f756e74223a362c226974656d73223a5b7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303430222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323334363430303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431333a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323334373330303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303431222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335303030303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431343a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335303930303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303432222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335333630303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431353a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335343530303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303433222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335373230303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431363a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335383130303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303434222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323336303830303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431373a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323336313730303030307d5d7d",
+      "valid": false
+    },
+    {
+      "id": "response-scheduling-outbox-trailing-text",
+      "action": "response",
+      "route": "scheduling-outbox",
+      "receivedHex": "7b227363686564756c696e67223a7b226d6f6465223a2273696465636172222c227363686564756c6572223a2272756e6e696e67222c2273796e63506175736564223a66616c73657d2c2273636f706548617368223a2261333065653036383435353932363534623061366439653139626238633561366363383966366630326638613761663436313530336530313834643232666464222c2270656e64696e67417070726f76616c436f756e74223a32312c2270656e64696e67417070726f76616c496473223a5b2230314a415a335733423651384d32563047355439533030303030222c2230314a415a335733423651384d32563047355439533030303031222c2230314a415a335733423651384d32563047355439533030303032222c2230314a415a335733423651384d32563047355439533030303033222c2230314a415a335733423651384d32563047355439533030303034222c2230314a415a335733423651384d32563047355439533030303035222c2230314a415a335733423651384d32563047355439533030303036222c2230314a415a335733423651384d32563047355439533030303037222c2230314a415a335733423651384d32563047355439533030303038222c2230314a415a335733423651384d32563047355439533030303039222c2230314a415a335733423651384d32563047355439533030303130222c2230314a415a335733423651384d32563047355439533030303131222c2230314a415a335733423651384d32563047355439533030303132222c2230314a415a335733423651384d32563047355439533030303133222c2230314a415a335733423651384d32563047355439533030303134222c2230314a415a335733423651384d32563047355439533030303135222c2230314a415a335733423651384d32563047355439533030303136222c2230314a415a335733423651384d32563047355439533030303137222c2230314a415a335733423651384d32563047355439533030303138222c2230314a415a335733423651384d32563047355439533030303139225d2c227363686564756c6564436f756e74223a362c226974656d73223a5b7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303430222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323334363430303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431333a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323334373330303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303431222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335303030303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431343a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335303930303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303432222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335333630303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431353a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335343530303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303433222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335373230303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431363a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335383130303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303434222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323336303830303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431373a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323336313730303030307d5d7d78",
+      "valid": false
+    },
+    {
+      "id": "response-scheduling-outbox-other-answer",
+      "action": "response",
+      "route": "scheduling-outbox",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": false
+      },
+      "valid": false
+    },
+    {
+      "id": "response-scheduling-outbox-count-6.0",
+      "action": "response",
+      "route": "scheduling-outbox",
+      "receivedHex": "7b227363686564756c696e67223a7b226d6f6465223a2273696465636172222c227363686564756c6572223a2272756e6e696e67222c2273796e63506175736564223a66616c73657d2c2273636f706548617368223a2261333065653036383435353932363534623061366439653139626238633561366363383966366630326638613761663436313530336530313834643232666464222c2270656e64696e67417070726f76616c436f756e74223a32312c2270656e64696e67417070726f76616c496473223a5b2230314a415a335733423651384d32563047355439533030303030222c2230314a415a335733423651384d32563047355439533030303031222c2230314a415a335733423651384d32563047355439533030303032222c2230314a415a335733423651384d32563047355439533030303033222c2230314a415a335733423651384d32563047355439533030303034222c2230314a415a335733423651384d32563047355439533030303035222c2230314a415a335733423651384d32563047355439533030303036222c2230314a415a335733423651384d32563047355439533030303037222c2230314a415a335733423651384d32563047355439533030303038222c2230314a415a335733423651384d32563047355439533030303039222c2230314a415a335733423651384d32563047355439533030303130222c2230314a415a335733423651384d32563047355439533030303131222c2230314a415a335733423651384d32563047355439533030303132222c2230314a415a335733423651384d32563047355439533030303133222c2230314a415a335733423651384d32563047355439533030303134222c2230314a415a335733423651384d32563047355439533030303135222c2230314a415a335733423651384d32563047355439533030303136222c2230314a415a335733423651384d32563047355439533030303137222c2230314a415a335733423651384d32563047355439533030303138222c2230314a415a335733423651384d32563047355439533030303139225d2c227363686564756c6564436f756e74223a362e302c226974656d73223a5b7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303430222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323334363430303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431333a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323334373330303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303431222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335303030303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431343a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335303930303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303432222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335333630303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431353a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335343530303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303433222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335373230303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431363a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335383130303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303434222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323336303830303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431373a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323336313730303030307d5d7d",
+      "valid": true
+    },
+    {
+      "id": "response-scheduling-outbox-count-6e0",
+      "action": "response",
+      "route": "scheduling-outbox",
+      "receivedHex": "7b227363686564756c696e67223a7b226d6f6465223a2273696465636172222c227363686564756c6572223a2272756e6e696e67222c2273796e63506175736564223a66616c73657d2c2273636f706548617368223a2261333065653036383435353932363534623061366439653139626238633561366363383966366630326638613761663436313530336530313834643232666464222c2270656e64696e67417070726f76616c436f756e74223a32312c2270656e64696e67417070726f76616c496473223a5b2230314a415a335733423651384d32563047355439533030303030222c2230314a415a335733423651384d32563047355439533030303031222c2230314a415a335733423651384d32563047355439533030303032222c2230314a415a335733423651384d32563047355439533030303033222c2230314a415a335733423651384d32563047355439533030303034222c2230314a415a335733423651384d32563047355439533030303035222c2230314a415a335733423651384d32563047355439533030303036222c2230314a415a335733423651384d32563047355439533030303037222c2230314a415a335733423651384d32563047355439533030303038222c2230314a415a335733423651384d32563047355439533030303039222c2230314a415a335733423651384d32563047355439533030303130222c2230314a415a335733423651384d32563047355439533030303131222c2230314a415a335733423651384d32563047355439533030303132222c2230314a415a335733423651384d32563047355439533030303133222c2230314a415a335733423651384d32563047355439533030303134222c2230314a415a335733423651384d32563047355439533030303135222c2230314a415a335733423651384d32563047355439533030303136222c2230314a415a335733423651384d32563047355439533030303137222c2230314a415a335733423651384d32563047355439533030303138222c2230314a415a335733423651384d32563047355439533030303139225d2c227363686564756c6564436f756e74223a3665302c226974656d73223a5b7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303430222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323334363430303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431333a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323334373330303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303431222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335303030303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431343a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335303930303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303432222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335333630303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431353a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335343530303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303433222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335373230303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431363a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335383130303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303434222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323336303830303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431373a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323336313730303030307d5d7d",
+      "valid": true
+    },
+    {
+      "id": "response-scheduling-outbox-count-6.5",
+      "action": "response",
+      "route": "scheduling-outbox",
+      "receivedHex": "7b227363686564756c696e67223a7b226d6f6465223a2273696465636172222c227363686564756c6572223a2272756e6e696e67222c2273796e63506175736564223a66616c73657d2c2273636f706548617368223a2261333065653036383435353932363534623061366439653139626238633561366363383966366630326638613761663436313530336530313834643232666464222c2270656e64696e67417070726f76616c436f756e74223a32312c2270656e64696e67417070726f76616c496473223a5b2230314a415a335733423651384d32563047355439533030303030222c2230314a415a335733423651384d32563047355439533030303031222c2230314a415a335733423651384d32563047355439533030303032222c2230314a415a335733423651384d32563047355439533030303033222c2230314a415a335733423651384d32563047355439533030303034222c2230314a415a335733423651384d32563047355439533030303035222c2230314a415a335733423651384d32563047355439533030303036222c2230314a415a335733423651384d32563047355439533030303037222c2230314a415a335733423651384d32563047355439533030303038222c2230314a415a335733423651384d32563047355439533030303039222c2230314a415a335733423651384d32563047355439533030303130222c2230314a415a335733423651384d32563047355439533030303131222c2230314a415a335733423651384d32563047355439533030303132222c2230314a415a335733423651384d32563047355439533030303133222c2230314a415a335733423651384d32563047355439533030303134222c2230314a415a335733423651384d32563047355439533030303135222c2230314a415a335733423651384d32563047355439533030303136222c2230314a415a335733423651384d32563047355439533030303137222c2230314a415a335733423651384d32563047355439533030303138222c2230314a415a335733423651384d32563047355439533030303139225d2c227363686564756c6564436f756e74223a362e352c226974656d73223a5b7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303430222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323334363430303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431333a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323334373330303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303431222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335303030303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431343a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335303930303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303432222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335333630303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431353a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335343530303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303433222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323335373230303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431363a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323335383130303030307d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303434222c226163636f756e744964223a2230314a415a335733423651384d325630473554394b3458375244222c22616c696173223a22776f726b222c2264657374696e6174696f6e223a22526563697069656e74406578616d706c652e74657374222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a302c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a313739323336303830303030302c227a6f6e65223a22416d65726963612f4368696361676f222c226c6f63616c57616c6c54696d65223a22323032362d31302d31385431373a30302d30353a3030222c226c6174656e657373536563223a3930302c22686f6c6449664e6577496e626f756e64223a747275657d2c2264656c697665724279223a313739323336313730303030307d5d7d",
+      "valid": false
+    },
+    {
+      "id": "response-scheduling-outbox-largest",
+      "action": "response",
+      "route": "scheduling-outbox",
+      "value": {
+        "scheduling": {
+          "mode": "sidecar",
+          "scheduler": "unavailable",
+          "syncPaused": false
+        },
+        "scopeHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "pendingApprovalCount": 9007199254740991,
+        "pendingApprovalIds": [
+          "01JAZ3W3B6Q8M2V0G5T9S00000",
+          "01JAZ3W3B6Q8M2V0G5T9S00001",
+          "01JAZ3W3B6Q8M2V0G5T9S00002",
+          "01JAZ3W3B6Q8M2V0G5T9S00003",
+          "01JAZ3W3B6Q8M2V0G5T9S00004",
+          "01JAZ3W3B6Q8M2V0G5T9S00005",
+          "01JAZ3W3B6Q8M2V0G5T9S00006",
+          "01JAZ3W3B6Q8M2V0G5T9S00007",
+          "01JAZ3W3B6Q8M2V0G5T9S00008",
+          "01JAZ3W3B6Q8M2V0G5T9S00009",
+          "01JAZ3W3B6Q8M2V0G5T9S00010",
+          "01JAZ3W3B6Q8M2V0G5T9S00011",
+          "01JAZ3W3B6Q8M2V0G5T9S00012",
+          "01JAZ3W3B6Q8M2V0G5T9S00013",
+          "01JAZ3W3B6Q8M2V0G5T9S00014",
+          "01JAZ3W3B6Q8M2V0G5T9S00015",
+          "01JAZ3W3B6Q8M2V0G5T9S00016",
+          "01JAZ3W3B6Q8M2V0G5T9S00017",
+          "01JAZ3W3B6Q8M2V0G5T9S00018",
+          "01JAZ3W3B6Q8M2V0G5T9S00019"
+        ],
+        "scheduledCount": 9007199254740991,
+        "items": [
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00040",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9S00060",
+            "alias": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "destination": "\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"",
+            "destinationTruncated": false,
+            "moreRecipients": 299,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 9007199168100991,
+              "zone": "Etc/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "localWallTime": "9999-12-31T23:59+00:00",
+              "latenessSec": 86400,
+              "holdIfNewInbound": false
+            },
+            "deliverBy": 9007199254500991
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00041",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9S00061",
+            "alias": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "destination": "\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"",
+            "destinationTruncated": false,
+            "moreRecipients": 299,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 9007199168160991,
+              "zone": "Etc/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "localWallTime": "9999-12-31T23:59+00:00",
+              "latenessSec": 86400,
+              "holdIfNewInbound": false
+            },
+            "deliverBy": 9007199254560991
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00042",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9S00062",
+            "alias": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "destination": "\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"",
+            "destinationTruncated": false,
+            "moreRecipients": 299,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 9007199168220991,
+              "zone": "Etc/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "localWallTime": "9999-12-31T23:59+00:00",
+              "latenessSec": 86400,
+              "holdIfNewInbound": false
+            },
+            "deliverBy": 9007199254620991
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00043",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9S00063",
+            "alias": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "destination": "\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"",
+            "destinationTruncated": false,
+            "moreRecipients": 299,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 9007199168280991,
+              "zone": "Etc/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "localWallTime": "9999-12-31T23:59+00:00",
+              "latenessSec": 86400,
+              "holdIfNewInbound": false
+            },
+            "deliverBy": 9007199254680991
+          },
+          {
+            "outboxId": "01JAZ3W3B6Q8M2V0G5T9S00044",
+            "accountId": "01JAZ3W3B6Q8M2V0G5T9S00064",
+            "alias": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "destination": "\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"",
+            "destinationTruncated": false,
+            "moreRecipients": 299,
+            "schedule": {
+              "kind": "at",
+              "notBefore": 9007199168340991,
+              "zone": "Etc/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "localWallTime": "9999-12-31T23:59+00:00",
+              "latenessSec": 86400,
+              "holdIfNewInbound": false
+            },
+            "deliverBy": 9007199254740991
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "response-scheduling-outbox-largest-received",
+      "action": "response",
+      "route": "scheduling-outbox",
+      "receivedHex": "7b227363686564756c696e67223a7b226d6f6465223a2273696465636172222c227363686564756c6572223a22756e617661696c61626c65222c2273796e63506175736564223a66616c73657d2c2273636f706548617368223a2266666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666222c2270656e64696e67417070726f76616c436f756e74223a393030373139393235343734303939312c2270656e64696e67417070726f76616c496473223a5b2230314a415a335733423651384d32563047355439533030303030222c2230314a415a335733423651384d32563047355439533030303031222c2230314a415a335733423651384d32563047355439533030303032222c2230314a415a335733423651384d32563047355439533030303033222c2230314a415a335733423651384d32563047355439533030303034222c2230314a415a335733423651384d32563047355439533030303035222c2230314a415a335733423651384d32563047355439533030303036222c2230314a415a335733423651384d32563047355439533030303037222c2230314a415a335733423651384d32563047355439533030303038222c2230314a415a335733423651384d32563047355439533030303039222c2230314a415a335733423651384d32563047355439533030303130222c2230314a415a335733423651384d32563047355439533030303131222c2230314a415a335733423651384d32563047355439533030303132222c2230314a415a335733423651384d32563047355439533030303133222c2230314a415a335733423651384d32563047355439533030303134222c2230314a415a335733423651384d32563047355439533030303135222c2230314a415a335733423651384d32563047355439533030303136222c2230314a415a335733423651384d32563047355439533030303137222c2230314a415a335733423651384d32563047355439533030303138222c2230314a415a335733423651384d32563047355439533030303139225d2c227363686564756c6564436f756e74223a393030373139393235343734303939312c226974656d73223a5b7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303430222c226163636f756e744964223a2230314a415a335733423651384d32563047355439533030303630222c22616c696173223a226161616161616161616161616161616161616161616161616161616161616161222c2264657374696e6174696f6e223a225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c22222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a3239392c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a393030373139393136383130303939312c227a6f6e65223a224574632f787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878222c226c6f63616c57616c6c54696d65223a22393939392d31322d33315432333a35392b30303a3030222c226c6174656e657373536563223a38363430302c22686f6c6449664e6577496e626f756e64223a66616c73657d2c2264656c697665724279223a393030373139393235343530303939317d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303431222c226163636f756e744964223a2230314a415a335733423651384d32563047355439533030303631222c22616c696173223a226161616161616161616161616161616161616161616161616161616161616161222c2264657374696e6174696f6e223a225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c22222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a3239392c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a393030373139393136383136303939312c227a6f6e65223a224574632f787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878222c226c6f63616c57616c6c54696d65223a22393939392d31322d33315432333a35392b30303a3030222c226c6174656e657373536563223a38363430302c22686f6c6449664e6577496e626f756e64223a66616c73657d2c2264656c697665724279223a393030373139393235343536303939317d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303432222c226163636f756e744964223a2230314a415a335733423651384d32563047355439533030303632222c22616c696173223a226161616161616161616161616161616161616161616161616161616161616161222c2264657374696e6174696f6e223a225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c22222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a3239392c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a393030373139393136383232303939312c227a6f6e65223a224574632f787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878222c226c6f63616c57616c6c54696d65223a22393939392d31322d33315432333a35392b30303a3030222c226c6174656e657373536563223a38363430302c22686f6c6449664e6577496e626f756e64223a66616c73657d2c2264656c697665724279223a393030373139393235343632303939317d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303433222c226163636f756e744964223a2230314a415a335733423651384d32563047355439533030303633222c22616c696173223a226161616161616161616161616161616161616161616161616161616161616161222c2264657374696e6174696f6e223a225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c22222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a3239392c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a393030373139393136383238303939312c227a6f6e65223a224574632f787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878222c226c6f63616c57616c6c54696d65223a22393939392d31322d33315432333a35392b30303a3030222c226c6174656e657373536563223a38363430302c22686f6c6449664e6577496e626f756e64223a66616c73657d2c2264656c697665724279223a393030373139393235343638303939317d2c7b226f7574626f784964223a2230314a415a335733423651384d32563047355439533030303434222c226163636f756e744964223a2230314a415a335733423651384d32563047355439533030303634222c22616c696173223a226161616161616161616161616161616161616161616161616161616161616161222c2264657374696e6174696f6e223a225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c225c22222c2264657374696e6174696f6e5472756e6361746564223a66616c73652c226d6f7265526563697069656e7473223a3239392c227363686564756c65223a7b226b696e64223a226174222c226e6f744265666f7265223a393030373139393136383334303939312c227a6f6e65223a224574632f787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878222c226c6f63616c57616c6c54696d65223a22393939392d31322d33315432333a35392b30303a3030222c226c6174656e657373536563223a38363430302c22686f6c6449664e6577496e626f756e64223a66616c73657d2c2264656c697665724279223a393030373139393235343734303939317d5d7d",
+      "valid": true
+    },
+    {
+      "id": "access-status-not-listed",
+      "action": "access",
+      "route": "status",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "request-status-not-listed",
+      "action": "request",
+      "route": "status",
+      "present": false,
+      "valid": false
+    },
+    {
+      "id": "response-status-not-listed",
+      "action": "response",
+      "route": "status",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": false
+      },
+      "valid": false
+    }
+  ]
+}

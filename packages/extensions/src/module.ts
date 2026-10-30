@@ -19,11 +19,9 @@ const versionPattern =
 function migrationDirectory(directory: string): string {
 	if (!isMigrationDirectoryPath(directory)) throw refused();
 	const absolute = path.resolve(directory);
-	const canonical = realpathSync(absolute);
-	const comparable = (value: string): string =>
-		process.platform === "win32" ? value.toLowerCase() : value;
-	if (comparable(absolute) !== comparable(canonical) || !lstatSync(absolute).isDirectory())
-		throw refused();
+	// Exact: links, volume GUID junctions, 8.3 names and case variants resolve to another spelling.
+	const canonical = realpathSync.native(absolute);
+	if (canonical !== absolute || !lstatSync(absolute).isDirectory()) throw refused();
 	const numbers = new Set<string>();
 	const entries = opendirSync(canonical);
 	try {

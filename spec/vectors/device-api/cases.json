@@ -359,7 +359,8 @@
           "organize",
           "approve",
           "admin"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": true
     },
@@ -381,6 +382,7 @@
           "approve",
           "admin"
         ],
+        "sas": "004917",
         "unexpected": true
       },
       "valid": false
@@ -405,9 +407,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -433,9 +436,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000,
         "unexpected": true
@@ -684,6 +688,24 @@
         "confirmed": true,
         "capabilities": [
           "host:sms"
+        ],
+        "testUpstreams": true
+      },
+      "valid": false
+    },
+    {
+      "id": "DeviceStatus-object-form",
+      "action": "schema",
+      "schema": "DeviceStatus",
+      "value": {
+        "deviceId": "01JAZ3W3B6Q8M2V0G5T9K4X7RH",
+        "epoch": 1,
+        "confirmed": true,
+        "capabilities": [
+          {
+            "read": null
+          },
+          "draft"
         ],
         "testUpstreams": true
       },
@@ -1207,6 +1229,33 @@
       "valid": false
     },
     {
+      "id": "PairingWindow-prefix-not-at-start",
+      "action": "schema",
+      "schema": "PairingWindow",
+      "value": {
+        "pairingCode": "other:draftyak-pair:v1:test"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairingWindow-prefix-after-line-break",
+      "action": "schema",
+      "schema": "PairingWindow",
+      "value": {
+        "pairingCode": "other\ndraftyak-pair:v1:test"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairingWindow-prefix-upper-case",
+      "action": "schema",
+      "schema": "PairingWindow",
+      "value": {
+        "pairingCode": "DRAFTYAK-PAIR:V1:test"
+      },
+      "valid": false
+    },
+    {
       "id": "OperationRequest-plugin.install",
       "action": "schema",
       "schema": "OperationRequest",
@@ -1648,7 +1697,7 @@
           "01JAZ3W3B6Q8M2V0G5T9K00099"
         ]
       },
-      "valid": true
+      "valid": false
     },
     {
       "id": "OperationRequest-account.mode-full",
@@ -1759,7 +1808,7 @@
           "01JAZ3W3B6Q8M2V0G5T9K00099"
         ]
       },
-      "valid": true
+      "valid": false
     },
     {
       "id": "OperationRequest-policy.routing-loosen",
@@ -3202,7 +3251,7 @@
           "01JAZ3W3B6Q8M2V0G5T9K00099"
         ]
       },
-      "valid": true
+      "valid": false
     },
     {
       "id": "OperationRequest-security.pin-change",
@@ -3538,6 +3587,257 @@
       "valid": true
     },
     {
+      "id": "OperationRequest-data.backup",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "data.backup",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001",
+          "01JAZ3W3B6Q8M2V0G5T9K00002",
+          "01JAZ3W3B6Q8M2V0G5T9K00003",
+          "01JAZ3W3B6Q8M2V0G5T9K00004",
+          "01JAZ3W3B6Q8M2V0G5T9K00005",
+          "01JAZ3W3B6Q8M2V0G5T9K00006",
+          "01JAZ3W3B6Q8M2V0G5T9K00007",
+          "01JAZ3W3B6Q8M2V0G5T9K00008",
+          "01JAZ3W3B6Q8M2V0G5T9K00009",
+          "01JAZ3W3B6Q8M2V0G5T9K00010",
+          "01JAZ3W3B6Q8M2V0G5T9K00011",
+          "01JAZ3W3B6Q8M2V0G5T9K00012",
+          "01JAZ3W3B6Q8M2V0G5T9K00013",
+          "01JAZ3W3B6Q8M2V0G5T9K00014",
+          "01JAZ3W3B6Q8M2V0G5T9K00015",
+          "01JAZ3W3B6Q8M2V0G5T9K00016",
+          "01JAZ3W3B6Q8M2V0G5T9K00017",
+          "01JAZ3W3B6Q8M2V0G5T9K00018",
+          "01JAZ3W3B6Q8M2V0G5T9K00019",
+          "01JAZ3W3B6Q8M2V0G5T9K00020",
+          "01JAZ3W3B6Q8M2V0G5T9K00021",
+          "01JAZ3W3B6Q8M2V0G5T9K00022",
+          "01JAZ3W3B6Q8M2V0G5T9K00023",
+          "01JAZ3W3B6Q8M2V0G5T9K00024",
+          "01JAZ3W3B6Q8M2V0G5T9K00025",
+          "01JAZ3W3B6Q8M2V0G5T9K00026",
+          "01JAZ3W3B6Q8M2V0G5T9K00027",
+          "01JAZ3W3B6Q8M2V0G5T9K00028",
+          "01JAZ3W3B6Q8M2V0G5T9K00029",
+          "01JAZ3W3B6Q8M2V0G5T9K00030",
+          "01JAZ3W3B6Q8M2V0G5T9K00031",
+          "01JAZ3W3B6Q8M2V0G5T9K00032",
+          "01JAZ3W3B6Q8M2V0G5T9K00033",
+          "01JAZ3W3B6Q8M2V0G5T9K00034",
+          "01JAZ3W3B6Q8M2V0G5T9K00035",
+          "01JAZ3W3B6Q8M2V0G5T9K00036",
+          "01JAZ3W3B6Q8M2V0G5T9K00037",
+          "01JAZ3W3B6Q8M2V0G5T9K00038",
+          "01JAZ3W3B6Q8M2V0G5T9K00039",
+          "01JAZ3W3B6Q8M2V0G5T9K00040",
+          "01JAZ3W3B6Q8M2V0G5T9K00041",
+          "01JAZ3W3B6Q8M2V0G5T9K00042",
+          "01JAZ3W3B6Q8M2V0G5T9K00043",
+          "01JAZ3W3B6Q8M2V0G5T9K00044",
+          "01JAZ3W3B6Q8M2V0G5T9K00045",
+          "01JAZ3W3B6Q8M2V0G5T9K00046",
+          "01JAZ3W3B6Q8M2V0G5T9K00047",
+          "01JAZ3W3B6Q8M2V0G5T9K00048",
+          "01JAZ3W3B6Q8M2V0G5T9K00049",
+          "01JAZ3W3B6Q8M2V0G5T9K00050",
+          "01JAZ3W3B6Q8M2V0G5T9K00051",
+          "01JAZ3W3B6Q8M2V0G5T9K00052",
+          "01JAZ3W3B6Q8M2V0G5T9K00053",
+          "01JAZ3W3B6Q8M2V0G5T9K00054",
+          "01JAZ3W3B6Q8M2V0G5T9K00055",
+          "01JAZ3W3B6Q8M2V0G5T9K00056",
+          "01JAZ3W3B6Q8M2V0G5T9K00057",
+          "01JAZ3W3B6Q8M2V0G5T9K00058",
+          "01JAZ3W3B6Q8M2V0G5T9K00059",
+          "01JAZ3W3B6Q8M2V0G5T9K00060",
+          "01JAZ3W3B6Q8M2V0G5T9K00061",
+          "01JAZ3W3B6Q8M2V0G5T9K00062",
+          "01JAZ3W3B6Q8M2V0G5T9K00063",
+          "01JAZ3W3B6Q8M2V0G5T9K00064",
+          "01JAZ3W3B6Q8M2V0G5T9K00065",
+          "01JAZ3W3B6Q8M2V0G5T9K00066",
+          "01JAZ3W3B6Q8M2V0G5T9K00067",
+          "01JAZ3W3B6Q8M2V0G5T9K00068",
+          "01JAZ3W3B6Q8M2V0G5T9K00069",
+          "01JAZ3W3B6Q8M2V0G5T9K00070",
+          "01JAZ3W3B6Q8M2V0G5T9K00071",
+          "01JAZ3W3B6Q8M2V0G5T9K00072",
+          "01JAZ3W3B6Q8M2V0G5T9K00073",
+          "01JAZ3W3B6Q8M2V0G5T9K00074",
+          "01JAZ3W3B6Q8M2V0G5T9K00075",
+          "01JAZ3W3B6Q8M2V0G5T9K00076",
+          "01JAZ3W3B6Q8M2V0G5T9K00077",
+          "01JAZ3W3B6Q8M2V0G5T9K00078",
+          "01JAZ3W3B6Q8M2V0G5T9K00079",
+          "01JAZ3W3B6Q8M2V0G5T9K00080",
+          "01JAZ3W3B6Q8M2V0G5T9K00081",
+          "01JAZ3W3B6Q8M2V0G5T9K00082",
+          "01JAZ3W3B6Q8M2V0G5T9K00083",
+          "01JAZ3W3B6Q8M2V0G5T9K00084",
+          "01JAZ3W3B6Q8M2V0G5T9K00085",
+          "01JAZ3W3B6Q8M2V0G5T9K00086",
+          "01JAZ3W3B6Q8M2V0G5T9K00087",
+          "01JAZ3W3B6Q8M2V0G5T9K00088",
+          "01JAZ3W3B6Q8M2V0G5T9K00089",
+          "01JAZ3W3B6Q8M2V0G5T9K00090",
+          "01JAZ3W3B6Q8M2V0G5T9K00091",
+          "01JAZ3W3B6Q8M2V0G5T9K00092",
+          "01JAZ3W3B6Q8M2V0G5T9K00093",
+          "01JAZ3W3B6Q8M2V0G5T9K00094",
+          "01JAZ3W3B6Q8M2V0G5T9K00095",
+          "01JAZ3W3B6Q8M2V0G5T9K00096",
+          "01JAZ3W3B6Q8M2V0G5T9K00097",
+          "01JAZ3W3B6Q8M2V0G5T9K00098",
+          "01JAZ3W3B6Q8M2V0G5T9K00099"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-account.disconnect-count-0",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.disconnect",
+        "ids": []
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-account.disconnect-count-1",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.disconnect",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationRequest-account.disconnect-count-2",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.disconnect",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-account.mode-full-count-0",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.mode-full",
+        "ids": []
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-account.mode-full-count-1",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.mode-full",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationRequest-account.mode-full-count-2",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.mode-full",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-security.device-capabilities-count-0",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "security.device-capabilities",
+        "ids": []
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-security.device-capabilities-count-1",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "security.device-capabilities",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationRequest-security.device-capabilities-count-2",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "security.device-capabilities",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-data.backup-count-0",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "data.backup",
+        "ids": []
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationRequest-data.backup-count-1",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "data.backup",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-data.backup-count-2",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "data.backup",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001"
+        ]
+      },
+      "valid": false
+    },
+    {
       "id": "OperationRequest-empty-admin-ids",
       "action": "schema",
       "schema": "OperationRequest",
@@ -3772,6 +4072,21 @@
       "valid": false
     },
     {
+      "id": "OperationRequest-object-form-preset",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "pair-confirm",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RM"
+        ],
+        "preset": {
+          "desktop": null
+        }
+      },
+      "valid": false
+    },
+    {
       "id": "PairConfirmSubject-desktop",
       "action": "schema",
       "schema": "PairConfirmSubject",
@@ -3788,7 +4103,8 @@
           "organize",
           "approve",
           "admin"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": true
     },
@@ -3816,9 +4132,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -3847,7 +4164,8 @@
           "read",
           "draft",
           "organize"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": true
     },
@@ -3873,9 +4191,10 @@
             "read",
             "draft",
             "organize"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "94b385e6c890c5103a8673d4eba938a801c54dc7a3443b227e60484eb28373c0",
+        "digest": "8a41b97e50fcc21408f30d5aa4ec48dab665089c5fd395c79aeb45e816f7f7b4",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -3903,7 +4222,8 @@
         "capabilities": [
           "read",
           "draft"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": true
     },
@@ -3928,9 +4248,10 @@
           "capabilities": [
             "read",
             "draft"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "d31ac70ab93cb3e831ec70880b12b67c9319940a24be82b2f903a9d0dbe7ec71",
+        "digest": "a3fc047b638b64e6a1cca7cb1a5f5627f5991010ffc21caf91356a7e7c17320b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -3957,7 +4278,8 @@
         "preset": "desktop",
         "capabilities": [
           "read"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": false
     },
@@ -3978,7 +4300,8 @@
           "organize",
           "approve",
           "admin"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": false
     },
@@ -3999,7 +4322,8 @@
           "organize",
           "approve",
           "admin"
-        ]
+        ],
+        "sas": "004917"
       },
       "valid": false
     },
@@ -4020,7 +4344,694 @@
           "organize",
           "approve",
           "admin"
+        ],
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-object-form-preset",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": {
+          "desktop": null
+        },
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-missing",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
         ]
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-five-digits",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "04917"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-seven-digits",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "0049170"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-number",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": 4917
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-letter",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "00491x"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-fullwidth-digits",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "００４９１７"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-suffix-\"\\r\"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "004917\r"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-last-\"\\r\"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "00491\r"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-suffix-\"\\n\"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "004917\n"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-last-\"\\n\"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "00491\n"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-suffix-\" \"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "004917 "
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-last-\" \"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "00491 "
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-suffix-\" \"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "004917 "
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-last-\" \"",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "00491 "
+      },
+      "valid": false
+    },
+    {
+      "id": "PairConfirmSubject-sas-zeros",
+      "action": "schema",
+      "schema": "PairConfirmSubject",
+      "value": {
+        "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+        "name": "Test device",
+        "role": "device",
+        "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+        "preset": "desktop",
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sas": "000000"
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationReview-sas-not-digested",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "pair-confirm",
+        "subject": {
+          "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+          "name": "Test device",
+          "role": "device",
+          "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+          "preset": "desktop",
+          "capabilities": [
+            "read",
+            "draft",
+            "organize",
+            "approve",
+            "admin"
+          ],
+          "sas": "000000"
+        },
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationReview-sas-digested",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "pair-confirm",
+        "subject": {
+          "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+          "name": "Test device",
+          "role": "device",
+          "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+          "preset": "desktop",
+          "capabilities": [
+            "read",
+            "draft",
+            "organize",
+            "approve",
+            "admin"
+          ],
+          "sas": "000000"
+        },
+        "digest": "774c214ccd3f72e54555f8d32d29d61aa30db3878a3fdec80cfa0e2421cc0b09",
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": true
+    },
+    {
+      "id": "DeviceStatus-sas-member",
+      "action": "schema",
+      "schema": "DeviceStatus",
+      "value": {
+        "deviceId": "01JAZ3W3B6Q8M2V0G5T9K4X7RH",
+        "epoch": 0,
+        "confirmed": false,
+        "capabilities": [],
+        "testUpstreams": false,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "BootstrapRequest-sas-member",
+      "action": "schema",
+      "schema": "BootstrapRequest",
+      "value": {
+        "pin": "123456",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "BootstrapStatus-sas-member",
+      "action": "schema",
+      "schema": "BootstrapStatus",
+      "value": {
+        "deviceId": "01JAZ3W3B6Q8M2V0G5T9K4X7RH",
+        "epoch": 1,
+        "confirmed": true,
+        "capabilities": [
+          "read",
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "testUpstreams": true,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairingWindowRequest-sas-member",
+      "action": "schema",
+      "schema": "PairingWindowRequest",
+      "value": {
+        "role": "device",
+        "pin": "123456",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "PairingWindow-sas-member",
+      "action": "schema",
+      "schema": "PairingWindow",
+      "value": {
+        "pairingCode": "draftyak-pair:v1:test",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-sas-member",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "pair-confirm",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RM"
+        ],
+        "preset": "desktop",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationCreated-sas-member",
+      "action": "schema",
+      "schema": "OperationCreated",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "SyncPause-sas-member",
+      "action": "schema",
+      "schema": "SyncPause",
+      "value": {
+        "paused": false,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "Accepted-sas-member",
+      "action": "schema",
+      "schema": "Accepted",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "SendReview-sas-member",
+      "action": "schema",
+      "schema": "SendReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationReview-sas-member",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "pair-confirm",
+        "subject": {
+          "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+          "name": "Test device",
+          "role": "device",
+          "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+          "preset": "desktop",
+          "capabilities": [
+            "read",
+            "draft",
+            "organize",
+            "approve",
+            "admin"
+          ],
+          "sas": "004917"
+        },
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "ChallengeRequest-sas-member",
+      "action": "schema",
+      "schema": "ChallengeRequest",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT"
+        ],
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "Challenge-sas-member",
+      "action": "schema",
+      "schema": "Challenge",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiTkVXX1JFQ0lQSUVOVCJdLCJmbGFnc0hhc2giOiI5ODQ3OTYyM2U1ZjM5ZDdhNjE1YWExNmFlMGNjNmNiY2U5NzYyMTliZjEwNjZhMDFmNWZmNjhjN2YwNWY0OTBlIiwiaHViIjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImlhdCI6MTc5MjM0MjgwMDAwMCwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwibm90QmVmb3JlIjpudWxsLCJvdXRib3giOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsInYiOjF9",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "SignedEnvelope-sas-member",
+      "action": "schema",
+      "schema": "SignedEnvelope",
+      "value": {
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiTkVXX1JFQ0lQSUVOVCJdLCJmbGFnc0hhc2giOiI5ODQ3OTYyM2U1ZjM5ZDdhNjE1YWExNmFlMGNjNmNiY2U5NzYyMTliZjEwNjZhMDFmNWZmNjhjN2YwNWY0OTBlIiwiaHViIjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImlhdCI6MTc5MjM0MjgwMDAwMCwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwibm90QmVmb3JlIjpudWxsLCJvdXRib3giOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsInYiOjF9",
+        "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "pin": "123456",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "EventsRequest-sas-member",
+      "action": "schema",
+      "schema": "EventsRequest",
+      "value": {
+        "after": null,
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "EventFrame-sas-member",
+      "action": "schema",
+      "schema": "EventFrame",
+      "value": {
+        "type": "ready",
+        "cursor": "",
+        "sas": "004917"
+      },
+      "valid": false
+    },
+    {
+      "id": "ApiError-sas-member",
+      "action": "schema",
+      "schema": "ApiError",
+      "value": {
+        "code": "INVALID_REQUEST",
+        "sas": "004917"
       },
       "valid": false
     },
@@ -4143,6 +5154,268 @@
           }
         ],
         "flagsHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "valid": false
+    },
+    {
+      "id": "SendReview-positional-flags",
+      "action": "schema",
+      "schema": "SendReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          [
+            "NEW_RECIPIENT",
+            "ack"
+          ],
+          [
+            "EXTERNAL_LINK",
+            "ack"
+          ]
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "valid": false
+    },
+    {
+      "id": "SendReview-object-form-flag-code",
+      "action": "schema",
+      "schema": "SendReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": {
+              "NEW_RECIPIENT": null
+            },
+            "severity": "ack"
+          },
+          {
+            "code": {
+              "EXTERNAL_LINK": null
+            },
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "valid": false
+    },
+    {
+      "id": "SendReview-positional-snapshot-body",
+      "action": "schema",
+      "schema": "SendReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": [
+            "Hello, café.\n",
+            "\nSent with DraftYak"
+          ],
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "valid": false
+    },
+    {
+      "id": "SendReview-object-form-snapshot-kind",
+      "action": "schema",
+      "schema": "SendReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": {
+            "email": null
+          },
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
         "state": "PENDING_APPROVAL",
         "stateReason": null,
         "requiredUsers": [
@@ -4336,7 +5609,8 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
         "digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "expiresAt": 1792342920000,
@@ -4364,9 +5638,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120001
       },
@@ -4392,9 +5667,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 0
       },
@@ -4416,16 +5692,6 @@
       "schema": "ChallengeRequest",
       "value": {
         "kind": "consent.v1",
-        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
-      },
-      "valid": false
-    },
-    {
-      "id": "ChallengeRequest-deferred-admin.v1",
-      "action": "schema",
-      "schema": "ChallengeRequest",
-      "value": {
-        "kind": "admin.v1",
         "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
       },
       "valid": false
@@ -4489,6 +5755,24 @@
         "flagsAcked": [
           "NEW_RECIPIENT",
           "NEW_RECIPIENT"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "ChallengeRequest-object-form-acks",
+      "action": "schema",
+      "schema": "ChallengeRequest",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          {
+            "EXTERNAL_LINK": null
+          },
+          {
+            "NEW_RECIPIENT": null
+          }
         ]
       },
       "valid": false
@@ -4623,6 +5907,263 @@
         "pin": "123456"
       },
       "valid": true
+    },
+    {
+      "id": "request-send-approval-positional-statement",
+      "action": "request",
+      "route": "send-approval",
+      "value": {
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsIjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCI5ODQ3OTYyM2U1ZjM5ZDdhNjE1YWExNmFlMGNjNmNiY2U5NzYyMTliZjEwNjZhMDFmNWZmNjhjN2YwNWY0OTBlIixbIkVYVEVSTkFMX0xJTksiLCJORVdfUkVDSVBJRU5UIl0sbnVsbCwxNzkyMzQzNzAwMDAwXQ",
+        "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "pin": "123456"
+      },
+      "valid": false
+    },
+    {
+      "id": "Challenge-positional-approval.send.v1",
+      "action": "schema",
+      "schema": "Challenge",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsIjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCI5ODQ3OTYyM2U1ZjM5ZDdhNjE1YWExNmFlMGNjNmNiY2U5NzYyMTliZjEwNjZhMDFmNWZmNjhjN2YwNWY0OTBlIixbIkVYVEVSTkFMX0xJTksiLCJORVdfUkVDSVBJRU5UIl0sbnVsbCwxNzkyMzQzNzAwMDAwXQ"
+      },
+      "valid": false
+    },
+    {
+      "id": "request-pair-confirmation-positional-statement",
+      "action": "request",
+      "route": "pair-confirmation",
+      "value": {
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSTSIsImRldmljZSIsImJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmIiLCJNRmt3RXdZSEtvWkl6ajBDQVFZSUtvWkl6ajBEQVFjRFFnQUVheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BaUDQwTGlfaHBfbTQ3bjYwcDhENTRXSzg0elYyc3hYczdMdGtCb043OVI5USIsWyJyZWFkIiwiZHJhZnQiLCJvcmdhbml6ZSIsImFwcHJvdmUiLCJhZG1pbiJdXQ",
+        "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "pin": "123456"
+      },
+      "valid": false
+    },
+    {
+      "id": "Challenge-positional-pair-confirm.v1",
+      "action": "schema",
+      "schema": "Challenge",
+      "value": {
+        "kind": "pair-confirm.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSTSIsImRldmljZSIsImJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmIiLCJNRmt3RXdZSEtvWkl6ajBDQVFZSUtvWkl6ajBEQVFjRFFnQUVheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BaUDQwTGlfaHBfbTQ3bjYwcDhENTRXSzg0elYyc3hYczdMdGtCb043OVI5USIsWyJyZWFkIiwiZHJhZnQiLCJvcmdhbml6ZSIsImFwcHJvdmUiLCJhZG1pbiJdXQ"
+      },
+      "valid": false
+    },
+    {
+      "id": "request-login-positional-statement",
+      "action": "request",
+      "route": "login",
+      "value": {
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSyIsImNjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2MiXQ",
+        "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "pin": "123456"
+      },
+      "valid": false
+    },
+    {
+      "id": "request-agent-session-positional-statement",
+      "action": "request",
+      "route": "agent-session",
+      "value": {
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIseyJpZCI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JGIiwia2luZCI6ImdyYW50In0sIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JEIiwicmVhZCIseyJkdXJhdGlvbk1zIjo5MDAwMDAsImtpbmQiOiJzZXNzaW9uIn1d",
+        "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "pin": "123456"
+      },
+      "valid": false
+    },
+    {
+      "id": "Challenge-positional-agent-session.v1",
+      "action": "schema",
+      "schema": "Challenge",
+      "value": {
+        "kind": "agent-session.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIseyJpZCI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JGIiwia2luZCI6ImdyYW50In0sIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JEIiwicmVhZCIseyJkdXJhdGlvbk1zIjo5MDAwMDAsImtpbmQiOiJzZXNzaW9uIn1d"
+      },
+      "valid": false
+    },
+    {
+      "id": "request-admin-positional-statement",
+      "action": "request",
+      "route": "admin",
+      "value": {
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIsImRhdGEuZXhwb3J0IiwiY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyJd",
+        "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "pin": "123456"
+      },
+      "valid": false
+    },
+    {
+      "id": "Challenge-positional-admin.v1",
+      "action": "schema",
+      "schema": "Challenge",
+      "value": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIsImRhdGEuZXhwb3J0IiwiY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyJd"
+      },
+      "valid": false
+    },
+    {
+      "id": "send-challenge-positional-statement",
+      "action": "challenge",
+      "challenge": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsIjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCI5ODQ3OTYyM2U1ZjM5ZDdhNjE1YWExNmFlMGNjNmNiY2U5NzYyMTliZjEwNjZhMDFmNWZmNjhjN2YwNWY0OTBlIixbIkVYVEVSTkFMX0xJTksiLCJORVdfUkVDSVBJRU5UIl0sbnVsbCwxNzkyMzQzNzAwMDAwXQ"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "request": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT"
+        ]
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "pair-challenge-positional-statement",
+      "action": "challenge",
+      "challenge": {
+        "kind": "pair-confirm.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSTSIsImRldmljZSIsImJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmIiLCJNRmt3RXdZSEtvWkl6ajBDQVFZSUtvWkl6ajBEQVFjRFFnQUVheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BaUDQwTGlfaHBfbTQ3bjYwcDhENTRXSzg0elYyc3hYczdMdGtCb043OVI5USIsWyJyZWFkIiwiZHJhZnQiLCJvcmdhbml6ZSIsImFwcHJvdmUiLCJhZG1pbiJdXQ"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "pair-confirm",
+        "subject": {
+          "candidate": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+          "name": "Test device",
+          "role": "device",
+          "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+          "preset": "desktop",
+          "capabilities": [
+            "read",
+            "draft",
+            "organize",
+            "approve",
+            "admin"
+          ],
+          "sas": "004917"
+        },
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "request": {
+        "kind": "pair-confirm.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "agent-challenge-positional-statement",
+      "action": "challenge",
+      "challenge": {
+        "kind": "agent-session.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "WzEsImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLDEsIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsMTc5MjM0MjgwMDAwMCwxNzkyMzQyOTIwMDAwLCIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIseyJpZCI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JGIiwia2luZCI6ImdyYW50In0sIjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JEIiwicmVhZCIseyJkdXJhdGlvbk1zIjo5MDAwMDAsImtpbmQiOiJzZXNzaW9uIn1d"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "agent-session",
+        "subject": {
+          "principal": {
+            "kind": "grant",
+            "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+          },
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "toolClass": "read",
+          "authorization": {
+            "kind": "session",
+            "durationMs": 900000
+          }
+        },
+        "digest": "967da3ae7d91d1d89157a617c652637a7db7ffc1936041b6ff6d2187068469f7",
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "request": {
+        "kind": "agent-session.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
     },
     {
       "id": "SignedEnvelope-signature-63",
@@ -4983,9 +6524,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -5149,6 +6691,300 @@
         "kind": "approval.send.v1",
         "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
         "flagsAcked": []
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "ChallengeRequest-acknowledgement-superset",
+      "action": "schema",
+      "schema": "ChallengeRequest",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT",
+          "REPLY_TO_REDIRECT"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "send-requested-acknowledgements-superset",
+      "action": "challenge",
+      "challenge": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiTkVXX1JFQ0lQSUVOVCJdLCJmbGFnc0hhc2giOiI5ODQ3OTYyM2U1ZjM5ZDdhNjE1YWExNmFlMGNjNmNiY2U5NzYyMTliZjEwNjZhMDFmNWZmNjhjN2YwNWY0OTBlIiwiaHViIjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImlhdCI6MTc5MjM0MjgwMDAwMCwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwibm90QmVmb3JlIjpudWxsLCJvdXRib3giOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "request": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT",
+          "REPLY_TO_REDIRECT"
+        ]
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "Challenge-signed-acknowledgement-superset",
+      "action": "schema",
+      "schema": "Challenge",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiTkVXX1JFQ0lQSUVOVCIsIlJFUExZX1RPX1JFRElSRUNUIl0sImZsYWdzSGFzaCI6Ijk4NDc5NjIzZTVmMzlkN2E2MTVhYTE2YWUwY2M2Y2JjZTk3NjIxOWJmMTA2NmEwMWY1ZmY2OGM3ZjA1ZjQ5MGUiLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJub25jZSI6IkFBRUNBd1FGQmdjSUNRb0xEQTBPRHciLCJub3RCZWZvcmUiOm51bGwsIm91dGJveCI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JDIiwidiI6MX0"
+      },
+      "valid": true
+    },
+    {
+      "id": "ChallengeRequest-acknowledgement-same-length",
+      "action": "schema",
+      "schema": "ChallengeRequest",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "DMARC_FAIL",
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "send-acknowledgements-same-length-differ",
+      "action": "challenge",
+      "challenge": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiTkVXX1JFQ0lQSUVOVCIsIlJFUExZX1RPX1JFRElSRUNUIl0sImZsYWdzSGFzaCI6Ijk4NDc5NjIzZTVmMzlkN2E2MTVhYTE2YWUwY2M2Y2JjZTk3NjIxOWJmMTA2NmEwMWY1ZmY2OGM3ZjA1ZjQ5MGUiLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJub25jZSI6IkFBRUNBd1FGQmdjSUNRb0xEQTBPRHciLCJub3RCZWZvcmUiOm51bGwsIm91dGJveCI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JDIiwidiI6MX0"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "request": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "DMARC_FAIL",
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT"
+        ]
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "Challenge-object-form-acks",
+      "action": "schema",
+      "schema": "Challenge",
+      "value": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6W3siRVhURVJOQUxfTElOSyI6bnVsbH0seyJORVdfUkVDSVBJRU5UIjpudWxsfV0sImZsYWdzSGFzaCI6Ijk4NDc5NjIzZTVmMzlkN2E2MTVhYTE2YWUwY2M2Y2JjZTk3NjIxOWJmMTA2NmEwMWY1ZmY2OGM3ZjA1ZjQ5MGUiLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJub25jZSI6IkFBRUNBd1FGQmdjSUNRb0xEQTBPRHciLCJub3RCZWZvcmUiOm51bGwsIm91dGJveCI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JDIiwidiI6MX0"
+      },
+      "valid": false
+    },
+    {
+      "id": "send-statement-object-form-acks",
+      "action": "challenge",
+      "challenge": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6W3siRVhURVJOQUxfTElOSyI6bnVsbH0seyJORVdfUkVDSVBJRU5UIjpudWxsfV0sImZsYWdzSGFzaCI6Ijk4NDc5NjIzZTVmMzlkN2E2MTVhYTE2YWUwY2M2Y2JjZTk3NjIxOWJmMTA2NmEwMWY1ZmY2OGM3ZjA1ZjQ5MGUiLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJub25jZSI6IkFBRUNBd1FGQmdjSUNRb0xEQTBPRHciLCJub3RCZWZvcmUiOm51bGwsIm91dGJveCI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JDIiwidiI6MX0"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "request": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT"
+        ]
       },
       "context": {
         "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -5900,9 +7736,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -5940,9 +7777,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -5980,9 +7818,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6020,9 +7859,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6060,9 +7900,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6100,9 +7941,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6140,9 +7982,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6180,9 +8023,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6220,9 +8064,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -6643,6 +8488,86 @@
         "kind": "approval.send.v1",
         "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
         "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiRVhURVJOQUxfTElOSyJdLCJmbGFnc0hhc2giOiI5ODQ3OTYyM2U1ZjM5ZDdhNjE1YWExNmFlMGNjNmNiY2U5NzYyMTliZjEwNjZhMDFmNWZmNjhjN2YwNWY0OTBlIiwiaHViIjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImlhdCI6MTc5MjM0MjgwMDAwMCwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwibm90QmVmb3JlIjpudWxsLCJvdXRib3giOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test"
+            ],
+            "cc": [],
+            "bcc": [],
+            "subject": "A frozen reply",
+            "references": []
+          },
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          }
+        },
+        "contentHash": "5cd36df14c2992ae975be2962fae765a7954de8d26b6360ec1bd77b7d67810ea",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "98479623e5f39d7a615aa16ae0cc6cbce976219bf1066a01f5ff68c7f05f490e",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "request": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "EXTERNAL_LINK",
+          "NEW_RECIPIENT"
+        ]
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "send-statement-flagsAcked-[\"EXTERNAL_LINK\",\"NEW_RECIPIENT\",\"REPLY_TO_REDIRECT\"]",
+      "action": "challenge",
+      "challenge": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjVjZDM2ZGYxNGMyOTkyYWU5NzViZTI5NjJmYWU3NjVhNzk1NGRlOGQyNmI2MzYwZWMxYmQ3N2I3ZDY3ODEwZWEiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJFWFRFUk5BTF9MSU5LIiwiTkVXX1JFQ0lQSUVOVCIsIlJFUExZX1RPX1JFRElSRUNUIl0sImZsYWdzSGFzaCI6Ijk4NDc5NjIzZTVmMzlkN2E2MTVhYTE2YWUwY2M2Y2JjZTk3NjIxOWJmMTA2NmEwMWY1ZmY2OGM3ZjA1ZjQ5MGUiLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJub25jZSI6IkFBRUNBd1FGQmdjSUNRb0xEQTBPRHciLCJub3RCZWZvcmUiOm51bGwsIm91dGJveCI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JDIiwidiI6MX0"
       },
       "review": {
         "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
@@ -7220,9 +9145,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7260,9 +9186,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7300,9 +9227,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7340,9 +9268,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7380,9 +9309,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7420,9 +9350,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7537,9 +9468,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "b3e827a3e04abb07c1a5a49ff680559a620d33b1922d960db1103bd1310f8970",
+        "digest": "418234c613473bc2d552d5c15db992aacc59603e0c758bd8194088072f3e40fa",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7577,9 +9509,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "806693ea43721dd0fad74f7fe0d79e405971a1c8e15f1abaa849a9341cd0f4e1",
+        "digest": "8d81a0f4e705862736ef7cdea4fcd2c9da16733cff8dabf02fc167be39a564df",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7617,9 +9550,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "71640a553d931d59e99fff27d7b3437455836f694f74d1410917d05338fe1cc7",
+        "digest": "a1297816727ce5d61c1bfb27313efe639620b016727259c91944ac91c705ed2d",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7657,9 +9591,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "3e0df4aae480d3681889b748c7ed9e986f2bbd2c8c1dcd0ba539ea6a4238b6d2",
+        "digest": "cff0a4443fdb636ec6c25e3b91ce5bab4db1b2dff8e01c68ab18857259efa924",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7697,9 +9632,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "48cd9d1d04402571249f1485ee01700a2b3599a363a6a84091f870dd10d65e90",
+        "digest": "c73d204df9e81adfbea6834f6dbe241bae72e3fb1fbb9ab372bbfebb64a58b58",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -7735,9 +9671,10 @@
             "read",
             "draft",
             "organize"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "658ef8fe191c05aa0121bb8465ced22a210908930b76e31b6b32372c20dc2765",
+        "digest": "0b57c7659b52cdd7f356177ad57beae4d6acc44ec4b98d2d5d36e1ecc8dc8ebc",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -10676,6 +12613,30 @@
       "valid": false
     },
     {
+      "id": "access-status-object-form-capability",
+      "action": "access",
+      "route": "status",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          {
+            "read": null
+          },
+          "draft",
+          "organize",
+          "approve",
+          "admin"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
       "id": "access-bootstrap-sidecarClaim",
       "action": "access",
       "route": "bootstrap",
@@ -12196,9 +14157,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -12224,9 +14186,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -12253,9 +14216,10 @@
             "organize",
             "approve",
             "admin"
-          ]
+          ],
+          "sas": "004917"
         },
-        "digest": "89214f93968d3bf5ae1dec93a70964cc09f2a024190d100704acbc1a6483af35",
+        "digest": "5d2382d3a83c14d0637f38049a5539d38a40ecb2db78937d7ca9355d56dd927b",
         "expiresAt": 1792342920000,
         "remainingMs": 120000
       },
@@ -15004,6 +16968,80 @@
         },
         "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
         "toolClass": "read"
+      },
+      "valid": false
+    },
+    {
+      "id": "AgentSessionReviewSubject-positional",
+      "action": "schema",
+      "schema": "AgentSessionReviewSubject",
+      "value": [
+        {
+          "kind": "grant",
+          "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        },
+        "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "read",
+        {
+          "kind": "session",
+          "durationMs": 900000
+        }
+      ],
+      "valid": false
+    },
+    {
+      "id": "AgentSessionReviewSubject-positional-principal",
+      "action": "schema",
+      "schema": "AgentSessionReviewSubject",
+      "value": {
+        "principal": [
+          "grant",
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "toolClass": "read",
+        "authorization": {
+          "kind": "session",
+          "durationMs": 900000
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "AgentSessionReviewSubject-object-form-tool-class",
+      "action": "schema",
+      "schema": "AgentSessionReviewSubject",
+      "value": {
+        "principal": {
+          "kind": "grant",
+          "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        },
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "toolClass": {
+          "read": null
+        },
+        "authorization": {
+          "kind": "session",
+          "durationMs": 900000
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "AgentSessionReviewSubject-positional-authorization",
+      "action": "schema",
+      "schema": "AgentSessionReviewSubject",
+      "value": {
+        "principal": {
+          "kind": "grant",
+          "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        },
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "toolClass": "read",
+        "authorization": [
+          "session",
+          900000
+        ]
       },
       "valid": false
     },

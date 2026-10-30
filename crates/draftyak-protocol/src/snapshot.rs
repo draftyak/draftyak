@@ -307,7 +307,7 @@ fn sha(text: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
-fn provider(text: &str) -> bool {
+pub(crate) fn provider(text: &str) -> bool {
     !text.is_empty() && text.len() <= 256 && text.bytes().all(|byte| (b'!'..=b'~').contains(&byte))
 }
 fn visible_local(ch: char) -> bool {
@@ -341,7 +341,7 @@ fn domain(text: &str, dotted: bool, max_label: bool) -> bool {
                     .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
         })
 }
-fn address(text: &str) -> bool {
+pub(crate) fn address(text: &str) -> bool {
     let Some((local, host)) = text.rsplit_once('@') else {
         return false;
     };
@@ -495,6 +495,24 @@ fn send_url(text: &str) -> bool {
     };
     valid(path, false) && query.is_none_or(|q| valid(q, true))
 }
+/// The frozen schedule's checks, shared by the snapshot and the scheduled summary.
+pub(crate) fn valid_schedule(schedule: &Schedule) -> bool {
+    match schedule {
+        Schedule::Now {} => true,
+        Schedule::At {
+            not_before,
+            zone: z,
+            local_wall_time,
+            lateness_sec,
+            ..
+        } => {
+            *not_before <= MAX_SAFE
+                && zone(z)
+                && wall_time(local_wall_time)
+                && [900, 3600, 14400, 86400].contains(lateness_sec)
+        }
+    }
+}
 impl Wire {
     fn valid(&self) -> bool {
         let common = self.v == 1
@@ -525,21 +543,7 @@ impl Wire {
                     && sha(&r.headers_sha256)
                     && sha(&r.body_sha256)
             })
-            && match &self.schedule {
-                Schedule::Now {} => true,
-                Schedule::At {
-                    not_before,
-                    zone: z,
-                    local_wall_time,
-                    lateness_sec,
-                    ..
-                } => {
-                    *not_before <= MAX_SAFE
-                        && zone(z)
-                        && wall_time(local_wall_time)
-                        && [900, 3600, 14400, 86400].contains(lateness_sec)
-                }
-            };
+            && valid_schedule(&self.schedule);
         common
             && match self.kind {
                 Kind::Email => {

@@ -8,7 +8,7 @@ import {
 import { createMockHost } from "./host.ts";
 import { createInMemory } from "./in-memory.ts";
 import { createProcess } from "./process.ts";
-import { type MockHub, MockHubError, type MockHubOptions } from "./types.ts";
+import { copyMockCallOptions, type MockHub, MockHubError, type MockHubOptions } from "./types.ts";
 
 function freeze<T>(value: T): T {
 	if (value && typeof value === "object") {
@@ -84,8 +84,11 @@ export function createMockHub(options: MockHubOptions): MockHub {
 			available();
 			return memory.request("tools/list");
 		},
-		async call(name, args, metadata = {}) {
+		async call(name, args, metadata = {}, optionsForCall) {
 			available();
+			const callOptions = copyMockCallOptions(optionsForCall);
+			if (callOptions?.onProgress && options.mode !== "process")
+				throw new MockHubError("PROCESS_PROGRESS_UNAVAILABLE");
 			if (manifest.kind === "tool" && !Object.hasOwn(canonicalToolsV1, name))
 				throw new MockHubError("TOOL_NAME_UNDECLARED");
 			const kind =
@@ -104,7 +107,7 @@ export function createMockHub(options: MockHubOptions): MockHub {
 									...params,
 									_meta: { ...params._meta, [LOOKUP_PERMIT_META_KEY]: permit },
 								};
-					const result = await memory.request("tools/call", admitted, signal);
+					const result = await memory.request("tools/call", admitted, signal, callOptions);
 					if (manifest.kind === "tool") {
 						const outcome = checkToolResult(
 							name as CanonicalToolName,

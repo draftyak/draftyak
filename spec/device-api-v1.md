@@ -61,9 +61,11 @@ scheduling summaries, code relay and hub-key delivery retain their own contracts
 - PairingWindowRequest is `{role,pin}`; PairingWindow is `{pairingCode}` with the
   `draftyak-pair:v1:` prefix and at most 1,000 characters. Existing pairing proof
   and bootstrap-secret derivation are reused, not defined again here.
-- OperationRequest is `{kind,ids}` for a registered admin kind, with at most 100
-  distinct ULIDs, or `{kind:'pair-confirm',ids:[candidate],preset}`. The hub creates
-  login, consent and session records itself; devices cannot create those kinds.
+- OperationRequest is `{kind,ids}` for a registered admin kind, or
+  `{kind:'pair-confirm',ids:[candidate],preset}`. A kind in `ADMIN_REVIEW_KINDS`
+  names exactly the IDs its admin record needs (below); every other admin kind
+  takes at most 100 distinct ULIDs. The hub creates login, consent and session
+  records itself; devices cannot create those kinds.
 - OperationCreated is `{id}`. SyncPause is `{paused:boolean}`. Accepted is
   `{kind,id}`, with the signed route's statement type and accepted record id.
 - Every PIN body holds 6–64 ASCII digits, with no final CR, LF or Unicode line
@@ -81,10 +83,13 @@ the owner as enforced by the consuming approval service.
 
 OperationReview is `{id,kind,digest,subject,expiresAt,remainingMs}`. Its digest is
 SHA-256 of the subject's JCS and remainingMs is 0–120,000. Pair-confirm's
-subject is `{candidate,name,role,transportSpkiSha256,signingKey,preset,capabilities}`.
+subject is `{candidate,name,role,transportSpkiSha256,signingKey,preset,capabilities,sas}`.
 Its exact capability array equals its preset and its role fits that preset.
 The signing key must be a canonical P-256 approval SPKI.
-The comparison-code line is added by the separate pairing contract.
+`sas` is the hub's comparison code for the candidate, from the reveal that held
+([Pairing v1](pairing-v1.md) section 9): exactly six ASCII digits, leading zeros
+kept. The digest covers it; the signed `pair-confirm.v1` statement doesn't carry
+it. No other request, answer or frame of this API carries it.
 
 The `agent-session` review uses the existing strict `AgentSessionReviewSubject`:
 `{principal,account,toolClass,authorization}`. Principal is a grant or token ULID;
@@ -101,9 +106,10 @@ ChallengeRequest currently has these strict members:
 
 - `{kind:'approval.send.v1',id,flagsAcked}`, with existing sorted unique flag codes;
 - `{kind:'pair-confirm.v1',id}`;
+- `{kind:'admin.v1',id}`, whose id is the pending admin operation;
 - `{kind:'agent-session.v1',id}`.
 
-Challenge is `{kind,id,statement}` for the same three members. Statement is unpadded
+Challenge is `{kind,id,statement}` for the same members. Statement is unpadded
 canonical base64url of canonical JCS bytes, at most **16,384 decoded bytes**
 (21,846 characters). Check decoded length before parsing the named type.
 16,384 passes the length gate and 16,385 fails; arbitrary bytes at the boundary
@@ -127,6 +133,9 @@ kind/id, review id and pinned hub/device, then:
   selected duration or one-call method, parameters digest, TTL and single-use
   flag. Session review/challenge and signed submission require a current
   confirmed device with approve; they do not apply pair-confirm's preset rule.
+- Admin: the review's kind is one of `ADMIN_REVIEW_KINDS`; op equals the
+  request and review ID; kind and digest equal the review's. A
+  `security.device-capabilities` subject must not name the signing device.
 
 The session review digest covers `target`, but the signed authorization has no
 target member. The consuming producer must derive the target from the same
@@ -140,6 +149,52 @@ Login and first-admin review/challenge members are added with their pending
 subjects by their own contract items. The consent extension adds its own members
 when its contract exists. Catalogue literals do not create
 those subjects or allow an unknown statement body. Unavailable types fail closed.
+
+Admin reviews exist only for `ADMIN_REVIEW_KINDS`: `account.disconnect`,
+`account.mode-full`, `security.device-capabilities` and `data.backup`. Each is an
+OperationReview member of that kind with the digest and remainingMs rules above.
+Its subject is the immutable pending record that `admin.v1` binds through
+`digest`, built from the hub's own records when the operation is created. The
+request's IDs are `[account]` for the account kinds, `[device]` for
+`security.device-capabilities` and `[]` for `data.backup`. OperationRequest
+refuses any other count for these kinds, so the hub answers `INVALID_REQUEST`.
+
+- Account kinds: `{channel:'email',account,alias,address,createdAt}` or
+  `{channel:'chat',account,alias,teamId,selfUserId,createdAt}`, copied from the
+  account; a chat `teamId` is null when the account has none. The owner can
+  rename the alias; only the provider sets the address, team and user. Both
+  kinds use these subjects, so kind alone tells their statements apart.
+- `security.device-capabilities`: `{device,name,transportSpkiSha256,signingKey,
+  pairedAt,current,capabilities}`: the target's ULID, name, transport pin,
+  approval key and pairing time, the set it holds and the set it will hold. Both
+  sets are nonempty, unique and in read/draft/organize/approve/admin order, and
+  the new set strictly contains the current one; narrowing is never an admin
+  operation. The new set never adds `approve`, which only an existing approver's
+  `pair-confirm.v1` gives after the SAS comparison (pairing-v1 section 10), and
+  adds `admin` only to a device that already holds `approve`. So a device
+  without `approve`, such as every mobile device in the MVP, can gain only read,
+  draft or organize. The new set is the owner's stored request for that
+  device, which grants nothing by itself.
+- `data.backup`: `{scope:'backup'}`, Back up now's encrypted hub backup. The save
+  location is chosen natively and is not part of the record.
+
+No subject member holds a credential, secret key, PIN or code.
+
+The hub creates admin operations only for these kinds. It issues the challenge
+and accepts the statement only for these kinds and only from the device that
+created the operation. At the challenge and at acceptance, each subject member
+that describes the account or device (for a device: name, keys, pairing time and
+current set) must still match the hub's records, the target device must be
+confirmed in the current epoch and not revoked, and `account.mode-full` needs a
+read-only account; otherwise the hub answers `STALE`. `canGrant(capabilities,
+subject)`, in TypeScript and Rust, holds when the signer holds `admin` and every
+capability of the new set; the hub checks it at operation creation, challenge
+and acceptance, and the trusted window checks it before asking for the PIN. No
+device changes its own capabilities. The hub carries out an accepted operation
+from its stored record alone and delivers a backup only to the device that
+signed. Plugin install and upgrade, account connect, the policy kinds,
+`data.export`, PIN change, key rotation and the tool, access and SMS groups stay
+closed until a contract adds their subject.
 
 SignedEnvelope is only `{statement,signature,pin}`. Its statement is unchanged
 from the challenge and must parse as the signed route's type. Signature is

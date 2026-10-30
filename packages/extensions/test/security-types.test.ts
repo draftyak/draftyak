@@ -3,7 +3,7 @@ import type { Flag } from "@draftyak/protocol/flags";
 import type { SendSnapshotV1 } from "@draftyak/protocol/snapshot";
 import { describe, expectTypeOf, it } from "vitest";
 import type { DeepReadonly, IdsOnlyEvent, Logger } from "../src/common.ts";
-import type { ModuleDatabase } from "../src/database.ts";
+import type { ModuleDatabase, ModuleRow } from "../src/database.ts";
 import { defineExtensionModule, type HubModule } from "../src/module.ts";
 import type { AuditSink } from "../src/points/audit.ts";
 import type { PushNotification } from "../src/points/push.ts";
@@ -55,6 +55,82 @@ function forbiddenCapabilities(registry: ExtensionRegistry<"example">): void {
 	database.select("ext_example_rows", { limit: 10 });
 	// @ts-expect-error Transactions are synchronous and cannot return a Promise.
 	database.transaction(async () => 1);
+}
+
+function synchronousTransactions(
+	database: ModuleDatabase<"example">,
+	query: { limit(count: number): unknown; then(resolve: (rows: number) => void): void },
+	objectWork: () => object,
+	callableColumn: { then: ((resolve: (rows: number) => void) => void) & string },
+): void {
+	// @ts-expect-error An explicit unknown result cannot admit a Promise.
+	database.transaction<unknown>(async () => 1);
+	// @ts-expect-error An explicit unknown result cannot admit a callback typed to return object.
+	database.transaction<unknown>((): object => Promise.resolve(1));
+	// @ts-expect-error An explicit unknown result cannot admit a callback typed to return {}.
+	// biome-ignore lint/complexity/noBannedTypes: the empty object type is the case under test.
+	database.transaction<unknown>((): {} => Promise.resolve(1));
+	// @ts-expect-error An explicit unknown result cannot admit a function typed to return object.
+	database.transaction<unknown>(objectWork);
+	// @ts-expect-error An explicit void result cannot admit a Promise.
+	database.transaction<void>(async () => {});
+	// @ts-expect-error An explicit object result cannot admit a Promise.
+	database.transaction<object>(async () => ({}));
+	// @ts-expect-error An explicit empty object result cannot admit a Promise.
+	// biome-ignore lint/complexity/noBannedTypes: the empty object type is the case under test.
+	database.transaction<{}>(async () => 1);
+	// @ts-expect-error An explicit any result cannot admit a Promise.
+	// biome-ignore lint/suspicious/noExplicitAny: an explicit any result is the case under test.
+	database.transaction<any>(async () => 1);
+	// @ts-expect-error An explicit Promise-like result is refused.
+	database.transaction<PromiseLike<number>>(() => Promise.resolve(1));
+	// @ts-expect-error A callback typed to return unknown cannot return a Promise.
+	database.transaction((): unknown => Promise.resolve(1));
+	// @ts-expect-error A callback that returns any could return a Promise.
+	database.transaction(() => JSON.parse("1"));
+	// @ts-expect-error A thenable that is not a PromiseLike is refused too.
+	database.transaction(() => query);
+	// @ts-expect-error An explicit object result cannot admit a thenable that fits it.
+	database.transaction<{ a: number }>(() => Object.assign(Promise.resolve(1), { a: 1 }));
+	// @ts-expect-error An explicit record result cannot admit a thenable that fits it.
+	database.transaction<Record<string, unknown>>(() => query);
+	// @ts-expect-error A callback annotated with a record result that a thenable fits is refused.
+	database.transaction((): Record<string, unknown> => query);
+	// @ts-expect-error An explicit primitive result cannot admit a thenable that fits it.
+	database.transaction<number>(() => Object.assign(1, query));
+	// @ts-expect-error An explicit union with a primitive cannot admit a thenable that fits it.
+	database.transaction<string | { a: number }>(() => Object.assign("a", query));
+	// @ts-expect-error A then typed as both callable and a column value is refused.
+	database.transaction<ModuleRow>(() => callableColumn);
+	// @ts-expect-error A data column named then is refused; the native adapter refuses any own then.
+	// biome-ignore lint/suspicious/noThenProperty: a data column named then is the case under test.
+	database.transaction(() => ({ then: "column" }));
+	// An annotated object result can hide a thenable; the native adapter must refuse one at runtime.
+	const annotated = database.transaction((): { a: number } => ({ a: 1 }));
+	expectTypeOf(annotated).toEqualTypeOf<{ a: number }>();
+	// So can a callback typed any under an explicit unknown result.
+	expectTypeOf(database.transaction<unknown>(() => JSON.parse("1"))).toEqualTypeOf<unknown>();
+	expectTypeOf(database.transaction(() => null)).toEqualTypeOf<null>();
+	const id = <T>(value: T): T => value;
+	expectTypeOf(database.transaction(() => [1, 2] as const)).toEqualTypeOf<readonly [1, 2]>();
+	// @ts-expect-error A const tuple result stays readonly inside a generic call.
+	id(database.transaction(() => [1, 2] as const)).push(1);
+	expectTypeOf(
+		database.transaction((tables) => tables.insert("ext_example_rows", { id: 1 })),
+	).toEqualTypeOf<number>();
+	expectTypeOf(
+		database.transaction((tables) => tables.select("ext_example_rows", { limit: 10 })),
+	).toEqualTypeOf<readonly ModuleRow[]>();
+	expectTypeOf(
+		database.transaction((tables) => {
+			tables.delete("ext_example_rows", { id: 1 });
+		}),
+	).toEqualTypeOf<void>();
+	expectTypeOf(
+		database.transaction<void>((tables) => {
+			tables.delete("ext_example_rows", { id: 1 });
+		}),
+	).toEqualTypeOf<void>();
 }
 
 function immutableModule(module: HubModule): void {
@@ -119,6 +195,7 @@ describe("security surface type checks", () => {
 	});
 	it("keeps forbidden surfaces as compile errors", () => {
 		expectTypeOf(forbiddenCapabilities).toBeFunction();
+		expectTypeOf(synchronousTransactions).toBeFunction();
 		expectTypeOf(forbiddenPolicy).toBeFunction();
 		expectTypeOf(immutableModule).toBeFunction();
 		expectTypeOf(noContent).toBeFunction();
