@@ -1,3 +1,4 @@
+import { isProxy } from "node:util/types";
 import * as z from "zod";
 import { copyByteView } from "../device-api/bytes.ts";
 import { DeviceCapability } from "../entities/device.ts";
@@ -181,12 +182,41 @@ const Peer = z.strictObject({
 	bootstrapDone: z.boolean(),
 });
 
+function capabilityData(value: unknown): unknown[] | undefined {
+	if (!Array.isArray(value) || isProxy(value)) return undefined;
+	const length = value.length;
+	if (length > DeviceCapability.options.length) return undefined;
+	const result: unknown[] = [];
+	for (let index = 0; index < length; index++) {
+		const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+		if (descriptor === undefined || !Object.hasOwn(descriptor, "value")) return undefined;
+		result.push(descriptor.value);
+	}
+	return result;
+}
+
+function peerData(peer: unknown): Record<string, unknown> | undefined {
+	if (peer === null || typeof peer !== "object" || isProxy(peer)) return undefined;
+	const data: Record<string, unknown> = Object.create(null);
+	for (const name of Object.keys(peer)) {
+		const descriptor = Object.getOwnPropertyDescriptor(peer, name);
+		if (descriptor === undefined || !Object.hasOwn(descriptor, "value")) return undefined;
+		data[name] = descriptor.value;
+	}
+	for (const name of Object.keys(Peer.shape)) if (!Object.hasOwn(data, name)) return undefined;
+	const capabilities = capabilityData(data.capabilities);
+	if (capabilities === undefined) return undefined;
+	data.capabilities = capabilities;
+	return data;
+}
+
 /** A known, non-revoked device confirmed in the current epoch that holds the route's capability. */
 export function oauthRelayRouteAllows(routeId: string, peer: unknown): boolean {
 	try {
 		const entry = findRoute(routeId);
-		const parsed = Peer.safeParse(peer);
-		if (entry === undefined || !parsed.success) return false;
+		if (entry === undefined) return false;
+		const parsed = Peer.safeParse(peerData(peer));
+		if (!parsed.success) return false;
 		const device = parsed.data;
 		if (!device.known || device.revoked || device.role !== entry.role) return false;
 		if (device.confirmedEpoch !== device.epoch) return false;

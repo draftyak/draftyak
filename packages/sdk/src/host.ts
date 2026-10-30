@@ -39,6 +39,27 @@ export interface MemoryHost extends HostChannel {
 	notify(notification: HostNotification): void;
 }
 
+const nativeAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "aborted")?.get;
+const nativeReason = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "reason")?.get;
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+	if (signal === undefined) return false;
+	try {
+		return nativeAborted === undefined || Reflect.apply(nativeAborted, signal, []) !== false;
+	} catch {
+		return true;
+	}
+}
+
+function abortReason(signal: AbortSignal): unknown {
+	try {
+		if (nativeReason !== undefined) return Reflect.apply(nativeReason, signal, []);
+	} catch {
+		// An unreadable native cancellation state cannot grant a successful result.
+	}
+	return new HostError("DENIED");
+}
+
 export function memoryHost(handler: HostHandler): MemoryHost {
 	let closed = false;
 	const active = new Set<AbortController>();
@@ -49,16 +70,17 @@ export function memoryHost(handler: HostHandler): MemoryHost {
 	return {
 		async request(method, params, options = {}) {
 			if (closed) throw new HostError("DENIED");
+			let requestedSignal: AbortSignal | undefined;
 			let signal: AbortSignal | undefined;
 			try {
-				const requestedSignal = options.signal;
+				requestedSignal = options.signal;
 				if (requestedSignal !== undefined && !(requestedSignal instanceof AbortSignal))
 					throw new HostError("BAD_REQUEST");
 				signal = requestedSignal === undefined ? undefined : AbortSignal.any([requestedSignal]);
 			} catch {
 				throw new HostError("BAD_REQUEST");
 			}
-			if (signal?.aborted) throw new HostError("DENIED");
+			if (isAborted(requestedSignal)) throw new HostError("DENIED");
 			if (active.size >= HOST_MAX_ACTIVE_REQUESTS) throw new HostError("TOO_LARGE");
 			let parsed: unknown;
 			try {
@@ -66,34 +88,51 @@ export function memoryHost(handler: HostHandler): MemoryHost {
 			} catch {
 				throw new HostError("BAD_REQUEST");
 			}
-			const controller = new AbortController();
-			active.add(controller);
-			const timeoutMs = options.timeoutMs ?? HOST_REQUEST_TIMEOUT_MS;
-			if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > HOST_REQUEST_TIMEOUT_MS) {
-				active.delete(controller);
+			let timeoutMs: number;
+			try {
+				timeoutMs = options.timeoutMs ?? HOST_REQUEST_TIMEOUT_MS;
+			} catch {
 				throw new HostError("BAD_REQUEST");
 			}
+			if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > HOST_REQUEST_TIMEOUT_MS) {
+				throw new HostError("BAD_REQUEST");
+			}
+			if (closed || isAborted(requestedSignal)) throw new HostError("DENIED");
+			if (active.size >= HOST_MAX_ACTIVE_REQUESTS) throw new HostError("TOO_LARGE");
+			const controller = new AbortController();
+			active.add(controller);
+			const checkCancellation = (): void => {
+				if (isAborted(controller.signal)) throw abortReason(controller.signal);
+				if (closed || isAborted(requestedSignal)) throw new HostError("DENIED");
+			};
 			const abort = (): void => controller.abort(new HostError("DENIED"));
 			signal?.addEventListener("abort", abort, { once: true });
 			const timer = setTimeout(() => controller.abort(new HostError("TIMEOUT")), timeoutMs);
 			try {
 				const value = await Promise.race([
 					Promise.resolve().then(() => {
-						if (controller.signal.aborted) throw controller.signal.reason;
+						checkCancellation();
 						return handler(method, parsed, controller.signal);
 					}),
 					new Promise<never>((_, reject) =>
-						controller.signal.addEventListener("abort", () => reject(controller.signal.reason), {
-							once: true,
-						}),
+						controller.signal.addEventListener(
+							"abort",
+							() => reject(abortReason(controller.signal)),
+							{
+								once: true,
+							},
+						),
 					),
 				]);
-				if (controller.signal.aborted) throw controller.signal.reason;
+				checkCancellation();
+				let parsedResult: HostMethods[typeof method]["result"];
 				try {
-					return parseHostResult(method, value);
+					parsedResult = parseHostResult(method, value);
 				} catch {
 					throw new HostError("BAD_REQUEST");
 				}
+				checkCancellation();
+				return parsedResult;
 			} finally {
 				clearTimeout(timer);
 				signal?.removeEventListener("abort", abort);

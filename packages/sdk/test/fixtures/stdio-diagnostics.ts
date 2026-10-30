@@ -1,3 +1,5 @@
+import { markStdioFixtureReady } from "../stdio-readiness.ts";
+
 const mode = process.argv[2];
 if (mode === "exit") {
 	process.stderr.write("synthetic startup failure\n");
@@ -5,6 +7,7 @@ if (mode === "exit") {
 } else if (mode === "delayed") {
 	process.stderr.write("waiting for startup\n");
 	process.stdin.resume();
+	markStdioFixtureReady();
 } else {
 	process.stdin.once("data", () => {
 		if (mode === "wrong-id") process.stdout.write('{"id":99,"result":{}}\n');

@@ -22,8 +22,9 @@ type Thenable = { then(...args: never[]): unknown };
 type NotThenable = { readonly then?: never };
 declare const unresolved: unique symbol;
 /**
- * Only never and any fit. Unknown maps here, not to never: a Result still being inferred is
- * unknown, and a never callback return type makes const tuples lose readonly in generic calls.
+ * Only never, any and a generic callback's return type parameter fit. Unknown maps here, not to
+ * never: a Result still being inferred is unknown, and a never callback return type makes const
+ * tuples lose readonly in generic calls.
  */
 type Unresolved = { readonly [unresolved]: never };
 

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { stdioFixture } from "./stdio-fixture.ts";
-import { STDIO_FIXTURE_STARTUP_MS } from "./stdio-readiness.ts";
 
 const fixture = new URL("./fixtures/stdio-diagnostics.ts", import.meta.url);
+// Requests sent before the child is up get no real-time deadline: a cold start can outlast 3 s.
+const untimed = { now: () => performance.now(), schedule: () => () => {} };
 function details(error: Error) {
 	expect(error.message).toMatch(/^Stdio fixture request failed: /);
 	return JSON.parse(error.message.slice("Stdio fixture request failed: ".length));
@@ -24,6 +25,7 @@ describe("stdio fixture failure diagnosis", () => {
 		let cancelled = 0;
 		const peer = stdioFixture(fixture, {
 			args: ["delayed"],
+			ready: true,
 			clock: {
 				now: () => now,
 				schedule(callback, ms) {
@@ -38,9 +40,7 @@ describe("stdio fixture failure diagnosis", () => {
 		try {
 			const response = peer.ask("server/discover");
 			const failure = rejected(response);
-			await expect
-				.poll(() => peer.stderr(), { timeout: STDIO_FIXTURE_STARTUP_MS })
-				.toContain("waiting for startup");
+			await peer.ready();
 			expect(delay).toBe(3000);
 			now = 3000;
 			fire?.();
@@ -60,7 +60,7 @@ describe("stdio fixture failure diagnosis", () => {
 		}
 	});
 	it("reports early exit code and stderr instead of an absent discovery result", async () => {
-		const peer = stdioFixture(fixture, { args: ["exit"] });
+		const peer = stdioFixture(fixture, { args: ["exit"], clock: untimed });
 		try {
 			const failure = await rejected(peer.ask("server/discover"));
 			expect(details(failure)).toMatchObject({
@@ -78,7 +78,7 @@ describe("stdio fixture failure diagnosis", () => {
 		}
 	});
 	it("reports a mismatched response with request identity and the actual last frame", async () => {
-		const peer = stdioFixture(fixture, { args: ["wrong-id"] });
+		const peer = stdioFixture(fixture, { args: ["wrong-id"], clock: untimed });
 		try {
 			const failure = await rejected(peer.ask("tools/list"));
 			expect(details(failure)).toMatchObject({
@@ -92,7 +92,7 @@ describe("stdio fixture failure diagnosis", () => {
 		}
 	});
 	it("bounds stderr and frame diagnostics when a synthetic child emits invalid JSON", async () => {
-		const peer = stdioFixture(fixture, { args: ["invalid"] });
+		const peer = stdioFixture(fixture, { args: ["invalid"], clock: untimed });
 		try {
 			const failure = await rejected(peer.ask("server/discover"));
 			const data = details(failure);
@@ -106,7 +106,7 @@ describe("stdio fixture failure diagnosis", () => {
 		}
 	});
 	it("retains request and frame diagnostics for an incomplete but correlated result", async () => {
-		const peer = stdioFixture(fixture, { args: ["incomplete"] });
+		const peer = stdioFixture(fixture, { args: ["incomplete"], clock: untimed });
 		try {
 			expect(await peer.ask("server/discover")).toEqual({ id: 1, result: {} });
 			expect(JSON.parse(peer.diagnostics())).toMatchObject({

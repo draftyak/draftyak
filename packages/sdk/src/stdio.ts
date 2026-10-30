@@ -28,9 +28,23 @@ export interface StdioHostOptions {
 }
 interface Pending {
 	readonly method: HostMethod;
+	readonly signal: AbortSignal | undefined;
 	readonly resolve: (value: never) => void;
 	readonly reject: (error: unknown) => void;
 	readonly cleanup: () => void;
+}
+
+const nativeSignalAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "aborted")?.get;
+
+function hasAborted(signal: AbortSignal | undefined): boolean {
+	if (signal === undefined) return false;
+	try {
+		return (
+			nativeSignalAborted === undefined || Reflect.apply(nativeSignalAborted, signal, []) !== false
+		);
+	} catch {
+		return true;
+	}
 }
 
 /** Child-side framing only. The parent owns platform-safe spawn and exit/drain cleanup. */
@@ -140,7 +154,9 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 		if (!request) return;
 		pending.delete(reply.id);
 		request.cleanup();
-		if (reply.error) request.reject(new HostError(reply.error.data.code));
+		// A source abort listener can deliver a reply before dependent abort listeners run.
+		if (hasAborted(request.signal)) request.reject(new HostError("DENIED"));
+		else if (reply.error) request.reject(new HostError(reply.error.data.code));
 		else {
 			try {
 				request.resolve(parseHostResult(request.method, reply.result) as never);
@@ -200,27 +216,34 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 			settings: HostRequestOptions = {},
 		): Promise<HostMethods[M]["result"]> {
 			if (closed) return Promise.reject(new HostError("DENIED"));
+			let requestedSignal: AbortSignal | undefined;
 			let signal: AbortSignal | undefined;
 			try {
-				const requestedSignal = settings.signal;
+				requestedSignal = settings.signal;
 				if (requestedSignal !== undefined && !(requestedSignal instanceof AbortSignal))
 					throw new HostError("BAD_REQUEST");
 				signal = requestedSignal === undefined ? undefined : AbortSignal.any([requestedSignal]);
 			} catch {
 				return Promise.reject(new HostError("BAD_REQUEST"));
 			}
-			if (signal?.aborted) return Promise.reject(new HostError("DENIED"));
+			if (hasAborted(requestedSignal)) return Promise.reject(new HostError("DENIED"));
 			if (pending.size >= HOST_MAX_ACTIVE_REQUESTS)
 				return Promise.reject(new HostError("TOO_LARGE"));
-			const timeout = settings.timeoutMs ?? HOST_REQUEST_TIMEOUT_MS;
+			let timeout: number;
+			try {
+				timeout = settings.timeoutMs ?? HOST_REQUEST_TIMEOUT_MS;
+			} catch {
+				return Promise.reject(new HostError("BAD_REQUEST"));
+			}
 			if (!Number.isFinite(timeout) || timeout <= 0 || timeout > HOST_REQUEST_TIMEOUT_MS)
 				return Promise.reject(new HostError("BAD_REQUEST"));
 			let parsed: HostMethods[M]["params"];
 			try {
-				parsed = parseHostParams(method, params);
+				parsed = jsonCopy(parseHostParams(method, params));
 			} catch {
 				return Promise.reject(new HostError("BAD_REQUEST"));
 			}
+			if (hasAborted(requestedSignal)) return Promise.reject(new HostError("DENIED"));
 			const id = randomUUID();
 			return new Promise((resolve, reject) => {
 				const cancel = (code: "DENIED" | "TIMEOUT"): void => {
@@ -234,6 +257,7 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 				const timer = setTimeout(() => cancel("TIMEOUT"), timeout);
 				pending.set(id, {
 					method,
+					signal: requestedSignal,
 					resolve: resolve as (value: never) => void,
 					reject,
 					cleanup() {
@@ -242,7 +266,7 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 					},
 				});
 				signal?.addEventListener("abort", abort, { once: true });
-				void write({ jsonrpc: "2.0", id, method, params: jsonCopy(parsed) }, true).catch(() =>
+				void write({ jsonrpc: "2.0", id, method, params: parsed }, true).catch(() =>
 					cancel("DENIED"),
 				);
 			});
