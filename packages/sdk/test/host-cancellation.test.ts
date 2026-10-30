@@ -119,6 +119,27 @@ describe("memory host cancellation admission", () => {
 		}
 	});
 
+	it.each([
+		["null", null],
+		["plain object", Object.prototype],
+	] as const)(
+		"refuses a re-prototyped signal with a %s prototype before dispatch",
+		async (_, proto) => {
+			const controller = new AbortController();
+			Object.setPrototypeOf(controller.signal, proto);
+			const handler = vi.fn(() => null);
+			const host = memoryHost(handler);
+			try {
+				await expect(
+					host.request("host/kv.set", { key: "key", value: null }, { signal: controller.signal }),
+				).rejects.toMatchObject({ code: "BAD_REQUEST" });
+				expect(handler).not.toHaveBeenCalled();
+			} finally {
+				host.close();
+			}
+		},
+	);
+
 	it("refuses non-signals with typed errors without consuming request capacity", async () => {
 		const handler = vi.fn(() => null);
 		const host = memoryHost(handler);
