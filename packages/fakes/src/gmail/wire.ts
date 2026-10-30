@@ -222,13 +222,27 @@ export function query(params: URLSearchParams, allowed: readonly string[]): void
 	}
 }
 type Selection = { [key: string]: Selection | null };
+function mergeSelections(left: Selection, right: Selection): Selection {
+	const result: Selection = Object.create(null);
+	for (const [name, child] of Object.entries(left)) result[name] = child;
+	for (const [name, child] of Object.entries(right)) {
+		const previous = result[name];
+		result[name] =
+			previous === null || child === null
+				? null
+				: previous === undefined
+					? child
+					: mergeSelections(previous, child);
+	}
+	return result;
+}
 export function project(value: unknown, fields: string | null): unknown {
 	if (!fields) return value;
 	let at = 0,
 		count = 0;
 	function parse(depth: number): Selection {
 		check(depth < 8);
-		const result: Selection = Object.create(null);
+		let result: Selection = Object.create(null);
 		for (;;) {
 			const start = at;
 			while (/[A-Za-z0-9_*/]/.test(fields?.[at] ?? "") && at < (fields?.length ?? 0)) at++;
@@ -245,13 +259,14 @@ export function project(value: unknown, fields: string | null): unknown {
 				child = parse(depth + 1);
 				check(fields?.[at++] === ")");
 			}
-			let parent = result;
-			for (const name of names.slice(0, -1)) {
-				const node = parent[name] ?? Object.create(null);
-				parent[name] = node;
-				parent = node;
+			let branch: Selection = Object.create(null);
+			branch[names[names.length - 1] as string] = child;
+			for (let index = names.length - 2; index >= 0; index--) {
+				const parent: Selection = Object.create(null);
+				parent[names[index] as string] = branch;
+				branch = parent;
 			}
-			parent[names[names.length - 1] as string] = child;
+			result = mergeSelections(result, branch);
 			if (fields?.[at] !== ",") return result;
 			at++;
 		}
@@ -264,7 +279,16 @@ export function project(value: unknown, fields: string | null): unknown {
 		const output: Record<string, unknown> = Object.create(null);
 		for (const [name, v] of Object.entries(data))
 			if (Object.hasOwn(wanted, name) || Object.hasOwn(wanted, "*")) {
-				const child = Object.hasOwn(wanted, name) ? wanted[name] : wanted["*"];
+				const exact = wanted[name],
+					wildcard = wanted["*"];
+				const child =
+					exact === null || wildcard === null
+						? null
+						: exact === undefined
+							? wildcard
+							: wildcard === undefined
+								? exact
+								: mergeSelections(exact, wildcard);
 				output[name] = child === null ? v : select(v, child as Selection);
 			}
 		return output;
