@@ -179,15 +179,40 @@ describe("synthetic Slack auth and private Socket Mode companion", () => {
 			404,
 		);
 	});
-	it("denies read/write/provider-schedule routes instead of forwarding or using native fetch", async () => {
+	it("denies read/write routes instead of forwarding or using native fetch", async () => {
 		const fake = fixture(),
 			native = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("DYTEST native fallback"));
-		for (const method of ["users.conversations", "chat.postMessage", "chat.scheduleMessage"])
+		for (const method of ["users.conversations", "chat.postMessage"])
 			expect((await api(fake, method)).response.status).toBe(404);
 		expect(native).not.toHaveBeenCalled();
 		const read = createSlackReadFake({ conversations: [] });
 		expect((await read.fetch("/api/auth.test", { method: "POST" })).status).toBe(405);
 	});
+	it.each(["chat.scheduleMessage", "chat.deleteScheduledMessage", "chat.scheduledMessages.list"])(
+		"refuses provider scheduling %s without changing companion state or using native fetch",
+		async (method) => {
+			const fake = fixture();
+			await ticket(fake);
+			const before = fake.stats();
+			expect(before).toEqual({ tickets: 1, connections: 0, pending: 0, timers: 0, http: 0 });
+			const now = fake.clock.now();
+			const native = vi
+				.spyOn(globalThis, "fetch")
+				.mockRejectedValue(new Error("Native network forbidden"));
+			for (const requestMethod of ["POST", "GET"]) {
+				const { response, body } = await api(fake, method, fake.userToken, {
+					method: requestMethod,
+				});
+				expect(response.status).toBe(404);
+				expect(body).toEqual({ ok: false, error: "unknown_method" });
+				expect(fake.stats()).toEqual(before);
+				expect(fake.clock.now()).toBe(now);
+			}
+			expect((await api(fake)).body.ok).toBe(true);
+			expect(fake.stats()).toEqual(before);
+			expect(native).not.toHaveBeenCalled();
+		},
+	);
 	it("admits exactly16KiB, refuses +1 with received-byte evidence and retains no token/body/query values", async () => {
 		const fake = fixture();
 		expect(

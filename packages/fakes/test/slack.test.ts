@@ -1085,6 +1085,40 @@ describe("synthetic Slack send effects", () => {
 		expect(result.ok).toBe(true);
 		return result;
 	};
+	it.each(["chat.scheduleMessage", "chat.deleteScheduledMessage", "chat.scheduledMessages.list"])(
+		"refuses provider scheduling %s without changing send state or using native fetch",
+		async (method) => {
+			const { reader, sender } = setup();
+			const control = setup();
+			for (const state of [reader, control.reader])
+				state.addMessage(channel().id, { ts: "1.0", user: state.ownerId, text: "DYTEST prior" });
+			const before = await history(reader);
+			const facts = reader.conversation(channel().id);
+			const now = reader.clock.now();
+			const native = vi
+				.spyOn(globalThis, "fetch")
+				.mockRejectedValue(new Error("Native network forbidden"));
+			const target = `/api/${method}`;
+			const post = await send(sender, wire(), target);
+			expect(post.status).toBe(400);
+			expect(await post.json()).toEqual({ ok: false, error: "invalid_arguments" });
+			const get = await sender.fetch(target, {
+				headers: { authorization: `Bearer ${credential}` },
+			});
+			expect(get.status).toBe(405);
+			expect(await get.json()).toEqual({ ok: false, error: "unknown_method" });
+			expect(reader.conversation(channel().id)).toEqual(facts);
+			expect(reader.clock.now()).toBe(now);
+			expect(await history(reader)).toEqual(before);
+			const accepted = await send(sender);
+			const expected = await send(control.sender);
+			expect(accepted.status).toBe(200);
+			expect(expected.status).toBe(200);
+			expect(await accepted.json()).toEqual(await expected.json());
+			expect(await history(reader)).toEqual(await history(control.reader));
+			expect(native).not.toHaveBeenCalled();
+		},
+	);
 	it("stores exact opaque text and detached identity for top-level and threaded read-back", async () => {
 		const { reader, sender } = setup();
 		const response = await send(sender);
