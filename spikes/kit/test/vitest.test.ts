@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { exec } from "../exec.ts";
 import { kitDir } from "../repo.ts";
 import { strictSkips } from "../skip.ts";
@@ -17,7 +17,12 @@ describe("spikeVitestConfig", () => {
 	const config = (mode: string, env: NodeJS.ProcessEnv = {}) =>
 		spikeVitestConfig({ command: "serve", mode }, { env, capabilities: extra });
 
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
 	it("keeps M0.1's tiers and adds a requires: tag per capability, skipping only missing ones", () => {
+		vi.stubEnv("CI", "");
 		const heavy = config("heavy").test;
 		expect(heavy?.include).toEqual(["**/*.heavy.test.ts"]);
 		const names = [...Object.keys(capabilities), "nowhere", "here"].map(

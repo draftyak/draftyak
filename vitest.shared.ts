@@ -23,6 +23,9 @@ export function tierFromMode(mode: string): Tier {
 export function vitestConfig(env: ConfigEnv): ViteUserConfig {
 	const tier = tierFromMode(env.mode);
 	const otherTiers = [tierFiles.heavy, tierFiles.live, tierFiles.device];
+	// Slow Windows CI disks can push SQLite unit transactions past the usual 30 seconds.
+	const timeout =
+		tier === "unit" && process.platform === "win32" && process.env.CI === "true" ? 90_000 : 30_000;
 	return {
 		// No .env loading: live secrets reach tests only through the spike kit.
 		envDir: false,
@@ -31,8 +34,8 @@ export function vitestConfig(env: ConfigEnv): ViteUserConfig {
 			exclude: tier === "unit" ? [...defaultExclude, ...otherTiers] : defaultExclude,
 			passWithNoTests: tier !== "unit",
 			// Many tests spawn git or a CLI, which can outlast Vitest's 5 s default on 2-core CI runners.
-			testTimeout: 30_000,
-			hookTimeout: 30_000,
+			testTimeout: timeout,
+			hookTimeout: timeout,
 			// Vitest 5 shares this cache between processes at the workspace root by default; packages
 			// tested in parallel on Windows then fail with EPERM on each other's open cache files.
 			fsModuleCachePath: path.join(process.cwd(), "node_modules", ".vitest-cache"),

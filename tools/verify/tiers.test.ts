@@ -1,11 +1,16 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Tier, tierFiles, vitestConfig } from "../../vitest.shared.ts";
 
 const config = (mode: string) => vitestConfig({ command: "serve", mode });
 
 describe("test tiers", () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
 	it("runs only unit tests by default and never loads .env files", () => {
+		vi.stubEnv("CI", "");
 		const { envDir, test } = config("test");
 		expect(envDir).toBe(false);
 		expect(test).toMatchObject({
