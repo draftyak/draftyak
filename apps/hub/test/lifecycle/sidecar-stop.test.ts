@@ -75,6 +75,20 @@ function thrown(action: () => unknown, code: "OPTIONS" | "BOUND"): void {
 }
 
 describe("sidecar shutdown lifecycle binding", () => {
+	it.each(["terminal", "closed"] as const)(
+		"refuses an intermediate native promise prototype for %s before stop or exit",
+		(property) => {
+			const h = harness();
+			const promise = h.input[property];
+			Object.setPrototypeOf(promise, Object.create(Promise.prototype));
+			expect(Object.hasOwn(promise, "constructor")).toBe(false);
+			thrown(() => bindSidecarShutdown(h.options), "OPTIONS");
+			expect(h.lifecycle.stop).not.toHaveBeenCalled();
+			expect(h.exit).not.toHaveBeenCalled();
+			expect(h.waits).toEqual([]);
+		},
+	);
+
 	it("closes the real claim gate before cleanup and waits for that cleanup", async () => {
 		const h = harness();
 		const hub = createHubLifecycle({ clock: h.clock });
