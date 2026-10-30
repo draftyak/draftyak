@@ -295,7 +295,10 @@ function headerValues(db: SqliteDatabase, schema: string): unknown {
 		userVersion: db.pragma(`${schema}.user_version`, { simple: true }),
 		applicationId: db.pragma(`${schema}.application_id`, { simple: true }),
 		sequence: sequence
-			? db.prepare(`SELECT name, seq FROM ${schema}.sqlite_sequence ORDER BY name`).all()
+			? db
+					.prepare(`SELECT name, seq FROM ${schema}.sqlite_sequence ORDER BY name`)
+					.safeIntegers()
+					.all()
 			: [],
 	};
 }
