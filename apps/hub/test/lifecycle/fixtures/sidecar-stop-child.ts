@@ -1,4 +1,4 @@
-import { receiveSidecarInput, type InitialMaterial } from "../../../src/kernel/sidecar-input.ts";
+import type { InitialMaterial } from "../../../src/index.ts";
 
 const mode = process.argv[2];
 const say = (line: "READY" | "CLOSED" | "CLOSE-PENDING"): Promise<void> =>
@@ -12,9 +12,9 @@ const say = (line: "READY" | "CLOSED" | "CLOSE-PENDING"): Promise<void> =>
 let material: InitialMaterial | undefined;
 try {
 	if (mode !== "normal" && mode !== "hang-close") throw new Error("DYTEST-CHILD-MODE");
-	// Exercise the shipped adapter, lifecycle and clock. The existing receiver has no root export.
+	// Exercise the shipped receiver, adapter, lifecycle and clock through one compiled entry.
 	const entry = new URL("../../../dist/index.mjs", import.meta.url);
-	const { bindSidecarShutdown, createHubLifecycle, systemClock } = (await import(
+	const { bindSidecarShutdown, createHubLifecycle, receiveSidecarInput, systemClock } = (await import(
 		entry.href
 	)) as typeof import("../../../src/index.ts");
 	const input = receiveSidecarInput(process.stdin);

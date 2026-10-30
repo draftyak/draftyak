@@ -118,6 +118,20 @@ export {
 export { isKnownSyncedPath } from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
 export {
+	type InitialMaterial,
+	receiveSidecarInput,
+	type SidecarControl,
+	type SidecarFaultCode,
+	type SidecarInput,
+	type SidecarInputCode,
+	SidecarInputError,
+	type SidecarInputOptions,
+	type SidecarInputState,
+	type SidecarResumed,
+	type SidecarStop,
+	type SidecarStopReason,
+} from "./kernel/sidecar-input.ts";
+export {
 	type HubSession,
 	HubSessionError,
 	type HubSessionErrorCode,
