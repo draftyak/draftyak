@@ -29,6 +29,7 @@ import { memoryHost } from "@draftyak/sdk/host";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { newId } from "../../../src/kernel/ids.ts";
 import { withNetworkTestHooks } from "../../../src/plugins/broker/network/test-context.ts";
+import { requireLoopbackNetworkGuard } from "../../helpers/loopback-network.ts";
 import { migrations, nativeBinding } from "../../store/helpers.ts";
 import { createTlsFixture } from "./tls-fixture.ts";
 
@@ -38,6 +39,7 @@ const cleanups: (() => void | Promise<void>)[] = [];
 const pin = { address: "8.8.8.8", family: 4 as const };
 const policy = { deniedAddresses: [], deniedPorts: [] };
 beforeAll(async () => {
+	requireLoopbackNetworkGuard().assertActive();
 	tls = await createTlsFixture(["api.openai.com"]);
 	defaultTls = await createTlsFixture();
 });
@@ -221,28 +223,53 @@ describe("Responses metadata through native HTTP and public integration APIs", (
 		expect(remote.seen.sni).toEqual(["api.openai.com"]);
 		expect(JSON.stringify(result)).not.toContain(f.secret);
 	});
-	it("binds the actual probe GET path only to the explicit input model", async () => {
-		const f = await fixture(),
-			model = "DYTEST-model/2026";
+	it.each([
+		["DYTEST-model/2026", "/v1/models/DYTEST-model%2F2026"],
+		["gpt-synthetic/a?b=%25#d+e", "/v1/models/gpt-synthetic%2Fa%3Fb=%2525%23d+e"],
+		[
+			"ft:gpt-synthetic:DYTEST-org:a1@2026+a=b$c&d,e;f",
+			"/v1/models/ft:gpt-synthetic:DYTEST-org:a1@2026+a=b$c&d,e;f",
+		],
+	])(
+		"binds the actual probe GET path for %s only to the explicit input model",
+		async (model, target) => {
+			const f = await fixture();
+			const binding: ResponsesMetadataBindingWithoutNetwork = {
+				operation: "ai_probe",
+				configuration: { ...listBinding().configuration, model: "DYTEST-configured" },
+				input: { model },
+			};
+			const remote = await peer((response) => response.end(JSON.stringify({ id: model })));
+			const result = await localTls(remote, () =>
+				f.execute(candidate(target.slice("/v1/models".length)), binding),
+			);
+			expect(result.status).toBe(200);
+			expect(remote.seen.paths).toEqual([target]);
+			expect(remote.seen.methods).toEqual(["GET"]);
+			expect(remote.seen.bodies).toEqual([""]);
+			expect(remote.seen.headers[0]).toMatchObject({
+				accept: "application/json",
+				authorization: `Bearer ${f.secret}`,
+				host: "api.openai.com",
+			});
+			expect(remote.seen.sni).toEqual(["api.openai.com"]);
+		},
+	);
+	it("opens no HTTP connection for a percent-encoded spelling of RFC 3986 path characters", async () => {
+		const f = await fixture();
 		const binding: ResponsesMetadataBindingWithoutNetwork = {
 			operation: "ai_probe",
-			configuration: { ...listBinding().configuration, model: "DYTEST-configured" },
-			input: { model },
+			configuration: listBinding().configuration,
+			input: { model: "ft:gpt-synthetic:DYTEST-org:a1@2026" },
 		};
-		const remote = await peer((response) => response.end(JSON.stringify({ id: model })));
-		const result = await localTls(remote, () =>
-			f.execute(candidate(`/${encodeURIComponent(model)}`), binding),
-		);
-		expect(result.status).toBe(200);
-		expect(remote.seen.paths).toEqual([`/v1/models/${encodeURIComponent(model)}`]);
-		expect(remote.seen.methods).toEqual(["GET"]);
-		expect(remote.seen.bodies).toEqual([""]);
-		expect(remote.seen.headers[0]).toMatchObject({
-			accept: "application/json",
-			authorization: `Bearer ${f.secret}`,
-			host: "api.openai.com",
-		});
-		expect(remote.seen.sni).toEqual(["api.openai.com"]);
+		const remote = await peer((response) => response.end("unsafe"));
+		await expect(
+			localTls(remote, () =>
+				f.execute(candidate("/ft%3Agpt-synthetic%3ADYTEST-org%3Aa1%402026"), binding),
+			),
+		).rejects.toThrow(ProviderHttpError);
+		expect(remote.seen.connections).toBe(0);
+		expect(remote.seen.applicationBytes).toBe(0);
 	});
 	it.each([false, true])(
 		"lists models for a model-less native probe with configured model=%s",

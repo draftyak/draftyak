@@ -6,7 +6,7 @@ import {
 	type CredentialUse,
 	CredentialVault,
 } from "../../../credentials/vault.ts";
-import { copyBoundedBytes, fields, record, vector } from "./boundary.ts";
+import { copyBoundedBytes, fields, modelPathSegment, record, vector } from "./boundary.ts";
 import {
 	type MessagesMetadataBindingWithoutNetwork,
 	type MessagesMetadataCall,
@@ -144,8 +144,7 @@ export function beginMessagesMetadataCall(
 		if (native.operation === "ai_probe") {
 			const model = native.input.model ?? native.configuration.model;
 			if (model === undefined) refuse();
-			expected = `${native.configuration.endpoint}/v1/models/${encodeURIComponent(model)}`;
-			if (new URL(expected).href !== expected) refuse();
+			expected = `${native.configuration.endpoint}/v1/models/${modelPathSegment(model)}`;
 		}
 		const controller = new AbortController();
 		const state: CallState = {

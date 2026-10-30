@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { modelPathSegment } from "../../../../src/plugins/broker/ai/boundary.ts";
 import {
 	type AiMetadataVerifierInput,
 	AiVerificationError,
@@ -14,6 +15,7 @@ import {
 } from "../../../../src/plugins/broker/ai/index.ts";
 import { captureResponsesMetadataBinding } from "../../../../src/plugins/broker/ai/responses-metadata.ts";
 import { builtinRegistrations } from "../../../../src/plugins/broker/ai/verifiers.ts";
+import { MODEL_PATH_SPELLINGS, otherSpellings } from "./model-paths.ts";
 
 const registry = createBuiltinAiProfileRegistry();
 const origin = "https://api.openai.com/v1";
@@ -115,18 +117,82 @@ describe("native Responses metadata binding", () => {
 		).toThrow(AiVerificationError);
 	});
 	it.each([
-		["model/with%name?x#fragment", "model%2Fwith%25name%3Fx%23fragment"],
-		["model:2026+pin", "model%3A2026%2Bpin"],
-		["model!'()*._~-", "model!'()*._~-"],
-	])("binds the exact single encoded input model %s", (model, encoded) => {
+		[
+			"gpt-synthetic/a?b=%25#d+e",
+			"gpt-synthetic%2Fa%3Fb=%2525%23d+e",
+			"gpt-synthetic%2Fa%3Fb%3D%2525%23d%2Be",
+		],
+		[
+			"ft:gpt-synthetic:DYTEST-org:a1@2026",
+			"ft:gpt-synthetic:DYTEST-org:a1@2026",
+			"ft%3Agpt-synthetic%3ADYTEST-org%3Aa1%402026",
+		],
+		["a$b&c+d,e;f=g", "a$b&c+d,e;f=g", "a%24b%26c%2Bd%2Ce%3Bf%3Dg"],
+		[
+			"model/with%name?x#fragment",
+			"model%2Fwith%25name%3Fx%23fragment",
+			"model/with%25name%3Fx%23fragment",
+		],
+		["model!'()*._~-", "model!'()*._~-", "model%21%27%28%29%2A._~-"],
+	])("binds input model %s only to the client spelling %s", (model, spelling, refused) => {
 		const { candidate } = list();
 		const binding: ResponsesMetadataBindingWithoutNetwork = {
 			operation: "ai_probe",
 			configuration: { ...configuration, model: "different-configured-model" },
 			input: { model },
 		};
-		const result = checked({ ...candidate, url: `${origin}/models/${encoded}` }, binding);
-		expect(result.url).toBe(`${origin}/models/${encoded}`);
+		const result = checked({ ...candidate, url: `${origin}/models/${spelling}` }, binding);
+		expect(result.url).toBe(`${origin}/models/${spelling}`);
+		expect(() => checked({ ...candidate, url: `${origin}/models/${refused}` }, binding)).toThrow(
+			AiVerificationError,
+		);
+	});
+	it.each(MODEL_PATH_SPELLINGS)(
+		"binds model character %s only to the spelling %s",
+		(character, spelling) => {
+			const { candidate } = list();
+			const binding: ResponsesMetadataBindingWithoutNetwork = {
+				operation: "ai_probe",
+				configuration,
+				input: { model: `DYTEST-${character}` },
+			};
+			const url = `${origin}/models/DYTEST-${spelling}`;
+			expect(checked({ ...candidate, url }, binding).url).toBe(url);
+			for (const other of otherSpellings(character, spelling))
+				expect(() =>
+					checked({ ...candidate, url: `${origin}/models/DYTEST-${other}` }, binding),
+				).toThrow(AiVerificationError);
+		},
+	);
+	it("refuses dot-segment models even when the candidate spells the same target", () => {
+		const { candidate } = list();
+		for (const model of [".", ".."]) {
+			const binding = { operation: "ai_probe", configuration, input: { model } };
+			for (const url of [
+				`${origin}/models/${model}`,
+				`${origin}/models/`,
+				`${origin}/models`,
+				`${origin}/`,
+				"https://api.openai.com/",
+			])
+				expect(() => checked({ ...candidate, url }, binding)).toThrow(AiVerificationError);
+		}
+		for (const [model, spelling] of [
+			["...", "..."],
+			[".DYTEST", ".DYTEST"],
+			["%2e", "%252e"],
+			["%2E%2E", "%252E%252E"],
+		]) {
+			const binding = { operation: "ai_probe", configuration, input: { model } };
+			const url = `${origin}/models/${spelling}`;
+			expect(checked({ ...candidate, url }, binding).url).toBe(url);
+		}
+	});
+	it("refuses dot segments in the shared model path encoder itself", () => {
+		for (const model of [".", ".."])
+			expect(() => modelPathSegment(model)).toThrow(AiVerificationError);
+		expect(modelPathSegment("...")).toBe("...");
+		expect(modelPathSegment("%2E%2E")).toBe("%252E%252E");
 	});
 	it("validates explicit ModelId values and refuses invented probe targets", () => {
 		const { candidate } = list();
