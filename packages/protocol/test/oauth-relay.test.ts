@@ -1,6 +1,6 @@
 import { type Schema, Validator } from "@cfworker/json-schema";
 import fc from "fast-check";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type * as z from "zod";
 import { jsonSchemaOf } from "../scripts/export-spec.ts";
 import {
@@ -484,16 +484,37 @@ describe("peer member admission", () => {
 	it("bounds capability length before inspecting any entries", () => {
 		for (const { id } of relay.OAUTH_RELAY_ROUTES) {
 			const peer = confirmed();
-			peer.capabilities = new Array<string>(100);
+			const oversized = new Array<string>(100);
+			peer.capabilities = oversized;
 			let reads = 0;
-			Object.defineProperty(peer.capabilities, "0", {
+			Object.defineProperty(oversized, "0", {
 				get() {
 					reads++;
 					return "admin";
 				},
 			});
-			expect(relay.oauthRelayRouteAllows(id, peer)).toBe(false);
-			expect(reads).toBe(0);
+			const valid = confirmed();
+			const native = valid.capabilities;
+			Object.defineProperty(native, "0", { enumerable: false });
+			let oversizedInspections = 0;
+			let nativeEntryInspections = 0;
+			const ownDescriptor = Object.getOwnPropertyDescriptor;
+			const descriptor = vi
+				.spyOn(Object, "getOwnPropertyDescriptor")
+				.mockImplementation((value, name) => {
+					if (value === oversized) oversizedInspections++;
+					if (value === native && name === "0") nativeEntryInspections++;
+					return ownDescriptor(value, name);
+				});
+			try {
+				expect(relay.oauthRelayRouteAllows(id, peer)).toBe(false);
+				expect(oversizedInspections).toBe(0);
+				expect(reads).toBe(0);
+				expect(relay.oauthRelayRouteAllows(id, valid)).toBe(true);
+				expect(nativeEntryInspections).toBeGreaterThan(0);
+			} finally {
+				descriptor.mockRestore();
+			}
 		}
 	});
 
