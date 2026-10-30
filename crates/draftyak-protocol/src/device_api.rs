@@ -331,9 +331,10 @@ fn operation_request(value: &Value) -> bool {
             && ids(&value["ids"], 1, 1)
             && preset(&value["preset"]).is_some()
     } else {
+        let (min, max) = admin::request_ids(text(value, "kind"));
         shape(value, &["kind", "ids"])
             && ADMIN_KINDS.contains(&text(value, "kind"))
-            && ids(&value["ids"], 0, 100)
+            && ids(&value["ids"], min, max)
     }
 }
 fn challenge_request(value: &Value) -> bool {

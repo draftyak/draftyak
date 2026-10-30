@@ -61,9 +61,11 @@ scheduling summaries, code relay and hub-key delivery retain their own contracts
 - PairingWindowRequest is `{role,pin}`; PairingWindow is `{pairingCode}` with the
   `draftyak-pair:v1:` prefix and at most 1,000 characters. Existing pairing proof
   and bootstrap-secret derivation are reused, not defined again here.
-- OperationRequest is `{kind,ids}` for a registered admin kind, with at most 100
-  distinct ULIDs, or `{kind:'pair-confirm',ids:[candidate],preset}`. The hub creates
-  login, consent and session records itself; devices cannot create those kinds.
+- OperationRequest is `{kind,ids}` for a registered admin kind, or
+  `{kind:'pair-confirm',ids:[candidate],preset}`. A kind in `ADMIN_REVIEW_KINDS`
+  names exactly the IDs its admin record needs (below); every other admin kind
+  takes at most 100 distinct ULIDs. The hub creates login, consent and session
+  records itself; devices cannot create those kinds.
 - OperationCreated is `{id}`. SyncPause is `{paused:boolean}`. Accepted is
   `{kind,id}`, with the signed route's statement type and accepted record id.
 - Every PIN body holds 6–64 ASCII digits, with no final CR, LF or Unicode line
@@ -154,7 +156,8 @@ OperationReview member of that kind with the digest and remainingMs rules above.
 Its subject is the immutable pending record that `admin.v1` binds through
 `digest`, built from the hub's own records when the operation is created. The
 request's IDs are `[account]` for the account kinds, `[device]` for
-`security.device-capabilities` and `[]` for `data.backup`.
+`security.device-capabilities` and `[]` for `data.backup`. OperationRequest
+refuses any other count for these kinds, so the hub answers `INVALID_REQUEST`.
 
 - Account kinds: `{channel:'email',account,alias,address,createdAt}` or
   `{channel:'chat',account,alias,teamId,selfUserId,createdAt}`, copied from the

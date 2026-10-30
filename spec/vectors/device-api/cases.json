@@ -1697,7 +1697,7 @@
           "01JAZ3W3B6Q8M2V0G5T9K00099"
         ]
       },
-      "valid": true
+      "valid": false
     },
     {
       "id": "OperationRequest-account.mode-full",
@@ -1808,7 +1808,7 @@
           "01JAZ3W3B6Q8M2V0G5T9K00099"
         ]
       },
-      "valid": true
+      "valid": false
     },
     {
       "id": "OperationRequest-policy.routing-loosen",
@@ -3251,7 +3251,7 @@
           "01JAZ3W3B6Q8M2V0G5T9K00099"
         ]
       },
-      "valid": true
+      "valid": false
     },
     {
       "id": "OperationRequest-security.pin-change",
@@ -3695,7 +3695,147 @@
           "01JAZ3W3B6Q8M2V0G5T9K00099"
         ]
       },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-account.disconnect-count-0",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.disconnect",
+        "ids": []
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-account.disconnect-count-1",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.disconnect",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000"
+        ]
+      },
       "valid": true
+    },
+    {
+      "id": "OperationRequest-account.disconnect-count-2",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.disconnect",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-account.mode-full-count-0",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.mode-full",
+        "ids": []
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-account.mode-full-count-1",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.mode-full",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationRequest-account.mode-full-count-2",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "account.mode-full",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-security.device-capabilities-count-0",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "security.device-capabilities",
+        "ids": []
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-security.device-capabilities-count-1",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "security.device-capabilities",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationRequest-security.device-capabilities-count-2",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "security.device-capabilities",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-data.backup-count-0",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "data.backup",
+        "ids": []
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationRequest-data.backup-count-1",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "data.backup",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-data.backup-count-2",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "data.backup",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001"
+        ]
+      },
+      "valid": false
     },
     {
       "id": "OperationRequest-empty-admin-ids",

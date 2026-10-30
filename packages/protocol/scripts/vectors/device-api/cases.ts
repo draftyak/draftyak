@@ -215,6 +215,14 @@ const ids = Array.from(
 	{ length: 101 },
 	(_, n) => `01JAZ3W3B6Q8M2V0G5T9K${n.toString().padStart(5, "0")}`,
 );
+// The IDs a request of each admin kind with a review subject names: the account or device the
+// subject describes, or none for Back up now. Every other admin kind takes up to 100.
+const requestIds: Readonly<Record<string, number>> = {
+	"account.disconnect": 1,
+	"account.mode-full": 1,
+	"security.device-capabilities": 1,
+	"data.backup": 0,
+};
 export function apiCases(): ApiCase[] {
 	const cases: ApiCase[] = [];
 	const add = (name: string, action: string, fields: ObjectValue, valid = false): void => {
@@ -371,7 +379,20 @@ export function apiCases(): ApiCase[] {
 	);
 	schema("PairingWindow", { pairingCode: "DRAFTYAK-PAIR:V1:test" }, false, "prefix-upper-case");
 	for (const kind of adminKinds)
-		schema("OperationRequest", { kind, ids: ids.slice(0, 100) }, true, kind);
+		schema(
+			"OperationRequest",
+			{ kind, ids: ids.slice(0, 100) },
+			!Object.hasOwn(requestIds, kind),
+			kind,
+		);
+	for (const [kind, count] of Object.entries(requestIds))
+		for (const length of [0, 1, 2])
+			schema(
+				"OperationRequest",
+				{ kind, ids: ids.slice(0, length) },
+				length === count,
+				`${kind}-count-${length}`,
+			);
 	schema("OperationRequest", { kind: "data.export", ids: [] }, true, "empty-admin-ids");
 	for (const kind of ["login", "consent", "agent-session", "unknown"])
 		schema("OperationRequest", { kind, ids: [id.op] }, false, `kind-${kind}`);
