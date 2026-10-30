@@ -955,28 +955,31 @@ it("keeps a failure pending past a lock set through another connection, then rec
 	]);
 });
 
-it("counts a wrong PIN after a lock ends as the first failure of a new window", async () => {
-	for (let count = 0; count < 4; count++)
+it.each([900_000, 900_001])(
+	"counts a wrong PIN %i ms after locking as the first failure of a new window",
+	async (elapsedMs) => {
+		for (let count = 0; count < 4; count++)
+			await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
+		await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_LOCKED");
+		expect(pinRow()).toEqual({ failures: 5, locked_until: wall + 900_000 });
+		wall += elapsedMs;
 		await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
-	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_LOCKED");
-	expect(pinRow()).toEqual({ failures: 5, locked_until: wall + 900_000 });
-	wall += 900_001;
-	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
-	expect(pinRow()).toEqual({ failures: 1, locked_until: 0 });
-	const proof = await pins.verify(user, "738294", "approval:n1");
-	f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
-	expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
-	expect(auditActions()).toEqual([
-		"pin.initialized",
-		"pin.failed",
-		"pin.failed",
-		"pin.failed",
-		"pin.failed",
-		"pin.locked",
-		"pin.failed",
-		"pin.verified",
-	]);
-});
+		expect(pinRow()).toEqual({ failures: 1, locked_until: 0 });
+		const proof = await pins.verify(user, "738294", "approval:n1");
+		f.store.write((tx) => pins.consume(tx, proof, user, "approval:n1"));
+		expect(pinRow()).toEqual({ failures: 0, locked_until: 0 });
+		expect(auditActions()).toEqual([
+			"pin.initialized",
+			"pin.failed",
+			"pin.failed",
+			"pin.failed",
+			"pin.failed",
+			"pin.locked",
+			"pin.failed",
+			"pin.verified",
+		]);
+	},
+);
 
 it("writes complete merged ID-only AuditEvent records for PIN state changes", async () => {
 	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_INVALID");
