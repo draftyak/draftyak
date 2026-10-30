@@ -149,4 +149,14 @@ export {
 	type ProviderHttpStream,
 	type ProviderStreamSink,
 } from "./plugins/broker/provider-http.ts";
+export {
+	BUNDLED_PLUGIN_IDS,
+	type BundledPluginId,
+	type BundledPluginPin,
+	type InstalledPlugin,
+	openPluginInstaller,
+	PluginInstallError,
+	type PluginInstaller,
+	type PluginInstallerOptions,
+} from "./plugins/installer/index.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";
