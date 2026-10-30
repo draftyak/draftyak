@@ -657,6 +657,128 @@ describe("basename inventory", () => {
 		expect(peak).toBe(4);
 	});
 
+	it("replenishes directory slots before slow siblings finish", async () => {
+		const root = path.resolve("synthetic");
+		const release = Promise.withResolvers<void>();
+		const listed: string[] = [];
+		let active = 0;
+		let peak = 0;
+		let settled = false;
+		const result = namedFiles(".gate-sentinel", root, false, async (target) => {
+			const directory = path.relative(root, target).split(path.sep).join("/");
+			listed.push(directory);
+			active += 1;
+			peak = Math.max(peak, active);
+			try {
+				if (directory === "")
+					return ["slow0", "slow1", "slow2", "fast", "queued0", "queued1"].map((name) =>
+						entry(name, true),
+					);
+				if (directory.startsWith("slow")) await release.promise;
+				if (directory === "fast") return [entry("deep", true)];
+				return sentinel;
+			} finally {
+				active -= 1;
+			}
+		}).finally(() => {
+			settled = true;
+		});
+		try {
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(listed).toEqual([
+				"",
+				"slow0",
+				"slow1",
+				"slow2",
+				"fast",
+				"queued0",
+				"queued1",
+				"fast/deep",
+			]);
+			expect(peak).toBe(4);
+			expect(active).toBe(3);
+			expect(settled).toBe(false);
+		} finally {
+			release.resolve();
+			await result;
+		}
+		expect(await result).toEqual(
+			["slow0", "slow1", "slow2", "queued0", "queued1", "fast/deep"]
+				.map((directory) => `${directory}/.gate-sentinel`)
+				.toSorted(),
+		);
+		expect(active).toBe(0);
+	});
+
+	it("covers descendants added after the pending queue empties without following links", async () => {
+		const root = path.resolve("synthetic");
+		const listed: string[] = [];
+		const expected = Array.from({ length: 33 }, (_, depth) => "deep/".repeat(depth).slice(0, -1));
+		const found = await namedFiles(".gate-sentinel", root, false, async (target) => {
+			const directory = path.relative(root, target).split(path.sep).join("/");
+			listed.push(directory);
+			if (!expected.includes(directory)) throw new Error("link target must not be listed");
+			const depth = directory === "" ? 0 : directory.split("/").length;
+			return [
+				...sentinel,
+				{ ...entry("cycle", true), isSymbolicLink: () => true },
+				...(depth < 32 ? [entry("deep", true)] : []),
+			];
+		});
+		expect(listed).toEqual(expected);
+		expect(found).toEqual(
+			expected.map((directory) => path.posix.join(directory, ".gate-sentinel")).toSorted(),
+		);
+	});
+
+	it("drains admitted directory reads on refusal without starting queued descendants", async () => {
+		const root = path.resolve("synthetic");
+		const release = Promise.withResolvers<void>();
+		const listed: string[] = [];
+		let active = 0;
+		let settled = false;
+		const result = namedFiles(
+			".gate-sentinel",
+			root,
+			false,
+			async (target) => {
+				const directory = path.relative(root, target).split(path.sep).join("/");
+				listed.push(directory);
+				if (directory === "")
+					return ["blocked0", "bad", "blocked1", "blocked2", "queued"].map((name) =>
+						entry(name, true),
+					);
+				if (directory === "bad") throw failure("EACCES");
+				active += 1;
+				await release.promise;
+				active -= 1;
+				return [entry("late", true)];
+			},
+			async () => kind(true, true),
+		).then(
+			() => {
+				settled = true;
+				return undefined;
+			},
+			(error: unknown) => {
+				settled = true;
+				return error;
+			},
+		);
+		try {
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(listed).toEqual(["", "blocked0", "bad", "blocked1", "blocked2"]);
+			expect(active).toBe(3);
+			expect(settled).toBe(false);
+		} finally {
+			release.resolve();
+			await result;
+		}
+		expect(await result).toEqual(new Error("file-name inventory failed"));
+		expect(active).toBe(0);
+		expect(listed).toEqual(["", "blocked0", "bad", "blocked1", "blocked2"]);
+	});
+
 	it.each(["", "nested/file", "nested\\file", "*", "?", "[a]", "a\0b"])(
 		"refuses a basename that could broaden the inventory: %s",
 		async (basename) => {
