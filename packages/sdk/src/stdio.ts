@@ -199,7 +199,17 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 			params: HostMethods[M]["params"],
 			settings: HostRequestOptions = {},
 		): Promise<HostMethods[M]["result"]> {
-			if (closed || settings.signal?.aborted) return Promise.reject(new HostError("DENIED"));
+			if (closed) return Promise.reject(new HostError("DENIED"));
+			let signal: AbortSignal | undefined;
+			try {
+				const requestedSignal = settings.signal;
+				if (requestedSignal !== undefined && !(requestedSignal instanceof AbortSignal))
+					throw new HostError("BAD_REQUEST");
+				signal = requestedSignal === undefined ? undefined : AbortSignal.any([requestedSignal]);
+			} catch {
+				return Promise.reject(new HostError("BAD_REQUEST"));
+			}
+			if (signal?.aborted) return Promise.reject(new HostError("DENIED"));
 			if (pending.size >= HOST_MAX_ACTIVE_REQUESTS)
 				return Promise.reject(new HostError("TOO_LARGE"));
 			const timeout = settings.timeoutMs ?? HOST_REQUEST_TIMEOUT_MS;
@@ -228,10 +238,10 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 					reject,
 					cleanup() {
 						clearTimeout(timer);
-						settings.signal?.removeEventListener("abort", abort);
+						signal?.removeEventListener("abort", abort);
 					},
 				});
-				settings.signal?.addEventListener("abort", abort, { once: true });
+				signal?.addEventListener("abort", abort, { once: true });
 				void write({ jsonrpc: "2.0", id, method, params: jsonCopy(parsed) }, true).catch(() =>
 					cancel("DENIED"),
 				);
