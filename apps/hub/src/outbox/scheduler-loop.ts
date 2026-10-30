@@ -307,7 +307,8 @@ export class SchedulerLoop {
 		this.#episodes.add(episode);
 		const onError = this.#onError;
 		try {
-			onError?.(code);
+			// Observe asynchronous failures without waiting for the listener to settle.
+			void Promise.resolve(onError?.(code)).catch(() => {});
 		} catch {
 			// A failing listener never stops the loop.
 		}
