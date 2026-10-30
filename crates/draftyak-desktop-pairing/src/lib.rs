@@ -9,9 +9,15 @@
 //! the hub's correlated confirmation after the owner has acknowledged the comparison. The code's
 //! expiry bounds the attempt until the reveal holds. Once the hub has accepted a claim from a
 //! code, the code is spent: no later attempt of this workflow claims from it, nor of a workflow
-//! built with its [`Pairing::spent_codes`]. No [`Projection`] carries native values. When an
-//! attempt ends, its code, session and comparison are dropped; a [`Completion`] hands the
-//! session back instead.
+//! built with its [`Pairing::spent_codes`] and [`Pairing::clock_floor_ms`]. No [`Projection`]
+//! carries native values. When an attempt ends, its code, session and comparison are dropped; a
+//! [`Completion`] hands the session back instead.
+//!
+//! M4.11 handoff: only the trusted pairing surface calls [`Pairing::consent`],
+//! [`Pairing::acknowledge`], [`Pairing::decline`] and [`Pairing::comparison`]; the renderer gets
+//! [`Pairing::projection`] and [`Pairing::cancel`]. A device keeps one live [`Pairing`]: the next
+//! is built with [`Pairing::with_floor`] only after the last one is dropped, from what the native
+//! store read of it, [`Pairing::spent_codes`] first and then [`Pairing::clock_floor_ms`].
 #![forbid(unsafe_code)]
 
 use std::{
@@ -94,12 +100,12 @@ fn allocate(counter: &AtomicU64) -> Option<AttemptId> {
 /// the session it starts; nothing in a projection can stand in for it.
 #[derive(Debug)]
 pub struct HubLink {
-    attempt: AttemptId,
+    attempt_id: AttemptId,
 }
 
 impl HubLink {
     pub fn attempt(&self) -> AttemptId {
-        self.attempt
+        self.attempt_id
     }
 }
 
@@ -373,10 +379,15 @@ fn current<C, H, S>(
 /// and `S` the opaque comparison for the trusted surface. A call that ends an attempt drops its
 /// session before returning, so dropping `H` must stop its native work without waiting on
 /// anything that calls into this workflow.
+///
+/// A device keeps one live workflow. Workflows share nothing but what the native store keeps
+/// from [`Pairing::spent_codes`] and [`Pairing::clock_floor_ms`], so the next one is built from
+/// those with [`Pairing::with_floor`] only after this one is dropped.
 pub struct Pairing<C, H, S, K> {
     clock: K,
     confirm_within_ms: u64,
     latest_ms: u64,
+    floor_ms: u64,
     spent: Vec<SpentCode>,
     attempt: Option<Attempt<C, H, S>>,
 }
@@ -418,16 +429,32 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
     }
 
     /// As [`Pairing::new`], with the codes that earlier workflows spent, as the native store kept
-    /// them from [`Pairing::spent_codes`].
+    /// them from [`Pairing::spent_codes`]. It keeps no clock floor: with the clock set back, a
+    /// spent code that had expired before the store read them can be revealed again, so a restart
+    /// uses [`Pairing::with_floor`].
     pub fn with_spent(
         clock: K,
         confirm_within_ms: u64,
         spent: impl IntoIterator<Item = SpentCode>,
     ) -> Self {
+        Self::with_floor(clock, confirm_within_ms, 0, spent)
+    }
+
+    /// As [`Pairing::with_spent`], for a workflow that never reads time below `floor_ms`: the
+    /// [`Pairing::clock_floor_ms`] that the native store kept with those codes. A spent code that
+    /// had expired before the store read them stays expired, however far back the clock is set
+    /// across a restart.
+    pub fn with_floor(
+        clock: K,
+        confirm_within_ms: u64,
+        floor_ms: u64,
+        spent: impl IntoIterator<Item = SpentCode>,
+    ) -> Self {
         Self {
             clock,
             confirm_within_ms,
-            latest_ms: 0,
+            latest_ms: floor_ms,
+            floor_ms,
             spent: spent.into_iter().collect(),
             attempt: None,
         }
@@ -440,10 +467,20 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
 
     /// Native only: the spent codes that have not expired. A code is spent once
     /// [`Pairing::hub_event`] has applied the hub's acceptance of its claim, and the native store
-    /// keeps these before the session reveals.
+    /// keeps these, with [`Pairing::clock_floor_ms`], before the session reveals.
     pub fn spent_codes(&mut self) -> Vec<SpentCode> {
         self.refresh();
         self.spent.clone()
+    }
+
+    /// Native only: one past the latest expiry among the spent codes that have expired, or the
+    /// floor this workflow was built with when that is later, so a clock reading far ahead does
+    /// not carry over. The native store reads it after [`Pairing::spent_codes`], since a floor read
+    /// first misses a code that expires before those are read, and keeps both for
+    /// [`Pairing::with_floor`].
+    pub fn clock_floor_ms(&mut self) -> u64 {
+        self.refresh();
+        self.floor_ms
     }
 
     /// Expires the current attempt once its deadline has passed. It names the attempt only when
@@ -501,7 +538,8 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
 
     /// The owner's consent. Only here does `start` receive the code, with the attempt's
     /// [`HubLink`], and return the running native session; it reports answers later, never from
-    /// inside `start`.
+    /// inside `start`. Only the trusted pairing surface calls this: the renderer gets
+    /// [`Pairing::projection`] and [`Pairing::cancel`].
     pub fn consent<F>(&mut self, attempt: AttemptId, start: F) -> Result<(), Refusal>
     where
         F: FnOnce(C, HubLink) -> Result<H, NativeError>,
@@ -514,7 +552,7 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
         ) {
             Stage::AwaitingConsent(code) => {
                 let link = HubLink {
-                    attempt: current.id,
+                    attempt_id: current.id,
                 };
                 let session = start(code, link).map_err(|_| Refusal::StartFailed)?;
                 current.stage = Stage::Claiming(session);
@@ -528,7 +566,8 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
     }
 
     /// The owner's acknowledgement that both screens show the same comparison. It grants
-    /// nothing: only the hub's later confirmation completes the attempt.
+    /// nothing: only the hub's later confirmation completes the attempt. Only the trusted pairing
+    /// surface calls this: the renderer gets [`Pairing::projection`] and [`Pairing::cancel`].
     pub fn acknowledge(&mut self, attempt: AttemptId) -> Result<(), Refusal> {
         self.refresh();
         let current = current(&mut self.attempt, attempt)?;
@@ -547,7 +586,8 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
         }
     }
 
-    /// The owner saw different comparisons: the attempt fails.
+    /// The owner saw different comparisons: the attempt fails. Only the trusted pairing surface
+    /// calls this: the renderer gets [`Pairing::projection`] and [`Pairing::cancel`].
     pub fn decline(&mut self, attempt: AttemptId) -> Result<(), Refusal> {
         self.refresh();
         let current = current(&mut self.attempt, attempt)?;
@@ -567,7 +607,8 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
         Ok(())
     }
 
-    /// Native only: the trusted pairing surface shows it, and no projection carries it.
+    /// Native only: no projection carries it. Only the trusted pairing surface calls this, to show
+    /// it: the renderer gets [`Pairing::projection`] and [`Pairing::cancel`].
     pub fn comparison(&mut self, attempt: AttemptId) -> Result<&S, Refusal> {
         self.refresh();
         match &current(&mut self.attempt, attempt)?.stage {
@@ -593,7 +634,7 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
         event: HubEvent<S>,
     ) -> Result<Option<Completion<H>>, Refusal> {
         let now = self.refresh();
-        let current = current(&mut self.attempt, link.attempt)?;
+        let current = current(&mut self.attempt, link.attempt())?;
         if hub_pin != current.hub_pin || window_id != current.window_id {
             current.end(Ending::Failed(Failure::Mismatch));
             return Err(Refusal::Mismatch);
@@ -622,7 +663,11 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
                 current.stage = Stage::Comparing(session, device, comparison);
                 Err(Refusal::AwaitingOwner)
             }
-            (Stage::AwaitingConfirmation(session, device, _), HubEvent::Confirmed(confirmed)) => {
+            (
+                Stage::AwaitingConfirmation(session, device, comparison),
+                HubEvent::Confirmed(confirmed),
+            ) => {
+                drop(comparison);
                 if confirmed != device {
                     current.end(Ending::Failed(Failure::Mismatch));
                     return Err(Refusal::Mismatch);
@@ -662,8 +707,15 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
     fn refresh(&mut self) -> u64 {
         let now = self.clock.now_ms().max(self.latest_ms);
         self.latest_ms = now;
-        // The workflow's clock never runs backwards, so a code dropped here stays expired.
-        self.spent.retain(|code| now <= code.expires_at_ms);
+        // A code dropped here stays expired: readings never go back, and a workflow built with the
+        // floor reads none at or below its expiry.
+        self.spent.retain(|code| {
+            let live = now <= code.expires_at_ms;
+            if !live {
+                self.floor_ms = self.floor_ms.max(code.expires_at_ms + 1);
+            }
+            live
+        });
         if let Some(attempt) = &mut self.attempt
             && attempt.active()
             && now > attempt.deadline_ms

@@ -1,5 +1,6 @@
 use std::{
     cell::{Cell, RefCell},
+    panic::{self, AssertUnwindSafe},
     rc::Rc,
 };
 
@@ -48,6 +49,8 @@ struct Counts {
     sessions: Cell<i32>,
     comparisons: Cell<i32>,
     starts: Cell<i32>,
+    // When set, the next comparison to be dropped panics.
+    comparison_drop_panics: Cell<bool>,
 }
 
 fn up(cell: &Cell<i32>) {
@@ -106,6 +109,9 @@ struct Comparison {
 impl Drop for Comparison {
     fn drop(&mut self) {
         down(&self.counts.comparisons);
+        if self.counts.comparison_drop_panics.take() {
+            panic!("a comparison was dropped");
+        }
     }
 }
 
@@ -136,8 +142,8 @@ const KINDS: [Kind; 5] = [
 
 type Outcome = Result<bool, Refusal>;
 
-struct Harness {
-    pairing: Pairing<Code, Session, Comparison, TestClock>,
+struct Harness<K = TestClock> {
+    pairing: Pairing<Code, Session, Comparison, K>,
     time: Rc<Cell<u64>>,
     counts: Rc<Counts>,
 }
@@ -162,8 +168,25 @@ impl Harness {
 
     fn with_spent(spent: Vec<SpentCode>) -> Self {
         let time = Rc::new(Cell::new(START_MS));
+        let pairing = Pairing::with_spent(TestClock(time.clone()), CONFIRM_WITHIN_MS, spent);
+        Self::on(time, pairing)
+    }
+
+    fn with_floor(floor_ms: u64, spent: Vec<SpentCode>) -> Self {
+        let time = Rc::new(Cell::new(START_MS));
+        let clock = TestClock(time.clone());
+        Self::on(
+            time,
+            Pairing::with_floor(clock, CONFIRM_WITHIN_MS, floor_ms, spent),
+        )
+    }
+}
+
+impl<K: Clock> Harness<K> {
+    // `pairing` reads `time` through its own clock.
+    fn on(time: Rc<Cell<u64>>, pairing: Pairing<Code, Session, Comparison, K>) -> Self {
         Self {
-            pairing: Pairing::with_spent(TestClock(time.clone()), CONFIRM_WITHIN_MS, spent),
+            pairing,
             time,
             counts: Rc::default(),
         }
@@ -812,6 +835,28 @@ fn a_confirmation_deadline_past_u64_max_saturates() {
 }
 
 #[test]
+fn a_closure_clock_workflow_expires_only_past_its_confirmation_deadline() {
+    let time = Rc::new(Cell::new(START_MS));
+    let now = time.clone();
+    let mut h = Harness::on(time, Pairing::new(move || now.get(), CONFIRM_WITHIN_MS));
+    let run = h.to(Phase::Revealing);
+    let revealed = START_MS + 2_000;
+    h.at(revealed);
+    assert_eq!(h.send(&run, Kind::Reveal), Ok(false));
+    let deadline = revealed + CONFIRM_WITHIN_MS;
+    assert_eq!(h.pairing.projection().deadline_ms, Some(deadline));
+    h.pairing.acknowledge(run.id).unwrap();
+    h.at(deadline);
+    assert_eq!(h.pairing.tick(), None);
+    assert_eq!(h.phase(), Phase::AwaitingConfirmation);
+    h.at(deadline + 1);
+    assert_eq!(h.pairing.tick(), Some(run.id));
+    assert_eq!(h.phase(), Phase::Expired);
+    assert_eq!(h.pairing.tick(), None);
+    assert_eq!(h.live(), (0, 0, 0));
+}
+
+#[test]
 fn time_never_runs_backwards_for_the_workflow() {
     let mut h = Harness::new();
     h.at(EXPIRES_MS + 1);
@@ -1171,6 +1216,127 @@ fn spent_codes_carry_into_a_later_workflow_until_they_expire() {
 }
 
 #[test]
+fn a_clock_set_back_across_a_restart_brings_back_no_spent_code() {
+    let later = EXPIRES_MS + 20_000;
+    let mut h = Harness::new();
+    for (window, expires_at_ms) in [(WINDOW, EXPIRES_MS), (NEW_WINDOW, later)] {
+        let code = h.code_for(HUB_PIN, window, expires_at_ms);
+        let run = h.drive(code, Phase::Revealing);
+        h.pairing.cancel(run.id).unwrap();
+    }
+    h.at(EXPIRES_MS + 1);
+    let spent = h.pairing.spent_codes();
+    assert_eq!(spent, [SpentCode::new(NEW_WINDOW, later)]);
+    let floor = h.pairing.clock_floor_ms();
+    assert_eq!(floor, EXPIRES_MS + 1);
+    drop(h);
+
+    // The restarted workflow's clock reads before either code's expiry.
+    let mut restarted = Harness::with_floor(floor, spent);
+    for (window, expires_at_ms, refusal) in [
+        (WINDOW, EXPIRES_MS, Refusal::Expired),
+        (NEW_WINDOW, later, Refusal::CodeUsed),
+    ] {
+        let code = restarted.code_for(HUB_PIN, window, expires_at_ms);
+        assert_eq!(restarted.pairing.stage(code), Err(refusal));
+    }
+    assert_eq!(restarted.phase(), Phase::Idle);
+    assert_eq!(restarted.pairing.clock_floor_ms(), floor);
+    let code = restarted.code_for(HUB_PIN, OTHER_WINDOW, later);
+    restarted.drive(code, Phase::Claiming);
+}
+
+#[test]
+fn a_reading_far_ahead_carries_over_a_restart_only_as_far_as_the_codes_it_expired() {
+    let mut h = Harness::new();
+    assert_eq!(h.pairing.clock_floor_ms(), 0);
+    let run = h.to(Phase::Revealing);
+    h.pairing.cancel(run.id).unwrap();
+    h.at(u64::MAX);
+    let spent = h.pairing.spent_codes();
+    assert_eq!(spent, []);
+    let floor = h.pairing.clock_floor_ms();
+    assert_eq!(floor, EXPIRES_MS + 1);
+    drop(h);
+
+    let mut restarted = Harness::with_floor(floor, spent);
+    let code = restarted.code();
+    assert_eq!(restarted.pairing.stage(code), Err(Refusal::Expired));
+    let code = restarted.code_for(HUB_PIN, NEW_WINDOW, EXPIRES_MS + 10);
+    restarted.drive(code, Phase::Claiming);
+}
+
+#[test]
+fn a_restart_floor_passes_the_latest_of_several_codes_expiring_at_once() {
+    let later = EXPIRES_MS + 20_000;
+    let mut h = Harness::new();
+    for (window, expires_at_ms) in [(NEW_WINDOW, later), (WINDOW, EXPIRES_MS)] {
+        let code = h.code_for(HUB_PIN, window, expires_at_ms);
+        let run = h.drive(code, Phase::Revealing);
+        h.pairing.cancel(run.id).unwrap();
+    }
+    // The code that expires later was spent first.
+    assert_eq!(
+        h.pairing.spent_codes(),
+        [
+            SpentCode::new(NEW_WINDOW, later),
+            SpentCode::new(WINDOW, EXPIRES_MS)
+        ]
+    );
+    h.at(later + 1);
+    let spent = h.pairing.spent_codes();
+    assert_eq!(spent, []);
+    let floor = h.pairing.clock_floor_ms();
+    assert_eq!(floor, later + 1);
+    drop(h);
+
+    let mut restarted = Harness::with_floor(floor, spent);
+    for (window, expires_at_ms) in [(NEW_WINDOW, later), (WINDOW, EXPIRES_MS)] {
+        let code = restarted.code_for(HUB_PIN, window, expires_at_ms);
+        assert_eq!(restarted.pairing.stage(code), Err(Refusal::Expired));
+    }
+    assert_eq!(restarted.phase(), Phase::Idle);
+    assert_eq!(restarted.pairing.clock_floor_ms(), floor);
+}
+
+// A floor read after the spent codes can pass the expiry of a code read with them.
+#[test]
+fn a_restart_floor_never_falls_below_the_floor_the_workflow_was_built_with() {
+    let later = EXPIRES_MS + 20_000;
+    let mut h = Harness::with_floor(later + 1, vec![SpentCode::new(WINDOW, EXPIRES_MS)]);
+    let spent = h.pairing.spent_codes();
+    assert_eq!(spent, []);
+    let floor = h.pairing.clock_floor_ms();
+    assert_eq!(floor, later + 1);
+    drop(h);
+
+    let mut restarted = Harness::with_floor(floor, spent);
+    let code = restarted.code_for(HUB_PIN, NEW_WINDOW, later);
+    assert_eq!(restarted.pairing.stage(code), Err(Refusal::Expired));
+    assert_eq!(restarted.phase(), Phase::Idle);
+    assert_eq!(restarted.pairing.clock_floor_ms(), floor);
+}
+
+// Workflows share nothing but what the native store keeps of them, so a device keeps one live
+// workflow and builds the next from the store only once the last one is dropped.
+#[test]
+fn a_workflow_built_while_another_is_live_misses_its_later_spends() {
+    let mut h = Harness::new();
+    let mut early = Harness::with_spent(h.pairing.spent_codes());
+    h.to(Phase::Revealing);
+    let spent = h.pairing.spent_codes();
+    let floor = h.pairing.clock_floor_ms();
+    let code = early.code();
+    early.drive(code, Phase::Claiming);
+    drop(h);
+
+    let mut next = Harness::with_floor(floor, spent);
+    let code = next.code();
+    assert_eq!(next.pairing.stage(code), Err(Refusal::CodeUsed));
+    assert_eq!(next.phase(), Phase::Idle);
+}
+
+#[test]
 fn declining_the_comparison_ends_the_attempt() {
     for phase in [Phase::Comparing, Phase::AwaitingConfirmation] {
         let mut h = Harness::new();
@@ -1181,6 +1347,23 @@ fn declining_the_comparison_ends_the_attempt() {
         assert_eq!(h.send(&run, Kind::Confirm), Err(Refusal::Closed));
         assert_eq!(h.pairing.acknowledge(run.id), Err(Refusal::Closed));
     }
+}
+
+// A comparison whose drop panics stops the confirming answer where it drops the comparison: the
+// attempt is not yet confirmed there, so none is confirmed without its completion reaching the
+// caller.
+#[test]
+fn the_confirming_answer_drops_the_comparison_before_the_attempt_is_confirmed() {
+    let mut h = Harness::new();
+    let run = h.to(Phase::AwaitingConfirmation);
+    let event = h.make(Kind::Confirm);
+    h.counts.comparison_drop_panics.set(true);
+    let done = panic::catch_unwind(AssertUnwindSafe(|| {
+        h.pairing.hub_event(run.link(), HUB_PIN, run.window, event)
+    }));
+    assert!(done.is_err());
+    assert_ne!(h.phase(), Phase::Confirmed);
+    assert_eq!(h.live(), (0, 0, 0));
 }
 
 #[test]
