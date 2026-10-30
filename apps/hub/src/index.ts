@@ -115,7 +115,12 @@ export {
 	timeoutSignal,
 	withDeadline,
 } from "./kernel/clock.ts";
-export { isKnownSyncedPath } from "./kernel/data-directory.ts";
+export {
+	admitDataFolder,
+	type DataFolder,
+	type DataFolderOptions,
+	isKnownSyncedPath,
+} from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
 export {
 	type InitialMaterial,
@@ -131,6 +136,13 @@ export {
 	type SidecarStop,
 	type SidecarStopReason,
 } from "./kernel/sidecar-input.ts";
+export {
+	checkLaunch,
+	type LaunchCheck,
+	type LaunchInput,
+	StartupRefusal,
+	type StartupRefusalCode,
+} from "./lifecycle/preflight.ts";
 export {
 	type HubSession,
 	HubSessionError,
