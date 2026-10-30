@@ -489,7 +489,7 @@ export function adminCases(): ApiCase[] {
 		["device-lower-case", { ...device, device: id.candidate.toLowerCase() }],
 		["name-empty", { ...device, name: "" }],
 		["name-65", { ...device, name: "x".repeat(65) }],
-		["name-hidden", { ...device, name: "Work​laptop" }],
+		["name-hidden", { ...device, name: "Work\u{200b}laptop" }],
 		["name-leading-space", { ...device, name: " Work laptop" }],
 		["transport-upper-case", { ...device, transportSpkiSha256: "B".repeat(64) }],
 		["transport-63", { ...device, transportSpkiSha256: "b".repeat(63) }],

@@ -12,8 +12,9 @@ import { jcsSha256 } from "../hash.ts";
 import { DisplayName, PairingRole, PairingSas } from "../pairing.ts";
 import { Sha256Hex, Ulid, UtcMs } from "../scalars.ts";
 import { contentHash, SendSnapshotV1 } from "../snapshot.ts";
-import { ADMIN_KINDS, AgentSessionReviewSubject, SigningKey } from "../statements.ts";
+import { AdminKind, AgentSessionReviewSubject, SigningKey } from "../statements.ts";
 import {
+	ADMIN_REVIEW_KINDS,
 	AdminAccountSubject,
 	AdminDataBackupSubject,
 	AdminDeviceCapabilitiesSubject,
@@ -23,7 +24,7 @@ import {
 import { presetFitsRole } from "./common.ts";
 
 export type OperationRequest =
-	| { readonly kind: (typeof ADMIN_KINDS)[number]; readonly ids: readonly string[] }
+	| { readonly kind: AdminKind; readonly ids: readonly string[] }
 	| {
 			readonly kind: "pair-confirm";
 			readonly ids: readonly [string];
@@ -31,7 +32,20 @@ export type OperationRequest =
 	  };
 export const OperationRequest: z.ZodType<OperationRequest> = z
 	.discriminatedUnion("kind", [
-		z.strictObject({ kind: z.enum(ADMIN_KINDS), ids: uniqueItems(z.array(Ulid).max(100)) }),
+		z.strictObject({
+			kind: AdminKind.exclude(ADMIN_REVIEW_KINDS),
+			ids: uniqueItems(z.array(Ulid).max(100)),
+		}),
+		// A reviewed kind names the account or device its subject describes, or nothing to back up.
+		z.strictObject({
+			kind: AdminKind.extract([
+				"account.disconnect",
+				"account.mode-full",
+				"security.device-capabilities",
+			]),
+			ids: z.tuple([Ulid]),
+		}),
+		z.strictObject({ kind: z.literal("data.backup"), ids: z.array(Ulid).max(0) }),
 		z.strictObject({
 			kind: z.literal("pair-confirm"),
 			ids: z.tuple([Ulid]),

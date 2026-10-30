@@ -445,8 +445,6 @@
                 "plugin.install",
                 "plugin.upgrade",
                 "account.connect",
-                "account.disconnect",
-                "account.mode-full",
                 "policy.routing-loosen",
                 "policy.auto-draft-enable",
                 "tool.instance-create",
@@ -459,11 +457,9 @@
                 "access.exposure-enable",
                 "access.bind-address-add",
                 "access.advertised-addresses-set",
-                "security.device-capabilities",
                 "security.pin-change",
                 "security.key-rotate",
-                "data.export",
-                "data.backup"
+                "data.export"
               ]
             },
             "ids": {
@@ -477,6 +473,64 @@
                 "description": "A ULID: 26 upper-case Crockford base32 characters."
               },
               "uniqueItems": true
+            }
+          },
+          "required": [
+            "kind",
+            "ids"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "account.disconnect",
+                "account.mode-full",
+                "security.device-capabilities"
+              ]
+            },
+            "ids": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                }
+              ],
+              "items": false,
+              "minItems": 1,
+              "maxItems": 1
+            }
+          },
+          "required": [
+            "kind",
+            "ids"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "data.backup"
+            },
+            "ids": {
+              "maxItems": 0,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 26,
+                "maxLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "description": "A ULID: 26 upper-case Crockford base32 characters."
+              }
             }
           },
           "required": [

@@ -20,6 +20,17 @@ pub const ADMIN_REVIEW_KINDS: &[&str] = &[
     "data.backup",
 ];
 
+/// The fewest and most ids an operation request of `kind` names. A reviewed kind names the
+/// account or device its subject describes, or nothing to back up; every other admin kind keeps
+/// up to 100 until its contract adds a subject.
+pub(super) fn request_ids(kind: &str) -> (usize, usize) {
+    match kind {
+        "account.disconnect" | "account.mode-full" | "security.device-capabilities" => (1, 1),
+        "data.backup" => (0, 0),
+        _ => (0, 100),
+    }
+}
+
 fn alias(s: &str) -> bool {
     let bytes = s.as_bytes();
     (1..=32).contains(&bytes.len())
