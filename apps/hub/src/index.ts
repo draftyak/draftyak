@@ -86,9 +86,15 @@ export { WorkError } from "./jobs/values.ts";
 export {
 	type Clock,
 	checkWait,
+	type DeadlineResult,
+	isAbortError,
 	MAX_WAIT_MS,
+	nextTick,
 	systemClock,
+	type TimeoutSignal,
 	type TimerClock,
+	timeoutSignal,
+	withDeadline,
 } from "./kernel/clock.ts";
 export { isKnownSyncedPath } from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
@@ -111,6 +117,12 @@ export {
 	type HubStopReport,
 	type MaintenanceLease,
 } from "./lifecycle/state.ts";
+export { SchedulerError, type SchedulerErrorCode } from "./outbox/scheduler-ports.ts";
+export {
+	scheduleAt,
+	schedulingAvailable,
+	type WallScheduleInput,
+} from "./outbox/scheduler-time.ts";
 export {
 	type AiCandidateRequest,
 	type AiProfileRegistry,
