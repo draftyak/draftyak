@@ -422,6 +422,18 @@ describe("sidecar input signal isolation", () => {
 	const forgeries: readonly (readonly [string, (calls: string[]) => AbortSignal])[] = [
 		["a forged signal", () => Object.create(AbortSignal.prototype)],
 		[
+			"a live signal with a null prototype",
+			() => Object.setPrototypeOf(new AbortController().signal, null),
+		],
+		[
+			"a live signal with Object.prototype",
+			() => Object.setPrototypeOf(new AbortController().signal, Object.prototype),
+		],
+		["a sealed live signal", () => Object.seal(new AbortController().signal)],
+		["a frozen live signal", () => Object.freeze(new AbortController().signal)],
+		["a non-extensible live signal", () => Object.preventExtensions(new AbortController().signal)],
+		["a proxy around a live signal", () => new Proxy(new AbortController().signal, {})],
+		[
 			"a forged signal with its own aborted false",
 			() => Object.create(AbortSignal.prototype, { aborted: { value: false } }),
 		],
