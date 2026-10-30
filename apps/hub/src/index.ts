@@ -136,6 +136,7 @@ export {
 	type HubStopReport,
 	type MaintenanceLease,
 } from "./lifecycle/state.ts";
+export { type NativeStorageOptions, openNativeStorage } from "./native-storage.ts";
 export { SchedulerError, type SchedulerErrorCode } from "./outbox/scheduler-ports.ts";
 export {
 	scheduleAt,
