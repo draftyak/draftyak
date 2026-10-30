@@ -104,6 +104,8 @@ export interface SlackSocketFake extends Fake {
 	acksFor(envelopeId: string): SlackSocketAck[];
 	disconnect(connection: SlackSocketConnection, reason: string, closeAfterMs?: number | null): void;
 	terminate(connection: SlackSocketConnection): void;
+	/** Fixture-local token state; app revocation also retires its socket resources. */
+	revoke(token: "user" | "app"): void;
 	stats(): { tickets: number; connections: number; pending: number; timers: number; http: number };
 }
 function socketRefused(): never {
@@ -299,6 +301,8 @@ export function createSlackSocketFake(
 		},
 	};
 	let closed = false,
+		userRevoked = false,
+		appRevoked = false,
 		hello = true,
 		drops = 0,
 		nextConnection = 0,
@@ -316,6 +320,7 @@ export function createSlackSocketFake(
 		messages: number;
 		frames: number;
 		lifetime?: ReturnType<typeof setTimeout>;
+		delays: Set<ReturnType<typeof setTimeout>>;
 	};
 	type Envelope = {
 		public: SlackSocketEnvelope;
@@ -366,11 +371,11 @@ export function createSlackSocketFake(
 		if (rows.length > MAX_SLACK_SOCKET_RECORDS) rows.shift();
 	};
 	const live = () =>
-		[...connections.values()].filter((c) => c.socket.readyState === WebSocket.OPEN);
+		[...connections.values()].filter((c) => !appRevoked && c.socket.readyState === WebSocket.OPEN);
 	const connection = (handle: SlackSocketConnection) => {
 		active();
 		const value = connections.get(handle);
-		if (!value || value.socket.readyState !== WebSocket.OPEN) socketRefused();
+		if (appRevoked || !value || value.socket.readyState !== WebSocket.OPEN) socketRefused();
 		return value;
 	};
 	const send = (c: Connection, value: Readonly<Record<string, unknown>>) => {
@@ -463,6 +468,7 @@ export function createSlackSocketFake(
 		return true;
 	};
 	const receive = (c: Connection, data: RawData, binary: boolean) => {
+		if (appRevoked) return;
 		if (!received(c)) return;
 		if (binary) {
 			c.socket.close(1003);
@@ -616,6 +622,7 @@ export function createSlackSocketFake(
 					expireTickets();
 					if (
 						closed ||
+						appRevoked ||
 						request.method !== "GET" ||
 						!UUID.test(ticket) ||
 						request.headers.host !== wsOrigin.slice(5) ||
@@ -628,11 +635,17 @@ export function createSlackSocketFake(
 					}
 					try {
 						wss.handleUpgrade(request, socket, head, (ws) => {
-							if (closed) {
+							if (closed || appRevoked) {
 								ws.terminate();
 								return;
 							}
-							const c = { socket: ws, closedCode: null, messages: 0, frames: 0 } as Connection;
+							const c = {
+								socket: ws,
+								closedCode: null,
+								messages: 0,
+								frames: 0,
+								delays: new Set(),
+							} as Connection;
 							c.public = Object.freeze({
 								id: ++nextConnection,
 								get closedCode() {
@@ -652,6 +665,8 @@ export function createSlackSocketFake(
 							ws.once("close", (code) => {
 								c.closedCode = code;
 								cancel(c.lifetime);
+								for (const timer of c.delays) cancel(timer);
+								c.delays.clear();
 								connections.delete(c.public);
 							});
 							c.lifetime = later(() => ws.terminate(), SOCKET_LIFETIME_MS);
@@ -713,8 +728,11 @@ export function createSlackSocketFake(
 					return Response.json({ ok: false, error: "not_allowed_token_type" });
 				if (token !== (app ? appToken : userToken))
 					return Response.json({ ok: false, error: "invalid_auth" });
+				const revoked = () => (app ? appRevoked : userRevoked);
+				if (revoked()) return Response.json({ ok: false, error: "token_revoked" });
 				if (target.includes("?") || (await request.text()) !== "")
 					return Response.json({ ok: false, error: "invalid_arg_name" });
+				if (revoked()) return Response.json({ ok: false, error: "token_revoked" });
 				if (!app)
 					return Response.json({
 						ok: true,
@@ -724,6 +742,7 @@ export function createSlackSocketFake(
 						team: "DYTEST workspace",
 					});
 				await ensureWS();
+				if (revoked()) return Response.json({ ok: false, error: "token_revoked" });
 				expireTickets();
 				active();
 				if (tickets.size >= MAX_SLACK_SOCKET_TICKETS)
@@ -890,10 +909,34 @@ export function createSlackSocketFake(
 				if (timers.size >= SOCKET_TIMERS) socketRefused();
 			}
 			send(c, { type: "disconnect", reason, debug_info: { host: "dytest-fixture" } });
-			if (closeAfterMs !== null) later(() => c.socket.close(1000), closeAfterMs);
+			if (closeAfterMs !== null) {
+				const timer = later(() => {
+					c.delays.delete(timer);
+					c.socket.close(1000);
+				}, closeAfterMs);
+				c.delays.add(timer);
+			}
 		},
 		terminate(handle) {
 			connection(handle).socket.terminate();
+		},
+		revoke(token) {
+			active();
+			if (token !== "user" && token !== "app") socketRefused();
+			if (token === "user") {
+				userRevoked = true;
+				return;
+			}
+			appRevoked = true;
+			tickets.clear();
+			for (const work of pending) settle(work);
+			for (const c of connections.values()) {
+				cancel(c.lifetime);
+				for (const timer of c.delays) cancel(timer);
+				c.delays.clear();
+				c.socket.terminate();
+			}
+			connections.clear();
 		},
 		stats() {
 			expireTickets();
@@ -1550,6 +1593,11 @@ export function createSlackReadFake(raw: {
 /** Wire intake is separate from the read fixture's 4,096-byte stored-text limit. */
 export const MAX_SLACK_SEND_REQUEST_BYTES: number = 32 * 1024;
 
+export interface SlackSendFake extends Fake {
+	/** Revokes only this sender's synthetic credential. */
+	revoke(): void;
+}
+
 /**
  * A synthetic provider write surface sharing only the supplied reader's public controls.
  * The caller owns the reader; this factory does not grant native send or reconcile authority.
@@ -1557,7 +1605,7 @@ export const MAX_SLACK_SEND_REQUEST_BYTES: number = 32 * 1024;
 export function createSlackSendFake(raw: {
 	readonly read: SlackReadFake;
 	readonly userToken: string;
-}): Fake {
+}): SlackSendFake {
 	const options = object(raw, ["read", "userToken"]);
 	const reader = options.read as SlackReadFake;
 	if (reader === null || typeof reader !== "object" || isProxy(reader)) refuse();
@@ -1569,6 +1617,7 @@ export function createSlackSendFake(raw: {
 	const inspect = reader.conversation.bind(reader);
 	const append = reader.addMessage.bind(reader);
 	let committed = -1n;
+	let revoked = false;
 	const fake = createFake(
 		{
 			async fetch(request) {
@@ -1577,6 +1626,7 @@ export function createSlackSendFake(raw: {
 					if (rawTarget(request) !== "/api/chat.postMessage") return failure("invalid_arguments");
 					if (request.headers.get("authorization") !== `Bearer ${token}`)
 						return failure("invalid_auth", 401);
+					if (revoked) return failure("token_revoked", 200);
 					if (request.headers.get("content-type") !== "application/json")
 						return failure("invalid_arguments");
 					const fields = object(await request.json(), [
@@ -1620,6 +1670,7 @@ export function createSlackSendFake(raw: {
 						},
 					});
 					request.signal.throwIfAborted();
+					if (revoked) return failure("token_revoked", 200);
 					append(id, value);
 					committed = next;
 					return response;
@@ -1637,6 +1688,9 @@ export function createSlackSendFake(raw: {
 	);
 	return Object.freeze({
 		...fake,
+		revoke(): void {
+			revoked = true;
+		},
 		async fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> {
 			if (input instanceof Request) {
 				const forwarded = withTarget(
