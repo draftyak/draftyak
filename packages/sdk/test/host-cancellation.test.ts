@@ -140,26 +140,32 @@ describe("memory host cancellation admission", () => {
 		},
 	);
 
-	it("refuses non-signals with typed errors without consuming request capacity", async () => {
-		const handler = vi.fn(() => null);
-		const host = memoryHost(handler);
-		try {
-			const errors: unknown[] = [];
-			for (let index = 0; index <= HOST_MAX_ACTIVE_REQUESTS; index++) {
-				errors.push(
-					await host
-						.request("host/kv.set", { key: "key", value: null }, { signal: {} as AbortSignal })
-						.catch((error: unknown) => error),
-				);
+	it.each(["non-signal", "null prototype", "plain object prototype"] as const)(
+		"refuses repeated %s requests with typed errors without consuming request capacity",
+		async (kind) => {
+			const handler = vi.fn(() => null);
+			const host = memoryHost(handler);
+			try {
+				const errors: unknown[] = [];
+				for (let index = 0; index <= HOST_MAX_ACTIVE_REQUESTS; index++) {
+					const signal = kind === "non-signal" ? ({} as AbortSignal) : new AbortController().signal;
+					if (kind !== "non-signal")
+						Object.setPrototypeOf(signal, kind === "null prototype" ? null : Object.prototype);
+					errors.push(
+						await host
+							.request("host/kv.set", { key: "key", value: null }, { signal })
+							.catch((error: unknown) => error),
+					);
+				}
+				expect(handler).not.toHaveBeenCalled();
+				await expect(host.request("host/kv.set", { key: "key", value: null })).resolves.toBeNull();
+				for (const error of errors) expect(error).toMatchObject({ code: "BAD_REQUEST" });
+				expect(handler).toHaveBeenCalledTimes(1);
+			} finally {
+				host.close();
 			}
-			expect(handler).not.toHaveBeenCalled();
-			await expect(host.request("host/kv.set", { key: "key", value: null })).resolves.toBeNull();
-			for (const error of errors) expect(error).toMatchObject({ code: "BAD_REQUEST" });
-			expect(handler).toHaveBeenCalledTimes(1);
-		} finally {
-			host.close();
-		}
-	});
+		},
+	);
 
 	it("cancels before dispatch and leaves capacity available to later requests", async () => {
 		const controller = new AbortController();
