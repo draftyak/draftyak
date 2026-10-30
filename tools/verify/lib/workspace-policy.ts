@@ -147,25 +147,53 @@ export async function namedFiles(
 		if (await gone(target)) return [];
 		throw new Error("file-name inventory failed");
 	};
-	const pending = [""];
+	type PendingDirectory = { readonly directory: string; next?: PendingDirectory };
+	let first: PendingDirectory | undefined = { directory: "" };
+	let last: PendingDirectory | undefined = first;
 	const found: string[] = [];
-	for (let next = 0; next < pending.length; ) {
-		const batch = pending.slice(next, next + 4);
-		next += batch.length;
-		let entries: readonly (readonly Entry[])[];
-		try {
-			entries = await Promise.all(batch.map(list));
-		} catch {
-			throw new Error("file-name inventory failed");
-		}
-		for (const [index, children] of entries.entries()) {
-			for (const entry of children) {
-				const relative = path.posix.join(batch[index] ?? "", entry.name);
-				if (equal(entry.name)) found.push(relative);
-				if (entry.isDirectory() && !entry.isSymbolicLink()) pending.push(relative);
+	await new Promise<void>((resolve, reject) => {
+		let active = 0;
+		let failed = false;
+		const visit = async (directory: string): Promise<void> => {
+			try {
+				const children = await list(directory);
+				if (failed) return;
+				for (const entry of children) {
+					const relative = path.posix.join(directory, entry.name);
+					if (equal(entry.name)) found.push(relative);
+					if (entry.isDirectory() && !entry.isSymbolicLink()) {
+						const pending: PendingDirectory = { directory: relative };
+						if (last) last.next = pending;
+						else first = pending;
+						last = pending;
+					}
+				}
+			} catch {
+				failed = true;
+				first = undefined;
+				last = undefined;
+			} finally {
+				active -= 1;
+				advance();
 			}
-		}
-	}
+		};
+		const advance = (): void => {
+			// Refill each free slot immediately; a slow sibling must not stall the whole frontier.
+			while (!failed && active < 4 && first) {
+				const current = first;
+				first = current.next;
+				if (!first) last = undefined;
+				active += 1;
+				void visit(current.directory);
+			}
+			// Stop admitting work on failure, but drain every read already in flight before settling.
+			if (active === 0) {
+				if (failed) reject(inventoryFailed());
+				else resolve();
+			}
+		};
+		advance();
+	});
 	return found.toSorted();
 }
 
