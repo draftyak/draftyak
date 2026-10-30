@@ -180,6 +180,7 @@ describe("migration folder declarations", () => {
 		refused(definition({ migrations: path.join(root, "PRIVATE_CANARY") }));
 		const actual = path.join(root, "actual");
 		mkdirSync(actual);
+		expect(defineExtensionModule(definition({ migrations: actual })).migrations).toBe(actual);
 		const alias = path.join(root, "alias");
 		symlinkSync(actual, alias, process.platform === "win32" ? "junction" : "dir");
 		refused(definition({ migrations: alias }));
@@ -253,6 +254,8 @@ describe("migration folder declarations", () => {
 		for (const alias of short) refused(definition({ migrations: alias }));
 	});
 	it("refuses case-variant spellings of the folder, a parent folder and the drive", (context) => {
+		if (process.platform !== "win32" && process.platform !== "darwin")
+			skipped(context, "realpath returns the stored spelling only on Windows and macOS");
 		const root = directory();
 		const canonical = path.join(root, "parent", "migrations");
 		mkdirSync(canonical, { recursive: true });
