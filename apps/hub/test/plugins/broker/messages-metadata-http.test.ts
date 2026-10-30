@@ -26,6 +26,7 @@ import { memoryHost } from "@draftyak/sdk/host";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { newId } from "../../../src/kernel/ids.ts";
 import { withNetworkTestHooks } from "../../../src/plugins/broker/network/test-context.ts";
+import { requireLoopbackNetworkGuard } from "../../helpers/loopback-network.ts";
 import { migrations, nativeBinding } from "../../store/helpers.ts";
 import { createTlsFixture } from "./tls-fixture.ts";
 
@@ -36,6 +37,7 @@ const firstUrl = `${endpoint}/v1/models?limit=100`;
 const nextUrl = `${firstUrl}&after_id=DYTEST-last`;
 const policy = { deniedAddresses: [], deniedPorts: [] };
 beforeAll(async () => {
+	requireLoopbackNetworkGuard().assertActive();
 	tls = await createTlsFixture(["api.anthropic.com"]);
 });
 afterEach(async () => {
@@ -262,18 +264,38 @@ describe("Messages metadata through native HTTP and SDK lifecycle", () => {
 		});
 		expect(remote.seen.headers[0]).not.toHaveProperty("authorization");
 	});
-	it("binds an actual probe to the input model rather than the configured fallback", async () => {
+	it.each([
+		["DYTEST-model/2026", "/v1/models/DYTEST-model%2F2026"],
+		["gpt-synthetic/a?b=%25#d+e", "/v1/models/gpt-synthetic%2Fa%3Fb=%2525%23d+e"],
+		[
+			"ft:claude-synthetic:DYTEST-org@2026+a=b$c&d,e;f",
+			"/v1/models/ft:claude-synthetic:DYTEST-org@2026+a=b$c&d,e;f",
+		],
+		["claude-synthetic:@!$&'()*+,;=", "/v1/models/claude-synthetic:@!$&'()*+,;="],
+	])(
+		"binds an actual probe for %s to the input model rather than the configured fallback",
+		async (selected, target) => {
+			const f = await fixture(),
+				call = nativeCall("ai_probe", selected);
+			const remote = await peer((response) =>
+				response.end(JSON.stringify({ ...model(selected), max_input_tokens: 32_768 })),
+			);
+			await expect(
+				withNetworkTestHooks(remote.hooks, () => f.execute(call, `${endpoint}${target}`)),
+			).resolves.toMatchObject({ status: 200 });
+			expect(remote.seen.paths).toEqual([target]);
+		},
+	);
+	it("opens no HTTP connection for a percent-encoded spelling of RFC 3986 path characters", async () => {
 		const f = await fixture(),
-			call = nativeCall("ai_probe", "DYTEST-model/2026");
-		const remote = await peer((response) =>
-			response.end(JSON.stringify({ ...model("DYTEST-model/2026"), max_input_tokens: 32_768 })),
-		);
+			call = nativeCall("ai_probe", "ft:claude-synthetic:DYTEST-org@2026");
+		const remote = await peer((response) => response.end("unsafe"));
 		await expect(
 			withNetworkTestHooks(remote.hooks, () =>
-				f.execute(call, `${endpoint}/v1/models/DYTEST-model%2F2026`),
+				f.execute(call, `${endpoint}/v1/models/ft%3Aclaude-synthetic%3ADYTEST-org%402026`),
 			),
-		).resolves.toMatchObject({ status: 200 });
-		expect(remote.seen.paths).toEqual(["/v1/models/DYTEST-model%2F2026"]);
+		).rejects.toThrow(ProviderHttpError);
+		expect(remote.seen.connections).toBe(0);
 	});
 	it.each(["generation", "reference", "vault", "signal"])(
 		"pins the real %s across accepted pages",
