@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import * as z from "zod";
 import { jsonSchemaOf } from "../scripts/export-spec.ts";
 import { community, manifestCases } from "../scripts/vectors/manifests/core.ts";
+import { issuerAuth } from "../scripts/vectors/manifests/oauth.ts";
 import { aiProviderV1 } from "../src/ai-provider-v1.ts";
 import { channelV1 } from "../src/channel-v1.ts";
 import {
@@ -100,6 +101,7 @@ describe("manifest declarations and template boundaries", () => {
 				kind: "ai-provider",
 				contract: { extension: "io.github.draftyak/ai-provider", version: 1 },
 				egress: { profile },
+				auth: profile === "responses-plan-v1" ? issuerAuth : base.auth,
 			};
 			expect(validateManifest(value).ok).toBe(profile !== "unregistered-v1");
 			expect(validator.validate(value).valid).toBe(profile !== "unregistered-v1");

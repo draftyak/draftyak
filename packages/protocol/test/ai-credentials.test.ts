@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { type Schema, Validator } from "@cfworker/json-schema";
 import { describe, expect, it } from "vitest";
 import { community } from "../scripts/vectors/manifests/core.ts";
-import { generate, issuerOAuthCases } from "../scripts/vectors/manifests/oauth.ts";
+import { generate, issuerAuth, issuerOAuthCases } from "../scripts/vectors/manifests/oauth.ts";
 import type { StatementVector } from "../scripts/vectors/statements/shared.ts";
 import { ADMIN_REVIEW_KINDS, requiredCapability } from "../src/device-api.ts";
 import { jcsSha256, sha256Hex } from "../src/hash.ts";
@@ -62,6 +62,7 @@ describe("the plan profile", () => {
 			kind: "ai-provider",
 			contract: { extension: "io.github.draftyak/ai-provider", version: 1 },
 			egress: { profile: "responses-plan-v1" },
+			auth: issuerAuth,
 		};
 		expect(validateManifest(provider).ok).toBe(true);
 		expect(validator.validate(provider).valid).toBe(true);
