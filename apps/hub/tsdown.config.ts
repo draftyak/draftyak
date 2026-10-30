@@ -10,6 +10,7 @@ const config: UserConfig = defineConfig({
 		{ from: "src/jobs/jobs-migrations/*.sql", to: "dist/jobs-migrations" },
 		{ from: "src/events/events-migrations/*.sql", to: "dist/events-migrations" },
 		{ from: "src/store/migrations/audit/*.sql", to: "dist/store/migrations/audit" },
+		{ from: "src/store/migrations/core/*.sql", to: "dist/store/migrations/core" },
 	],
 });
 export default config;
