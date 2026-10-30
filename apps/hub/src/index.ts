@@ -125,6 +125,11 @@ export {
 	openHubSession,
 } from "./lifecycle/session.ts";
 export {
+	bindSidecarResumes,
+	type SidecarResumeCode,
+	SidecarResumeError,
+} from "./lifecycle/sidecar-resume.ts";
+export {
 	bindSidecarShutdown,
 	SIDECAR_SHUTDOWN_MS,
 	SidecarShutdownError,
@@ -145,6 +150,15 @@ export {
 	type MaintenanceLease,
 } from "./lifecycle/state.ts";
 export { type NativeStorageOptions, openNativeStorage } from "./native-storage.ts";
+export {
+	SchedulerLoop,
+	type SchedulerLoopError,
+	type SchedulerLoopOptions,
+	type SchedulerStatus,
+	type SchedulerTick,
+	type TickContext,
+	type TickReason,
+} from "./outbox/scheduler-loop.ts";
 export { SchedulerError, type SchedulerErrorCode } from "./outbox/scheduler-ports.ts";
 export {
 	scheduleAt,
