@@ -326,6 +326,35 @@ it.each(["issuer", "resource", "endpoint", "capability", "duplicate-json", "redi
 );
 
 it.each([
+	{ profile: "issuer-resource", support: "false" },
+	{ profile: "issuer-resource", support: "missing" },
+	{ profile: "registered-public", support: "false" },
+	{ profile: "registered-public", support: "missing" },
+] as const)("$profile discovers without CIMD support ($support)", async ({ profile, support }) => {
+	const outbound = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("DYTEST-no-network"));
+	const { client, responses, transport } = fixture(profile);
+	const metadata: Record<string, unknown> = { ...METADATA };
+	if (support === "missing") delete metadata.client_id_metadata_document_supported;
+	else metadata.client_id_metadata_document_supported = false;
+	responses.set("/.well-known/oauth-authorization-server", () => Response.json(metadata));
+	await expect(client.discover()).resolves.toEqual({
+		issuer: ISSUER,
+		resource: RESOURCE,
+		authorizationEndpoint: ISSUER + "/authorize",
+		tokenEndpoint: ISSUER + "/token",
+		revocationEndpoint: ISSUER + "/revoke",
+	});
+	expect(
+		transport.recorder.takeRequests().map(({ method, host, path }) => ({ method, host, path })),
+	).toEqual([
+		{ method: "POST", host: "as.draftyak.example", path: "/mcp" },
+		{ method: "GET", host: "as.draftyak.example", path: "/.well-known/oauth-protected-resource" },
+		{ method: "GET", host: "as.draftyak.example", path: "/.well-known/oauth-authorization-server" },
+	]);
+	expect(outbound).not.toHaveBeenCalled();
+});
+
+it.each([
 	{ field: "code_challenge_methods_supported", value: ["plain"] },
 	{ field: "authorization_response_iss_parameter_supported", value: false },
 	{ field: "authorization_response_iss_parameter_supported", value: undefined },
