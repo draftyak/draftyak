@@ -190,6 +190,39 @@ describe("the summary's fields", () => {
 			expect(ScheduledItem.safeParse({ ...item, destination }).success, destination).toBe(valid);
 	});
 
+	it("replaces lone surrogates without changing valid pairs or hidden-character filtering", () => {
+		for (const [text, destination] of [
+			["\ud800", "\u{fffd}"],
+			["\udc00", "\u{fffd}"],
+			["team\ud800x\udc00", "team\u{fffd}x\u{fffd}"],
+			["\ud800\ud800", "\u{fffd}\u{fffd}"],
+			["\udc00\udc00", "\u{fffd}\u{fffd}"],
+			["\ud83d\ude00", "\ud83d\ude00"],
+			["\ud83d\ude00\ud800\t\udc00", "\ud83d\ude00\u{fffd}\u{fffd}\u{fffd}"],
+		] as const) {
+			const cut = cutDestination(text);
+			expect(cut).toEqual({ destination, destinationTruncated: false });
+			expect(cut.destination.isWellFormed()).toBe(true);
+			expect(ScheduledItem.safeParse({ ...item, ...cut }).success).toBe(true);
+		}
+	});
+
+	it("measures and cuts malformed destinations after replacing lone surrogates", () => {
+		for (const [text, destination, destinationTruncated, bytes] of [
+			[`${"x".repeat(509)}\ud800`, `${"x".repeat(509)}\u{fffd}`, false, 512],
+			[`${"x".repeat(509)}\udc00z`, `${"x".repeat(509)}\u{fffd}`, true, 512],
+			[`${"x".repeat(510)}\ud800`, "x".repeat(510), true, 510],
+			["\ud800".repeat(171), "\u{fffd}".repeat(170), true, 510],
+			[`${"x".repeat(508)}\ud83d\ude00x`, `${"x".repeat(508)}\ud83d\ude00`, true, 512],
+		] as const) {
+			const cut = cutDestination(text);
+			expect(cut).toEqual({ destination, destinationTruncated });
+			expect(cut.destination.isWellFormed()).toBe(true);
+			expect(Buffer.byteLength(cut.destination)).toBe(bytes);
+			expect(ScheduledItem.safeParse({ ...item, ...cut }).success).toBe(true);
+		}
+	});
+
 	it("refuse every hidden code point in the destination, and keep U+FFFD and the joiners", () => {
 		for (const [first, last] of DISPLAY_NAME_HIDDEN_RANGES)
 			for (let point = first; point <= last; point++) {
