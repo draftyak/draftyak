@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs, { type BigIntStats, type PathLike } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -6,6 +7,8 @@ import { afterEach, test, vi } from "vitest";
 import { assertOutboxSuppressions, OUTBOX_SCAN_LIMITS, SKIPPED_NAME } from "./suppression-scan.ts";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../../..");
+const hubRoot = path.resolve(import.meta.dirname, "../..");
+const runner = "scripts/outbox-suppression-scan.ts";
 const temporaryParent = fs.realpathSync.native(tmpdir());
 const prefix = "draftyak-outbox-suppression-";
 const roots: string[] = [];
@@ -27,6 +30,21 @@ function source(outbox: string, name: string, body = "export const value = 1;\n"
 
 function refused(run: () => unknown): void {
 	assert.throws(run, { name: "Error", message: "Outbox suppression scan refused" });
+}
+
+function runScan(hub: string): { status: number | null; stdout: string; stderr: string } {
+	const result = spawnSync(process.execPath, [path.join(hub, runner)], {
+		env: {},
+		encoding: "utf8",
+		shell: false,
+		windowsHide: true,
+		timeout: 20_000,
+		maxBuffer: 64 * 1024,
+		killSignal: "SIGKILL",
+	});
+	assert.equal(result.error, undefined);
+	assert.equal(result.signal, null);
+	return result;
 }
 
 afterEach(() => {
@@ -55,6 +73,44 @@ test("scans actual production outbox, including its explicit empty installation 
 		assert(inventory.files.length <= OUTBOX_SCAN_LIMITS.files);
 		assert(inventory.bytes <= OUTBOX_SCAN_LIMITS.totalBytes);
 	}
+});
+
+test("root lint runs the scan, which passes the actual outbox and fails a copy with a planted token", () => {
+	const manifest = JSON.parse(fs.readFileSync(path.join(repositoryRoot, "package.json"), "utf8"));
+	// biome ci stays last: pnpm appends extra arguments, Biome's flags, to the script's end.
+	assert.equal(manifest.scripts.lint, `node apps/hub/${runner} && biome ci .`);
+	const parent = fs.realpathSync.native(path.join(hubRoot, "src"));
+	const { files } = assertOutboxSuppressions(path.join(parent, "outbox"));
+	const actual = runScan(hubRoot);
+	assert.equal(actual.status, 0, actual.stderr);
+	assert.equal(actual.stdout, `Outbox suppression scan passed (${files.length} source files).\n`);
+	if (process.platform === "win32") {
+		// A lowercase drive letter isn't the native spelling the scan admits; the runner must fix it.
+		const lowercase = path.dirname(parent).replace(/^[A-Z]:/, (drive) => drive.toLowerCase());
+		assert.match(lowercase, /^[a-z]:\\/);
+		const lowered = runScan(lowercase);
+		assert.equal(lowered.status, 0, lowered.stderr);
+		assert.equal(lowered.stdout, actual.stdout);
+	}
+	const { root } = fixture(false);
+	for (const file of [runner, "test/outbox/suppression-scan.ts"]) {
+		fs.mkdirSync(path.join(root, path.dirname(file)), { recursive: true });
+		fs.copyFileSync(path.join(hubRoot, file), path.join(root, file));
+	}
+	fs.writeFileSync(path.join(root, "package.json"), '{ "type": "module" }\n');
+	const outbox = path.join(root, "src", "outbox");
+	fs.cpSync(path.join(hubRoot, "src", "outbox"), outbox, { recursive: true });
+	const copy = runScan(root);
+	assert.equal(copy.status, 0, copy.stderr);
+	assert.equal(copy.stdout, actual.stdout);
+	source(outbox, "planted.ts", "// biome-ignore lint: planted\nexport const value = 1;\n");
+	const planted = runScan(root);
+	assert.equal(planted.status, 1);
+	assert.match(planted.stderr, /^Outbox suppression scan refused$/m);
+	fs.rmSync(outbox, { recursive: true });
+	const missing = runScan(root);
+	assert.equal(missing.status, 1);
+	assert.match(missing.stderr, /^Outbox suppression scan refused$/m);
 });
 
 test("requires explicit admission of only the missing top-level outbox", () => {
