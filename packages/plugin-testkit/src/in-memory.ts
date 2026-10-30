@@ -1,7 +1,13 @@
+import { CHANNEL_V1 } from "@draftyak/protocol/channel-v1";
 import { jsonCopy } from "@draftyak/protocol/host-channel";
 import { parseStrict } from "@draftyak/protocol/jcs";
 import { parseToolFrame } from "@draftyak/protocol/tool-v1";
-import { createPluginServer, type HostChannel, type PluginEntry } from "@draftyak/sdk";
+import {
+	createPluginServer,
+	type HostChannel,
+	type PluginEntry,
+	type PluginInstance,
+} from "@draftyak/sdk";
 import {
 	CLIENT_CAPABILITIES_META_KEY,
 	CLIENT_INFO_META_KEY,
@@ -11,6 +17,22 @@ import {
 import { MockHubError } from "./types.ts";
 
 export const MCP_VERSION = "2026-07-28";
+// The SDK captures a serving instance before reading any definition field.
+const INSTANCE_CHECK: PluginEntry = Object.freeze({
+	name: "instance-check",
+	version: "0.0.0",
+	plugin: "instance-check",
+	extensions: Object.freeze({ [CHANNEL_V1]: Object.freeze({}) }),
+	tools: Object.freeze([]),
+});
+function acceptsInstance(host: HostChannel, instance: PluginInstance): boolean {
+	try {
+		createPluginServer(INSTANCE_CHECK, host, { instance });
+		return true;
+	} catch {
+		return false;
+	}
+}
 async function responseText(response: Response, tool: boolean): Promise<string> {
 	const maximum = tool ? 65_538 : 1_048_576;
 	const reader = response.body?.getReader();
@@ -78,6 +100,7 @@ export function createInMemory(
 	entry: PluginEntry,
 	host: HostChannel,
 	tool: boolean,
+	instance?: PluginInstance,
 ): {
 	request(
 		method: string,
@@ -85,7 +108,16 @@ export function createInMemory(
 		signal?: AbortSignal,
 	): Promise<Record<string, unknown>>;
 } {
-	const handler = createMcpHandler(createPluginServer(entry, host), {
+	let factory: ReturnType<typeof createPluginServer>;
+	try {
+		factory = createPluginServer(entry, host, instance === undefined ? {} : { instance });
+	} catch (error) {
+		// Only the instance refusal maps here; definition errors keep the SDK's own report.
+		if (instance !== undefined && !acceptsInstance(host, instance))
+			throw new MockHubError("INSTANCE_CONFIG_UNAVAILABLE");
+		throw error;
+	}
+	const handler = createMcpHandler(factory, {
 		legacy: "reject",
 		responseMode: "json",
 	});

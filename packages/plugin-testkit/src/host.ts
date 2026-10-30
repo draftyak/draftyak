@@ -1,17 +1,27 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
+import { types } from "node:util";
 import type { Fake } from "@draftyak/fakes";
 import { type HeaderList, headersSha256, sha256Hex } from "@draftyak/protocol/hash";
 import {
+	HOST_MAX_ACTIVE_REQUESTS,
+	HOST_MAX_STREAM_BYTES,
 	HOST_METHOD_SCHEMAS,
+	type HostErrorCode,
 	type HostFetchParams,
 	type HostFetchResult,
 	HostHeaders,
 	type HostMethod,
 	type HostMethods,
 	jsonCopy,
+	parseHostResult,
 } from "@draftyak/protocol/host-channel";
 import type { PluginManifestV1 } from "@draftyak/protocol/manifest";
+import {
+	createResponsesHttpBinding,
+	type ResponsesHttpBinding,
+	type ResponsesHttpBindingInput,
+} from "@draftyak/protocol/manifest/responses-http";
 import { MAX_INLINE_BYTES } from "@draftyak/protocol/normalized-change";
 import { Ulid } from "@draftyak/protocol/scalars";
 import {
@@ -34,6 +44,7 @@ import {
 import { HostError, type HostRequestOptions, memoryHost } from "@draftyak/sdk";
 import { matchRequest } from "./policy.ts";
 import {
+	copyResponsesHttpInputs,
 	type Denial,
 	type MockAccount,
 	type MockHost,
@@ -58,10 +69,11 @@ interface Lookup {
 interface Attempt {
 	scope?: Lookup;
 	reason?: string;
+	signal?: AbortSignal;
 }
 class Refusal extends HostError {
 	readonly reason: string;
-	constructor(reason: string, code: "DENIED" | "TIMEOUT" | "TOO_LARGE" | "UNSUPPORTED" = "DENIED") {
+	constructor(reason: string, code: HostErrorCode = "DENIED") {
 		super(code);
 		this.reason = reason;
 	}
@@ -69,6 +81,37 @@ class Refusal extends HostError {
 const STATE_LIMIT = 1024;
 const BODY_LIMIT = 35 * 1024 ** 2;
 const STATE_BYTES = 64 * 1024 ** 2;
+const STREAM_DATA_CHUNK_LIMIT = 65_536;
+const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype) as object;
+const streamBuffer = Object.getOwnPropertyDescriptor(typedArrayPrototype, "buffer")?.get;
+const streamOffset = Object.getOwnPropertyDescriptor(typedArrayPrototype, "byteOffset")?.get;
+const streamLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, "byteLength")?.get;
+const validateStreamView = Uint8Array.prototype.values;
+const copyStreamBytes = Uint8Array.prototype.set;
+
+function captureStreamChunk(value: unknown, remaining: number): Uint8Array {
+	try {
+		if (types.isProxy(value) || !types.isUint8Array(value)) throw new HostError("BAD_REQUEST");
+		// Iterator creation validates detached and out-of-bounds views without reading caller fields.
+		Reflect.apply(validateStreamView, value, []);
+		const buffer: unknown = streamBuffer && Reflect.apply(streamBuffer, value, []);
+		const offset: unknown = streamOffset && Reflect.apply(streamOffset, value, []);
+		const length: unknown = streamLength && Reflect.apply(streamLength, value, []);
+		if (
+			!types.isAnyArrayBuffer(buffer) ||
+			types.isSharedArrayBuffer(buffer) ||
+			typeof offset !== "number" ||
+			typeof length !== "number"
+		)
+			throw new HostError("BAD_REQUEST");
+		if (length > remaining) throw new HostError("TOO_LARGE");
+		const copy = new Uint8Array(length);
+		Reflect.apply(copyStreamBytes, copy, [new Uint8Array(buffer as ArrayBuffer, offset, length)]);
+		return copy;
+	} catch (error) {
+		throw error instanceof HostError ? error : new HostError("BAD_REQUEST");
+	}
+}
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 function id(): string {
 	let number = BigInt(`0x${randomBytes(16).toString("hex")}`);
@@ -81,6 +124,15 @@ function id(): string {
 }
 function copyHeaders(input: HeaderList): HeaderList {
 	return Object.freeze(HostHeaders.parse(jsonCopy(input)).map((row) => Object.freeze(row)));
+}
+// The channel parses a reply only after the handler returns; check status and headers first.
+function representable(reply: { readonly status: number; readonly headers: HeaderList }): boolean {
+	try {
+		parseHostResult("host/fetch", { ...reply, body: { base64: "" } });
+		return true;
+	} catch {
+		return false;
+	}
 }
 async function interrupted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 	if (signal.aborted) throw signal.reason;
@@ -107,6 +159,7 @@ export function createMockHost(
 		readonly instance: string;
 		readonly upstreams: readonly Fake[];
 		readonly secrets?: Readonly<Record<string, string>>;
+		readonly responsesHttp?: readonly ResponsesHttpBindingInput[];
 	},
 	controls: { readonly entropy?: () => Uint8Array } = {},
 ): {
@@ -118,6 +171,22 @@ export function createMockHost(
 	): Promise<T>;
 } {
 	const manifest = options.manifest;
+	const bindingSlot = Object.getOwnPropertyDescriptor(options, "responsesHttp");
+	if (bindingSlot && !Object.hasOwn(bindingSlot, "value"))
+		throw new MockHubError("INVALID_RESPONSES_BINDINGS");
+	const inputs = bindingSlot?.value === undefined ? [] : copyResponsesHttpInputs(bindingSlot.value);
+	if (
+		inputs.length > 0 &&
+		(manifest.kind !== "ai-provider" || manifest.egress.profile !== "responses-api-v1")
+	)
+		throw new MockHubError("INVALID_RESPONSES_BINDINGS");
+	const responsesBindings: ResponsesHttpBinding[] = [];
+	for (const input of inputs) {
+		const issued = createResponsesHttpBinding(input);
+		if (!issued.ok) throw new MockHubError("INVALID_RESPONSES_BINDINGS");
+		responsesBindings.push(issued.binding);
+	}
+	Object.freeze(responsesBindings);
 	const generation = Symbol();
 	const account = options.account ? Object.freeze({ ...options.account }) : undefined;
 	if (!Ulid.safeParse(options.instance).success) throw new MockHubError("INVALID_INSTANCE");
@@ -150,6 +219,7 @@ export function createMockHost(
 		nextLookup = 0,
 		blobBytes = 0;
 	const streams = new Set<() => void>();
+	const incrementalStreams = new Set<object>();
 	const elapsed = (): number => performance.now();
 	const release = (scope: Lookup): void => {
 		if (scope.active || scope.pending !== 0) return;
@@ -176,10 +246,22 @@ export function createMockHost(
 		disabled = true;
 		for (const scope of retained) retire(scope, new HostError("DENIED"));
 	};
-	const deny = (
-		reason: string,
-		code?: "DENIED" | "TIMEOUT" | "TOO_LARGE" | "UNSUPPORTED",
-	): never => {
+	const recordDenial = (method: HostMethod, reason: string, scope?: Lookup): void => {
+		if (denials.length < 4096)
+			denials.push(
+				Object.freeze({
+					sequence: denials.length,
+					method: Object.hasOwn(HOST_METHOD_SCHEMAS, method) ? method : "unknown",
+					reason,
+					lookup: scope?.id ?? null,
+				}),
+			);
+		else {
+			auditComplete = false;
+			disable();
+		}
+	};
+	const deny = (reason: string, code?: HostErrorCode): never => {
 		const attempt = attempts.getStore();
 		if (attempt) attempt.reason = reason;
 		throw new Refusal(reason, code);
@@ -327,7 +409,11 @@ export function createMockHost(
 		// Presented tickets are consumed even when a subsequent policy check refuses the request.
 		let ticketHeaders =
 			params.sendTicket === undefined ? undefined : consumeTicket(params, body, foundTicket);
-		const matched = matchRequest(manifest, params.url, params.method, secrets);
+		const matched = matchRequest(manifest, params.url, params.method, secrets, {
+			bindings: responsesBindings,
+			headers: params.headers,
+			body,
+		});
 		if (!matched) return deny("OFF_RULE");
 		const { rule, url } = matched;
 		if (rule.class === "organize" && account?.mode !== "full") return deny("FULL_MODE_REQUIRED");
@@ -343,12 +429,34 @@ export function createMockHost(
 		const budget = deadline - now;
 		if (budget <= 0) return deny("FETCH_TIMEOUT", "TIMEOUT");
 		const timeout = new AbortController();
+		const originalSignal = attempts.getStore()?.signal;
 		const signal = AbortSignal.any([
 			parentSignal,
+			...(originalSignal ? [originalSignal] : []),
 			timeout.signal,
 			...(scope ? [scope.controller.signal] : []),
 		]);
 		const timer = setTimeout(() => timeout.abort(new Refusal("FETCH_TIMEOUT", "TIMEOUT")), budget);
+		const reservation = params.stream === true && params.saveAs === undefined ? {} : undefined;
+		if (reservation && incrementalStreams.size >= HOST_MAX_ACTIVE_REQUESTS) {
+			clearTimeout(timer);
+			return deny("STREAM_LIMIT", "TOO_LARGE");
+		}
+		if (reservation) incrementalStreams.add(reservation);
+		let pending = 0;
+		let retired = false;
+		const releaseStream = (): void => {
+			if (reservation && retired && pending === 0) incrementalStreams.delete(reservation);
+		};
+		const track = <T>(work: Promise<T>): Promise<T> => {
+			pending++;
+			const settled = (): void => {
+				pending--;
+				releaseStream();
+			};
+			void work.then(settled, settled);
+			return own(scope, work);
+		};
 		const admit = (): void => {
 			if (signal.aborted) throw signal.reason;
 			if (elapsed() >= deadline) {
@@ -361,16 +469,19 @@ export function createMockHost(
 			if (scope && !scope.active) deny("LOOKUP_ENDED");
 		};
 		let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+		let transferred = false;
 		try {
 			const allowed =
 				manifest.kind === "tool"
 					? TOOL_REQUEST_HEADERS
 					: ["accept", "content-type", "if-none-match", "if-modified-since"];
-			const headers = ticketHeaders ?? keepToolHeaders(params.headers, allowed);
+			const headers =
+				manifest.kind === "ai-provider" && manifest.egress.profile === "responses-api-v1"
+					? params.headers
+					: (ticketHeaders ?? keepToolHeaders(params.headers, allowed));
 			admit();
 			const response = await interrupted(
-				own(
-					scope,
+				track(
 					Promise.resolve()
 						.then(() => {
 							admit();
@@ -384,7 +495,7 @@ export function createMockHost(
 						})
 						.then((response) => {
 							if (closed || signal.aborted || elapsed() >= deadline || (scope && !scope.active))
-								own(scope, response.body?.cancel().catch(() => {}) ?? Promise.resolve());
+								track(response.body?.cancel().catch(() => {}) ?? Promise.resolve());
 							return response;
 						}),
 				),
@@ -394,6 +505,128 @@ export function createMockHost(
 			admit();
 			if (response.status >= 300 && response.status < 400 && response.status !== 304)
 				return deny("REDIRECT_REFUSED");
+			const responseHeaders = keepToolHeaders(
+				[...response.headers.entries()],
+				manifest.kind === "tool"
+					? TOOL_RESPONSE_HEADERS
+					: ["content-type", "etag", "last-modified", "content-length"],
+			);
+			const common = { status: response.status, headers: responseHeaders };
+			if (!representable(common)) return deny("RESPONSE_INVALID", "BAD_REQUEST");
+			admit();
+			if (reservation) {
+				const streamId = id();
+				const ownedReader = reader;
+				let sequence = 0;
+				let total = 0;
+				let dataChunks = 0;
+				let emittedChunks = 0;
+				let ended = false;
+				let immediate: NodeJS.Immediate | undefined;
+				const done = Promise.withResolvers<void>();
+				track(done.promise);
+				const finish = (error?: HostErrorCode, denial?: string): void => {
+					if (ended) return;
+					ended = true;
+					if (immediate) clearImmediate(immediate);
+					clearTimeout(timer);
+					signal.removeEventListener("abort", cancel);
+					streams.delete(cancel);
+					if (denial !== undefined) recordDenial("host/fetch", denial, scope);
+					if (!closed)
+						base.notify({
+							jsonrpc: "2.0",
+							method: "host/stream.chunk",
+							params: {
+								streamId,
+								sequence: sequence++,
+								base64: "",
+								done: true,
+								...(error ? { error } : {}),
+							},
+						});
+					const cancellation = ownedReader?.cancel().catch(() => {}) ?? Promise.resolve();
+					track(cancellation).finally(() => {
+						ownedReader?.releaseLock();
+						retired = true;
+						done.resolve();
+						releaseStream();
+					});
+				};
+				const cancel = (): void => {
+					const reason: unknown = signal.reason;
+					if (
+						reason instanceof Refusal &&
+						reason.code === "TIMEOUT" &&
+						((timeout.signal.aborted && reason === timeout.signal.reason) ||
+							(scope?.controller.signal.aborted && reason === scope.controller.signal.reason))
+					)
+						finish("TIMEOUT", reason.reason);
+					else finish("DENIED");
+				};
+				streams.add(cancel);
+				signal.addEventListener("abort", cancel, { once: true });
+				const pump = async (): Promise<void> => {
+					try {
+						while (!ended) {
+							admit();
+							let next: ReadableStreamReadResult<Uint8Array>;
+							try {
+								next = ownedReader
+									? await interrupted(track(ownedReader.read()), signal)
+									: { done: true, value: undefined };
+							} catch {
+								if (signal.aborted) cancel();
+								else finish("DENIED", "UPSTREAM_FAILED");
+								return;
+							}
+							if (ended) return;
+							admit();
+							if (next.done) return finish();
+							if (++dataChunks > STREAM_DATA_CHUNK_LIMIT)
+								return finish("TOO_LARGE", "RESPONSE_TOO_LARGE");
+							const chunk = captureStreamChunk(
+								next.value,
+								Math.min(rule.maxBytes, HOST_MAX_STREAM_BYTES) - total,
+							);
+							total += chunk.byteLength;
+							for (let position = 0; position < chunk.byteLength; position += MAX_INLINE_BYTES) {
+								admit();
+								if (ended) return;
+								if (++emittedChunks > STREAM_DATA_CHUNK_LIMIT)
+									return finish("TOO_LARGE", "RESPONSE_TOO_LARGE");
+								base.notify({
+									jsonrpc: "2.0",
+									method: "host/stream.chunk",
+									params: {
+										streamId,
+										sequence: sequence++,
+										base64: Buffer.from(
+											chunk.subarray(position, position + MAX_INLINE_BYTES),
+										).toString("base64url"),
+										done: false,
+									},
+								});
+							}
+						}
+					} catch (error) {
+						if (signal.aborted) cancel();
+						else if (error instanceof Refusal) finish(error.code, error.reason);
+						else if (error instanceof HostError)
+							finish(
+								error.code,
+								error.code === "TOO_LARGE" ? "RESPONSE_TOO_LARGE" : "UPSTREAM_FAILED",
+							);
+						else finish("DENIED", "UPSTREAM_FAILED");
+					}
+				};
+				transferred = true;
+				immediate = setImmediate(() => {
+					void pump();
+				});
+				if (signal.aborted) cancel();
+				return { ...common, streamId };
+			}
 			const chunks: Uint8Array[] = [];
 			let total = 0;
 			while (reader) {
@@ -406,13 +639,6 @@ export function createMockHost(
 				chunks.push(next.value);
 			}
 			const bytes = Buffer.concat(chunks, total);
-			const responseHeaders = keepToolHeaders(
-				[...response.headers.entries()],
-				manifest.kind === "tool"
-					? TOOL_RESPONSE_HEADERS
-					: ["content-type", "etag", "last-modified", "content-length"],
-			);
-			const common = { status: response.status, headers: responseHeaders };
 			admit();
 			if (params.saveAs === "blob") return { ...common, body: putBlob(bytes) };
 			if (bytes.length <= MAX_INLINE_BYTES)
@@ -424,13 +650,17 @@ export function createMockHost(
 			if (error instanceof Refusal) throw error;
 			return deny("UPSTREAM_FAILED");
 		} finally {
-			clearTimeout(timer);
-			if (reader)
-				own(
-					scope,
-					reader.cancel().catch(() => {}),
-				);
-			reader?.releaseLock();
+			if (!transferred) {
+				clearTimeout(timer);
+				const ownedReader = reader;
+				if (ownedReader) {
+					const cancellation = track(ownedReader.cancel().catch(() => {}));
+					if (reservation) void cancellation.then(() => ownedReader.releaseLock());
+					else ownedReader.releaseLock();
+				}
+				retired = true;
+				releaseStream();
+			}
 		}
 	};
 	const base = memoryHost(async (method, params, signal) => {
@@ -504,24 +734,24 @@ export function createMockHost(
 			const attempt: Attempt = {};
 			if (manifest.kind !== "tool" || method !== "host/fetch") attempt.scope = scopes.getStore();
 			try {
-				return await attempts.run(attempt, () => base.request(method, params, requestOptions));
+				const signal = requestOptions?.signal;
+				const timeoutMs = requestOptions?.timeoutMs;
+				attempt.signal = signal;
+				return await attempts.run(attempt, () =>
+					base.request(
+						method,
+						params,
+						requestOptions === undefined ? undefined : { signal, timeoutMs },
+					),
+				);
 			} catch (error) {
 				const failure = error instanceof HostError ? error : new HostError("BAD_REQUEST");
-				if (denials.length < 4096)
-					denials.push(
-						Object.freeze({
-							sequence: denials.length,
-							method: Object.hasOwn(HOST_METHOD_SCHEMAS, method) ? method : "unknown",
-							reason:
-								attempt.reason ??
-								(error instanceof Refusal ? error.reason : closed ? "HOST_CLOSED" : failure.code),
-							lookup: attempt.scope?.id ?? null,
-						}),
-					);
-				else {
-					auditComplete = false;
-					disable();
-				}
+				recordDenial(
+					method,
+					attempt.reason ??
+						(error instanceof Refusal ? error.reason : closed ? "HOST_CLOSED" : failure.code),
+					attempt.scope,
+				);
 				throw failure;
 			}
 		},
