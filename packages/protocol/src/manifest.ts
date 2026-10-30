@@ -11,6 +11,7 @@ import {
 } from "./json-template.ts";
 import { AI_HTTP_PROFILES, type AiProfile } from "./manifest/ai-http.ts";
 import { PluginAuth as Auth, type PluginAuth } from "./manifest/auth.ts";
+import { issuerOAuth } from "./manifest/auth-issuer.ts";
 import { crossClassOverlap, type EgressRule, EgressRule as Rule } from "./manifest/egress.ts";
 import { type Json, manifestJson } from "./manifest/json.ts";
 import { type RuntimeDeclaration, runtimeFields, runtimeSupported } from "./manifest/runtime.ts";
@@ -238,6 +239,11 @@ export function validateManifest(input: unknown): ManifestCheck {
 		)
 			return refuse("MANIFEST_POLICY_INVALID");
 	} else if (value.dataClasses.some((name) => name.startsWith("tool.")))
+		return refuse("MANIFEST_POLICY_INVALID");
+	if (
+		(value.auth.kind === issuerOAuth.shape.kind.value) !==
+		(value.kind === "ai-provider" && value.egress.profile === "responses-plan-v1")
+	)
 		return refuse("MANIFEST_POLICY_INVALID");
 	if (value.kind === "channel") {
 		if ("rules" in value.egress) {
