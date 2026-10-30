@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "source": "registry+https://github.com/rust-lang/crates.io-index",
+  "expiresAt": "2026-11-19T13:15:04Z",
+  "reviewedAt": "2026-10-30T12:08:26Z",
+  "reviewer": "nicksavov",
+  "advisories": [
+    {
+      "id": "RUSTSEC-2026-0370",
+      "crate": "zvariant 5.15.1",
+      "routes": [
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > secret-service 5.2.0 > zbus 5.19.0 > zbus_macros 5.19.0 > zbus_names 4.3.5 > zvariant 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > secret-service 5.2.0 > zbus 5.19.0 > zbus_macros 5.19.0 > zvariant 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > secret-service 5.2.0 > zbus 5.19.0 > zbus_names 4.3.5 > zvariant 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > secret-service 5.2.0 > zbus 5.19.0 > zvariant 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > zbus 5.19.0 > zbus_macros 5.19.0 > zbus_names 4.3.5 > zvariant 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > zbus 5.19.0 > zbus_macros 5.19.0 > zvariant 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > zbus 5.19.0 > zbus_names 4.3.5 > zvariant 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > zbus 5.19.0 > zvariant 5.15.1"
+      ]
+    },
+    {
+      "id": "RUSTSEC-2026-0371",
+      "crate": "zbus_names 4.3.5",
+      "routes": [
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > secret-service 5.2.0 > zbus 5.19.0 > zbus_macros 5.19.0 > zbus_names 4.3.5",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > secret-service 5.2.0 > zbus 5.19.0 > zbus_names 4.3.5",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > zbus 5.19.0 > zbus_macros 5.19.0 > zbus_names 4.3.5",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > zbus 5.19.0 > zbus_names 4.3.5"
+      ]
+    },
+    {
+      "id": "RUSTSEC-2026-0372",
+      "crate": "zvariant_derive 5.15.1",
+      "routes": [
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > secret-service 5.2.0 > zbus 5.19.0 > zbus_macros 5.19.0 > zbus_names 4.3.5 > zvariant 5.15.1 > zvariant_derive 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > secret-service 5.2.0 > zbus 5.19.0 > zbus_macros 5.19.0 > zvariant 5.15.1 > zvariant_derive 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > secret-service 5.2.0 > zbus 5.19.0 > zbus_names 4.3.5 > zvariant 5.15.1 > zvariant_derive 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > secret-service 5.2.0 > zbus 5.19.0 > zvariant 5.15.1 > zvariant_derive 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > zbus 5.19.0 > zbus_macros 5.19.0 > zbus_names 4.3.5 > zvariant 5.15.1 > zvariant_derive 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > zbus 5.19.0 > zbus_macros 5.19.0 > zvariant 5.15.1 > zvariant_derive 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > zbus 5.19.0 > zbus_names 4.3.5 > zvariant 5.15.1 > zvariant_derive 5.15.1",
+        "draftyak-transport 0.0.0 > zbus-secret-service-keyring-store 1.0.1 > zbus 5.19.0 > zvariant 5.15.1 > zvariant_derive 5.15.1"
+      ]
+    }
+  ],
+  "duplicate": {
+    "crate": "syn",
+    "skip": "2.0.119",
+    "parents": {
+      "2.0.119": {
+        "active": [
+          "enumflags2_derive 0.7.12",
+          "tracing-attributes 0.1.31"
+        ],
+        "lockOnly": [
+          "asn1-rs-derive 0.6.0",
+          "asn1-rs-impl 0.2.0",
+          "jiff-static 0.2.38",
+          "synstructure 0.13.2"
+        ]
+      },
+      "3.0.9": {
+        "active": [
+          "async-recursion 1.2.0",
+          "async-trait 0.1.92",
+          "futures-macro 0.3.34",
+          "serde_derive 1.0.229",
+          "serde_repr 0.1.21",
+          "thiserror-impl 2.0.21",
+          "tokio-macros 2.7.2",
+          "zbus_macros 5.19.0",
+          "zvariant_derive 5.15.1",
+          "zvariant_utils 4.2.0"
+        ],
+        "lockOnly": [
+          "defmt-macros 1.2.0",
+          "displaydoc 0.2.7",
+          "wasm-bindgen-macro-support 0.2.129"
+        ]
+      }
+    }
+  }
+}

@@ -33,6 +33,22 @@ impl fmt::Debug for Identity {
 }
 
 impl Identity {
+    pub(crate) fn from_pkcs8(pkcs8: &[u8]) -> Result<Self, Error> {
+        let key = KeyPair::from_pkcs8_der_and_sign_algo(
+            &PrivatePkcs8KeyDer::from(pkcs8),
+            &PKCS_ECDSA_P256_SHA256,
+        )
+        .map_err(|_| Error::InvalidKey)?;
+        let params = CertificateParams::new(vec!["device.draftyak.invalid".to_owned()])
+            .map_err(|_| Error::InvalidKey)?;
+        let cert = params.self_signed(&key).map_err(|_| Error::InvalidKey)?;
+        Ok(Self {
+            certificate: cert.der().clone(),
+            key: Zeroizing::new(key.serialize_der()),
+            spki_hash: Sha256::digest(key.subject_public_key_info()).into(),
+        })
+    }
+
     pub fn generate() -> Result<Self, Error> {
         let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).map_err(|_| Error::InvalidKey)?;
         let params = CertificateParams::new(vec!["device.draftyak.invalid".to_owned()])

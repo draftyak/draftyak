@@ -106,6 +106,7 @@ mod codec {
             })
     }
 }
+pub mod key_store;
 pub mod payload;
 pub mod sidecar;
 pub mod tls;
