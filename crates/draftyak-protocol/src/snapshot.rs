@@ -1,5 +1,5 @@
 //! Frozen email/chat sends. Deserialize through this validated type before hashing or rendering.
-use crate::{hash::jcs_sha256, jcs::parse_strict};
+use crate::{hash::jcs_sha256, jcs::parse_strict, statements::decode};
 use serde::{Deserialize, Deserializer, Serialize};
 use unicode_normalization::is_nfc;
 
@@ -248,8 +248,7 @@ impl SendSnapshotV1 {
     }
 }
 pub fn parse_snapshot(bytes: &[u8]) -> Result<SendSnapshotV1, SnapshotError> {
-    serde_json::from_value(parse_strict(bytes).map_err(|_| SnapshotError::Invalid)?)
-        .map_err(|_| SnapshotError::Invalid)
+    decode(&parse_strict(bytes).map_err(|_| SnapshotError::Invalid)?).ok_or(SnapshotError::Invalid)
 }
 /// Structural current-send admission, without enriching or rewriting legacy signed snapshots.
 pub fn check_current_send_snapshot(snapshot: &SendSnapshotV1) -> bool {

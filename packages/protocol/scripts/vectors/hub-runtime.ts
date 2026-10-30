@@ -96,7 +96,8 @@ function routeCases(): Case[] {
 		access("unknown", { known: false });
 		access("host-role", { role: "host:sms" });
 		access("repeated-capability", { capabilities: ["read", "read"] });
-		access("unknown-capability", { capabilities: ["read", "host:sms"] });
+		access("unknown-capability", { capabilities: ["read", "send"] });
+		access("object-form-capability", { capabilities: ["read", { draft: null }] });
 		access("unknown-member", { extra: true });
 		for (const direction of ["request", "response"] as const) {
 			const cap = direction === "request" ? route.requestBytes : route.responseBytes;

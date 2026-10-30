@@ -2029,6 +2029,262 @@
       "error": "SNAPSHOT_INVALID"
     },
     {
+      "id": "positional-body",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": [
+          "Hello, café.\n",
+          "\nSent with DraftYak"
+        ],
+        "attachments": [],
+        "schedule": {
+          "kind": "now"
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1792342800000,
+      "error": "SNAPSHOT_INVALID"
+    },
+    {
+      "id": "object-form-kind",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": {
+          "email": null
+        },
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "now"
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1792342800000,
+      "error": "SNAPSHOT_INVALID"
+    },
+    {
+      "id": "positional-schedule",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": [
+          "now"
+        ],
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1792342800000,
+      "error": "SNAPSHOT_INVALID"
+    },
+    {
+      "id": "positional-author",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "now"
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            [
+              "owner",
+              "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            ]
+          ]
+        }
+      },
+      "iat": 1792342800000,
+      "error": "SNAPSHOT_INVALID"
+    },
+    {
+      "id": "object-form-author-kind",
+      "snapshot": {
+        "v": 1,
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "epoch": 1,
+        "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "conversation": null,
+        "kind": "email",
+        "email": {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        "body": {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        "attachments": [],
+        "schedule": {
+          "kind": "now"
+        },
+        "source": {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": {
+                "owner": null
+              },
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      },
+      "iat": 1792342800000,
+      "error": "SNAPSHOT_INVALID"
+    },
+    {
+      "id": "positional",
+      "snapshot": [
+        1,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        1,
+        "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        null,
+        "email",
+        {
+          "from": "Owner@example.test",
+          "to": [
+            "Recipient@example.test"
+          ],
+          "cc": [],
+          "bcc": [],
+          "subject": "A frozen reply",
+          "references": []
+        },
+        {
+          "text": "Hello, café.\n",
+          "footer": "\nSent with DraftYak"
+        },
+        [],
+        {
+          "kind": "now"
+        },
+        {
+          "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+          "rev": 1,
+          "authors": [
+            {
+              "kind": "owner",
+              "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+            }
+          ]
+        }
+      ],
+      "iat": 1792342800000,
+      "error": "SNAPSHOT_INVALID"
+    },
+    {
       "id": "shared-zone-alias",
       "snapshot": {
         "v": 1,
