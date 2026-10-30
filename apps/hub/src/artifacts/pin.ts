@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { isProxy } from "node:util/types";
 import { parseStrict } from "@draftyak/protocol/jcs";
+import { integrityDigest } from "../kernel/integrity.ts";
 import { ArtifactError, portablePath, snapshotArchive, unpackTarball } from "./archive.ts";
 import type { PackageLock, PreparedPackage } from "./index.ts";
 
@@ -36,7 +37,7 @@ export function snapshotPackageLock(raw: unknown): PackageLock {
 			!version ||
 			version.length > 128 ||
 			!integrity ||
-			/^sha512-[A-Za-z0-9+/]{86}==$/.exec(integrity)?.[0] !== integrity
+			integrityDigest(integrity) === undefined
 		)
 			throw new ArtifactError();
 		const match = versionPattern.exec(version);
@@ -46,9 +47,6 @@ export function snapshotPackageLock(raw: unknown): PackageLock {
 				?.split(".")
 				.some((part) => /^[0-9]+$/.test(part) && part.length > 1 && part[0] === "0")
 		)
-			throw new ArtifactError();
-		const expected = Buffer.from(integrity.slice(7), "base64");
-		if (expected.length !== 64 || expected.toString("base64") !== integrity.slice(7))
 			throw new ArtifactError();
 		return Object.freeze({ name, version, integrity, entry: portablePath(entry) });
 	} catch {
@@ -61,9 +59,9 @@ export function preparePinnedPackage(rawArchive: unknown, rawLock: PackageLock):
 	try {
 		const archive = snapshotArchive(rawArchive);
 		const lock = snapshotPackageLock(rawLock);
-		const expected = Buffer.from(lock.integrity.slice(7), "base64");
+		const expected = integrityDigest(lock.integrity);
 		const actual = createHash("sha512").update(archive).digest();
-		if (!timingSafeEqual(actual, expected)) throw new ArtifactError();
+		if (!expected || !timingSafeEqual(actual, expected)) throw new ArtifactError();
 		const files = unpackTarball(archive);
 		const manifest = files.get("package.json");
 		if (!files.has(lock.entry) || !manifest) throw new ArtifactError();

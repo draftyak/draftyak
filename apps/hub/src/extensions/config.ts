@@ -3,6 +3,7 @@ import path from "node:path";
 import { readBoundedRegularFile } from "@draftyak/bounded-files";
 import { isMigrationDirectoryPath, migrationNumber } from "@draftyak/extensions/validation";
 import { parseStrict } from "@draftyak/protocol/jcs";
+import { integrityDigest } from "../kernel/integrity.ts";
 import { refuse } from "./errors.ts";
 import { denseArray, inertRecord, isIdentifier } from "./values.ts";
 
@@ -43,7 +44,6 @@ export interface ExtensionConfig {
 
 const VERSION =
 	/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-const PIN = /^sha512-([A-Za-z0-9+/]{86}==)$/;
 
 function exactVersion(value: unknown): string {
 	const match = typeof value === "string" && value.length <= 128 ? VERSION.exec(value) : null;
@@ -54,11 +54,7 @@ function exactVersion(value: unknown): string {
 
 /** Subresource-integrity form of an exact 64-byte digest, in its one canonical base64 spelling. */
 export function pinDigest(value: unknown): Buffer {
-	const encoded = typeof value === "string" ? PIN.exec(value) : null;
-	const text = encoded?.[0] === value ? encoded?.[1] : undefined;
-	const digest = text === undefined ? undefined : Buffer.from(text, "base64");
-	if (digest?.length !== 64 || digest.toString("base64") !== text) refuse("config");
-	return digest;
+	return integrityDigest(value) ?? refuse("config");
 }
 
 function absolutePath(value: unknown): string {
