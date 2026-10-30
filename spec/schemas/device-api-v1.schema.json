@@ -459,7 +459,9 @@
                 "access.advertised-addresses-set",
                 "security.pin-change",
                 "security.key-rotate",
-                "data.export"
+                "data.export",
+                "ai.credential-connect",
+                "ai.credential-disconnect"
               ]
             },
             "ids": {
