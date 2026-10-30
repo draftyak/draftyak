@@ -104,8 +104,11 @@ it("postponed kinds remain closed even for a desktop admin or native CLI", () =>
 		"access.grant-widen",
 		"access.cimd-host-add",
 		"access.exposure-enable",
+		"ai.credential-connect",
+		"ai.credential-disconnect",
 	]) {
 		expect(decideKind(peer, kind)).toBe("KIND_UNAVAILABLE");
+		expect(decideRoute(peer, "new-operation", { kind })).toBe("KIND_UNAVAILABLE");
 		expect(decidePrincipal({ kind: "cli" }, kind)).toBe("KIND_UNAVAILABLE");
 	}
 	for (const kind of [
