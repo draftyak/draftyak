@@ -452,12 +452,32 @@ describe("Responses HTTP detached comparison boundary", () => {
 		refused(check({ ...metadata(), body: new Uint8Array([0x20]) }, bound));
 	});
 
+	it("refuses out-of-bounds resizable byte views while accepting valid empty views", () => {
+		const storage = new ArrayBuffer(4, { maxByteLength: 8 });
+		const outside = new Uint8Array(storage, 2, 2);
+		const fixedEmpty = new Uint8Array(storage, 2, 0);
+		const trackingEmpty = new Uint8Array(storage, 2);
+		const bound = binding({ operation: "ai_models_list", origin: ORIGIN });
+		storage.resize(2);
+		expect([outside.byteOffset, outside.byteLength]).toEqual([0, 0]);
+		refused(check({ ...metadata(), body: outside }, bound));
+		accepted({ ...metadata(), body: fixedEmpty }, bound);
+		accepted({ ...metadata(), body: trackingEmpty }, bound);
+		storage.resize(1);
+		refused(check({ ...metadata(), body: fixedEmpty }, bound));
+		refused(check({ ...metadata(), body: trackingEmpty }, bound));
+	});
+
 	it("reads exactly the native byte-view range and refuses shared, detached or nonnative views", () => {
 		const original = bytes(body());
 		const storage = new Uint8Array(original.length + 2);
 		storage.set(original, 1);
 		accepted({ ...request(), body: storage.subarray(1, -1) });
 		accepted({ ...request(), body: Buffer.from(original) });
+		const resizable = new ArrayBuffer(original.length + 2, { maxByteLength: original.length + 4 });
+		const range = new Uint8Array(resizable, 1, original.length);
+		range.set(original);
+		accepted({ ...request(), body: range });
 		const shadowed = original.slice();
 		let shadowCalls = 0;
 		const shadow = (): never => {
@@ -470,6 +490,7 @@ describe("Responses HTTP detached comparison boundary", () => {
 			"byteLength",
 			"length",
 			"constructor",
+			"values",
 			Symbol.iterator,
 			Symbol.toPrimitive,
 			"toJSON",

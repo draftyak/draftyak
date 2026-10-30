@@ -79,6 +79,7 @@ const typedArray = Object.getPrototypeOf(Uint8Array.prototype) as object;
 const bufferSlot = Object.getOwnPropertyDescriptor(typedArray, "buffer")?.get;
 const offsetSlot = Object.getOwnPropertyDescriptor(typedArray, "byteOffset")?.get;
 const lengthSlot = Object.getOwnPropertyDescriptor(typedArray, "byteLength")?.get;
+const validateView = Uint8Array.prototype.values;
 
 function fail(): never {
 	throw new Error("Responses request comparison refused");
@@ -165,6 +166,8 @@ function bytes(value: unknown): Uint8Array {
 			Object.getPrototypeOf(value) !== Buffer.prototype)
 	)
 		fail();
+	// Native iterator creation rejects out-of-bounds views before their slots report zero.
+	validateView.call(value);
 	const buffer: unknown = bufferSlot?.call(value);
 	const offset: unknown = offsetSlot?.call(value);
 	const length: unknown = lengthSlot?.call(value);
