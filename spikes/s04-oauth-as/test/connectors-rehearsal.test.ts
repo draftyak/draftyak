@@ -1773,7 +1773,7 @@ describe("the clean-up", () => {
 					},
 				},
 			);
-			expect(run.cleanup.connectors).toBe("removed (owner confirmed)");
+			expect(run.cleanup).toMatchObject({ connectors: "removed (owner confirmed)" });
 			expect(rowOf(run.rows, "claude-ai").token.refreshes).toBe(0);
 			expect(rowOf(run.data.clients, "claude-ai").token.refreshes).toBe(count);
 			expect(finalRows.map((row) => row.token.refreshes)).toStrictEqual([count, 0, 0, 0]);
