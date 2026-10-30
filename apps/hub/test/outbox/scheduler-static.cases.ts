@@ -96,13 +96,18 @@ export function schedulerStaticCases(): void {
 				expect(pattern.test(rules), String(pattern)).toBe(false);
 		});
 
-		it("root-exports only the ready helpers, error, and schedule creation", async () => {
+		it("root-exports the concrete loop, ready helpers, error, and schedule creation", async () => {
 			const index = read("index.ts");
 			const outboxModules = imports(index).filter((name) => name.startsWith("./outbox/"));
-			expect(outboxModules).toEqual(["./outbox/scheduler-ports.ts", "./outbox/scheduler-time.ts"]);
+			expect(outboxModules).toEqual([
+				"./outbox/scheduler-loop.ts",
+				"./outbox/scheduler-ports.ts",
+				"./outbox/scheduler-time.ts",
+			]);
 			const root = await import("../../src/index.ts");
 			for (const name of [
 				"SchedulerError",
+				"SchedulerLoop",
 				"scheduleAt",
 				"schedulingAvailable",
 				"nextTick",
@@ -112,7 +117,6 @@ export function schedulerStaticCases(): void {
 			])
 				expect(name in root, name).toBe(true);
 			for (const name of [
-				"SchedulerLoop",
 				"observeBrokerDate",
 				"checkClaimWindow",
 				"decidePreclaim",

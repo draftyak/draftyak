@@ -118,12 +118,39 @@ export {
 export { isKnownSyncedPath } from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
 export {
+	type InitialMaterial,
+	receiveSidecarInput,
+	type SidecarControl,
+	type SidecarFaultCode,
+	type SidecarInput,
+	type SidecarInputCode,
+	SidecarInputError,
+	type SidecarInputOptions,
+	type SidecarInputState,
+	type SidecarResumed,
+	type SidecarStop,
+	type SidecarStopReason,
+} from "./kernel/sidecar-input.ts";
+export {
 	type HubSession,
 	HubSessionError,
 	type HubSessionErrorCode,
 	type HubSessionOptions,
 	openHubSession,
 } from "./lifecycle/session.ts";
+export {
+	bindSidecarResumes,
+	type SidecarResumeCode,
+	SidecarResumeError,
+} from "./lifecycle/sidecar-resume.ts";
+export {
+	bindSidecarShutdown,
+	SIDECAR_SHUTDOWN_MS,
+	SidecarShutdownError,
+	type SidecarShutdownErrorCode,
+	type SidecarShutdownOptions,
+	type SidecarShutdownReport,
+} from "./lifecycle/sidecar-stop.ts";
 export {
 	type ClaimPermit,
 	createHubLifecycle,
@@ -136,6 +163,16 @@ export {
 	type HubStopReport,
 	type MaintenanceLease,
 } from "./lifecycle/state.ts";
+export { type NativeStorageOptions, openNativeStorage } from "./native-storage.ts";
+export {
+	SchedulerLoop,
+	type SchedulerLoopError,
+	type SchedulerLoopOptions,
+	type SchedulerStatus,
+	type SchedulerTick,
+	type TickContext,
+	type TickReason,
+} from "./outbox/scheduler-loop.ts";
 export { SchedulerError, type SchedulerErrorCode } from "./outbox/scheduler-ports.ts";
 export {
 	scheduleAt,
