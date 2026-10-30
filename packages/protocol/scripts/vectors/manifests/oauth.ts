@@ -1,3 +1,4 @@
+import { AI_HTTP_PROFILES } from "../../../src/manifest/ai-http.ts";
 import type { PluginAuth } from "../../../src/manifest/auth.ts";
 import { issuerOAuth } from "../../../src/manifest/auth-issuer.ts";
 import { validateManifest } from "../../../src/manifest.ts";
@@ -20,6 +21,22 @@ const base = {
 	egress: { profile: "responses-plan-v1" },
 	auth: issuerAuth,
 };
+const otherAuth: PluginAuth[] = [
+	{
+		kind: "oauth2-pkce-loopback",
+		scopes: [],
+		requiredGrantedScopes: [],
+		endpoints: {
+			authorization: "https://auth.example.com/authorize",
+			token: "https://auth.example.com/token",
+		},
+	},
+	...(["manifest-app", "api-key", "token-paste", "url-secret", "none"] as const).map((kind) => ({
+		kind,
+		scopes: [],
+		requiredGrantedScopes: [],
+	})),
+];
 
 const absent = Symbol("absent");
 type Patch = readonly [path: string, value: unknown];
@@ -113,14 +130,22 @@ export function issuerOAuthCases(): ManifestCase[] {
 		"auth/requiredGrantedScopes",
 		["unrequested"],
 	]);
+	const policy = (id: string, source: unknown, ...patches: Patch[]): void => {
+		cases.push({
+			id: `issuer-oauth-${id}`,
+			manifest: patched(source, ...patches),
+			code: "MANIFEST_POLICY_INVALID",
+			structural: false,
+		});
+	};
 	const tool = manifestCases().find((item) => item.id === "tool-auth-oauth");
 	if (tool === undefined) throw new Error("manifest vector tool-auth-oauth");
-	cases.push({
-		id: "issuer-oauth-tool",
-		manifest: patched(tool.manifest, ["auth", issuerAuth]),
-		code: "MANIFEST_POLICY_INVALID",
-		structural: false,
-	});
+	policy("tool", tool.manifest, ["auth", issuerAuth]);
+	policy("channel", community, ["auth", issuerAuth]);
+	for (const profile of AI_HTTP_PROFILES)
+		if (profile !== base.egress.profile)
+			policy(`profile-${profile}`, base, ["egress/profile", profile]);
+	for (const auth of otherAuth) policy(`plan-profile-auth-${auth.kind}`, base, ["auth", auth]);
 	return cases;
 }
 

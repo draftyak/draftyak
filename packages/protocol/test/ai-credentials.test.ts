@@ -20,6 +20,14 @@ const validator = new Validator(document, "2020-12", false);
 const adminCases = (read("vectors/statements/admin.v1.json") as { cases: StatementVector[] }).cases;
 const aiKinds = ["ai.credential-connect", "ai.credential-disconnect"];
 const fields = ["scopes", "requiredGrantedScopes", "kind", "issuer", "resource"];
+const otherKinds = [
+	"oauth2-pkce-loopback",
+	"manifest-app",
+	"api-key",
+	"token-paste",
+	"url-secret",
+	"none",
+];
 const kindSha256 = "e92f25d694a740fe2531fbded26e9d7b9f720c3b581ae63e9a0c4cec3f9af121";
 
 describe("the ai admin group", () => {
@@ -103,6 +111,23 @@ describe("issuer OAuth", () => {
 			if (item.code === null || item.structural)
 				expect(validator.validate(item.manifest).valid).toBe(item.code === null);
 		});
+	it("is valid only on the plan profile of an ai-provider manifest, and that profile only with it", () => {
+		const cases = new Map(issuerOAuthCases().map((item) => [item.id, item]));
+		expect(validateManifest(cases.get("issuer-oauth-ai-provider")?.manifest).ok).toBe(true);
+		for (const id of [
+			"issuer-oauth-tool",
+			"issuer-oauth-channel",
+			...AI_HTTP_PROFILES.filter((profile) => profile !== "responses-plan-v1").map(
+				(profile) => `issuer-oauth-profile-${profile}`,
+			),
+			...otherKinds.map((kind) => `issuer-oauth-plan-profile-auth-${kind}`),
+		]) {
+			const manifest = cases.get(id)?.manifest;
+			const result = validateManifest(manifest);
+			expect(result.ok ? null : result.problems[0]?.code, id).toBe("MANIFEST_POLICY_INVALID");
+			expect(validator.validate(manifest).valid, id).toBe(true);
+		}
+	});
 	it("pins the accepted declaration and the refused hostile ones", () => {
 		const cases = new Map(issuerOAuthCases().map((item) => [item.id, item]));
 		expect(cases.get("issuer-oauth-ai-provider")?.code).toBeNull();
