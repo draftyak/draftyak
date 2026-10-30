@@ -203,14 +203,14 @@ export function scopeHash(scope: SummaryScope): string {
 }
 
 /**
- * A recipient or channel name as shown: each hidden code point replaced with U+FFFD, then the
- * longest prefix of whole code points within 512 UTF-8 bytes, and whether it was cut.
+ * A recipient or channel name as shown: lone surrogates and hidden code points replaced with
+ * U+FFFD, then the longest prefix of whole code points within 512 UTF-8 bytes, and whether it was cut.
  */
 export function cutDestination(text: string): {
 	readonly destination: string;
 	readonly destinationTruncated: boolean;
 } {
-	const shownText = text.replace(everyHidden, "\u{fffd}");
+	const shownText = text.toWellFormed().replace(everyHidden, "\u{fffd}");
 	if (Buffer.byteLength(shownText) <= MAX_DESTINATION_BYTES)
 		return { destination: shownText, destinationTruncated: false };
 	let bytes = 0;
