@@ -100,12 +100,12 @@ fn allocate(counter: &AtomicU64) -> Option<AttemptId> {
 /// the session it starts; nothing in a projection can stand in for it.
 #[derive(Debug)]
 pub struct HubLink {
-    attempt: AttemptId,
+    attempt_id: AttemptId,
 }
 
 impl HubLink {
     pub fn attempt(&self) -> AttemptId {
-        self.attempt
+        self.attempt_id
     }
 }
 
@@ -552,7 +552,7 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
         ) {
             Stage::AwaitingConsent(code) => {
                 let link = HubLink {
-                    attempt: current.id,
+                    attempt_id: current.id,
                 };
                 let session = start(code, link).map_err(|_| Refusal::StartFailed)?;
                 current.stage = Stage::Claiming(session);
@@ -634,7 +634,7 @@ impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> {
         event: HubEvent<S>,
     ) -> Result<Option<Completion<H>>, Refusal> {
         let now = self.refresh();
-        let current = current(&mut self.attempt, link.attempt)?;
+        let current = current(&mut self.attempt, link.attempt())?;
         if hub_pin != current.hub_pin || window_id != current.window_id {
             current.end(Ending::Failed(Failure::Mismatch));
             return Err(Refusal::Mismatch);

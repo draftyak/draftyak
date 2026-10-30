@@ -1266,6 +1266,57 @@ fn a_reading_far_ahead_carries_over_a_restart_only_as_far_as_the_codes_it_expire
     restarted.drive(code, Phase::Claiming);
 }
 
+#[test]
+fn a_restart_floor_passes_the_latest_of_several_codes_expiring_at_once() {
+    let later = EXPIRES_MS + 20_000;
+    let mut h = Harness::new();
+    for (window, expires_at_ms) in [(NEW_WINDOW, later), (WINDOW, EXPIRES_MS)] {
+        let code = h.code_for(HUB_PIN, window, expires_at_ms);
+        let run = h.drive(code, Phase::Revealing);
+        h.pairing.cancel(run.id).unwrap();
+    }
+    // The code that expires later was spent first.
+    assert_eq!(
+        h.pairing.spent_codes(),
+        [
+            SpentCode::new(NEW_WINDOW, later),
+            SpentCode::new(WINDOW, EXPIRES_MS)
+        ]
+    );
+    h.at(later + 1);
+    let spent = h.pairing.spent_codes();
+    assert_eq!(spent, []);
+    let floor = h.pairing.clock_floor_ms();
+    assert_eq!(floor, later + 1);
+    drop(h);
+
+    let mut restarted = Harness::with_floor(floor, spent);
+    for (window, expires_at_ms) in [(NEW_WINDOW, later), (WINDOW, EXPIRES_MS)] {
+        let code = restarted.code_for(HUB_PIN, window, expires_at_ms);
+        assert_eq!(restarted.pairing.stage(code), Err(Refusal::Expired));
+    }
+    assert_eq!(restarted.phase(), Phase::Idle);
+    assert_eq!(restarted.pairing.clock_floor_ms(), floor);
+}
+
+// A floor read after the spent codes can pass the expiry of a code read with them.
+#[test]
+fn a_restart_floor_never_falls_below_the_floor_the_workflow_was_built_with() {
+    let later = EXPIRES_MS + 20_000;
+    let mut h = Harness::with_floor(later + 1, vec![SpentCode::new(WINDOW, EXPIRES_MS)]);
+    let spent = h.pairing.spent_codes();
+    assert_eq!(spent, []);
+    let floor = h.pairing.clock_floor_ms();
+    assert_eq!(floor, later + 1);
+    drop(h);
+
+    let mut restarted = Harness::with_floor(floor, spent);
+    let code = restarted.code_for(HUB_PIN, NEW_WINDOW, later);
+    assert_eq!(restarted.pairing.stage(code), Err(Refusal::Expired));
+    assert_eq!(restarted.phase(), Phase::Idle);
+    assert_eq!(restarted.pairing.clock_floor_ms(), floor);
+}
+
 // Workflows share nothing but what the native store keeps of them, so a device keeps one live
 // workflow and builds the next from the store only once the last one is dropped.
 #[test]

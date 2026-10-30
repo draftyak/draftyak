@@ -33,13 +33,20 @@ const FORBIDDEN: [&str; 17] = [
     "UNIX_EPOCH",
 ];
 
-// Words, `::` and single characters; comments and literals are read as code.
+// Words, `::` and single characters; comments and literals are read as code, and a raw
+// identifier as its word.
 fn tokens(source: &str) -> Vec<String> {
     let chars: Vec<char> = source.chars().collect();
     let word = |c: char| c == '_' || c.is_alphanumeric();
     let mut tokens = Vec::new();
     let mut at = 0;
     while at < chars.len() {
+        if chars[at] == 'r'
+            && chars.get(at + 1) == Some(&'#')
+            && chars.get(at + 2).copied().is_some_and(word)
+        {
+            at += 2;
+        }
         let start = at;
         if word(chars[at]) {
             while at < chars.len() && word(chars[at]) {
@@ -178,7 +185,8 @@ fn group_end(tokens: &[String], open: usize) -> usize {
 // Traits that make a value of their own type, derived or implemented.
 const MAKERS: [&str; 3] = ["Clone", "Copy", "Default"];
 
-// Whether consent alone makes a `HubLink`, or the first other way that `source` has to make one.
+// Whether consent alone makes a `HubLink` and nothing changes one, or the first other way that
+// `source` has to make or change one.
 fn hub_links(source: &str) -> Result<(), String> {
     let tokens = tokens(&code(source));
     let at = |index: usize| tokens.get(index).map_or("", String::as_str);
@@ -208,6 +216,10 @@ fn hub_links(source: &str) -> Result<(), String> {
     {
         return Err("HubLink has a public field".into());
     }
+    // A field of another type, such as an atomic, could change behind `&`.
+    if (fields..group_end(&tokens, fields)).any(|i| at(i) == ":" && at(i + 1) != "AttemptId") {
+        return Err("a HubLink field is not an AttemptId".into());
+    }
     let borrowed = (0..tokens.len()).any(|i| {
         let mut name = i + 1;
         while at(name + 1) == "::" {
@@ -229,6 +241,7 @@ fn hub_links(source: &str) -> Result<(), String> {
     if renamed {
         return Err("HubLink under another name".into());
     }
+    let mut link_impls = Vec::new();
     for start in (0..tokens.len()).filter(|&i| at(i) == "impl") {
         let open = (start..tokens.len())
             .find(|&i| at(i) == "{")
@@ -249,6 +262,7 @@ fn hub_links(source: &str) -> Result<(), String> {
             return Err(format!("{maker} for HubLink"));
         }
         let end = group_end(&tokens, open);
+        link_impls.push(start..=end);
         if tokens[start..end].iter().any(|token| token == "mut") {
             return Err("an impl on HubLink changes one".into());
         }
@@ -269,6 +283,22 @@ fn hub_links(source: &str) -> Result<(), String> {
         {
             return Err("an impl on HubLink makes one".into());
         }
+    }
+    // Nothing changes a HubLink: its field is reached only as `self.<field>` in an impl on
+    // HubLink, which has no `mut`. The check reads no types, so it refuses every other reach of a
+    // field of that name, whatever the receiver; HubLink's field has a name no other type uses.
+    let names: Vec<&str> = (fields..group_end(&tokens, fields))
+        .filter(|&i| at(i + 1) == ":")
+        .map(at)
+        .collect();
+    let reached = |i: usize| {
+        at(i) == "."
+            && names.contains(&at(i + 1))
+            && (i.checked_sub(1).map_or("", at) != "self"
+                || !link_impls.iter().any(|extent| extent.contains(&i)))
+    };
+    if (0..tokens.len()).any(reached) {
+        return Err("a HubLink field is reached other than on self in its impls".into());
     }
     let literal = |i: usize| {
         let mut first = i;
@@ -577,16 +607,28 @@ fn the_hub_link_check_refuses_every_other_way_to_make_one() {
     let tuple = |fields: &str| {
         SOURCE
             .replacen(
-                "pub struct HubLink {\n    attempt: AttemptId,\n}",
+                "pub struct HubLink {\n    attempt_id: AttemptId,\n}",
                 &format!("pub struct HubLink({fields});"),
                 1,
             )
             .replacen(
-                "HubLink {\n                    attempt: current.id,\n                }",
+                "HubLink {\n                    attempt_id: current.id,\n                }",
                 "HubLink(current.id)",
                 1,
             )
     };
+    // A link that a helper hands over, changed where no type is named.
+    let relinked = |change: &str| {
+        appended(&format!(
+            "fn minted<C: PairingCode, K: Clock>(pairing: &mut Pairing<C, (), (), K>, \
+             id: AttemptId) -> Option<HubLink> {{ let mut held = None; \
+             pairing.consent(id, |_, link| {{ held = Some(link); Ok(()) }}).ok()?; held }}\n\
+             pub fn relink<C: PairingCode, K: Clock>(pairing: &mut Pairing<C, (), (), K>, \
+             id: AttemptId, to: AttemptId) -> Option<AttemptId> {{ \
+             let mut link = minted(pairing, id)?; {change} Some(link.attempt()) }}"
+        ))
+    };
+    let reached = "a HubLink field is reached other than on self in its impls";
     let cases = [
         (derived("Clone, Debug"), "HubLink derives Clone"),
         (derived("Debug, Copy"), "HubLink derives Copy"),
@@ -605,7 +647,8 @@ fn the_hub_link_check_refuses_every_other_way_to_make_one() {
         ),
         (
             appended(
-                "impl HubLink { pub fn forge(attempt: AttemptId) -> Self { Self { attempt } } }",
+                "impl HubLink { pub fn forge(attempt_id: AttemptId) -> Self { \
+                 Self { attempt_id } } }",
             ),
             "an impl on HubLink returns one",
         ),
@@ -620,20 +663,20 @@ fn the_hub_link_check_refuses_every_other_way_to_make_one() {
         (
             appended(
                 "impl HubLink { pub fn pass(&self, to: fn(HubLink)) { \
-                 to(Self { attempt: self.attempt }) } }",
+                 to(Self { attempt_id: self.attempt_id }) } }",
             ),
             "an impl on HubLink makes one",
         ),
         (
-            appended("pub fn forge(attempt: AttemptId) -> HubLink { HubLink { attempt } }"),
+            appended("pub fn forge(attempt_id: AttemptId) -> HubLink { HubLink { attempt_id } }"),
             "2 HubLink literals",
         ),
         (
             SOURCE.replacen(
-                "HubLink {\n                    attempt: current.id,\n                }",
+                "HubLink {\n                    attempt_id: current.id,\n                }",
                 "link_for(current.id)",
                 1,
-            ) + "\nfn link_for(attempt: AttemptId) -> HubLink { HubLink { attempt } }\n",
+            ) + "\nfn link_for(attempt_id: AttemptId) -> HubLink { HubLink { attempt_id } }\n",
             "the HubLink literal is outside consent",
         ),
         (
@@ -646,8 +689,8 @@ fn the_hub_link_check_refuses_every_other_way_to_make_one() {
         ),
         (
             SOURCE.replacen(
-                "pub struct HubLink {\n    attempt: AttemptId,",
-                "pub struct HubLink {\n    pub attempt: AttemptId,",
+                "pub struct HubLink {\n    attempt_id: AttemptId,",
+                "pub struct HubLink {\n    pub attempt_id: AttemptId,",
                 1,
             ),
             "HubLink has a public field",
@@ -660,7 +703,7 @@ fn the_hub_link_check_refuses_every_other_way_to_make_one() {
         ),
         (
             appended(
-                "macro_rules! make { ($t:ident, $a:expr) => { $t { attempt: $a } }; }\n\
+                "macro_rules! make { ($t:ident, $a:expr) => { $t { attempt_id: $a } }; }\n\
                  pub fn forge(id: AttemptId) -> HubLink { make!(HubLink, id) }",
             ),
             "a macro could make a HubLink",
@@ -675,19 +718,239 @@ fn the_hub_link_check_refuses_every_other_way_to_make_one() {
         (
             appended(
                 "impl HubLink { pub fn retarget(&mut self, attempt: AttemptId) { \
-                 self.attempt = attempt } }",
+                 self.attempt_id = attempt } }",
             ),
             "an impl on HubLink changes one",
         ),
         (
             appended(
-                "pub fn retarget(link: &mut HubLink, attempt: AttemptId) { link.attempt = attempt }",
+                "pub fn retarget(link: &mut HubLink, attempt: AttemptId) { \
+                 link.attempt_id = attempt }",
             ),
             "a HubLink is borrowed mutably",
+        ),
+        (
+            appended(
+                "pub fn retarget(mut link: HubLink, attempt: AttemptId) -> HubLink { \
+                 link.attempt_id = attempt; link }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "pub fn retarget(link: HubLink, attempt: AttemptId) -> HubLink { \
+                 let mut link = link; link.attempt_id = attempt; link }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "pub fn retarget(link: HubLink, attempt: AttemptId) -> Option<HubLink> { \
+                 Some(link).map(|mut link| { link.attempt_id = attempt; link }) }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "pub fn retarget(links: &mut [HubLink], attempt: AttemptId) { \
+                 links[0].attempt_id = attempt }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "fn with_mut<T>(mut value: T, change: impl FnOnce(&mut T)) -> T { \
+                 change(&mut value); value }\n\
+                 pub fn retarget(link: HubLink, attempt: AttemptId) -> HubLink { \
+                 with_mut(link, |link| link.attempt_id.clone_from(&attempt)) }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "pub static RETARGET: fn(HubLink, AttemptId) -> HubLink = \
+                 |mut link, attempt| { link.attempt_id = attempt; link };",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "pub struct Held { link: HubLink }\n\
+                 impl Held { pub fn retarget(&mut self, attempt: AttemptId) { \
+                 self.link.attempt_id = attempt } }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "pub fn retarget(link: HubLink, attempt: AttemptId) -> HubLink { \
+                 HubLink { attempt_id: attempt, ..link } }",
+            ),
+            "2 HubLink literals",
+        ),
+        (
+            appended(
+                "pub fn retarget(link: HubLink, attempt: AttemptId) -> HubLink { \
+                 let HubLink { .. } = link; HubLink { attempt_id: attempt } }",
+            ),
+            "3 HubLink literals",
+        ),
+        (
+            appended(
+                "pub fn retarget(mut link: HubLink, attempt: AttemptId) -> HubLink { \
+                 link.r#attempt_id = attempt; link }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "pub fn retarget(link: &mut r#HubLink, attempt: AttemptId) { \
+                 link.r#attempt_id = attempt }",
+            ),
+            "a HubLink is borrowed mutably",
+        ),
+        (
+            appended(
+                "pub trait Linkish { fn into_link(self) -> HubLink; }\n\
+                 impl<T: Into<HubLink>> Linkish for T { \
+                 fn into_link(self) -> HubLink { self.into() } }\n\
+                 pub fn retarget(link: impl Linkish, attempt: AttemptId) -> impl Linkish { \
+                 let mut held = link.into_link(); held.attempt_id = attempt; held }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "pub trait Starter<C, H> { \
+                 fn begin(self, code: C, link: HubLink) -> Result<H, NativeError>; }\n\
+                 impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> { \
+                 pub fn consent_as(&mut self, attempt: AttemptId, other: AttemptId, \
+                 start: impl Starter<C, H>) -> Result<(), Refusal> { \
+                 self.consent(attempt, move |code, mut link| { \
+                 link.attempt_id = other; start.begin(code, link) }) } }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "fn with_mut<T>(mut value: T, change: impl FnOnce(&mut T)) -> T { \
+                 change(&mut value); value }\n\
+                 impl HubLink { pub fn retarget<R>(self, attempt: AttemptId, \
+                 then: impl FnOnce(Self) -> R) -> R { \
+                 then(with_mut(self, |link| link.attempt_id = attempt)) } }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> { \
+                 pub fn consent_as(&mut self, attempt: AttemptId, other: AttemptId, \
+                 start: impl FnOnce(C, AttemptId) -> Result<H, NativeError>) \
+                 -> Result<(), Refusal> { self.consent(attempt, move |code, mut link| { \
+                 link.attempt_id = other; start(code, link.attempt()) }) } }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "impl<C: PairingCode, H, S, K: Clock> Pairing<C, H, S, K> { \
+                 pub fn consent_showing<F>(&mut self, attempt: AttemptId, other: AttemptId, \
+                 start: F) -> Result<(), Refusal> \
+                 where F: FnOnce(C, &HubLink) -> Result<H, NativeError> { \
+                 self.consent(attempt, move |code, mut link| { \
+                 link.attempt_id = other; start(code, &link) }) } }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "pub fn relink<C: PairingCode>(code: C, to: AttemptId) -> Option<()> { \
+                 let mut pairing: Pairing<C, _, (), _> = Pairing::new(|| 0, 0); \
+                 let id = pairing.stage(code).ok()?; \
+                 pairing.consent(id, |_, mut link| { link.attempt_id = to; Ok(link) }).ok() }",
+            ),
+            reached,
+        ),
+        (relinked("link.attempt_id = to;"), reached),
+        (
+            relinked("let _ = mem::replace(&mut link.attempt_id, to);"),
+            reached,
+        ),
+        (
+            relinked("let slot = &mut link.attempt_id; *slot = to;"),
+            reached,
+        ),
+        (relinked("(link.attempt_id) = to;"), reached),
+        (
+            relinked("let ref mut slot = link.attempt_id; *slot = to;"),
+            reached,
+        ),
+        (
+            appended(
+                "pub enum Slot { Linked(HubLink), Empty }\n\
+                 impl Slot { pub fn retarget(&mut self, attempt: AttemptId) { \
+                 if let Slot::Linked(link) = self { link.attempt_id = attempt; } } }",
+            ),
+            reached,
+        ),
+        (
+            appended(
+                "pub trait Retarget { fn retarget(&mut self, attempt: AttemptId); }\n\
+                 impl<T: std::ops::DerefMut<Target = HubLink>> Retarget for T { \
+                 fn retarget(&mut self, attempt: AttemptId) { self.attempt_id = attempt } }",
+            ),
+            reached,
+        ),
+        (
+            SOURCE
+                .replacen(
+                    "    attempt_id: AttemptId,\n}",
+                    "    attempt_id: AtomicU64,\n}",
+                    1,
+                )
+                .replacen(
+                    "        self.attempt_id\n",
+                    "        AttemptId(self.attempt_id.load(Ordering::Relaxed))\n",
+                    1,
+                )
+                .replacen(
+                    "attempt_id: current.id,",
+                    "attempt_id: AtomicU64::new(current.id.0),",
+                    1,
+                )
+                + "\nimpl HubLink { pub fn retarget(&self, attempt: AttemptId) { \
+                   self.attempt_id.store(attempt.0, Ordering::Relaxed) } }\n",
+            "a HubLink field is not an AttemptId",
         ),
     ];
     for (case, (source, refused)) in cases.into_iter().enumerate() {
         assert!(source != SOURCE, "case {case}");
         assert_eq!(hub_links(&source), Err(refused.to_owned()), "case {case}");
+    }
+}
+
+#[test]
+fn the_hub_link_check_lets_a_link_move_unchanged() {
+    for body in [
+        "pub fn pass(link: HubLink) -> HubLink { link }",
+        "pub fn pass_on(link: HubLink, to: impl FnOnce(HubLink)) { to(link) }",
+        "pub fn first(links: Vec<HubLink>) -> Option<HubLink> { links.into_iter().next() }",
+        "pub fn pass_if(link: HubLink, attempt: AttemptId) -> Option<HubLink> { \
+         (link.attempt() == attempt).then_some(link) }",
+        "pub fn agrees(link: &HubLink) -> bool { HubLink::attempt(link) == link.attempt() }",
+        "impl<C, H, S, K> Pairing<C, H, S, K> { \
+         pub fn hand_back(&mut self, link: HubLink) -> HubLink { self.latest_ms = 0; link } }",
+        "impl<C, H, S, K> Pairing<C, H, S, K> { \
+         pub fn hand_over(&self, link: HubLink) -> (HubLink, bool) { \
+         (link, self.attempt.is_some()) } }",
+        "pub struct Held { link: HubLink }\n\
+         impl Held { pub fn hold(link: HubLink) -> Self { Self { link } } \
+         pub fn release(self) -> HubLink { self.link } }",
+        "pub enum Slot { Linked(HubLink), Empty }\n\
+         impl Slot { pub fn take(&mut self) -> Option<HubLink> { \
+         match mem::replace(self, Slot::Empty) { Slot::Linked(link) => Some(link), \
+         Slot::Empty => None } } }",
+    ] {
+        assert_eq!(hub_links(&format!("{SOURCE}\n{body}\n")), Ok(()), "{body}");
     }
 }
