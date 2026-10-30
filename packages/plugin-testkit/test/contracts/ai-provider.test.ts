@@ -206,6 +206,8 @@ describe("direct provider contract checks", () => {
 	});
 
 	it.each([
+		["initial", 10_000],
+		["initial", 10_001],
 		["between", 10_000],
 		["between", 10_001],
 		["tail", 10_000],
@@ -218,6 +220,7 @@ describe("direct provider contract checks", () => {
 				options(
 					aiFixture({
 						async generateDraft(_args, context) {
+							if (phase === "initial") now += gap;
 							await context.progress(0, 1);
 							if (phase === "between") now += gap;
 							await context.progress(1, 1);
