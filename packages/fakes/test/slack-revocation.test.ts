@@ -1,3 +1,4 @@
+import { Server } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
@@ -233,6 +234,38 @@ describe("synthetic Slack fixture-local revocation", () => {
 			expect(fake.stats()).toEqual({ tickets: 0, connections: 0, pending: 0, timers: 0, http: 0 });
 		},
 	);
+
+	it("rechecks app revocation after starting the socket listener", async () => {
+		const fake = companion();
+		const native = vi
+			.spyOn(globalThis, "fetch")
+			.mockRejectedValue(new Error("Native network forbidden"));
+		const listen = Server.prototype.listen;
+		const startup = vi.spyOn(Server.prototype, "listen").mockImplementation(function (
+			this: Server,
+			...args: unknown[]
+		) {
+			const result = Reflect.apply(listen, this, args);
+			// ensureWS cannot resume its await until this synchronous listen call returns.
+			fake.revoke("app");
+			return result;
+		});
+		try {
+			expect(await api(fake, "apps.connections.open")).toEqual({
+				ok: false,
+				error: "token_revoked",
+			});
+			expect(startup).toHaveBeenCalled();
+			expect(fake.stats()).toEqual({ tickets: 0, connections: 0, pending: 0, timers: 0, http: 0 });
+			expect((await api(fake)).ok).toBe(true);
+		} finally {
+			startup.mockRestore();
+		}
+		const other = companion();
+		expect((await api(other, "apps.connections.open")).ok).toBe(true);
+		expect(other.stats().tickets).toBe(1);
+		expect(native).not.toHaveBeenCalled();
+	});
 
 	it.each([undefined, null, "all", {}, { token: "user" }])(
 		"refuses invalid token selectors without revocation: %#",
