@@ -36,6 +36,15 @@ fn admin_kinds_flatten_the_groups() {
 }
 
 #[test]
+fn ai_kinds_sit_only_in_the_ai_group() {
+    for (group, kinds) in ADMIN_GROUPS {
+        for kind in *kinds {
+            assert_eq!(kind.starts_with("ai."), *group == "ai", "{group}: {kind}");
+        }
+    }
+}
+
+#[test]
 fn near_miss_ai_kinds_are_not_admin_kinds() {
     for kind in [
         "ai.connect",
