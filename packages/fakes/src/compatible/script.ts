@@ -1,9 +1,13 @@
+import { validateHeaderValue } from "node:http";
 import { checkDelay, wait } from "../faults.ts";
 
 interface Delivery {
 	/** 200 by default; any status from 200 to 599 that allows a body. */
 	readonly status?: number;
-	/** Any header but Content-Length, Transfer-Encoding and Trailer; Date comes from the clock. */
+	/**
+	 * Any header but Content-Length, Transfer-Encoding and Trailer, with values node:http can send;
+	 * Date comes from the clock.
+	 */
 	readonly headers?: HeadersInit;
 	/** Wait before the response headers; Infinity waits until the request aborts. */
 	readonly delayMs?: number;
@@ -75,6 +79,16 @@ function bytesOf(body: unknown, cap: number): Uint8Array<ArrayBuffer> {
 	return bytes;
 }
 
+// Headers accepts control characters other than tab that node:http refuses, so over loopback such
+// a value would turn the step into a 500. Header names follow the same token rule in both.
+function checkSendable(name: string, value: string): void {
+	try {
+		validateHeaderValue(name, value);
+	} catch {
+		throw new TypeError(`A compatible step's ${name} header can't be sent by the listener`);
+	}
+}
+
 // Reads each field of the step once, so a getter cannot answer differently later.
 function prepare(step: CompatibleStep, available: number): Prepared {
 	const kind = step.kind;
@@ -107,7 +121,9 @@ function prepare(step: CompatibleStep, available: number): Prepared {
 	if (FRAMING.some((name) => headers.has(name)))
 		throw new TypeError("A compatible step leaves its framing headers to the server");
 	if (!headers.has("content-type")) headers.set("content-type", contentType);
-	return { bytes, status, headers: [...headers], delayMs, chunkBytes, chunkDelayMs };
+	const sent = [...headers];
+	for (const [name, value] of sent) checkSendable(name, value);
+	return { bytes, status, headers: sent, delayMs, chunkBytes, chunkDelayMs };
 }
 
 /** Encodes and snapshots one step outside any queue, within the per-step limits. */

@@ -215,6 +215,11 @@ describe("compatible wire formats", () => {
 			{ listing: { kind: "raw", body: "{}", headers: { Trailer: "x-dytest" } } },
 			"framing headers",
 		],
+		[
+			"a listing with DEL in a header value",
+			{ listing: { kind: "json", body: LISTED, headers: { "x-dytest": "DYTEST\u007f" } } },
+			"x-dytest header can't be sent by the listener",
+		],
 	] as const)("refuses %s when the fake is made", (_name, options, message) => {
 		expect(() => createCompatibleFake(options)).toThrow(message);
 		expect(() => createCompatibleDraftFake(options)).toThrow(message);
@@ -680,6 +685,16 @@ describe("script admission", () => {
 			"framing headers",
 		],
 		["Trailer", { kind: "json", body: {}, headers: { trailer: "x-dytest" } }, "framing headers"],
+		[
+			"U+0001 in a header value",
+			{ kind: "json", body: {}, headers: { "x-dytest": "DYTEST\u0001" } },
+			"x-dytest header can't be sent by the listener",
+		],
+		[
+			"U+001F in its content type",
+			{ kind: "raw", body: "x", contentType: "text/plain\u001f" },
+			"content-type header can't be sent by the listener",
+		],
 	];
 
 	it.each(invalid)("refuses a step with %s and adds none of its batch", (_name, step, error) => {
@@ -1685,6 +1700,64 @@ describe("loopback listener", () => {
 			await expect(fetch(`${origin}${CHAT}`, post())).rejects.toThrow(TypeError);
 			expect(fake.pending()).toBe(1);
 			expect(await json(fetch(`${origin}${CHAT}`, post()))).toEqual({ order: 1 });
+		} finally {
+			await open.closeAll();
+		}
+	});
+
+	it("sends a step's or listing's tab and Latin-1 header values as the in-memory fetch does", async () => {
+		const open = listeners();
+		const headers = { "x-dytest-tab": "DYTEST\tinner", "x-dytest-latin": "DYTEST café ÿ" };
+		const step: CompatibleStep = { kind: "json", body: { order: 1 }, headers };
+		const fake = createCompatibleFake({
+			listing: { kind: "json", body: LISTED, headers },
+			steps: [step, step],
+		});
+		const seen = async (answer: Promise<Response>) => {
+			const response = await answer;
+			return [
+				response.status,
+				response.headers.get("x-dytest-tab"),
+				response.headers.get("x-dytest-latin"),
+				await response.text(),
+			];
+		};
+		try {
+			const { origin } = open.keep(await fake.listen());
+			for (const [path, init, body] of [
+				[CHAT, post(), { order: 1 }],
+				[MODELS, undefined, LISTED],
+			] as const) {
+				const expected = [200, "DYTEST\tinner", "DYTEST café ÿ", JSON.stringify(body)];
+				expect(await seen(fake.fetch(path, init))).toEqual(expected);
+				expect(await seen(fetch(`${origin}${path}`, init))).toEqual(expected);
+			}
+			expect(fake.pending()).toBe(0);
+		} finally {
+			await open.closeAll();
+		}
+	});
+
+	it("refuses at enqueue a header value the listener can't send, so neither mode serves it", async () => {
+		const open = listeners();
+		const fake = createCompatibleFake({ steps: [reply({ order: 1 })] });
+		try {
+			const { origin } = open.keep(await fake.listen());
+			const step: CompatibleStep = {
+				kind: "json",
+				body: {},
+				headers: { "x-dytest": "DYTEST\u0001" },
+			};
+			expect(() => fake.enqueue(reply({ appended: false }), step)).toThrow(
+				new TypeError("A compatible step's x-dytest header can't be sent by the listener"),
+			);
+			expect(fake.pending()).toBe(1);
+			expect(await json(fetch(`${origin}${CHAT}`, post()))).toEqual({ order: 1 });
+			const exhausted = await fake.fetch(CHAT, post());
+			expect([exhausted.status, await exhausted.json()]).toEqual([
+				503,
+				{ error: "script_exhausted" },
+			]);
 		} finally {
 			await open.closeAll();
 		}
