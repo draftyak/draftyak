@@ -613,7 +613,8 @@
                   "enum": [
                     "messages-api-v1",
                     "responses-api-v1",
-                    "chat-completions-v1"
+                    "chat-completions-v1",
+                    "responses-plan-v1"
                   ]
                 }
               },
