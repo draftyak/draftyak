@@ -54,6 +54,12 @@ interface Header {
 	readonly draft: Draft;
 	readonly channel: "email" | "chat";
 	readonly lockId: string | null;
+	readonly latestRevisionMac: string;
+	readonly auditEventMac: string;
+}
+export interface DraftAuditReceipt {
+	readonly seq: number;
+	readonly mac: string;
 }
 interface HeaderRow {
 	id: string;
@@ -68,6 +74,14 @@ interface RevisionRow {
 	previous: string;
 	mac: string;
 }
+interface LockRow {
+	id: string;
+	draft_id: string;
+	outbox_id: string;
+	payload: string;
+	audit_seq: number;
+	mac: string;
+}
 export class DraftRevisionError extends Error {
 	readonly code = "DRAFT_REVISION_UNAVAILABLE";
 	constructor() {
@@ -79,8 +93,33 @@ const readStore = HubStore.prototype.read,
 	writeStore = HubStore.prototype.write,
 	appendAudit = AuditChain.prototype.append,
 	verifyAudit = AuditChain.prototype.verify,
+	verifySegment = AuditChain.prototype.verifySegment,
 	derive = MasterKey.prototype.derive;
 const bindingKeys = ["draftId", "accountId", "conversationId", "channel"] as const;
+// The only audit actions that link a header or a lock row; other modules' events never count.
+const DRAFT_HEADER_ACTIONS = [
+	"draft.created",
+	"draft.appended",
+	"draft.locked",
+	"draft.unlocked",
+] as const;
+const DRAFT_LOCK_ACTIONS = [
+	"draft.freeze_active",
+	"draft.freeze_released",
+	"draft.freeze_consumed",
+] as const;
+type DraftHeaderAction = (typeof DRAFT_HEADER_ACTIONS)[number];
+export type DraftLockAction = (typeof DRAFT_LOCK_ACTIONS)[number];
+const actionIn = (actions: readonly string[]): string =>
+	`action IN (${actions.map((action) => `'${action}'`).join(",")})`;
+// The audit MACs cover rows, not indexes, so these lookups never read an index.
+const AUDIT_LINK_COLUMNS =
+	"seq,CASE WHEN typeof(mac)='text' AND length(CAST(mac AS BLOB))=64 THEN mac ELSE NULL END AS mac";
+export const HEADER_LINK_SQL: string = `SELECT ${AUDIT_LINK_COLUMNS} FROM main.audit_events NOT INDEXED WHERE refs=? AND ${actionIn(DRAFT_HEADER_ACTIONS)} ORDER BY seq DESC LIMIT 1`;
+export const LOCK_LINK_SQL: string = `SELECT ${AUDIT_LINK_COLUMNS} FROM main.audit_events NOT INDEXED WHERE refs=? AND ${actionIn(DRAFT_LOCK_ACTIONS)} ORDER BY seq DESC LIMIT 1`;
+export const DRAFT_USED_SQL: string = `SELECT 1 FROM main.audit_events NOT INDEXED WHERE ${actionIn([...DRAFT_HEADER_ACTIONS, ...DRAFT_LOCK_ACTIONS])} AND json_extract(refs,'$.draft')=? LIMIT 1`;
+export const OUTBOX_USED_SQL: string = `SELECT 1 FROM main.audit_events NOT INDEXED WHERE ${actionIn(DRAFT_LOCK_ACTIONS)} AND json_extract(refs,'$.outbox')=? LIMIT 1`;
+const LOCK_SQL = `SELECT id,draft_id,outbox_id,CASE WHEN typeof(payload)='text' AND length(CAST(payload AS BLOB)) BETWEEN 1 AND 2097152 THEN payload ELSE NULL END AS payload,audit_seq,CASE WHEN typeof(mac)='text' AND length(CAST(mac AS BLOB))=64 THEN mac ELSE NULL END AS mac FROM main.native_draft_locks WHERE id=?`;
 const HEADER_SQL = `SELECT id,CASE WHEN typeof(payload)='text' AND length(CAST(payload AS BLOB)) BETWEEN 1 AND 8192 THEN payload ELSE NULL END AS payload,audit_seq,CASE WHEN typeof(mac)='text' AND length(CAST(mac AS BLOB))=64 THEN mac ELSE NULL END AS mac FROM main.native_drafts WHERE id=?`;
 const REVISION_SQL = `SELECT draft_id,rev,CASE WHEN typeof(payload)='text' AND length(CAST(payload AS BLOB)) BETWEEN 1 AND 2097152 THEN payload ELSE NULL END AS payload,CASE WHEN typeof(previous)='text' AND length(CAST(previous AS BLOB)) IN(0,64) THEN previous ELSE NULL END AS previous,CASE WHEN typeof(mac)='text' AND length(CAST(mac AS BLOB))=64 THEN mac ELSE NULL END AS mac FROM main.native_draft_revisions WHERE draft_id=? ORDER BY rev`;
 
@@ -181,6 +220,8 @@ export class NativeDraftRevisions {
 	readonly #audit: AuditChain;
 	readonly #key: Buffer;
 	readonly #clock: Clock;
+	// One wall-clock reading per live transaction, shared by every write in it.
+	readonly #times = new WeakMap<SqlTransaction, number>();
 	#destroyed = false;
 	constructor(
 		store: HubStore,
@@ -192,7 +233,7 @@ export class NativeDraftRevisions {
 		try {
 			if ([store, audit, masterKey, clock].some(types.isProxy)) throw revisionUnavailable();
 			HubStore.prototype.assertMasterKey.call(store, masterKey);
-			key = derive.call(masterKey, "handles");
+			key = derive.call(masterKey, "drafts");
 			readStore.call(store, (db: SqlReader) => {
 				db.get("SELECT id FROM main.native_drafts LIMIT 1");
 				verifyAudit.call(audit, db);
@@ -206,12 +247,17 @@ export class NativeDraftRevisions {
 		this.#key = key;
 		this.#clock = clock;
 	}
-	now(): number {
-		return this.#now();
+	now(tx?: SqlTransaction): number {
+		if (tx !== undefined) this.#assertTransaction(tx);
+		return this.#now(tx);
 	}
-	#now(): number {
+	#now(tx?: SqlTransaction): number {
+		if (this.#destroyed) throw revisionUnavailable();
+		const known = tx === undefined ? undefined : this.#times.get(tx);
+		if (known !== undefined) return known;
 		const at = this.#clock.wallMs();
-		if (this.#destroyed || !UtcMs.safeParse(at).success) throw revisionUnavailable();
+		if (!UtcMs.safeParse(at).success) throw revisionUnavailable();
+		if (tx !== undefined) this.#times.set(tx, at);
 		return at;
 	}
 	/** Shared internal authentication for revision and freeze rows, under distinct domains. */
@@ -235,13 +281,14 @@ export class NativeDraftRevisions {
 		)
 			throw revisionUnavailable();
 	}
-	assertTransaction(tx: SqlTransaction): void {
+	/** With auditFrom, also authenticates the audit rows from that sequence through the head. */
+	assertTransaction(tx: SqlTransaction, auditFrom?: number): void {
 		this.#assertTransaction(tx);
+		if (auditFrom !== undefined) verifySegment.call(this.#audit, tx, auditFrom);
 	}
 	#assertTransaction(tx: SqlTransaction): void {
 		if (this.#destroyed) throw revisionUnavailable();
 		assertStoreTransaction(this.#store, tx);
-		verifyAudit.call(this.#audit, tx);
 	}
 	sameStore(other: NativeDraftRevisions): boolean {
 		return this.#store === other.#store;
@@ -256,6 +303,11 @@ export class NativeDraftRevisions {
 			return work(db);
 		}) as T;
 	}
+	// Draft reads authenticate only the audit segment their linkage depends on.
+	#view<T>(work: (db: SqlReader) => T): T {
+		if (this.#destroyed) throw revisionUnavailable();
+		return readStore.call(this.#store, (db: SqlReader) => work(db)) as T;
+	}
 	write<T>(work: (tx: SqlTransaction) => T): T {
 		if (this.#destroyed) throw revisionUnavailable();
 		return writeStore.call(this.#store, (tx: SqlTransaction) => {
@@ -263,12 +315,20 @@ export class NativeDraftRevisions {
 			return work(tx);
 		}) as T;
 	}
-	auditInTransaction(tx: SqlTransaction, action: string, refs: Record<string, string>): number {
+	auditInTransaction(
+		tx: SqlTransaction,
+		action: string,
+		refs: Record<string, string>,
+	): DraftAuditReceipt {
 		return this.#auditInTransaction(tx, action, refs);
 	}
-	#auditInTransaction(tx: SqlTransaction, action: string, refs: Record<string, string>): number {
+	#auditInTransaction(
+		tx: SqlTransaction,
+		action: string,
+		refs: Record<string, string>,
+	): DraftAuditReceipt {
 		this.#assertTransaction(tx);
-		const at = this.#now();
+		const at = this.#now(tx);
 		appendAudit.call(this.#audit, tx, {
 			id: newId(at),
 			at,
@@ -276,11 +336,65 @@ export class NativeDraftRevisions {
 			actor: { kind: "hub", id: null },
 			refs,
 		});
-		const seq = tx.get<{ audit_seq: number }>(
-			"SELECT audit_seq FROM main.audit_meta WHERE singleton=1",
-		)?.audit_seq;
-		if (!seq || !Number.isSafeInteger(seq)) throw revisionUnavailable();
-		return seq;
+		const head = tx.get<{ audit_seq: number; audit_head: string }>(
+			"SELECT audit_seq,CASE WHEN typeof(audit_head)='text' AND length(CAST(audit_head AS BLOB))=64 THEN audit_head ELSE NULL END AS audit_head FROM main.audit_meta WHERE singleton=1",
+		);
+		if (
+			!head ||
+			!Number.isSafeInteger(head.audit_seq) ||
+			head.audit_seq < 1 ||
+			!Sha256Hex.safeParse(head.audit_head).success
+		)
+			throw revisionUnavailable();
+		return Object.freeze({ seq: head.audit_seq, mac: head.audit_head });
+	}
+	/** The row's audit event is the latest of its kind and no row from it to the head is altered. */
+	#linked(
+		db: SqlReader,
+		sql: string,
+		refs: Record<string, string>,
+		seq: number,
+		mac: string,
+	): void {
+		const latest = db.get<{ seq: number; mac: string }>(sql, [canonicalize(refs)]);
+		if (latest?.seq !== seq || latest.mac !== mac) throw revisionUnavailable();
+		verifySegment.call(this.#audit, db, seq);
+	}
+	#activeLock(tx: SqlTransaction, draftId: string, lockId: string): void {
+		const row = tx.get<LockRow>(LOCK_SQL, [lockId]);
+		if (
+			!row ||
+			row.id !== lockId ||
+			row.draft_id !== draftId ||
+			typeof row.payload !== "string" ||
+			!Number.isSafeInteger(row.audit_seq)
+		)
+			throw revisionUnavailable();
+		const { mac, ...signed } = row;
+		this.#checkMac("freeze", signed, mac);
+		const payload = draftRecord(JSON.parse(row.payload), [
+			"binding",
+			"snapshot",
+			"revisionContentHash",
+			"flagsHash",
+			"status",
+			"createdAt",
+			"updatedAt",
+			"auditEventMac",
+		]);
+		if (
+			canonicalize(payload) !== row.payload ||
+			payload.status !== "active" ||
+			!Sha256Hex.safeParse(payload.auditEventMac).success
+		)
+			throw revisionUnavailable();
+		this.#linked(
+			tx,
+			LOCK_LINK_SQL,
+			{ draft: row.draft_id, freeze: row.id, outbox: row.outbox_id },
+			row.audit_seq,
+			payload.auditEventMac as string,
+		);
 	}
 	#header(db: SqlReader, bound: DraftBinding): Header {
 		const row = db.get<HeaderRow>(HEADER_SQL, [bound.draftId]);
@@ -294,21 +408,37 @@ export class NativeDraftRevisions {
 			throw revisionUnavailable();
 		const { mac, ...signed } = row;
 		this.#checkMac("header", signed, mac);
-		const latest = db.get<{ seq: number }>(
-			"SELECT seq FROM main.audit_events WHERE refs=? ORDER BY seq DESC LIMIT 1",
-			[canonicalize({ draft: row.id })],
-		);
-		if (latest?.seq !== row.audit_seq) throw revisionUnavailable();
-		const parsed = draftRecord(JSON.parse(row.payload), ["draft", "channel", "lockId"]),
+		const parsed = draftRecord(JSON.parse(row.payload), [
+				"draft",
+				"channel",
+				"lockId",
+				"latestRevisionMac",
+				"auditEventMac",
+			]),
 			draft = Draft.parse(parsed.draft);
 		if (
 			canonicalize(parsed) !== row.payload ||
 			draft.rev > 10000 ||
 			!["email", "chat"].includes(parsed.channel as string) ||
-			!(parsed.lockId === null || Ulid.safeParse(parsed.lockId).success)
+			!(parsed.lockId === null || Ulid.safeParse(parsed.lockId).success) ||
+			!Sha256Hex.safeParse(parsed.latestRevisionMac).success ||
+			!Sha256Hex.safeParse(parsed.auditEventMac).success
 		)
 			throw revisionUnavailable();
-		const header = { draft, channel: parsed.channel, lockId: parsed.lockId } as Header;
+		this.#linked(
+			db,
+			HEADER_LINK_SQL,
+			{ draft: row.id },
+			row.audit_seq,
+			parsed.auditEventMac as string,
+		);
+		const header = {
+			draft,
+			channel: parsed.channel,
+			lockId: parsed.lockId,
+			latestRevisionMac: parsed.latestRevisionMac,
+			auditEventMac: parsed.auditEventMac,
+		} as Header;
 		bindHeader(header, bound);
 		return header;
 	}
@@ -373,12 +503,16 @@ export class NativeDraftRevisions {
 				if (index > afterRev && page.length < limit) page.push(revision);
 			}
 		}
-		if (!latest || index !== header.draft.rev) throw revisionUnavailable();
+		if (!latest || index !== header.draft.rev || previous !== header.latestRevisionMac)
+			throw revisionUnavailable();
 		return { latest, authors: [...authors.values()], page };
 	}
-	#facts(db: SqlReader, bound: DraftBinding): NativeRevision {
-		const header = this.#header(db, bound),
-			history = this.#history(db, header),
+	#facts(
+		db: SqlReader,
+		bound: DraftBinding,
+		header: Header = this.#header(db, bound),
+	): NativeRevision {
+		const history = this.#history(db, header),
 			revision = history.latest,
 			authors = history.authors;
 		return immutableDraftData({
@@ -393,7 +527,7 @@ export class NativeDraftRevisions {
 	current(bound: DraftBinding): NativeRevision {
 		try {
 			const captured = captureDraftBinding(bound);
-			return this.#read((db) => this.#facts(db, captured));
+			return this.#view((db) => this.#facts(db, captured));
 		} catch {
 			throw revisionUnavailable();
 		}
@@ -417,7 +551,7 @@ export class NativeDraftRevisions {
 			)
 				throw revisionUnavailable();
 			const captured = captureDraftBinding(bound);
-			return this.#read((db) => {
+			return this.#view((db) => {
 				const header = this.#header(db, captured);
 				return immutableDraftData(this.#history(db, header, afterRev, limit).page);
 			});
@@ -425,10 +559,23 @@ export class NativeDraftRevisions {
 			throw revisionUnavailable();
 		}
 	}
-	#saveHeader(tx: SqlTransaction, header: Header, action: string, insert: boolean): void {
-		const audit_seq = this.#auditInTransaction(tx, action, { draft: header.draft.id }),
-			row = { id: header.draft.id, payload: canonicalize(header), audit_seq },
+	#saveHeader(
+		tx: SqlTransaction,
+		header: Omit<Header, "auditEventMac">,
+		action: DraftHeaderAction,
+		insert: boolean,
+	): void {
+		if (Buffer.byteLength(canonicalize({ ...header, auditEventMac: "0".repeat(64) })) > 8192)
+			throw revisionUnavailable();
+		const receipt = this.#auditInTransaction(tx, action, { draft: header.draft.id }),
+			audit_seq = receipt.seq,
+			row = {
+				id: header.draft.id,
+				payload: canonicalize({ ...header, auditEventMac: receipt.mac }),
+				audit_seq,
+			},
 			mac = this.#sign("header", row);
+		if (Buffer.byteLength(row.payload) > 8192) throw revisionUnavailable();
 		if (insert)
 			tx.run("INSERT INTO main.native_drafts(id,payload,audit_seq,mac) VALUES(?,?,?,?)", [
 				row.id,
@@ -446,7 +593,11 @@ export class NativeDraftRevisions {
 		)
 			throw revisionUnavailable();
 	}
-	#saveRevision(tx: SqlTransaction, bound: DraftBinding, revision: DraftRevision): void {
+	#prepareRevision(
+		tx: SqlTransaction,
+		bound: DraftBinding,
+		revision: DraftRevision,
+	): Readonly<RevisionRow> {
 		const previous =
 			revision.rev === 1
 				? ""
@@ -462,15 +613,12 @@ export class NativeDraftRevisions {
 			previous,
 		};
 		if (Buffer.byteLength(row.payload) > 2097152) throw revisionUnavailable();
+		return Object.freeze({ ...row, mac: this.#sign("revision", { binding: bound, ...row }) });
+	}
+	#saveRevision(tx: SqlTransaction, row: Readonly<RevisionRow>): void {
 		tx.run(
 			"INSERT INTO main.native_draft_revisions(draft_id,rev,payload,previous,mac) VALUES(?,?,?,?,?)",
-			[
-				row.draft_id,
-				row.rev,
-				row.payload,
-				previous,
-				this.#sign("revision", { binding: bound, ...row }),
-			],
+			[row.draft_id, row.rev, row.payload, row.previous, row.mac],
 		);
 	}
 	createInTransaction(tx: SqlTransaction, input: DraftCreation): NativeRevision {
@@ -480,14 +628,9 @@ export class NativeDraftRevisions {
 				bound = asBinding(data),
 				content = normalizeDraftContent(data.content),
 				author = DraftAuthor.parse(data.author),
-				at = this.#now();
+				at = this.#now(tx);
 			if (content.channel !== bound.channel) throw revisionUnavailable();
-			if (
-				tx.get("SELECT 1 FROM main.audit_events WHERE json_extract(refs,'$.draft')=? LIMIT 1", [
-					bound.draftId,
-				])
-			)
-				throw revisionUnavailable();
+			if (tx.get(DRAFT_USED_SQL, [bound.draftId])) throw revisionUnavailable();
 			const draft = Draft.parse({
 					id: bound.draftId,
 					accountId: bound.accountId,
@@ -506,8 +649,15 @@ export class NativeDraftRevisions {
 					flags: flags(data.flags),
 					createdAt: at,
 				});
-			this.#saveHeader(tx, { draft, channel: bound.channel, lockId: null }, "draft.created", true);
-			this.#saveRevision(tx, bound, revision);
+			if (Buffer.byteLength(canonicalize(revision)) > 2097152) throw revisionUnavailable();
+			const prepared = this.#prepareRevision(tx, bound, revision);
+			this.#saveHeader(
+				tx,
+				{ draft, channel: bound.channel, lockId: null, latestRevisionMac: prepared.mac },
+				"draft.created",
+				true,
+			);
+			this.#saveRevision(tx, prepared);
 			return this.#facts(tx, bound);
 		} catch {
 			throw revisionUnavailable();
@@ -532,11 +682,10 @@ export class NativeDraftRevisions {
 				current.draft.rev >= 10000
 			)
 				throw revisionUnavailable();
-			const at = this.#now(),
+			const at = Math.max(this.#now(tx), current.draft.updatedAt),
 				content = normalizeDraftContent(data.content),
 				author = DraftAuthor.parse(data.author);
 			if (
-				at < current.draft.updatedAt ||
 				content.channel !== bound.channel ||
 				new Set([...current.authors.map((item) => canonicalize(item)), canonicalize(author)]).size >
 					100
@@ -552,10 +701,11 @@ export class NativeDraftRevisions {
 					createdAt: at,
 				}),
 				draft = Draft.parse({ ...current.draft, rev: revision.rev, updatedAt: at });
-			this.#saveRevision(tx, bound, revision);
+			const prepared = this.#prepareRevision(tx, bound, revision);
+			this.#saveRevision(tx, prepared);
 			this.#saveHeader(
 				tx,
-				{ draft, channel: bound.channel, lockId: null },
+				{ draft, channel: bound.channel, lockId: null, latestRevisionMac: prepared.mac },
 				"draft.appended",
 				false,
 			);
@@ -572,20 +722,13 @@ export class NativeDraftRevisions {
 				current = this.#facts(tx, bound),
 				author = DraftAuthor.parse(data.author);
 			if (author.kind !== "ai") throw revisionUnavailable();
-			const merged = [
-				...new Map(
-					[...current.revision.flags, ...flags(data.flags)].map((flag) => [
-						canonicalize(flag),
-						flag,
-					]),
-				).values(),
-			];
+			// A new revision gets its own flags (spec/flags-v1.md); earlier ones never carry over.
 			return NativeDraftRevisions.prototype.appendInTransaction.call(this, tx, {
 				...bound,
 				expectedRev: data.expectedRev as number,
 				author,
 				content: { ...current.revision.content, body: normalizeDraftBody(data.body as string) },
-				flags: merged,
+				flags: flags(data.flags),
 			});
 		} catch {
 			throw revisionUnavailable();
@@ -601,7 +744,9 @@ export class NativeDraftRevisions {
 	): NativeRevision {
 		try {
 			this.#assertTransaction(tx);
-			const current = this.#facts(tx, captureDraftBinding(bound));
+			const captured = captureDraftBinding(bound),
+				header = this.#header(tx, captured),
+				current = this.#facts(tx, captured, header);
 			if (
 				current.draft.rev !== expectedRev ||
 				current.lockId !== expectedLock ||
@@ -609,15 +754,20 @@ export class NativeDraftRevisions {
 				!(lockId === null || Ulid.safeParse(lockId).success)
 			)
 				throw revisionUnavailable();
-			const at = this.#now();
-			if (at < current.draft.updatedAt) throw revisionUnavailable();
+			if (lockId !== null) this.#activeLock(tx, current.draft.id, lockId);
+			const at = Math.max(this.#now(tx), current.draft.updatedAt);
 			this.#saveHeader(
 				tx,
-				{ draft: { ...current.draft, updatedAt: at }, channel: current.channel, lockId },
+				{
+					draft: { ...current.draft, updatedAt: at },
+					channel: current.channel,
+					lockId,
+					latestRevisionMac: header.latestRevisionMac,
+				},
 				lockId === null ? "draft.unlocked" : "draft.locked",
 				false,
 			);
-			return this.#facts(tx, bound);
+			return this.#facts(tx, captured);
 		} catch {
 			throw revisionUnavailable();
 		}

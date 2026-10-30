@@ -54,24 +54,31 @@ describe("encrypted immutable native revision storage", () => {
 	});
 	it("uses expectedRev CAS so concurrent append callers retain exactly one next revision", async () => {
 		const f = await fixture(),
-			input = f.make();
+			input = f.make(),
+			bound = f.bind(input);
 		f.create(input);
-		const results = await Promise.allSettled(
-			["one", "two"].map((body) =>
-				Promise.resolve().then(() =>
-					f.store.write((tx) =>
-						f.revisions.appendInTransaction(tx, {
-							...input,
-							expectedRev: 1,
-							content: { ...input.content, body },
-						}),
-					),
-				),
-			),
+		// A second real connection reads rev 1 while the first one's append is still uncommitted.
+		const store = new HubStore(f.options),
+			other = new NativeDraftRevisions(store, f.audit, f.key, f.clock);
+		f.stores.push(store);
+		f.services.push(other);
+		const edit = (body: string) => ({
+			...input,
+			expectedRev: 1,
+			content: { ...input.content, body },
+		});
+		const seen = f.store.write((tx) => {
+			f.revisions.appendInTransaction(tx, edit("one"));
+			return other.current(bound).draft.rev;
+		});
+		expect(seen).toBe(1);
+		expect(() => store.write((tx) => other.appendInTransaction(tx, edit("two")))).toThrow(
+			"Draft revision unavailable",
 		);
-		expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-		expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
-		expect(f.revisions.history(f.bind(input))).toHaveLength(2);
+		expect(other.history(bound).map((item) => item.content.body)).toEqual([
+			`${f.canary}\nCafé`,
+			"one",
+		]);
 	});
 	it.each(["accountId", "conversationId", "channel"] as const)(
 		"refuses changed %s binding",
@@ -87,7 +94,7 @@ describe("encrypted immutable native revision storage", () => {
 			expect(f.revisions.current(f.bind(input)).draft.rev).toBe(1);
 		},
 	);
-	it("model append can change only body and retains previous native flags and all envelope fields", async () => {
+	it("model append can change only body and keeps all envelope fields", async () => {
 		const f = await fixture(),
 			input = f.make(),
 			one = f.create(input),
@@ -103,7 +110,7 @@ describe("encrypted immutable native revision storage", () => {
 			}),
 		);
 		expect(two.revision.content).toEqual({ ...one.revision.content, body: "Model\nbody" });
-		expect(two.revision.flags).toEqual(one.revision.flags);
+		expect(two.revision.flags).toEqual([]);
 		expect(() =>
 			f.store.write((tx) =>
 				f.revisions.appendModelBodyInTransaction(tx, {
@@ -132,6 +139,41 @@ describe("encrypted immutable native revision storage", () => {
 			}),
 		);
 		expect(two.revision.content).toEqual({ ...one.revision.content, body: "changed" });
+	});
+	it("model rewrite carries only the flags computed for its own content", async () => {
+		const f = await fixture(),
+			base = f.make(),
+			link = { code: "EXTERNAL_LINK", severity: "ack", detail: "offers.example.test" } as const,
+			recipient = {
+				code: "NEW_RECIPIENT",
+				severity: "ack",
+				detail: "recipient@example.test",
+			} as const,
+			lookup = { code: "TOOL_DATA_IN_BODY", severity: "ack" } as const,
+			input = {
+				...base,
+				content: { ...base.content, body: "Details at https://offers.example.test/spring" },
+				flags: [link, recipient],
+			},
+			bound = f.bind(input);
+		f.create(input);
+		// The rewrite drops the link, keeps the unchanged recipient and adds a looked-up number.
+		const two = f.store.write((tx) =>
+			f.revisions.appendModelBodyInTransaction(tx, {
+				...bound,
+				expectedRev: 1,
+				author: { kind: "ai", id: newId() },
+				body: "Please call 555 010 0199 on Monday.",
+				flags: [recipient, lookup],
+			}),
+		);
+		expect(two.revision.flags).toEqual([recipient, lookup]);
+		expect(two.flagsHash).toBe(flagsHash([recipient, lookup]));
+		expect(f.revisions.history(bound).map((item) => item.flags)).toEqual([
+			[link, recipient],
+			[recipient, lookup],
+		]);
+		expect(f.reopen().revisions.current(bound).revision.flags).toEqual([recipient, lookup]);
 	});
 	it("does not execute hostile input accessors or proxy traps", async () => {
 		const f = await fixture(),
@@ -229,7 +271,7 @@ describe("encrypted immutable native revision storage", () => {
 				f.revisions.createInTransaction(tx, input);
 				tx.run("INSERT INTO revision_child(id) VALUES(99)");
 			}),
-		).toThrow();
+		).toThrow(expect.objectContaining({ code: "SQLITE_CONSTRAINT_FOREIGNKEY" }));
 		expect(() => f.revisions.current(f.bind(input))).toThrow("Draft revision unavailable");
 		expect(f.create(input).draft.rev).toBe(1);
 	});
