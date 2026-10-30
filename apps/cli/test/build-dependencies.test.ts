@@ -26,12 +26,15 @@ import {
 	SyntaxKind,
 } from "typescript/unstable/ast";
 import { API } from "typescript/unstable/sync";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = path.resolve(packageRoot, "../..");
 const temporary = realpathSync.native(os.tmpdir());
 const roots = new Map<string, { readonly dev: number; readonly ino: number }>();
+
+// Child builds (60 s) and runs (30 s) can outlast Vitest's 30 s default case timeout under load.
+vi.setConfig({ testTimeout: 180_000 });
 
 afterEach(() => {
 	for (const [root, identity] of roots) {
