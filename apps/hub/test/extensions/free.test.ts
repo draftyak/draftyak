@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AuditSink, SendPolicyInput } from "@draftyak/extensions";
 import {
@@ -42,6 +43,7 @@ import {
 	resetTrace,
 } from "./helpers.ts";
 import { EXTENSION_MODES, installModule, startMode, startWith } from "./modes.ts";
+import { productionFiles, WORKSPACE_YAML, workspaceManifests } from "./production.ts";
 
 let f: Fixture;
 let store: HubStore;
@@ -84,6 +86,12 @@ const event = (overrides: Partial<AuditEvent> = {}): AuditEvent => ({
 	refs: { outbox: OTHER_ULID },
 	...overrides,
 });
+const withRefs = (count: number): AuditEvent =>
+	event({
+		refs: Object.fromEntries(
+			Array.from({ length: count }, (_, index) => [`ref${index}`, OTHER_ULID]),
+		),
+	});
 /** The exported events without their chain fields. */
 const entries = (page: AuditExportPage): unknown[] =>
 	page.jsonl === ""
@@ -163,10 +171,14 @@ describe.each(EXTENSION_MODES)("%s mode", (mode) => {
 			if (decision.kind === "require") expect(decision.approvals).toBeGreaterThanOrEqual(1);
 			else expect(decision.kind).toBe("deny");
 		}
-		for (const [account, granted] of Object.entries(current.access)) {
-			expect(floor.access[account]).toBe(true);
-			expect(granted && !floor.access[account]).toBe(false);
-		}
+		const freeAccess = Object.fromEntries(ACCOUNTS.map((account) => [account, true]));
+		const commercialAccess = {
+			[FAKE_IDS.assigned]: true,
+			[FAKE_IDS.denied]: false,
+			[OTHER_ULID]: false,
+		};
+		expect(floor.access).toEqual(freeAccess);
+		expect(current.access).toEqual(mode === "free" ? freeAccess : commercialAccess);
 		const commercial = {
 			decisions: Object.fromEntries(
 				ACCOUNTS.flatMap((account) =>
@@ -174,11 +186,11 @@ describe.each(EXTENSION_MODES)("%s mode", (mode) => {
 						`${phase} ${account}`,
 						account === FAKE_IDS.denied
 							? { kind: "deny", policies: ["fc-rules/n-of-m"] }
-							: { kind: "require", approvals: 2, roles: ["approver"] },
+							: { kind: "require", approvals: 2, roles: [] },
 					]),
 				),
 			),
-			access: { [FAKE_IDS.assigned]: true, [FAKE_IDS.denied]: false, [OTHER_ULID]: false },
+			access: commercialAccess,
 		};
 		expect(current).toEqual(mode === "free" ? floor : commercial);
 		expect(JSON.stringify(current)).not.toContain("PRIVATE_");
@@ -195,6 +207,37 @@ describe.each(EXTENSION_MODES)("%s mode", (mode) => {
 			mode === "free" ? { delivered: [], failed: [] } : { delivered: ["fcaudit/siem"], failed: [] },
 		);
 		expect(sink.exportJsonl()).toEqual(page);
+	});
+});
+
+describe("mode configuration", () => {
+	it("removes a previous commercial configuration before starting free mode", async () => {
+		const commercial = await startMode(f, "fake-commercial");
+		expect(commercial.modules).toHaveLength(COMMERCIAL_MODULES.length);
+		commercial.close();
+		const config = path.join(f.dir, "config.json");
+		expect(existsSync(config)).toBe(true);
+		const free = await startMode(f, "free");
+		expect(free.modules).toEqual([]);
+		expect(listing(free)).toEqual(
+			Object.fromEntries(Object.keys(LISTED).map((service) => [service, []])),
+		);
+		expect(existsSync(config)).toBe(false);
+		expect((await answers(free)).access).toEqual(
+			Object.fromEntries(ACCOUNTS.map((account) => [account, true])),
+		);
+		free.close();
+		expect((await startMode(f, "free")).modules).toEqual([]);
+	});
+
+	it("does not recursively remove an invalid configuration directory", async () => {
+		const config = path.join(f.dir, "config.json");
+		mkdirSync(config);
+		const member = path.join(config, "DYTEST-owned.txt");
+		writeFileSync(member, "DYTEST-KEEP");
+		await expect(Promise.resolve().then(() => startMode(f, "free"))).rejects.toThrow();
+		expect(readFileSync(member, "utf8")).toBe("DYTEST-KEEP");
+		expect(f.hosts).toEqual([]);
 	});
 });
 
@@ -257,7 +300,7 @@ describe("the commercial set", () => {
 	it("answers the admin summary and the device route through what the hub captured", async () => {
 		const host = await startMode(f, "fake-commercial");
 		expect(host.adminOperation("fc-rules", "rules")?.summarize({})).toEqual([
-			"Require 2 approvals from the approver role",
+			"Require 2 approvals",
 		]);
 		const routes = host.deviceRoutes("fc-team");
 		expect(Reflect.ownKeys(routes ?? {})).toEqual(["fetch"]);
@@ -390,11 +433,39 @@ describe("audit delivery", () => {
 			{ ...event(), actor: { kind: "device", id: null } },
 			{ ...event(), refs: { outbox: "DYTEST-NOT-AN-ID" } },
 			{ ...event(), body: "PRIVATE_EXTRA" },
+			withRefs(33),
 		])
 			await expect(deliverAuditEvent(host, invalid as never, systemClock)).rejects.toThrow(
 				TypeError,
 			);
 		expect(sees("fcaudit", "append")).toEqual([]);
+	});
+
+	/** The most refs the local chain records; its bound is private, so append until it refuses. */
+	async function chainRefBound(): Promise<number> {
+		for (let count = 1; count <= 256; count++)
+			try {
+				await sink.append(withRefs(count));
+			} catch (error) {
+				expect(error).toEqual(new Error("Audit metadata is invalid"));
+				return count - 1;
+			}
+		return expect.unreachable("the local chain recorded 256 refs");
+	}
+
+	it("delivers at the local chain's reference bound and refuses one ref more", async () => {
+		const host = await startMode(f, "fake-commercial");
+		const bound = await chainRefBound();
+		const committed = withRefs(bound);
+		await sink.append(committed);
+		expect(await deliverAuditEvent(host, committed, systemClock)).toEqual({
+			delivered: ["fcaudit/siem"],
+			failed: [],
+		});
+		await expect(deliverAuditEvent(host, withRefs(bound + 1), systemClock)).rejects.toThrow(
+			TypeError,
+		);
+		expect(sees("fcaudit", "append")).toEqual([committed]);
 	});
 
 	it("lists failed sinks sorted and frozen, with no event content", async () => {
@@ -455,7 +526,7 @@ describe("audit delivery", () => {
 		["to two seconds", 2_000, false],
 		["past two seconds", 2_001, false],
 	])(
-		"judges a sink a busy event loop delays %s by the host's monotonic clock",
+		"judges a sink a busy event loop delays %s by the supplied monotonic clock",
 		async (_, ms, delivered) => {
 			expect(AUDIT_SINK_TIMEOUT_MS).toBe(POLICY_TIMEOUT_MS);
 			const clock = manualClock();
@@ -550,11 +621,44 @@ describe("the local sink", () => {
 		expect(() => localAuditSink(lookalike as never, chain)).toThrow(TypeError);
 	});
 
+	it("refuses a proxy or a look-alike chain at construction without calling its methods", () => {
+		const traps: string[] = [];
+		const proxy = new Proxy(chain, {
+			get: (target, key, receiver) => {
+				traps.push(String(key));
+				return Reflect.get(target, key, receiver);
+			},
+		});
+		expect(() => localAuditSink(store, proxy)).toThrow(TypeError);
+		const verify = vi.fn();
+		for (const lookalike of [
+			Object.create(AuditChain.prototype),
+			{ verify, append: vi.fn(), exportVerifiedJsonl: vi.fn() },
+		])
+			expect(() => localAuditSink(store, lookalike)).toThrow(TypeError);
+		expect(verify).not.toHaveBeenCalled();
+		expect(traps).toEqual([]);
+	});
+
+	it("refuses a chain with another key or a destroyed chain at construction", () => {
+		const key = randomBytes(32);
+		const other = new AuditChain(key);
+		key.fill(0);
+		try {
+			expect(() => localAuditSink(store, other)).toThrow("Audit head verification failed");
+		} finally {
+			other.destroy();
+		}
+		chain.destroy();
+		expect(() => localAuditSink(store, chain)).toThrow("Audit is locked");
+	});
+
 	it("uses the store and chain methods captured at load", async () => {
 		const spies = [
 			vi.spyOn(HubStore.prototype, "read"),
 			vi.spyOn(HubStore.prototype, "write"),
 			vi.spyOn(AuditChain.prototype, "append"),
+			vi.spyOn(AuditChain.prototype, "verify"),
 			vi.spyOn(AuditChain.prototype, "exportVerifiedJsonl"),
 		];
 		try {
@@ -570,22 +674,11 @@ describe("the local sink", () => {
 
 describe("production code", () => {
 	const root = path.resolve(import.meta.dirname, "../../../..");
-	/** Every file under dir, relative to the repository root. */
-	const files = (dir: string): string[] =>
-		readdirSync(dir, { recursive: true, withFileTypes: true })
-			.filter((entry) => entry.isFile())
-			.map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)));
 
 	it("never names the fake-commercial package", () => {
-		const sources = [
-			path.join(root, "apps", "hub", "src"),
-			...readdirSync(path.join(root, "packages"))
-				.filter((name) => name !== "fake-commercial")
-				.map((name) => path.join(root, "packages", name, "src"))
-				.filter((dir) => existsSync(dir)),
-		];
-		const scanned = sources.flatMap(files);
+		const scanned = productionFiles(root);
 		expect(scanned).toContain(path.join("apps", "hub", "src", "extensions", "free", "audit.ts"));
+		expect(scanned).toContain(path.join("apps", "cli", "src", "main.ts"));
 		expect(scanned).toContain(path.join("packages", "extensions", "src", "index.ts"));
 		const naming = scanned.filter(
 			(file) =>
@@ -596,11 +689,73 @@ describe("production code", () => {
 	});
 
 	it("lists the package only as a hub devDependency", () => {
-		const manifest = JSON.parse(
-			readFileSync(path.join(root, "apps", "hub", "package.json"), "utf8"),
-		) as Record<string, Record<string, string> | undefined>;
-		expect(manifest.devDependencies?.["@draftyak/fake-commercial"]).toBe("workspace:*");
-		for (const group of ["dependencies", "optionalDependencies", "peerDependencies"])
-			expect(Object.keys(manifest[group] ?? {})).not.toContain("@draftyak/fake-commercial");
+		const fakeCommercial = /(?<![\w-])fake-commercial(?![\w-])/i;
+		for (const text of ["link:../../packages/fake-commercial", "file:../Fake-Commercial"])
+			expect(text).toMatch(fakeCommercial);
+		for (const text of ["@draftyak/fake-commercial-docs", "my-fake-commercial"])
+			expect(text).not.toMatch(fakeCommercial);
+		const manifests = workspaceManifests(root);
+		expect(manifests).toContain("package.json");
+		expect(manifests).toContain(path.join("apps", "cli", "package.json"));
+		expect(manifests).toContain(path.join("apps", "hub", "package.json"));
+		for (const filename of manifests) {
+			const manifest = JSON.parse(readFileSync(path.join(root, filename), "utf8"));
+			if (filename === path.join("packages", "fake-commercial", "package.json"))
+				delete manifest.name;
+			if (filename === path.join("apps", "hub", "package.json")) {
+				expect(manifest.devDependencies?.["@draftyak/fake-commercial"]).toBe("workspace:*");
+				delete manifest.devDependencies["@draftyak/fake-commercial"];
+			}
+			expect(JSON.stringify(manifest), filename).not.toMatch(fakeCommercial);
+		}
+	});
+
+	it("covers application, package and plugin modules outside src without scanning tests", () => {
+		const sources = [
+			path.join("apps", "cli", "src", "index.ts"),
+			path.join("apps", "cli", "src", "view.tsx"),
+			path.join("apps", "cli", "bin", "entry.mjs"),
+			path.join("packages", "runtime", "modules", "entry.cjs"),
+			path.join("packages", "runtime", "native", "lib.rs"),
+			path.join("packages", "runtime", "migrations", "0001.sql"),
+			path.join("plugins", "channel", "src", "index.js"),
+			path.join("plugins", "channel", "src", "view.jsx"),
+			path.join("plugins", "channel", "module.json"),
+		];
+		const excluded = [
+			path.join("apps", "cli", "package.json"),
+			path.join("apps", "cli", "tsconfig.build.json"),
+			path.join("apps", "cli", "vitest.config.ts"),
+			path.join("apps", "cli", "test", "entry.ts"),
+			path.join("packages", "runtime", "src", "entry.test.ts"),
+			path.join("packages", "runtime", "dist", "entry.js"),
+			path.join("packages", "runtime", "node_modules", "entry.js"),
+			path.join("packages", "fake-commercial", "modules", "entry.mjs"),
+		];
+		for (const filename of [...sources, ...excluded]) {
+			const target = path.join(f.dir, filename);
+			mkdirSync(path.dirname(target), { recursive: true });
+			writeFileSync(target, "export {};");
+		}
+		expect(productionFiles(f.dir)).toEqual(sources.sort());
+	});
+
+	it("covers the root and every workspace manifest group", () => {
+		const manifests = [
+			"package.json",
+			...["apps", "packages", "plugins", "spikes", "tools"].map((group) =>
+				path.join(group, "DYTEST-package", "package.json"),
+			),
+		];
+		for (const filename of manifests) {
+			const target = path.join(f.dir, filename);
+			mkdirSync(path.dirname(target), { recursive: true });
+			writeFileSync(target, "{}");
+		}
+		expect(workspaceManifests(f.dir)).toEqual(manifests.sort());
+	});
+
+	it("covers exactly the package groups pnpm-workspace.yaml lists", () => {
+		expect(readFileSync(path.join(root, "pnpm-workspace.yaml"), "utf8")).toBe(WORKSPACE_YAML);
 	});
 });
