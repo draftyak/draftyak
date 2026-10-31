@@ -200,7 +200,7 @@ const respell={'chain-spelling':'chain','chain-respelled':'chain','file-spelling
 const native={open:fs.openSync,close:fs.closeSync,lstat:fs.lstatSync,read:fs.readSync,fstat:fs.fstatSync,realpath:fs.realpathSync.native};
 const readerFds=new Set();
 let opens=0,closes=0,metadata=0,mutated=false,probe=false,offset=0,substituted=false,readerFd,openedSnapshot;
-let second=false,eof=false,spellings=0,rewrote=false;
+let second=false,eof=false,spellings=0,rewrote=false,writeDenied=false;
 const refused=(run,code)=>assert.throws(run,error=>error instanceof BoundedFileError&&error.code===code&&error.message==='Bounded file operation refused.'&&!error.message.includes('PRIVATE'));
 const pin=stat=>{
  if(sameTick&&stat.ino===tick.ino)for(const field of ['mtimeNs','ctimeNs'])Object.defineProperty(stat,field,{value:tick[field]});
@@ -267,7 +267,10 @@ try{
   if(position===body.length&&count===0)eof=true;
   if(effect==='parent-swap'&&position===body.length){assert.equal(count,0);probe=true;}
   if(effect==='growth'){
-   if(position===0)fs.appendFileSync(file,'x');
+   if(position===0){
+    try{fs.appendFileSync(file,'x');}
+    catch(error){writeDenied=process.platform==='win32'&&error?.code==='EBUSY';throw error;}
+   }
    if(position===body.length){assert.equal(count,1);probe=true;}
   }
   return count;
@@ -298,16 +301,25 @@ try{
  }else if(effect.endsWith('-respelled')){
   refused(()=>readBoundedRegularFile(file,{maximum:1024}),'path');
   assert(eof);assert.equal(spellings,respell==='file'?2:1,'ancestors are rechecked before the file name');
+ }else if(sameTick&&process.platform==='win32'){
+  refused(()=>readBoundedRegularFile(file,{maximum:body.length}),'file');
+  assert(!rewrote);assert.equal(readerFds.size,0);assert.equal(closes,0);
+  assert(native.fstat(writer).isFile(),'the caller still owns its writer handle');
  }else if(effect==='same-tick-whole'){
   assert.deepEqual(readBoundedRegularFile(file,{maximum:body.length}),rewritten);assert(rewrote);
  }else if(sameTick){
   refused(()=>readBoundedRegularFile(file,{maximum:body.length}),'file');assert(rewrote);
  }else{
   refused(()=>readBoundedRegularFile(file,{maximum:body.length}),effect==='parent-swap'?'path':'file');
-  assert(mutated);if(effect==='growth'||effect==='parent-swap')assert(probe);
+  assert(mutated);
+  if(effect==='growth'&&process.platform==='win32'){
+   assert(writeDenied);assert(!probe);assert.equal(native.lstat(file).size,body.length);
+  }else if(effect==='growth'||effect==='parent-swap')assert(probe);
   if(effect==='parent-swap'&&process.platform==='win32')assert(substituted);
  }
- if(!['bounds','paths','zero-inode','streams','chain-spelling','file-spelling'].includes(effect)){assert.equal(opens,1);assert.equal(closes,1);}
+ if(!['bounds','paths','zero-inode','streams','chain-spelling','file-spelling'].includes(effect)){
+  assert.equal(opens,1);assert.equal(closes,sameTick&&process.platform==='win32'?0:1);
+ }
 }finally{
  fs.openSync=native.open;fs.closeSync=native.close;fs.lstatSync=native.lstat;fs.fstatSync=native.fstat;fs.readSync=native.read;fs.realpathSync.native=native.realpath;syncBuiltinESMExports();
  if(writer!==undefined)native.close(writer);
@@ -335,7 +347,11 @@ for (const [effect, description] of [
 	["chain-respelled", "refuses an ancestor respelled during the read before the file's recheck"],
 	["file-respelled", "refuses a file name respelled during the read"],
 ] as const) {
-	test(description, () => {
+	const platformDescription =
+		process.platform === "win32" && effect.startsWith("same-tick")
+			? `refuses the pre-opened writer for ${effect}`
+			: description;
+	test(platformDescription, () => {
 		const child = spawnSync(
 			process.execPath,
 			[
