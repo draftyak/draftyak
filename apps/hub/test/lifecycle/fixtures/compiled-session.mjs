@@ -8,6 +8,7 @@ import path from "node:path";
 const migrations = [
 	["audit", "0001_chain"],
 	["core", "0001_identity"],
+	["devices", "0001_devices"],
 	["jobs", "0001_jobs"],
 	["events", "0001_events"],
 	["revisions", "0001_native_revisions"],
@@ -17,7 +18,7 @@ const migrations = [
 const businessTables = [
 	"audit_meta", "audit_events", "hub_meta", "users", "approval_pins", "jobs", "jobs_meta",
 	"events", "event_meta", "native_drafts", "native_draft_revisions", "native_draft_locks",
-	"credentials", "native_send_attempts",
+	"credentials", "native_send_attempts", "device_authority", "devices",
 ].sort();
 let phase = "admission";
 
@@ -25,7 +26,7 @@ async function main() {
 	assert.equal(process.permission?.has("net"), false);
 	const [nativeBinding, mode, hub] = process.argv.slice(2);
 	assert.equal(typeof nativeBinding, "string");
-	assert.ok(["positive", "missing-credentials", "invalid-credentials", "missing-revision-immutability"].includes(mode));
+	assert.ok(["positive", "missing-credentials", "invalid-credentials", "missing-revision-immutability", "missing-devices", "invalid-devices"].includes(mode));
 	assert.equal(typeof hub, "string");
 	for (const denied of ["src/store/migrations/audit/0001_chain.sql", "dist/index.mjs"]) {
 		assert.throws(() => readFileSync(path.join(hub, denied)), { code: "ERR_ACCESS_DENIED" });
@@ -51,7 +52,8 @@ async function main() {
 	let HubStore, HubIdentity, migrate, loadIdentity, closeStore;
 	const requiredAsset = path.join(import.meta.dirname, mode === "missing-revision-immutability"
 		? "drafts/migrations/0002_immutable_revisions.sql"
-		: "credentials/migrations/0001_credentials.sql");
+		: mode.endsWith("devices") ? "devices-migrations/0001_devices.sql"
+			: "credentials/migrations/0001_credentials.sql");
 	const heldAsset = path.join(import.meta.dirname, "held-schema.sql");
 	let savedAsset;
 	let assetMissing = false;
@@ -126,7 +128,7 @@ async function main() {
 		let refused = null;
 		if (mode !== "positive") {
 			phase = "damaged-asset";
-			if (mode === "missing-credentials" || mode === "missing-revision-immutability") {
+			if (mode.startsWith("missing-")) {
 				renameSync(requiredAsset, heldAsset);
 				assetMissing = true;
 			} else {
@@ -194,7 +196,7 @@ async function main() {
 		assert.deepEqual(order.slice(beforeHealthy), [...migrations, ...migrations].map(([namespace]) => namespace));
 		assert.equal(modules, 0);
 		process.stdout.write(`${JSON.stringify({
-			ok: true, mode, schemas: 7, businessTables: businessTables.length, bookkeepingTables: 14,
+			ok: true, mode, schemas: 8, businessTables: businessTables.length, bookkeepingTables: 16,
 			beforeIdentity: true, refused, failedOpenClosed: mode !== "positive",
 			failedKeyErased: mode !== "positive", reopened: true, auditVerified: true, modules,
 		})}\n`);
@@ -211,8 +213,8 @@ async function main() {
 		} finally {
 			bytes.fill(0);
 			try {
-				if (assetMissing) renameSync(heldAsset, credentialAsset);
-				if (assetInvalid) writeFileSync(credentialAsset, savedAsset);
+				if (assetMissing) renameSync(heldAsset, requiredAsset);
+				if (assetInvalid) writeFileSync(requiredAsset, savedAsset);
 			} finally {
 				savedAsset?.fill(0);
 				if (migrate) HubStore.prototype.migrate = migrate;
