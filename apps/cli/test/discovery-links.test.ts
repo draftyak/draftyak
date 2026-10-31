@@ -384,7 +384,7 @@ it.for(both)("loads the unlinked %s payload and records each module import", (mo
 });
 
 it.for(cases)(
-	"$mode discovery refuses a $link at $where before importing any module",
+	"$mode discovery refuses a $link at $where before importing any command or check",
 	(testCase, context) => {
 		const f = fixture(testCase.mode);
 		replaceWithLink(context, f, testCase);
