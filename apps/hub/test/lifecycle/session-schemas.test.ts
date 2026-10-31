@@ -9,7 +9,7 @@ const EXPECTED = [
 	["jobs", ["0001_jobs"]],
 	["events", ["0001_events"]],
 	["revisions", ["0001_native_revisions", "0002_immutable_revisions"]],
-	["credentials", ["0001_credentials"]],
+	["credentials", ["0001_credentials", "0002_sealed_credentials"]],
 	["tickets", ["0001_send_attempts"]],
 ] as const;
 const DOMAIN_TABLES = [

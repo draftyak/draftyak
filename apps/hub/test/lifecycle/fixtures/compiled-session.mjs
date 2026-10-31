@@ -6,13 +6,13 @@ import path from "node:path";
 
 // These expectations are independent of the production namespace inventory.
 const migrations = [
-	["audit", "0001_chain"],
-	["core", "0001_identity"],
-	["jobs", "0001_jobs"],
-	["events", "0001_events"],
-	["revisions", "0001_native_revisions"],
-	["credentials", "0001_credentials"],
-	["tickets", "0001_send_attempts"],
+	["audit", ["0001_chain"]],
+	["core", ["0001_identity"]],
+	["jobs", ["0001_jobs"]],
+	["events", ["0001_events"]],
+	["revisions", ["0001_native_revisions", "0002_immutable_revisions"]],
+	["credentials", ["0001_credentials", "0002_sealed_credentials"]],
+	["tickets", ["0001_send_attempts"]],
 ];
 const businessTables = [
 	"audit_meta", "audit_events", "hub_meta", "users", "approval_pins", "jobs", "jobs_meta",
@@ -68,14 +68,11 @@ async function main() {
 			const actual = db.all("SELECT name FROM main.sqlite_schema WHERE type='table'")
 				.map((row) => row.name);
 			assert.deepEqual(actual.filter((name) => businessTables.includes(name)).sort(), businessTables);
-			for (const [namespace, migration] of migrations) {
+			for (const [namespace, names] of migrations) {
 				assert.ok(actual.includes(`_migrations_${namespace}`));
 				assert.ok(actual.includes(`_migrations_${namespace}_lock`));
-				const versions = namespace === "revisions" ? [migration, "0002_immutable_revisions"] : [migration];
-				assert.deepEqual(
-					db.all(`SELECT name FROM main._migrations_${namespace} ORDER BY name`),
-					versions.map((name) => ({ name })),
-				);
+				assert.deepEqual(db.all(`SELECT name FROM main._migrations_${namespace} ORDER BY name`),
+					names.map((name) => ({ name })));
 			}
 		});
 		migrate = HubStore.prototype.migrate;

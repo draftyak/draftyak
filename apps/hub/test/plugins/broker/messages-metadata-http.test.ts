@@ -107,7 +107,7 @@ async function fixture() {
 	});
 	await store.migrate("audit");
 	await store.migrate("credentials");
-	const vault = new CredentialVault(store, audit),
+	const vault = new CredentialVault(store, audit, key),
 		registry = createBuiltinAiProfileRegistry();
 	const credential: CredentialBinding = {
 		ownerKind: "provider",
@@ -125,7 +125,7 @@ async function fixture() {
 		brokers = [broker];
 	const otherBroker = () => {
 		const next = createProviderHttpBroker({
-			vault: new CredentialVault(store, audit),
+			vault: new CredentialVault(store, audit, key),
 			registry,
 			networkPolicy: policy,
 		});

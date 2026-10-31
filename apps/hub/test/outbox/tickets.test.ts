@@ -73,7 +73,7 @@ async function fixture() {
 	await store.migrate("fault");
 	const time = { wall: 1_800_000_000_000, mono: 10_000 },
 		clock = { wallMs: () => time.wall, monotonicMs: () => time.mono };
-	const vault = new CredentialVault(store, audit),
+	const vault = new CredentialVault(store, audit, key),
 		accountId = newId(time.wall),
 		owner: CredentialBinding = { ownerKind: "account", ownerId: accountId, kind: "slack-token" };
 	const secret = `DYTEST-${randomBytes(20).toString("hex")}`,
@@ -129,7 +129,7 @@ async function fixture() {
 		store.close();
 		const next = new HubStore(options);
 		tracked.stores.push(next);
-		const nextVault = new CredentialVault(next, audit);
+		const nextVault = new CredentialVault(next, audit, key);
 		return {
 			store: next,
 			vault: nextVault,
