@@ -536,49 +536,6 @@
       "structural": true
     },
     {
-      "id": "issuer-oauth-issuer-leading-space",
-      "manifest": {
-        "id": "@example/ai-plan",
-        "version": "1.2.3",
-        "kind": "ai-provider",
-        "contract": {
-          "extension": "io.github.draftyak/ai-provider",
-          "version": 1
-        },
-        "sdk": "1.0.0",
-        "runtime": "node",
-        "isolation": "standard",
-        "auth": {
-          "kind": "oauth2-dynamic-agent",
-          "scopes": [
-            "openid",
-            "profile",
-            "email",
-            "offline_access"
-          ],
-          "requiredGrantedScopes": [
-            "openid"
-          ],
-          "issuer": " https://auth.example.com",
-          "resource": "https://api.example.com/v1"
-        },
-        "credentials": {
-          "mode": "brokered",
-          "urlSecrets": []
-        },
-        "permissions": {},
-        "dataClasses": [
-          "community.content"
-        ],
-        "license": "Apache-2.0",
-        "egress": {
-          "profile": "responses-plan-v1"
-        }
-      },
-      "code": "MANIFEST_INVALID",
-      "structural": true
-    },
-    {
       "id": "issuer-oauth-issuer-no-slashes",
       "manifest": {
         "id": "@example/ai-plan",
@@ -604,6 +561,49 @@
           ],
           "issuer": "https:auth.example.com",
           "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-no-slashes",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https:api.example.com/v1"
         },
         "credentials": {
           "mode": "brokered",
@@ -665,6 +665,49 @@
       "structural": true
     },
     {
+      "id": "issuer-oauth-resource-one-slash",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https:/api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
       "id": "issuer-oauth-issuer-three-slashes",
       "manifest": {
         "id": "@example/ai-plan",
@@ -690,6 +733,135 @@
           ],
           "issuer": "https:///auth.example.com",
           "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-three-slashes",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https:///api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-issuer-four-slashes",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https:////auth.example.com",
+          "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-four-slashes",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https:////api.example.com/v1"
         },
         "credentials": {
           "mode": "brokered",
@@ -751,6 +923,49 @@
       "structural": true
     },
     {
+      "id": "issuer-oauth-resource-backslashes",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https:\\\\api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
       "id": "issuer-oauth-issuer-slash-backslash",
       "manifest": {
         "id": "@example/ai-plan",
@@ -776,6 +991,49 @@
           ],
           "issuer": "https:/\\auth.example.com",
           "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-slash-backslash",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https:/\\api.example.com/v1"
         },
         "credentials": {
           "mode": "brokered",
@@ -837,6 +1095,49 @@
       "structural": true
     },
     {
+      "id": "issuer-oauth-resource-backslash-slash",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https:\\/api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
       "id": "issuer-oauth-issuer-slashes-backslash",
       "manifest": {
         "id": "@example/ai-plan",
@@ -862,6 +1163,49 @@
           ],
           "issuer": "https://\\auth.example.com",
           "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-slashes-backslash",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https://\\api.example.com/v1"
         },
         "credentials": {
           "mode": "brokered",
@@ -923,6 +1267,49 @@
       "structural": true
     },
     {
+      "id": "issuer-oauth-resource-tab-in-separator",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https:/\t/api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
       "id": "issuer-oauth-issuer-upper-case-scheme",
       "manifest": {
         "id": "@example/ai-plan",
@@ -948,6 +1335,565 @@
           ],
           "issuer": "HTTPS://auth.example.com",
           "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-upper-case-scheme",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "HTTPS://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-issuer-empty-userinfo",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://@auth.example.com",
+          "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-empty-userinfo",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https://@api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-issuer-leading-space",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": " https://auth.example.com",
+          "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-leading-space",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": " https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-issuer-leading-tab",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "\thttps://auth.example.com",
+          "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-leading-tab",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "\thttps://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-issuer-trailing-space",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com ",
+          "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-trailing-space",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https://api.example.com/v1 "
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-issuer-trailing-tab",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com\t",
+          "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-trailing-tab",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https://api.example.com/v1\t"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-issuer-line-feed",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com\n",
+          "resource": "https://api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-line-feed",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https://api.example.com/v1\n"
         },
         "credentials": {
           "mode": "brokered",
@@ -1205,49 +2151,6 @@
             "openid"
           ],
           "issuer": "https://user@auth.example.com",
-          "resource": "https://api.example.com/v1"
-        },
-        "credentials": {
-          "mode": "brokered",
-          "urlSecrets": []
-        },
-        "permissions": {},
-        "dataClasses": [
-          "community.content"
-        ],
-        "license": "Apache-2.0",
-        "egress": {
-          "profile": "responses-plan-v1"
-        }
-      },
-      "code": "MANIFEST_INVALID",
-      "structural": true
-    },
-    {
-      "id": "issuer-oauth-issuer-empty-userinfo",
-      "manifest": {
-        "id": "@example/ai-plan",
-        "version": "1.2.3",
-        "kind": "ai-provider",
-        "contract": {
-          "extension": "io.github.draftyak/ai-provider",
-          "version": 1
-        },
-        "sdk": "1.0.0",
-        "runtime": "node",
-        "isolation": "standard",
-        "auth": {
-          "kind": "oauth2-dynamic-agent",
-          "scopes": [
-            "openid",
-            "profile",
-            "email",
-            "offline_access"
-          ],
-          "requiredGrantedScopes": [
-            "openid"
-          ],
-          "issuer": "https://@auth.example.com",
           "resource": "https://api.example.com/v1"
         },
         "credentials": {
@@ -1568,92 +2471,6 @@
       "structural": true
     },
     {
-      "id": "issuer-oauth-issuer-line-feed",
-      "manifest": {
-        "id": "@example/ai-plan",
-        "version": "1.2.3",
-        "kind": "ai-provider",
-        "contract": {
-          "extension": "io.github.draftyak/ai-provider",
-          "version": 1
-        },
-        "sdk": "1.0.0",
-        "runtime": "node",
-        "isolation": "standard",
-        "auth": {
-          "kind": "oauth2-dynamic-agent",
-          "scopes": [
-            "openid",
-            "profile",
-            "email",
-            "offline_access"
-          ],
-          "requiredGrantedScopes": [
-            "openid"
-          ],
-          "issuer": "https://auth.example.com\n",
-          "resource": "https://api.example.com/v1"
-        },
-        "credentials": {
-          "mode": "brokered",
-          "urlSecrets": []
-        },
-        "permissions": {},
-        "dataClasses": [
-          "community.content"
-        ],
-        "license": "Apache-2.0",
-        "egress": {
-          "profile": "responses-plan-v1"
-        }
-      },
-      "code": "MANIFEST_INVALID",
-      "structural": true
-    },
-    {
-      "id": "issuer-oauth-issuer-trailing-space",
-      "manifest": {
-        "id": "@example/ai-plan",
-        "version": "1.2.3",
-        "kind": "ai-provider",
-        "contract": {
-          "extension": "io.github.draftyak/ai-provider",
-          "version": 1
-        },
-        "sdk": "1.0.0",
-        "runtime": "node",
-        "isolation": "standard",
-        "auth": {
-          "kind": "oauth2-dynamic-agent",
-          "scopes": [
-            "openid",
-            "profile",
-            "email",
-            "offline_access"
-          ],
-          "requiredGrantedScopes": [
-            "openid"
-          ],
-          "issuer": "https://auth.example.com ",
-          "resource": "https://api.example.com/v1"
-        },
-        "credentials": {
-          "mode": "brokered",
-          "urlSecrets": []
-        },
-        "permissions": {},
-        "dataClasses": [
-          "community.content"
-        ],
-        "license": "Apache-2.0",
-        "egress": {
-          "profile": "responses-plan-v1"
-        }
-      },
-      "code": "MANIFEST_INVALID",
-      "structural": true
-    },
-    {
       "id": "issuer-oauth-issuer-too-long",
       "manifest": {
         "id": "@example/ai-plan",
@@ -1870,221 +2687,6 @@
       "structural": true
     },
     {
-      "id": "issuer-oauth-resource-no-slashes",
-      "manifest": {
-        "id": "@example/ai-plan",
-        "version": "1.2.3",
-        "kind": "ai-provider",
-        "contract": {
-          "extension": "io.github.draftyak/ai-provider",
-          "version": 1
-        },
-        "sdk": "1.0.0",
-        "runtime": "node",
-        "isolation": "standard",
-        "auth": {
-          "kind": "oauth2-dynamic-agent",
-          "scopes": [
-            "openid",
-            "profile",
-            "email",
-            "offline_access"
-          ],
-          "requiredGrantedScopes": [
-            "openid"
-          ],
-          "issuer": "https://auth.example.com",
-          "resource": "https:api.example.com/v1"
-        },
-        "credentials": {
-          "mode": "brokered",
-          "urlSecrets": []
-        },
-        "permissions": {},
-        "dataClasses": [
-          "community.content"
-        ],
-        "license": "Apache-2.0",
-        "egress": {
-          "profile": "responses-plan-v1"
-        }
-      },
-      "code": "MANIFEST_INVALID",
-      "structural": true
-    },
-    {
-      "id": "issuer-oauth-resource-one-slash",
-      "manifest": {
-        "id": "@example/ai-plan",
-        "version": "1.2.3",
-        "kind": "ai-provider",
-        "contract": {
-          "extension": "io.github.draftyak/ai-provider",
-          "version": 1
-        },
-        "sdk": "1.0.0",
-        "runtime": "node",
-        "isolation": "standard",
-        "auth": {
-          "kind": "oauth2-dynamic-agent",
-          "scopes": [
-            "openid",
-            "profile",
-            "email",
-            "offline_access"
-          ],
-          "requiredGrantedScopes": [
-            "openid"
-          ],
-          "issuer": "https://auth.example.com",
-          "resource": "https:/api.example.com/v1"
-        },
-        "credentials": {
-          "mode": "brokered",
-          "urlSecrets": []
-        },
-        "permissions": {},
-        "dataClasses": [
-          "community.content"
-        ],
-        "license": "Apache-2.0",
-        "egress": {
-          "profile": "responses-plan-v1"
-        }
-      },
-      "code": "MANIFEST_INVALID",
-      "structural": true
-    },
-    {
-      "id": "issuer-oauth-resource-three-slashes",
-      "manifest": {
-        "id": "@example/ai-plan",
-        "version": "1.2.3",
-        "kind": "ai-provider",
-        "contract": {
-          "extension": "io.github.draftyak/ai-provider",
-          "version": 1
-        },
-        "sdk": "1.0.0",
-        "runtime": "node",
-        "isolation": "standard",
-        "auth": {
-          "kind": "oauth2-dynamic-agent",
-          "scopes": [
-            "openid",
-            "profile",
-            "email",
-            "offline_access"
-          ],
-          "requiredGrantedScopes": [
-            "openid"
-          ],
-          "issuer": "https://auth.example.com",
-          "resource": "https:///api.example.com/v1"
-        },
-        "credentials": {
-          "mode": "brokered",
-          "urlSecrets": []
-        },
-        "permissions": {},
-        "dataClasses": [
-          "community.content"
-        ],
-        "license": "Apache-2.0",
-        "egress": {
-          "profile": "responses-plan-v1"
-        }
-      },
-      "code": "MANIFEST_INVALID",
-      "structural": true
-    },
-    {
-      "id": "issuer-oauth-resource-backslashes",
-      "manifest": {
-        "id": "@example/ai-plan",
-        "version": "1.2.3",
-        "kind": "ai-provider",
-        "contract": {
-          "extension": "io.github.draftyak/ai-provider",
-          "version": 1
-        },
-        "sdk": "1.0.0",
-        "runtime": "node",
-        "isolation": "standard",
-        "auth": {
-          "kind": "oauth2-dynamic-agent",
-          "scopes": [
-            "openid",
-            "profile",
-            "email",
-            "offline_access"
-          ],
-          "requiredGrantedScopes": [
-            "openid"
-          ],
-          "issuer": "https://auth.example.com",
-          "resource": "https:\\\\api.example.com/v1"
-        },
-        "credentials": {
-          "mode": "brokered",
-          "urlSecrets": []
-        },
-        "permissions": {},
-        "dataClasses": [
-          "community.content"
-        ],
-        "license": "Apache-2.0",
-        "egress": {
-          "profile": "responses-plan-v1"
-        }
-      },
-      "code": "MANIFEST_INVALID",
-      "structural": true
-    },
-    {
-      "id": "issuer-oauth-resource-upper-case-scheme",
-      "manifest": {
-        "id": "@example/ai-plan",
-        "version": "1.2.3",
-        "kind": "ai-provider",
-        "contract": {
-          "extension": "io.github.draftyak/ai-provider",
-          "version": 1
-        },
-        "sdk": "1.0.0",
-        "runtime": "node",
-        "isolation": "standard",
-        "auth": {
-          "kind": "oauth2-dynamic-agent",
-          "scopes": [
-            "openid",
-            "profile",
-            "email",
-            "offline_access"
-          ],
-          "requiredGrantedScopes": [
-            "openid"
-          ],
-          "issuer": "https://auth.example.com",
-          "resource": "HTTPS://api.example.com/v1"
-        },
-        "credentials": {
-          "mode": "brokered",
-          "urlSecrets": []
-        },
-        "permissions": {},
-        "dataClasses": [
-          "community.content"
-        ],
-        "license": "Apache-2.0",
-        "egress": {
-          "profile": "responses-plan-v1"
-        }
-      },
-      "code": "MANIFEST_INVALID",
-      "structural": true
-    },
-    {
       "id": "issuer-oauth-resource-empty-port",
       "manifest": {
         "id": "@example/ai-plan",
@@ -2110,49 +2712,6 @@
           ],
           "issuer": "https://auth.example.com",
           "resource": "https://api.example.com:/v1"
-        },
-        "credentials": {
-          "mode": "brokered",
-          "urlSecrets": []
-        },
-        "permissions": {},
-        "dataClasses": [
-          "community.content"
-        ],
-        "license": "Apache-2.0",
-        "egress": {
-          "profile": "responses-plan-v1"
-        }
-      },
-      "code": "MANIFEST_INVALID",
-      "structural": true
-    },
-    {
-      "id": "issuer-oauth-resource-empty-userinfo",
-      "manifest": {
-        "id": "@example/ai-plan",
-        "version": "1.2.3",
-        "kind": "ai-provider",
-        "contract": {
-          "extension": "io.github.draftyak/ai-provider",
-          "version": 1
-        },
-        "sdk": "1.0.0",
-        "runtime": "node",
-        "isolation": "standard",
-        "auth": {
-          "kind": "oauth2-dynamic-agent",
-          "scopes": [
-            "openid",
-            "profile",
-            "email",
-            "offline_access"
-          ],
-          "requiredGrantedScopes": [
-            "openid"
-          ],
-          "issuer": "https://auth.example.com",
-          "resource": "https://@api.example.com/v1"
         },
         "credentials": {
           "mode": "brokered",
@@ -2386,6 +2945,178 @@
       "structural": true
     },
     {
+      "id": "issuer-oauth-resource-upper-case",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https://Api.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-homograph",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https://аpi.example.com/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-ip",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https://192.0.2.1/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
+      "id": "issuer-oauth-resource-trailing-dot",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https://api.example.com./v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": true
+    },
+    {
       "id": "issuer-oauth-resource-long-label",
       "manifest": {
         "id": "@example/ai-plan",
@@ -2558,6 +3289,49 @@
       "structural": false
     },
     {
+      "id": "issuer-oauth-resource-port",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https://api.example.com:8443/v1"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": null,
+      "structural": false
+    },
+    {
       "id": "issuer-oauth-resource-dot-segment",
       "manifest": {
         "id": "@example/ai-plan",
@@ -2583,6 +3357,49 @@
           ],
           "issuer": "https://auth.example.com",
           "resource": "https://api.example.com/v1/../v2"
+        },
+        "credentials": {
+          "mode": "brokered",
+          "urlSecrets": []
+        },
+        "permissions": {},
+        "dataClasses": [
+          "community.content"
+        ],
+        "license": "Apache-2.0",
+        "egress": {
+          "profile": "responses-plan-v1"
+        }
+      },
+      "code": "MANIFEST_INVALID",
+      "structural": false
+    },
+    {
+      "id": "issuer-oauth-resource-dot-segment-same-url",
+      "manifest": {
+        "id": "@example/ai-plan",
+        "version": "1.2.3",
+        "kind": "ai-provider",
+        "contract": {
+          "extension": "io.github.draftyak/ai-provider",
+          "version": 1
+        },
+        "sdk": "1.0.0",
+        "runtime": "node",
+        "isolation": "standard",
+        "auth": {
+          "kind": "oauth2-dynamic-agent",
+          "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "offline_access"
+          ],
+          "requiredGrantedScopes": [
+            "openid"
+          ],
+          "issuer": "https://auth.example.com",
+          "resource": "https://api.example.com/./v1"
         },
         "credentials": {
           "mode": "brokered",

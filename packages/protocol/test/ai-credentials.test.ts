@@ -132,48 +132,97 @@ describe("issuer OAuth", () => {
 			expect(validator.validate(manifest).valid, id).toBe(true);
 		}
 	});
-	it("pins the accepted declaration and the refused hostile ones", () => {
-		const cases = new Map(issuerOAuthCases().map((item) => [item.id, item]));
-		expect(cases.get("issuer-oauth-ai-provider")?.code).toBeNull();
-		for (const id of [
-			"issuer-oauth-unknown-member",
-			"issuer-oauth-http-endpoint",
-			"issuer-oauth-duplicate-required-scope",
-			"issuer-oauth-http-issuer",
-			"issuer-oauth-issuer-text-before-scheme",
-			"issuer-oauth-issuer-leading-space",
-			"issuer-oauth-issuer-no-slashes",
-			"issuer-oauth-issuer-one-slash",
-			"issuer-oauth-issuer-three-slashes",
-			"issuer-oauth-issuer-backslashes",
-			"issuer-oauth-issuer-slash-backslash",
-			"issuer-oauth-issuer-backslash-slash",
-			"issuer-oauth-issuer-slashes-backslash",
-			"issuer-oauth-issuer-tab-in-separator",
-			"issuer-oauth-issuer-upper-case-scheme",
-			"issuer-oauth-issuer-port-443",
-			"issuer-oauth-issuer-empty-port",
-			"issuer-oauth-issuer-empty-userinfo",
-			"issuer-oauth-issuer-homograph",
-			"issuer-oauth-issuer-single-label",
-			"issuer-oauth-issuer-trailing-dot",
-			"issuer-oauth-issuer-trailing-space",
-			"issuer-oauth-http-resource",
-			"issuer-oauth-resource-no-slashes",
-			"issuer-oauth-resource-one-slash",
-			"issuer-oauth-resource-three-slashes",
-			"issuer-oauth-resource-backslashes",
-			"issuer-oauth-resource-upper-case-scheme",
-			"issuer-oauth-resource-empty-port",
-			"issuer-oauth-resource-empty-userinfo",
-			"issuer-oauth-resource-query",
-			"issuer-oauth-resource-single-label",
-			"issuer-oauth-resource-long-label",
-		]) {
-			expect(cases.get(id)?.code, id).toBe("MANIFEST_INVALID");
-			expect(cases.get(id)?.structural, id).toBe(true);
-		}
-		expect(cases.get("issuer-oauth-tool")?.code).toBe("MANIFEST_POLICY_INVALID");
+	it("pins every case and its outcome", () => {
+		const spellings = [
+			"no-slashes",
+			"one-slash",
+			"three-slashes",
+			"four-slashes",
+			"backslashes",
+			"slash-backslash",
+			"backslash-slash",
+			"slashes-backslash",
+			"tab-in-separator",
+			"upper-case-scheme",
+			"empty-userinfo",
+			"leading-space",
+			"leading-tab",
+			"trailing-space",
+			"trailing-tab",
+			"line-feed",
+		];
+		const outcomes: Record<string, string[]> = {
+			accepted: ["ai-provider", "issuer-longest-host", "resource-port", "resource-longest-host"],
+			"MANIFEST_INVALID structural": [
+				"unknown-member",
+				"endpoints",
+				"http-endpoint",
+				"read-only-mode",
+				"unknown-kind",
+				"duplicate-scope",
+				"duplicate-required-scope",
+				"missing-issuer",
+				"issuer-not-string",
+				"http-issuer",
+				"issuer-text-before-scheme",
+				...spellings.flatMap((spelling) => [`issuer-${spelling}`, `resource-${spelling}`]),
+				"issuer-slash",
+				"issuer-path",
+				"issuer-port",
+				"issuer-port-443",
+				"issuer-empty-port",
+				"issuer-userinfo",
+				"issuer-query",
+				"issuer-fragment",
+				"issuer-upper-case",
+				"issuer-homograph",
+				"issuer-ip",
+				"issuer-single-label",
+				"issuer-trailing-dot",
+				"issuer-too-long",
+				"missing-resource",
+				"resource-not-string",
+				"http-resource",
+				"resource-empty-port",
+				"resource-origin",
+				"resource-fragment",
+				"resource-userinfo",
+				"resource-query",
+				"resource-single-label",
+				"resource-upper-case",
+				"resource-homograph",
+				"resource-ip",
+				"resource-trailing-dot",
+				"resource-long-label",
+			],
+			MANIFEST_INVALID: [
+				"private-issuer",
+				"private-resource",
+				"resource-port-443",
+				"resource-dot-segment",
+				"resource-dot-segment-same-url",
+				"resource-too-long",
+				"unrequested-scope",
+			],
+			MANIFEST_POLICY_INVALID: [
+				"tool",
+				"channel",
+				...AI_HTTP_PROFILES.filter((profile) => profile !== "responses-plan-v1").map(
+					(profile) => `profile-${profile}`,
+				),
+				...otherKinds.map((kind) => `plan-profile-auth-${kind}`),
+			],
+		};
+		const expected = Object.entries(outcomes)
+			.flatMap(([outcome, ids]) => ids.map((id) => `issuer-oauth-${id} ${outcome}`))
+			.sort();
+		const actual = issuerOAuthCases()
+			.map(
+				({ id, code, structural }) =>
+					`${id} ${code ?? "accepted"}${structural ? " structural" : ""}`,
+			)
+			.sort();
+		expect(actual).toEqual(expected);
 	});
 	it("accepts a host of 253 characters and refuses one of 254", () => {
 		const cases = new Map(issuerOAuthCases().map((item) => [item.id, item]));
