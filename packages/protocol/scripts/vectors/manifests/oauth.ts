@@ -41,6 +41,10 @@ const otherAuth: PluginAuth[] = [
 const absent = Symbol("absent");
 const cyrillicA = String.fromCodePoint(0x430);
 const backslash = String.fromCodePoint(0x5c);
+const tab = String.fromCodePoint(9);
+// A public DNS name of `length` characters, 197 to 259, in labels of at most 63.
+const longHost = (length: number): string =>
+	`${["a", "b", "c"].map((letter) => letter.repeat(63)).join(".")}.${"d".repeat(length - 196)}.com`;
 type Patch = readonly [path: string, value: unknown];
 
 function patched(source: unknown, ...patches: Patch[]): unknown {
@@ -102,11 +106,17 @@ export function issuerOAuthCases(): ManifestCase[] {
 	refused("issuer-three-slashes", ["auth/issuer", "https:///auth.example.com"]);
 	refused("issuer-backslashes", ["auth/issuer", `https:${backslash}${backslash}auth.example.com`]);
 	refused("issuer-slash-backslash", ["auth/issuer", `https:/${backslash}auth.example.com`]);
+	refused("issuer-backslash-slash", ["auth/issuer", `https:${backslash}/auth.example.com`]);
+	refused("issuer-slashes-backslash", ["auth/issuer", `https://${backslash}auth.example.com`]);
+	refused("issuer-tab-in-separator", ["auth/issuer", `https:/${tab}/auth.example.com`]);
+	refused("issuer-upper-case-scheme", ["auth/issuer", "HTTPS://auth.example.com"]);
 	refused("issuer-slash", ["auth/issuer", "https://auth.example.com/"]);
 	refused("issuer-path", ["auth/issuer", "https://auth.example.com/oauth"]);
 	refused("issuer-port", ["auth/issuer", "https://auth.example.com:8443"]);
 	refused("issuer-port-443", ["auth/issuer", "https://auth.example.com:443"]);
+	refused("issuer-empty-port", ["auth/issuer", "https://auth.example.com:"]);
 	refused("issuer-userinfo", ["auth/issuer", "https://user@auth.example.com"]);
+	refused("issuer-empty-userinfo", ["auth/issuer", "https://@auth.example.com"]);
 	refused("issuer-query", ["auth/issuer", "https://auth.example.com?tenant=1"]);
 	refused("issuer-fragment", ["auth/issuer", "https://auth.example.com#top"]);
 	refused("issuer-upper-case", ["auth/issuer", "https://Auth.example.com"]);
@@ -115,13 +125,22 @@ export function issuerOAuthCases(): ManifestCase[] {
 	refused("issuer-single-label", ["auth/issuer", "https://auth"]);
 	refused("issuer-trailing-dot", ["auth/issuer", "https://auth.example.com."]);
 	refused("issuer-line-feed", ["auth/issuer", "https://auth.example.com\n"]);
-	refused("issuer-too-long", [
-		"auth/issuer",
-		`https://${Array(4).fill("a".repeat(63)).join(".")}.com`,
-	]);
+	refused("issuer-trailing-space", ["auth/issuer", "https://auth.example.com "]);
+	refused("issuer-too-long", ["auth/issuer", `https://${longHost(254)}`]);
+	add("issuer-longest-host", null, false, ["auth/issuer", `https://${longHost(253)}`]);
 	refused("missing-resource", ["auth/resource", absent]);
 	refused("resource-not-string", ["auth/resource", ["https://api.example.com/v1"]]);
 	refused("http-resource", ["auth/resource", "http://api.example.com/v1"]);
+	refused("resource-no-slashes", ["auth/resource", "https:api.example.com/v1"]);
+	refused("resource-one-slash", ["auth/resource", "https:/api.example.com/v1"]);
+	refused("resource-three-slashes", ["auth/resource", "https:///api.example.com/v1"]);
+	refused("resource-backslashes", [
+		"auth/resource",
+		`https:${backslash}${backslash}api.example.com/v1`,
+	]);
+	refused("resource-upper-case-scheme", ["auth/resource", "HTTPS://api.example.com/v1"]);
+	refused("resource-empty-port", ["auth/resource", "https://api.example.com:/v1"]);
+	refused("resource-empty-userinfo", ["auth/resource", "https://@api.example.com/v1"]);
 	refused("resource-origin", ["auth/resource", "https://api.example.com"]);
 	refused("resource-fragment", ["auth/resource", "https://api.example.com/v1#x"]);
 	refused("resource-userinfo", ["auth/resource", "https://user@api.example.com/v1"]);
@@ -140,8 +159,9 @@ export function issuerOAuthCases(): ManifestCase[] {
 	]);
 	add("resource-too-long", "MANIFEST_INVALID", false, [
 		"auth/resource",
-		`https://${Array(4).fill("a".repeat(63)).join(".")}.com/v1`,
+		`https://${longHost(254)}/v1`,
 	]);
+	add("resource-longest-host", null, false, ["auth/resource", `https://${longHost(253)}/v1`]);
 	add("unrequested-scope", "MANIFEST_INVALID", false, [
 		"auth/requiredGrantedScopes",
 		["unrequested"],
