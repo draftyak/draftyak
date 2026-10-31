@@ -76,11 +76,15 @@ describe("the gated entries", () => {
 	// runs nothing.
 	const LOADS = new Set(["static", "bare", "dynamic", "require"]);
 
-	it("start the root typecheck, test and build through turbo.ts, and verify and m0:prefetch gated", () => {
+	it("start the root scripts: typecheck, test and build through turbo.ts, lint and format after the gate", () => {
 		const { scripts } = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
 		expect(["typecheck", "test", "build"].map((name) => scripts[name])).toEqual(
 			["typecheck", "test", "build"].map((task) => `node tools/verify/turbo.ts run ${task}`),
 		);
+		expect([scripts.lint, scripts.format]).toEqual([
+			"node tools/verify/gate.ts && biome ci .",
+			"node tools/verify/gate.ts && biome check --write .",
+		]);
 		expect([scripts.verify, scripts["verify:m0"]]).toEqual([
 			"node tools/verify/verify.ts",
 			"node tools/verify/verify.ts --profile m0",
