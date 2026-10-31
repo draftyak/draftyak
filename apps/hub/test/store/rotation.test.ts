@@ -1242,6 +1242,40 @@ describe("verifyRotatedFile", () => {
 		});
 	});
 
+	it.for(METHODS)("%s compares adjacent 64-bit sequence values exactly", async (method) => {
+		await withSource(({ file, target, from, to, writer }) => {
+			const files = { source: file, target, nativeBinding, from, to, purpose: "db" } as const;
+			const sequence = (db: SqliteDatabase): unknown =>
+				db
+					.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'notes'")
+					.safeIntegers()
+					.pluck()
+					.get();
+			writer.exec(`
+				INSERT INTO notes (id, body) VALUES (9007199254740993, 'DYTEST-HISTORICAL-NOTE');
+				DELETE FROM notes WHERE id = 9007199254740993;
+			`);
+			expect(sequence(writer)).toBe(9007199254740993n);
+			rotateDatabaseFile({ ...files, method });
+			expect(sequence(writer)).toBe(9007199254740993n);
+			expect(() => verifyRotatedFile(files)).not.toThrow();
+			const copied = openEncrypted({ filename: target, nativeBinding }, to);
+			try {
+				expect(sequence(copied)).toBe(9007199254740993n);
+				expect(
+					copied
+						.prepare("UPDATE sqlite_sequence SET seq = ? WHERE name = 'notes'")
+						.run(9007199254740992n).changes,
+				).toBe(1);
+				expect(sequence(copied)).toBe(9007199254740992n);
+			} finally {
+				copied.close();
+			}
+			expect(sequence(writer)).toBe(9007199254740993n);
+			refused(() => verifyRotatedFile(files), "verify");
+		});
+	});
+
 	it("maps direct invalid input, file failures and wrong target keys to verify", async () => {
 		await withSource(({ dir, file, target, from, to, writer }) => {
 			const files = { source: file, target, nativeBinding, from, to, purpose: "db" } as const;
