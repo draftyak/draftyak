@@ -62,7 +62,12 @@ describe("the plan profile", () => {
 	const { send: _send, ...channel } = community;
 	it("is listed in the frozen profile table", () => {
 		expect(Object.isFrozen(AI_HTTP_PROFILES)).toBe(true);
-		expect((AI_HTTP_PROFILES as readonly string[]).includes("responses-plan-v1")).toBe(true);
+		expect(AI_HTTP_PROFILES).toEqual([
+			"messages-api-v1",
+			"responses-api-v1",
+			"chat-completions-v1",
+			"responses-plan-v1",
+		]);
 	});
 	it("is an ai-provider egress profile and never a channel one", () => {
 		const provider = {
@@ -108,8 +113,7 @@ describe("issuer OAuth", () => {
 		it(item.id, () => {
 			const result = validateManifest(item.manifest);
 			expect(result.ok ? null : result.problems[0]?.code).toBe(item.code);
-			if (item.code === null || item.structural)
-				expect(validator.validate(item.manifest).valid).toBe(item.code === null);
+			expect(validator.validate(item.manifest).valid).toBe(!item.structural);
 		});
 	it("is valid only on the plan profile of an ai-provider manifest, and that profile only with it", () => {
 		const cases = new Map(issuerOAuthCases().map((item) => [item.id, item]));
@@ -138,6 +142,11 @@ describe("issuer OAuth", () => {
 			"issuer-oauth-http-issuer",
 			"issuer-oauth-issuer-text-before-scheme",
 			"issuer-oauth-issuer-leading-space",
+			"issuer-oauth-issuer-no-slashes",
+			"issuer-oauth-issuer-one-slash",
+			"issuer-oauth-issuer-three-slashes",
+			"issuer-oauth-issuer-backslashes",
+			"issuer-oauth-issuer-slash-backslash",
 			"issuer-oauth-issuer-port-443",
 			"issuer-oauth-issuer-homograph",
 			"issuer-oauth-issuer-single-label",
