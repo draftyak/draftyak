@@ -54,9 +54,15 @@ importers:
         specifier: 0.2.2
         version: 0.2.2
     devDependencies:
+      '@draftyak/fakes':
+        specifier: workspace:*
+        version: link:../../packages/fakes
       '@draftyak/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
       tsdown:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)
