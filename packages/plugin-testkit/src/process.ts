@@ -26,7 +26,9 @@ import {
 	HOST_REQUEST_TIMEOUT_MS,
 	HostMessage,
 	type HostMethod,
+	HostNotification,
 	jsonCopy,
+	parseHostResult,
 } from "@draftyak/protocol/host-channel";
 import { canonicalize, parseStrict } from "@draftyak/protocol/jcs";
 import { validateManifest } from "@draftyak/protocol/manifest";
@@ -302,7 +304,29 @@ export function createProcess(
 		  }
 		| undefined;
 	const stop = new AbortController();
-	const activeHosts = new Map<string, AbortController>();
+	// Records live only while their call runs, so the call's earlier deadline bounds each of them.
+	const activeHosts = new Map<
+		string,
+		{
+			readonly controller: AbortController;
+			readonly fetch: boolean;
+			streamId?: string;
+			retired: boolean;
+			settled: boolean;
+		}
+	>();
+	const earlyTerminals = new Set<string>();
+	const unresolvedFetches = (): boolean =>
+		[...activeHosts.values()].some((record) => record.fetch && !record.retired && !record.streamId);
+	const retireHost = (id: string, abort = false): void => {
+		const record = activeHosts.get(id);
+		if (!record || record.retired) return;
+		record.retired = true;
+		// Pending host RPCs keep their capacity until their promise settles, even after cancellation.
+		if (record.settled) activeHosts.delete(id);
+		if (!unresolvedFetches()) earlyTerminals.clear();
+		if (abort) record.controller.abort(new HostError("DENIED"));
+	};
 	let unsubscribe: (() => void) | undefined;
 	const waiting = new Map<
 		string | number,
@@ -321,8 +345,9 @@ export function createProcess(
 			.then(async () => {
 				stop.abort(new MockHubError("PROCESS_CLOSED"));
 				unsubscribe?.();
-				for (const active of activeHosts.values()) active.abort();
+				for (const id of activeHosts.keys()) retireHost(id, true);
 				activeHosts.clear();
+				earlyTerminals.clear();
 				for (const pending of waiting.values()) pending.reject(new MockHubError("PROCESS_CLOSED"));
 				waiting.clear();
 				clientPending.clear();
@@ -415,31 +440,68 @@ export function createProcess(
 	};
 	const hostRequest = (value: unknown): void => {
 		const message = HostMessage.parse(value);
+		if ("method" in message && message.method === "host/cancel") {
+			retireHost(message.params.requestId, true);
+			return;
+		}
 		if (!("method" in message) || !("id" in message)) fail("PROCESS_FRAME_INVALID");
-		if (!scope) {
+		const refuse = (code: "DENIED" | "TOO_LARGE"): void => {
 			void write(
 				{
 					jsonrpc: "2.0",
 					id: message.id,
-					error: { code: -32000, message: "Host request refused", data: { code: "DENIED" } },
+					error: { code: -32000, message: "Host request refused", data: { code } },
 				},
 				true,
 			).catch(() => failed("PROCESS_CLOSED"));
+		};
+		if (!scope) {
+			refuse("DENIED");
 			return;
 		}
-		if (activeHosts.has(message.id) || activeHosts.size >= HOST_MAX_ACTIVE_REQUESTS)
+		// Cancelled requests keep capacity until settled but no longer count against the child.
+		const live = [...activeHosts.values()].filter((record) => !record.retired).length;
+		if (activeHosts.has(message.id) || live >= HOST_MAX_ACTIVE_REQUESTS)
 			fail("PROCESS_FRAME_INVALID");
+		if (activeHosts.size >= HOST_MAX_ACTIVE_REQUESTS) {
+			refuse("TOO_LARGE");
+			return;
+		}
 		const controller = new AbortController();
-		activeHosts.set(message.id, controller);
+		const record = {
+			controller,
+			fetch: message.method === "host/fetch",
+			streamId: undefined as string | undefined,
+			retired: false,
+			settled: false,
+		};
+		activeHosts.set(message.id, record);
 		const execute = (): void => {
 			void host
 				.request(message.method as HostMethod, message.params as never, {
 					signal: AbortSignal.any([controller.signal, stop.signal]),
 				})
 				.then(
-					(result) => write({ jsonrpc: "2.0", id: message.id, result }, true),
-					(error) =>
-						write(
+					(result) => {
+						if (record.retired || closed) return;
+						const parsed = parseHostResult(message.method as HostMethod, result);
+						if (record.fetch && "streamId" in (parsed as object)) {
+							const streamId = (parsed as { streamId: string }).streamId;
+							// A host that reuses a live stream ID makes stream correlation ambiguous.
+							if ([...activeHosts.values()].some((other) => other.streamId === streamId)) {
+								failed("PROCESS_CLOSED");
+								return;
+							}
+							record.streamId = streamId;
+							if (earlyTerminals.delete(streamId)) retireHost(message.id);
+							if (!unresolvedFetches()) earlyTerminals.clear();
+						} else retireHost(message.id);
+						return write({ jsonrpc: "2.0", id: message.id, result: parsed }, true);
+					},
+					(error) => {
+						if (record.retired || closed) return;
+						retireHost(message.id);
+						return write(
 							{
 								jsonrpc: "2.0",
 								id: message.id,
@@ -450,10 +512,14 @@ export function createProcess(
 								},
 							},
 							true,
-						),
+						);
+					},
 				)
 				.catch(() => failed("PROCESS_CLOSED"))
-				.finally(() => activeHosts.delete(message.id));
+				.finally(() => {
+					record.settled = true;
+					if (record.retired) activeHosts.delete(message.id);
+				});
 		};
 		scope(execute);
 	};
@@ -684,7 +750,26 @@ export function createProcess(
 				);
 				unsubscribe = host.subscribe(
 					(notification) => {
-						void write(notification, true).catch(() => failed("PROCESS_CLOSED"));
+						try {
+							const checked = HostNotification.parse(jsonCopy(notification));
+							if (
+								checked.method === "host/stream.chunk" &&
+								(checked.params.done || checked.params.error)
+							) {
+								const streamId = checked.params.streamId;
+								const owner = [...activeHosts].find(
+									([, record]) => !record.retired && record.streamId === streamId,
+								);
+								if (owner) retireHost(owner[0]);
+								// Past this bound a later header keeps its record until cancellation or call end.
+								else if (unresolvedFetches() && earlyTerminals.size < HOST_MAX_ACTIVE_REQUESTS)
+									earlyTerminals.add(streamId);
+							}
+							void write(checked, true).catch(() => failed("PROCESS_CLOSED"));
+						} catch {
+							// An invalid host notification is never forwarded to the plugin.
+							failed("PROCESS_CLOSED");
+						}
 					},
 					() => {
 						void teardown().catch(() => {});
@@ -805,7 +890,7 @@ export function createProcess(
 				if (running) {
 					if (progressObserver === observer) progressObserver = undefined;
 					scope = undefined;
-					for (const active of activeHosts.values()) active.abort();
+					for (const id of activeHosts.keys()) retireHost(id, true);
 				}
 				// A cancelled queued call retains its place until predecessors settle, bounding tombstones.
 				void prior.then(() => {

@@ -108,12 +108,21 @@ export function memoryHost(handler: HostHandler): MemoryHost {
 			const abort = (): void => controller.abort(new HostError("DENIED"));
 			signal?.addEventListener("abort", abort, { once: true });
 			const timer = setTimeout(() => controller.abort(new HostError("TIMEOUT")), timeoutMs);
+			// A cancelled or timed-out request keeps its capacity until its handler's own work settles.
+			let running = true;
+			let returned = false;
+			const work = Promise.resolve().then(() => {
+				checkCancellation();
+				return handler(method, parsed, controller.signal);
+			});
+			const settled = (): void => {
+				running = false;
+				if (returned) active.delete(controller);
+			};
+			void work.then(settled, settled);
 			try {
 				const value = await Promise.race([
-					Promise.resolve().then(() => {
-						checkCancellation();
-						return handler(method, parsed, controller.signal);
-					}),
+					work,
 					new Promise<never>((_, reject) =>
 						controller.signal.addEventListener(
 							"abort",
@@ -136,7 +145,8 @@ export function memoryHost(handler: HostHandler): MemoryHost {
 			} finally {
 				clearTimeout(timer);
 				signal?.removeEventListener("abort", abort);
-				active.delete(controller);
+				returned = true;
+				if (!running) active.delete(controller);
 			}
 		},
 		subscribe(listener, onclose) {
