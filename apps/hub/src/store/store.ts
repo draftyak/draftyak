@@ -19,6 +19,15 @@ import {
 	type SqliteDatabase,
 } from "./open.ts";
 import { bindReadStamp, releaseReadStamp } from "./read-stamp.ts";
+import {
+	expirePreMigrationSnapshots,
+	removePreMigrationSnapshots,
+	SnapshotError,
+	type SnapshotOptions,
+	type SnapshotSettings,
+	snapshotSettings,
+	takePreMigrationSnapshot,
+} from "./snapshots.ts";
 
 export type SqlValue = string | number | bigint | Uint8Array | null;
 export interface SqlReader {
@@ -34,6 +43,8 @@ export interface SqlTransaction extends SqlReader {
 export interface StoreOptions extends OpenOptions {
 	readonly masterKey: MasterKey;
 	readonly migrations?: Readonly<Record<string, string>>;
+	/** migrate() copies the file here before a namespace's pending files run on an existing schema. */
+	readonly snapshots?: SnapshotOptions;
 }
 const promiseThen = Promise.prototype.then;
 const isThenable = (value: unknown): boolean => {
@@ -78,6 +89,7 @@ export class HubStore {
 	readonly #genesisTag: string;
 	readonly #readOwner: object = Object.freeze(Object.create(null));
 	readonly #migrations: ReadonlyMap<string, string>;
+	readonly #snapshots: SnapshotSettings | undefined;
 	#revision = 0;
 	#newAuditStorage = false;
 	#busy = false;
@@ -85,6 +97,8 @@ export class HubStore {
 	#nativeClosed = false;
 	constructor(options: StoreOptions) {
 		this.#migrations = new Map(Object.entries(options.migrations ?? {}));
+		const snapshots = options.snapshots;
+		this.#snapshots = snapshots === undefined ? undefined : snapshotSettings(snapshots);
 		const masterKey = options.masterKey;
 		let auditKey: Buffer | undefined;
 		try {
@@ -178,11 +192,16 @@ export class HubStore {
 		if (this.#closed || this.#busy) throw new Error("Database is unavailable or already in use");
 		const dir = this.#migrations.get(namespace);
 		if (dir === undefined) throw new Error("Migration namespace is not registered");
+		const snapshots = this.#snapshots;
+		const snapshot =
+			snapshots === undefined
+				? undefined
+				: () => takePreMigrationSnapshot(this.#db, namespace, snapshots);
 		this.#busy = true;
 		this.#revision++;
 		let initializing = false;
 		try {
-			return await migrate(this.#db, namespace, dir, undefined, (name) => {
+			return await migrate(this.#db, namespace, dir, snapshot, (name) => {
 				if (namespace !== "audit" || name !== "0001_chain.sql") return;
 				if (
 					!this.#newAuditStorage ||
@@ -227,6 +246,25 @@ export class HubStore {
 		if (this.#closed || this.#busy) throw new Error("Database is unavailable or already in use");
 		const [result] = this.#db.pragma("wal_checkpoint(TRUNCATE)") as { busy: number }[];
 		if (result?.busy !== 0) throw new Error("Database checkpoint is busy");
+	}
+	/** Removes pre-migration snapshots older than the retention period; returns the count. */
+	expireSnapshots(): number {
+		return this.#snapshotFiles(expirePreMigrationSnapshots);
+	}
+	/** Removes every pre-migration snapshot, for purges; returns the count. */
+	removeSnapshots(): number {
+		return this.#snapshotFiles(removePreMigrationSnapshots);
+	}
+	#snapshotFiles(remove: (settings: SnapshotSettings) => number): number {
+		if (this.#closed || this.#busy) throw new Error("Database is unavailable or already in use");
+		const snapshots = this.#snapshots;
+		if (snapshots === undefined) throw new SnapshotError("options");
+		this.#busy = true;
+		try {
+			return remove(snapshots);
+		} finally {
+			this.#busy = false;
+		}
 	}
 	close(): void {
 		if (this.#busy) throw new Error("Database is in use");
