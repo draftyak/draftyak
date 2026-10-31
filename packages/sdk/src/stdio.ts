@@ -32,6 +32,9 @@ interface Pending {
 	readonly resolve: (value: never) => void;
 	readonly reject: (error: unknown) => void;
 	readonly cleanup: () => void;
+	readonly cancel: (code: "DENIED" | "TIMEOUT") => void;
+	streamId?: string;
+	settled: boolean;
 }
 
 const nativeSignalAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "aborted")?.get;
@@ -52,6 +55,18 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 	const input = options.input ?? process.stdin;
 	const output = options.output ?? process.stdout;
 	const pending = new Map<string, Pending>();
+	// Headers and terminal chunks can share one read, in either order. No payload is retained here.
+	const earlyTerminals = new Set<string>();
+	const unresolvedFetches = (): boolean =>
+		[...pending.values()].some((request) => request.method === "host/fetch" && !request.settled);
+	const retire = (id: string): Pending | undefined => {
+		const request = pending.get(id);
+		if (!request) return;
+		pending.delete(id);
+		request.cleanup();
+		if (!unresolvedFetches()) earlyTerminals.clear();
+		return request;
+	};
 	const subscriptions = new Set<{
 		readonly listener: (notification: HostNotification) => void;
 		readonly onclose: (() => void) | undefined;
@@ -74,6 +89,7 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 			request.reject(new HostError("DENIED"));
 		}
 		pending.clear();
+		earlyTerminals.clear();
 		for (const subscription of closing) {
 			try {
 				subscription.onclose?.();
@@ -102,9 +118,10 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 		}
 		close();
 	};
-	const write = (value: unknown, host: boolean): Promise<void> => {
-		if (closed || writes >= HOST_MAX_ACTIVE_REQUESTS * 2)
-			return Promise.reject(new HostError("DENIED"));
+	// Each admitted request sends at most one cancellation, so cancellations skip the shared budget.
+	const encode = (value: unknown, host: boolean, cancellation = false): string => {
+		if (closed || (!cancellation && writes >= HOST_MAX_ACTIVE_REQUESTS * 2))
+			throw new HostError("DENIED");
 		let line: string;
 		try {
 			// MCP's absent optional properties follow its JSON wire representation.
@@ -112,10 +129,13 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 			if (json === undefined) throw new HostError("BAD_REQUEST");
 			line = `${host ? HOST_FRAME_TAG : ""}${host ? json : canonicalize(parseStrict(json))}\n`;
 		} catch {
-			return Promise.reject(new HostError("BAD_REQUEST"));
+			throw new HostError("BAD_REQUEST");
 		}
 		if (Buffer.byteLength(line) > HOST_MAX_FRAME_BYTES + (host ? 2 : 1))
-			return Promise.reject(new HostError("TOO_LARGE"));
+			throw new HostError("TOO_LARGE");
+		return line;
+	};
+	const send = (line: string): Promise<void> => {
 		writes++;
 		return new Promise((resolve, reject) =>
 			output.write(line, (error) => {
@@ -126,6 +146,13 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 				} else resolve();
 			}),
 		);
+	};
+	const write = (value: unknown, host: boolean, cancellation = false): Promise<void> => {
+		try {
+			return send(encode(value, host, cancellation));
+		} catch (error) {
+			return Promise.reject(error);
+		}
 	};
 	const line = (raw: Buffer): void => {
 		if (raw.length === 0) throw new HostError("BAD_REQUEST");
@@ -138,7 +165,21 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 		}
 		const message = HostMessage.parse(value);
 		if ("method" in message) {
-			if ("id" in message) throw new HostError("BAD_REQUEST");
+			if ("id" in message || message.method === "host/cancel") throw new HostError("BAD_REQUEST");
+			if (message.method === "host/stream.chunk") {
+				const chunk = message.params;
+				const owner = [...pending].find(([, request]) => request.streamId === chunk.streamId);
+				if (owner) {
+					if (hasAborted(owner[1].signal)) {
+						owner[1].cancel("DENIED");
+						return;
+					}
+					if (chunk.done || chunk.error) retire(owner[0]);
+				} else if ((chunk.done || chunk.error) && unresolvedFetches()) {
+					// Past this bound the stream router refuses unresolved fetches; the channel stays open.
+					if (earlyTerminals.size < HOST_MAX_ACTIVE_REQUESTS) earlyTerminals.add(chunk.streamId);
+				}
+			}
 			for (const subscription of [...subscriptions]) {
 				if (closed) break;
 				try {
@@ -151,16 +192,27 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 		}
 		const reply: HostReply = message;
 		const request = pending.get(reply.id);
-		if (!request) return;
-		pending.delete(reply.id);
-		request.cleanup();
+		if (!request || request.settled) return;
 		// A source abort listener can deliver a reply before dependent abort listeners run.
-		if (hasAborted(request.signal)) request.reject(new HostError("DENIED"));
-		else if (reply.error) request.reject(new HostError(reply.error.data.code));
-		else {
+		if (hasAborted(request.signal)) request.cancel("DENIED");
+		else if (reply.error) {
+			retire(reply.id);
+			request.reject(new HostError(reply.error.data.code));
+		} else {
 			try {
-				request.resolve(parseHostResult(request.method, reply.result) as never);
+				const result = parseHostResult(request.method, reply.result);
+				if (request.method === "host/fetch" && "streamId" in (result as object)) {
+					const streamId = (result as HostMethods["host/fetch"]["result"]).streamId as string;
+					if ([...pending.values()].some((other) => other.streamId === streamId))
+						throw new HostError("BAD_REQUEST");
+					request.streamId = streamId;
+					request.settled = true;
+					if (earlyTerminals.delete(streamId)) retire(reply.id);
+					if (!unresolvedFetches()) earlyTerminals.clear();
+				} else retire(reply.id);
+				request.resolve(result as never);
 			} catch {
+				retire(reply.id);
 				request.reject(new HostError("BAD_REQUEST"));
 				throw new HostError("BAD_REQUEST");
 			}
@@ -244,19 +296,37 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 				return Promise.reject(new HostError("BAD_REQUEST"));
 			}
 			if (hasAborted(requestedSignal)) return Promise.reject(new HostError("DENIED"));
+			// Getters above can synchronously close the channel or admit sibling requests.
+			if (closed) return Promise.reject(new HostError("DENIED"));
+			if (pending.size >= HOST_MAX_ACTIVE_REQUESTS)
+				return Promise.reject(new HostError("TOO_LARGE"));
 			const id = randomUUID();
+			let frame: string;
+			try {
+				frame = encode({ jsonrpc: "2.0", id, method, params: parsed }, true);
+			} catch {
+				// Refused before registration, so no cancellation can follow an unsent request.
+				return Promise.reject(new HostError("DENIED"));
+			}
 			return new Promise((resolve, reject) => {
 				const cancel = (code: "DENIED" | "TIMEOUT"): void => {
-					const request = pending.get(id);
+					const request = retire(id);
 					if (!request) return;
-					pending.delete(id);
-					request.cleanup();
 					reject(new HostError(code));
+					// A failed output has already closed the channel; there is nothing left to report.
+					if (!closed)
+						void write(
+							{ jsonrpc: "2.0", method: "host/cancel", params: { requestId: id } },
+							true,
+							true,
+						).catch(() => {});
 				};
 				const abort = (): void => cancel("DENIED");
 				const timer = setTimeout(() => cancel("TIMEOUT"), timeout);
 				pending.set(id, {
 					method,
+					settled: false,
+					cancel,
 					signal: requestedSignal,
 					resolve: resolve as (value: never) => void,
 					reject,
@@ -266,9 +336,10 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 					},
 				});
 				signal?.addEventListener("abort", abort, { once: true });
-				void write({ jsonrpc: "2.0", id, method, params: parsed }, true).catch(() =>
-					cancel("DENIED"),
-				);
+				// A failed output has already closed the channel and rejected this request.
+				void send(frame).catch(() => {
+					if (retire(id)) reject(new HostError("DENIED"));
+				});
 			});
 		},
 		subscribe(listener, onclose) {

@@ -13,6 +13,7 @@ use p256::{
     ecdsa::{Signature, SigningKey, signature::Signer},
     pkcs8::DecodePrivateKey,
 };
+use serde::de::{Deserializer, MapAccess, Visitor};
 use serde_json::{Value, json};
 fn documents() -> Vec<String> {
     statements::TYPES
@@ -32,6 +33,34 @@ fn hex(text: &str) -> Vec<u8> {
         .step_by(2)
         .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
         .collect()
+}
+fn case<'a>(document: &'a Value, id: &str) -> &'a Value {
+    document["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["id"] == id)
+        .unwrap()
+}
+/// The member values of the JSON object `text`, in the order `text` writes them.
+fn member_values(text: &str) -> Vec<Value> {
+    struct InOrder;
+    impl<'de> Visitor<'de> for InOrder {
+        type Value = Vec<Value>;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("an object")
+        }
+        fn visit_map<A: MapAccess<'de>>(self, mut members: A) -> Result<Vec<Value>, A::Error> {
+            let mut values = Vec::new();
+            while let Some((_, value)) = members.next_entry::<String, Value>()? {
+                values.push(value);
+            }
+            Ok(values)
+        }
+    }
+    serde_json::Deserializer::from_str(text)
+        .deserialize_map(InOrder)
+        .unwrap()
 }
 #[test]
 fn every_shared_statement_and_deterministic_signature() {
@@ -116,9 +145,10 @@ fn flags_match_typescript_corpus() {
             .map_err(|_| "FLAGS_INVALID")
             .and_then(|flags| flags_hash(&flags).map_err(|e| e.code()));
         if let Some(error) = case["error"].as_str() {
-            assert_eq!(result.unwrap_err(), error, "{}", case["id"]);
+            assert_eq!(result.err(), Some(error), "{}", case["id"]);
         } else {
-            assert_eq!(result.unwrap(), case["flagsHash"], "{}", case["id"]);
+            let hash = result.unwrap_or_else(|error| panic!("{}: {error}", case["id"]));
+            assert_eq!(hash, case["flagsHash"], "{}", case["id"]);
         }
     }
 }
@@ -296,24 +326,28 @@ fn registered_types_and_freshness() {
     ] {
         assert!(statements::parse_statement(typ, b"{}").is_none());
     }
-    // Signature checks refuse a positional statement before parse_statement sees it.
-    let read: Vec<&str> = statements::TYPES
-        .iter()
-        .zip(documents())
-        .filter(|(typ, document)| {
-            let document: Value = serde_json::from_str(document).unwrap();
-            let positional = document["cases"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|case| case["id"] == "positional")
-                .unwrap();
-            statements::parse_statement(typ, &hex(positional["receivedHex"].as_str().unwrap()))
-                .is_some()
-        })
-        .map(|(typ, _)| *typ)
-        .collect();
+    // Signature checks refuse a positional statement before parse_statement sees it. It lists the
+    // valid statement's member values in the order its type's derived Serialize writes them, the
+    // type's by-position form while its wire struct declares the same order: device_statement!
+    // builds both from one list, but hub_key_rotate.rs repeats the list by hand.
+    let mut read = Vec::new();
+    let mut not_by_position = Vec::new();
+    for (typ, document) in statements::TYPES.iter().zip(documents()) {
+        let document: Value = serde_json::from_str(&document).unwrap();
+        let positional = &case(&document, "positional")["receivedHex"];
+        let bytes = hex(positional.as_str().unwrap());
+        if statements::parse_statement(typ, &bytes).is_some() {
+            read.push(*typ);
+        }
+        let valid = &case(&document, "valid")["receivedHex"];
+        let valid = statements::parse_statement(typ, &hex(valid.as_str().unwrap())).unwrap();
+        let written = serde_json::to_string(&valid).unwrap();
+        if serde_json::from_slice::<Vec<Value>>(&bytes).ok() != Some(member_values(&written)) {
+            not_by_position.push(*typ);
+        }
+    }
     assert!(read.is_empty(), "{read:?}");
+    assert!(not_by_position.is_empty(), "{not_by_position:?}");
     let document: Value = serde_json::from_str(&documents()[0]).unwrap();
     let body = statements::parse_statement(
         "approval.send.v1",

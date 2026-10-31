@@ -256,6 +256,8 @@ export function hostFetch(
 			signal.addEventListener("abort", onAbort, { once: true });
 			if (signal.aborted) abort();
 			if (finished || signal.aborted) throw failure ?? new HostError("DENIED");
+			// Header latency consumes the same request budget as the streamed body.
+			timer = setTimeout(() => abort("TIMEOUT"), HOST_REQUEST_TIMEOUT_MS);
 			const result = await host.request("host/fetch", params, {
 				signal: AbortSignal.any([signal, requestAbort.signal]),
 			});
@@ -272,7 +274,6 @@ export function hostFetch(
 			let responseBody: BodyInit | null = null;
 			if (result.streamId) {
 				streamId = result.streamId;
-				timer = setTimeout(onAbort, HOST_REQUEST_TIMEOUT_MS);
 				responseBody = new ReadableStream<Uint8Array>({
 					start(value) {
 						controller = value;

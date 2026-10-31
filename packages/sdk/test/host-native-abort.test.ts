@@ -8,6 +8,8 @@ afterEach(() => {
 });
 
 async function useCapacity(host: MemoryHost): Promise<void> {
+	// A settled handler releases its capacity in a later promise reaction.
+	for (let turn = 0; turn < 10; turn++) await Promise.resolve();
 	const requests: Promise<unknown>[] = [];
 	for (let index = 0; index < HOST_MAX_ACTIVE_REQUESTS; index++) {
 		requests.push(

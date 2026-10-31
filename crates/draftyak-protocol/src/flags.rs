@@ -1,4 +1,4 @@
-use crate::{hash::jcs_sha256, jcs::parse_strict};
+use crate::{hash::jcs_sha256, jcs::parse_strict, statements::decode};
 use serde::{Deserialize, Deserializer, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -113,7 +113,7 @@ impl FlagsError {
 }
 pub fn parse_flags(bytes: &[u8]) -> Result<Vec<Flag>, FlagsError> {
     let value = parse_strict(bytes).map_err(|_| FlagsError::Invalid)?;
-    serde_json::from_value(value).map_err(|_| FlagsError::Invalid)
+    decode(&value).ok_or(FlagsError::Invalid)
 }
 pub fn flags_hash(flags: &[Flag]) -> Result<String, FlagsError> {
     let mut sorted = flags.to_vec();

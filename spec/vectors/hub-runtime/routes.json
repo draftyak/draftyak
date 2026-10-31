@@ -280,7 +280,28 @@
         "confirmedEpoch": 1,
         "capabilities": [
           "read",
-          "host:sms"
+          "send"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-object-form-capability",
+      "action": "access",
+      "route": "scheduling",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          {
+            "draft": null
+          }
         ],
         "sidecarClaim": false,
         "bootstrapDone": false
@@ -796,7 +817,28 @@
         "confirmedEpoch": 1,
         "capabilities": [
           "read",
-          "host:sms"
+          "send"
+        ],
+        "sidecarClaim": false,
+        "bootstrapDone": false
+      },
+      "valid": false
+    },
+    {
+      "id": "access-scheduling-outbox-object-form-capability",
+      "action": "access",
+      "route": "scheduling-outbox",
+      "peer": {
+        "role": "device",
+        "known": true,
+        "revoked": false,
+        "epoch": 1,
+        "confirmedEpoch": 1,
+        "capabilities": [
+          "read",
+          {
+            "draft": null
+          }
         ],
         "sidecarClaim": false,
         "bootstrapDone": false
