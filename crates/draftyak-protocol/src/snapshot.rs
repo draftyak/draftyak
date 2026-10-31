@@ -25,7 +25,7 @@ impl SnapshotError {
 pub struct SendSnapshotV1(Wire);
 impl<'de> Deserialize<'de> for SendSnapshotV1 {
     fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        let wire = Wire::deserialize(decoder)?;
+        let wire: Wire = crate::statements::decode_from(decoder, "SNAPSHOT_INVALID")?;
         if !wire.valid() {
             return Err(serde::de::Error::custom("SNAPSHOT_INVALID"));
         }
