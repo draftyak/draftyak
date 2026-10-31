@@ -132,6 +132,10 @@ export {
 	type SidecarStopReason,
 } from "./kernel/sidecar-input.ts";
 export {
+	createLifecycleScheduler,
+	type LifecycleSchedulerOptions,
+} from "./lifecycle/scheduler.ts";
+export {
 	type HubSession,
 	HubSessionError,
 	type HubSessionErrorCode,

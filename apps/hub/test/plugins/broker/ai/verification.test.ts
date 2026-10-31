@@ -26,6 +26,7 @@ import { builtinRegistrations } from "../../../../src/plugins/broker/ai/verifier
 
 const encoder = new TextEncoder();
 const registry = createBuiltinAiProfileRegistry();
+const bundled = builtinRegistrations.map(({ profile }) => profile);
 const draft = {
 	model: "model-2026-01",
 	system: "DYTEST-system\n\u00e9",
@@ -148,6 +149,15 @@ describe("native profile registry", () => {
 			).toThrow(AiVerificationError);
 		}
 	});
+	it("refuses requests under each listed profile that no bundled plugin ships", () => {
+		for (const id of AI_HTTP_PROFILES.filter((profile) => !bundled.includes(profile)))
+			for (const shape of bundled) {
+				const { candidate, binding } = base(shape);
+				expect(() => verifyAiRequest(registry, id, candidate, binding)).toThrow(
+					AiVerificationError,
+				);
+			}
+	});
 	it("supports a native registration without adding an inferred production profile", () => {
 		let calls = 0;
 		const registrations = builtinRegistrations.map((entry) =>
@@ -216,22 +226,19 @@ describe("native profile registry", () => {
 });
 
 describe("bundled request verification", () => {
-	it.each(AI_HTTP_PROFILES)(
-		"accepts exact %s bytes and returns isolated branded snapshots",
-		(id) => {
-			const { candidate, binding } = base(id);
-			const before = Uint8Array.from(candidate.body);
-			const handle = verifyAiRequest(registry, id, candidate, binding);
-			const first = snapshotVerifiedAiRequest(handle);
-			expect(first).toEqual({ ...candidate, profile: id });
-			candidate.body.fill(0);
-			first.body.fill(1);
-			expect(snapshotVerifiedAiRequest(handle).body).toEqual(before);
-			expect(Object.isFrozen(first.headers)).toBe(true);
-			expect(first.headers.every(Object.isFrozen)).toBe(true);
-		},
-	);
-	it.each(AI_HTTP_PROFILES)("refuses unknown executable and disclosure fields in %s", (id) => {
+	it.each(bundled)("accepts exact %s bytes and returns isolated branded snapshots", (id) => {
+		const { candidate, binding } = base(id);
+		const before = Uint8Array.from(candidate.body);
+		const handle = verifyAiRequest(registry, id, candidate, binding);
+		const first = snapshotVerifiedAiRequest(handle);
+		expect(first).toEqual({ ...candidate, profile: id });
+		candidate.body.fill(0);
+		first.body.fill(1);
+		expect(snapshotVerifiedAiRequest(handle).body).toEqual(before);
+		expect(Object.isFrozen(first.headers)).toBe(true);
+		expect(first.headers.every(Object.isFrozen)).toBe(true);
+	});
+	it.each(bundled)("refuses unknown executable and disclosure fields in %s", (id) => {
 		const { candidate, binding, body } = base(id);
 		for (const key of [
 			"tools",
@@ -264,7 +271,7 @@ describe("bundled request verification", () => {
 			);
 		}
 	});
-	it.each(AI_HTTP_PROFILES)("binds exact model, instructions and prompt for %s", (id) => {
+	it.each(bundled)("binds exact model, instructions and prompt for %s", (id) => {
 		const { candidate, binding, body } = base(id);
 		for (const change of [
 			{ model: "other-model" },
@@ -293,7 +300,7 @@ describe("bundled request verification", () => {
 			}),
 		).toThrow(AiVerificationError);
 	});
-	it.each(AI_HTTP_PROFILES)(
+	it.each(bundled)(
 		"rejects credentials, duplicate headers and header side channels for %s",
 		(id) => {
 			const { candidate, binding } = base(id);
@@ -324,7 +331,7 @@ describe("bundled request verification", () => {
 			).toThrow(AiVerificationError);
 		},
 	);
-	it.each(AI_HTTP_PROFILES)(
+	it.each(bundled)(
 		"rejects duplicate JSON members, malformed UTF-8 and body limits for %s",
 		(id) => {
 			const { candidate, binding } = base(id);
@@ -340,7 +347,7 @@ describe("bundled request verification", () => {
 				);
 		},
 	);
-	it.each(AI_HTTP_PROFILES)("rejects inherited optional header names for %s", (id) => {
+	it.each(bundled)("rejects inherited optional header names for %s", (id) => {
 		const { candidate, binding } = base(id);
 		for (const name of [
 			"constructor",
@@ -387,7 +394,7 @@ describe("bundled request verification", () => {
 		},
 	);
 	it("refuses nested schema metadata, extra turns and executable schemas", () => {
-		for (const id of AI_HTTP_PROFILES) {
+		for (const id of bundled) {
 			const { candidate, binding, body } = base(id);
 			const copy = structuredClone(body);
 			const format =
@@ -613,7 +620,7 @@ describe("destination and captured-input boundaries", () => {
 			),
 		).toThrow(AiVerificationError);
 	});
-	it.each(AI_HTTP_PROFILES)("refuses endpoint, method and profile substitution for %s", (id) => {
+	it.each(bundled)("refuses endpoint, method and profile substitution for %s", (id) => {
 		const { candidate, binding } = base(id);
 		for (const endpoint of [
 			`${binding.endpoint}/`,
@@ -628,7 +635,7 @@ describe("destination and captured-input boundaries", () => {
 			expect(() => verifyAiRequest(registry, id, { ...candidate, method }, binding)).toThrow(
 				AiVerificationError,
 			);
-		const other = AI_HTTP_PROFILES.find((profile) => profile !== id);
+		const other = bundled.find((profile) => profile !== id);
 		expect(() => verifyAiRequest(registry, other, candidate, binding)).toThrow(AiVerificationError);
 	});
 	it("captures original body, header, settings, endpoint and job before a DNS await", async () => {
