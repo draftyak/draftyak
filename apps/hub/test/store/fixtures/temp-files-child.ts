@@ -6,15 +6,22 @@ import {
 	mkdirSync,
 	opendirSync,
 	readdirSync,
-	readFileSync,
 	readlinkSync,
 	realpathSync,
-	statSync,
 } from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3-multiple-ciphers";
 import { MasterKey } from "../../../src/kernel/master-key.ts";
 import { openEncrypted } from "../../../src/store/open.ts";
+import {
+	databaseFileIdentities,
+	requireEmptyTempFileScan,
+	scanDescriptorDirectory,
+	scanNamedFiles,
+	tempFileDiagnostic,
+	tempFileScanSupported,
+	type TempFileScanStage,
+} from "../temp-file-observer.ts";
 
 interface Scan {
 	readonly files: number;
@@ -34,12 +41,14 @@ let key: MasterKey | undefined;
 let memory: Operations | undefined;
 let file: Operations | undefined;
 let failed = false;
+let scanStage: TempFileScanStage = "operation";
+let diagnostic: ReturnType<typeof tempFileDiagnostic> | undefined;
 const readDirectory = Dir.prototype.readSync;
 const closeDirectory = Dir.prototype.closeSync;
 try {
 	assert.equal(process.argv.length, 4);
 	assert(root && nativeBinding);
-	assert(process.platform === "win32" || process.platform === "linux");
+	assert(tempFileScanSupported(process.platform));
 	assert(path.isAbsolute(root) && path.isAbsolute(nativeBinding));
 	assert.equal(realpathSync(root), root);
 	assert(path.basename(root).startsWith("draftyak-temp-store-"));
@@ -127,33 +136,33 @@ try {
 		assert(result.length <= 32);
 		return result;
 	};
-	const scan = (): Scan => {
-		const files = liveFiles();
-		const found = new Set<string>();
-		let bytes = 0;
-		for (const name of files) {
-			const info = statSync(name);
-			assert(info.isFile() && info.size <= 16 * 1024 * 1024);
-			const content = readFileSync(name);
-			assert(content.length <= 16 * 1024 * 1024);
-			bytes += content.length;
-			assert(bytes <= 64 * 1024 * 1024);
-			for (const needle of needles) if (content.includes(needle.value)) found.add(needle.label);
-		}
-		return { files: files.length, bytes, hits: [...found].sort() };
+	const scan = (stage: "baseline" | "active", requireEmpty = false): Scan => {
+		scanStage = stage;
+		const result =
+			process.platform === "darwin"
+				? scanDescriptorDirectory(
+						"/dev/fd",
+						databaseFileIdentities(path.join(root, "hub.db")),
+						needles,
+					)
+				: scanNamedFiles(liveFiles(), needles);
+		if (requireEmpty) requireEmptyTempFileScan(result);
+		scanStage = "operation";
+		return result;
 	};
+	const empty = (): void => assert.deepEqual(scan("baseline", true), { files: 0, bytes: 0, hits: [] });
 	const sort = (): Scan => {
-		assert.deepEqual(liveFiles(), []);
+		empty();
 		const rows = db.prepare("SELECT body FROM records ORDER BY body").iterate();
 		try {
 			assert.equal(rows.next().done, false);
-			return scan();
+			return scan("active");
 		} finally {
 			rows.return?.();
 		}
 	};
 	const statement = (): Scan => {
-		assert.deepEqual(liveFiles(), []);
+		empty();
 		db.exec("BEGIN IMMEDIATE");
 		try {
 			// Possible trigger ABORT requires rollback of this multi-row statement.
@@ -165,7 +174,7 @@ try {
 				.iterate();
 			try {
 				assert.equal(rows.next().done, false);
-				return scan();
+				return scan("active");
 			} finally {
 				rows.return?.();
 			}
@@ -174,10 +183,10 @@ try {
 		}
 	};
 	const table = (): Scan => {
-		assert.deepEqual(liveFiles(), []);
+		empty();
 		db.exec("CREATE TEMP TABLE copied AS SELECT subject,body,sender FROM records");
 		try {
-			return scan();
+			return scan("active");
 		} finally {
 			db.exec("DROP TABLE temp.copied");
 		}
@@ -191,10 +200,13 @@ try {
 	phase = "memory-table";
 	memory = { sort: memorySort, statement: memoryStatement, table: table() };
 	for (const observed of Object.values(memory)) {
+		scanStage = "active";
+		requireEmptyTempFileScan(observed);
 		assert.equal(observed.files, 0);
 		assert.deepEqual(observed.hits, []);
+		scanStage = "operation";
 	}
-	assert.deepEqual(liveFiles(), []);
+	empty();
 	phase = "file-setting";
 	db.pragma("temp_store = FILE");
 	db.pragma("temp.cache_size = 2");
@@ -212,26 +224,34 @@ try {
 	for (const observed of Object.values(file)) assert(observed.files > 0 && observed.bytes > 0);
 	assert.equal((db.prepare("SELECT count(*) AS n FROM records").get() as { n: number }).n, 6001);
 	phase = "cleanup";
-} catch {
+} catch (error) {
 	failed = true;
+	diagnostic = tempFileDiagnostic(error, scanStage);
 } finally {
 	if (database) {
 		try {
 			database.pragma("temp_store_directory = ''");
-		} catch {
+		} catch (error) {
 			failed = true;
+			diagnostic ??= tempFileDiagnostic(error, "operation");
 		}
 		try {
 			database.close();
 			assert.equal(database.open, false);
-		} catch {
+		} catch (error) {
 			failed = true;
+			diagnostic ??= tempFileDiagnostic(error, "operation");
 		}
 	}
-	key?.destroy();
+	try {
+		key?.destroy();
+	} catch (error) {
+		failed = true;
+		diagnostic ??= tempFileDiagnostic(error, "operation");
+	}
 }
 if (failed) {
-	process.stderr.write(JSON.stringify({ phase, refused: true, memory, file }));
+	process.stderr.write(JSON.stringify({ phase, refused: true, ...diagnostic, memory, file }));
 	process.exitCode = 1;
 } else
 	process.stdout.write(JSON.stringify({ passed: true, platform: process.platform, memory, file }));
