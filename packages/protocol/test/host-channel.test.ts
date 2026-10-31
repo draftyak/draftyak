@@ -1,9 +1,37 @@
 import { type Schema, Validator } from "@cfworker/json-schema";
 import { describe, expect, it } from "vitest";
 import * as z from "zod";
-import { HostMessage, jsonCopy, parseHostParams, parseHostResult } from "../src/host-channel.ts";
+import {
+	HostCancel,
+	HostMessage,
+	HostNotification,
+	jsonCopy,
+	parseHostParams,
+	parseHostResult,
+} from "../src/host-channel.ts";
 
 describe("host channel contracts", () => {
+	it("admits only an ID-bound child cancellation without making it a parent notification or RPC", () => {
+		const validator = new Validator(
+			z.toJSONSchema(HostMessage, { target: "draft-2020-12", io: "input" }) as Schema,
+			"2020-12",
+		);
+		const valid = { jsonrpc: "2.0", method: "host/cancel", params: { requestId: "original-1" } };
+		expect(HostCancel.parse(valid)).toEqual(valid);
+		expect(validator.validate(valid).valid).toBe(true);
+		expect(HostNotification.safeParse(valid).success).toBe(false);
+		for (const invalid of [
+			{ ...valid, id: "rpc" },
+			{ ...valid, params: { requestId: "" } },
+			{ ...valid, params: { requestId: "x\ny" } },
+			{ ...valid, params: { requestId: "x".repeat(129) } },
+			{ ...valid, params: { requestId: "original-1", reason: "detail" } },
+			{ ...valid, params: { streamId: "stream" } },
+		]) {
+			expect(HostMessage.safeParse(invalid).success).toBe(false);
+			expect(validator.validate(invalid).valid).toBe(false);
+		}
+	});
 	it("exports the same typed host method restrictions without widening the ack-only surface", () => {
 		const validator = new Validator(
 			z.toJSONSchema(HostMessage, { target: "draft-2020-12", io: "input" }) as Schema,

@@ -931,6 +931,43 @@
           "additionalProperties": false
         }
       ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "method": {
+          "type": "string",
+          "const": "host/cancel"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$(?![\\s\\S])",
+              "not": {
+                "pattern": "[\\u000a\\u000d\\u2028\\u2029]"
+              }
+            }
+          },
+          "required": [
+            "requestId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "method",
+        "params"
+      ],
+      "additionalProperties": false
     }
   ]
 }
