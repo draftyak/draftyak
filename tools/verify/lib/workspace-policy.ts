@@ -110,8 +110,19 @@ export async function namedFiles(
 ): Promise<string[]> {
 	if (!basename || /[/\\\0*?[\]]/.test(basename)) throw new Error("invalid basename");
 	root = path.resolve(root);
-	const equal = (name: string): boolean =>
-		insensitive ? name.toLowerCase() === basename.toLowerCase() : name === basename;
+	const wanted = insensitive ? basename.toLowerCase() : basename;
+	const equal = (name: string): boolean => (insensitive ? name.toLowerCase() : name) === wanted;
+	const relativeName = (directory: string, name: string): string =>
+		directory === "." ||
+		directory.endsWith("/") ||
+		name === "" ||
+		name === "." ||
+		name === ".." ||
+		name.includes("/")
+			? path.posix.join(directory, name)
+			: directory === ""
+				? name
+				: `${directory}/${name}`;
 	const attempt = async (target: string): Promise<readonly Entry[] | undefined> => {
 		try {
 			return await readDirectory(target);
@@ -147,7 +158,10 @@ export async function namedFiles(
 		if (await gone(target)) return [];
 		throw new Error("file-name inventory failed");
 	};
-	type PendingDirectory = { readonly directory: string; next?: PendingDirectory };
+	type PendingDirectory = {
+		readonly directory: string;
+		next?: PendingDirectory;
+	};
 	let first: PendingDirectory | undefined = { directory: "" };
 	let last: PendingDirectory | undefined = first;
 	const found: string[] = [];
@@ -159,9 +173,15 @@ export async function namedFiles(
 				const children = await list(directory);
 				if (failed) return;
 				for (const entry of children) {
-					const relative = path.posix.join(directory, entry.name);
-					if (equal(entry.name)) found.push(relative);
-					if (entry.isDirectory() && !entry.isSymbolicLink()) {
+					const name = entry.name;
+					if (typeof name !== "string") throw inventoryFailed();
+					const matches = equal(name);
+					const descend = entry.isDirectory() && !entry.isSymbolicLink();
+					// Ordinary files need no relative path; keep normalization for synthetic edge names.
+					if (matches || descend) {
+						const relative = relativeName(directory, name);
+						if (matches) found.push(relative);
+						if (!descend) continue;
 						const pending: PendingDirectory = { directory: relative };
 						if (last) last.next = pending;
 						else first = pending;
