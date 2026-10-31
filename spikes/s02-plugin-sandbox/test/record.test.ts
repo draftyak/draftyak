@@ -6,6 +6,9 @@ import * as kit from "@draftyak/spike-kit";
 import { describe, expect, it, vi } from "vitest";
 import { codeChanged, evidenceFile, missing, recordEvidence, recording, unmet } from "./record.ts";
 
+// Multiple git-backed recordings need bounded headroom when the workspace runs tests in parallel.
+const recordingTimeoutMs = 120_000;
+
 describe("S2b evidence recording", () => {
 	it("records only when asked or in CI", () => {
 		expect(recording({})).toBe(false);
@@ -84,42 +87,47 @@ describe("S2b evidence recording", () => {
 				fs.rmSync(root, { recursive: true, force: true });
 			}
 		},
+		recordingTimeoutMs,
 	);
 
-	it("records exact generated outputs cleanly while retaining untracked input provenance", async () => {
-		const root = fs.mkdtempSync(path.join(os.tmpdir(), "dy-s02-record-output-"));
-		const log = vi.spyOn(console, "log").mockImplementation(() => {});
-		vi.stubEnv("DRAFTYAK_RECORD_EVIDENCE", "1");
-		try {
-			const repo = path.join(root, "repo");
-			fs.mkdirSync(repo);
-			const initialized = spawnSync("git", ["init", "-q"], {
-				cwd: repo,
-				env: Object.fromEntries(
-					Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)),
-				),
-			});
-			expect(initialized.status).toBe(0);
-			const record = async (name: string): Promise<boolean> => {
-				const file = path.join(repo, "evidence", `${name}.json`);
-				await recordEvidence(file, [], { held: true }, repo);
-				return JSON.parse(fs.readFileSync(file, "utf8")).fingerprint.dirty;
-			};
-			expect(await record("one")).toBe(false);
-			expect(await record("two")).toBe(false);
-			fs.mkdirSync(path.join(repo, "test"));
-			const input = path.join(repo, "test", "untracked.test.ts");
-			fs.writeFileSync(input, "export {};\n");
-			expect(await record("three")).toBe(true);
-			fs.unlinkSync(input);
-			fs.writeFileSync(path.join(repo, "evidence", "unknown.json"), "{}\n");
-			expect(await record("four")).toBe(true);
-		} finally {
-			vi.unstubAllEnvs();
-			log.mockRestore();
-			fs.rmSync(root, { recursive: true, force: true });
-		}
-	}, 30_000);
+	it(
+		"records exact generated outputs cleanly while retaining untracked input provenance",
+		async () => {
+			const root = fs.mkdtempSync(path.join(os.tmpdir(), "dy-s02-record-output-"));
+			const log = vi.spyOn(console, "log").mockImplementation(() => {});
+			vi.stubEnv("DRAFTYAK_RECORD_EVIDENCE", "1");
+			try {
+				const repo = path.join(root, "repo");
+				fs.mkdirSync(repo);
+				const initialized = spawnSync("git", ["init", "-q"], {
+					cwd: repo,
+					env: Object.fromEntries(
+						Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)),
+					),
+				});
+				expect(initialized.status).toBe(0);
+				const record = async (name: string): Promise<boolean> => {
+					const file = path.join(repo, "evidence", `${name}.json`);
+					await recordEvidence(file, [], { held: true }, repo);
+					return JSON.parse(fs.readFileSync(file, "utf8")).fingerprint.dirty;
+				};
+				expect(await record("one")).toBe(false);
+				expect(await record("two")).toBe(false);
+				fs.mkdirSync(path.join(repo, "test"));
+				const input = path.join(repo, "test", "untracked.test.ts");
+				fs.writeFileSync(input, "export {};\n");
+				expect(await record("three")).toBe(true);
+				fs.unlinkSync(input);
+				fs.writeFileSync(path.join(repo, "evidence", "unknown.json"), "{}\n");
+				expect(await record("four")).toBe(true);
+			} finally {
+				vi.unstubAllEnvs();
+				log.mockRestore();
+				fs.rmSync(root, { recursive: true, force: true });
+			}
+		},
+		recordingTimeoutMs,
+	);
 
 	it("counts tracked and untracked inputs, exempting only exact recording outputs", () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "dy-s02-record-"));
