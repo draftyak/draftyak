@@ -55,6 +55,7 @@ export {
 	type EventPurgeProgress,
 	type EventRecord,
 } from "./events/log.ts";
+export { SINGLE_OWNER_IDENTITY, singleOwnerIdentity } from "./extensions/free/identity.ts";
 export {
 	ExtensionError,
 	type ExtensionErrorCode,
