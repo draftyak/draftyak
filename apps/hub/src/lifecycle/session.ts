@@ -1,13 +1,16 @@
 import { lstatSync, readdirSync, realpathSync, type Stats, statSync } from "node:fs";
 import path from "node:path";
 import { inspect, types } from "node:util";
+import type { IdentityProvider } from "@draftyak/extensions";
 import { AuditChain } from "../audit/chain.ts";
+import { singleOwnerIdentity } from "../extensions/free/identity.ts";
 import {
 	type ExtensionHost,
 	type ExtensionLogEntry,
 	startExtensions,
 } from "../extensions/registry.ts";
 import { dataMember, inertRecord, isPlainFunction } from "../extensions/values.ts";
+import { DeviceRegistry } from "../identity/devices.ts";
 import { HubIdentity } from "../identity/hub-key.ts";
 import { PinService } from "../identity/pin.ts";
 import { systemClock, type TimerClock } from "../kernel/clock.ts";
@@ -23,6 +26,8 @@ export type HubSessionErrorCode =
 	| "UNLOCK_REFUSED"
 	| "STORE_UNAVAILABLE"
 	| "IDENTITY_UNAVAILABLE"
+	| "DEVICES_UNAVAILABLE"
+	| "IDENTITY_PROVIDER_UNAVAILABLE"
 	| "EXTENSIONS_UNAVAILABLE"
 	| "CLOSE_INCOMPLETE";
 
@@ -56,9 +61,13 @@ export interface HubSession {
 	readonly identity: HubIdentity;
 	/** The one PIN service for this store. */
 	readonly pins: PinService;
+	/** Native-only authority over this session's store, audit chain, identity and PIN service. */
+	readonly devices: DeviceRegistry;
+	/** The captured configured provider, or the native single-owner default; never grants rights. */
+	readonly identityProvider: IdentityProvider;
 	readonly extensions: ExtensionHost;
 	/**
-	 * Closes the extensions, locks the PIN service and the identity, destroys the audit key, closes
+	 * Closes the extensions, locks device authority, the PIN service and identity, destroys the audit key, closes
 	 * the store and erases the master key. Idempotent; a store close that fails is retried next call.
 	 */
 	close(): void;
@@ -76,6 +85,8 @@ interface Parts {
 	readonly audit: AuditChain;
 	readonly identity: HubIdentity;
 	readonly pins: PinService;
+	readonly devices: DeviceRegistry;
+	readonly identityProvider: IdentityProvider;
 	readonly extensions: ExtensionHost;
 }
 
@@ -95,6 +106,7 @@ const closeStore = HubStore.prototype.close;
 const destroyAudit = AuditChain.prototype.destroy;
 const lockIdentity = HubIdentity.prototype.lock;
 const lockPins = PinService.prototype.lock;
+const lockDevices = DeviceRegistry.prototype.lock;
 const redacted = (): string => "[REDACTED]";
 // One session per data folder in this process, from the start of its open until its store closes.
 const live = new Set<string>();
@@ -184,7 +196,7 @@ function existingDatabase(folder: string, filename: string): boolean {
 const notADatabase = (error: unknown): boolean =>
 	error instanceof Error && (error as NodeJS.ErrnoException).code === "SQLITE_NOTADB";
 
-/** The handoff order before the store closes: extensions, PIN service, identity, audit key. */
+/** The handoff order before the store closes: extensions, devices, PIN service, identity, audit key. */
 function stop(parts: Partial<Parts>): boolean {
 	let clean = true;
 	try {
@@ -192,6 +204,7 @@ function stop(parts: Partial<Parts>): boolean {
 	} catch {
 		clean = false;
 	}
+	if (parts.devices) lockDevices.call(parts.devices);
 	if (parts.pins) lockPins.call(parts.pins);
 	if (parts.identity) lockIdentity.call(parts.identity);
 	if (parts.audit) destroyAudit.call(parts.audit);
@@ -249,7 +262,9 @@ export async function openHubSession(options: HubSessionOptions): Promise<HubSes
 	let store: HubStore | undefined,
 		audit: AuditChain | undefined,
 		identity: HubIdentity | undefined,
-		pins: PinService | undefined;
+		pins: PinService | undefined,
+		devices: DeviceRegistry | undefined,
+		extensions: ExtensionHost | undefined;
 	try {
 		const filename = path.join(folder, DATABASE);
 		const existing = existingDatabase(folder, filename);
@@ -277,17 +292,29 @@ export async function openHubSession(options: HubSessionOptions): Promise<HubSes
 		code = "IDENTITY_UNAVAILABLE";
 		identity = await HubIdentity.loadOrCreate(store, masterKey);
 		pins = new PinService(store, audit, clock);
+		code = "DEVICES_UNAVAILABLE";
+		devices = new DeviceRegistry(store, audit, pins, { identity, clock });
 		code = "EXTENSIONS_UNAVAILABLE";
-		const extensions = await startExtensions({
+		extensions = await startExtensions({
 			dataDirectory: folder,
 			nativeBinding,
 			masterKey,
 			clock,
 			log,
 		});
-		return session(folder, masterKey, { store, audit, identity, pins, extensions });
+		code = "IDENTITY_PROVIDER_UNAVAILABLE";
+		const identityProvider = extensions.providers("identity")[0] ?? singleOwnerIdentity(devices);
+		return session(folder, masterKey, {
+			store,
+			audit,
+			identity,
+			pins,
+			devices,
+			identityProvider,
+			extensions,
+		});
 	} catch (error) {
-		stop({ pins, identity, audit });
+		stop({ extensions, devices, pins, identity, audit });
 		if (store && !tryClose(store)) unclosed.add(store);
 		erase(masterKey);
 		live.delete(folder);

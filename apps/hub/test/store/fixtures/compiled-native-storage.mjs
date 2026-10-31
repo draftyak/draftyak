@@ -19,7 +19,7 @@ async function run() {
 	const mode = process.argv[3];
 	assert.ok(["healthy", "missing-asset", "invalid-sql"].includes(mode));
 	checkpoint = 3;
-	const namespaces = ["audit", "core", "jobs", "events", "revisions", "credentials", "tickets"];
+	const namespaces = ["audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets"];
 	const filename = path.join(import.meta.dirname, "native-storage.db");
 	const bytes = randomBytes(32);
 	const masterKey = new MasterKey(bytes);
@@ -87,7 +87,7 @@ async function run() {
 					assert.ok(ordinal("audit_events") < ordinal(name), "Audit events must precede core schema");
 				}
 				for (const name of [
-					"jobs", "jobs_meta", "events", "event_meta", "native_drafts",
+					"device_authority", "devices", "jobs", "jobs_meta", "events", "event_meta", "native_drafts",
 					"native_draft_revisions", "native_draft_locks", "credentials", "native_send_attempts",
 				]) {
 					assert.ok(ordinal("audit_meta") < ordinal(name), "Audit schema must migrate first");
@@ -105,6 +105,9 @@ async function run() {
 				assert.deepEqual(core, { singleton: 1, identity_wrapped: null, statement_wrapped: null, identity_cert: null });
 				assert.equal(sql.get("SELECT count(*) AS n FROM users").n, 0);
 				assert.equal(sql.get("SELECT count(*) AS n FROM approval_pins").n, 0);
+				assert.deepEqual(sql.get("SELECT singleton,epoch,bootstrap_done,owner_user_id FROM device_authority"),
+					{ singleton: 1, epoch: 0, bootstrap_done: 0, owner_user_id: null });
+				assert.equal(sql.get("SELECT count(*) AS n FROM devices").n, 0);
 				const genesis = sql.get("SELECT audit_seq,audit_head,audit_tag FROM audit_meta");
 				assert.match(genesis.audit_tag, /^[0-9a-f]{64}$/);
 				audit.verify(sql);

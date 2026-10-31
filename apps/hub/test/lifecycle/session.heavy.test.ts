@@ -77,9 +77,11 @@ const compiledSessionModes = [
 	"missing-credentials",
 	"invalid-credentials",
 	"missing-revision-immutability",
+	"missing-devices",
+	"invalid-devices",
 ] as const;
 it.each(compiledSessionModes)(
-	"opens and reopens a compiled session using all seven staged schemas (%s)",
+	"opens and reopens a compiled session using all eight staged schemas (%s)",
 	(mode) => {
 		const hub = path.resolve(import.meta.dirname, "../.."),
 			workspace = path.resolve(hub, "../..");
@@ -106,6 +108,7 @@ it.each(compiledSessionModes)(
 			for (const [source, relative] of [
 				["store/migrations/audit/0001_chain.sql", "store/migrations/audit/0001_chain.sql"],
 				["store/migrations/core/0001_identity.sql", "store/migrations/core/0001_identity.sql"],
+				["identity/devices-migrations/0001_devices.sql", "devices-migrations/0001_devices.sql"],
 				["jobs/jobs-migrations/0001_jobs.sql", "jobs-migrations/0001_jobs.sql"],
 				["events/events-migrations/0001_events.sql", "events-migrations/0001_events.sql"],
 				[
@@ -155,9 +158,9 @@ it.each(compiledSessionModes)(
 			expect(JSON.parse(run.stdout)).toEqual({
 				ok: true,
 				mode,
-				schemas: 7,
-				businessTables: 14,
-				bookkeepingTables: 14,
+				schemas: 8,
+				businessTables: 16,
+				bookkeepingTables: 16,
 				beforeIdentity: true,
 				refused: mode === "positive" ? null : "STORE_UNAVAILABLE",
 				failedOpenClosed: mode !== "positive",

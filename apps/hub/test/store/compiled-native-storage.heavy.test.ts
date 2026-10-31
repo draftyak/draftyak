@@ -33,6 +33,7 @@ const nativeBinding = realpathSync(
 const assets = [
 	["store/migrations/audit/0001_chain.sql", "store/migrations/audit/0001_chain.sql"],
 	["store/migrations/core/0001_identity.sql", "store/migrations/core/0001_identity.sql"],
+	["identity/devices-migrations/0001_devices.sql", "devices-migrations/0001_devices.sql"],
 	["jobs/jobs-migrations/0001_jobs.sql", "jobs-migrations/0001_jobs.sql"],
 	["events/events-migrations/0001_events.sql", "events-migrations/0001_events.sql"],
 	["drafts/migrations/0001_native_revisions.sql", "drafts/migrations/0001_native_revisions.sql"],
@@ -224,7 +225,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql"): void {
 				receipt.mode === mode &&
 				receipt.networkAllowed === false &&
 				receipt.nativeAddonPermission === true &&
-				receipt.schemas === 7,
+				receipt.schemas === 8,
 			"Native fixture success receipt",
 		).toBe(true);
 		// Stderr stays opaque. Allowing native addons does not establish OS isolation.
