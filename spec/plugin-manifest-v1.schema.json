@@ -613,7 +613,8 @@
                   "enum": [
                     "messages-api-v1",
                     "responses-api-v1",
-                    "chat-completions-v1"
+                    "chat-completions-v1",
+                    "responses-plan-v1"
                   ]
                 }
               },
@@ -1226,6 +1227,76 @@
             "scopes",
             "requiredGrantedScopes",
             "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "scopes": {
+              "maxItems": 128,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[!-~]+$(?![\\s\\S])",
+                "not": {
+                  "pattern": "\\n"
+                }
+              },
+              "uniqueItems": true
+            },
+            "requiredGrantedScopes": {
+              "maxItems": 128,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[!-~]+$(?![\\s\\S])",
+                "not": {
+                  "pattern": "\\n"
+                }
+              },
+              "uniqueItems": true
+            },
+            "kind": {
+              "type": "string",
+              "const": "oauth2-dynamic-agent"
+            },
+            "issuer": {
+              "type": "string",
+              "maxLength": 261,
+              "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
+              "description": "An https origin on a public DNS name: no port, path, query, fragment or userinfo.",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "resource": {
+              "type": "string",
+              "maxLength": 8192,
+              "allOf": [
+                {
+                  "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?[.])*[a-z](?:[a-z0-9-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?[/](?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))*(?:[?](?:[A-Za-z0-9._~!$&()*+,;=:@/?-]|%(?:[01][0-9A-F]|2[0-9A-CF]|3[A-F]|40|5[B-E]|60|7[BCDF]|[89A-F][0-9A-F]))+)?$(?![\\s\\S])"
+                },
+                {
+                  "pattern": "^https:[/][/](?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?[:/][^?]*$(?![\\s\\S])"
+                }
+              ],
+              "description": "A canonical https URL on a public DNS name, with no query: the API the grant is for.",
+              "not": {
+                "pattern": "\\n"
+              }
+            }
+          },
+          "required": [
+            "scopes",
+            "requiredGrantedScopes",
+            "kind",
+            "issuer",
+            "resource"
           ],
           "additionalProperties": false
         }

@@ -3,6 +3,7 @@ import { wholeString } from "../entities/common.ts";
 import { SendUrl } from "../send-ticket.ts";
 import { PublicDnsHost } from "../tool-v1/egress.ts";
 import { authScopesValid, authFields as common } from "./auth-fields.ts";
+import { issuerOAuth } from "./auth-issuer.ts";
 
 export type { AuthMode } from "./auth-fields.ts";
 
@@ -45,7 +46,11 @@ const basic: z.ZodObject<
 
 // Append a future module's actual schema here; its fields and types follow without another union.
 // Self-types keep each tuple entry explicit for isolated declaration emit.
-export const AUTH_VARIANTS = [oauth as typeof oauth, basic as typeof basic] as const;
+export const AUTH_VARIANTS = [
+	oauth as typeof oauth,
+	basic as typeof basic,
+	issuerOAuth as typeof issuerOAuth,
+] as const;
 Object.freeze(AUTH_VARIANTS);
 export type PluginAuth = z.infer<(typeof AUTH_VARIANTS)[number]>;
 export type AuthKind = PluginAuth["kind"];

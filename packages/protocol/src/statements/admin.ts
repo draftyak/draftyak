@@ -17,6 +17,7 @@ export const ADMIN_GROUPS = {
 	],
 	security: ["security.device-capabilities", "security.pin-change", "security.key-rotate"],
 	data: ["data.export", "data.backup"],
+	ai: ["ai.credential-connect", "ai.credential-disconnect"],
 	sms: [],
 } as const;
 export type AdminKind = (typeof ADMIN_GROUPS)[keyof typeof ADMIN_GROUPS][number];

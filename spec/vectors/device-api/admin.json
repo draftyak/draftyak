@@ -5409,6 +5409,446 @@
       "valid": false
     },
     {
+      "id": "admin-refused-review-ai.credential-connect-email",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-connect",
+        "digest": "5726c85ced3278ab5d1b93cc366e3718ca1416d66ce4e1600cfd7be7abc1a2fc",
+        "subject": {
+          "channel": "email",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "alias": "gmail-1",
+          "address": "owner@example.test",
+          "createdAt": 1791817200000
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-challenge-ai.credential-connect-email",
+      "action": "challenge",
+      "challenge": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "eyJkZXZpY2UiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSCIsImRpZ2VzdCI6IjU3MjZjODVjZWQzMjc4YWI1ZDFiOTNjYzM2NmUzNzE4Y2ExNDE2ZDY2Y2U0ZTE2MDBjZmQ3YmU3YWJjMWEyZmMiLCJlcG9jaCI6MSwiZXhwIjoxNzkyMzQyOTIwMDAwLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJraW5kIjoiYWkuY3JlZGVudGlhbC1jb25uZWN0Iiwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwib3AiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-connect",
+        "digest": "5726c85ced3278ab5d1b93cc366e3718ca1416d66ce4e1600cfd7be7abc1a2fc",
+        "subject": {
+          "channel": "email",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "alias": "gmail-1",
+          "address": "owner@example.test",
+          "createdAt": 1791817200000
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "request": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-review-ai.credential-connect-chat",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-connect",
+        "digest": "0ac18be3a82d0873dc1520d6f575d3f8af68504d431323806426382b7bdcdddc",
+        "subject": {
+          "channel": "chat",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "alias": "slack-1",
+          "teamId": "T0123ABCD",
+          "selfUserId": "U0123ABCD",
+          "createdAt": 1791817200000
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-challenge-ai.credential-connect-chat",
+      "action": "challenge",
+      "challenge": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "eyJkZXZpY2UiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSCIsImRpZ2VzdCI6IjBhYzE4YmUzYTgyZDA4NzNkYzE1MjBkNmY1NzVkM2Y4YWY2ODUwNGQ0MzEzMjM4MDY0MjYzODJiN2JkY2RkZGMiLCJlcG9jaCI6MSwiZXhwIjoxNzkyMzQyOTIwMDAwLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJraW5kIjoiYWkuY3JlZGVudGlhbC1jb25uZWN0Iiwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwib3AiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-connect",
+        "digest": "0ac18be3a82d0873dc1520d6f575d3f8af68504d431323806426382b7bdcdddc",
+        "subject": {
+          "channel": "chat",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "alias": "slack-1",
+          "teamId": "T0123ABCD",
+          "selfUserId": "U0123ABCD",
+          "createdAt": 1791817200000
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "request": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-review-ai.credential-connect-device",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-connect",
+        "digest": "8aa376b488cb992dadc4f66e3253d2973a2fcfb25ed8becf6a44009a16bb2277",
+        "subject": {
+          "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+          "name": "Work laptop",
+          "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+          "pairedAt": 1791995400000,
+          "current": [
+            "read",
+            "draft"
+          ],
+          "capabilities": [
+            "read",
+            "draft",
+            "organize"
+          ]
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-challenge-ai.credential-connect-device",
+      "action": "challenge",
+      "challenge": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "eyJkZXZpY2UiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSCIsImRpZ2VzdCI6IjhhYTM3NmI0ODhjYjk5MmRhZGM0ZjY2ZTMyNTNkMjk3M2EyZmNmYjI1ZWQ4YmVjZjZhNDQwMDlhMTZiYjIyNzciLCJlcG9jaCI6MSwiZXhwIjoxNzkyMzQyOTIwMDAwLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJraW5kIjoiYWkuY3JlZGVudGlhbC1jb25uZWN0Iiwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwib3AiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-connect",
+        "digest": "8aa376b488cb992dadc4f66e3253d2973a2fcfb25ed8becf6a44009a16bb2277",
+        "subject": {
+          "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+          "name": "Work laptop",
+          "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+          "pairedAt": 1791995400000,
+          "current": [
+            "read",
+            "draft"
+          ],
+          "capabilities": [
+            "read",
+            "draft",
+            "organize"
+          ]
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "request": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-review-ai.credential-connect-backup",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-connect",
+        "digest": "4ce76e333b0ccb4e39bbb304936c875eed3d14f5e5a8b6b95b0f944a1319a6a2",
+        "subject": {
+          "scope": "backup"
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-challenge-ai.credential-connect-backup",
+      "action": "challenge",
+      "challenge": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "eyJkZXZpY2UiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSCIsImRpZ2VzdCI6IjRjZTc2ZTMzM2IwY2NiNGUzOWJiYjMwNDkzNmM4NzVlZWQzZDE0ZjVlNWE4YjZiOTViMGY5NDRhMTMxOWE2YTIiLCJlcG9jaCI6MSwiZXhwIjoxNzkyMzQyOTIwMDAwLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJraW5kIjoiYWkuY3JlZGVudGlhbC1jb25uZWN0Iiwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwib3AiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-connect",
+        "digest": "4ce76e333b0ccb4e39bbb304936c875eed3d14f5e5a8b6b95b0f944a1319a6a2",
+        "subject": {
+          "scope": "backup"
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "request": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-review-ai.credential-disconnect-email",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-disconnect",
+        "digest": "5726c85ced3278ab5d1b93cc366e3718ca1416d66ce4e1600cfd7be7abc1a2fc",
+        "subject": {
+          "channel": "email",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "alias": "gmail-1",
+          "address": "owner@example.test",
+          "createdAt": 1791817200000
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-challenge-ai.credential-disconnect-email",
+      "action": "challenge",
+      "challenge": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "eyJkZXZpY2UiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSCIsImRpZ2VzdCI6IjU3MjZjODVjZWQzMjc4YWI1ZDFiOTNjYzM2NmUzNzE4Y2ExNDE2ZDY2Y2U0ZTE2MDBjZmQ3YmU3YWJjMWEyZmMiLCJlcG9jaCI6MSwiZXhwIjoxNzkyMzQyOTIwMDAwLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJraW5kIjoiYWkuY3JlZGVudGlhbC1kaXNjb25uZWN0Iiwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwib3AiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-disconnect",
+        "digest": "5726c85ced3278ab5d1b93cc366e3718ca1416d66ce4e1600cfd7be7abc1a2fc",
+        "subject": {
+          "channel": "email",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "alias": "gmail-1",
+          "address": "owner@example.test",
+          "createdAt": 1791817200000
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "request": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-review-ai.credential-disconnect-chat",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-disconnect",
+        "digest": "0ac18be3a82d0873dc1520d6f575d3f8af68504d431323806426382b7bdcdddc",
+        "subject": {
+          "channel": "chat",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "alias": "slack-1",
+          "teamId": "T0123ABCD",
+          "selfUserId": "U0123ABCD",
+          "createdAt": 1791817200000
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-challenge-ai.credential-disconnect-chat",
+      "action": "challenge",
+      "challenge": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "eyJkZXZpY2UiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSCIsImRpZ2VzdCI6IjBhYzE4YmUzYTgyZDA4NzNkYzE1MjBkNmY1NzVkM2Y4YWY2ODUwNGQ0MzEzMjM4MDY0MjYzODJiN2JkY2RkZGMiLCJlcG9jaCI6MSwiZXhwIjoxNzkyMzQyOTIwMDAwLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJraW5kIjoiYWkuY3JlZGVudGlhbC1kaXNjb25uZWN0Iiwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwib3AiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-disconnect",
+        "digest": "0ac18be3a82d0873dc1520d6f575d3f8af68504d431323806426382b7bdcdddc",
+        "subject": {
+          "channel": "chat",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "alias": "slack-1",
+          "teamId": "T0123ABCD",
+          "selfUserId": "U0123ABCD",
+          "createdAt": 1791817200000
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "request": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-review-ai.credential-disconnect-device",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-disconnect",
+        "digest": "8aa376b488cb992dadc4f66e3253d2973a2fcfb25ed8becf6a44009a16bb2277",
+        "subject": {
+          "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+          "name": "Work laptop",
+          "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+          "pairedAt": 1791995400000,
+          "current": [
+            "read",
+            "draft"
+          ],
+          "capabilities": [
+            "read",
+            "draft",
+            "organize"
+          ]
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-challenge-ai.credential-disconnect-device",
+      "action": "challenge",
+      "challenge": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "eyJkZXZpY2UiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSCIsImRpZ2VzdCI6IjhhYTM3NmI0ODhjYjk5MmRhZGM0ZjY2ZTMyNTNkMjk3M2EyZmNmYjI1ZWQ4YmVjZjZhNDQwMDlhMTZiYjIyNzciLCJlcG9jaCI6MSwiZXhwIjoxNzkyMzQyOTIwMDAwLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJraW5kIjoiYWkuY3JlZGVudGlhbC1kaXNjb25uZWN0Iiwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwib3AiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-disconnect",
+        "digest": "8aa376b488cb992dadc4f66e3253d2973a2fcfb25ed8becf6a44009a16bb2277",
+        "subject": {
+          "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RM",
+          "name": "Work laptop",
+          "transportSpkiSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signingKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q",
+          "pairedAt": 1791995400000,
+          "current": [
+            "read",
+            "draft"
+          ],
+          "capabilities": [
+            "read",
+            "draft",
+            "organize"
+          ]
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "request": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-review-ai.credential-disconnect-backup",
+      "action": "schema",
+      "schema": "OperationReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-disconnect",
+        "digest": "4ce76e333b0ccb4e39bbb304936c875eed3d14f5e5a8b6b95b0f944a1319a6a2",
+        "subject": {
+          "scope": "backup"
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "valid": false
+    },
+    {
+      "id": "admin-refused-challenge-ai.credential-disconnect-backup",
+      "action": "challenge",
+      "challenge": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "statement": "eyJkZXZpY2UiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSCIsImRpZ2VzdCI6IjRjZTc2ZTMzM2IwY2NiNGUzOWJiYjMwNDkzNmM4NzVlZWQzZDE0ZjVlNWE4YjZiOTViMGY5NDRhMTMxOWE2YTIiLCJlcG9jaCI6MSwiZXhwIjoxNzkyMzQyOTIwMDAwLCJodWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaWF0IjoxNzkyMzQyODAwMDAwLCJraW5kIjoiYWkuY3JlZGVudGlhbC1kaXNjb25uZWN0Iiwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwib3AiOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSSiIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ",
+        "kind": "ai.credential-disconnect",
+        "digest": "4ce76e333b0ccb4e39bbb304936c875eed3d14f5e5a8b6b95b0f944a1319a6a2",
+        "subject": {
+          "scope": "backup"
+        },
+        "expiresAt": 1792342920000,
+        "remainingMs": 120000
+      },
+      "request": {
+        "kind": "admin.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RJ"
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": false
+    },
+    {
       "id": "admin-refused-review-plugin.enable-email",
       "action": "schema",
       "schema": "OperationReview",
