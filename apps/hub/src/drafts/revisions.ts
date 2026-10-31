@@ -37,6 +37,7 @@ export interface NativeRevision {
 	readonly lockId: string | null;
 }
 export interface DraftCreation extends DraftBinding {
+	/** Attribution only. The native caller computes the envelope and authorizes its creation. */
 	readonly author: DraftAuthor;
 	readonly content: DraftContent;
 	readonly flags: readonly Flag[];
@@ -173,6 +174,15 @@ function asBinding(input: Record<string, unknown>): DraftBinding {
 	return captureDraftBinding(
 		Object.fromEntries(bindingKeys.map((key) => [key, input[key]])) as unknown as DraftBinding,
 	);
+}
+
+/** Keep the snapshot's finite attribution list without exhausting the owner's first edit. */
+function admitAuthor(authors: readonly DraftAuthor[], author: DraftAuthor): void {
+	const keys = new Set(authors.map((item) => canonicalize(item)));
+	if (keys.has(canonicalize(author))) return;
+	const ownerRecorded = authors.some((item) => item.kind === "owner");
+	const maximum = author.kind === "owner" || ownerRecorded ? 100 : 99;
+	if (keys.size >= maximum) throw revisionUnavailable();
 }
 
 /** Internal encrypted data storage. Author attribution and supplied flag facts confer no rights. */
@@ -514,6 +524,9 @@ export class NativeDraftRevisions {
 		}
 	}
 	appendInTransaction(tx: SqlTransaction, input: DraftAppend): NativeRevision {
+		return this.#appendInTransaction(tx, input, false);
+	}
+	#appendInTransaction(tx: SqlTransaction, input: DraftAppend, modelBody: boolean): NativeRevision {
 		try {
 			this.#assertTransaction(tx);
 			const data = draftRecord(input, [
@@ -535,12 +548,10 @@ export class NativeDraftRevisions {
 			const at = this.#now(),
 				content = normalizeDraftContent(data.content),
 				author = DraftAuthor.parse(data.author);
-			if (
-				at < current.draft.updatedAt ||
-				content.channel !== bound.channel ||
-				new Set([...current.authors.map((item) => canonicalize(item)), canonicalize(author)]).size >
-					100
-			)
+			// Only the body-only entry point can attribute a later revision to a model run.
+			if ((author.kind === "ai") !== modelBody) throw revisionUnavailable();
+			admitAuthor(current.authors, author);
+			if (at < current.draft.updatedAt || content.channel !== bound.channel)
 				throw revisionUnavailable();
 			const revision = DraftRevision.parse({
 					draftId: bound.draftId,
@@ -580,13 +591,17 @@ export class NativeDraftRevisions {
 					]),
 				).values(),
 			];
-			return NativeDraftRevisions.prototype.appendInTransaction.call(this, tx, {
-				...bound,
-				expectedRev: data.expectedRev as number,
-				author,
-				content: { ...current.revision.content, body: normalizeDraftBody(data.body as string) },
-				flags: merged,
-			});
+			return this.#appendInTransaction(
+				tx,
+				{
+					...bound,
+					expectedRev: data.expectedRev as number,
+					author,
+					content: { ...current.revision.content, body: normalizeDraftBody(data.body as string) },
+					flags: merged,
+				},
+				true,
+			);
 		} catch {
 			throw revisionUnavailable();
 		}

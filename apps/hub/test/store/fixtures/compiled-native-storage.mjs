@@ -97,7 +97,7 @@ async function run() {
 					}
 				}
 				for (const namespace of namespaces) {
-					assert.equal(sql.get(`SELECT count(*) AS n FROM _migrations_${namespace}`).n, 1);
+					assert.equal(sql.get(`SELECT count(*) AS n FROM _migrations_${namespace}`).n, namespace === "revisions" ? 2 : 1);
 				}
 				assert.equal(sql.get("SELECT count(*) AS n FROM audit_meta").n, 1);
 				assert.equal(sql.get("SELECT count(*) AS n FROM hub_meta").n, 1);

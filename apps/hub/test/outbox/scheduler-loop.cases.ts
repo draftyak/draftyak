@@ -427,7 +427,7 @@ export function schedulerLoopCases(): void {
 
 		for (const [wait, elapsed] of [
 			[15_000, 0],
-			[10, 8.999],
+			[10, 7.999],
 			[1, 0],
 		] as const) {
 			it(`parks after repeated early waits (${elapsed} ms of ${wait} ms), without starving other work`, async () => {
@@ -463,37 +463,104 @@ export function schedulerLoopCases(): void {
 		}
 
 		for (const fault of ["string", "throw"] as const) {
-			it(`parks safely when monotonic wait readings ${fault === "string" ? "are not numbers" : "throw"}`, async () => {
+			it.each([
+				["start", 2],
+				["end", 0],
+			])(
+				`uses elapsed wall time when monotonic %s readings ${fault === "string" ? "are not numbers" : "throw"}`,
+				async (_, reading) => {
+					const fake = new FakeClock();
+					let readings = 0;
+					let calls = 0;
+					const clock: TimerClock = {
+						wallMs: () => fake.wall,
+						monotonicMs: () => {
+							if (++readings % 3 === reading) {
+								if (fault === "throw") throw new Error("Synthetic clock failure");
+								return String(fake.mono) as unknown as number;
+							}
+							return fake.mono;
+						},
+						after: (ms, signal) => {
+							if (++calls > 3) return fake.after(ms, signal);
+							fake.advance(ms);
+							return Promise.resolve();
+						},
+					};
+					const h = harness(undefined, clock);
+					try {
+						h.loop.start();
+						await settle();
+						expect([h.ticks.length, calls, h.errors]).toEqual([4, 4, []]);
+					} finally {
+						await h.loop.stop();
+					}
+				},
+			);
+
+			it(`keeps retrying through a monotonic outage (${fault}) and resumes ticking after recovery`, async () => {
 				const fake = new FakeClock();
-				let readings = 0;
-				let calls = 0;
+				let failing = false;
 				const clock: TimerClock = {
 					wallMs: () => fake.wall,
 					monotonicMs: () => {
-						if (++readings % 3 === 0) {
+						if (failing) {
 							if (fault === "throw") throw new Error("Synthetic clock failure");
 							return String(fake.mono) as unknown as number;
 						}
 						return fake.mono;
 					},
-					after: (ms, signal) => {
-						if (++calls > 12) return fake.after(ms, signal);
-						fake.advance(ms);
-						return Promise.resolve();
-					},
+					after: (ms, signal) => fake.after(ms, signal),
 				};
 				const h = harness(undefined, clock);
 				try {
 					h.loop.start();
 					await settle();
-					expect([h.ticks.length, calls, h.errors]).toEqual([3, 3, ["SCHEDULER_DATA"]]);
+					failing = true;
+					for (let retry = 0; retry < 4; retry++) {
+						fake.advance(MAX_WAIT_MS);
+						await settle();
+						expect(fake.last()).toMatchObject({ ms: MAX_WAIT_MS, state: "pending" });
+						expect(fake.waits).toHaveLength(retry + 2);
+						expect(reasons(h)).toEqual(["start"]);
+					}
+					expect(h.errors).toEqual(["SCHEDULER_DATA"]);
+					failing = false;
+					fake.advance(MAX_WAIT_MS);
+					await settle();
+					expect(reasons(h)).toEqual(["start", "timer"]);
+					expect(h.errors).toEqual(["SCHEDULER_DATA"]);
 				} finally {
 					await h.loop.stop();
 				}
 			});
 		}
 
-		it("allows a wait to complete exactly one millisecond early", async () => {
+		it("still parks on clearly early wall waits when monotonic wait readings are unavailable", async () => {
+			const fake = new FakeClock();
+			let readings = 0;
+			let calls = 0;
+			const clock: TimerClock = {
+				wallMs: () => fake.wall,
+				monotonicMs: () => (++readings % 3 === 0 ? Number.NaN : fake.mono),
+				after: (ms, signal) => {
+					if (++calls > 12) return fake.after(ms, signal);
+					return Promise.resolve();
+				},
+			};
+			const h = harness(undefined, clock);
+			try {
+				h.loop.start();
+				await settle();
+				expect([h.ticks.length, calls, h.errors]).toEqual([3, 3, ["SCHEDULER_DATA"]]);
+				await settle();
+				expect([h.ticks.length, calls]).toEqual([3, 3]);
+			} finally {
+				await h.loop.stop();
+			}
+		});
+
+		it.each([1, 1.9, 2])("allows a wait to complete %s milliseconds early", async (early) => {
 			const fake = new FakeClock();
 			let calls = 0;
 			const clock: TimerClock = {
@@ -501,7 +568,8 @@ export function schedulerLoopCases(): void {
 				monotonicMs: () => fake.mono,
 				after: (ms, signal) => {
 					if (++calls > 3) return fake.after(ms, signal);
-					fake.advance(ms - 1);
+					fake.wall += Math.ceil(ms - early);
+					fake.mono += ms - early;
 					return Promise.resolve();
 				},
 			};

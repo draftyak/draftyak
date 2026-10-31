@@ -37,6 +37,7 @@ it("runs compiled revisions and one-use freeze using only actual staged exports 
 		);
 		for (const relative of [
 			"drafts/migrations/0001_native_revisions.sql",
+			"drafts/migrations/0002_immutable_revisions.sql",
 			"store/migrations/audit/0001_chain.sql",
 		]) {
 			const built = path.join(hub, "dist", relative);
