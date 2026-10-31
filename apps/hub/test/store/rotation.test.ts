@@ -1065,7 +1065,12 @@ describe("rotateDatabaseFile", () => {
 				method,
 			});
 			expect(sha256(f.filename)).toBe(sourceHash);
-			const store = new HubStore({ filename: rotated, nativeBinding, masterKey: to });
+			const store = new HubStore({
+				filename: rotated,
+				nativeBinding,
+				masterKey: to,
+				migrations: f.migrations,
+			});
 			try {
 				expect(contents(store)).toEqual(expected);
 				// The chain is copied as written: re-keying it is master-key rotation's work.

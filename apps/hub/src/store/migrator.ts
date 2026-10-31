@@ -86,41 +86,60 @@ export function statementStarts(sql: string): string[] {
 	return starts;
 }
 
-// Every NNNN_<name>.sql in one folder, each run whole with exec(): FTS5 triggers hold BEGIN…END,
-// which Kysely's one-statement queries and any split on ";" would break. Another file in the
-// folder, or a file with a refused statement, fails the run before any file runs.
-export class SqlDirMigrationProvider implements MigrationProvider {
-	readonly #dir: string;
+export interface MigrationFile {
+	/** The file name without `.sql`, as the migrator records it. */
+	readonly name: string;
+	readonly sql: string;
+}
+export type MigrationPlan = readonly MigrationFile[];
+const captured = new WeakSet<MigrationPlan>();
+
+// Every NNNN_<name>.sql in one folder, read once: the migrator runs these exact strings and the
+// schema check replays them. Another file in the folder, or a file with a refused statement,
+// refuses the whole plan.
+export function captureMigrationPlan(dir: string): MigrationPlan {
+	const files: MigrationFile[] = [];
+	const numbers = new Set<string>();
+	for (const name of readdirSync(dir).toSorted()) {
+		const entry = lstatSync(path.join(dir, name));
+		if (!entry.isFile() || entry.isSymbolicLink()) {
+			throw new MigrationFileError("Migration entries must be regular files without symlinks");
+		}
+		const number = MIGRATION_FILE.exec(name)?.[1];
+		if (number === undefined) {
+			throw new MigrationFileError(`${name}: migration files are named NNNN_<name>.sql`);
+		}
+		if (numbers.has(number)) throw new MigrationFileError(`${name}: ${number} is used twice`);
+		numbers.add(number);
+		const sql = readFileSync(path.join(dir, name), "utf8");
+		const refused = [...new Set(statementStarts(sql))].filter((w) => REFUSED_STATEMENTS.has(w));
+		if (refused.length > 0) {
+			throw new MigrationFileError(`${name}: a migration can't run ${refused.join(", ")}`);
+		}
+		files.push(Object.freeze({ name: name.slice(0, -".sql".length), sql }));
+	}
+	const plan = Object.freeze(files);
+	captured.add(plan);
+	return plan;
+}
+
+// Each file runs whole with exec(): FTS5 triggers hold BEGIN…END, which Kysely's one-statement
+// queries and any split on ";" would break.
+class PlanMigrationProvider implements MigrationProvider {
+	readonly #plan: MigrationPlan;
 	readonly #db: SqliteDatabase;
 	readonly #afterFile: ((name: string) => void) | undefined;
 
-	constructor(dir: string, db: SqliteDatabase, afterFile?: (name: string) => void) {
-		this.#dir = dir;
+	constructor(plan: MigrationPlan, db: SqliteDatabase, afterFile?: (name: string) => void) {
+		this.#plan = plan;
 		this.#db = db;
 		this.#afterFile = afterFile;
 	}
 
 	async getMigrations(): Promise<Record<string, Migration>> {
 		const migrations: Record<string, Migration> = {};
-		const numbers = new Set<string>();
-		for (const name of readdirSync(this.#dir).toSorted()) {
-			const entry = lstatSync(path.join(this.#dir, name));
-			if (!entry.isFile() || entry.isSymbolicLink()) {
-				throw new MigrationFileError("Migration entries must be regular files without symlinks");
-			}
-			const number = MIGRATION_FILE.exec(name)?.[1];
-			if (number === undefined) {
-				throw new MigrationFileError(`${name}: migration files are named NNNN_<name>.sql`);
-			}
-			if (numbers.has(number)) throw new MigrationFileError(`${name}: ${number} is used twice`);
-			numbers.add(number);
-			const sql = readFileSync(path.join(this.#dir, name), "utf8");
-			const refused = [...new Set(statementStarts(sql))].filter((w) => REFUSED_STATEMENTS.has(w));
-			if (refused.length > 0) {
-				throw new MigrationFileError(`${name}: a migration can't run ${refused.join(", ")}`);
-			}
-			migrations[name.slice(0, -".sql".length)] = { up: async () => this.#run(name, sql) };
-		}
+		for (const { name, sql } of this.#plan)
+			migrations[name] = { up: async () => this.#run(`${name}.sql`, sql) };
 		return migrations;
 	}
 
@@ -160,6 +179,23 @@ export class SqlDirMigrationProvider implements MigrationProvider {
 	}
 }
 
+export class SqlDirMigrationProvider implements MigrationProvider {
+	readonly #dir: string;
+	readonly #db: SqliteDatabase;
+	readonly #afterFile: ((name: string) => void) | undefined;
+
+	constructor(dir: string, db: SqliteDatabase, afterFile?: (name: string) => void) {
+		this.#dir = dir;
+		this.#db = db;
+		this.#afterFile = afterFile;
+	}
+
+	async getMigrations(): Promise<Record<string, Migration>> {
+		const plan = captureMigrationPlan(this.#dir);
+		return new PlanMigrationProvider(plan, this.#db, this.#afterFile).getMigrations();
+	}
+}
+
 export class MigrationError extends Error {
 	override name = "MigrationError";
 	readonly results: readonly MigrationResult[];
@@ -176,20 +212,25 @@ export const migrationTables = (namespace: string): { table: string; lock: strin
 });
 
 // Runs a namespace's pending migrations (§3 Migrations) on a connection from openEncrypted() and
-// returns their names. Kysely keeps the caller's connection open: destroying the Kysely instance
-// would close it.
+// returns their names. A folder is read when the migrator asks for it; a captured plan runs as
+// captured. Kysely keeps the caller's connection open: destroying the Kysely instance would close it.
 export async function migrate(
 	db: SqliteDatabase,
 	namespace: string,
-	dir: string,
+	source: string | MigrationPlan,
 	beforePending?: () => void,
 	afterFile?: (name: string) => void,
 ): Promise<string[]> {
 	if (!NAMESPACE.test(namespace)) throw new TypeError(`not a migration namespace: ${namespace}`);
+	if (typeof source !== "string" && !captured.has(source))
+		throw new TypeError("not a captured migration plan");
 	if (db.inTransaction) throw new MigrationFileError("migrations run outside other transactions");
 	assertSettings(db);
 	const { table, lock } = migrationTables(namespace);
-	let provider: MigrationProvider = new SqlDirMigrationProvider(dir, db, afterFile);
+	let provider: MigrationProvider =
+		typeof source === "string"
+			? new SqlDirMigrationProvider(source, db, afterFile)
+			: new PlanMigrationProvider(source, db, afterFile);
 	if (beforePending) {
 		// Discover pending work using reads only, before Kysely can create its metadata tables.
 		// Reuse this exact plan: later directory changes cannot introduce SQL after the preflight.

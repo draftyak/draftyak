@@ -3,7 +3,9 @@ import Database from "better-sqlite3-multiple-ciphers";
 import { auditHeadTag } from "../audit/head.ts";
 import { MasterKey } from "../kernel/master-key.ts";
 import {
+	captureMigrationPlan,
 	MigrationError,
+	type MigrationPlan,
 	migrate,
 	namesPragmaFunction,
 	REFUSED_STATEMENTS,
@@ -16,9 +18,11 @@ import {
 	destroyEncryptedKeyIdentity,
 	type OpenOptions,
 	openEncrypted,
+	releaseFailedOpen,
 	type SqliteDatabase,
 } from "./open.ts";
 import { bindReadStamp, releaseReadStamp } from "./read-stamp.ts";
+import { SCHEMA_REFUSED, StoreSchema } from "./schema.ts";
 
 export type SqlValue = string | number | bigint | Uint8Array | null;
 export interface SqlReader {
@@ -33,6 +37,10 @@ export interface SqlTransaction extends SqlReader {
 }
 export interface StoreOptions extends OpenOptions {
 	readonly masterKey: MasterKey;
+	/**
+	 * Trusted migration folders by namespace. Reopening a file needs the folder of each namespace
+	 * it applied, unless that namespace is one of the hub's delivered schemas.
+	 */
 	readonly migrations?: Readonly<Record<string, string>>;
 }
 const promiseThen = Promise.prototype.then;
@@ -75,6 +83,7 @@ export function assertStoreTransaction(store: HubStore, transaction: SqlTransact
 export class HubStore {
 	readonly #keyIdentity = createEncryptedKeyIdentity();
 	readonly #db: SqliteDatabase;
+	readonly #schema: StoreSchema;
 	readonly #genesisTag: string;
 	readonly #readOwner: object = Object.freeze(Object.create(null));
 	readonly #migrations: ReadonlyMap<string, string>;
@@ -86,17 +95,36 @@ export class HubStore {
 	constructor(options: StoreOptions) {
 		this.#migrations = new Map(Object.entries(options.migrations ?? {}));
 		const masterKey = options.masterKey;
-		let auditKey: Buffer | undefined;
+		let auditKey: Buffer | undefined, db: SqliteDatabase | undefined;
 		try {
 			auditKey = derive.call(masterKey, "audit");
 			this.#genesisTag = auditHeadTag(auditKey, 0, "");
-			this.#db = openEncrypted(options, masterKey, "db", this.#keyIdentity);
+			const opening: OpenOptions = {
+				filename: options.filename,
+				nativeBinding: options.nativeBinding,
+				create: options.create,
+			};
+			db = openEncrypted(opening, masterKey, "db", this.#keyIdentity);
 			this.#newAuditStorage = consumeCreatedEncryptedFile(this.#keyIdentity);
+			// No read, write or migration can reach the file before its schema is accepted.
+			this.#schema = StoreSchema.accept(db, opening.nativeBinding, this.#migrations);
+			this.#db = db;
 		} catch (error) {
 			destroyEncryptedKeyIdentity(this.#keyIdentity);
+			if (db) releaseFailedOpen(db);
 			throw error;
 		} finally {
 			auditKey?.fill(0);
+		}
+	}
+	// A schema refusal after construction leaves only close() usable.
+	#checked(check: () => void): void {
+		try {
+			check();
+		} catch {
+			this.#closed = true;
+			destroyEncryptedKeyIdentity(this.#keyIdentity);
+			throw new Error(SCHEMA_REFUSED);
 		}
 	}
 	#scope<T>(write: boolean, work: (db: SqlTransaction) => T): T {
@@ -180,9 +208,14 @@ export class HubStore {
 		if (dir === undefined) throw new Error("Migration namespace is not registered");
 		this.#busy = true;
 		this.#revision++;
-		let initializing = false;
+		let initializing = false,
+			started: MigrationPlan | undefined;
 		try {
-			return await migrate(this.#db, namespace, dir, undefined, (name) => {
+			// The migrator runs the same captured SQL that the schema checks replay.
+			const plan = captureMigrationPlan(dir);
+			this.#checked(() => this.#schema.beforeMigration(this.#db, namespace, plan));
+			started = plan;
+			return await migrate(this.#db, namespace, plan, undefined, (name) => {
 				if (namespace !== "audit" || name !== "0001_chain.sql") return;
 				if (
 					!this.#newAuditStorage ||
@@ -220,7 +253,12 @@ export class HubStore {
 			}
 			throw error;
 		} finally {
-			this.#busy = false;
+			try {
+				const plan = started;
+				if (plan) this.#checked(() => this.#schema.afterMigration(this.#db, namespace, plan));
+			} finally {
+				this.#busy = false;
+			}
 		}
 	}
 	checkpoint(): void {
