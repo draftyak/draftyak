@@ -139,7 +139,8 @@ export interface SecondClock {
 /**
  * Conservative bounds of a right upstream's current time T, low ≤ T < high, from this
  * account's sample; undefined when the read took over 10 s or the sample or the readings cannot
- * bound it. high assumes the hub's wall or monotonic clock counted the time since the request: a
+ * bound it. In each interval (request to response, then response to now), high assumes at least
+ * one hub clock counted the elapsed time; the counting clock may differ between intervals. A
  * pause that stops both, such as a VM save and restore, lets high trail T.
  */
 export function secondClock(
@@ -157,21 +158,24 @@ export function secondClock(
 	const { wall, mono } = reading;
 	if (!isWallMs(wall) || !isMonoMs(mono)) return undefined;
 	const { requestWall, requestMono, responseWall, responseMono, dateMs } = sample;
+	const readWall = responseWall - requestWall;
+	const readMono = responseMono - requestMono;
 	const sinceWall = wall - responseWall;
 	const sinceMono = mono - responseMono;
 	if (
 		!(requestMono <= responseMono && responseMono <= mono) ||
-		responseMono - requestMono > PRECLAIM_TIMEOUT_MS ||
+		readMono > PRECLAIM_TIMEOUT_MS ||
 		sinceMono > SAMPLE_MAX_AGE_MS ||
-		Math.abs(responseWall - requestWall - (responseMono - requestMono)) > DIVERGENCE_MS ||
+		Math.abs(readWall - readMono) > DIVERGENCE_MS ||
 		Math.abs(sinceWall - sinceMono) > DIVERGENCE_MS
 	)
 		return undefined;
-	// The header is whole seconds, written between request and response; the larger elapsed
-	// time covers a monotonic clock paused by a short suspend.
+	// The header is whole seconds, written during the read. Bound both intervals separately so
+	// a later correction cannot cancel time counted by the other clock during the read.
 	return Object.freeze({
 		low: dateMs + Math.min(sinceMono, sinceWall),
-		high: dateMs + DATE_RESOLUTION_MS + Math.max(mono - requestMono, wall - requestWall),
+		high:
+			dateMs + DATE_RESOLUTION_MS + Math.max(readMono, readWall) + Math.max(sinceMono, sinceWall),
 	});
 }
 
