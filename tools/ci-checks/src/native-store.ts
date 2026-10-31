@@ -1,18 +1,30 @@
 import { spawnSync } from "node:child_process";
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, rmSync } from "node:fs";
+import {
+	closeSync,
+	constants,
+	fstatSync,
+	lstatSync,
+	openSync,
+	readSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { appendSummary, runCli, setOutputs } from "./lib.ts";
 
 export const nativeStoreFile = "apps/hub/test/store/temp-files.heavy.test.ts";
 export const nativeStoreCase =
 	"observes live plaintext FILE controls and no temporary files under production MEMORY";
+export const nativeStoreReceiptFile = "native-store-receipt.json";
 const repository = "draftyak/draftyak";
 const owner = "nicksavov";
 const workflowRef = `${repository}/.github/workflows/native-store.yml@refs/heads/m0`;
 const sha = /^(?!0{40}$)[0-9a-f]{40}$/;
 const positive = /^[1-9][0-9]{0,8}$/;
+const runIdentity = /^[1-9][0-9]{0,15}$/;
 const maxMetadata = 256 * 1024;
 const maxReport = 1024 * 1024;
+const maxReceipt = 4096;
 const sourceTreeArgs = [
 	"diff",
 	"--quiet",
@@ -50,6 +62,9 @@ export interface NativeStoreContext {
 	readonly temporary: string;
 	readonly pr: string;
 	readonly head: string;
+	readonly runId: string;
+	readonly runAttempt: string;
+	readonly job: string;
 }
 
 export interface NativeStoreSource {
@@ -76,6 +91,9 @@ export function nativeStoreContext(
 		temporary: env.RUNNER_TEMP ?? "",
 		pr: env.NATIVE_STORE_PR ?? "",
 		head: env.NATIVE_STORE_HEAD ?? "",
+		runId: env.GITHUB_RUN_ID ?? "",
+		runAttempt: env.GITHUB_RUN_ATTEMPT ?? "",
+		job: env.GITHUB_JOB ?? "",
 	};
 }
 
@@ -91,6 +109,10 @@ export function checkNativeStoreContext(context: NativeStoreContext): NativeStor
 		context.workflowSha !== context.sha ||
 		context.runnerOs !== "macOS" ||
 		context.platform !== "darwin" ||
+		context.job !== "native-store" ||
+		!runIdentity.test(context.runId) ||
+		!Number.isSafeInteger(Number(context.runId)) ||
+		!positive.test(context.runAttempt) ||
 		!path.isAbsolute(context.workspace) ||
 		!path.isAbsolute(context.temporary)
 	)
@@ -307,7 +329,7 @@ export function checkNativeStoreReport(value: unknown, directory: string): numbe
 	if (
 		report.success !== true ||
 		!Number.isSafeInteger(report.numTotalTestSuites) ||
-		Number(report.numTotalTestSuites) < 1 ||
+		report.numTotalTestSuites !== 1 ||
 		report.numPassedTestSuites !== report.numTotalTestSuites ||
 		report.numFailedTestSuites !== 0 ||
 		report.numPendingTestSuites !== 0 ||
@@ -319,7 +341,7 @@ export function checkNativeStoreReport(value: unknown, directory: string): numbe
 		suite.name !== expected ||
 		suite.status !== "passed" ||
 		suite.message !== "" ||
-		count < 1 ||
+		count !== 1 ||
 		!Array.isArray(assertions) ||
 		assertions.some((item) => {
 			const test = record(item);
@@ -358,6 +380,65 @@ const execute: NativeStoreExecute = (command) => {
 	return result.error ? null : result.status;
 };
 
+// This file is written only after the command, unchanged source and held native report pass.
+// Its claims still require primary run/job/step/artifact joins; detached JSON proves no execution.
+function writeNativeStoreReceipt(context: NativeStoreContext, count: number): void {
+	const value = {
+		version: 1,
+		repository: context.repository,
+		workflowRef: context.workflowRef,
+		ref: context.ref,
+		actor: context.actor,
+		triggeringActor: context.triggeringActor,
+		controlSha: context.sha,
+		pr: context.pr,
+		sourceHead: context.head,
+		runId: context.runId,
+		runAttempt: context.runAttempt,
+		job: context.job,
+		runnerOs: context.runnerOs,
+		platform: context.platform,
+		testFile: nativeStoreFile,
+		testCase: nativeStoreCase,
+		passed: count,
+		failed: 0,
+		skipped: 0,
+		pending: 0,
+		todo: 0,
+		sourceUnchanged: true,
+	};
+	const bytes = Buffer.from(`${JSON.stringify(value)}\n`);
+	if (bytes.length > maxReceipt) refuse("Native store receipt is unavailable");
+	const file = path.join(context.temporary, nativeStoreReceiptFile);
+	let descriptor: number | undefined;
+	try {
+		descriptor = openSync(
+			file,
+			constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0),
+			0o600,
+		);
+		writeFileSync(descriptor, bytes);
+		const held = fstatSync(descriptor, { bigint: true });
+		const named = lstatSync(file, { bigint: true });
+		if (
+			!sameReportStat(held, named) ||
+			held.size !== BigInt(bytes.length) ||
+			held.size > BigInt(maxReceipt)
+		)
+			refuse("Native store receipt is unavailable");
+	} catch {
+		refuse("Native store receipt is unavailable");
+	} finally {
+		if (descriptor !== undefined) {
+			try {
+				closeSync(descriptor);
+			} catch {
+				refuse("Native store receipt is unavailable");
+			}
+		}
+	}
+}
+
 export function runNativeStore(
 	context: NativeStoreContext,
 	env: NodeJS.ProcessEnv,
@@ -368,6 +449,7 @@ export function runNativeStore(
 	const directory = path.join(context.workspace, "source");
 	const report = path.join(context.temporary, "native-store.json");
 	rmSync(report, { force: true });
+	rmSync(path.join(context.temporary, nativeStoreReceiptFile), { force: true });
 	const status = run({
 		executable: process.execPath,
 		args: [
@@ -399,7 +481,9 @@ export function runNativeStore(
 	});
 	if (status !== 0) refuse("Native store test command failed");
 	verifyNativeStoreSource(context, readGit);
-	return checkNativeStoreReport(readNativeStoreReport(report), directory);
+	const count = checkNativeStoreReport(readNativeStoreReport(report), directory);
+	writeNativeStoreReceipt(context, count);
+	return count;
 }
 
 async function main(): Promise<number> {
@@ -417,6 +501,7 @@ async function main(): Promise<number> {
 			appendSummary(
 				`Native macOS store: ${count} passed, zero skipped.\n\nPR #${context.pr}: \`${context.head}\`\n\nControl: \`${context.sha}\``,
 			);
+			setOutputs({ receipt: "ready" });
 			return 0;
 		}
 		default:

@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { capabilities as kitCapabilities } from "../../spikes/kit/vitest.ts";
 import {
 	heavyCapabilities,
@@ -17,7 +17,12 @@ import { capture } from "./lib/spawn.ts";
 const config = (mode: string) => vitestConfig({ command: "serve", mode });
 
 describe("test tiers", () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
 	it("runs only unit tests by default and never loads .env files", () => {
+		vi.stubEnv("CI", "");
 		const { envDir, test } = config("test");
 		expect(envDir).toBe(false);
 		expect(test).toMatchObject({
@@ -61,6 +66,7 @@ describe("heavyVitestConfig", () => {
 		here: { description: "always", detect: () => true },
 	};
 	const heavyConfig = (mode: string, strict = "") => {
+		vi.stubEnv("CI", "");
 		vi.stubEnv("DRAFTYAK_STRICT_SKIPS", strict);
 		try {
 			return heavyVitestConfig({ command: "serve", mode }, extra);
