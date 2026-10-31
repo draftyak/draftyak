@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
 	closeSync,
+	existsSync,
 	fstatSync,
 	lstatSync,
 	mkdtempSync,
@@ -45,6 +46,7 @@ afterEach(() => {
 		assert.equal(identity.ino, ino);
 		assert.equal(identity.birthtimeNs, born);
 		rmSync(root, { recursive: true, force: false });
+		assert.equal(existsSync(root), false);
 	}
 });
 

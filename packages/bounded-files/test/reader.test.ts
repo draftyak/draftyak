@@ -347,10 +347,12 @@ for (const [effect, description] of [
 	["chain-respelled", "refuses an ancestor respelled during the read before the file's recheck"],
 	["file-respelled", "refuses a file name respelled during the read"],
 ] as const) {
-	const platformDescription =
-		process.platform === "win32" && effect.startsWith("same-tick")
-			? `refuses the pre-opened writer for ${effect}`
-			: description;
+	let platformDescription: string = description;
+	if (process.platform === "win32") {
+		if (effect === "growth") platformDescription = "refuses an append while the reader is open";
+		else if (effect.startsWith("same-tick"))
+			platformDescription = `refuses the pre-opened writer for ${effect}`;
+	}
 	test(platformDescription, () => {
 		const child = spawnSync(
 			process.execPath,
