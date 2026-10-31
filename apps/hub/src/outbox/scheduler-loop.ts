@@ -52,8 +52,8 @@ const PRIORITY: Readonly<Record<TickReason, number>> = Object.freeze({
 });
 
 const EARLY_WAKES = 3;
-// Native waits may complete up to one millisecond early.
-const EARLY_SLACK_MS = 1;
+// A native timer's coarse loop clock can end a wait almost two milliseconds early.
+const EARLY_SLACK_MS = 2;
 
 const stronger = (a: TickReason, b: TickReason | undefined): TickReason =>
 	b !== undefined && PRIORITY[b] > PRIORITY[a] ? b : a;
@@ -230,6 +230,15 @@ export class SchedulerLoop {
 		}
 	}
 
+	#wall(): number {
+		try {
+			const wall = this.#wallMs();
+			return isWallMs(wall) ? wall : Number.NaN;
+		} catch {
+			return Number.NaN;
+		}
+	}
+
 	#open(): boolean {
 		try {
 			return this.#gate() === "running";
@@ -280,11 +289,16 @@ export class SchedulerLoop {
 			controller.signal.addEventListener("abort", () => resolve(false), { once: true }),
 		);
 		try {
-			const started = this.#mono();
+			const startedMono = this.#mono();
+			const startedWall = this.#wall();
 			const pending = this.#after(ms, controller.signal);
 			if (!types.isPromise(pending)) throw new SchedulerError("SCHEDULER_DATA");
 			if (await Promise.race([pending.then(() => true), aborted])) {
-				const elapsed = this.#mono() - started;
+				const monoElapsed = this.#mono() - startedMono;
+				// An unavailable monotonic reading must not turn a fully elapsed retry into an early
+				// wake. Tick admission still requires both clocks to recover in #read().
+				const elapsed = Number.isFinite(monoElapsed) ? monoElapsed : this.#wall() - startedWall;
+				if (!Number.isFinite(elapsed)) throw new SchedulerError("SCHEDULER_DATA");
 				if (elapsed >= ms - EARLY_SLACK_MS && (ms === 0 || elapsed > 0)) {
 					this.#early = 0;
 					this.#episodes.delete("wait");
