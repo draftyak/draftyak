@@ -1,10 +1,12 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { GATE_ROOT_ENV } from "../../../tools/verify/lib/bootstrap.ts";
+import { PLUGIN_MISSING } from "../../../vitest.shared.ts";
 import { exec } from "../exec.ts";
-import { kitDir } from "../repo.ts";
+import { kitDir, repoRoot } from "../repo.ts";
 import { strictSkips } from "../skip.ts";
 import { capabilities, spikeVitestConfig } from "../vitest.ts";
 
@@ -16,6 +18,8 @@ const extra = {
 describe("spikeVitestConfig", () => {
 	const config = (mode: string, env: NodeJS.ProcessEnv = {}) =>
 		spikeVitestConfig({ command: "serve", mode }, { env, capabilities: extra });
+	const plugins = (mode: string, env: NodeJS.ProcessEnv = {}) =>
+		(config(mode, env).plugins ?? []).map((plugin) => (plugin as { name?: string }).name);
 
 	afterEach(() => {
 		vi.unstubAllEnvs();
@@ -24,7 +28,8 @@ describe("spikeVitestConfig", () => {
 	it("keeps M0.1's tiers and adds a requires: tag per capability, skipping only missing ones", () => {
 		vi.stubEnv("CI", "");
 		const heavy = config("heavy").test;
-		expect(heavy?.include).toEqual(["**/*.heavy.test.ts"]);
+		// The tier's glob arrives through draftyak:reserved-tests; the runs below use it.
+		expect(heavy?.include).toEqual([PLUGIN_MISSING]);
 		const names = [...Object.keys(capabilities), "nowhere", "here"].map(
 			(name) => `requires:${name}`,
 		);
@@ -35,10 +40,11 @@ describe("spikeVitestConfig", () => {
 		expect(() => config("production")).toThrow('unknown test tier "production"');
 	});
 
-	it("adds the strict-skips plugin to heavy runs only, and refuses unknown strict values", () => {
+	it("keeps the shared reserved-tests plugin and adds strict skips to heavy runs only", () => {
 		const strict = { DRAFTYAK_STRICT_SKIPS: "1" };
-		expect(config("heavy", strict).plugins).toMatchObject([{ name: "draftyak:strict-skips" }]);
-		expect([config("heavy").plugins, config("test", strict).plugins]).toEqual([[], []]);
+		const shared = "draftyak:reserved-tests";
+		expect(plugins("heavy", strict)).toEqual([shared, "draftyak:strict-skips"]);
+		expect([plugins("heavy"), plugins("test", strict)]).toEqual([[shared], [shared]]);
 		expect(() => config("heavy", { DRAFTYAK_STRICT_SKIPS: "true" })).toThrow('not "true"');
 		expect([strictSkips({}), strictSkips({ DRAFTYAK_STRICT_SKIPS: "0" })]).toEqual([false, false]);
 	});
@@ -84,11 +90,20 @@ it("runs", () => {});
 		`it.skip("skipped by hand", () => {});\nit("runs", () => {});\n`,
 	);
 	write("solo.heavy.test.ts", `it.only("chosen", () => {});\nit("left out", () => {});\n`);
-	// A clean child: no outer Vitest state, colours (turbo forces them) or CI behaviour.
-	const inherited = /^(?:VITEST|TEST$|NODE_ENV$|DRAFTYAK_STRICT|FORCE_COLOR$|GITHUB_ACTIONS$|CI$)/;
-	const env = Object.fromEntries(
-		Object.entries(process.env).filter(([name]) => !inherited.test(name)),
+	// A reserved heavy file: its name is built here, and the runs below select it as "zz-",
+	// so no output names it unless it runs.
+	write(
+		`zz-${["si", "wc"].join("")}.heavy.test.ts`,
+		`it("ran", () => { throw new Error("ran"); });\n`,
 	);
+	// A clean child: no outer Vitest state, colours (turbo forces them) or CI behaviour.
+	const inherited =
+		/^(?:VITEST|TEST$|NODE_ENV$|DRAFTYAK_(?:STRICT|RESERVED|TEST_COUNTS|TYPECHECK_MARKS)|FORCE_COLOR$|GITHUB_ACTIONS$|CI$)/i;
+	// As under a gated launcher: the input gate has run on this checkout (routes.test.ts runs it).
+	const env = {
+		...Object.fromEntries(Object.entries(process.env).filter(([name]) => !inherited.test(name))),
+		[GATE_ROOT_ENV]: realpathSync.native(repoRoot),
+	};
 	const run = (args: string[], extraEnv: NodeJS.ProcessEnv = {}) =>
 		exec(process.execPath, [path.join(kitDir, "run.ts"), ...args, "--configLoader", "native"], {
 			cwd: dir,
@@ -101,6 +116,16 @@ it("runs", () => {});
 		const result = await run(["--heavy", "cases"]);
 		expect(result.stdout).toContain("1 passed | 6 skipped | 1 todo (8)");
 		expect(result.code).toBe(0);
+	}, 120_000);
+
+	it("leaves a reserved test file out of the run unless DRAFTYAK_RESERVED_TESTS=1", async () => {
+		const [off, optIn] = await Promise.all([
+			run(["--heavy", "zz-"]),
+			run(["--heavy", "zz-"], { DRAFTYAK_RESERVED_TESTS: "1" }),
+		]);
+		const output = (result: { stdout: string; stderr: string }) => result.stdout + result.stderr;
+		expect([off.code, output(off).includes("No test files found")]).toEqual([0, true]);
+		expect([optIn.code, output(optIn).includes("Tests  1 failed (1)")]).toEqual([1, true]);
 	}, 120_000);
 
 	it("under strict skips fails the Docker test by name, and every skip no tag routed", async () => {

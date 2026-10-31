@@ -1,0 +1,22 @@
+{
+  "$schema": "../../node_modules/turbo/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/verify/lib/**",
+        "$TURBO_ROOT$/tools/verify/reserved-tripwire.ts",
+        "$TURBO_ROOT$/tools/verify/test/temp-repo.ts"
+      ]
+    },
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/verify/lib/**",
+        "$TURBO_ROOT$/tools/verify/reserved-tripwire.ts",
+        "$TURBO_ROOT$/tools/verify/test/temp-repo.ts"
+      ]
+    }
+  }
+}
