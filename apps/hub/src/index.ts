@@ -9,6 +9,14 @@ export {
 	type AuditInput,
 } from "./audit/chain.ts";
 export {
+	GMAIL_CREDENTIAL_MIGRATIONS,
+	GMAIL_DELETION_DELAY_MS,
+	type GmailCredentialDeadline,
+	type GmailCredentialOptions,
+	GmailCredentials,
+	type GoogleDesktopClient,
+} from "./channels/gmail/connection/google-credentials.ts";
+export {
 	type CredentialBinding,
 	type CredentialDescriptor,
 	CredentialError,
