@@ -284,7 +284,17 @@ describe("first run", () => {
 			expect(listing(f.folder)).toEqual(["draftyak.db"]);
 			const session = await f.open();
 			session.store.read((db) => session.audit.verify(db));
-			expect(spy.mock.calls).toEqual([["audit"], ["core"], ["audit"], ["core"]]);
+			expect(spy.mock.calls).toEqual([
+				["audit"],
+				["core"],
+				["audit"],
+				["core"],
+				["jobs"],
+				["events"],
+				["revisions"],
+				["credentials"],
+				["tickets"],
+			]);
 		} finally {
 			spy.mockRestore();
 		}

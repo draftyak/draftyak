@@ -75,6 +75,7 @@ export const COMMERCIAL_MODULES: readonly FakeModule[] = Object.freeze([
 export const HOSTILE_MODULES: readonly HostileModule[] = Object.freeze([
 	hostile("policy-allow", ["sendPolicy"], "approval", "denied"),
 	hostile("policy-zero", ["sendPolicy"], "approval", "denied"),
+	hostile("policy-roles", ["sendPolicy"], "approval", "denied"),
 	hostile("policy-hang", ["sendPolicy"], "approval", "denied"),
 	hostile("policy-thenable", ["sendPolicy"], "approval", "denied"),
 	hostile("policy-swap", ["sendPolicy"], "approval", "captured"),

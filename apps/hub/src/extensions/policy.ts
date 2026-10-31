@@ -84,6 +84,8 @@ function requirement(value: unknown): { approvals: number; roles: readonly strin
 			return undefined;
 		const roles = fields.has("roles") ? denseArray(fields.get("roles"), MAX_ROLES, "module") : [];
 		if (!roles.every(isIdentifier) || new Set(roles).size !== roles.length) return undefined;
+		// Role membership has no native authority in the single-owner pilot.
+		if (roles.length > 0) return undefined;
 		return { approvals, roles };
 	} catch {
 		return undefined;

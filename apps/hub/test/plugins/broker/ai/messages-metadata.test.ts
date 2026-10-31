@@ -28,6 +28,7 @@ import {
 import { builtinRegistrations } from "../../../../src/plugins/broker/ai/verifiers.ts";
 import { HubStore } from "../../../../src/store/store.ts";
 import { migrations, nativeBinding } from "../../../store/helpers.ts";
+import { MODEL_PATH_SPELLINGS, otherSpellings } from "./model-paths.ts";
 
 const registry = createBuiltinAiProfileRegistry();
 const base = "https://api.anthropic.com/v1/models";
@@ -175,6 +176,68 @@ describe("native Messages metadata calls", () => {
 		expect(() => call({ operation: "ai_probe", configuration, input: {} })).toThrow(
 			AiVerificationError,
 		);
+	});
+	it.each([
+		[
+			"gpt-synthetic/a?b=%25#d+e",
+			"gpt-synthetic%2Fa%3Fb=%2525%23d+e",
+			"gpt-synthetic%2Fa%3Fb%3D%2525%23d%2Be",
+		],
+		[
+			"ft:claude-synthetic:DYTEST-org@2026",
+			"ft:claude-synthetic:DYTEST-org@2026",
+			"ft%3Aclaude-synthetic%3ADYTEST-org%402026",
+		],
+		["a$b&c+d,e;f=g", "a$b&c+d,e;f=g", "a%24b%26c%2Bd%2Ce%3Bf%3Dg"],
+		[
+			"claude-synthetic:@!$&'()*+,;=",
+			"claude-synthetic:@!$&'()*+,;=",
+			"claude-synthetic%3A%40!%24%26'()*%2B%2C%3B%3D",
+		],
+	])("probes model %s only at the client spelling %s", (model, spelling, refused) => {
+		for (const native of [
+			{ operation: "ai_probe" as const, configuration, input: { model } },
+			{ operation: "ai_probe" as const, configuration: { ...configuration, model }, input: {} },
+		]) {
+			const url = `${base}/${spelling}`;
+			expect(snapshotVerifiedAiRequest(request(call(native), url).handle).url).toBe(url);
+			expect(() => request(call(native), `${base}/${refused}`)).toThrow(AiVerificationError);
+		}
+	});
+	it.each(MODEL_PATH_SPELLINGS)(
+		"probes model character %s only at the spelling %s",
+		(character, spelling) => {
+			const native = {
+				operation: "ai_probe" as const,
+				configuration: { ...configuration, model: "configured" },
+				input: { model: `DYTEST-${character}` },
+			};
+			const url = `${base}/DYTEST-${spelling}`;
+			expect(snapshotVerifiedAiRequest(request(call(native), url).handle).url).toBe(url);
+			for (const other of otherSpellings(character, spelling))
+				expect(() => request(call(native), `${base}/DYTEST-${other}`)).toThrow(AiVerificationError);
+		},
+	);
+	it("refuses dot-segment probe models before any request can be reserved", () => {
+		for (const model of [".", ".."]) {
+			expect(() => call({ operation: "ai_probe", configuration, input: { model } })).toThrow(
+				AiVerificationError,
+			);
+			expect(() =>
+				call({ operation: "ai_probe", configuration: { ...configuration, model }, input: {} }),
+			).toThrow(AiVerificationError);
+		}
+		for (const [model, spelling] of [
+			["...", "..."],
+			[".DYTEST", ".DYTEST"],
+			["%2e", "%252e"],
+			["%2E%2E", "%252E%252E"],
+		]) {
+			const state = call({ operation: "ai_probe", configuration, input: { model } });
+			expect(snapshotVerifiedAiRequest(request(state, `${base}/${spelling}`).handle).url).toBe(
+				`${base}/${spelling}`,
+			);
+		}
 	});
 	it("derives multiple exact cursors only from observed successful native pages", async () => {
 		const f = await fixture(),

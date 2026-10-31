@@ -14,12 +14,12 @@ export default {
 			async evaluate(input) {
 				if (input.accountId === DENIED_ACCOUNT)
 					return { kind: "deny", reason: "PRIVATE_RULES_REASON" };
-				return { kind: "require", approvals: 2, roles: ["approver"] };
+				return { kind: "require", approvals: 2 };
 			},
 		});
 		registry.adminOp("rules", {
 			summarize() {
-				return ["Require 2 approvals from the approver role"];
+				return ["Require 2 approvals"];
 			},
 			async apply() {
 				seen("apply");

@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import {
+	type BackupTarget,
 	defineExtensionModule,
 	type ExtensionRegistry,
 	type HubModule,
@@ -118,6 +119,20 @@ describe("module files", () => {
 			expect(names.length).toBeGreaterThan(0);
 			for (const name of names) expect(migrationNumber(name), name).toBeDefined();
 		}
+	});
+
+	it("pins the invalid backup refusal to a class reserved by the hub", async () => {
+		const module = HOSTILE_MODULES.find(({ id }) => id === "backup-refuses-invalid");
+		if (module === undefined) return expect.unreachable("no backup-refuses-invalid");
+		const targets: BackupTarget[] = [];
+		const registry = frozen({
+			...recording().registry,
+			backup(value: BackupTarget): void {
+				targets.push(value);
+			},
+		}) as ExtensionRegistry;
+		await (await load(module)).register(registry);
+		expect(targets.map(({ refuses }) => refuses)).toEqual([["slack.content", "hub.content"]]);
 	});
 });
 

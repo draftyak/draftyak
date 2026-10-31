@@ -55,6 +55,7 @@ export {
 	type EventPurgeProgress,
 	type EventRecord,
 } from "./events/log.ts";
+export { SINGLE_OWNER_IDENTITY, singleOwnerIdentity } from "./extensions/free/identity.ts";
 export {
 	ExtensionError,
 	type ExtensionErrorCode,
@@ -131,6 +132,10 @@ export {
 	type SidecarStop,
 	type SidecarStopReason,
 } from "./kernel/sidecar-input.ts";
+export {
+	createLifecycleScheduler,
+	type LifecycleSchedulerOptions,
+} from "./lifecycle/scheduler.ts";
 export {
 	type HubSession,
 	HubSessionError,

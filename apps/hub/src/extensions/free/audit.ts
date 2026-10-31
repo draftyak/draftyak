@@ -13,6 +13,7 @@ export const AUDIT_SINK_TIMEOUT_MS: number = 2_000;
 const readStore = HubStore.prototype.read;
 const writeStore = HubStore.prototype.write;
 const appendAudit = AuditChain.prototype.append;
+const verifyAudit = AuditChain.prototype.verify;
 const exportAudit = AuditChain.prototype.exportVerifiedJsonl;
 
 export interface LocalAuditSink extends AuditSink {
@@ -21,8 +22,8 @@ export interface LocalAuditSink extends AuditSink {
 
 /** The local HMAC chain and its verified JSONL export. Never call it inside another write. */
 export function localAuditSink(store: HubStore, chain: AuditChain): LocalAuditSink {
-	// The captured native read requires the real HubStore brand.
-	readStore.call(store, (db: SqlReader) => db.get("SELECT 1"));
+	// Captured native methods require both brands and a matching authenticated chain.
+	readStore.call(store, (db: SqlReader) => verifyAudit.call(chain, db));
 	return Object.freeze(
 		Object.assign(Object.create(null) as object, {
 			id: LOCAL_AUDIT_SINK,
@@ -53,7 +54,8 @@ export async function deliverAuditEvent(
 	clock: DeadlineClock,
 ): Promise<AuditDelivery> {
 	const parsed = AuditEvent.safeParse(event);
-	if (!parsed.success) throw new TypeError("Invalid audit event");
+	if (!parsed.success || Object.keys(parsed.data.refs).length > 32)
+		throw new TypeError("Invalid audit event");
 	const sinks = host.providers("auditSink");
 	const settled = await Promise.all(
 		sinks.map((sink) =>

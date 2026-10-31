@@ -12,7 +12,7 @@ import { HubIdentity } from "../identity/hub-key.ts";
 import { PinService } from "../identity/pin.ts";
 import { systemClock, type TimerClock } from "../kernel/clock.ts";
 import { MasterKey } from "../kernel/master-key.ts";
-import { HUB_NAMESPACES } from "../kernel/namespaces.ts";
+import { HUB_NAMESPACES, migrateHubSchemas } from "../kernel/namespaces.ts";
 import { HubStore } from "../store/store.ts";
 
 export type HubSessionErrorCode =
@@ -267,8 +267,7 @@ export async function openHubSession(options: HubSessionOptions): Promise<HubSes
 		// Checked before migrating: the refused migration would still write its bookkeeping tables.
 		if (existing && !store.read((db) => db.get(AUDIT_TABLE)))
 			throw new HubSessionError("FIRST_RUN_INTERRUPTED", AUDIT_INCOMPLETE);
-		await store.migrate("audit");
-		await store.migrate("core");
+		await migrateHubSchemas(store);
 		const auditKey = deriveKey.call(masterKey, "audit");
 		try {
 			audit = new AuditChain(auditKey);
