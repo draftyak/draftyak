@@ -1,11 +1,13 @@
 import { existsSync, globSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { reservedTestsOn, reservedWord, workspaceGlobs } from "../../reserved-tests.ts";
 import { type Captured, capture, type RunOptions, run } from "./lib/spawn.ts";
 import { telemetryOff } from "./lib/tools.ts";
 
 // pnpm m0:prefetch, and the M0 environment verify:m0 checks. profiles/m0.ts imports this file, so
-// it imports only node: built-ins and relative files.
+// it imports only node: built-ins and relative files. Unless DRAFTYAK_RESERVED_TESTS=1, nothing
+// here reads a reserved file or package manifest, or runs a reserved spike's prefetch.ts.
 const win = process.platform === "win32";
 
 export interface Exec {
@@ -21,22 +23,20 @@ export interface Manifest {
 	readonly devDependencies?: Deps;
 }
 
-// The `packages:` list of pnpm-workspace.yaml, read line by line, since verify runs before install.
-function workspaceGlobs(root: string): string[] {
-	const lines = readFileSync(path.join(root, "pnpm-workspace.yaml"), "utf8").split(/\r?\n/);
-	const block = lines.slice(lines.indexOf("packages:") + 1);
-	const end = block.findIndex((line) => !/^\s+-\s/.test(line));
-	return block
-		.slice(0, end === -1 ? block.length : end)
-		.map((line) => line.replace(/^\s+-\s+|["']/g, "").trim());
-}
-
-export function workspacePackages(root: string): { dir: string; manifest: Manifest }[] {
+// The workspace packages and their manifests. pnpm-workspace.yaml's packages: list comes from the
+// shared helper, which throws on a missing or unreadable list instead of finding no package.
+export function workspacePackages(
+	root: string,
+	env: NodeJS.ProcessEnv = process.env,
+): { dir: string; manifest: Manifest }[] {
+	const on = reservedTestsOn(env);
 	const globs = workspaceGlobs(root).map((glob) => `${glob}/package.json`);
 	return globSync(globs, { cwd: root })
 		.toSorted()
+		.map((file) => file.split(path.sep).join("/"))
+		.filter((file) => on || !reservedWord.test(file))
 		.map((file) => ({
-			dir: path.dirname(file).split(path.sep).join("/"),
+			dir: path.posix.dirname(file),
 			manifest: JSON.parse(readFileSync(path.join(root, file), "utf8")) as Manifest,
 		}));
 }
@@ -107,7 +107,12 @@ const imageRef =
 export const imageRefs = (text: string): string[] => [...new Set(text.match(imageRef) ?? [])];
 
 // Items pin images by digest at first use, written as name[:tag]@sha256:<64 hex> in tools/ or spikes/.
-export async function pinnedImages(root: string, exec: Exec): Promise<string[]> {
+export async function pinnedImages(
+	root: string,
+	exec: Exec,
+	env: NodeJS.ProcessEnv = process.env,
+): Promise<string[]> {
+	const on = reservedTestsOn(env);
 	const listed = await exec.capture("git", ["ls-files", "-z", "--", "tools", "spikes"], {
 		cwd: root,
 	});
@@ -116,16 +121,21 @@ export async function pinnedImages(root: string, exec: Exec): Promise<string[]> 
 		.split("\0")
 		.filter((file) => /\.(?:[cm]?[jt]s|json|ya?ml|toml)$|(?:^|\/)Dockerfile$/.test(file))
 		.filter((file) => !/(?:^|\/)(?:evidence|vendor|fixtures)\//.test(file))
+		.filter((file) => on || !reservedWord.test(file))
 		.filter((file) => existsSync(path.join(root, file)));
 	const refs = files.flatMap((file) => imageRefs(readFileSync(path.join(root, file), "utf8")));
 	return [...new Set(refs)].toSorted();
 }
 
-export function spikesWithPrefetch(root: string): string[] {
+export function spikesWithPrefetch(root: string, env: NodeJS.ProcessEnv = process.env): string[] {
+	const on = reservedTestsOn(env);
 	const dir = path.join(root, "spikes");
 	if (!existsSync(dir)) return [];
 	const has = (name: string): boolean => existsSync(path.join(dir, name, "prefetch.ts"));
-	return readdirSync(dir).filter(has).toSorted();
+	return readdirSync(dir)
+		.filter((name) => on || !reservedWord.test(`spikes/${name}`))
+		.filter(has)
+		.toSorted();
 }
 
 const ensure = [
@@ -209,7 +219,7 @@ export async function prefetch(root: string, exec: Exec, env: NodeJS.ProcessEnv)
 	}
 
 	console.log("m0:prefetch: pinned images");
-	const images = await pinnedImages(root, exec);
+	const images = await pinnedImages(root, exec, env);
 	const { docker, detail } =
 		images.length > 0 ? await dockerState(root, exec, env) : { detail: "" };
 	if (images.length === 0)
@@ -224,7 +234,7 @@ export async function prefetch(root: string, exec: Exec, env: NodeJS.ProcessEnv)
 	}
 
 	console.log("m0:prefetch: spike caches");
-	const spikes = spikesWithPrefetch(root);
+	const spikes = spikesWithPrefetch(root, env);
 	if (spikes.length === 0) console.log("  skipped: no spike has a prefetch.ts yet");
 	for (const id of spikes) {
 		const cwd = path.join(root, "spikes", id);
@@ -236,27 +246,21 @@ export async function prefetch(root: string, exec: Exec, env: NodeJS.ProcessEnv)
 	return failed.length === 0 ? 0 : 1;
 }
 
+// pnpm m0:prefetch's run, once tools/verify/m0-prefetch.ts has checked its inputs: telemetry off,
+// real children.
+export async function prefetchMain(root: string, env: NodeJS.ProcessEnv): Promise<number> {
+	Object.assign(env, telemetryOff);
+	const exec: Exec = {
+		run: (command, args, options) => run({ command, args }, options),
+		capture: (command, args, options) => capture({ command, args }, options),
+	};
+	return prefetch(root, exec, env).catch((error: unknown) => {
+		console.error(`m0:prefetch: ${error instanceof Error ? error.message : String(error)}`);
+		return 1;
+	});
+}
+
 if (import.meta.main) {
-	// pnpm passes a leading `--` through from bash and cmd; PowerShell's pnpm.ps1 drops it.
-	const args = process.argv.slice(2).filter((arg, index) => index > 0 || arg !== "--");
-	const usage =
-		"usage: pnpm m0:prefetch   (both Nodes, pinned images, then each spike's prefetch.ts)";
-	const unknown = args.find((arg) => arg !== "--help" && arg !== "-h");
-	if (unknown !== undefined) {
-		console.error(`m0:prefetch: unknown argument ${unknown}\n${usage}`);
-		process.exitCode = 2;
-	} else if (args.length > 0) {
-		console.log(usage);
-	} else {
-		Object.assign(process.env, telemetryOff);
-		const exec: Exec = {
-			run: (command, args, options) => run({ command, args }, options),
-			capture: (command, args, options) => capture({ command, args }, options),
-		};
-		const root = path.resolve(import.meta.dirname, "..", "..");
-		process.exitCode = await prefetch(root, exec, process.env).catch((error: unknown) => {
-			console.error(`m0:prefetch: ${error instanceof Error ? error.message : String(error)}`);
-			return 1;
-		});
-	}
+	console.error("m0:prefetch: start it as node tools/verify/m0-prefetch.ts, which checks first");
+	process.exitCode = 2;
 }
