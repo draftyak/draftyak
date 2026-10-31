@@ -239,4 +239,14 @@ export {
 	type PluginInstaller,
 	type PluginInstallerOptions,
 } from "./plugins/installer/index.ts";
+export {
+	openPluginRegistry,
+	PLUGIN_REGISTRY_MIGRATIONS,
+	type PluginRecord,
+	type PluginRecordState,
+	type PluginRegistry,
+	PluginRegistryError,
+	type PluginRegistryErrorCode,
+	type PluginRegistryOptions,
+} from "./plugins/registry/index.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";
