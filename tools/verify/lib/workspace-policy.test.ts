@@ -336,6 +336,29 @@ describe("basename inventory", () => {
 		).toEqual(["a\nb/.gate-sentinel"]);
 	});
 
+	it.each([null, 17, Object("ordinary")])(
+		"refuses a non-string injected file name %j",
+		async (name) => {
+			const fs = synthetic({ "": [[entry(name as unknown as string)]] });
+			await expect(fs.run()).rejects.toThrow("file-name inventory failed");
+			expect(fs.listed).toEqual([""]);
+		},
+	);
+
+	it.each([
+		[".", ".gate-sentinel"],
+		["a/..", ".gate-sentinel"],
+		["a/", "a/.gate-sentinel"],
+		["/", "/.gate-sentinel"],
+	])("preserves normalized results below injected directory %s", async (directory, expected) => {
+		let reads = 0;
+		const found = await namedFiles(".gate-sentinel", path.resolve("synthetic"), false, async () =>
+			reads++ === 0 ? [entry(directory, true)] : [entry(".gate-sentinel")],
+		);
+		expect(found).toEqual([expected]);
+		expect(reads).toBe(2);
+	});
+
 	it.each(["trailing", "forward"] as const)(
 		"stops disappearance proof at a %s-spelled root",
 		async (spelling) => {
