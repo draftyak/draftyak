@@ -30,6 +30,8 @@ export interface BoundedReadOptions {
 
 const hardMaximum = 512 * 1024 * 1024;
 const chunkLimit = 64 * 1024;
+// Node does not export libuv's Windows exclusive-sharing flag in fs.constants.
+const windowsExclusiveSharing = process.platform === "win32" ? 0x10000000 : 0;
 
 function refuse(code: BoundedFileCode): never {
 	throw new BoundedFileError(code);
@@ -145,7 +147,7 @@ function readChunk(fd: number, target: Buffer, at: number, position: number, siz
 	return count;
 }
 
-/** Read one bounded canonical regular-file snapshot; no discovery, retries or link following. */
+/** Read bounded canonical regular-file bytes; no discovery, retries or link following. */
 export function readBoundedRegularFile(raw: unknown, options: BoundedReadOptions): Buffer {
 	let fd: number | undefined;
 	let result: Buffer | undefined;
@@ -165,7 +167,10 @@ export function readBoundedRegularFile(raw: unknown, options: BoundedReadOptions
 		if (realpathSync.native(name) !== name) refuse("path");
 		fd = openSync(
 			name,
-			constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+			constants.O_RDONLY |
+				(constants.O_NOFOLLOW ?? 0) |
+				(constants.O_NONBLOCK ?? 0) |
+				windowsExclusiveSharing,
 		);
 		const opened = fstatSync(fd, { bigint: true });
 		regular(opened);
