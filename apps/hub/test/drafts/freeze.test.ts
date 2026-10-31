@@ -154,6 +154,7 @@ describe("native frozen revision data proofs", () => {
 			proof = f.store.write((tx) => f.freeze.freezeInTransaction(tx, bound, 1, two)),
 			facts = f.store.write((tx) => f.freeze.consumeInTransaction(tx, proof));
 		expect(facts.snapshotHash).not.toBe(contentHash(one));
+		expect(facts.snapshotHash).toBe(contentHash(two));
 		expect(facts.snapshot.schedule).toEqual(two.schedule);
 	});
 	it("invalidates old data proofs on release and edit, then freezes the actual next revision", async () => {
