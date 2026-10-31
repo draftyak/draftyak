@@ -42,9 +42,29 @@ const absent = Symbol("absent");
 const cyrillicA = String.fromCodePoint(0x430);
 const backslash = String.fromCodePoint(0x5c);
 const tab = String.fromCodePoint(9);
-// A public DNS name of `length` characters, 197 to 259, in labels of at most 63.
+const lineFeed = String.fromCodePoint(0xa);
+// A host name of `length` characters, 197 to 259, in labels of at most 63; DNS allows 253.
 const longHost = (length: number): string =>
 	`${["a", "b", "c"].map((letter) => letter.repeat(63)).join(".")}.${"d".repeat(length - 196)}.com`;
+// Spellings that a URL parser reads as the same URL.
+const respellings: readonly (readonly [id: string, respell: (url: string) => string])[] = [
+	["no-slashes", (url) => url.replace("https://", "https:")],
+	["one-slash", (url) => url.replace("https://", "https:/")],
+	["three-slashes", (url) => url.replace("https://", "https:///")],
+	["four-slashes", (url) => url.replace("https://", "https:////")],
+	["backslashes", (url) => url.replace("https://", `https:${backslash}${backslash}`)],
+	["slash-backslash", (url) => url.replace("https://", `https:/${backslash}`)],
+	["backslash-slash", (url) => url.replace("https://", `https:${backslash}/`)],
+	["slashes-backslash", (url) => url.replace("https://", `https://${backslash}`)],
+	["tab-in-separator", (url) => url.replace("https://", `https:/${tab}/`)],
+	["upper-case-scheme", (url) => url.replace("https:", "HTTPS:")],
+	["empty-userinfo", (url) => url.replace("https://", "https://@")],
+	["leading-space", (url) => ` ${url}`],
+	["leading-tab", (url) => `${tab}${url}`],
+	["trailing-space", (url) => `${url} `],
+	["trailing-tab", (url) => `${url}${tab}`],
+	["line-feed", (url) => `${url}${lineFeed}`],
+];
 type Patch = readonly [path: string, value: unknown];
 
 function patched(source: unknown, ...patches: Patch[]): unknown {
@@ -100,23 +120,16 @@ export function issuerOAuthCases(): ManifestCase[] {
 		"auth/issuer",
 		"http://evil.example/https://auth.example.com",
 	]);
-	refused("issuer-leading-space", ["auth/issuer", " https://auth.example.com"]);
-	refused("issuer-no-slashes", ["auth/issuer", "https:auth.example.com"]);
-	refused("issuer-one-slash", ["auth/issuer", "https:/auth.example.com"]);
-	refused("issuer-three-slashes", ["auth/issuer", "https:///auth.example.com"]);
-	refused("issuer-backslashes", ["auth/issuer", `https:${backslash}${backslash}auth.example.com`]);
-	refused("issuer-slash-backslash", ["auth/issuer", `https:/${backslash}auth.example.com`]);
-	refused("issuer-backslash-slash", ["auth/issuer", `https:${backslash}/auth.example.com`]);
-	refused("issuer-slashes-backslash", ["auth/issuer", `https://${backslash}auth.example.com`]);
-	refused("issuer-tab-in-separator", ["auth/issuer", `https:/${tab}/auth.example.com`]);
-	refused("issuer-upper-case-scheme", ["auth/issuer", "HTTPS://auth.example.com"]);
+	for (const [id, respell] of respellings) {
+		refused(`issuer-${id}`, ["auth/issuer", respell(issuerAuth.issuer)]);
+		refused(`resource-${id}`, ["auth/resource", respell(issuerAuth.resource)]);
+	}
 	refused("issuer-slash", ["auth/issuer", "https://auth.example.com/"]);
 	refused("issuer-path", ["auth/issuer", "https://auth.example.com/oauth"]);
 	refused("issuer-port", ["auth/issuer", "https://auth.example.com:8443"]);
 	refused("issuer-port-443", ["auth/issuer", "https://auth.example.com:443"]);
 	refused("issuer-empty-port", ["auth/issuer", "https://auth.example.com:"]);
 	refused("issuer-userinfo", ["auth/issuer", "https://user@auth.example.com"]);
-	refused("issuer-empty-userinfo", ["auth/issuer", "https://@auth.example.com"]);
 	refused("issuer-query", ["auth/issuer", "https://auth.example.com?tenant=1"]);
 	refused("issuer-fragment", ["auth/issuer", "https://auth.example.com#top"]);
 	refused("issuer-upper-case", ["auth/issuer", "https://Auth.example.com"]);
@@ -124,28 +137,21 @@ export function issuerOAuthCases(): ManifestCase[] {
 	refused("issuer-ip", ["auth/issuer", "https://192.0.2.1"]);
 	refused("issuer-single-label", ["auth/issuer", "https://auth"]);
 	refused("issuer-trailing-dot", ["auth/issuer", "https://auth.example.com."]);
-	refused("issuer-line-feed", ["auth/issuer", "https://auth.example.com\n"]);
-	refused("issuer-trailing-space", ["auth/issuer", "https://auth.example.com "]);
 	refused("issuer-too-long", ["auth/issuer", `https://${longHost(254)}`]);
 	add("issuer-longest-host", null, false, ["auth/issuer", `https://${longHost(253)}`]);
 	refused("missing-resource", ["auth/resource", absent]);
 	refused("resource-not-string", ["auth/resource", ["https://api.example.com/v1"]]);
 	refused("http-resource", ["auth/resource", "http://api.example.com/v1"]);
-	refused("resource-no-slashes", ["auth/resource", "https:api.example.com/v1"]);
-	refused("resource-one-slash", ["auth/resource", "https:/api.example.com/v1"]);
-	refused("resource-three-slashes", ["auth/resource", "https:///api.example.com/v1"]);
-	refused("resource-backslashes", [
-		"auth/resource",
-		`https:${backslash}${backslash}api.example.com/v1`,
-	]);
-	refused("resource-upper-case-scheme", ["auth/resource", "HTTPS://api.example.com/v1"]);
 	refused("resource-empty-port", ["auth/resource", "https://api.example.com:/v1"]);
-	refused("resource-empty-userinfo", ["auth/resource", "https://@api.example.com/v1"]);
 	refused("resource-origin", ["auth/resource", "https://api.example.com"]);
 	refused("resource-fragment", ["auth/resource", "https://api.example.com/v1#x"]);
 	refused("resource-userinfo", ["auth/resource", "https://user@api.example.com/v1"]);
 	refused("resource-query", ["auth/resource", "https://api.example.com/v1?tenant=1"]);
 	refused("resource-single-label", ["auth/resource", "https://api/v1"]);
+	refused("resource-upper-case", ["auth/resource", "https://Api.example.com/v1"]);
+	refused("resource-homograph", ["auth/resource", `https://${cyrillicA}pi.example.com/v1`]);
+	refused("resource-ip", ["auth/resource", "https://192.0.2.1/v1"]);
+	refused("resource-trailing-dot", ["auth/resource", "https://api.example.com./v1"]);
 	refused("resource-long-label", ["auth/resource", `https://api.${"a".repeat(64)}.com/v1`]);
 	add("private-issuer", "MANIFEST_INVALID", false, ["auth/issuer", "https://auth.internal"]);
 	add("private-resource", "MANIFEST_INVALID", false, ["auth/resource", "https://api.local/v1"]);
@@ -153,9 +159,14 @@ export function issuerOAuthCases(): ManifestCase[] {
 		"auth/resource",
 		"https://api.example.com:443/v1",
 	]);
+	add("resource-port", null, false, ["auth/resource", "https://api.example.com:8443/v1"]);
 	add("resource-dot-segment", "MANIFEST_INVALID", false, [
 		"auth/resource",
 		"https://api.example.com/v1/../v2",
+	]);
+	add("resource-dot-segment-same-url", "MANIFEST_INVALID", false, [
+		"auth/resource",
+		"https://api.example.com/./v1",
 	]);
 	add("resource-too-long", "MANIFEST_INVALID", false, [
 		"auth/resource",
