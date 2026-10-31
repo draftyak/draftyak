@@ -1,0 +1,104 @@
+[
+  {
+    "name": "non-owner thread with empty frozen footer",
+    "input": {
+      "channelId": "C0CHAN001",
+      "threadTs": "1760000001.000100",
+      "text": "<!channel> & <https://example.invalid|safe>",
+      "authors": [
+        "ai"
+      ],
+      "footer": "",
+      "broadcast": false
+    },
+    "body": "{\"channel\":\"C0CHAN001\",\"thread_ts\":\"1760000001.000100\",\"text\":\"&lt;!channel&gt; &amp; &lt;https://example.invalid|safe&gt;\",\"unfurl_links\":false,\"unfurl_media\":false}",
+    "bodySha256": "0565d906bd85cf0cfda2c814d098664835f7a698998e7df5a89354c43ac01059"
+  },
+  {
+    "name": "non-owner top-level post",
+    "input": {
+      "channelId": "D0DM00001",
+      "threadTs": null,
+      "text": "<@U0OTHER01> & ready",
+      "authors": [
+        "agent"
+      ],
+      "footer": "",
+      "broadcast": false
+    },
+    "body": "{\"channel\":\"D0DM00001\",\"text\":\"&lt;@U0OTHER01&gt; &amp; ready\",\"unfurl_links\":false,\"unfurl_media\":false}",
+    "bodySha256": "abc94ab5aa1a4d8f19cbc933851a9f2a5a081ee2fd3d398a4efe33d6f4c4f398"
+  },
+  {
+    "name": "owner text keeps deliberate Slack markup",
+    "input": {
+      "channelId": "G0GROUP01",
+      "text": "<!here> café\nReady 😀",
+      "authors": [
+        "owner"
+      ],
+      "footer": "",
+      "broadcast": false
+    },
+    "body": "{\"channel\":\"G0GROUP01\",\"text\":\"<!here> café\\nReady 😀\",\"unfurl_links\":false,\"unfurl_media\":false}",
+    "bodySha256": "ed0b5b100c32557ff1fc2f03609dfabe46ef55675f69319f04e2871b91037170"
+  },
+  {
+    "name": "owner thread with explicit broadcast",
+    "input": {
+      "channelId": "C0CHAN001",
+      "threadTs": "1760000001.000100",
+      "text": "Owner thread",
+      "authors": [
+        "owner"
+      ],
+      "broadcast": true,
+      "footer": ""
+    },
+    "body": "{\"channel\":\"C0CHAN001\",\"thread_ts\":\"1760000001.000100\",\"text\":\"Owner thread\",\"unfurl_links\":false,\"unfurl_media\":false,\"reply_broadcast\":true}",
+    "bodySha256": "2551f7669b456ddfe9ae836fc656301a209ed3a181b94062304d55b31142d50c"
+  },
+  {
+    "name": "mixed authors escape owner markup",
+    "input": {
+      "channelId": "C0CHAN001",
+      "text": "<!here> & ready",
+      "authors": [
+        "owner",
+        "plugin"
+      ],
+      "footer": "",
+      "broadcast": false
+    },
+    "body": "{\"channel\":\"C0CHAN001\",\"text\":\"&lt;!here&gt; &amp; ready\",\"unfurl_links\":false,\"unfurl_media\":false}",
+    "bodySha256": "2ba01bf42e79697d37ca0297097f49ee600bc1ca84ec11b9d17246714b211aeb"
+  },
+  {
+    "name": "owner body and always-escaped frozen footer",
+    "input": {
+      "channelId": "C0CHAN001",
+      "text": "<!here> café\nReady 😀",
+      "footer": "<!channel> & <https://example.invalid|footer> &amp;\nFooter café 😀",
+      "authors": [
+        "owner"
+      ],
+      "broadcast": false
+    },
+    "body": "{\"channel\":\"C0CHAN001\",\"text\":\"<!here> café\\nReady 😀\\n&lt;!channel&gt; &amp; &lt;https://example.invalid|footer&gt; &amp;amp;\\nFooter café 😀\",\"unfurl_links\":false,\"unfurl_media\":false}",
+    "bodySha256": "4e7eb96ae5d795e31496e363ba927c592ce8f6e40e817d062a76e88b6458e3ab"
+  },
+  {
+    "name": "non-owner body and always-escaped frozen footer",
+    "input": {
+      "channelId": "C0CHAN001",
+      "text": "<!here> café\nReady 😀",
+      "footer": "<!channel> & <https://example.invalid|footer> &amp;\nFooter café 😀",
+      "authors": [
+        "plugin"
+      ],
+      "broadcast": false
+    },
+    "body": "{\"channel\":\"C0CHAN001\",\"text\":\"&lt;!here&gt; café\\nReady 😀\\n&lt;!channel&gt; &amp; &lt;https://example.invalid|footer&gt; &amp;amp;\\nFooter café 😀\",\"unfurl_links\":false,\"unfurl_media\":false}",
+    "bodySha256": "6bc8d6ef22b091912135b02b9e0a712bd50c52dbaf1bb94f64ed0c5e05d1222d"
+  }
+]

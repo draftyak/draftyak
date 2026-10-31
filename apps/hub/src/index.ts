@@ -8,6 +8,7 @@ export {
 	type AuditExportPage,
 	type AuditInput,
 } from "./audit/chain.ts";
+export * from "./channels/slack/index.ts";
 export {
 	type CredentialBinding,
 	type CredentialDescriptor,
