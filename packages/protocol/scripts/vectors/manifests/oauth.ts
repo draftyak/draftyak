@@ -40,6 +40,7 @@ const otherAuth: PluginAuth[] = [
 
 const absent = Symbol("absent");
 const cyrillicA = String.fromCodePoint(0x430);
+const backslash = String.fromCodePoint(0x5c);
 type Patch = readonly [path: string, value: unknown];
 
 function patched(source: unknown, ...patches: Patch[]): unknown {
@@ -96,6 +97,11 @@ export function issuerOAuthCases(): ManifestCase[] {
 		"http://evil.example/https://auth.example.com",
 	]);
 	refused("issuer-leading-space", ["auth/issuer", " https://auth.example.com"]);
+	refused("issuer-no-slashes", ["auth/issuer", "https:auth.example.com"]);
+	refused("issuer-one-slash", ["auth/issuer", "https:/auth.example.com"]);
+	refused("issuer-three-slashes", ["auth/issuer", "https:///auth.example.com"]);
+	refused("issuer-backslashes", ["auth/issuer", `https:${backslash}${backslash}auth.example.com`]);
+	refused("issuer-slash-backslash", ["auth/issuer", `https:/${backslash}auth.example.com`]);
 	refused("issuer-slash", ["auth/issuer", "https://auth.example.com/"]);
 	refused("issuer-path", ["auth/issuer", "https://auth.example.com/oauth"]);
 	refused("issuer-port", ["auth/issuer", "https://auth.example.com:8443"]);
@@ -131,6 +137,10 @@ export function issuerOAuthCases(): ManifestCase[] {
 	add("resource-dot-segment", "MANIFEST_INVALID", false, [
 		"auth/resource",
 		"https://api.example.com/v1/../v2",
+	]);
+	add("resource-too-long", "MANIFEST_INVALID", false, [
+		"auth/resource",
+		`https://${Array(4).fill("a".repeat(63)).join(".")}.com/v1`,
 	]);
 	add("unrequested-scope", "MANIFEST_INVALID", false, [
 		"auth/requiredGrantedScopes",
