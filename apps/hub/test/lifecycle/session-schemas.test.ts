@@ -4,13 +4,13 @@ import { HubStore, type SqlReader } from "../../src/store/store.ts";
 import { expectErased, refusal, type SessionFixture, sessionFixture } from "./session-helpers.ts";
 
 const EXPECTED = [
-	["audit", "0001_chain"],
-	["core", "0001_identity"],
-	["jobs", "0001_jobs"],
-	["events", "0001_events"],
-	["revisions", "0001_native_revisions"],
-	["credentials", "0001_credentials"],
-	["tickets", "0001_send_attempts"],
+	["audit", ["0001_chain"]],
+	["core", ["0001_identity"]],
+	["jobs", ["0001_jobs"]],
+	["events", ["0001_events"]],
+	["revisions", ["0001_native_revisions", "0002_immutable_revisions"]],
+	["credentials", ["0001_credentials"]],
+	["tickets", ["0001_send_attempts"]],
 ] as const;
 const DOMAIN_TABLES = [
 	"approval_pins",
@@ -51,12 +51,12 @@ function expectSchemas(store: HubStore): void {
 		expect(
 			tables.filter((name) => !name.startsWith("_migrations_") && !name.startsWith("sqlite_")),
 		).toEqual(DOMAIN_TABLES);
-		for (const [namespace, migration] of EXPECTED) {
+		for (const [namespace, migrations] of EXPECTED) {
 			expect(tables).toContain(`_migrations_${namespace}`);
 			expect(tables).toContain(`_migrations_${namespace}_lock`);
-			expect(db.all(`SELECT name FROM main._migrations_${namespace}`)).toEqual([
-				{ name: migration },
-			]);
+			expect(db.all(`SELECT name FROM main._migrations_${namespace} ORDER BY name`)).toEqual(
+				migrations.map((name) => ({ name })),
+			);
 		}
 		expect(db.get("SELECT singleton FROM main.jobs_meta")).toEqual({ singleton: 1 });
 		expect(db.get("SELECT singleton, last_seq, floor_seq FROM main.event_meta")).toEqual({
@@ -103,7 +103,7 @@ describe("native component schemas in an unlocked session", () => {
 			const first = await f.open({ masterKey: firstKey });
 			expectSchemas(first.store);
 			expect(order).toEqual(EXPECTED.map(([namespace]) => namespace));
-			expect(applied).toEqual(EXPECTED.map(([, migration]) => [migration]));
+			expect(applied).toEqual(EXPECTED.map(([, migrations]) => migrations));
 			expect(identityCheckpoints).toEqual(
 				EXPECTED.slice(1).map(([namespace]) => ({
 					namespace,
