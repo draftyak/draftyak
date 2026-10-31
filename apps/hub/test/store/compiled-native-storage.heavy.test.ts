@@ -36,6 +36,7 @@ const assets = [
 	["jobs/jobs-migrations/0001_jobs.sql", "jobs-migrations/0001_jobs.sql"],
 	["events/events-migrations/0001_events.sql", "events-migrations/0001_events.sql"],
 	["drafts/migrations/0001_native_revisions.sql", "drafts/migrations/0001_native_revisions.sql"],
+	["drafts/migrations/0002_immutable_revisions.sql", "drafts/migrations/0002_immutable_revisions.sql"],
 	["credentials/migrations/0001_credentials.sql", "credentials/migrations/0001_credentials.sql"],
 	["outbox/migrations/0001_send_attempts.sql", "outbox/migrations/0001_send_attempts.sql"],
 ] as const;

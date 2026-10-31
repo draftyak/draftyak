@@ -29,6 +29,7 @@ const SCHEMAS = Object.freeze([
 	["jobs", "0001_jobs.sql"],
 	["events", "0001_events.sql"],
 	["revisions", "0001_native_revisions.sql"],
+	["revisions", "0002_immutable_revisions.sql"],
 	["credentials", "0001_credentials.sql"],
 	["tickets", "0001_send_attempts.sql"],
 ] as const);
