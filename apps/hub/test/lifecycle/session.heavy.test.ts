@@ -107,6 +107,10 @@ it.each(["positive", "missing-credentials", "invalid-credentials"])(
 					"drafts/migrations/0001_native_revisions.sql",
 				],
 				[
+					"drafts/migrations/0002_immutable_revisions.sql",
+					"drafts/migrations/0002_immutable_revisions.sql",
+				],
+				[
 					"credentials/migrations/0001_credentials.sql",
 					"credentials/migrations/0001_credentials.sql",
 				],

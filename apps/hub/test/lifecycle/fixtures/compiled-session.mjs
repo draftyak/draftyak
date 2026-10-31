@@ -69,7 +69,11 @@ async function main() {
 			for (const [namespace, migration] of migrations) {
 				assert.ok(actual.includes(`_migrations_${namespace}`));
 				assert.ok(actual.includes(`_migrations_${namespace}_lock`));
-				assert.deepEqual(db.all(`SELECT name FROM main._migrations_${namespace}`), [{ name: migration }]);
+				const versions = namespace === "revisions" ? [migration, "0002_immutable_revisions"] : [migration];
+				assert.deepEqual(
+					db.all(`SELECT name FROM main._migrations_${namespace} ORDER BY name`),
+					versions.map((name) => ({ name })),
+				);
 			}
 		});
 		migrate = HubStore.prototype.migrate;
