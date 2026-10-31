@@ -11,7 +11,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
+import { RESERVED_TESTS, reservedTestsOn, reservedWord } from "../../../reserved-tests.ts";
 import type { Visibility } from "./ci-minutes.ts";
 import {
 	artifactName,
@@ -508,7 +509,26 @@ describe("the committed ci.json files", () => {
 				? readFileSync(path.join(repoRoot, file), "utf8")
 				: undefined,
 	};
-	const withCi = listed.flatMap((file) => /^spikes\/([^/]+)\/ci\.json$/.exec(file)?.[1] ?? []);
+	// A reserved spike's ci.json joins these cases only with DRAFTYAK_RESERVED_TESTS=1, so a
+	// default run neither reads it nor prints its name.
+	const committedCi = (files: readonly string[]): string[] =>
+		files
+			.flatMap((file) => /^spikes\/([^/]+)\/ci\.json$/.exec(file)?.[1] ?? [])
+			.filter((spike) => reservedTestsOn(process.env) || !reservedWord.test(spike));
+	const withCi = committedCi(listed);
+
+	it("leaves a reserved spike's ci.json out unless the flag is on", () => {
+		const reserved = `s70-${["si", "wc"].join("")}`;
+		const files = ["spikes/s01/ci.json", `spikes/${reserved}/ci.json`, "spikes/s02/README.md"];
+		try {
+			vi.stubEnv(RESERVED_TESTS, undefined);
+			expect(committedCi(files)).toEqual(["s01"]);
+			vi.stubEnv(RESERVED_TESTS, "1");
+			expect(committedCi(files).length).toBe(2);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
 
 	it.each(withCi)("spikes/%s/ci.json plans on each runner it lists", (spike) => {
 		const { os } = JSON.parse(tree.read(`spikes/${spike}/ci.json`) ?? "{}");

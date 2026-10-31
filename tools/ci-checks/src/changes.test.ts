@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { HELPERS } from "../../verify/lib/bootstrap.ts";
 import {
 	areaNames,
 	classify,
@@ -131,6 +132,27 @@ describe("transitive consuming spikes", () => {
 		"vitest.shared.ts",
 		"tsconfig.base.json",
 		"turbo.json",
+		// The reserved controls, the input gate, the pre-install check and the opted-in proof.
+		"reserved-tests.ts",
+		"tools/verify/gate.ts",
+		"tools/verify/lib/gate.ts",
+		"tools/verify/lib/bootstrap.ts",
+		"tools/verify/lib/listing.ts",
+		"tools/verify/lib/references.ts",
+		"tools/verify/lib/discovery.ts",
+		"tools/verify/lib/safe-fs.ts",
+		"tools/verify/lib/rust-source.ts",
+		"tools/verify/lib/imports.ts",
+		"tools/verify/lib/allowed.ts",
+		"tools/verify/reserved-tripwire.ts",
+		"tools/verify/preinstall.ts",
+		"tools/verify/lib/hooks.ts",
+		"tools/verify/lib/workspace-policy.ts",
+		"tools/verify/reserved-proof.ts",
+		"tools/verify/lib/proof.ts",
+		"tools/verify/lib/spawn.ts",
+		"tools/verify/lib/tools.ts",
+		"tools/verify/reserved-inventory.json",
 	])("fans shared %s changes out to every spike", (file) => {
 		expect(
 			classify(
@@ -145,6 +167,38 @@ describe("transitive consuming spikes", () => {
 				.map((pkg) => pkg.folder)
 				.sort(),
 		);
+	});
+
+	// The heavy steps start spikes through turbo.ts, the opted-in proof and the kit, which runs the
+	// gate itself outside a launcher. The kit's own files reach every spike through the graph.
+	it("fans out every file the heavy steps' launchers check before loading it", () => {
+		const loaded = new Set([
+			"tools/verify/turbo.ts",
+			"tools/verify/reserved-proof.ts",
+			"tools/verify/gate.ts",
+			"tools/verify/lib/bootstrap.ts",
+			...HELPERS.turbo,
+			...HELPERS.proof,
+			...HELPERS.gate,
+			...HELPERS.kitOff,
+			...HELPERS.kitGate,
+		]);
+		const every = graph
+			.filter((pkg) => pkg.folder.startsWith("spikes/"))
+			.map((pkg) => pkg.folder)
+			.sort();
+		const missed = [...loaded]
+			.filter((file) => !file.startsWith("spikes/kit/"))
+			.filter((file) => {
+				const { spikes } = classify(
+					[file],
+					root,
+					() => [],
+					() => graph,
+				);
+				return spikes.join() !== every.join();
+			});
+		expect(missed).toEqual([]);
 	});
 });
 
@@ -277,6 +331,33 @@ console.log("absolute paths rejected without manifest probes");
 		[[], []],
 	])("%j → %j", (files, expected) => {
 		expect(areaNames(fixtureClassify(files))).toEqual(expected);
+	});
+
+	// Evidence is docs only as a JSON file directly in a spike's evidence/ folder, and a reserved
+	// path only as Markdown; any other change runs the full CI, the reserved job included. The
+	// reserved names are built here.
+	it("counts evidence JSON directly in evidence/ as docs, and a reserved path only as Markdown", () => {
+		const word = ["si", "wc"].join("");
+		const docs = (file: string): boolean => fixtureClassify([file]).docsOnly;
+		expect(
+			[
+				"spikes/s01/evidence/a.json",
+				"spikes/s01/evidence/A.JSON",
+				`docs/roadmap/m7-${word}.md`,
+				`spikes/s70-${word}/README.md`,
+			].map(docs),
+		).toEqual([true, true, true, true]);
+		expect(
+			[
+				"spikes/s01/evidence/a.txt",
+				"spikes/s01/evidence/run/a.json",
+				"spikes/s01/evidence/a.ts",
+				`spikes/s70-${word}/evidence/a.json`,
+				`spikes/x-${["dynamic", "agent"].join("_")}/evidence/a.json`,
+				`docs/${word}/LICENSE`,
+				`spikes/s70-${word}/notes.txt`,
+			].map(docs),
+		).toEqual([false, false, false, false, false, false, false]);
 	});
 
 	it("names Rust workspaces that no spike package tests", () => {
