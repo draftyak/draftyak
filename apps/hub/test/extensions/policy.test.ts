@@ -43,17 +43,17 @@ const modules = (...bodies: string[]) =>
 	);
 
 describe("send policies", () => {
-	it("AND-s every policy: require takes the most approvals and every role, deny wins", async () => {
+	it("AND-s every policy: require takes the most approvals, deny wins", async () => {
 		modules(
-			'return { kind: "require", approvals: 2, roles: ["finance"] };',
-			'return { kind: "require", approvals: 3, roles: ["legal", "finance"] };',
+			'return { kind: "require", approvals: 2, roles: [] };',
+			'return { kind: "require", approvals: 3 };',
 			'return { kind: "require", approvals: 1 };',
 		);
 		const host = await f.start();
 		expect(await host.evaluateSendPolicy(input())).toEqual({
 			kind: "require",
 			approvals: 3,
-			roles: ["finance", "legal"],
+			roles: [],
 		});
 		host.close();
 		modules(
@@ -66,6 +66,22 @@ describe("send policies", () => {
 		expect(JSON.stringify(decision)).not.toContain("DYTEST-REASON");
 		expect(Object.isFrozen(decision)).toBe(true);
 	});
+
+	it.each(["propose", "claim", "retry"] as const)(
+		"denies every role-naming policy at %s without discarding its requirement",
+		async (phase) => {
+			modules(
+				'return { kind: "require", approvals: 1, roles: ["owner"] };',
+				'return { kind: "require", approvals: 3, roles: ["legal", "finance"] };',
+				'return { kind: "require", approvals: 5, roles: [] };',
+			);
+			const host = await f.start();
+			expect(await host.evaluateSendPolicy({ ...input(), phase })).toEqual({
+				kind: "deny",
+				policies: ["m0/p0", "m1/p1"],
+			});
+		},
+	);
 
 	it.each([
 		["a synchronous throw", 'evaluate() { throw new Error("PRIVATE_CANARY"); }'],
