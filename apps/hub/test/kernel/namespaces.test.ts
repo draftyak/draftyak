@@ -26,12 +26,21 @@ function recorder(): { store: HubStore; calls: string[] } {
 	return { store, calls };
 }
 
-it("checks the required revision asset and migrates all seven namespaces exactly once", async () => {
+it("checks the required revision asset and migrates all eight namespaces exactly once", async () => {
 	const { store, calls } = recorder();
 	await migrateHubSchemas(store);
 	expect(access).toHaveBeenCalledWith(requiredRevisionAsset, constants.R_OK);
-	expect(calls).toEqual(["audit", "core", "jobs", "events", "revisions", "credentials", "tickets"]);
-	expect(new Set(calls).size).toBe(7);
+	expect(calls).toEqual([
+		"audit",
+		"core",
+		"devices",
+		"jobs",
+		"events",
+		"revisions",
+		"credentials",
+		"tickets",
+	]);
+	expect(new Set(calls).size).toBe(8);
 });
 
 it("refuses a missing revision immutability asset before later namespaces can migrate", async () => {

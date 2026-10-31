@@ -2,11 +2,14 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AuditChain } from "../../src/audit/chain.ts";
+import type { ExtensionHost } from "../../src/extensions/registry.ts";
+import type { DeviceRegistry } from "../../src/identity/devices.ts";
 import { HubIdentity } from "../../src/identity/hub-key.ts";
 import type { PinService } from "../../src/identity/pin.ts";
 import type { MasterKey } from "../../src/kernel/master-key.ts";
 import type { HubStore } from "../../src/store/store.ts";
 import {
+	configureModule,
 	expectErased,
 	noRows,
 	PIN,
@@ -21,11 +24,26 @@ const seen = vi.hoisted(() => ({
 	chains: [] as { chain: AuditChain; key: Uint8Array }[],
 	pins: [] as PinService[],
 	identities: [] as HubIdentity[],
+	devices: [] as DeviceRegistry[],
+	deviceRevocation: [] as boolean[],
+	hosts: [] as ExtensionHost[],
 }));
+const faults = vi.hoisted(() => ({ identityProvider: false }));
+vi.mock("../../src/extensions/free/identity.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../src/extensions/free/identity.ts")>();
+	return {
+		...actual,
+		singleOwnerIdentity: (registry: DeviceRegistry) => {
+			if (faults.identityProvider) throw new Error("DYTEST-PRIVATE-IDENTITY-PROVIDER");
+			return actual.singleOwnerIdentity(registry);
+		},
+	};
+});
 vi.mock("../../src/extensions/registry.ts", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../src/extensions/registry.ts")>();
 	const startExtensions: typeof actual.startExtensions = async (options) => {
 		const host = await actual.startExtensions(options);
+		seen.hosts.push(host);
 		return Object.freeze({
 			...host,
 			close: () => {
@@ -44,11 +62,35 @@ vi.mock("../../src/identity/pin.ts", async (importOriginal) => {
 			seen.pins.push(this);
 		}
 		lock(): void {
+			const devices = seen.devices.at(-1);
+			if (devices) {
+				let revoked = false;
+				try {
+					devices.currentState();
+				} catch {
+					revoked = true;
+				}
+				seen.deviceRevocation.push(revoked);
+			}
 			seen.steps.push("pins.lock");
 			super.lock();
 		}
 	}
 	return { ...actual, PinService: RecordedPins };
+});
+vi.mock("../../src/identity/devices.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../src/identity/devices.ts")>();
+	class RecordedDevices extends actual.DeviceRegistry {
+		constructor(...args: ConstructorParameters<typeof actual.DeviceRegistry>) {
+			super(...args);
+			seen.devices.push(this);
+		}
+		lock(): void {
+			seen.steps.push("devices.lock");
+			super.lock();
+		}
+	}
+	return { ...actual, DeviceRegistry: RecordedDevices };
 });
 vi.mock("../../src/identity/hub-key.ts", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../src/identity/hub-key.ts")>();
@@ -102,9 +144,16 @@ vi.mock("../../src/kernel/master-key.ts", async (importOriginal) => {
 let f: SessionFixture;
 beforeEach(() => {
 	f = sessionFixture();
+	faults.identityProvider = false;
 	for (const list of Object.values(seen)) list.length = 0;
 });
-afterEach(() => f.remove());
+afterEach(() => {
+	try {
+		for (const host of seen.hosts) host.close();
+	} finally {
+		f.remove();
+	}
+});
 
 const ERASED = Buffer.alloc(32);
 
@@ -114,6 +163,7 @@ it("makes one audit chain and one PIN service per open and erases the audit subk
 	expect(seen.chains[0]?.chain).toBe(session.audit);
 	expect(seen.pins[0]).toBe(session.pins);
 	expect(seen.identities[0]).toBe(session.identity);
+	expect(seen.devices).toEqual([session.devices]);
 	expect(seen.chains[0]?.key).toEqual(ERASED);
 	session.store.read((db) => session.audit.verify(db));
 	expect(seen.steps).toEqual([]);
@@ -123,8 +173,10 @@ it("closes the extensions, PIN service, identity, audit key and store, then eras
 	const session = await f.open();
 	session.close();
 	session.close();
+	expect(seen.deviceRevocation).toEqual([true]);
 	expect(seen.steps).toEqual([
 		"extensions.close",
+		"devices.lock",
 		"pins.lock",
 		"identity.lock",
 		"audit.destroy",
@@ -137,7 +189,9 @@ it("locks every service a failed open made, in the same order", async () => {
 	writeFileSync(path.join(f.folder, "config.json"), "{ not json");
 	const key = f.key();
 	expect((await refusal(f.open({ masterKey: key }))).code).toBe("EXTENSIONS_UNAVAILABLE");
+	expect(seen.deviceRevocation).toEqual([true]);
 	expect(seen.steps).toEqual([
+		"devices.lock",
 		"pins.lock",
 		"identity.lock",
 		"audit.destroy",
@@ -150,6 +204,7 @@ it("locks every service a failed open made, in the same order", async () => {
 	expect(() => seen.chains[0]?.chain.verify(noRows)).toThrow("Audit is locked");
 	expect(() => seen.identities[0]?.tlsPrivateKey()).toThrow("Hub is locked");
 	await expect(seen.pins[0]?.verify("not-a-user", PIN, "approval")).rejects.toThrow("PIN_REQUIRED");
+	expect(() => seen.devices[0]?.currentState()).toThrow("UNAVAILABLE");
 });
 
 it("destroys the audit key when the identity cannot load", async () => {
@@ -166,4 +221,30 @@ it("destroys the audit key when the identity cannot load", async () => {
 	} finally {
 		load.mockRestore();
 	}
+});
+
+it("retires the started extensions and device authority if identity selection fails", async () => {
+	configureModule(f, "provider-selection");
+	faults.identityProvider = true;
+	const key = f.key();
+	const error = await refusal(f.open({ masterKey: key }));
+	expect(error).toMatchObject({
+		code: "IDENTITY_PROVIDER_UNAVAILABLE",
+		message: "IDENTITY_PROVIDER_UNAVAILABLE",
+	});
+	expect(String(error)).not.toContain("DYTEST-PRIVATE");
+	expect(seen.deviceRevocation).toEqual([true]);
+	expect(error.cause).toBeUndefined();
+	expect(seen.hosts[0]?.providers("auditSink")).toEqual([]);
+	expect(seen.steps).toEqual([
+		"extensions.close",
+		"devices.lock",
+		"pins.lock",
+		"identity.lock",
+		"audit.destroy",
+		"store.close",
+		"key.destroy",
+	]);
+	expectErased(key);
+	expect(() => seen.devices[0]?.currentState()).toThrow("UNAVAILABLE");
 });

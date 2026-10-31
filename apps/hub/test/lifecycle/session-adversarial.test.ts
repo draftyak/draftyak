@@ -289,6 +289,7 @@ describe("first run", () => {
 				["core"],
 				["audit"],
 				["core"],
+				["devices"],
 				["jobs"],
 				["events"],
 				["revisions"],
@@ -474,6 +475,8 @@ describe("redaction", () => {
 			"audit",
 			"identity",
 			"pins",
+			"devices",
+			"identityProvider",
 			"extensions",
 			"close",
 		]);

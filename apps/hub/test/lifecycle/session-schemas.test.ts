@@ -6,6 +6,7 @@ import { expectErased, refusal, type SessionFixture, sessionFixture } from "./se
 const EXPECTED = [
 	["audit", ["0001_chain"]],
 	["core", ["0001_identity"]],
+	["devices", ["0001_devices"]],
 	["jobs", ["0001_jobs"]],
 	["events", ["0001_events"]],
 	["revisions", ["0001_native_revisions", "0002_immutable_revisions"]],
@@ -17,6 +18,8 @@ const DOMAIN_TABLES = [
 	"audit_events",
 	"audit_meta",
 	"credentials",
+	"device_authority",
+	"devices",
 	"event_meta",
 	"events",
 	"hub_meta",
@@ -66,6 +69,7 @@ function expectSchemas(store: HubStore): void {
 		});
 		for (const table of [
 			"credentials",
+			"devices",
 			"native_drafts",
 			"native_draft_revisions",
 			"native_draft_locks",

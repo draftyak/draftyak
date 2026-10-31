@@ -132,6 +132,9 @@ export function expectUsable(key: MasterKey): void {
 
 /** Every service of a closed session refuses. */
 export async function expectLocked(session: HubSession): Promise<void> {
+	expect(() => session.devices.currentState()).toThrow("UNAVAILABLE");
+	await expect(Promise.resolve().then(() => session.identityProvider.users())).rejects.toThrow();
+	expect(() => session.identityProvider.maxOwners()).toThrow();
 	await expect(session.pins.verify("not-a-user", PIN, "approval")).rejects.toThrow("PIN_REQUIRED");
 	expect(() => session.identity.tlsPrivateKey()).toThrow("Hub is locked");
 	expect(() => session.audit.verify(noRows)).toThrow("Audit is locked");
@@ -153,4 +156,23 @@ export function configureModule(fixture: SessionFixture, id: string, register = 
 			modules: [{ id, version: "1.0.0", entry, sha512: pin(source), provides: ["auditSink"] }],
 		}),
 	);
+}
+
+export const DIRECTORY_USER = "01DYTEST000000000000000099";
+
+/** One pinned, captured module identity directory; its answers carry no native device authority. */
+export function configureIdentityModule(fixture: SessionFixture): void {
+	configureModule(
+		fixture,
+		"identity",
+		`registry.identity({ id: "directory", async users() { return [{ id: "${DIRECTORY_USER}" }]; }, maxOwners() { return 3; } });`,
+	);
+	const filename = path.join(fixture.folder, "config.json");
+	const config = JSON.parse(readFileSync(filename, "utf8")) as {
+		modules: { provides: string[] }[];
+	};
+	const module = config.modules[0];
+	if (!module) throw new Error("Missing identity module fixture");
+	module.provides.push("identity");
+	writeFileSync(filename, JSON.stringify(config));
 }
