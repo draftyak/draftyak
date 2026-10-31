@@ -36,12 +36,14 @@ const SCHEMAS = Object.freeze([
 
 /** Migrate the registered native schemas in order; the caller retains store and key cleanup. */
 export async function migrateHubSchemas(store: HubStore): Promise<void> {
-	const namespaces = new Set<HubNamespace>();
+	const migrated = new Set<HubNamespace>();
 	for (const [namespace, file] of SCHEMAS) {
 		// An empty directory must not silently omit a required current schema.
 		accessSync(path.join(HUB_NAMESPACES[namespace], file), constants.R_OK);
-		namespaces.add(namespace);
+		// Each namespace applies all pending versions; later entries still check required assets.
+		if (!migrated.has(namespace)) {
+			await store.migrate(namespace);
+			migrated.add(namespace);
+		}
 	}
-	// Each namespace applies all of its pending versions in one migration call.
-	for (const namespace of namespaces) await store.migrate(namespace);
 }

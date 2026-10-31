@@ -72,7 +72,13 @@ it("refuses every later open after a hard kill between file creation and audit g
 	}
 });
 
-it.each(["positive", "missing-credentials", "invalid-credentials"])(
+const compiledSessionModes = [
+	"positive",
+	"missing-credentials",
+	"invalid-credentials",
+	"missing-revision-immutability",
+] as const;
+it.each(compiledSessionModes)(
 	"opens and reopens a compiled session using all seven staged schemas (%s)",
 	(mode) => {
 		const hub = path.resolve(import.meta.dirname, "../.."),

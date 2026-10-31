@@ -25,7 +25,7 @@ async function main() {
 	assert.equal(process.permission?.has("net"), false);
 	const [nativeBinding, mode, hub] = process.argv.slice(2);
 	assert.equal(typeof nativeBinding, "string");
-	assert.ok(["positive", "missing-credentials", "invalid-credentials"].includes(mode));
+	assert.ok(["positive", "missing-credentials", "invalid-credentials", "missing-revision-immutability"].includes(mode));
 	assert.equal(typeof hub, "string");
 	for (const denied of ["src/store/migrations/audit/0001_chain.sql", "dist/index.mjs"]) {
 		assert.throws(() => readFileSync(path.join(hub, denied)), { code: "ERR_ACCESS_DENIED" });
@@ -49,8 +49,10 @@ async function main() {
 		return result;
 	};
 	let HubStore, HubIdentity, migrate, loadIdentity, closeStore;
-	const credentialAsset = path.join(import.meta.dirname, "credentials/migrations/0001_credentials.sql");
-	const heldAsset = path.join(import.meta.dirname, "held-credentials.sql");
+	const requiredAsset = path.join(import.meta.dirname, mode === "missing-revision-immutability"
+		? "drafts/migrations/0002_immutable_revisions.sql"
+		: "credentials/migrations/0001_credentials.sql");
+	const heldAsset = path.join(import.meta.dirname, "held-schema.sql");
 	let savedAsset;
 	let assetMissing = false;
 	let assetInvalid = false;
@@ -113,23 +115,23 @@ async function main() {
 		};
 		const restoreAsset = () => {
 			if (assetMissing) {
-				renameSync(heldAsset, credentialAsset);
+				renameSync(heldAsset, requiredAsset);
 				assetMissing = false;
 			}
 			if (assetInvalid) {
-				writeFileSync(credentialAsset, savedAsset);
+				writeFileSync(requiredAsset, savedAsset);
 				assetInvalid = false;
 			}
 		};
 		let refused = null;
 		if (mode !== "positive") {
 			phase = "damaged-asset";
-			if (mode === "missing-credentials") {
-				renameSync(credentialAsset, heldAsset);
+			if (mode === "missing-credentials" || mode === "missing-revision-immutability") {
+				renameSync(requiredAsset, heldAsset);
 				assetMissing = true;
 			} else {
-				savedAsset = readFileSync(credentialAsset);
-				writeFileSync(credentialAsset,
+				savedAsset = readFileSync(requiredAsset);
+				writeFileSync(requiredAsset,
 					"CREATE TABLE compiled_rollback_marker (singleton INTEGER PRIMARY KEY) STRICT;\nSELECT * FROM compiled_missing_relation;\n");
 				assetInvalid = true;
 			}
