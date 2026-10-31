@@ -17,7 +17,8 @@ use serde_json::{Map, Number, Value};
 /// `value` as a `T` that writes it back unchanged. Serde also reads a struct from an array and an
 /// enum from a one-member map, at any depth; the TypeScript schemas take only the written form.
 pub(crate) fn decode<T: DeserializeOwned + Serialize>(value: &Value) -> Option<T> {
-    let decoded = serde_json::from_value::<T>(value.clone()).ok()?;
+    let received = crate::jcs::bounded_value(value).ok()?;
+    let decoded = serde_json::from_value::<T>(received).ok()?;
     (serde_json::to_value(&decoded).ok()? == *value).then_some(decoded)
 }
 /// [`decode`] over what `decoder` holds, for a `Deserialize` impl; otherwise the error `code`.
@@ -25,11 +26,18 @@ pub(crate) fn decode_from<'de, D: Deserializer<'de>, T: DeserializeOwned + Seria
     decoder: D,
     code: &'static str,
 ) -> Result<T, D::Error> {
+    let value = receive_value(decoder, code)?;
+    decode(&value).ok_or_else(|| de::Error::custom(code))
+}
+/// Read an unchecked serde input with the same depth and duplicate-member rules as strict JSON.
+/// The static type error also covers reader failures; input names and values never escape.
+pub(crate) fn receive_value<'de, D: Deserializer<'de>>(
+    decoder: D,
+    code: &'static str,
+) -> Result<Value, D::Error> {
     decoder
         .deserialize_any(Received { depth: 0 })
-        .ok()
-        .and_then(|value| decode(&value))
-        .ok_or_else(|| de::Error::custom(code))
+        .map_err(|_| de::Error::custom(code))
 }
 // A `Value` that refuses a member name written twice, as the derives do; serde_json's keeps the
 // last one. A container nested deeper than `parse_strict` takes is refused before what it holds
@@ -107,9 +115,18 @@ impl<'de> Visitor<'de> for Received {
 macro_rules! register_statements {
     ($($module:ident::$variant:ident($name:ident) => $typ:literal),* $(,)?) => {
         pub const TYPES: &[&str] = &[$($typ),*];
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize)]
         #[serde(untagged)]
         pub enum Statement { $($variant($module::$name)),* }
+        impl<'de> Deserialize<'de> for Statement {
+            fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
+                let value = receive_value(decoder, "STATEMENT_INVALID")?;
+                $(if let Some(body) = decode::<$module::$name>(&value) {
+                    return Ok(Self::$variant(body));
+                })*
+                Err(de::Error::custom("STATEMENT_INVALID"))
+            }
+        }
         pub fn parse_statement(typ: &str, bytes: &[u8]) -> Option<Statement> {
             let value = parse_strict(bytes).ok()?;
             match typ { $($typ => decode(&value).map(Statement::$variant),)* _ => None }
