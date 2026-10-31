@@ -32,6 +32,15 @@ function requestId(output: PassThrough): string {
 	return (JSON.parse(frame?.subarray(1).toString("utf8") ?? "") as { id: string }).id;
 }
 
+function expectCancellation(output: PassThrough, id: string): void {
+	const frame = output.read() as Buffer;
+	expect(JSON.parse(frame.subarray(1).toString("utf8"))).toEqual({
+		jsonrpc: "2.0",
+		method: "host/cancel",
+		params: { requestId: id },
+	});
+}
+
 function reply(input: PassThrough, id: string, outcome: "success" | "error" = "success") {
 	const body =
 		outcome === "success"
@@ -86,6 +95,7 @@ describe("stdio native cancellation order", () => {
 					});
 					controller.abort();
 					expect(await result).toMatchObject({ code: "DENIED" });
+					expectCancellation(output, id);
 					reply(input, id);
 					expect(settlements).toBe(1);
 					expect(overridden).not.toHaveBeenCalled();
@@ -179,6 +189,7 @@ describe("stdio native cancellation order", () => {
 			const id = requestId(output);
 			await vi.advanceTimersByTimeAsync(100);
 			expect(await result).toMatchObject({ code: "TIMEOUT" });
+			expectCancellation(output, id);
 			reply(input, id);
 			expect(vi.getTimerCount()).toBe(0);
 			await useCapacity(channel);
