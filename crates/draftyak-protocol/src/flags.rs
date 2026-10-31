@@ -76,7 +76,7 @@ fn optional<'de, D: Deserializer<'de>>(decoder: D) -> Result<Option<String>, D::
 }
 impl<'de> Deserialize<'de> for Flag {
     fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        let value = Wire::deserialize(decoder)?;
+        let value: Wire = crate::statements::decode_from(decoder, "FLAGS_INVALID")?;
         if value.code.severity() != value.severity
             || value
                 .detail

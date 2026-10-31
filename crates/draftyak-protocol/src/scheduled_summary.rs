@@ -4,7 +4,10 @@ use crate::{
     hub_runtime::{SCHEDULED_SUMMARY_BYTES, SchedulingStatus, members},
     jcs::parse_strict,
     snapshot::{Schedule, valid_schedule},
-    statements::common::{MAX_SAFE, id, sha},
+    statements::{
+        common::{MAX_SAFE, id, sha},
+        receive_value,
+    },
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -126,7 +129,7 @@ impl ScheduledItem {
 }
 impl<'de> Deserialize<'de> for ScheduledItem {
     fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        Self::from_json(&Value::deserialize(decoder)?)
+        Self::from_json(&receive_value(decoder, "SCHEDULED_ITEM_INVALID")?)
             .ok_or_else(|| serde::de::Error::custom("SCHEDULED_ITEM_INVALID"))
     }
 }
@@ -227,7 +230,7 @@ impl ScheduledSummary {
 }
 impl<'de> Deserialize<'de> for ScheduledSummary {
     fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        Self::from_json(&Value::deserialize(decoder)?)
+        Self::from_json(&receive_value(decoder, "SCHEDULED_SUMMARY_INVALID")?)
             .ok_or_else(|| serde::de::Error::custom("SCHEDULED_SUMMARY_INVALID"))
     }
 }
