@@ -183,7 +183,13 @@ async function processFixture() {
 			children.push(child);
 			const copy = Buffer.from(bytes);
 			try {
-				const reply = await child.request("init", { filename, key: copy, wall, monotonic });
+				const reply = await child.request("init", {
+					filename,
+					stateMigrations: stateDir,
+					key: copy,
+					wall,
+					monotonic,
+				});
 				expect(reply.ok).toBe(true);
 				expect((reply.value as { pid: number }).pid).toBe(child.process.pid);
 			} finally {
