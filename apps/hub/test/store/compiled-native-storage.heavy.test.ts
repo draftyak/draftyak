@@ -119,7 +119,7 @@ function stageRuntimePackage(
 		);
 }
 
-function compiled(mode: "healthy" | "missing-asset" | "invalid-sql"): void {
+function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-schema"): void {
 	const parent = realpathSync(path.join(hub, "node_modules"));
 	const stage = realpathSync(mkdtempSync(path.join(parent, ".native-storage-compiled-")));
 	const cleanup = (): void => {
@@ -206,7 +206,9 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql"): void {
 		const checkpoint =
 			receipt?.ok === false &&
 			Object.keys(receipt).sort().join() === "checkpoint,ok" &&
-			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 90].includes(receipt.checkpoint as number)
+			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 90].includes(
+				receipt.checkpoint as number,
+			)
 				? (receipt.checkpoint as number)
 				: 0;
 		expect(child.error === undefined, "Native fixture process start").toBe(true);
@@ -239,4 +241,8 @@ it("closes genuine compiled native storage when a delivered migration asset is m
 
 it("closes genuine compiled native storage when a migration transaction fails", () => {
 	compiled("invalid-sql");
+});
+
+it("refuses compiled native storage with a missing applied asset or an unknown namespace", () => {
+	compiled("refused-schema");
 });

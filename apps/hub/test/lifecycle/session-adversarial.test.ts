@@ -354,7 +354,12 @@ describe("existing database", () => {
 		const key = f.key();
 		expect((await refusal(f.open({ masterKey: key }))).code).toBe("STORE_UNAVAILABLE");
 		expectErased(key);
-		const check = new HubStore({ filename: f.database, nativeBinding, masterKey: creator });
+		const check = new HubStore({
+			filename: f.database,
+			nativeBinding,
+			masterKey: creator,
+			migrations: { audit: HUB_NAMESPACES.audit, rogue },
+		});
 		try {
 			expect(
 				check.read((db) =>

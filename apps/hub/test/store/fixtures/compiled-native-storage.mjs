@@ -17,7 +17,7 @@ async function run() {
 	const { openNativeStorage, HubStore, MasterKey, AuditChain } = await import("./index.mjs");
 	assert.equal(typeof openNativeStorage, "function", "Built root must export openNativeStorage");
 	const mode = process.argv[3];
-	assert.ok(["healthy", "missing-asset", "invalid-sql"].includes(mode));
+	assert.ok(["healthy", "missing-asset", "invalid-sql", "refused-schema"].includes(mode));
 	checkpoint = 3;
 	const namespaces = ["audit", "core", "jobs", "events", "revisions", "credentials", "tickets"];
 	const filename = path.join(import.meta.dirname, "native-storage.db");
@@ -34,7 +34,50 @@ async function run() {
 	let closeCalls = 0;
 	let originalCloseReturned = false;
 	try {
-		if (mode !== "healthy") {
+		if (mode === "refused-schema") {
+			// An applied namespace whose delivered asset is missing refuses before any migration.
+			store = await openNativeStorage({ ...options, create: true });
+			store.close();
+			store = undefined;
+			const asset = path.join(import.meta.dirname, "events-migrations/0001_events.sql");
+			const delivered = readFileSync(asset);
+			const originalMigrate = HubStore.prototype.migrate;
+			let migrations = 0;
+			HubStore.prototype.migrate = function (namespace) {
+				migrations++;
+				return Reflect.apply(originalMigrate, this, [namespace]);
+			};
+			try {
+				unlinkSync(asset);
+				checkpoint = 13;
+				await assert.rejects(() => openNativeStorage(options), /^Error: Database schema is not recognized$/);
+				assert.throws(() => new HubStore(options), /^Error: Database schema is not recognized$/);
+				assert.equal(migrations, 0, "A refused schema must not reach migration bookkeeping");
+			} finally {
+				HubStore.prototype.migrate = originalMigrate;
+				writeFileSync(asset, delivered);
+			}
+			// A namespace the build does not deliver needs its composition's trusted folder.
+			const other = path.join(import.meta.dirname, "other.db");
+			const callerSql = path.join(import.meta.dirname, "caller-sql");
+			mkdirSync(callerSql);
+			writeFileSync(path.join(callerSql, "0001_caller.sql"), "CREATE TABLE caller_rows(id INTEGER);");
+			checkpoint = 14;
+			const custom = new HubStore({ ...options, filename: other, create: true, migrations: { caller: callerSql } });
+			try {
+				assert.deepEqual(await custom.migrate("caller"), ["0001_caller"]);
+			} finally {
+				custom.close();
+			}
+			checkpoint = 15;
+			await assert.rejects(
+				() => openNativeStorage({ ...options, filename: other }),
+				/^Error: Database schema is not recognized$/,
+			);
+			new HubStore({ ...options, filename: other, migrations: { caller: callerSql } }).close();
+			checkpoint = 16;
+			store = await openNativeStorage(options);
+		} else if (mode !== "healthy") {
 			const asset = path.join(import.meta.dirname, "credentials/migrations/0001_credentials.sql");
 			const delivered = readFileSync(asset);
 			HubStore.prototype.close = function () {

@@ -18,6 +18,8 @@ const derive = MasterKey.prototype.derive;
 const closeDatabase = Database.prototype.close;
 // Failed initialization retains only its original native connection, never caller key authority.
 let initialization: SqliteDatabase | undefined;
+// Connections this opener returned, which a refusing store may hand back once.
+const issued = new WeakSet<SqliteDatabase>();
 const initializationFailure = (): Error => new Error("Database initialization cleanup unavailable");
 const isDatabaseClosed = (database: SqliteDatabase): boolean => database.open === false;
 function closeInitialization(): void {
@@ -110,6 +112,12 @@ function reserveNewFile(filename: string): CreationReservation {
 		}
 		throw reservationFailure();
 	}
+}
+/** Closes an issued connection its store refused, or retains it for the next open to retry. */
+export function releaseFailedOpen(db: SqliteDatabase): void {
+	if (initialization !== undefined || !issued.delete(db)) throw initializationFailure();
+	initialization = db;
+	closeInitialization();
 }
 export function createEncryptedKeyIdentity(): EncryptedKeyIdentity {
 	const identity = Object.freeze(Object.create(null)) as EncryptedKeyIdentity;
@@ -298,6 +306,7 @@ export function openEncrypted(
 			creationReservation = undefined;
 		}
 		if (state) state.created = created;
+		issued.add(db);
 		return db;
 	} catch (error) {
 		if (identity !== undefined) destroyEncryptedKeyIdentity(identity);

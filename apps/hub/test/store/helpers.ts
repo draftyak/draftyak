@@ -24,27 +24,30 @@ export async function fixture(masterBytes?: Uint8Array): Promise<{
 	filename: string;
 	key: MasterKey;
 	store: HubStore;
+	/** The fixture's trusted folders; a reopen passes them again. */
+	migrations: Readonly<Record<string, string>>;
 }> {
 	const dir = mkdtempSync(path.join(os.tmpdir(), "draftyak-store-"));
 	const filename = path.join(dir, "draftyak.db");
 	const key = new MasterKey(masterBytes ?? randomBytes(32));
+	const folders = Object.freeze({
+		audit: path.join(migrations, "audit"),
+		fixture: path.join(dir, "rows"),
+		...Object.fromEntries(
+			["demo", "unsafe", "forbidden", "rebuild", "linked"].map((name) => [
+				name,
+				path.join(dir, "sql"),
+			]),
+		),
+		bom: path.join(dir, "bom"),
+		shadows: path.join(dir, "shadows"),
+	});
 	const store = new HubStore({
 		filename,
 		nativeBinding,
 		masterKey: key,
 		create: true,
-		migrations: {
-			audit: path.join(migrations, "audit"),
-			fixture: path.join(dir, "rows"),
-			...Object.fromEntries(
-				["demo", "unsafe", "forbidden", "rebuild", "linked"].map((name) => [
-					name,
-					path.join(dir, "sql"),
-				]),
-			),
-			bom: path.join(dir, "bom"),
-			shadows: path.join(dir, "shadows"),
-		},
+		migrations: folders,
 	});
 	await store.migrate("audit");
 	mkdirSync(path.join(dir, "sql"));
@@ -55,5 +58,5 @@ export async function fixture(masterBytes?: Uint8Array): Promise<{
 		"CREATE TABLE test_rows(id TEXT PRIMARY KEY, created_at INTEGER NOT NULL) STRICT;",
 	);
 	await store.migrate("fixture");
-	return { dir, filename, key, store };
+	return { dir, filename, key, store, migrations: folders };
 }
