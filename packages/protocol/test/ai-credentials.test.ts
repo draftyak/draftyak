@@ -147,11 +147,25 @@ describe("issuer OAuth", () => {
 			"issuer-oauth-issuer-three-slashes",
 			"issuer-oauth-issuer-backslashes",
 			"issuer-oauth-issuer-slash-backslash",
+			"issuer-oauth-issuer-backslash-slash",
+			"issuer-oauth-issuer-slashes-backslash",
+			"issuer-oauth-issuer-tab-in-separator",
+			"issuer-oauth-issuer-upper-case-scheme",
 			"issuer-oauth-issuer-port-443",
+			"issuer-oauth-issuer-empty-port",
+			"issuer-oauth-issuer-empty-userinfo",
 			"issuer-oauth-issuer-homograph",
 			"issuer-oauth-issuer-single-label",
 			"issuer-oauth-issuer-trailing-dot",
+			"issuer-oauth-issuer-trailing-space",
 			"issuer-oauth-http-resource",
+			"issuer-oauth-resource-no-slashes",
+			"issuer-oauth-resource-one-slash",
+			"issuer-oauth-resource-three-slashes",
+			"issuer-oauth-resource-backslashes",
+			"issuer-oauth-resource-upper-case-scheme",
+			"issuer-oauth-resource-empty-port",
+			"issuer-oauth-resource-empty-userinfo",
 			"issuer-oauth-resource-query",
 			"issuer-oauth-resource-single-label",
 			"issuer-oauth-resource-long-label",
@@ -160,6 +174,22 @@ describe("issuer OAuth", () => {
 			expect(cases.get(id)?.structural, id).toBe(true);
 		}
 		expect(cases.get("issuer-oauth-tool")?.code).toBe("MANIFEST_POLICY_INVALID");
+	});
+	it("accepts a host of 253 characters and refuses one of 254", () => {
+		const cases = new Map(issuerOAuthCases().map((item) => [item.id, item]));
+		for (const [id, field, length, code, structural] of [
+			["issuer-oauth-issuer-longest-host", "issuer", 253, null, false],
+			["issuer-oauth-issuer-too-long", "issuer", 254, "MANIFEST_INVALID", true],
+			["issuer-oauth-resource-longest-host", "resource", 253, null, false],
+			["issuer-oauth-resource-too-long", "resource", 254, "MANIFEST_INVALID", false],
+		] as const) {
+			const item = cases.get(id);
+			if (item === undefined) throw new Error(`manifest vector ${id}`);
+			const auth = (item.manifest as { auth: Record<string, string> }).auth;
+			expect(new URL(auth[field] ?? "").hostname.length, id).toBe(length);
+			expect(item.code, id).toBe(code);
+			expect(item.structural, id).toBe(structural);
+		}
 	});
 	it("keeps the committed vectors as generated", () => {
 		const [output] = generate();
