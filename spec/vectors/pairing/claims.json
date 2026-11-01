@@ -1,6 +1,6 @@
 {
   "format": "draftyak.vectors.pairing.v1",
-  "description": "Pairing claims as the hub checks them. Each case gives the window the hub holds, the live connection (its EKM, synthetic here, and the SHA-256 of the client certificate's SPKI) and the claim body as received. \"outcome\" is accepted or the refusal code, from the first check that fails: PAIR_CLAIM_INVALID (over 4096 bytes, not strict JSON, or not exactly the fields pid, role, name, transportSpkiSha256, signingKey and proof in their forms), PAIR_WINDOW_CLOSED (the claim's pid isn't the window's), PAIR_ROLE_MISMATCH (its role isn't the window's) and PAIR_PROOF_INVALID (transportSpkiSha256 isn't the client certificate's SPKI hash, or proof isn't the HMAC over pubs: transportSpkiSha256's 32 bytes, then signingKey's 65-byte uncompressed point). \"keys\" are test-only public keys, and \"pubsHex\" and \"sas\" are what the accepted claim binds and shows.",
+  "description": "Pairing claims and reveals as the hub checks them. Each claim case gives the window the hub holds, the live connection (its EKM, synthetic here, and the SHA-256 of the client certificate's SPKI) and the claim body as received. \"outcome\" is accepted or the refusal code, from the first check that fails: PAIR_CLAIM_INVALID (over 4096 bytes, not strict JSON, or not exactly the fields pid, role, name, transportSpkiSha256, signingKey, c and proof in their forms), PAIR_WINDOW_CLOSED (the claim's pid isn't the window's), PAIR_ROLE_MISMATCH (its role isn't the window's) and PAIR_PROOF_INVALID (transportSpkiSha256 isn't the client certificate's SPKI hash, or proof isn't the HMAC over pubs, transportSpkiSha256's 32 bytes and then signingKey's 65-byte uncompressed point, followed by the 32 bytes of c). \"pubsHex\" is what the accepted claim binds before c. Each reveal case gives the claim that held on the reveal's connection, as its body, the EKM of that connection, the hub's nonce \"nh\" from its answer and the reveal body as received; \"outcome\" is accepted or the refusal code, from the first check that fails: PAIR_REVEAL_INVALID (over 1024 bytes, not strict JSON, or not exactly the fields pid and nd, each base64url of 16 bytes), PAIR_WINDOW_CLOSED (its pid isn't the claim's) and PAIR_COMMITMENT_MISMATCH (the SHA-256 of the ASCII of draftyak/sas-commit/v1 followed by nd isn't the claim's c). A body's size is its UTF-8 bytes: one byte past its limit, a multibyte-name or fullwidth-nonce body is still within it in UTF-16 units and in code points. \"sas\" is what both screens show once a reveal holds. \"keys\" are test-only public keys.",
   "keys": {
     "device": {
       "testOnly": true,
@@ -25,10 +25,9 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "accepted",
-      "pubsHex": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa",
-      "sas": "406053"
+      "pubsHex": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa"
     },
     {
       "id": "device-members-in-other-order",
@@ -41,7 +40,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\",\"name\":\"Work laptop\",\"role\":\"device\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "body": "{\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\",\"name\":\"Work laptop\",\"role\":\"device\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
       "outcome": "accepted"
     },
     {
@@ -55,7 +54,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "6784cc5fc245f67b827faf3e598f52ef77e25b69722f7dee7ef7cb4984f582d0"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_PROOF_INVALID"
     },
     {
@@ -69,7 +68,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "6784cc5fc245f67b827faf3e598f52ef77e25b69722f7dee7ef7cb4984f582d0"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"6784cc5fc245f67b827faf3e598f52ef77e25b69722f7dee7ef7cb4984f582d0\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"6784cc5fc245f67b827faf3e598f52ef77e25b69722f7dee7ef7cb4984f582d0\"}",
       "outcome": "PAIR_PROOF_INVALID"
     },
     {
@@ -83,7 +82,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"404a887afc240c5184b2a7283b534ead1d6d9e0e854e45c42df26fa656735295\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"848d8be92803ba2db4ad733cd9d34ce42c4d57f018cf2f367070d59749e59a39\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_PROOF_INVALID"
     },
     {
@@ -97,7 +96,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"c44d174d668daeb4626c9561b36e2476cfa66c3b1e90d7213d6ba711aabddca6\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"95c49fbd5cc68e7241a249d6a6a97ec9ca44b8087806a8e32dd28d8f38ab016e\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_PROOF_INVALID"
     },
     {
@@ -111,7 +110,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzVXiL1NwVtlBhDnJWJaAx11J6HDR73IzA9OTxeiBs_Zi9J0HFx7-jJB_YWH27Jhzl1CSiXPOMKSRwvDr_PiSpA\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzVXiL1NwVtlBhDnJWJaAx11J6HDR73IzA9OTxeiBs_Zi9J0HFx7-jJB_YWH27Jhzl1CSiXPOMKSRwvDr_PiSpA\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_PROOF_INVALID"
     },
     {
@@ -125,7 +124,35 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826d0\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee00\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "outcome": "PAIR_PROOF_INVALID"
+    },
+    {
+      "id": "commitment-of-another-nonce",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"c\":\"9957b6bfcd68b3fccfe264bdeb36dcb3ad766e1f1ae97b8ad730c056973e29ae\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "outcome": "PAIR_PROOF_INVALID"
+    },
+    {
+      "id": "proof-without-commitment",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_PROOF_INVALID"
     },
     {
@@ -139,8 +166,120 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"EBESExQVFhcYGRobHB0eHw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"EBESExQVFhcYGRobHB0eHw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_WINDOW_CLOSED"
+    },
+    {
+      "id": "commitment-missing",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "outcome": "PAIR_CLAIM_INVALID"
+    },
+    {
+      "id": "superseded-claim",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "outcome": "PAIR_CLAIM_INVALID"
+    },
+    {
+      "id": "commitment-upper-case",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"c\":\"477A0A9D7BF0BD80D6C73E3BB8BE01E929089C54D3172EB4B33368F52122031E\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "outcome": "PAIR_CLAIM_INVALID"
+    },
+    {
+      "id": "commitment-31-bytes",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"c\":\"7a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "outcome": "PAIR_CLAIM_INVALID"
+    },
+    {
+      "id": "commitment-base64url",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"c\":\"R3oKnXvwvYDWxz47uL4B6SkInFTTFy60szNo9SEiAx4\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "outcome": "PAIR_CLAIM_INVALID"
+    },
+    {
+      "id": "commitment-null",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"c\":null,\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "outcome": "PAIR_CLAIM_INVALID"
+    },
+    {
+      "id": "nonce-in-the-claim",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"nd\":\"YGFiY2RlZmdoaWprbG1ubw\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "outcome": "PAIR_CLAIM_INVALID"
+    },
+    {
+      "id": "sas-in-the-claim",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"sas\":\"364237\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "outcome": "PAIR_CLAIM_INVALID"
     },
     {
       "id": "proof-upper-case",
@@ -153,7 +292,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955B943AE523578BAD7EA1266CD4E06A7F93CC99CDE897A9D5911707AA0826DA\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2AF17D26852764A447BAB8BA61D75077ABA74B9B353335B39FDE8F90C216EE09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_CLAIM_INVALID"
     },
     {
@@ -167,7 +306,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"5b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"f17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_CLAIM_INVALID"
     },
     {
@@ -181,7 +320,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MDkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDIgACHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwE\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MDkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDIgACHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwE\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_CLAIM_INVALID"
     },
     {
@@ -195,7 +334,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEFqqv4rDKaN24qEc36ZKnDmJyxIwqcqykjNq-gQFRmLsDfZSmw89DG1TrxMhZs2muWkFboZ3uXfH7jM-etfN3iaSaP1A0mgZw_IpkYBm9G2ktd9ypxKuLz8jzvtybsPBA\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEFqqv4rDKaN24qEc36ZKnDmJyxIwqcqykjNq-gQFRmLsDfZSmw89DG1TrxMhZs2muWkFboZ3uXfH7jM-etfN3iaSaP1A0mgZw_IpkYBm9G2ktd9ypxKuLz8jzvtybsPBA\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_CLAIM_INVALID"
     },
     {
@@ -209,7 +348,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"D5C2E710C1ADA3747530453EBD020BC4C362F75B144A5C38BFEB7672C4AD8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"D5C2E710C1ADA3747530453EBD020BC4C362F75B144A5C38BFEB7672C4AD8533\"}",
       "outcome": "PAIR_CLAIM_INVALID"
     },
     {
@@ -223,7 +362,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"admin\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"admin\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_CLAIM_INVALID"
     },
     {
@@ -237,7 +376,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work ‮potpal\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work ‮potpal\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_CLAIM_INVALID"
     },
     {
@@ -251,7 +390,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"capabilities\":[\"approve\"],\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"capabilities\":[\"approve\"],\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_CLAIM_INVALID"
     },
     {
@@ -265,7 +404,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Other\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "body": "{\"name\":\"Other\",\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
       "outcome": "PAIR_CLAIM_INVALID"
     },
     {
@@ -279,7 +418,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa.955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da",
+      "body": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa.2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09",
       "outcome": "PAIR_CLAIM_INVALID"
     },
     {
@@ -293,7 +432,7 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ",
       "outcome": "accepted"
     },
     {
@@ -307,8 +446,265 @@
         "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
         "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
       },
-      "body": "{\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ",
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ",
       "outcome": "PAIR_CLAIM_INVALID"
+    },
+    {
+      "id": "multibyte-name-at-4096-bytes",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Zoë’s laptop 💻\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ",
+      "outcome": "accepted"
+    },
+    {
+      "id": "multibyte-name-over-4096-bytes",
+      "window": {
+        "pid": "AAECAwQFBgcICQoLDA0ODw",
+        "role": "device",
+        "sec": "oKGio6SlpqeoqaqrrK2urw"
+      },
+      "connection": {
+        "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "clientSpkiSha256": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533"
+      },
+      "body": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Zoë’s laptop 💻\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ",
+      "outcome": "PAIR_CLAIM_INVALID"
+    }
+  ],
+  "reveals": [
+    {
+      "id": "device",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubw\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "accepted",
+      "sas": "364237"
+    },
+    {
+      "id": "device-members-in-other-order-with-whitespace",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": " { \"pid\" : \"AAECAwQFBgcICQoLDA0ODw\" , \"nd\" : \"YGFiY2RlZmdoaWprbG1ubw\" } ",
+      "outcome": "accepted",
+      "sas": "364237"
+    },
+    {
+      "id": "at-1024-bytes",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubw\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ",
+      "outcome": "accepted",
+      "sas": "364237"
+    },
+    {
+      "id": "over-1024-bytes",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubw\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   ",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "fullwidth-nonce-at-1024-bytes",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"ＹＧＦｉＹ２ＲｌＺｍｄｏａＷｐｒｂＧ１ｕｂｗ\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "fullwidth-nonce-over-1024-bytes",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"ＹＧＦｉＹ２ＲｌＺｍｄｏａＷｐｒｂＧ１ｕｂｗ\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "pid-of-another-window",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubw\",\"pid\":\"EBESExQVFhcYGRobHB0eHw\"}",
+      "outcome": "PAIR_WINDOW_CLOSED"
+    },
+    {
+      "id": "pid-of-another-window-and-nonce-of-another-claim",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"wMHCw8TFxsfIycrLzM3Ozw\",\"pid\":\"EBESExQVFhcYGRobHB0eHw\"}",
+      "outcome": "PAIR_WINDOW_CLOSED"
+    },
+    {
+      "id": "nonce-bit-flipped",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1u7w\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_COMMITMENT_MISMATCH"
+    },
+    {
+      "id": "nonce-of-another-claim",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"wMHCw8TFxsfIycrLzM3Ozw\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_COMMITMENT_MISMATCH"
+    },
+    {
+      "id": "claim-of-another-nonce",
+      "claim": "{\"c\":\"9957b6bfcd68b3fccfe264bdeb36dcb3ad766e1f1ae97b8ad730c056973e29ae\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"b9bdbd881774ffab7f10634bcd9dd9f8aeee8aaefb89a06fd6ed60251fa761d2\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubw\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_COMMITMENT_MISMATCH"
+    },
+    {
+      "id": "commitment-as-nonce",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"R3oKnXvwvYDWxz47uL4B6SkInFTTFy60szNo9SEiAx4\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "commitment-hex-as-nonce",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "nonce-15-bytes",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1u\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "nonce-17-bytes",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubwA\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "nonce-loose-encoding",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubx\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "nonce-padded",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubw==\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "nonce-hex",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"606162636465666768696a6b6c6d6e6f\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "nonce-null",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":null,\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "nonce-missing",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "pid-missing",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "pid-loose-encoding",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubw\",\"pid\":\"AAECAwQFBgcICQoLDA0ODx\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "hub-nonce-echoed",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubw\",\"nh\":\"cHFyc3R1dnd4eXp7fH1-fw\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "sas-in-the-reveal",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"YGFiY2RlZmdoaWprbG1ubw\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"sas\":\"364237\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "duplicate-member",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "{\"nd\":\"wMHCw8TFxsfIycrLzM3Ozw\",\"nd\":\"YGFiY2RlZmdoaWprbG1ubw\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\"}",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "not-an-object",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "[\"AAECAwQFBgcICQoLDA0ODw\",\"YGFiY2RlZmdoaWprbG1ubw\"]",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "not-json",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "pid=AAECAwQFBgcICQoLDA0ODw&nd=YGFiY2RlZmdoaWprbG1ubw",
+      "outcome": "PAIR_REVEAL_INVALID"
+    },
+    {
+      "id": "empty",
+      "claim": "{\"c\":\"477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e\",\"name\":\"Work laptop\",\"pid\":\"AAECAwQFBgcICQoLDA0ODw\",\"proof\":\"2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09\",\"role\":\"device\",\"signingKey\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHunHqS0zKnoRCe702Yts1zpUdLlZwwPa65L3luARdwEJ177mTTcifTI-N3iLkIfo8r7xVYZPSzVC6n7LnPrh-g\",\"transportSpkiSha256\":\"d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533\"}",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "nh": "cHFyc3R1dnd4eXp7fH1-fw",
+      "body": "",
+      "outcome": "PAIR_REVEAL_INVALID"
     }
   ]
 }

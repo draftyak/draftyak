@@ -11,12 +11,15 @@ use crate::{
         admin::ADMIN_KINDS,
         agent_session::AgentSessionReviewSubject,
         common::{MAX_SAFE, id, key, sha},
+        decode,
         pair_confirm::{ConfirmationPreset, DeviceCapability, can_confirm},
         send::{check_flags_acked, check_send_window},
     },
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
+
+pub mod admin;
 
 pub const STATEMENT_BYTES: usize = 16_384;
 pub const FRAME_BYTES: usize = 65_536;
@@ -157,12 +160,12 @@ fn ids(value: &Value, min: usize, max: usize) -> bool {
     })
 }
 fn capabilities(value: &Value, empty: bool) -> bool {
-    serde_json::from_value::<Vec<DeviceCapability>>(value.clone()).is_ok_and(|caps| {
+    decode::<Vec<DeviceCapability>>(value).is_some_and(|caps| {
         (empty || !caps.is_empty()) && caps.windows(2).all(|pair| pair[0] < pair[1])
     })
 }
 fn preset(value: &Value) -> Option<ConfirmationPreset> {
-    serde_json::from_value(value.clone()).ok()
+    decode(value)
 }
 fn cursor(value: &Value) -> bool {
     value
@@ -192,7 +195,7 @@ fn display_name(s: &str) -> bool {
         && s.chars().any(|c| !blank(c) && !joiner(c))
 }
 fn flags_acked(value: &Value) -> bool {
-    serde_json::from_value::<Vec<FlagCode>>(value.clone()).is_ok_and(|codes| {
+    decode::<Vec<FlagCode>>(value).is_some_and(|codes| {
         codes
             .windows(2)
             .all(|pair| pair[0].as_str() < pair[1].as_str())
@@ -212,7 +215,8 @@ fn typed_statement(value: &Value, typ: &str) -> Option<Statement> {
     }
     statements::parse_statement(typ, &statement_bytes(value)?)
 }
-fn send_review(value: &Value) -> bool {
+/// The snapshot and flags of a strict send review.
+fn send_review(value: &Value) -> Option<(SendSnapshotV1, Vec<Flag>)> {
     if !shape(
         value,
         &[
@@ -227,15 +231,11 @@ fn send_review(value: &Value) -> bool {
             "expiresAt",
         ],
     ) {
-        return false;
+        return None;
     }
-    let Ok(snapshot) = serde_json::from_value::<SendSnapshotV1>(value["snapshot"].clone()) else {
-        return false;
-    };
-    let Ok(flags) = serde_json::from_value::<Vec<Flag>>(value["flags"].clone()) else {
-        return false;
-    };
-    is_text(value, "id", id)
+    let snapshot: SendSnapshotV1 = decode(&value["snapshot"])?;
+    let flags: Vec<Flag> = decode(&value["flags"])?;
+    let valid = is_text(value, "id", id)
         && content_hash(&snapshot).is_ok_and(|h| value["contentHash"] == h)
         && flags_hash(&flags).is_ok_and(|h| value["flagsHash"] == h)
         && [
@@ -268,7 +268,12 @@ fn send_review(value: &Value) -> bool {
             ]
             .contains(&text(value, "stateReason")))
         && ids(&value["requiredUsers"], 1, usize::MAX)
-        && safe(&value["expiresAt"])
+        && safe(&value["expiresAt"]);
+    valid.then_some((snapshot, flags))
+}
+/// The pairing SAS (`spec/pairing-v1.md` section 9): exactly six ASCII digits.
+fn sas(s: &str) -> bool {
+    s.len() == 6 && s.bytes().all(|b| b.is_ascii_digit())
 }
 fn pair_subject(value: &Value) -> bool {
     shape(
@@ -281,6 +286,7 @@ fn pair_subject(value: &Value) -> bool {
             "signingKey",
             "preset",
             "capabilities",
+            "sas",
         ],
     ) && is_text(value, "candidate", id)
         && is_text(value, "name", display_name)
@@ -289,6 +295,7 @@ fn pair_subject(value: &Value) -> bool {
         && is_text(value, "signingKey", key)
         && preset(&value["preset"])
             .is_some_and(|p| json!(p.capabilities()) == value["capabilities"])
+        && is_text(value, "sas", sas)
 }
 fn operation_review(value: &Value) -> bool {
     shape(
@@ -305,6 +312,10 @@ fn operation_review(value: &Value) -> bool {
         && match text(value, "kind") {
             "pair-confirm" => pair_subject(&value["subject"]),
             "agent-session" => agent_subject(&value["subject"]).is_some(),
+            "account.disconnect" => admin::account_subject(&value["subject"]),
+            "account.mode-full" => admin::account_subject(&value["subject"]),
+            "security.device-capabilities" => admin::device_capabilities_subject(&value["subject"]),
+            "data.backup" => admin::data_backup_subject(&value["subject"]),
             _ => false,
         }
         && jcs_sha256(&value["subject"]).is_ok_and(|h| value["digest"] == h)
@@ -312,7 +323,7 @@ fn operation_review(value: &Value) -> bool {
         && value["remainingMs"].as_u64().is_some_and(|v| v <= 120_000)
 }
 fn agent_subject(value: &Value) -> Option<AgentSessionReviewSubject> {
-    serde_json::from_value(value.clone()).ok()
+    decode(value)
 }
 fn operation_request(value: &Value) -> bool {
     if value["kind"] == "pair-confirm" {
@@ -320,9 +331,10 @@ fn operation_request(value: &Value) -> bool {
             && ids(&value["ids"], 1, 1)
             && preset(&value["preset"]).is_some()
     } else {
+        let (min, max) = admin::request_ids(text(value, "kind"));
         shape(value, &["kind", "ids"])
             && ADMIN_KINDS.contains(&text(value, "kind"))
-            && ids(&value["ids"], 0, 100)
+            && ids(&value["ids"], min, max)
     }
 }
 fn challenge_request(value: &Value) -> bool {
@@ -332,14 +344,20 @@ fn challenge_request(value: &Value) -> bool {
                 shape(value, &["kind", "id", "flagsAcked"]) && flags_acked(&value["flagsAcked"])
             }
             "pair-confirm.v1" | "agent-session.v1" => shape(value, &["kind", "id"]),
+            "admin.v1" => shape(value, &["kind", "id"]),
             _ => false,
         }
 }
 fn challenge(value: &Value) -> bool {
     shape(value, &["kind", "id", "statement"])
         && is_text(value, "id", id)
-        && ["approval.send.v1", "pair-confirm.v1", "agent-session.v1"]
-            .contains(&text(value, "kind"))
+        && [
+            "approval.send.v1",
+            "pair-confirm.v1",
+            "agent-session.v1",
+            "admin.v1",
+        ]
+        .contains(&text(value, "kind"))
         && typed_statement(&value["statement"], text(value, "kind")).is_some()
 }
 fn envelope(value: &Value, typ: Option<&str>) -> bool {
@@ -422,9 +440,12 @@ pub fn check_schema(name: &str, value: &Value) -> bool {
                 && DEVICE_TYPES.contains(&text(value, "kind"))
                 && is_text(value, "id", id)
         }
-        "SendReview" => send_review(value),
+        "SendReview" => send_review(value).is_some(),
         "PairConfirmSubject" => pair_subject(value),
         "AgentSessionReviewSubject" => agent_subject(value).is_some(),
+        "AdminAccountSubject" => admin::account_subject(value),
+        "AdminDeviceCapabilitiesSubject" => admin::device_capabilities_subject(value),
+        "AdminDataBackupSubject" => admin::data_backup_subject(value),
         "OperationReview" => operation_review(value),
         "ChallengeRequest" => challenge_request(value),
         "Challenge" => challenge(value),
@@ -539,14 +560,7 @@ pub fn check_challenge(
     };
     match statement {
         Statement::Send(s) => {
-            if !send_review(review) {
-                return false;
-            }
-            let Ok(snapshot) = serde_json::from_value::<SendSnapshotV1>(review["snapshot"].clone())
-            else {
-                return false;
-            };
-            let Ok(flags) = serde_json::from_value::<Vec<Flag>>(review["flags"].clone()) else {
+            let Some((snapshot, flags)) = send_review(review) else {
                 return false;
             };
             s.hub == text(context, "hub")
@@ -585,11 +599,25 @@ pub fn check_challenge(
                 && s.device == text(context, "device")
                 && s.matches_pending(text(review, "id"), &subject)
         }
+        Statement::Admin(s) => {
+            operation_review(review)
+                && admin::ADMIN_REVIEW_KINDS.contains(&text(review, "kind"))
+                && s.hub == text(context, "hub")
+                && s.device == text(context, "device")
+                && s.op == text(request, "id")
+                && s.kind == text(review, "kind")
+                && s.digest == text(review, "digest")
+                && (review["kind"] != "security.device-capabilities"
+                    || s.device != text(&review["subject"], "device"))
+        }
         _ => false,
     }
 }
 pub fn route_allows(name: &str, peer: &Value, operation: Option<&Value>) -> bool {
     let Some(r) = route(name) else {
+        return false;
+    };
+    let Some(held) = decode::<Vec<DeviceCapability>>(&peer["capabilities"]) else {
         return false;
     };
     if !shape(
@@ -611,8 +639,7 @@ pub fn route_allows(name: &str, peer: &Value, operation: Option<&Value>) -> bool
         || !(peer["confirmedEpoch"].is_null() || safe(&peer["confirmedEpoch"]))
         || !peer["sidecarClaim"].is_boolean()
         || !peer["bootstrapDone"].is_boolean()
-        || !serde_json::from_value::<Vec<DeviceCapability>>(peer["capabilities"].clone())
-            .is_ok_and(|caps| caps.iter().enumerate().all(|(i, c)| !caps[..i].contains(c)))
+        || !held.iter().enumerate().all(|(i, c)| !held[..i].contains(c))
     {
         return false;
     }
@@ -642,7 +669,13 @@ pub fn route_allows(name: &str, peer: &Value, operation: Option<&Value>) -> bool
         return false;
     }
     if name == "challenge"
-        && !["approval.send.v1", "pair-confirm.v1", "agent-session.v1"].contains(&text(op, "kind"))
+        && ![
+            "approval.send.v1",
+            "pair-confirm.v1",
+            "agent-session.v1",
+            "admin.v1",
+        ]
+        .contains(&text(op, "kind"))
     {
         return false;
     }
@@ -665,10 +698,7 @@ pub fn route_allows(name: &str, peer: &Value, operation: Option<&Value>) -> bool
         let Some(preset) = preset(&op["preset"]) else {
             return false;
         };
-        let Ok(caps) = serde_json::from_value::<Vec<DeviceCapability>>(caps.clone()) else {
-            return false;
-        };
-        return can_confirm(&caps, preset);
+        return can_confirm(&held, preset);
     }
     true
 }

@@ -102,6 +102,17 @@ it("keeps admin groups closed and defers types without contracts", () => {
 	])
 		expect(AdminStatement.safeParse({ ...doc.cases[0].statement, kind }).success).toBe(false);
 });
+it("parseStatement refuses every positional statement vector", () => {
+	const read = (Object.keys(StatementSchemas) as StatementType[]).filter((typ) => {
+		const { cases } = JSON.parse(readFileSync(path.join(directory, `${typ}.json`), "utf8")) as {
+			cases: StatementVector[];
+		};
+		const positional = cases.find((vector) => vector.id === "positional");
+		if (positional === undefined) throw Error(`${typ}: no positional case`);
+		return parseStatement(typ, Buffer.from(positional.receivedHex, "hex")) !== undefined;
+	});
+	expect(read).toEqual([]);
+});
 it("pair capabilities bind exact order but cannot contain a duplicate or future grant", () => {
 	const doc = JSON.parse(readFileSync(path.join(directory, "pair-confirm.v1.json"), "utf8"));
 	const base = doc.cases[0].statement;
