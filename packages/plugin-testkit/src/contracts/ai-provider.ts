@@ -1,3 +1,4 @@
+import { types } from "node:util";
 import type { Fake } from "@draftyak/fakes";
 import {
 	aiProviderV1,
@@ -11,10 +12,17 @@ import { createPluginServer } from "@draftyak/sdk";
 import { parseJSONRPCMessage, type Transport } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { createMockHub } from "../mock-hub.ts";
-import type { MockHub, MockHubOptions, MockPlugin } from "../types.ts";
+import {
+	copyResponsesHttpInputs,
+	type MockHub,
+	type MockHubOptions,
+	type MockPlugin,
+} from "../types.ts";
 
 export interface AiProviderFixtures {
 	readonly upstreams: readonly Fake[];
+	/** Trusted constructor comparisons, independent of plugin request fields or metadata. */
+	readonly responsesHttp?: MockHubOptions["responsesHttp"];
 	readonly request: DraftRequest;
 	/** The successful scripted response for this request, including its usage. */
 	readonly expected: Extract<DraftOutcome, { kind: "draft" }>;
@@ -62,6 +70,13 @@ async function run(
 	let failure: AiProviderFailureCode = "AI_FIXTURES_INVALID";
 	try {
 		const fixtures = await options.fixtures();
+		if (types.isProxy(fixtures)) return result;
+		const bindingSlot = Object.getOwnPropertyDescriptor(fixtures, "responsesHttp");
+		if (bindingSlot && (!bindingSlot.enumerable || !Object.hasOwn(bindingSlot, "value")))
+			return result;
+		// Capture array membership before another fixture read can replace the selected inputs.
+		const bindings =
+			bindingSlot?.value === undefined ? undefined : copyResponsesHttpInputs(bindingSlot.value);
 		const request = aiProviderV1.tools.ai_draft_generate.input.safeParse(fixtures.request);
 		const expected = DraftOutcome.safeParse(fixtures.expected);
 		if (!request.success || !expected.success || expected.data.kind !== "draft") return result;
@@ -70,6 +85,7 @@ async function run(
 			mode: options.mode ?? "process",
 			plugin: options.plugin,
 			upstreams: fixtures.upstreams,
+			...(bindings === undefined ? {} : { responsesHttp: bindings }),
 		});
 		failure = "AI_CHECK_FAILED";
 		result = await check(hub, fixtures);
