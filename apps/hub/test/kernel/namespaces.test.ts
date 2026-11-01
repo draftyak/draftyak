@@ -10,6 +10,10 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 const requiredRevisionAsset = path.join(HUB_NAMESPACES.revisions, "0002_immutable_revisions.sql");
+const requiredCredentialAsset = path.join(
+	HUB_NAMESPACES.credentials,
+	"0002_sealed_credentials.sql",
+);
 const access = vi.mocked(accessSync);
 
 afterEach(() => access.mockReset());
@@ -30,6 +34,7 @@ it("checks the required revision asset and migrates all eight namespaces exactly
 	const { store, calls } = recorder();
 	await migrateHubSchemas(store);
 	expect(access).toHaveBeenCalledWith(requiredRevisionAsset, constants.R_OK);
+	expect(access).toHaveBeenCalledWith(requiredCredentialAsset, constants.R_OK);
 	expect(calls).toEqual([
 		"audit",
 		"core",
@@ -52,5 +57,17 @@ it("refuses a missing revision immutability asset before later namespaces can mi
 	await expect(migrateHubSchemas(store)).rejects.toBe(missing);
 	expect(access).toHaveBeenCalledWith(requiredRevisionAsset, constants.R_OK);
 	expect(calls).not.toContain("credentials");
+	expect(calls).not.toContain("tickets");
+});
+
+it("refuses a missing credential sealing asset before tickets can migrate", async () => {
+	const { store, calls } = recorder();
+	const missing = Object.assign(new Error("Required credential asset missing"), { code: "ENOENT" });
+	access.mockImplementation((filename) => {
+		if (filename === requiredCredentialAsset) throw missing;
+	});
+	await expect(migrateHubSchemas(store)).rejects.toBe(missing);
+	expect(access).toHaveBeenCalledWith(requiredCredentialAsset, constants.R_OK);
+	expect(calls.filter((namespace) => namespace === "credentials")).toHaveLength(1);
 	expect(calls).not.toContain("tickets");
 });
