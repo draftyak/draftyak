@@ -38,6 +38,12 @@ importers:
 
   apps/hub:
     dependencies:
+      '@draftyak/bounded-files':
+        specifier: workspace:*
+        version: link:../../packages/bounded-files
+      '@draftyak/extensions':
+        specifier: workspace:*
+        version: link:../../packages/extensions
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -54,9 +60,15 @@ importers:
         specifier: 0.2.2
         version: 0.2.2
     devDependencies:
+      '@draftyak/fake-commercial':
+        specifier: workspace:*
+        version: link:../../packages/fake-commercial
       '@draftyak/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
       tsdown:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)
@@ -79,6 +91,12 @@ importers:
       tsdown:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)
+
+  packages/fake-commercial:
+    devDependencies:
+      '@draftyak/extensions':
+        specifier: workspace:*
+        version: link:../extensions
 
   packages/fakes:
     dependencies:
@@ -110,6 +128,9 @@ importers:
       '@draftyak/sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@modelcontextprotocol/client':
+        specifier: 2.3.1
+        version: 2.3.1
       '@modelcontextprotocol/server':
         specifier: 2.3.1
         version: 2.3.1
@@ -227,6 +248,28 @@ importers:
       fast-check:
         specifier: 4.10.2
         version: 4.10.2
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
+  plugins/channel-hello:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@draftyak/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@draftyak/fakes':
+        specifier: workspace:*
+        version: link:../../packages/fakes
+      '@draftyak/plugin-testkit':
+        specifier: workspace:*
+        version: link:../../packages/plugin-testkit
       tsdown:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)

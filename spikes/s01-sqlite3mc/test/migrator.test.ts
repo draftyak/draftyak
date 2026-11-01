@@ -184,39 +184,69 @@ describe("migrate", () => {
 		});
 	});
 
-	it("refuses a stray, misnamed or reused file name instead of skipping it", async () => {
-		const cases: Readonly<Record<string, string>>[] = [
-			{ "README.txt": "notes" },
-			{ "0002_Labels.sql": "SELECT 1;" },
-			{ "2_labels.sql": "SELECT 1;" },
-			{ "0001_again.sql": "SELECT 1;" },
-		];
-		for (const files of cases) {
+	it.for([
+		{ name: "README.txt", text: "notes" },
+		{ name: "0002_Labels.sql", text: "SELECT 1;" },
+		{ name: "2_labels.sql", text: "SELECT 1;" },
+		{ name: "0001_again.sql", text: "SELECT 1;" },
+	])(
+		"refuses a stray, misnamed or reused file name instead of skipping it: $name",
+		async ({ name, text }) => {
 			await withDb(async (db, dir) => {
-				const error = await rejection(migrate(db, "core", migrationFolder(dir, files)));
+				const error = await rejection(migrate(db, "core", migrationFolder(dir, { [name]: text })));
 				expect(error).toMatchObject({ name: "MigrationError", results: [] });
 				expect(String((error as Error).message)).toMatch(
 					/^core: .* (named NNNN_<name>\.sql|is used twice)$/,
 				);
 				expect(schemaNames(db, "table")).toEqual(["_migrations_core", "_migrations_core_lock"]);
 			});
-		}
-	});
+		},
+	);
 
-	it("refuses transaction control, PRAGMA, ATTACH and VACUUM before any file of the run runs", async () => {
-		const refused: Readonly<Record<string, string>> = {
-			"0003_commits.sql":
-				"CREATE TABLE early (x TEXT) STRICT;\nCOMMIT;\nCREATE TABLE late (x TEXT);",
-			"0003_wrapped.sql": "BEGIN;\nCREATE TABLE wrapped (x TEXT) STRICT;\nCOMMIT;",
-			"0003_undoes.sql": "CREATE TABLE b (x TEXT) STRICT;\nROLLBACK;\nCREATE TABLE c (x TEXT);",
-			"0003_ends.sql": "CREATE TABLE d (x TEXT) STRICT; /* done */ end transaction;",
-			"0003_settings.sql": "PRAGMA secure_delete = OFF;\npragma trusted_schema = ON;",
-			"0003_saves.sql": "SAVEPOINT s; CREATE TABLE e (x TEXT); RELEASE s;",
-			"0003_attaches.sql": "ATTACH 'other.db' AS other; DETACH other;",
-			"0003_vacuums.sql": "VACUUM;",
-		};
-		const named: Record<string, string> = {};
-		for (const [name, text] of Object.entries(refused)) {
+	it.for([
+		{
+			name: "0003_commits.sql",
+			text: "CREATE TABLE early (x TEXT) STRICT;\nCOMMIT;\nCREATE TABLE late (x TEXT);",
+			message: "core: 0003_commits.sql: a migration can't run COMMIT",
+		},
+		{
+			name: "0003_wrapped.sql",
+			text: "BEGIN;\nCREATE TABLE wrapped (x TEXT) STRICT;\nCOMMIT;",
+			message: "core: 0003_wrapped.sql: a migration can't run BEGIN, COMMIT",
+		},
+		{
+			name: "0003_undoes.sql",
+			text: "CREATE TABLE b (x TEXT) STRICT;\nROLLBACK;\nCREATE TABLE c (x TEXT);",
+			message: "core: 0003_undoes.sql: a migration can't run ROLLBACK",
+		},
+		{
+			name: "0003_ends.sql",
+			text: "CREATE TABLE d (x TEXT) STRICT; /* done */ end transaction;",
+			message: "core: 0003_ends.sql: a migration can't run END",
+		},
+		{
+			name: "0003_settings.sql",
+			text: "PRAGMA secure_delete = OFF;\npragma trusted_schema = ON;",
+			message: "core: 0003_settings.sql: a migration can't run PRAGMA",
+		},
+		{
+			name: "0003_saves.sql",
+			text: "SAVEPOINT s; CREATE TABLE e (x TEXT); RELEASE s;",
+			message: "core: 0003_saves.sql: a migration can't run SAVEPOINT, RELEASE",
+		},
+		{
+			name: "0003_attaches.sql",
+			text: "ATTACH 'other.db' AS other; DETACH other;",
+			message: "core: 0003_attaches.sql: a migration can't run ATTACH, DETACH",
+		},
+		{
+			name: "0003_vacuums.sql",
+			text: "VACUUM;",
+			message: "core: 0003_vacuums.sql: a migration can't run VACUUM",
+		},
+	])(
+		"refuses transaction control, PRAGMA, ATTACH and VACUUM before any file of the run runs: $name",
+		async ({ name, text, message }) => {
 			await withDb(async (db, dir) => {
 				await migrate(db, "core");
 				const folder = migrationFolder(dir, {
@@ -225,22 +255,15 @@ describe("migrate", () => {
 				});
 				const error = await rejection(migrate(db, "core", folder));
 				expect(error).toMatchObject({ name: "MigrationError", results: [] });
-				named[name] = String((error as Error).message);
 				expect(schemaNames(db, "table")).toEqual(tablesAfterCore);
 				expect(applied(db)).toEqual(["0001_init"]);
 				expect(readSettings(db)).toEqual(EXPECTED);
+				expect(String((error as Error).message)).toBe(message);
 			});
-		}
-		expect(Object.values(named)).toEqual([
-			"core: 0003_commits.sql: a migration can't run COMMIT",
-			"core: 0003_wrapped.sql: a migration can't run BEGIN, COMMIT",
-			"core: 0003_undoes.sql: a migration can't run ROLLBACK",
-			"core: 0003_ends.sql: a migration can't run END",
-			"core: 0003_settings.sql: a migration can't run PRAGMA",
-			"core: 0003_saves.sql: a migration can't run SAVEPOINT, RELEASE",
-			"core: 0003_attaches.sql: a migration can't run ATTACH, DETACH",
-			"core: 0003_vacuums.sql: a migration can't run VACUUM",
-		]);
+		},
+	);
+
+	it("refuses exactly transaction control, PRAGMA, ATTACH, DETACH and VACUUM", () => {
 		expect([...REFUSED_STATEMENTS].toSorted()).toEqual(
 			["ATTACH", "BEGIN", "COMMIT", "DETACH", "END", "PRAGMA", "RELEASE", "ROLLBACK"]
 				.concat(["SAVEPOINT", "VACUUM"])

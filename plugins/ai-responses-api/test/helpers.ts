@@ -274,7 +274,7 @@ export async function nativeProviderFixture(options: {
 		});
 		await store.migrate("audit");
 		await store.migrate("credentials");
-		const vault = new hub.CredentialVault(store, audit);
+		const vault = new hub.CredentialVault(store, audit, key);
 		const registry = hub.createBuiltinAiProfileRegistry();
 		const credential = {
 			ownerKind: "provider" as const,

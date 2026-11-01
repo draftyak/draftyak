@@ -10,6 +10,7 @@ import {
 	matchesAgentSessionPending,
 	type SendStatement,
 } from "../statements.ts";
+import { ADMIN_REVIEW_KINDS } from "./admin.ts";
 import {
 	ChallengeContext,
 	decodeDeviceStatement,
@@ -25,16 +26,18 @@ export type ChallengeRequest =
 			readonly flagsAcked: readonly FlagCode[];
 	  }
 	| { readonly kind: "pair-confirm.v1"; readonly id: string }
-	| { readonly kind: "agent-session.v1"; readonly id: string };
+	| { readonly kind: "agent-session.v1"; readonly id: string }
+	| { readonly kind: "admin.v1"; readonly id: string };
 export const ChallengeRequest: z.ZodType<ChallengeRequest> = z
 	.discriminatedUnion("kind", [
 		z.strictObject({ kind: z.literal("approval.send.v1"), id: Ulid, flagsAcked: FlagsAcked }),
 		z.strictObject({ kind: z.literal("pair-confirm.v1"), id: Ulid }),
 		z.strictObject({ kind: z.literal("agent-session.v1"), id: Ulid }),
+		z.strictObject({ kind: z.literal("admin.v1"), id: Ulid }),
 	])
 	.meta({ id: "draftyak.device-api.ChallengeRequest" });
 export type Challenge = {
-	readonly kind: "approval.send.v1" | "pair-confirm.v1" | "agent-session.v1";
+	readonly kind: "approval.send.v1" | "pair-confirm.v1" | "agent-session.v1" | "admin.v1";
 	readonly id: string;
 	readonly statement: string;
 };
@@ -43,6 +46,7 @@ export const Challenge: z.ZodType<Challenge> = z
 		z.strictObject({ kind: z.literal("approval.send.v1"), id: Ulid, statement: StatementText }),
 		z.strictObject({ kind: z.literal("pair-confirm.v1"), id: Ulid, statement: StatementText }),
 		z.strictObject({ kind: z.literal("agent-session.v1"), id: Ulid, statement: StatementText }),
+		z.strictObject({ kind: z.literal("admin.v1"), id: Ulid, statement: StatementText }),
 	])
 	.refine((value) => decodeDeviceStatement(value.kind, value.statement) !== undefined, {
 		message: "statement must match challenge kind",
@@ -99,6 +103,15 @@ export function checkChallenge(
 					session: parsed.data.id,
 					subject: parsed.data.subject,
 				})
+			);
+		if (r.data.kind === "admin.v1")
+			return (
+				(ADMIN_REVIEW_KINDS as readonly string[]).includes(parsed.data.kind) &&
+				statement.op === r.data.id &&
+				statement.kind === parsed.data.kind &&
+				statement.digest === parsed.data.digest &&
+				(parsed.data.kind !== "security.device-capabilities" ||
+					parsed.data.subject.device !== statement.device)
 			);
 		if (parsed.data.kind !== "pair-confirm") return false;
 		const subject = parsed.data.subject;

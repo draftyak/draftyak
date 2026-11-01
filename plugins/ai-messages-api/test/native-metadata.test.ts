@@ -153,7 +153,7 @@ async function fixture(
 	});
 	await store.migrate("audit");
 	await store.migrate("credentials");
-	const vault = new CredentialVault(store, audit);
+	const vault = new CredentialVault(store, audit, key);
 	const credential: CredentialBinding = {
 		ownerKind: "provider",
 		ownerId: newId(),
