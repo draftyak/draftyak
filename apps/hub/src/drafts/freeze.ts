@@ -59,6 +59,7 @@ function matches(
 ): void {
 	const revision = current.revision,
 		content = revision.content;
+	if (snapshot.render !== undefined) throw revisionUnavailable();
 	if (
 		snapshot.account !== bound.accountId ||
 		snapshot.conversation !== bound.conversationId ||
@@ -72,6 +73,10 @@ function matches(
 	if (content.channel === "email") {
 		if (
 			snapshot.kind !== "email" ||
+			(bound.conversationId === null &&
+				(snapshot.email.threadId !== undefined ||
+					snapshot.email.inReplyTo !== undefined ||
+					snapshot.email.references.length !== 0)) ||
 			canonicalize(snapshot.email.to) !== canonicalize(content.to) ||
 			canonicalize(snapshot.email.cc) !== canonicalize(content.cc) ||
 			canonicalize(snapshot.email.bcc) !== canonicalize(content.bcc) ||
@@ -248,9 +253,22 @@ export class NativeDraftFreeze {
 				])
 			)
 				throw revisionUnavailable();
-			const at = methods.now.call(this.#revisions),
+			const observedAt = methods.now.call(this.#revisions),
+				at = Math.max(observedAt, current.draft.updatedAt, current.revision.createdAt),
 				id = newId(at);
-			methods.setLockInTransaction.call(this.#revisions, tx, bound, expectedRev, null, id);
+			if (observedAt < at)
+				methods.auditInTransaction.call(this.#revisions, tx, "draft.clock_skew", {
+					clockSkewDraft: bound.draftId,
+				});
+			const locked = methods.setLockInTransaction.call(
+				this.#revisions,
+				tx,
+				bound,
+				expectedRev,
+				null,
+				id,
+				at,
+			);
 			this.#save(
 				tx,
 				id,
@@ -260,8 +278,8 @@ export class NativeDraftFreeze {
 					revisionContentHash: current.revision.contentSha256,
 					flagsHash: current.flagsHash,
 					status: "active",
-					createdAt: at,
-					updatedAt: at,
+					createdAt: locked.draft.updatedAt,
+					updatedAt: locked.draft.updatedAt,
 				},
 				true,
 			);
@@ -292,9 +310,18 @@ export class NativeDraftFreeze {
 			if (!saved || !methods.sameStore.call(this.#revisions, saved.revisions))
 				throw revisionUnavailable();
 			const loaded = this.#load(tx, saved.lockId),
-				{ row, payload } = this.#current(tx, loaded.payload.binding, loaded.row.outbox_id),
-				at = methods.now.call(this.#revisions);
-			if (at < payload.updatedAt) throw revisionUnavailable();
+				{ row, payload, current } = this.#current(tx, loaded.payload.binding, loaded.row.outbox_id),
+				rawAt = methods.now.call(this.#revisions),
+				at = Math.max(
+					rawAt,
+					payload.updatedAt,
+					current.draft.updatedAt,
+					current.revision.createdAt,
+				);
+			if (rawAt < at)
+				methods.auditInTransaction.call(this.#revisions, tx, "draft.clock_skew", {
+					clockSkewDraft: payload.binding.draftId,
+				});
 			this.#save(tx, row.id, { ...payload, status: "consumed", updatedAt: at }, false);
 			return this.#facts(payload);
 		} catch {
@@ -307,8 +334,17 @@ export class NativeDraftFreeze {
 			methods.assertTransaction.call(this.#revisions, tx);
 			const bound = captureDraftBinding(binding),
 				{ row, payload, current } = this.#current(tx, bound, outboxId),
-				at = methods.now.call(this.#revisions);
-			if (at < payload.updatedAt) throw revisionUnavailable();
+				rawAt = methods.now.call(this.#revisions),
+				at = Math.max(
+					rawAt,
+					payload.updatedAt,
+					current.draft.updatedAt,
+					current.revision.createdAt,
+				);
+			if (rawAt < at)
+				methods.auditInTransaction.call(this.#revisions, tx, "draft.clock_skew", {
+					clockSkewDraft: bound.draftId,
+				});
 			this.#save(tx, row.id, { ...payload, status: "released", updatedAt: at }, false);
 			methods.setLockInTransaction.call(
 				this.#revisions,
@@ -317,6 +353,7 @@ export class NativeDraftFreeze {
 				current.draft.rev,
 				row.id,
 				null,
+				at,
 			);
 		} catch {
 			throw revisionUnavailable();

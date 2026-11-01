@@ -88,7 +88,7 @@ describe("encrypted immutable native revision storage", () => {
 			expect(f.revisions.current(f.bind(input)).draft.rev).toBe(1);
 		},
 	);
-	it("model append can change only body and retains previous native flags and all envelope fields", async () => {
+	it("model append changes only body, replaces recomputed flags and retains all envelope fields", async () => {
 		const f = await fixture(),
 			input = f.make(),
 			one = f.create(input),
@@ -104,7 +104,7 @@ describe("encrypted immutable native revision storage", () => {
 			}),
 		);
 		expect(two.revision.content).toEqual({ ...one.revision.content, body: "Model\nbody" });
-		expect(two.revision.flags).toEqual(one.revision.flags);
+		expect(two.revision.flags).toEqual([]);
 		expect(() =>
 			f.store.write((tx) =>
 				f.revisions.appendModelBodyInTransaction(tx, {
