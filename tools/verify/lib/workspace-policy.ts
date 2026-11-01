@@ -135,10 +135,14 @@ export async function namedFiles(
 		missingDirectory(target, readDirectory, statPath, root);
 	// Other checkouts add and remove folders mid-walk. The root must list; below it, a vanished
 	// folder is skipped and any other failed folder is listed once more before validation is refused.
-	const list = async (dir: string): Promise<readonly Entry[]> => {
-		const target = path.join(root, dir);
+	const list = async (dir: string, target: string): Promise<readonly Entry[]> => {
 		if (dir === "") return readDirectory(target);
-		const first = await attempt(target);
+		let first: readonly Entry[] | undefined;
+		try {
+			first = await readDirectory(target);
+		} catch {
+			// Failed reads retain the fresh disappearance proof and bounded retry below.
+		}
 		if (first) return first;
 		if (await gone(target)) return [];
 		await sleep(RETRY_DELAY_MS);
@@ -160,17 +164,23 @@ export async function namedFiles(
 	};
 	type PendingDirectory = {
 		readonly directory: string;
+		readonly target: string;
+		readonly plain: boolean;
 		next?: PendingDirectory;
 	};
-	let first: PendingDirectory | undefined = { directory: "" };
+	let first: PendingDirectory | undefined = { directory: "", target: root, plain: true };
 	let last: PendingDirectory | undefined = first;
 	const found: string[] = [];
 	await new Promise<void>((resolve, reject) => {
 		let active = 0;
 		let failed = false;
-		const visit = async (directory: string): Promise<void> => {
+		const visit = async (
+			directory: string,
+			absolute: string,
+			plainAncestry: boolean,
+		): Promise<void> => {
 			try {
-				const children = await list(directory);
+				const children = await list(directory, absolute);
 				if (failed) return;
 				for (const entry of children) {
 					const name = entry.name;
@@ -182,7 +192,18 @@ export async function namedFiles(
 						const relative = relativeName(directory, name);
 						if (matches) found.push(relative);
 						if (!descend) continue;
-						const pending: PendingDirectory = { directory: relative };
+						// Ordinary components can extend an already-normalized native target. Keep the
+						// original whole-path normalization for every unusual component and descendant.
+						const plain =
+							plainAncestry &&
+							name !== "" &&
+							name !== "." &&
+							name !== ".." &&
+							!/[\\/:\0]/.test(name);
+						const target = plain
+							? `${absolute}${absolute.endsWith(path.sep) ? "" : path.sep}${name}`
+							: path.join(root, relative);
+						const pending: PendingDirectory = { directory: relative, target, plain };
 						if (last) last.next = pending;
 						else first = pending;
 						last = pending;
@@ -204,7 +225,8 @@ export async function namedFiles(
 				first = current.next;
 				if (!first) last = undefined;
 				active += 1;
-				void visit(current.directory);
+				// Passing only values prevents a slow read from retaining a dequeued node's tail.
+				void visit(current.directory, current.target, current.plain);
 			}
 			// Stop admitting work on failure, but drain every read already in flight before settling.
 			if (active === 0) {
