@@ -14,6 +14,7 @@ const requiredCredentialAsset = path.join(
 	HUB_NAMESPACES.credentials,
 	"0002_sealed_credentials.sql",
 );
+const requiredAccountAsset = path.join(HUB_NAMESPACES.accounts, "0001_accounts.sql");
 const access = vi.mocked(accessSync);
 
 afterEach(() => access.mockReset());
@@ -30,11 +31,12 @@ function recorder(): { store: HubStore; calls: string[] } {
 	return { store, calls };
 }
 
-it("checks the required revision asset and migrates all eight namespaces exactly once", async () => {
+it("checks the required assets and migrates all nine namespaces exactly once", async () => {
 	const { store, calls } = recorder();
 	await migrateHubSchemas(store);
 	expect(access).toHaveBeenCalledWith(requiredRevisionAsset, constants.R_OK);
 	expect(access).toHaveBeenCalledWith(requiredCredentialAsset, constants.R_OK);
+	expect(access).toHaveBeenCalledWith(requiredAccountAsset, constants.R_OK);
 	expect(calls).toEqual([
 		"audit",
 		"core",
@@ -44,8 +46,9 @@ it("checks the required revision asset and migrates all eight namespaces exactly
 		"revisions",
 		"credentials",
 		"tickets",
+		"accounts",
 	]);
-	expect(new Set(calls).size).toBe(8);
+	expect(new Set(calls).size).toBe(9);
 });
 
 it("refuses a missing revision immutability asset before later namespaces can migrate", async () => {
@@ -58,6 +61,7 @@ it("refuses a missing revision immutability asset before later namespaces can mi
 	expect(access).toHaveBeenCalledWith(requiredRevisionAsset, constants.R_OK);
 	expect(calls).not.toContain("credentials");
 	expect(calls).not.toContain("tickets");
+	expect(calls).not.toContain("accounts");
 });
 
 it("refuses a missing credential sealing asset before tickets can migrate", async () => {
@@ -70,4 +74,16 @@ it("refuses a missing credential sealing asset before tickets can migrate", asyn
 	expect(access).toHaveBeenCalledWith(requiredCredentialAsset, constants.R_OK);
 	expect(calls.filter((namespace) => namespace === "credentials")).toHaveLength(1);
 	expect(calls).not.toContain("tickets");
+	expect(calls).not.toContain("accounts");
+});
+
+it("refuses a missing account asset before its namespace can migrate", async () => {
+	const { store, calls } = recorder();
+	const missing = Object.assign(new Error("Required account asset missing"), { code: "ENOENT" });
+	access.mockImplementation((filename) => {
+		if (filename === requiredAccountAsset) throw missing;
+	});
+	await expect(migrateHubSchemas(store)).rejects.toBe(missing);
+	expect(calls).toContain("tickets");
+	expect(calls).not.toContain("accounts");
 });

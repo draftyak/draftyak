@@ -47,6 +47,7 @@ const assets = [
 		"credentials/migrations/0002_sealed_credentials.sql",
 	],
 	["outbox/migrations/0001_send_attempts.sql", "outbox/migrations/0001_send_attempts.sql"],
+	["accounts/migrations/0001_accounts.sql", "accounts/migrations/0001_accounts.sql"],
 ] as const;
 
 function checkRuntimeNames(directory: string): void {
@@ -229,7 +230,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql"): void {
 				receipt.mode === mode &&
 				receipt.networkAllowed === false &&
 				receipt.nativeAddonPermission === true &&
-				receipt.schemas === 8,
+				receipt.schemas === 9,
 			"Native fixture success receipt",
 		).toBe(true);
 		// Stderr stays opaque. Allowing native addons does not establish OS isolation.
