@@ -80,9 +80,10 @@ const compiledSessionModes = [
 	"missing-revision-immutability",
 	"missing-devices",
 	"invalid-devices",
+	"missing-accounts",
 ] as const;
 it.each(compiledSessionModes)(
-	"opens and reopens a compiled session using all eight staged schemas (%s)",
+	"opens and reopens a compiled session using all nine staged schemas (%s)",
 	(mode) => {
 		const hub = path.resolve(import.meta.dirname, "../.."),
 			workspace = path.resolve(hub, "../..");
@@ -129,6 +130,7 @@ it.each(compiledSessionModes)(
 					"credentials/migrations/0002_sealed_credentials.sql",
 				],
 				["outbox/migrations/0001_send_attempts.sql", "outbox/migrations/0001_send_attempts.sql"],
+				["accounts/migrations/0001_accounts.sql", "accounts/migrations/0001_accounts.sql"],
 			] as const) {
 				const built = path.join(hub, "dist", relative);
 				expect(readFileSync(built)).toEqual(readFileSync(path.join(hub, "src", source)));
@@ -163,15 +165,16 @@ it.each(compiledSessionModes)(
 			expect(JSON.parse(run.stdout)).toEqual({
 				ok: true,
 				mode,
-				schemas: 8,
-				businessTables: 16,
-				bookkeepingTables: 16,
+				schemas: 9,
+				businessTables: 17,
+				bookkeepingTables: 18,
 				beforeIdentity: true,
 				refused: mode === "positive" ? null : "STORE_UNAVAILABLE",
 				failedOpenClosed: mode !== "positive",
 				failedKeyErased: mode !== "positive",
 				reopened: true,
 				auditVerified: true,
+				accountsRoundTrip: true,
 				modules: 0,
 			});
 		} finally {

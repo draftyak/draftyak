@@ -19,7 +19,7 @@ async function run() {
 	const mode = process.argv[3];
 	assert.ok(["healthy", "missing-asset", "invalid-sql"].includes(mode));
 	checkpoint = 3;
-	const namespaces = ["audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets"];
+	const namespaces = ["audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets", "accounts"];
 	const filename = path.join(import.meta.dirname, "native-storage.db");
 	const bytes = randomBytes(32);
 	const masterKey = new MasterKey(bytes);
@@ -88,7 +88,7 @@ async function run() {
 				}
 				for (const name of [
 					"device_authority", "devices", "jobs", "jobs_meta", "events", "event_meta", "native_drafts",
-					"native_draft_revisions", "native_draft_locks", "credentials", "native_send_attempts",
+					"native_draft_revisions", "native_draft_locks", "credentials", "native_send_attempts", "accounts",
 				]) {
 					assert.ok(ordinal("audit_meta") < ordinal(name), "Audit schema must migrate first");
 					assert.ok(ordinal("audit_events") < ordinal(name), "Audit events must migrate first");

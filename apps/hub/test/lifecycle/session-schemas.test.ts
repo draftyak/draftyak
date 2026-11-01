@@ -12,8 +12,10 @@ const EXPECTED = [
 	["revisions", ["0001_native_revisions", "0002_immutable_revisions"]],
 	["credentials", ["0001_credentials", "0002_sealed_credentials"]],
 	["tickets", ["0001_send_attempts"]],
+	["accounts", ["0001_accounts"]],
 ] as const;
 const DOMAIN_TABLES = [
+	"accounts",
 	"approval_pins",
 	"audit_events",
 	"audit_meta",
@@ -154,10 +156,10 @@ describe("native component schemas in an unlocked session", () => {
 			namespace: string,
 		) {
 			order.push(namespace);
-			if (namespace === "tickets") {
+			if (namespace === "accounts") {
 				failedStore = this;
 				pendingIdentity = this.read((db) => db.get(PENDING_IDENTITY));
-				throw new Error("DYTEST-PRIVATE-TICKETS-MIGRATION");
+				throw new Error("DYTEST-PRIVATE-ACCOUNTS-MIGRATION");
 			}
 			return migrateStore.call(this, namespace);
 		});
@@ -166,7 +168,7 @@ describe("native component schemas in an unlocked session", () => {
 			const error = await refusal(f.open({ masterKey: key }));
 			expect(error).toMatchObject({ code: "STORE_UNAVAILABLE", message: "STORE_UNAVAILABLE" });
 			expect(error.cause).toBeUndefined();
-			expect(String(error)).not.toContain("DYTEST-PRIVATE-TICKETS-MIGRATION");
+			expect(String(error)).not.toContain("DYTEST-PRIVATE-ACCOUNTS-MIGRATION");
 			expectErased(key);
 			expect(order).toEqual(EXPECTED.map(([namespace]) => namespace));
 			expect(pendingIdentity).toEqual({ transport: 1, signing: 1, certificate: 1 });
