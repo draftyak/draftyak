@@ -20,7 +20,32 @@ interface Reply {
 	readonly ok: boolean;
 	readonly value?: unknown;
 	readonly code?: string;
+	readonly phase?: string;
 }
+const INIT_PHASES = new Set([
+	"init-input",
+	"master-key",
+	"audit-key",
+	"store-open",
+	"identity-open",
+	"rotation-open",
+]);
+const INIT_CODES = new Set([
+	"SQLITE_BUSY",
+	"SQLITE_BUSY_RECOVERY",
+	"SQLITE_BUSY_SNAPSHOT",
+	"SQLITE_BUSY_TIMEOUT",
+	"SQLITE_LOCKED",
+	"SQLITE_LOCKED_SHAREDCACHE",
+	"SQLITE_LOCKED_VTAB",
+	"SQLITE_IOERR",
+	"SQLITE_CANTOPEN",
+	"SQLITE_NOTADB",
+	"SQLITE_CORRUPT",
+	"Hub identity rotation unavailable",
+	"Hub identity chain unavailable",
+	"fixture",
+]);
 
 class RotationChild {
 	readonly process: ChildProcess;
@@ -133,6 +158,11 @@ async function withChildren(
 			const key = f.masterBytes();
 			try {
 				const reply = await child.request("init", { dir: f.dir, filename: f.filename, key });
+				const phase =
+					reply.phase !== undefined && INIT_PHASES.has(reply.phase) ? reply.phase : "fixture";
+				const code =
+					reply.code !== undefined && INIT_CODES.has(reply.code) ? reply.code : "fixture";
+				expect(reply.ok, `${phase}:${code}`).toBe(true);
 				expect(reply).toMatchObject({
 					ok: true,
 					value: { pid: child.process.pid, hid: genesis.hid },
@@ -158,6 +188,29 @@ async function withChildren(
 	if (errors.length === 1) throw errors[0];
 	if (errors.length) throw new AggregateError(errors, "Rotation process test failed");
 }
+
+it.each([
+	{ inputKey: false, phase: "init-input" },
+	{ inputKey: true, phase: "master-key" },
+])("reports a fixed init diagnostic at $phase", async ({ inputKey, phase }) => {
+	const f = await rotationFixture();
+	const child = new RotationChild(f.dir);
+	const key = new Uint8Array(1);
+	try {
+		const reply = await child.request(
+			"init",
+			inputKey ? { dir: f.dir, filename: f.filename, key } : {},
+		);
+		expect(reply).toEqual({ id: 1, ok: false, code: "fixture", phase });
+	} finally {
+		key.fill(0);
+		try {
+			await child.kill();
+		} finally {
+			f.cleanup();
+		}
+	}
+});
 
 it.each(["hold-clock", "hold-commit"])(
 	"keeps the old identity when a process dies inside an uncommitted rotation (%s)",
