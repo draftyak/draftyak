@@ -96,6 +96,8 @@ function synchronousTransactions(
 	database.transaction<Record<string, unknown>>(() => query);
 	// @ts-expect-error A callback annotated with a record result that a thenable fits is refused.
 	database.transaction((): Record<string, unknown> => query);
+	// @ts-expect-error A callback annotated with a then-less type that a Promise fits is refused.
+	database.transaction((): Omit<Promise<never>, "then"> => Promise.reject());
 	// @ts-expect-error An explicit primitive result cannot admit a thenable that fits it.
 	database.transaction<number>(() => Object.assign(1, query));
 	// @ts-expect-error An explicit union with a primitive cannot admit a thenable that fits it.
@@ -105,10 +107,13 @@ function synchronousTransactions(
 	// @ts-expect-error A data column named then is refused; the native adapter refuses any own then.
 	// biome-ignore lint/suspicious/noThenProperty: a data column named then is the case under test.
 	database.transaction(() => ({ then: "column" }));
-	// An annotated object result can hide a thenable; the native adapter must refuse one at runtime.
+	// These forms compile, so only the native adapter's runtime refusal stops a thenable or async
+	// work behind them: an annotated object result; a callback typed any under an explicit result;
+	// a generic callback's return type parameter; a callback typed to return void that returns a
+	// Promise, such as an async implementation of a void method; a callable then behind a computed
+	// key; a Proxy typed as its target; an async generator callback.
 	const annotated = database.transaction((): { a: number } => ({ a: 1 }));
 	expectTypeOf(annotated).toEqualTypeOf<{ a: number }>();
-	// So can a callback typed any under an explicit unknown result.
 	expectTypeOf(database.transaction<unknown>(() => JSON.parse("1"))).toEqualTypeOf<unknown>();
 	expectTypeOf(database.transaction(() => null)).toEqualTypeOf<null>();
 	const id = <T>(value: T): T => value;
@@ -121,6 +126,9 @@ function synchronousTransactions(
 	expectTypeOf(
 		database.transaction((tables) => tables.select("ext_example_rows", { limit: 10 })),
 	).toEqualTypeOf<readonly ModuleRow[]>();
+	expectTypeOf(
+		database.transaction((tables) => tables.select("ext_example_rows", { limit: 1 })[0]),
+	).toEqualTypeOf<ModuleRow | undefined>();
 	expectTypeOf(
 		database.transaction((tables) => {
 			tables.delete("ext_example_rows", { id: 1 });

@@ -3,7 +3,7 @@
 use crate::{
     jcs::{canonicalize, parse_strict},
     scheduled_summary::ScheduledSummary,
-    statements::{common::MAX_SAFE, pair_confirm::DeviceCapability},
+    statements::{common::MAX_SAFE, decode, pair_confirm::DeviceCapability, receive_value},
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
@@ -61,7 +61,7 @@ impl SchedulingStatus {
 }
 impl<'de> Deserialize<'de> for SchedulingStatus {
     fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        Self::from_json(&Value::deserialize(decoder)?)
+        Self::from_json(&receive_value(decoder, "SCHEDULING_STATUS_INVALID")?)
             .ok_or_else(|| serde::de::Error::custom("SCHEDULING_STATUS_INVALID"))
     }
 }
@@ -164,9 +164,7 @@ pub fn route_allows(name: &str, peer: &Value) -> bool {
     let Some(r) = route(name) else {
         return false;
     };
-    let Ok(capabilities) =
-        serde_json::from_value::<Vec<DeviceCapability>>(peer["capabilities"].clone())
-    else {
+    let Some(capabilities) = decode::<Vec<DeviceCapability>>(&peer["capabilities"]) else {
         return false;
     };
     members(

@@ -37,6 +37,106 @@ const workflow = (on: string[], steps = checkout, permissions = ["contents: read
 const pr = ["pull_request:"];
 const run = (expression: string): string[] => ["- run: |", `    echo "\${{ ${expression} }}"`];
 
+describe("the native receipt execution contract", () => {
+	const file = ".github/workflows/native-store.yml";
+	const source = (): string => read(file).replaceAll("\r\n", "\n");
+	it("admits only the complete owner-only native workflow and its one-day receipt upload", () => {
+		expect(checkWorkflow(file, source(), toolchain)).toEqual([]);
+	});
+	it.each([
+		["write permission", (text: string) => text.replace("contents: read", "contents: write")],
+		[
+			"another runner",
+			(text: string) => text.replace("runs-on: macos-15", "runs-on: ubuntu-24.04"),
+		],
+		["another job", (text: string) => text.replace("  native-store:", "  other:")],
+		["missing owner fence", (text: string) => text.replace("github.actor == 'nicksavov'", "true")],
+		["another control ref", (text: string) => text.replace(`ref: \${{ github.sha }}`, "ref: m2")],
+		[
+			"changed admission",
+			(text: string) => text.replace("native-store.ts admit", "native-store.ts run"),
+		],
+		[
+			"changed verification",
+			(text: string) => text.replace("native-store.ts verify-source", "native-store.ts admit"),
+		],
+		[
+			"another source checkout",
+			(text: string) => text.replace(`ref: \${{ steps.source.outputs.head }}`, "ref: m2"),
+		],
+		[
+			"ignored native failure",
+			(text: string) =>
+				text.replace("        id: native", "        id: native\n        continue-on-error: true"),
+		],
+		["renamed producer", (text: string) => text.replace("id: native", "id: other")],
+		[
+			"unconditional upload",
+			(text: string) =>
+				text.replace(
+					`\${{ success() && steps.native.outputs.receipt == 'ready' }}`,
+					`\${{ always() }}`,
+				),
+		],
+		[
+			"missing readiness fence",
+			(text: string) =>
+				text.replace(
+					`\${{ success() && steps.native.outputs.receipt == 'ready' }}`,
+					`\${{ success() }}`,
+				),
+		],
+		[
+			"missing attempt identity",
+			(text: string) =>
+				text.replace(
+					`native-store-receipt-\${{ github.run_id }}-\${{ github.run_attempt }}`,
+					"native-store-receipt",
+				),
+		],
+		[
+			"raw native report",
+			(text: string) =>
+				text.replace(
+					`path: \${{ runner.temp }}/native-store-receipt.json`,
+					`path: \${{ runner.temp }}/native-store.json`,
+				),
+		],
+		[
+			"broader evidence path",
+			(text: string) =>
+				text.replace(
+					`path: \${{ runner.temp }}/native-store-receipt.json`,
+					"path: spikes/*/evidence/",
+				),
+		],
+		[
+			"extra upload path",
+			(text: string) =>
+				text.replace(
+					`path: \${{ runner.temp }}/native-store-receipt.json`,
+					`path: |\n            \${{ runner.temp }}/native-store-receipt.json\n            source/`,
+				),
+		],
+		["longer retention", (text: string) => text.replace("retention-days: 1", "retention-days: 2")],
+		[
+			"missing-file success",
+			(text: string) => text.replace("if-no-files-found: error", "if-no-files-found: warn"),
+		],
+		["another command", (text: string) => `${text}      - run: echo synthetic-extra\n`],
+	] as const)("refuses %s", (_name, mutate) => {
+		expect(checkWorkflow(file, mutate(source()), toolchain).join("\n")).toContain(
+			"trusted native receipt contract",
+		);
+	});
+
+	it("refuses the same receipt path outside the exact native workflow", () => {
+		expect(
+			checkWorkflow(".github/workflows/unrelated.yml", source(), toolchain).join("\n"),
+		).toContain("trusted native receipt");
+	});
+});
+
 // The reviewed source contract, with a one-line condition within the current YAML subset.
 const labelsFixture = `name: Sync approved labels
 on:

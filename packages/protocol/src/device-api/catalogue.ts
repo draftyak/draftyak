@@ -1,3 +1,4 @@
+import { types } from "node:util";
 import * as z from "zod";
 import { canConfirm, DeviceCapability } from "../entities/device.ts";
 import { canonicalize, parseStrict } from "../jcs.ts";
@@ -424,6 +425,56 @@ const peerSchema = z.strictObject({
 	sidecarClaim: z.boolean(),
 	bootstrapDone: z.boolean(),
 });
+const peerFields = [
+	"role",
+	"known",
+	"revoked",
+	"epoch",
+	"confirmedEpoch",
+	"capabilities",
+	"sidecarClaim",
+	"bootstrapDone",
+] as const;
+
+// Capture own JSON data without invoking peer properties or capability-array hooks.
+function peerData(value: unknown): Record<string, unknown> | undefined {
+	if (value === null || typeof value !== "object" || types.isProxy(value)) return undefined;
+	const prototype = Object.getPrototypeOf(value);
+	if (prototype !== Object.prototype && prototype !== null) return undefined;
+	if (Reflect.ownKeys(value).length !== peerFields.length) return undefined;
+	const result: Record<string, unknown> = Object.create(null);
+	for (const field of peerFields) {
+		const slot = Object.getOwnPropertyDescriptor(value, field);
+		if (!slot?.enumerable || !Object.hasOwn(slot, "value")) return undefined;
+		const item: unknown = slot.value;
+		if (
+			field !== "capabilities" &&
+			item !== null &&
+			!["string", "number", "boolean"].includes(typeof item)
+		)
+			return undefined;
+		result[field] = item;
+	}
+	const capabilities = result.capabilities;
+	if (types.isProxy(capabilities) || !Array.isArray(capabilities)) return undefined;
+	const length: unknown = Object.getOwnPropertyDescriptor(capabilities, "length")?.value;
+	if (
+		typeof length !== "number" ||
+		!Number.isSafeInteger(length) ||
+		length < 0 ||
+		length > DeviceCapability.options.length
+	)
+		return undefined;
+	const held: string[] = [];
+	for (let index = 0; index < length; index++) {
+		const slot = Object.getOwnPropertyDescriptor(capabilities, String(index));
+		if (!slot || !Object.hasOwn(slot, "value") || typeof slot.value !== "string") return undefined;
+		held.push(slot.value);
+	}
+	result.capabilities = held;
+	return result;
+}
+
 const operationContext = z.strictObject({
 	kind: z.string().optional(),
 	preset: z.string().optional(),
@@ -435,7 +486,7 @@ export function routeAllows(
 ): boolean {
 	try {
 		const route = findRoute(routeId),
-			parsed = peerSchema.safeParse(peer),
+			parsed = peerSchema.safeParse(peerData(peer)),
 			options = operationContext.safeParse(operation === undefined ? {} : operation);
 		if (route === undefined || !parsed.success || !options.success) return false;
 		const p = parsed.data,

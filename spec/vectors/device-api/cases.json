@@ -3698,6 +3698,228 @@
       "valid": false
     },
     {
+      "id": "OperationRequest-ai.credential-connect",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "ai.credential-connect",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001",
+          "01JAZ3W3B6Q8M2V0G5T9K00002",
+          "01JAZ3W3B6Q8M2V0G5T9K00003",
+          "01JAZ3W3B6Q8M2V0G5T9K00004",
+          "01JAZ3W3B6Q8M2V0G5T9K00005",
+          "01JAZ3W3B6Q8M2V0G5T9K00006",
+          "01JAZ3W3B6Q8M2V0G5T9K00007",
+          "01JAZ3W3B6Q8M2V0G5T9K00008",
+          "01JAZ3W3B6Q8M2V0G5T9K00009",
+          "01JAZ3W3B6Q8M2V0G5T9K00010",
+          "01JAZ3W3B6Q8M2V0G5T9K00011",
+          "01JAZ3W3B6Q8M2V0G5T9K00012",
+          "01JAZ3W3B6Q8M2V0G5T9K00013",
+          "01JAZ3W3B6Q8M2V0G5T9K00014",
+          "01JAZ3W3B6Q8M2V0G5T9K00015",
+          "01JAZ3W3B6Q8M2V0G5T9K00016",
+          "01JAZ3W3B6Q8M2V0G5T9K00017",
+          "01JAZ3W3B6Q8M2V0G5T9K00018",
+          "01JAZ3W3B6Q8M2V0G5T9K00019",
+          "01JAZ3W3B6Q8M2V0G5T9K00020",
+          "01JAZ3W3B6Q8M2V0G5T9K00021",
+          "01JAZ3W3B6Q8M2V0G5T9K00022",
+          "01JAZ3W3B6Q8M2V0G5T9K00023",
+          "01JAZ3W3B6Q8M2V0G5T9K00024",
+          "01JAZ3W3B6Q8M2V0G5T9K00025",
+          "01JAZ3W3B6Q8M2V0G5T9K00026",
+          "01JAZ3W3B6Q8M2V0G5T9K00027",
+          "01JAZ3W3B6Q8M2V0G5T9K00028",
+          "01JAZ3W3B6Q8M2V0G5T9K00029",
+          "01JAZ3W3B6Q8M2V0G5T9K00030",
+          "01JAZ3W3B6Q8M2V0G5T9K00031",
+          "01JAZ3W3B6Q8M2V0G5T9K00032",
+          "01JAZ3W3B6Q8M2V0G5T9K00033",
+          "01JAZ3W3B6Q8M2V0G5T9K00034",
+          "01JAZ3W3B6Q8M2V0G5T9K00035",
+          "01JAZ3W3B6Q8M2V0G5T9K00036",
+          "01JAZ3W3B6Q8M2V0G5T9K00037",
+          "01JAZ3W3B6Q8M2V0G5T9K00038",
+          "01JAZ3W3B6Q8M2V0G5T9K00039",
+          "01JAZ3W3B6Q8M2V0G5T9K00040",
+          "01JAZ3W3B6Q8M2V0G5T9K00041",
+          "01JAZ3W3B6Q8M2V0G5T9K00042",
+          "01JAZ3W3B6Q8M2V0G5T9K00043",
+          "01JAZ3W3B6Q8M2V0G5T9K00044",
+          "01JAZ3W3B6Q8M2V0G5T9K00045",
+          "01JAZ3W3B6Q8M2V0G5T9K00046",
+          "01JAZ3W3B6Q8M2V0G5T9K00047",
+          "01JAZ3W3B6Q8M2V0G5T9K00048",
+          "01JAZ3W3B6Q8M2V0G5T9K00049",
+          "01JAZ3W3B6Q8M2V0G5T9K00050",
+          "01JAZ3W3B6Q8M2V0G5T9K00051",
+          "01JAZ3W3B6Q8M2V0G5T9K00052",
+          "01JAZ3W3B6Q8M2V0G5T9K00053",
+          "01JAZ3W3B6Q8M2V0G5T9K00054",
+          "01JAZ3W3B6Q8M2V0G5T9K00055",
+          "01JAZ3W3B6Q8M2V0G5T9K00056",
+          "01JAZ3W3B6Q8M2V0G5T9K00057",
+          "01JAZ3W3B6Q8M2V0G5T9K00058",
+          "01JAZ3W3B6Q8M2V0G5T9K00059",
+          "01JAZ3W3B6Q8M2V0G5T9K00060",
+          "01JAZ3W3B6Q8M2V0G5T9K00061",
+          "01JAZ3W3B6Q8M2V0G5T9K00062",
+          "01JAZ3W3B6Q8M2V0G5T9K00063",
+          "01JAZ3W3B6Q8M2V0G5T9K00064",
+          "01JAZ3W3B6Q8M2V0G5T9K00065",
+          "01JAZ3W3B6Q8M2V0G5T9K00066",
+          "01JAZ3W3B6Q8M2V0G5T9K00067",
+          "01JAZ3W3B6Q8M2V0G5T9K00068",
+          "01JAZ3W3B6Q8M2V0G5T9K00069",
+          "01JAZ3W3B6Q8M2V0G5T9K00070",
+          "01JAZ3W3B6Q8M2V0G5T9K00071",
+          "01JAZ3W3B6Q8M2V0G5T9K00072",
+          "01JAZ3W3B6Q8M2V0G5T9K00073",
+          "01JAZ3W3B6Q8M2V0G5T9K00074",
+          "01JAZ3W3B6Q8M2V0G5T9K00075",
+          "01JAZ3W3B6Q8M2V0G5T9K00076",
+          "01JAZ3W3B6Q8M2V0G5T9K00077",
+          "01JAZ3W3B6Q8M2V0G5T9K00078",
+          "01JAZ3W3B6Q8M2V0G5T9K00079",
+          "01JAZ3W3B6Q8M2V0G5T9K00080",
+          "01JAZ3W3B6Q8M2V0G5T9K00081",
+          "01JAZ3W3B6Q8M2V0G5T9K00082",
+          "01JAZ3W3B6Q8M2V0G5T9K00083",
+          "01JAZ3W3B6Q8M2V0G5T9K00084",
+          "01JAZ3W3B6Q8M2V0G5T9K00085",
+          "01JAZ3W3B6Q8M2V0G5T9K00086",
+          "01JAZ3W3B6Q8M2V0G5T9K00087",
+          "01JAZ3W3B6Q8M2V0G5T9K00088",
+          "01JAZ3W3B6Q8M2V0G5T9K00089",
+          "01JAZ3W3B6Q8M2V0G5T9K00090",
+          "01JAZ3W3B6Q8M2V0G5T9K00091",
+          "01JAZ3W3B6Q8M2V0G5T9K00092",
+          "01JAZ3W3B6Q8M2V0G5T9K00093",
+          "01JAZ3W3B6Q8M2V0G5T9K00094",
+          "01JAZ3W3B6Q8M2V0G5T9K00095",
+          "01JAZ3W3B6Q8M2V0G5T9K00096",
+          "01JAZ3W3B6Q8M2V0G5T9K00097",
+          "01JAZ3W3B6Q8M2V0G5T9K00098",
+          "01JAZ3W3B6Q8M2V0G5T9K00099"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationRequest-ai.credential-disconnect",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "ai.credential-disconnect",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001",
+          "01JAZ3W3B6Q8M2V0G5T9K00002",
+          "01JAZ3W3B6Q8M2V0G5T9K00003",
+          "01JAZ3W3B6Q8M2V0G5T9K00004",
+          "01JAZ3W3B6Q8M2V0G5T9K00005",
+          "01JAZ3W3B6Q8M2V0G5T9K00006",
+          "01JAZ3W3B6Q8M2V0G5T9K00007",
+          "01JAZ3W3B6Q8M2V0G5T9K00008",
+          "01JAZ3W3B6Q8M2V0G5T9K00009",
+          "01JAZ3W3B6Q8M2V0G5T9K00010",
+          "01JAZ3W3B6Q8M2V0G5T9K00011",
+          "01JAZ3W3B6Q8M2V0G5T9K00012",
+          "01JAZ3W3B6Q8M2V0G5T9K00013",
+          "01JAZ3W3B6Q8M2V0G5T9K00014",
+          "01JAZ3W3B6Q8M2V0G5T9K00015",
+          "01JAZ3W3B6Q8M2V0G5T9K00016",
+          "01JAZ3W3B6Q8M2V0G5T9K00017",
+          "01JAZ3W3B6Q8M2V0G5T9K00018",
+          "01JAZ3W3B6Q8M2V0G5T9K00019",
+          "01JAZ3W3B6Q8M2V0G5T9K00020",
+          "01JAZ3W3B6Q8M2V0G5T9K00021",
+          "01JAZ3W3B6Q8M2V0G5T9K00022",
+          "01JAZ3W3B6Q8M2V0G5T9K00023",
+          "01JAZ3W3B6Q8M2V0G5T9K00024",
+          "01JAZ3W3B6Q8M2V0G5T9K00025",
+          "01JAZ3W3B6Q8M2V0G5T9K00026",
+          "01JAZ3W3B6Q8M2V0G5T9K00027",
+          "01JAZ3W3B6Q8M2V0G5T9K00028",
+          "01JAZ3W3B6Q8M2V0G5T9K00029",
+          "01JAZ3W3B6Q8M2V0G5T9K00030",
+          "01JAZ3W3B6Q8M2V0G5T9K00031",
+          "01JAZ3W3B6Q8M2V0G5T9K00032",
+          "01JAZ3W3B6Q8M2V0G5T9K00033",
+          "01JAZ3W3B6Q8M2V0G5T9K00034",
+          "01JAZ3W3B6Q8M2V0G5T9K00035",
+          "01JAZ3W3B6Q8M2V0G5T9K00036",
+          "01JAZ3W3B6Q8M2V0G5T9K00037",
+          "01JAZ3W3B6Q8M2V0G5T9K00038",
+          "01JAZ3W3B6Q8M2V0G5T9K00039",
+          "01JAZ3W3B6Q8M2V0G5T9K00040",
+          "01JAZ3W3B6Q8M2V0G5T9K00041",
+          "01JAZ3W3B6Q8M2V0G5T9K00042",
+          "01JAZ3W3B6Q8M2V0G5T9K00043",
+          "01JAZ3W3B6Q8M2V0G5T9K00044",
+          "01JAZ3W3B6Q8M2V0G5T9K00045",
+          "01JAZ3W3B6Q8M2V0G5T9K00046",
+          "01JAZ3W3B6Q8M2V0G5T9K00047",
+          "01JAZ3W3B6Q8M2V0G5T9K00048",
+          "01JAZ3W3B6Q8M2V0G5T9K00049",
+          "01JAZ3W3B6Q8M2V0G5T9K00050",
+          "01JAZ3W3B6Q8M2V0G5T9K00051",
+          "01JAZ3W3B6Q8M2V0G5T9K00052",
+          "01JAZ3W3B6Q8M2V0G5T9K00053",
+          "01JAZ3W3B6Q8M2V0G5T9K00054",
+          "01JAZ3W3B6Q8M2V0G5T9K00055",
+          "01JAZ3W3B6Q8M2V0G5T9K00056",
+          "01JAZ3W3B6Q8M2V0G5T9K00057",
+          "01JAZ3W3B6Q8M2V0G5T9K00058",
+          "01JAZ3W3B6Q8M2V0G5T9K00059",
+          "01JAZ3W3B6Q8M2V0G5T9K00060",
+          "01JAZ3W3B6Q8M2V0G5T9K00061",
+          "01JAZ3W3B6Q8M2V0G5T9K00062",
+          "01JAZ3W3B6Q8M2V0G5T9K00063",
+          "01JAZ3W3B6Q8M2V0G5T9K00064",
+          "01JAZ3W3B6Q8M2V0G5T9K00065",
+          "01JAZ3W3B6Q8M2V0G5T9K00066",
+          "01JAZ3W3B6Q8M2V0G5T9K00067",
+          "01JAZ3W3B6Q8M2V0G5T9K00068",
+          "01JAZ3W3B6Q8M2V0G5T9K00069",
+          "01JAZ3W3B6Q8M2V0G5T9K00070",
+          "01JAZ3W3B6Q8M2V0G5T9K00071",
+          "01JAZ3W3B6Q8M2V0G5T9K00072",
+          "01JAZ3W3B6Q8M2V0G5T9K00073",
+          "01JAZ3W3B6Q8M2V0G5T9K00074",
+          "01JAZ3W3B6Q8M2V0G5T9K00075",
+          "01JAZ3W3B6Q8M2V0G5T9K00076",
+          "01JAZ3W3B6Q8M2V0G5T9K00077",
+          "01JAZ3W3B6Q8M2V0G5T9K00078",
+          "01JAZ3W3B6Q8M2V0G5T9K00079",
+          "01JAZ3W3B6Q8M2V0G5T9K00080",
+          "01JAZ3W3B6Q8M2V0G5T9K00081",
+          "01JAZ3W3B6Q8M2V0G5T9K00082",
+          "01JAZ3W3B6Q8M2V0G5T9K00083",
+          "01JAZ3W3B6Q8M2V0G5T9K00084",
+          "01JAZ3W3B6Q8M2V0G5T9K00085",
+          "01JAZ3W3B6Q8M2V0G5T9K00086",
+          "01JAZ3W3B6Q8M2V0G5T9K00087",
+          "01JAZ3W3B6Q8M2V0G5T9K00088",
+          "01JAZ3W3B6Q8M2V0G5T9K00089",
+          "01JAZ3W3B6Q8M2V0G5T9K00090",
+          "01JAZ3W3B6Q8M2V0G5T9K00091",
+          "01JAZ3W3B6Q8M2V0G5T9K00092",
+          "01JAZ3W3B6Q8M2V0G5T9K00093",
+          "01JAZ3W3B6Q8M2V0G5T9K00094",
+          "01JAZ3W3B6Q8M2V0G5T9K00095",
+          "01JAZ3W3B6Q8M2V0G5T9K00096",
+          "01JAZ3W3B6Q8M2V0G5T9K00097",
+          "01JAZ3W3B6Q8M2V0G5T9K00098",
+          "01JAZ3W3B6Q8M2V0G5T9K00099"
+        ]
+      },
+      "valid": true
+    },
+    {
       "id": "OperationRequest-account.disconnect-count-0",
       "action": "schema",
       "schema": "OperationRequest",
@@ -6411,6 +6633,443 @@
         "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
         "flagsAcked": [
           "EXTERNAL_LINK",
+          "NEW_RECIPIENT"
+        ]
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": true
+    },
+    {
+      "id": "SendReview-rich-chat",
+      "action": "schema",
+      "schema": "SendReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": "01JAZ3W3B6Q8M2V0G5T9K4X7RG",
+          "kind": "chat",
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [
+            {
+              "filename": "notes.txt",
+              "contentType": "text/plain",
+              "size": 23,
+              "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "filename": "photo.jpg",
+              "contentType": "image/jpeg",
+              "size": 48213,
+              "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+          ],
+          "schedule": {
+            "kind": "at",
+            "notBefore": 1792346400000,
+            "zone": "America/Chicago",
+            "localWallTime": "2026-10-18T13:00-05:00",
+            "latenessSec": 3600,
+            "holdIfNewInbound": true
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          },
+          "chat": {
+            "channelId": "C123",
+            "channelName": "engineering",
+            "channelType": "private",
+            "external": true,
+            "shared": true,
+            "memberCount": 12,
+            "threadTs": "1792000000.000001",
+            "broadcast": true
+          }
+        },
+        "contentHash": "211454591840ccb79bbc62caddfe463cf936680a1f329af0cf13b629918d1668",
+        "flags": [
+          {
+            "code": "MASS_MENTION",
+            "severity": "ack",
+            "detail": "@channel"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack",
+            "detail": "example.net"
+          },
+          {
+            "code": "TOOL_INSTRUCTIONS",
+            "severity": "advisory",
+            "detail": "kb.lookup"
+          },
+          {
+            "code": "AGENT_AUTHORED",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "37e1d3bf7bcc350fa3dcb16af095bc67052204ba99754b091b3a204cf4bfa13d",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "valid": true
+    },
+    {
+      "id": "send-challenge-rich-chat",
+      "action": "challenge",
+      "challenge": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjIxMTQ1NDU5MTg0MGNjYjc5YmJjNjJjYWRkZmU0NjNjZjkzNjY4MGExZjMyOWFmMGNmMTNiNjI5OTE4ZDE2NjgiLCJkZWxpdmVyQnkiOjE3OTIzNTAwMDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJBR0VOVF9BVVRIT1JFRCIsIkVYVEVSTkFMX0xJTksiLCJNQVNTX01FTlRJT04iXSwiZmxhZ3NIYXNoIjoiMzdlMWQzYmY3YmNjMzUwZmEzZGNiMTZhZjA5NWJjNjcwNTIyMDRiYTk5NzU0YjA5MWIzYTIwNGNmNGJmYTEzZCIsImh1YiI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJpYXQiOjE3OTIzNDI4MDAwMDAsIm5vbmNlIjoiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsIm5vdEJlZm9yZSI6MTc5MjM0NjQwMDAwMCwib3V0Ym94IjoiMDFKQVozVzNCNlE4TTJWMEc1VDlLNFg3UkMiLCJ2IjoxfQ"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": "01JAZ3W3B6Q8M2V0G5T9K4X7RG",
+          "kind": "chat",
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [
+            {
+              "filename": "notes.txt",
+              "contentType": "text/plain",
+              "size": 23,
+              "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "filename": "photo.jpg",
+              "contentType": "image/jpeg",
+              "size": 48213,
+              "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+          ],
+          "schedule": {
+            "kind": "at",
+            "notBefore": 1792346400000,
+            "zone": "America/Chicago",
+            "localWallTime": "2026-10-18T13:00-05:00",
+            "latenessSec": 3600,
+            "holdIfNewInbound": true
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          },
+          "chat": {
+            "channelId": "C123",
+            "channelName": "engineering",
+            "channelType": "private",
+            "external": true,
+            "shared": true,
+            "memberCount": 12,
+            "threadTs": "1792000000.000001",
+            "broadcast": true
+          }
+        },
+        "contentHash": "211454591840ccb79bbc62caddfe463cf936680a1f329af0cf13b629918d1668",
+        "flags": [
+          {
+            "code": "MASS_MENTION",
+            "severity": "ack",
+            "detail": "@channel"
+          },
+          {
+            "code": "EXTERNAL_LINK",
+            "severity": "ack",
+            "detail": "example.net"
+          },
+          {
+            "code": "TOOL_INSTRUCTIONS",
+            "severity": "advisory",
+            "detail": "kb.lookup"
+          },
+          {
+            "code": "AGENT_AUTHORED",
+            "severity": "ack"
+          }
+        ],
+        "flagsHash": "37e1d3bf7bcc350fa3dcb16af095bc67052204ba99754b091b3a204cf4bfa13d",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "request": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "AGENT_AUTHORED",
+          "EXTERNAL_LINK",
+          "MASS_MENTION"
+        ]
+      },
+      "context": {
+        "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "device": "01JAZ3W3B6Q8M2V0G5T9K4X7RH"
+      },
+      "valid": true
+    },
+    {
+      "id": "SendReview-rich-email-reply",
+      "action": "schema",
+      "schema": "SendReview",
+      "value": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [
+            {
+              "filename": "notes.txt",
+              "contentType": "text/plain",
+              "size": 23,
+              "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "filename": "photo.jpg",
+              "contentType": "image/jpeg",
+              "size": 48213,
+              "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+          ],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          },
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test",
+              "Second@example.test"
+            ],
+            "cc": [
+              "Copy@example.test"
+            ],
+            "bcc": [
+              "Blind@example.test"
+            ],
+            "subject": "Re: A frozen reply",
+            "references": [
+              "<first@example.test>",
+              "<message@example.test>"
+            ],
+            "threadId": "thread-1",
+            "inReplyTo": "<message@example.test>"
+          },
+          "render": {
+            "method": "POST",
+            "url": "https://hello.example/v1/messages",
+            "headersSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "bodySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        },
+        "contentHash": "01fc185a88bcf7fe85b394b4276e3f508b3ae8b8a0dc3a8944ea100e9480356f",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack",
+            "detail": "Second@example.test"
+          },
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack",
+            "detail": "Copy@example.test"
+          },
+          {
+            "code": "ATTACHMENT_ADDED_BY_AGENT",
+            "severity": "ack",
+            "detail": "photo.jpg"
+          },
+          {
+            "code": "TOOL_CONTEXT_USED",
+            "severity": "info",
+            "detail": "calendar.freebusy"
+          },
+          {
+            "code": "SUSPECTED_INSTRUCTIONS",
+            "severity": "advisory"
+          }
+        ],
+        "flagsHash": "6e890ccc449326178525f57f20a050859f58376e66a8da8ca95edc845bb4e628",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "valid": true
+    },
+    {
+      "id": "send-challenge-rich-email-reply",
+      "action": "challenge",
+      "challenge": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "statement": "eyJjb250ZW50SGFzaCI6IjAxZmMxODVhODhiY2Y3ZmU4NWIzOTRiNDI3NmUzZjUwOGIzYWU4YjhhMGRjM2E4OTQ0ZWExMDBlOTQ4MDM1NmYiLCJkZWxpdmVyQnkiOjE3OTIzNDM3MDAwMDAsImRldmljZSI6IjAxSkFaM1czQjZROE0yVjBHNVQ5SzRYN1JIIiwiZXBvY2giOjEsImV4cCI6MTc5MjM0MjkyMDAwMCwiZmxhZ3NBY2tlZCI6WyJBVFRBQ0hNRU5UX0FEREVEX0JZX0FHRU5UIiwiTkVXX1JFQ0lQSUVOVCJdLCJmbGFnc0hhc2giOiI2ZTg5MGNjYzQ0OTMyNjE3ODUyNWY1N2YyMGEwNTA4NTlmNTgzNzZlNjZhOGRhOGNhOTVlZGM4NDViYjRlNjI4IiwiaHViIjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImlhdCI6MTc5MjM0MjgwMDAwMCwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3Iiwibm90QmVmb3JlIjpudWxsLCJvdXRib3giOiIwMUpBWjNXM0I2UThNMlYwRzVUOUs0WDdSQyIsInYiOjF9"
+      },
+      "review": {
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "snapshot": {
+          "v": 1,
+          "hub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "epoch": 1,
+          "outbox": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+          "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+          "conversation": null,
+          "kind": "email",
+          "body": {
+            "text": "Hello, café.\n",
+            "footer": "\nSent with DraftYak"
+          },
+          "attachments": [
+            {
+              "filename": "notes.txt",
+              "contentType": "text/plain",
+              "size": 23,
+              "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            {
+              "filename": "photo.jpg",
+              "contentType": "image/jpeg",
+              "size": 48213,
+              "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+          ],
+          "schedule": {
+            "kind": "now"
+          },
+          "source": {
+            "draft": "01JAZ3W3B6Q8M2V0G5T9K4X7RE",
+            "rev": 1,
+            "authors": [
+              {
+                "kind": "owner",
+                "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+              }
+            ]
+          },
+          "email": {
+            "from": "Owner@example.test",
+            "to": [
+              "Recipient@example.test",
+              "Second@example.test"
+            ],
+            "cc": [
+              "Copy@example.test"
+            ],
+            "bcc": [
+              "Blind@example.test"
+            ],
+            "subject": "Re: A frozen reply",
+            "references": [
+              "<first@example.test>",
+              "<message@example.test>"
+            ],
+            "threadId": "thread-1",
+            "inReplyTo": "<message@example.test>"
+          },
+          "render": {
+            "method": "POST",
+            "url": "https://hello.example/v1/messages",
+            "headersSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "bodySha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        },
+        "contentHash": "01fc185a88bcf7fe85b394b4276e3f508b3ae8b8a0dc3a8944ea100e9480356f",
+        "flags": [
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack",
+            "detail": "Second@example.test"
+          },
+          {
+            "code": "NEW_RECIPIENT",
+            "severity": "ack",
+            "detail": "Copy@example.test"
+          },
+          {
+            "code": "ATTACHMENT_ADDED_BY_AGENT",
+            "severity": "ack",
+            "detail": "photo.jpg"
+          },
+          {
+            "code": "TOOL_CONTEXT_USED",
+            "severity": "info",
+            "detail": "calendar.freebusy"
+          },
+          {
+            "code": "SUSPECTED_INSTRUCTIONS",
+            "severity": "advisory"
+          }
+        ],
+        "flagsHash": "6e890ccc449326178525f57f20a050859f58376e66a8da8ca95edc845bb4e628",
+        "state": "PENDING_APPROVAL",
+        "stateReason": null,
+        "requiredUsers": [
+          "01JAZ3W3B6Q8M2V0G5T9K4X7RF"
+        ],
+        "expiresAt": 1792342920000
+      },
+      "request": {
+        "kind": "approval.send.v1",
+        "id": "01JAZ3W3B6Q8M2V0G5T9K4X7RC",
+        "flagsAcked": [
+          "ATTACHMENT_ADDED_BY_AGENT",
           "NEW_RECIPIENT"
         ]
       },
