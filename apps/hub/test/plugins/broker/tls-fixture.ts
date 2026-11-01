@@ -1,12 +1,13 @@
 import { createPrivateKey } from "node:crypto";
 
 /** Ephemeral certificates and keys stay in memory. No production metadata shim is installed. */
-export async function createTlsFixture(): Promise<{
+export async function createTlsFixture(dnsNames: readonly string[] = ["guard.example"]): Promise<{
 	ca: string;
 	cert: string;
 	key: Buffer;
 	ipCert: string;
 }> {
+	const dnsSans = dnsNames.map((value) => ({ type: "dns" as const, value }));
 	const readers = ["getMetadata", "getOwnMetadata"];
 	const installed: string[] = [];
 	for (const name of readers) {
@@ -63,7 +64,7 @@ export async function createTlsFixture(): Promise<{
 					new BasicConstraintsExtension(false, undefined, true),
 					new KeyUsagesExtension(KeyUsageFlags.digitalSignature, true),
 					new ExtendedKeyUsageExtension([ExtendedKeyUsage.serverAuth]),
-					new SubjectAlternativeNameExtension([{ type: "dns", value: "guard.example" }]),
+					new SubjectAlternativeNameExtension(dnsSans),
 				],
 			},
 			crypto,

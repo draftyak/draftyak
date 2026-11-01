@@ -92,7 +92,7 @@ it("rejects the legacy era in the actual in-memory handler", async () => {
 });
 it("refuses unsupported process mode, bad manifests and mismatched identity before serving", () => {
 	expect(() => createMockHub({ mode: "process", plugin: channelFixture(), upstreams: [] })).toThrow(
-		"PROCESS_MODE_UNAVAILABLE",
+		"PROCESS_BINDING_REQUIRED",
 	);
 	expect(() =>
 		createMockHub({

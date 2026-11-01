@@ -1,5 +1,11 @@
 import { exactBody } from "./boundary.ts";
-import type { AiProfileRegistration, AiVerifierInput } from "./profile-registry.ts";
+import { assertMessagesMetadataReservation } from "./messages-metadata.ts";
+import type {
+	AiMetadataVerifierInput,
+	AiProfileRegistration,
+	AiVerifierInput,
+} from "./profile-registry.ts";
+import { responsesMetadataEndpoint } from "./responses-metadata.ts";
 import { compatibleSchema, messagesSchema, responsesSchema } from "./schemas.ts";
 import { refuse } from "./types.ts";
 
@@ -13,7 +19,7 @@ const FALLBACK_MODELS = new Set([
 ]);
 
 function headers(
-	input: AiVerifierInput,
+	input: Pick<AiVerifierInput, "headers">,
 	required: Readonly<Record<string, string>>,
 	optional: Readonly<Record<string, (value: string) => boolean>> = {},
 ): void {
@@ -94,6 +100,30 @@ function responses(input: AiVerifierInput): void {
 	});
 }
 
+function responsesMetadata(input: AiMetadataVerifierInput): void {
+	if ("call" in input.binding) refuse();
+	if (
+		input.method !== "GET" ||
+		input.url !== responsesMetadataEndpoint(input.binding) ||
+		input.body.byteLength !== 0
+	)
+		refuse();
+	headers(input, { accept: "application/json", authorization: "Bearer brokered" });
+}
+
+function messagesMetadata(input: AiMetadataVerifierInput): void {
+	if (!("call" in input.binding) || input.method !== "GET" || input.body.byteLength !== 0) refuse();
+	assertMessagesMetadataReservation(input.binding, input.url);
+	headers(input, {
+		accept: "application/json",
+		"anthropic-version": "2023-06-01",
+		"user-agent": "Anthropic/JS 0.135.0",
+		"x-api-key": "brokered",
+		"x-stainless-retry-count": "0",
+		"x-stainless-timeout": "600",
+	});
+}
+
 function compatible(input: AiVerifierInput): void {
 	const { draft, settings } = input.binding;
 	if (settings.kind !== "compatible") refuse();
@@ -131,7 +161,11 @@ function compatible(input: AiVerifierInput): void {
 }
 
 export const builtinRegistrations: readonly AiProfileRegistration[] = Object.freeze([
-	Object.freeze({ profile: "messages-api-v1", verify: messages }),
-	Object.freeze({ profile: "responses-api-v1", verify: responses }),
+	Object.freeze({ profile: "messages-api-v1", verify: messages, verifyMetadata: messagesMetadata }),
+	Object.freeze({
+		profile: "responses-api-v1",
+		verify: responses,
+		verifyMetadata: responsesMetadata,
+	}),
 	Object.freeze({ profile: "chat-completions-v1", verify: compatible }),
 ]);

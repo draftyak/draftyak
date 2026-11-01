@@ -1,9 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import os from "node:os";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuditChain } from "../../src/audit/chain.ts";
 import {
 	type CredentialBinding,
 	CredentialError,
@@ -11,104 +9,46 @@ import {
 	type CredentialValue,
 	CredentialVault,
 } from "../../src/credentials/vault.ts";
-import { newId } from "../../src/kernel/ids.ts";
 import { MasterKey } from "../../src/kernel/master-key.ts";
 import { HubStore, type SqlTransaction } from "../../src/store/store.ts";
-import { migrations, nativeBinding } from "../store/helpers.ts";
+import { nativeBinding } from "../store/helpers.ts";
+import {
+	appValue,
+	canary,
+	cleanupFixtures,
+	deferred,
+	gmail,
+	holdsAny,
+	keptValue,
+	keyValue,
+	provider,
+	secrets,
+	slack,
+	slackApp,
+	slackValue,
+	token,
+	unsealWith,
+	vaultFixture,
+} from "./helpers.ts";
 
-const fixtures: { dir: string; stores: HubStore[]; key: MasterKey; audit: AuditChain }[] = [];
-afterEach(() => {
-	for (const fixture of fixtures.splice(0)) {
-		for (const store of fixture.stores) store.close();
-		fixture.audit.destroy();
-		fixture.key.destroy();
-		rmSync(fixture.dir, { recursive: true, force: true });
-	}
-});
-const canary = (): string => `DYTEST-${randomBytes(20).toString("hex")}`;
-const provider = (): CredentialBinding => ({
-	ownerKind: "provider",
-	ownerId: newId(),
-	kind: "provider-key",
-});
-const gmail = (): CredentialBinding => ({
-	ownerKind: "account",
-	ownerId: newId(),
-	kind: "gmail-oauth",
-});
-const token = (expiresAt = 0): CredentialValue => ({
-	kind: "gmail-oauth",
-	accessToken: canary(),
-	refreshToken: canary(),
-	expiresAt,
-});
-const keyValue = (): CredentialValue => ({ kind: "provider-key", key: canary() });
+afterEach(cleanupFixtures);
 const later = (): number => Date.now() + 60_000;
-const deferred = <T>() => {
-	let resolve: (value: T) => void = () => undefined;
-	const promise = new Promise<T>((yes) => {
-		resolve = yes;
-	});
-	return { promise, resolve };
-};
-async function fixture() {
-	const dir = mkdtempSync(path.join(os.tmpdir(), "draftyak-credentials-"));
-	const filename = path.join(dir, "hub.db"),
-		fault = path.join(dir, "fault");
-	mkdirSync(fault);
-	const key = new MasterKey(randomBytes(32));
-	const auditKey = key.derive("audit"),
-		audit = new AuditChain(auditKey);
-	auditKey.fill(0);
-	const options = {
-		filename,
-		nativeBinding,
-		masterKey: key,
-		migrations: {
-			audit: path.join(migrations, "audit"),
-			credentials: path.resolve(import.meta.dirname, "../../src/credentials/migrations"),
-			fault,
-		},
-	};
-	const store = new HubStore({ ...options, create: true });
-	const tracked = { dir, stores: [store], key, audit };
-	fixtures.push(tracked);
-	await store.migrate("audit");
-	await store.migrate("credentials");
-	const vault = new CredentialVault(store, audit);
-	const create = (owner: CredentialBinding, value: CredentialValue): string =>
-		store.write((tx) => vault.createInTransaction(tx, owner, value));
-	const reopen = (): HubStore => {
-		store.close();
-		const next = new HubStore(options);
-		tracked.stores.push(next);
-		return next;
-	};
-	return { dir, filename, fault, store, key, audit, vault, create, reopen };
-}
+const fixture = () => vaultFixture();
 
 describe("encrypted native credential persistence", () => {
 	it("persists Gmail, Slack and provider credentials across reopen without plaintext database/WAL/SHM", async () => {
 		const f = await fixture();
 		const values: [CredentialBinding, CredentialValue][] = [
 			[gmail(), token(later())],
-			[
-				{ ownerKind: "account", ownerId: newId(), kind: "slack-token" },
-				{ kind: "slack-token", accessToken: canary(), expiresAt: null },
-			],
+			[slack(), slackValue()],
+			[slackApp(), appValue()],
 			[provider(), keyValue()],
 		];
 		const refs = values.map(([owner, value]) => f.create(owner, value));
-		for (const suffix of ["", "-wal", "-shm"]) {
-			if (!existsSync(f.filename + suffix)) continue;
-			const bytes = readFileSync(f.filename + suffix);
-			for (const [, value] of values) {
-				const secret = value.kind === "provider-key" ? value.key : value.accessToken;
-				expect(bytes.includes(Buffer.from(secret))).toBe(false);
-			}
-		}
+		const all = values.flatMap(([, value]) => secrets(value));
+		expect(holdsAny(f.store, f.filename, all)).toBe(false);
 		const store = f.reopen(),
-			vault = new CredentialVault(store, f.audit);
+			vault = f.open(store);
 		for (let i = 0; i < values.length; i++) {
 			const [owner, value] = values[i] as [CredentialBinding, CredentialValue];
 			const ref = refs[i] as string;
@@ -118,6 +58,8 @@ describe("encrypted native credential persistence", () => {
 				return "result";
 			});
 		}
+		store.checkpoint();
+		expect(holdsAny(store, f.filename, all)).toBe(false);
 		store.read((db) => f.audit.verify(db));
 	});
 	it("refuses the wrong database key and structural or foreign transaction facades", async () => {
@@ -133,7 +75,7 @@ describe("encrypted native credential persistence", () => {
 			wrong.destroy();
 		}
 		expect(
-			() => new CredentialVault({ read: () => undefined } as unknown as HubStore, f.audit),
+			() => new CredentialVault({ read: () => undefined } as unknown as HubStore, f.audit, f.key),
 		).toThrow(CredentialError);
 		expect(() =>
 			f.vault.createInTransaction(
@@ -159,13 +101,7 @@ describe("encrypted native credential persistence", () => {
 			value = keyValue(),
 			reference = f.create(owner, value);
 		expect(() => f.vault.describe(reference, provider())).toThrow(CredentialError);
-		expect(() =>
-			f.vault.describe(reference, {
-				ownerKind: "account",
-				ownerId: owner.ownerId,
-				kind: "slack-token",
-			}),
-		).toThrow(CredentialError);
+		expect(() => f.vault.describe(reference, slack(owner.ownerId))).toThrow(CredentialError);
 		expect(JSON.stringify(f.vault.describe(reference, owner))).not.toContain(JSON.stringify(value));
 		expect(JSON.stringify(f.vault)).toBe('"[REDACTED]"');
 		const failure = await f.vault
@@ -178,9 +114,7 @@ describe("encrypted native credential persistence", () => {
 			code: "CREDENTIAL_UNAVAILABLE",
 		});
 		expect(failure).not.toHaveProperty("cause");
-		const audit = f.store.read((db) =>
-			db.all<{ refs: string }>("SELECT refs FROM main.audit_events"),
-		);
+		const audit = f.actions();
 		expect(audit).toHaveLength(1);
 		expect(JSON.parse(audit[0]?.refs ?? "")).toEqual({
 			credential: reference,
@@ -199,9 +133,7 @@ describe("encrypted native credential persistence", () => {
 		expect(
 			f.store.read((db) => db.get<{ n: number }>("SELECT count(*) n FROM main.credentials")?.n),
 		).toBe(0);
-		expect(
-			f.store.read((db) => db.get<{ n: number }>("SELECT count(*) n FROM main.audit_events")?.n),
-		).toBe(0);
+		expect(f.actions()).toHaveLength(0);
 	});
 	it("refuses hostile value objects and malformed stored payloads", async () => {
 		const f = await fixture(),
@@ -217,7 +149,15 @@ describe("encrypted native credential persistence", () => {
 		expect(() => f.create(owner, hostile as CredentialValue)).toThrow(CredentialError);
 		expect(getterCalls).toBe(0);
 		const ref = f.create(owner, keyValue());
-		f.store.write((tx) => tx.run("UPDATE main.credentials SET value=? WHERE id=?", ["{}", ref]));
+		expect(() =>
+			f.raw((tx) => tx.run("UPDATE main.credentials SET value=? WHERE id=?", ["{}", ref])),
+		).toThrow();
+		f.raw((tx) =>
+			tx.run("UPDATE main.credentials SET value=? WHERE id=?", [
+				Buffer.concat([Buffer.from([1]), randomBytes(60)]),
+				ref,
+			]),
+		);
 		await expect(
 			f.vault.withCredential(ref, owner, { requestClass: "read" }, () => "unsafe"),
 		).rejects.toThrow(CredentialError);
@@ -265,20 +205,24 @@ describe("shared refresh and revision coordination", () => {
 		await expect(Promise.all([refreshing, valid])).resolves.toEqual(["refresh", "valid"]);
 		expect(canceledUses).toBe(0);
 	});
-	it("cancels the refreshing caller promptly and never installs its delayed rotated value", async () => {
+	it("cancels the refreshing caller promptly while its exchange still installs the rotated value", async () => {
 		const f = await fixture(),
 			owner = gmail(),
-			ref = f.create(owner, token());
+			original = token(),
+			ref = f.create(owner, original),
+			rotated = token(later());
 		const started = deferred<void>(),
 			gate = deferred<CredentialValue>(),
 			external = new AbortController();
+		let refreshSignal: AbortSignal | undefined;
 		const refreshing = f.vault.withCredential(
 			ref,
 			owner,
 			{
 				requestClass: "read",
 				signal: external.signal,
-				refresh: async () => {
+				refresh: async (_, context) => {
+					refreshSignal = context.signal;
 					started.resolve();
 					return gate.promise;
 				},
@@ -289,15 +233,13 @@ describe("shared refresh and revision coordination", () => {
 		await started.promise;
 		external.abort();
 		await rejected;
-		gate.resolve(token(later()));
+		expect(refreshSignal?.aborted).toBe(false);
+		expect(keptValue(f, ref, owner)).toEqual(original);
+		gate.resolve(rotated);
 		await expect(
-			f.vault.withCredential(ref, owner, { requestClass: "read" }, () => "unsafe"),
-		).rejects.toThrow(CredentialError);
-		expect(
-			f.store.read((db) =>
-				db.get("SELECT status,value,generation FROM main.credentials WHERE id=?", [ref]),
-			),
-		).toEqual({ status: "refreshing", value: null, generation: 2 });
+			f.vault.withCredential(ref, owner, { requestClass: "read" }, (value) => value),
+		).resolves.toEqual(rotated);
+		expect(f.row(ref)).toMatchObject({ status: "active", generation: 2 });
 	});
 	it("cancels asynchronous use and safely refuses fake or shadowed signal objects", async () => {
 		const f = await fixture(),
@@ -349,7 +291,7 @@ describe("shared refresh and revision coordination", () => {
 			ref = f.create(owner, token()),
 			gate = deferred<CredentialValue>(),
 			started = deferred<void>();
-		const otherVault = new CredentialVault(f.store, f.audit);
+		const otherVault = f.open();
 		let refreshes = 0,
 			alternate = 0;
 		const read = f.vault.withCredential(
@@ -407,22 +349,10 @@ describe("shared refresh and revision coordination", () => {
 			(value, context) => {
 				expect(value).toEqual(rotated);
 				expect(context.generation).toBe(2);
-				expect(
-					f.store.read((db) =>
-						db.get<{ value: string; status: string }>(
-							"SELECT value,status FROM main.credentials WHERE id=?",
-							[ref],
-						),
-					),
-				).toEqual({ value: JSON.stringify(rotated), status: "active" });
-				expect(
-					f.store.read(
-						(db) =>
-							db.get<{ action: string }>(
-								"SELECT action FROM main.audit_events ORDER BY seq DESC LIMIT 1",
-							)?.action,
-					),
-				).toBe("credential.refreshed");
+				const row = f.row(ref);
+				expect(row?.status).toBe("active");
+				expect(unsealWith(f.key, row?.value as Uint8Array, ref, owner, 2)).toEqual(rotated);
+				expect(f.actions().at(-1)?.action).toBe("credential.refreshed");
 			},
 		);
 	});
@@ -452,12 +382,9 @@ describe("shared refresh and revision coordination", () => {
 			),
 		).rejects.toThrow(CredentialError);
 		expect(uses).toBe(0);
-		expect(
-			f.store.read((db) =>
-				db.get("SELECT status,value,generation FROM main.credentials WHERE id=?", [ref]),
-			),
-		).toEqual({ status: "refreshing", value: null, generation: 2 });
-		const vault = new CredentialVault(f.reopen(), f.audit);
+		expect(f.row(ref)).toMatchObject({ status: "refreshing", value: null, generation: 2 });
+		const vault = f.open(f.reopen());
+		expect(f.row(ref)).toMatchObject({ status: "refreshing", value: null, generation: 2 });
 		await expect(
 			vault.withCredential(
 				ref,
@@ -469,6 +396,7 @@ describe("shared refresh and revision coordination", () => {
 			),
 		).rejects.toThrow(CredentialError);
 		expect(uses).toBe(0);
+		expect(f.actions().map(({ action }) => action)).not.toContain("credential.restored");
 	});
 	it("never refreshes an expired send, while a current send may use its existing value", async () => {
 		const f = await fixture(),
@@ -530,9 +458,7 @@ describe("shared refresh and revision coordination", () => {
 			gate.resolve(token(later()));
 			await rejection;
 			expect(uses).toBe(0);
-			expect(() => new CredentialVault(f.reopen(), f.audit).describe(ref, owner)).toThrow(
-				CredentialError,
-			);
+			expect(() => f.open(f.reopen()).describe(ref, owner)).toThrow(CredentialError);
 		},
 	);
 	it("replacement aborts prior revision use and blocks delayed refresh overwriting the replacement", async () => {
@@ -556,7 +482,7 @@ describe("shared refresh and revision coordination", () => {
 		const rejection = expect(pending).rejects.toThrow(CredentialError);
 		await started.promise;
 		const replacement = token(later());
-		new CredentialVault(f.store, f.audit);
+		f.open();
 		f.store.write((tx) => f.vault.replaceInTransaction(tx, ref, owner, replacement));
 		gate.resolve(token(later()));
 		await rejection;
@@ -578,13 +504,13 @@ describe("shared refresh and revision coordination", () => {
 		});
 		const rejection = expect(pending).rejects.toThrow(CredentialError);
 		await started.promise;
-		const other = new CredentialVault(f.store, f.audit);
+		const other = f.open();
 		f.store.write((tx) => other.replaceInTransaction(tx, ref, owner, keyValue()));
 		expect(context?.signal.aborted).toBe(true);
 		gate.resolve("late");
 		await rejection;
 	});
-	it("redacts refresh failure and consumes stale authority rather than retrying it", async () => {
+	it("redacts refresh failure and keeps stale authority unusable rather than retrying it", async () => {
 		const f = await fixture(),
 			owner = gmail(),
 			ref = f.create(owner, token());
