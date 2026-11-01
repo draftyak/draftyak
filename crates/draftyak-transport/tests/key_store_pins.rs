@@ -56,7 +56,7 @@ const STORE_ROWS: [(&str, &str); 4] = [
     (UNIX_TARGET, UNIX_STORE),
 ];
 const MEMBERS: &str = "members = [\"draftyak-protocol\", \"draftyak-transport\"]";
-const SOURCE_FILES: [&str; 12] = [
+const SOURCE_FILES: [&str; 13] = [
     "key_store/linux_environment.rs",
     "key_store/mod.rs",
     "key_store/platform.rs",
@@ -65,6 +65,7 @@ const SOURCE_FILES: [&str; 12] = [
     "lib.rs",
     "pairing.rs",
     "payload.rs",
+    "sas.rs",
     "sidecar.rs",
     "statements.rs",
     "tls.rs",

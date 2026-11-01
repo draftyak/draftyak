@@ -34,6 +34,8 @@ mod codec {
         ClaimInvalid,
         RoleMismatch,
         ProofInvalid,
+        RevealInvalid,
+        CommitmentMismatch,
     }
     impl RefusalCode {
         pub fn code(self) -> &'static str {
@@ -42,6 +44,8 @@ mod codec {
                 Self::ClaimInvalid => "PAIR_CLAIM_INVALID",
                 Self::RoleMismatch => "PAIR_ROLE_MISMATCH",
                 Self::ProofInvalid => "PAIR_PROOF_INVALID",
+                Self::RevealInvalid => "PAIR_REVEAL_INVALID",
+                Self::CommitmentMismatch => "PAIR_COMMITMENT_MISMATCH",
             }
         }
 
@@ -56,6 +60,8 @@ mod codec {
                 Some("PAIR_CLAIM_INVALID") => Ok(Self::ClaimInvalid),
                 Some("PAIR_ROLE_MISMATCH") => Ok(Self::RoleMismatch),
                 Some("PAIR_PROOF_INVALID") => Ok(Self::ProofInvalid),
+                Some("PAIR_REVEAL_INVALID") => Ok(Self::RevealInvalid),
+                Some("PAIR_COMMITMENT_MISMATCH") => Ok(Self::CommitmentMismatch),
                 _ => Err(Error::InvalidResponse),
             }
         }
@@ -109,6 +115,7 @@ mod codec {
 pub mod key_store;
 pub mod pairing;
 pub mod payload;
+pub mod sas;
 pub mod sidecar;
 pub mod statements;
 pub mod tls;
