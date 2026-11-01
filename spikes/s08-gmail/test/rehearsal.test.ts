@@ -1127,10 +1127,20 @@ describe("the S8b session rehearsed against FakeGmail and fake Google OAuth", ()
 				query(input).has("labelIds")
 					? json(200, { messages: [], resultSizeEstimate: 0 })
 					: session.fetch(input, init);
-			setWork(session.dir, { sendAt: Date.now() + 1_200 });
+			const positiveTiming = { ...FAST, indexTimeoutMs: 5_000 };
+			// Allow the full observation window and a discovery window of runner headroom.
+			setWork(session.dir, {
+				sendAt:
+					Date.now() +
+					positiveTiming.sendMarginMs +
+					positiveTiming.indexTimeoutMs +
+					positiveTiming.findTimeoutMs,
+			});
+			// A slow entry must not consume the former fixture's entire 200 ms reading window.
+			await new Promise((resolve) => setTimeout(resolve, 350));
 			const lines = await runStep("scheduled", {
 				...session,
-				timing: { ...FAST, indexTimeoutMs: 5_000 },
+				timing: positiveTiming,
 				fetch: positiveWithSlowLabel,
 			});
 			expect(lines[0]).toBe("in:scheduled: works");
