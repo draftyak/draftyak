@@ -22,6 +22,8 @@ export {
 	type CredentialDescriptor,
 	CredentialError,
 	type CredentialKind,
+	CredentialRefreshError,
+	type CredentialRefreshFailure,
 	type CredentialRequest,
 	type CredentialUse,
 	type CredentialValue,

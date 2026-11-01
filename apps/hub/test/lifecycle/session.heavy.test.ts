@@ -75,6 +75,7 @@ it("refuses every later open after a hard kill between file creation and audit g
 const compiledSessionModes = [
 	"positive",
 	"missing-credentials",
+	"missing-sealed-credentials",
 	"invalid-credentials",
 	"missing-revision-immutability",
 	"missing-devices",
@@ -122,6 +123,10 @@ it.each(compiledSessionModes)(
 				[
 					"credentials/migrations/0001_credentials.sql",
 					"credentials/migrations/0001_credentials.sql",
+				],
+				[
+					"credentials/migrations/0002_sealed_credentials.sql",
+					"credentials/migrations/0002_sealed_credentials.sql",
 				],
 				["outbox/migrations/0001_send_attempts.sql", "outbox/migrations/0001_send_attempts.sql"],
 			] as const) {
