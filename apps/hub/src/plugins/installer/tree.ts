@@ -125,6 +125,51 @@ export function stage(root: string, rootStat: BigIntStats, destination: string):
 	return { root, rootStat, top, directories: new Map([[top, directory(top)]]), files: new Map() };
 }
 
+/** Snapshot an existing sealed tree's native entries; no entry is created, changed or removed. */
+export function existingTree(
+	root: string,
+	rootStat: BigIntStats,
+	top: string,
+	files: readonly string[],
+): Tree {
+	rootDirectory(root, rootStat);
+	const directories = new Map<string, BigIntStats>();
+	const entries = new Map<string, BigIntStats>();
+	const keepDirectory = (name: string): void => {
+		if (directories.has(name)) return;
+		const stat = directory(name);
+		if (!WINDOWS && (stat.mode & 0o222n) !== 0n) refuse();
+		directories.set(name, stat);
+	};
+	keepDirectory(top);
+	for (const relative of files) {
+		const parts = relative.split("/");
+		let parent = top;
+		for (const part of parts.slice(0, -1)) {
+			parent = path.join(parent, part);
+			keepDirectory(parent);
+		}
+		const filename = path.join(top, relative);
+		const stat = lstatSync(filename, { bigint: true });
+		if (
+			!stat.isFile() ||
+			stat.isSymbolicLink() ||
+			stat.ino === 0n ||
+			stat.nlink !== 1n ||
+			(stat.mode & 0o222n) !== 0n
+		)
+			refuse();
+		entries.set(filename, stat);
+	}
+	return { root, rootStat, top, directories, files: entries };
+}
+
+/** The private root and every captured sealed entry must still be the same after verification. */
+export function recheckExisting(tree: Tree): void {
+	rootDirectory(tree.root, tree.rootStat);
+	recheck(tree);
+}
+
 function write(tree: Tree, filename: string, bytes: Buffer): void {
 	const fd = openSync(
 		filename,

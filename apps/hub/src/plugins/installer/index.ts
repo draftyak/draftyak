@@ -6,6 +6,7 @@ import {
 	canonicalDirectory,
 	type InstalledBundle,
 	type PackageLock,
+	type PreparedPackage,
 	preparePinnedPackage,
 	verifyBundle,
 } from "../../artifacts/index.ts";
@@ -18,7 +19,17 @@ import {
 	record,
 	refuse,
 } from "./policy.ts";
-import { discard, materialize, place, rootDirectory, seal, stage, type Tree } from "./tree.ts";
+import {
+	discard,
+	existingTree,
+	materialize,
+	place,
+	recheckExisting,
+	rootDirectory,
+	seal,
+	stage,
+	type Tree,
+} from "./tree.ts";
 
 export { BUNDLED_PLUGIN_IDS, type BundledPluginId, PluginInstallError } from "./policy.ts";
 
@@ -59,8 +70,30 @@ export interface PluginInstaller {
 	 * plugin registry's recovery (M2.25).
 	 */
 	install(id: BundledPluginId, version: string, archive: Uint8Array): Promise<InstalledPlugin>;
-	/** Refuses later installs and resolves once every in-flight install has settled. */
+	/**
+	 * Rechecks the existing deterministic target against this factory's native pin and the original
+	 * archive. It writes nothing and returns only artifact facts, not installation history, review
+	 * or execution authority. A missing, changed, extra, linked or unsealed entry refuses.
+	 */
+	inspect(id: BundledPluginId, version: string, archive: Uint8Array): Promise<InstalledPlugin>;
+	/** Refuses later operations and resolves once every in-flight operation has settled. */
 	close(): Promise<void>;
+}
+
+function installedFacts(
+	prepared: PreparedPackage,
+	manifest: PluginManifestV1,
+	directory: string,
+): InstalledPlugin {
+	return Object.freeze({
+		bundle: Object.freeze({ directory, inventory: prepared.inventory }),
+		manifest,
+		digests: Object.freeze({
+			manifest: manifestDigest(prepared.files.get("draftyak.plugin.json")),
+			egress: egressDigest(manifest.egress),
+			send: manifest.kind === "channel" && manifest.send ? sendTemplateDigest(manifest.send) : null,
+		}),
+	});
 }
 
 function catalog(raw: unknown): ReadonlyMap<string, BundledPluginPin> {
@@ -89,7 +122,7 @@ function catalog(raw: unknown): ReadonlyMap<string, BundledPluginPin> {
 	return result;
 }
 
-/** Takes no master key and starts no extension host: it only writes verified plugin files. */
+/** Takes no master key and starts no extension host: it only installs or inspects verified plugin files. */
 export async function openPluginInstaller(
 	options: PluginInstallerOptions,
 ): Promise<PluginInstaller> {
@@ -123,18 +156,7 @@ export async function openPluginInstaller(
 				await seal(tree);
 				await verifyBundle(Object.freeze({ directory: tree.top, inventory: prepared.inventory }));
 				await place(tree, destination, active);
-				return Object.freeze({
-					bundle: Object.freeze({ directory: destination, inventory: prepared.inventory }),
-					manifest,
-					digests: Object.freeze({
-						manifest: manifestDigest(prepared.files.get("draftyak.plugin.json")),
-						egress: egressDigest(manifest.egress),
-						send:
-							manifest.kind === "channel" && manifest.send
-								? sendTemplateDigest(manifest.send)
-								: null,
-					}),
-				});
+				return installedFacts(prepared, manifest, destination);
 			} catch {
 				try {
 					if (tree) await discard(tree);
@@ -144,12 +166,37 @@ export async function openPluginInstaller(
 				throw new PluginInstallError();
 			}
 		};
-		const install = (
-			id: BundledPluginId,
-			version: string,
-			archive: Uint8Array,
+		const reinspect = async (
+			id: unknown,
+			version: unknown,
+			archive: unknown,
 		): Promise<InstalledPlugin> => {
-			const result = run(id, version, archive);
+			try {
+				active();
+				if (typeof id !== "string" || typeof version !== "string") refuse();
+				const pin = pins.get(`${id}\0${version}`);
+				if (!pin) refuse();
+				const prepared = preparePinnedPackage(archive, pin.package);
+				const manifest = declaration(prepared, pin.id);
+				const digest = Buffer.from(pin.package.integrity.slice(7), "base64").toString("hex");
+				const destination = path.join(root, `${pin.id}-${digest}`);
+				const tree = existingTree(
+					root,
+					rootStat,
+					destination,
+					prepared.inventory.files.map((file) => file.path),
+				);
+				await verifyBundle(
+					Object.freeze({ directory: destination, inventory: prepared.inventory }),
+				);
+				active();
+				recheckExisting(tree);
+				return installedFacts(prepared, manifest, destination);
+			} catch {
+				throw new PluginInstallError();
+			}
+		};
+		const track = (result: Promise<InstalledPlugin>): Promise<InstalledPlugin> => {
 			const settled = result.then(
 				() => undefined,
 				() => undefined,
@@ -158,11 +205,23 @@ export async function openPluginInstaller(
 			void settled.then(() => settling.delete(settled));
 			return result;
 		};
+		const install = (
+			id: BundledPluginId,
+			version: string,
+			archive: Uint8Array,
+		): Promise<InstalledPlugin> => {
+			return track(run(id, version, archive));
+		};
 		const close = async (): Promise<void> => {
 			closed = true;
 			await Promise.all(settling);
 		};
-		return Object.freeze({ install, close });
+		return Object.freeze({
+			install,
+			inspect: (id: BundledPluginId, version: string, archive: Uint8Array) =>
+				track(reinspect(id, version, archive)),
+			close,
+		});
 	} catch {
 		throw new PluginInstallError();
 	}
