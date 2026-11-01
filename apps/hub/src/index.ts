@@ -1,4 +1,10 @@
 export {
+	AccountError,
+	type AccountPage,
+	type AccountRecord,
+	NativeAccounts,
+} from "./accounts/records.ts";
+export {
 	AUDIT_EXPORT_MAX_BYTES,
 	AUDIT_EXPORT_MAX_EVENTS,
 	AUDIT_VERIFY_BATCH_SIZE,

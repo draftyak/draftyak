@@ -19,7 +19,8 @@ type HubNamespace =
 	| "events"
 	| "revisions"
 	| "credentials"
-	| "tickets";
+	| "tickets"
+	| "accounts";
 
 /** The current fixed native schema inventory; callers cannot substitute migration folders. */
 export const HUB_NAMESPACES: Readonly<Record<HubNamespace, string>> = Object.freeze({
@@ -31,6 +32,7 @@ export const HUB_NAMESPACES: Readonly<Record<HubNamespace, string>> = Object.fre
 	revisions: bundled("drafts/migrations"),
 	credentials: bundled("credentials/migrations"),
 	tickets: bundled("outbox/migrations"),
+	accounts: bundled("accounts/migrations"),
 });
 
 const SCHEMAS = Object.freeze([
@@ -44,6 +46,7 @@ const SCHEMAS = Object.freeze([
 	["credentials", "0001_credentials.sql"],
 	["credentials", "0002_sealed_credentials.sql"],
 	["tickets", "0001_send_attempts.sql"],
+	["accounts", "0001_accounts.sql"],
 ] as const);
 
 /** Migrate the registered native schemas in order; the caller retains store and key cleanup. */

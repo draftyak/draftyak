@@ -14,11 +14,12 @@ const migrations = [
 	["revisions", ["0001_native_revisions", "0002_immutable_revisions"]],
 	["credentials", ["0001_credentials", "0002_sealed_credentials"]],
 	["tickets", ["0001_send_attempts"]],
+	["accounts", ["0001_accounts"]],
 ];
 const businessTables = [
 	"audit_meta", "audit_events", "hub_meta", "users", "approval_pins", "jobs", "jobs_meta",
 	"events", "event_meta", "native_drafts", "native_draft_revisions", "native_draft_locks",
-	"credentials", "native_send_attempts", "device_authority", "devices",
+	"credentials", "native_send_attempts", "device_authority", "devices", "accounts",
 ].sort();
 let phase = "admission";
 
@@ -26,7 +27,7 @@ async function main() {
 	assert.equal(process.permission?.has("net"), false);
 	const [nativeBinding, mode, hub] = process.argv.slice(2);
 	assert.equal(typeof nativeBinding, "string");
-	assert.ok(["positive", "missing-credentials", "missing-sealed-credentials", "invalid-credentials", "missing-revision-immutability", "missing-devices", "invalid-devices"].includes(mode));
+	assert.ok(["positive", "missing-credentials", "missing-sealed-credentials", "invalid-credentials", "missing-revision-immutability", "missing-devices", "invalid-devices", "missing-accounts"].includes(mode));
 	assert.equal(typeof hub, "string");
 	for (const denied of ["src/store/migrations/audit/0001_chain.sql", "dist/index.mjs"]) {
 		assert.throws(() => readFileSync(path.join(hub, denied)), { code: "ERR_ACCESS_DENIED" });
@@ -53,8 +54,9 @@ async function main() {
 	const requiredAsset = path.join(import.meta.dirname, mode === "missing-revision-immutability"
 		? "drafts/migrations/0002_immutable_revisions.sql"
 		: mode === "missing-sealed-credentials" ? "credentials/migrations/0002_sealed_credentials.sql"
-			: mode.endsWith("devices") ? "devices-migrations/0001_devices.sql"
-				: "credentials/migrations/0001_credentials.sql");
+			: mode === "missing-accounts" ? "accounts/migrations/0001_accounts.sql"
+				: mode.endsWith("devices") ? "devices-migrations/0001_devices.sql"
+					: "credentials/migrations/0001_credentials.sql");
 	const heldAsset = path.join(import.meta.dirname, "held-schema.sql");
 	let savedAsset;
 	let assetMissing = false;
@@ -151,6 +153,10 @@ async function main() {
 				assert.equal(order.filter((namespace) => namespace === "credentials").length, 1);
 				assert.equal(order.includes("tickets"), false);
 			}
+			if (mode === "missing-accounts") {
+				assert.equal(order.filter((namespace) => namespace === "tickets").length, 1);
+				assert.equal(order.includes("accounts"), false);
+			}
 			erased(failedKey);
 			// Inspect the encrypted file after the failed session closed its actual connection.
 			const probeKey = key();
@@ -174,10 +180,23 @@ async function main() {
 		const beforeHealthy = order.length;
 		const first = await open();
 		const identity = [first.session.hubId, first.session.hid];
+		const account = {
+			id: "00000000000000000000000001", userId: "00000000000000000000000002",
+			pluginInstanceId: "00000000000000000000000003", channel: "email", alias: "dytest-mailbox",
+			mode: "read_only", status: "active", deletionDeadline: null, historyLimitDays: 30,
+			disclosureVersion: 1, createdAt: 1000, address: "dytest@example.invalid",
+		};
+		const services = (session) => {
+			const database = new api.WorkDatabase(session.store);
+			const events = new api.EventLog(database, () => 2000);
+			return { database, events, accounts: new api.NativeAccounts(database, events, session.audit, () => 2000) };
+		};
 		let modules;
 		try {
 			inspectSchemas(first.session.store);
 			first.session.store.read((db) => first.session.audit.verify(db));
+			const native = services(first.session);
+			native.database.write((scope) => native.accounts.create(scope, account));
 			modules = first.session.extensions.modules.length;
 		} finally {
 			first.session.close();
@@ -189,6 +208,14 @@ async function main() {
 			assert.equal(second.session.hubId === identity[0] && second.session.hid === identity[1], true);
 			inspectSchemas(second.session.store);
 			second.session.store.read((db) => second.session.audit.verify(db));
+			const native = services(second.session);
+			native.database.write((scope) => {
+				assert.deepEqual(native.accounts.get(scope, account.userId, account.id), { account, generation: 1 });
+				const page = native.events.page(scope, { userId: account.userId, afterSeq: 0 });
+				assert.equal(page.events.length, 1);
+				assert.equal(page.events[0].kind, "accounts.changed");
+				assert.deepEqual(page.events[0].ids, [account.id]);
+			});
 			assert.equal(second.session.extensions.modules.length, modules);
 		} finally {
 			second.session.close();
@@ -198,9 +225,9 @@ async function main() {
 		assert.deepEqual(order.slice(beforeHealthy), [...migrations, ...migrations].map(([namespace]) => namespace));
 		assert.equal(modules, 0);
 		process.stdout.write(`${JSON.stringify({
-			ok: true, mode, schemas: 8, businessTables: businessTables.length, bookkeepingTables: 16,
+			ok: true, mode, schemas: 9, businessTables: businessTables.length, bookkeepingTables: 18,
 			beforeIdentity: true, refused, failedOpenClosed: mode !== "positive",
-			failedKeyErased: mode !== "positive", reopened: true, auditVerified: true, modules,
+			failedKeyErased: mode !== "positive", reopened: true, auditVerified: true, accountsRoundTrip: true, modules,
 		})}\n`);
 	} finally {
 		let cleanupFailed = false;
