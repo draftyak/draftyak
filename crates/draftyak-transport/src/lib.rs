@@ -1,11 +1,11 @@
 //! Native pinned TLS and payload intake for M1b.1.
 //! Native callers obtain owner consent before connecting. This crate starts no listener,
-//! confirms no device and grants no capability. Claim/proof processing and SAS remain absent.
+//! confirms no device and grants no capability. Native claims retain their pinned channel for SAS.
 //! Erasure covers owned buffers on a best-effort basis; TLS and temporary copies prevent
 //! a complete memory-erasure guarantee.
 
 mod codec {
-    //! One native payload codec; claim construction and proof/SAS processing are not part of this crate.
+    //! Shared native payload, claim and refusal codecs.
     use crate::Error;
     use draftyak_protocol::jcs;
 
@@ -107,6 +107,7 @@ mod codec {
     }
 }
 pub mod key_store;
+pub mod pairing;
 pub mod payload;
 pub mod sidecar;
 pub mod tls;
