@@ -110,6 +110,7 @@ pub mod key_store;
 pub mod pairing;
 pub mod payload;
 pub mod sidecar;
+pub mod statements;
 pub mod tls;
 pub mod websocket;
 pub use codec::{CodecError, RefusalCode};
