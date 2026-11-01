@@ -86,7 +86,7 @@ fn valid_device_id(text: &str) -> bool {
         })
 }
 
-fn commitment(nd: &[u8; 16]) -> [u8; 32] {
+pub(crate) fn commitment(nd: &[u8; 16]) -> [u8; 32] {
     let mut hash = Sha256::new();
     Digest::update(&mut hash, COMMIT_LABEL);
     Digest::update(&mut hash, nd);
@@ -199,7 +199,77 @@ impl Channel {
                 .to_bytes();
             match status {
                 200 => Ok(Zeroizing::new(bytes.to_vec())),
-                403 => Err(Error::Refused(RefusalCode::read(&bytes)?)),
+                403 => {
+                    let code = RefusalCode::read(&bytes)?;
+                    if matches!(
+                        code,
+                        RefusalCode::WindowClosed
+                            | RefusalCode::ClaimInvalid
+                            | RefusalCode::RoleMismatch
+                            | RefusalCode::ProofInvalid
+                    ) {
+                        Err(Error::Refused(code))
+                    } else {
+                        Err(Error::InvalidResponse)
+                    }
+                }
+                _ => Err(Error::InvalidResponse),
+            }
+        })
+        .await
+        .map_err(|_| Error::TimedOut)?
+    }
+
+    async fn reveal(&mut self, body: &[u8]) -> Result<(), Error> {
+        if body.len() > crate::sas::MAX_REVEAL_BYTES {
+            return Err(Error::InvalidInput);
+        }
+        let request = Request::post("/pair/v1/reveal")
+            .header("host", &self.authority)
+            .header("content-type", "application/json")
+            .body(Full::new(Bytes::copy_from_slice(body)))
+            .map_err(|_| Error::InvalidInput)?;
+        tokio::time::timeout(IO_TIMEOUT, async {
+            let response = self
+                .sender
+                .send_request(request)
+                .await
+                .map_err(|_| Error::ConnectionFailed)?;
+            let status = response.status().as_u16();
+            // HTTP treats a 204 as bodyless. Refuse a declared payload as well,
+            // rather than letting that interpretation hide forbidden content.
+            if status == 204
+                && (response
+                    .headers()
+                    .contains_key(hyper::header::TRANSFER_ENCODING)
+                    || response
+                        .headers()
+                        .get_all(hyper::header::CONTENT_LENGTH)
+                        .iter()
+                        .any(|value| value.as_bytes() != b"0"))
+            {
+                return Err(Error::InvalidResponse);
+            }
+            let bytes = Limited::new(response.into_body(), crate::sas::MAX_REVEAL_BYTES)
+                .collect()
+                .await
+                .map_err(|_| Error::InvalidResponse)?
+                .to_bytes();
+            match status {
+                204 if bytes.is_empty() => Ok(()),
+                403 => {
+                    let code = RefusalCode::read(&bytes)?;
+                    if matches!(
+                        code,
+                        RefusalCode::WindowClosed
+                            | RefusalCode::RevealInvalid
+                            | RefusalCode::CommitmentMismatch
+                    ) {
+                        Err(Error::Refused(code))
+                    } else {
+                        Err(Error::InvalidResponse)
+                    }
+                }
                 _ => Err(Error::InvalidResponse),
             }
         })
@@ -232,6 +302,7 @@ pub struct PairingAttempt {
     nd: Zeroizing<[u8; 16]>,
     ekm: Zeroizing<[u8; 32]>,
     body: Zeroizing<Vec<u8>>,
+    preview: crate::payload::Preview,
     started: Instant,
     window_remaining: Duration,
 }
@@ -262,6 +333,7 @@ impl PairingAttempt {
         }
         let started = Instant::now();
         let window_remaining = Duration::from_millis(payload.expires_at_ms() - now_ms);
+        let preview = payload.preview();
         let pid = payload.exporter_context();
         let sec = payload.pairing_secret();
         let mut nd = Zeroizing::new([0; 16]);
@@ -287,6 +359,7 @@ impl PairingAttempt {
             nd,
             ekm,
             body,
+            preview,
             started,
             window_remaining,
         })
@@ -331,6 +404,9 @@ impl PairingAttempt {
             nh,
             device_id,
             epoch,
+            preview: self.preview,
+            started: self.started,
+            window_remaining: self.window_remaining,
         })
     }
 }
@@ -360,6 +436,9 @@ pub struct AcceptedClaim {
     nh: Zeroizing<[u8; 16]>,
     device_id: String,
     epoch: u64,
+    preview: crate::payload::Preview,
+    started: Instant,
+    window_remaining: Duration,
 }
 
 impl AcceptedClaim {
@@ -368,6 +447,37 @@ impl AcceptedClaim {
     }
     pub fn epoch(&self) -> u64 {
         self.epoch
+    }
+
+    /// Reveals this claim's nonce once, on its original connection and within
+    /// its original window. Success returns only a local pending SAS preview.
+    pub async fn reveal(mut self) -> Result<crate::sas::SasPreview, Error> {
+        if self.started.elapsed().as_millis() > self.window_remaining.as_millis() {
+            self.channel.close().await;
+            return Err(Error::InvalidInput);
+        }
+        let body = match crate::sas::build_reveal(&self.pid, &self.nd) {
+            Ok(body) => body,
+            Err(error) => {
+                self.channel.close().await;
+                return Err(error);
+            }
+        };
+        let result = self.channel.reveal(&body).await;
+        let expired = self.started.elapsed().as_millis() > self.window_remaining.as_millis();
+        self.channel.close().await;
+        result?;
+        if expired {
+            return Err(Error::InvalidInput);
+        }
+        Ok(crate::sas::SasPreview::from_revealed(
+            &self.ekm,
+            &self.nd,
+            &self.nh,
+            self.preview.clone(),
+            std::mem::take(&mut self.device_id),
+            self.epoch,
+        ))
     }
 }
 
