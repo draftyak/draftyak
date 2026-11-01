@@ -634,6 +634,40 @@
       "error": "FLAGS_INVALID"
     },
     {
+      "id": "positional-flag",
+      "flags": [
+        [
+          "NEW_RECIPIENT",
+          "ack"
+        ]
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "object-form-code",
+      "flags": [
+        {
+          "code": {
+            "NEW_RECIPIENT": null
+          },
+          "severity": "ack"
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
+      "id": "object-form-severity",
+      "flags": [
+        {
+          "code": "NEW_RECIPIENT",
+          "severity": {
+            "ack": null
+          }
+        }
+      ],
+      "error": "FLAGS_INVALID"
+    },
+    {
       "id": "duplicate",
       "flags": [
         {

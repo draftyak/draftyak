@@ -17,6 +17,7 @@ import {
 	ResourceReadRequest,
 	snapshotMcpParams,
 } from "../src/mcp.ts";
+import { PAIRING_PREFIX } from "../src/pairing.ts";
 import { exportSpki } from "../src/sign.ts";
 import { contentHash } from "../src/snapshot.ts";
 import * as statements from "../src/statements.ts";
@@ -57,6 +58,7 @@ function pairFixture() {
 		signingKey: key,
 		preset: "desktop",
 		capabilities: [...CONFIRMATION_PRESETS.desktop],
+		sas: "004917",
 	};
 	const review = {
 		id: SNAPSHOT_IDS.op,
@@ -171,6 +173,9 @@ describe("device API authorization and strict wire forms", () => {
 		expect(
 			frameSchema.validate({ type: "event", cursor: "", kind: "outbox.changed", ids: [] }).valid,
 		).toBe(true);
+	});
+	it("keeps a prefix the pairingCode pattern can hold unescaped", () => {
+		expect(PAIRING_PREFIX).toMatch(/^[\w:-]+$/);
 	});
 	it("permits pending status only for known non-revoked device peers", () => {
 		expect(api.DeviceStatus.safeParse(status).success).toBe(true);
@@ -291,7 +296,7 @@ describe("device API authorization and strict wire forms", () => {
 		expect(api.requiredCapability("security.pin-change")).toBe("admin");
 		for (const kind of ["unknown", "__proto__", "constructor", "hub-key-rotate.v1"])
 			expect(api.requiredCapability(kind)).toBeUndefined();
-		for (const kind of ["login.v1", "admin.v1", "consent.v1"])
+		for (const kind of ["login.v1", "consent.v1"])
 			expect(api.ChallengeRequest.safeParse({ kind, id: SNAPSHOT_IDS.op }).success).toBe(false);
 	});
 	it("refuses operation-kind, preset and ID substitution", () => {

@@ -112,7 +112,11 @@ export interface PairingWindow {
 }
 export const PairingWindow: z.ZodType<PairingWindow> = z
 	.strictObject({
-		pairingCode: z.string().max(MAX_PAYLOAD_LENGTH).startsWith(PAIRING_PREFIX),
+		// A pattern: zod exports startsWith with a non-standard "starts_with" format.
+		pairingCode: z
+			.string()
+			.max(MAX_PAYLOAD_LENGTH)
+			.regex(new RegExp(`^${PAIRING_PREFIX}`)),
 	})
 	.meta({ id: "draftyak.device-api.PairingWindow" });
 export interface OperationCreated {

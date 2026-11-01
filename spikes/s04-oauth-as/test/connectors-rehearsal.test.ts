@@ -1773,6 +1773,7 @@ describe("the clean-up", () => {
 					},
 				},
 			);
+			expect(run.cleanup).toMatchObject({ connectors: "removed (owner confirmed)" });
 			expect(rowOf(run.rows, "claude-ai").token.refreshes).toBe(0);
 			expect(rowOf(run.data.clients, "claude-ai").token.refreshes).toBe(count);
 			expect(finalRows.map((row) => row.token.refreshes)).toStrictEqual([count, 0, 0, 0]);
@@ -1816,9 +1817,13 @@ describe("the clean-up", () => {
 					now += 21 * MINUTE;
 					await new Promise((done) => setTimeout(done, 150));
 					expect((await owner.view()).cleanup?.awaitingOwner).toBe(true);
-					now += 9 * MINUTE;
+					now += 9 * MINUTE - 1;
+					await new Promise((done) => setTimeout(done, 150));
+					expect((await owner.view()).cleanup?.awaitingOwner).toBe(true);
+					now += 1;
+					await new Promise((done) => setTimeout(done, 150));
+					expect((await owner.view()).cleanup?.awaitingOwner).toBe(false);
 					await standIn.close();
-					await owner.until((view) => view.cleanup?.awaitingOwner === false);
 					return await cleaning;
 				} finally {
 					stop.abort();

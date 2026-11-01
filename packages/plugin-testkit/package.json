@@ -24,6 +24,7 @@
   ],
   "scripts": {
     "test": "vitest run",
+    "test:heavy": "vitest run --mode heavy",
     "typecheck": "tsc -b",
     "build": "tsdown"
   },
@@ -31,6 +32,7 @@
     "@draftyak/fakes": "workspace:*",
     "@draftyak/protocol": "workspace:*",
     "@draftyak/sdk": "workspace:*",
+    "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/server": "2.3.1"
   },
   "peerDependencies": {

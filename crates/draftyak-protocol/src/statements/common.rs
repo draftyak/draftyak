@@ -27,12 +27,12 @@ macro_rules! device_statement {
         #[derive(Debug,Clone,serde::Serialize)]
         #[serde(rename_all="camelCase")]
         pub struct $name {pub v:u8,pub hub:String,pub epoch:u64,pub device:String,pub nonce:String,pub iat:u64,pub exp:u64,$($(#[$attribute])*pub $field:$typ),*}
-        #[derive(serde::Deserialize)]
+        #[derive(serde::Serialize,serde::Deserialize)]
         #[serde(deny_unknown_fields,rename_all="camelCase")]
         struct $wire {v:u8,hub:String,epoch:u64,device:String,nonce:String,iat:u64,exp:u64,$($(#[$attribute])*$field:$typ),*}
         impl<'de> serde::Deserialize<'de> for $name {
             fn deserialize<D:serde::Deserializer<'de>>(decoder:D)->Result<Self,D::Error>{
-                let wire=<$wire as serde::Deserialize>::deserialize(decoder).map_err(|_|serde::de::Error::custom("STATEMENT_INVALID"))?;
+                let wire:$wire=super::decode_from(decoder,"STATEMENT_INVALID")?;
                 let body=Self{v:wire.v,hub:wire.hub,epoch:wire.epoch,device:wire.device,nonce:wire.nonce,iat:wire.iat,exp:wire.exp,$($field:wire.$field),*};
                 if !body.valid(){return Err(serde::de::Error::custom("STATEMENT_INVALID"));}Ok(body)
             }

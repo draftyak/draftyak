@@ -345,7 +345,12 @@ describe("verification receipt selection metadata", () => {
 				["pnpm-lock.yaml"],
 				["apps/cli/src/a.ts", "package.json"],
 			]) {
-				const classified = classify(files, repo.dir, () => []);
+				const classified = classify(
+					files,
+					repo.dir,
+					() => [],
+					() => [],
+				);
 				const areas = areaNames(classified);
 				const receipt = selected({
 					areas: JSON.stringify(areas),
@@ -623,6 +628,8 @@ describe("verification receipt selection metadata", () => {
 		const repo = tempRepo();
 		try {
 			const fixture = {
+				"pnpm-lock.yaml":
+					"lockfileVersion: '9.0'\nimporters:\n  .: {}\n  spikes/native-probe: {}\n  packages/receipt-probe: {}\n",
 				"apps/android-host/native/Cargo.toml": "[workspace]\nmembers = []\n",
 				"spikes/native-probe/package.json": "{}",
 				"spikes/native-probe/rust/Cargo.toml": "[workspace]\nmembers = []\n",
