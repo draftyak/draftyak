@@ -26,6 +26,30 @@ let identity: HubIdentity | undefined;
 let rotation: HubKeyRotation | undefined;
 let prepared: PreparedSuccessor | undefined;
 let holdClock: number | undefined;
+type Phase =
+	| "idle"
+	| "init-input"
+	| "master-key"
+	| "audit-key"
+	| "store-open"
+	| "identity-open"
+	| "rotation-open"
+	| "prepare"
+	| "commit";
+let phase: Phase = "idle";
+const SQLITE_CODES = new Set([
+	"SQLITE_BUSY",
+	"SQLITE_BUSY_RECOVERY",
+	"SQLITE_BUSY_SNAPSHOT",
+	"SQLITE_BUSY_TIMEOUT",
+	"SQLITE_LOCKED",
+	"SQLITE_LOCKED_SHAREDCACHE",
+	"SQLITE_LOCKED_VTAB",
+	"SQLITE_IOERR",
+	"SQLITE_CANTOPEN",
+	"SQLITE_NOTADB",
+	"SQLITE_CORRUPT",
+]);
 
 function reply(id: number, value: unknown): void {
 	process.send?.({ id, ok: true, value });
@@ -61,42 +85,63 @@ function commit(request: Request, then?: () => void): unknown {
 process.on("message", async (request: Request) => {
 	try {
 		if (request.command === "init") {
+			phase = "init-input";
 			if (store || !request.key || !request.filename || !request.dir)
 				throw new Error("Invalid fixture init");
 			try {
+				phase = "master-key";
 				key = new MasterKey(request.key);
 			} finally {
 				request.key.fill(0);
 			}
+			phase = "audit-key";
 			const auditKey = key.derive("audit");
 			audit = new AuditChain(auditKey);
 			auditKey.fill(0);
+			phase = "store-open";
 			store = new HubStore({
 				filename: request.filename,
 				nativeBinding,
 				masterKey: key,
 				migrations: rotationMigrations(request.dir),
 			});
+			phase = "identity-open";
 			identity = await openRotatedIdentity(store, key, audit);
+			phase = "rotation-open";
 			rotation = new HubKeyRotation(store, key, audit, { clock });
 			reply(request.id, { pid: process.pid, hid: identity.hid });
 		} else if (request.command === "prepare") {
+			phase = "prepare";
 			if (!rotation || !identity) throw new Error("Fixture is not initialized");
 			prepared = await rotation.prepareSuccessor(identity);
 			reply(request.id, null);
 		} else if (request.command === "commit") {
+			phase = "commit";
 			reply(request.id, commit(request));
 		} else if (request.command === "hold-commit") {
+			phase = "commit";
 			commit(request, () => hold(request.id));
 		} else if (request.command === "hold-clock") {
+			phase = "commit";
 			holdClock = request.id;
 			commit(request);
 		} else throw new Error("Unknown fixture command");
 	} catch (error) {
+		const sqliteCode =
+			error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
+		const message = error instanceof Error ? error.message : undefined;
+		const code =
+			typeof sqliteCode === "string" && SQLITE_CODES.has(sqliteCode)
+				? sqliteCode
+				: message === "Hub identity rotation unavailable" ||
+						message === "Hub identity chain unavailable"
+					? message
+					: "fixture";
 		process.send?.({
 			id: request.id,
 			ok: false,
-			code: error instanceof Error ? error.message : "fixture",
+			code,
+			phase,
 		});
 	}
 });
