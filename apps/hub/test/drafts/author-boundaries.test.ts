@@ -259,7 +259,7 @@ describe("full-content and model-body revision entry points", () => {
 			const original = structuredClone(one);
 			const two = append(f, input, one, author("ai"), "New\r\nCafe\u0301");
 			expect(two.revision.content).toEqual({ ...one.revision.content, body: "New\nCaf\u00e9" });
-			expect(two.revision.flags).toEqual(one.revision.flags);
+			expect(two.revision.flags).toEqual([]);
 			expect(two.revision.contentSha256).toBe(jcsSha256(two.revision.content));
 			expect(one).toEqual(original);
 			expect(Object.isFrozen(two.revision.content)).toBe(true);
