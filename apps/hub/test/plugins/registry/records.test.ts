@@ -2,7 +2,6 @@ import {
 	chmodSync,
 	existsSync,
 	lstatSync,
-	mkdirSync,
 	readdirSync,
 	readFileSync,
 	realpathSync,
@@ -13,7 +12,8 @@ import path from "node:path";
 import { setImmediate as turn } from "node:timers/promises";
 import { egressDigest, manifestDigest, sendTemplateDigest } from "@draftyak/protocol/digests";
 import { canonicalize } from "@draftyak/protocol/jcs";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import * as artifacts from "../../../src/artifacts/index.ts";
 import { AuditChain } from "../../../src/audit/chain.ts";
 import { advanceEpochForRestore } from "../../../src/identity/devices.ts";
 import type { WorkScope } from "../../../src/jobs/database.ts";
@@ -21,6 +21,7 @@ import { newId } from "../../../src/kernel/ids.ts";
 import { openPluginRegistry, PluginRegistryError } from "../../../src/plugins/registry/index.ts";
 import { openEncrypted } from "../../../src/store/open.ts";
 import { nativeBinding } from "../../store/helpers.ts";
+import { artifactNames, finalName, fixture as installerFixture } from "../installer-fixtures.ts";
 import { bundle, fixture, removeFixtures } from "./helpers.ts";
 
 const fixtures: Awaited<ReturnType<typeof fixture>>[] = [];
@@ -30,6 +31,7 @@ async function setup(bootstrapped = true, bundles = [bundle()]) {
 	return f;
 }
 afterEach(async () => {
+	vi.restoreAllMocks();
 	for (const f of fixtures.splice(0)) await f.close();
 	await removeFixtures();
 });
@@ -123,7 +125,7 @@ it("uses monotone CAS generations for bounded version records and tightenings", 
 		registry.stageBundled(second.id, second.lock.version, second.archive, 1),
 	).rejects.toMatchObject(failure("conflict"));
 	expect(counts(f)).toEqual(before);
-	expect(readdirSync(f.files.root)).toHaveLength(1);
+	expect(artifactNames(f.files.root)).toHaveLength(1);
 	const next = await registry.stageBundled(second.id, second.lock.version, second.archive, 2);
 	expect(next).toMatchObject({ id: staged.id, generation: 3, version: "1.0.1", state: "staged" });
 	expect(next.versionId).not.toBe(staged.versionId);
@@ -167,7 +169,7 @@ it("reinspects its genuine installed tree and original archive for a live-proces
 		PluginRegistryError,
 	);
 	expect(counts(f)).toEqual(before);
-	expect(readdirSync(f.files.root)).toHaveLength(1);
+	expect(artifactNames(f.files.root)).toHaveLength(1);
 	f.clock.failed = false;
 	await expect(
 		registry.stageBundled(item.id, item.lock.version, new Uint8Array([1]), 0),
@@ -188,7 +190,7 @@ it("recovers a late failed install after close/reopen only through native pin/ar
 	await expect(
 		registry.stageBundled(item.id, item.lock.version, item.archive, 0),
 	).rejects.toThrow();
-	const targets = readdirSync(f.files.root);
+	const targets = artifactNames(f.files.root);
 	const reopened = await f.reopen();
 	const record = await reopened.stageBundled(item.id, item.lock.version, item.archive, 0);
 	expect(record).toMatchObject({ generation: 1, state: "staged" });
@@ -199,7 +201,7 @@ it("recovers a late failed install after close/reopen only through native pin/ar
 		audit: (before.audit ?? 0) + 1,
 		events: (before.events ?? 0) + 1,
 	});
-	expect(readdirSync(f.files.root)).toEqual(targets);
+	expect(artifactNames(f.files.root)).toEqual(targets);
 });
 
 it.each(["changed bytes", "extra file", "wrong archive"] as const)(
@@ -213,7 +215,7 @@ it.each(["changed bytes", "extra file", "wrong archive"] as const)(
 		await expect(
 			registry.stageBundled(item.id, item.lock.version, item.archive, 0),
 		).rejects.toThrow(PluginRegistryError);
-		const targets = readdirSync(f.files.root),
+		const targets = artifactNames(f.files.root),
 			directory = path.join(f.files.root, targets[0] as string),
 			entry = path.join(directory, item.lock.entry);
 		if (mode === "changed bytes") {
@@ -240,7 +242,7 @@ it.each(["changed bytes", "extra file", "wrong archive"] as const)(
 			PluginRegistryError,
 		);
 		expect(counts(f)).toEqual(before);
-		expect(readdirSync(f.files.root)).toEqual(targets);
+		expect(artifactNames(f.files.root)).toEqual(targets);
 		expect(lstatSync(directory, { bigint: true }).ino).toBe(identity.ino);
 		expect(readFileSync(entry)).toEqual(bytes);
 		if (mode === "extra file")
@@ -287,12 +289,12 @@ it("rechecks native owner/epoch after the asynchronous install and commits no st
 	const pending = registry.stageBundled(item.id, item.lock.version, item.archive, 0);
 	const rejected = expect(pending).rejects.toMatchObject(failure("unavailable"));
 	await turn();
-	expect(readdirSync(f.files.root)).toHaveLength(1);
+	expect(artifactNames(f.files.root)).toHaveLength(1);
 	f.native.store.write((sql) => advanceEpochForRestore(f.native.registry, sql));
 	const before = counts(f);
 	await rejected;
 	expect(counts(f)).toEqual(before);
-	expect(readdirSync(f.files.root)).toHaveLength(1);
+	expect(artifactNames(f.files.root)).toHaveLength(1);
 });
 
 it("rechecks the generation before falling back from inspection to filesystem installation", async () => {
@@ -307,7 +309,7 @@ it("rechecks the generation before falling back from inspection to filesystem in
 	const before = counts(f);
 	await rejected;
 	expect(counts(f)).toEqual(before);
-	expect(readdirSync(f.files.root)).toHaveLength(1);
+	expect(artifactNames(f.files.root)).toHaveLength(1);
 	expect(registry.get(first.id)).toMatchObject({ generation: 2, state: "disabled" });
 });
 
@@ -327,7 +329,7 @@ it("keeps the first installer reservation when concurrent rejected calls finish"
 	expect(counts(f).versions).toBe(1);
 });
 
-it("allows only one concurrent CAS winner and retries the other genuine staged version", async () => {
+it("excludes a concurrent writer for the same root and retries it after the winner closes", async () => {
 	const a = bundle(),
 		b = bundle("channel-gmail", { version: "1.0.1" });
 	const f = await setup(true, [a, b]),
@@ -343,10 +345,62 @@ it("allows only one concurrent CAS winner and retries the other genuine staged v
 	const firstWon = outcomes[0]?.status === "fulfilled",
 		retry = firstWon ? right : left,
 		item = firstWon ? b : a;
+	const refused = outcomes[firstWon ? 1 : 0];
+	if (refused?.status !== "rejected") throw new Error("DYTEST missing writer refusal");
+	expect(refused.reason).toMatchObject(failure("install"));
+	expect(artifactNames(f.files.root)).toEqual([finalName(firstWon ? a : b)]);
+	await (firstWon ? left : right).close();
+	await expect(
+		retry.stageBundled(item.id, item.lock.version, item.archive, 0),
+	).rejects.toMatchObject(failure("conflict"));
 	expect(await retry.stageBundled(item.id, item.lock.version, item.archive, 1)).toMatchObject({
 		generation: 2,
 	});
 	expect(counts(f).versions).toBe(2);
+});
+
+it("allows only one final CAS winner after two live registries reinspect genuinely staged versions", async () => {
+	const a = bundle(),
+		b = bundle("channel-gmail", { version: "1.0.1" });
+	const f = await setup(true, [a, b]),
+		writer = await f.files.open(f.bundles);
+	await writer.install(a.id, a.lock.version, a.archive);
+	await writer.install(b.id, b.lock.version, b.archive);
+	await writer.close();
+	const left = await f.open(),
+		right = await f.open();
+	const both = Promise.withResolvers<void>(),
+		verify = artifacts.verifyBundle;
+	let arrivals = 0;
+	vi.spyOn(artifacts, "verifyBundle").mockImplementation(async (input) => {
+		const entry = await verify(input);
+		if (++arrivals === 2) both.resolve();
+		await both.promise;
+		return entry;
+	});
+	try {
+		const outcomes = await Promise.allSettled([
+			left.stageBundled(a.id, a.lock.version, a.archive, 0),
+			right.stageBundled(b.id, b.lock.version, b.archive, 0),
+		]);
+		expect(arrivals).toBe(2);
+		expect(artifactNames(f.files.root).sort()).toEqual([finalName(a), finalName(b)].sort());
+		expect(outcomes.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+		expect(outcomes.filter((result) => result.status === "rejected")).toHaveLength(1);
+		for (const outcome of outcomes)
+			if (outcome.status === "rejected") expect(outcome.reason).toMatchObject(failure("conflict"));
+		expect(counts(f).versions).toBe(1);
+		vi.restoreAllMocks();
+		const firstWon = outcomes[0]?.status === "fulfilled",
+			retry = firstWon ? right : left,
+			item = firstWon ? b : a;
+		expect(await retry.stageBundled(item.id, item.lock.version, item.archive, 1)).toMatchObject({
+			generation: 2,
+		});
+		expect(counts(f).versions).toBe(2);
+	} finally {
+		await right.close();
+	}
 });
 
 it("poisons its own scope when a caught audit failure precedes invalidation", async () => {
@@ -395,7 +449,7 @@ it("reinspects its genuine installed tree and refuses a changed file on retry", 
 	await expect(
 		registry.stageBundled(item.id, item.lock.version, item.archive, 0),
 	).rejects.toThrow();
-	const target = path.join(f.files.root, readdirSync(f.files.root)[0] as string, item.lock.entry);
+	const target = path.join(f.files.root, artifactNames(f.files.root)[0] as string, item.lock.entry);
 	chmodSync(target, 0o600);
 	writeFileSync(target, "DYTEST changed file");
 	f.clock.failed = false;
@@ -405,10 +459,11 @@ it("reinspects its genuine installed tree and refuses a changed file on retry", 
 	expect(counts(f)).toEqual(before);
 });
 
-it.each(["writable file", "replacement root"] as const)(
-	"refuses a live-process retry after a %s even with the same package bytes",
+it.each(["writable file", "root replacement attempt"] as const)(
+	"keeps live-process retry behind native tree checks after a %s",
 	async (mode) => {
-		const f = await setup(),
+		const second = bundle("channel-gmail", { version: "1.0.1" });
+		const f = await setup(true, [bundle(), second]),
 			registry = await f.open(),
 			item = f.bundles[0];
 		if (!item) throw new Error("DYTEST missing package");
@@ -419,17 +474,65 @@ it.each(["writable file", "replacement root"] as const)(
 		const before = counts(f);
 		if (mode === "writable file") {
 			chmodSync(
-				path.join(f.files.root, readdirSync(f.files.root)[0] as string, item.lock.entry),
+				path.join(f.files.root, artifactNames(f.files.root)[0] as string, item.lock.entry),
 				0o600,
 			);
 		} else {
 			const saved = path.join(f.files.dir, "original-root");
 			expect(path.dirname(realpathSync(f.files.root))).toBe(realpathSync(f.files.dir));
 			expect(path.dirname(saved)).toBe(realpathSync(f.files.dir));
-			renameSync(f.files.root, saved);
-			mkdirSync(f.files.root, { mode: 0o700 });
+			const standby = installerFixture(),
+				seed = await standby.open(f.bundles);
+			await seed.install(item.id, item.lock.version, item.archive);
+			await seed.close();
+			const replacement = lstatSync(standby.root, { bigint: true });
+			const original = lstatSync(f.files.root, { bigint: true });
+			let blocked: unknown;
+			try {
+				renameSync(f.files.root, saved);
+			} catch (error) {
+				blocked = error;
+			}
+			if (blocked !== undefined) {
+				expect(process.platform).toBe("win32");
+				expect(["EACCES", "EPERM", "EBUSY"]).toContain((blocked as NodeJS.ErrnoException).code);
+				expect(existsSync(saved)).toBe(false);
+				const retained = lstatSync(f.files.root, { bigint: true });
+				expect([retained.dev, retained.ino]).toEqual([original.dev, original.ino]);
+				// This same live service can still recover its intact orphan; refusal is not closure.
+				f.clock.failed = false;
+				expect(
+					await registry.stageBundled(item.id, item.lock.version, item.archive, 0),
+				).toMatchObject({
+					generation: 1,
+				});
+				const recovered = counts(f);
+				f.clock.failed = true;
+				await expect(
+					registry.stageBundled(second.id, second.lock.version, second.archive, 1),
+				).rejects.toThrow(PluginRegistryError);
+				expect(artifactNames(f.files.root).sort()).toEqual(
+					[finalName(item), finalName(second)].sort(),
+				);
+				const target = path.join(f.files.root, finalName(second), second.lock.entry);
+				chmodSync(target, 0o600);
+				writeFileSync(target, "DYTEST changed second orphan bytes");
+				chmodSync(target, 0o400);
+				f.clock.failed = false;
+				await expect(
+					registry.stageBundled(second.id, second.lock.version, second.archive, 1),
+				).rejects.toThrow(PluginRegistryError);
+				expect(counts(f)).toEqual(recovered);
+				return;
+			}
+			renameSync(standby.root, f.files.root);
+			const moved = lstatSync(f.files.root, { bigint: true });
+			expect([moved.dev, moved.ino]).toEqual([replacement.dev, replacement.ino]);
+			expect(moved.ino).not.toBe(original.ino);
 			const fresh = await f.files.open(f.bundles);
-			await fresh.install(item.id, item.lock.version, item.archive);
+			await expect(fresh.inspect(item.id, item.lock.version, item.archive)).resolves.toMatchObject({
+				bundle: { directory: path.join(f.files.root, finalName(item)) },
+			});
 		}
 		f.clock.failed = false;
 		await expect(
@@ -584,6 +687,7 @@ it("keeps its captured native catalog and root when startup input objects change
 	try {
 		config.bundles.splice(0, 1, { id: changed.id, package: changed.lock });
 		config.directory = path.join(f.files.root, "changed");
+		config.nativeBinding = path.join(f.files.dir, "changed-native-binding.node");
 		const before = counts(f);
 		await expect(
 			registry.stageBundled(item.id, item.lock.version, changed.archive, 0),
