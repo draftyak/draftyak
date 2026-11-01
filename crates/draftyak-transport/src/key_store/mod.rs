@@ -97,6 +97,18 @@ impl StoredIdentity {
     pub async fn connect(&self, address: SocketAddr) -> Result<PinnedConnection, crate::Error> {
         PinnedConnection::connect(address, &self.transport, self.hid).await
     }
+
+    /// Connects this stored identity to its decoded native pairing window.
+    pub async fn connect_for_pairing(
+        &self,
+        payload: &crate::payload::Payload,
+        address_index: usize,
+    ) -> Result<PinnedConnection, crate::Error> {
+        if self.hid != payload.hub_pin() {
+            return Err(crate::Error::InvalidInput);
+        }
+        PinnedConnection::connect_for_pairing(payload, address_index, &self.transport).await
+    }
 }
 
 #[derive(Serialize, Deserialize)]
