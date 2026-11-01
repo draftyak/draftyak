@@ -11,6 +11,7 @@ import {
 	verifyBundle,
 } from "../../artifacts/index.ts";
 import { snapshotPackageLock } from "../../artifacts/pin.ts";
+import { createInstallerMutex } from "./mutex.ts";
 import {
 	BUNDLED_PLUGIN_IDS,
 	type BundledPluginId,
@@ -47,6 +48,8 @@ export interface PluginInstallerOptions {
 	readonly directory: string;
 	/** Native release pins, never a package-provided catalog or an install-request pin. */
 	readonly bundles: readonly BundledPluginPin[];
+	/** Trusted native startup binding, never supplied by an archive or install request. */
+	readonly nativeBinding: string;
 }
 
 /** Verified bytes and declarations only; activation and reviewed generations remain M2.25's. */
@@ -127,14 +130,16 @@ export async function openPluginInstaller(
 	options: PluginInstallerOptions,
 ): Promise<PluginInstaller> {
 	try {
-		const input = record(options, ["directory", "bundles"]);
+		const input = record(options, ["directory", "bundles", "nativeBinding"]);
 		const pins = catalog(input.bundles);
 		const root = await canonicalDirectory(input.directory);
 		const rootStat = rootDirectory(root);
+		const mutex = createInstallerMutex(root, rootStat, input.nativeBinding);
 		let closed = false;
 		const settling = new Set<Promise<void>>();
 		const active = (): void => {
 			if (closed) refuse();
+			mutex.check();
 		};
 		const run = async (
 			id: unknown,
@@ -151,6 +156,7 @@ export async function openPluginInstaller(
 				const manifest = declaration(prepared, pin.id);
 				const digest = Buffer.from(pin.package.integrity.slice(7), "base64").toString("hex");
 				const destination = path.join(root, `${pin.id}-${digest}`);
+				mutex.acquire();
 				tree = stage(root, rootStat, destination);
 				await materialize(tree, prepared.files, active);
 				await seal(tree);
@@ -212,9 +218,17 @@ export async function openPluginInstaller(
 		): Promise<InstalledPlugin> => {
 			return track(run(id, version, archive));
 		};
-		const close = async (): Promise<void> => {
+		let closePromise: Promise<void> | undefined;
+		const close = (): Promise<void> => {
 			closed = true;
-			await Promise.all(settling);
+			if (!closePromise) {
+				closePromise = Promise.all(settling).then(() => mutex.close());
+				void closePromise.catch(() => {
+					// Explicit close may retry a native connection whose first close failed.
+					closePromise = undefined;
+				});
+			}
+			return closePromise;
 		};
 		return Object.freeze({
 			install,
