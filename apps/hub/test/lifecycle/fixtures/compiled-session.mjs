@@ -6,14 +6,14 @@ import path from "node:path";
 
 // These expectations are independent of the production namespace inventory.
 const migrations = [
-	["audit", "0001_chain"],
-	["core", "0001_identity"],
-	["devices", "0001_devices"],
-	["jobs", "0001_jobs"],
-	["events", "0001_events"],
-	["revisions", "0001_native_revisions"],
-	["credentials", "0001_credentials"],
-	["tickets", "0001_send_attempts"],
+	["audit", ["0001_chain"]],
+	["core", ["0001_identity"]],
+	["devices", ["0001_devices"]],
+	["jobs", ["0001_jobs"]],
+	["events", ["0001_events"]],
+	["revisions", ["0001_native_revisions", "0002_immutable_revisions"]],
+	["credentials", ["0001_credentials", "0002_sealed_credentials"]],
+	["tickets", ["0001_send_attempts"]],
 ];
 const businessTables = [
 	"audit_meta", "audit_events", "hub_meta", "users", "approval_pins", "jobs", "jobs_meta",
@@ -26,7 +26,7 @@ async function main() {
 	assert.equal(process.permission?.has("net"), false);
 	const [nativeBinding, mode, hub] = process.argv.slice(2);
 	assert.equal(typeof nativeBinding, "string");
-	assert.ok(["positive", "missing-credentials", "invalid-credentials", "missing-revision-immutability", "missing-devices", "invalid-devices"].includes(mode));
+	assert.ok(["positive", "missing-credentials", "missing-sealed-credentials", "invalid-credentials", "missing-revision-immutability", "missing-devices", "invalid-devices"].includes(mode));
 	assert.equal(typeof hub, "string");
 	for (const denied of ["src/store/migrations/audit/0001_chain.sql", "dist/index.mjs"]) {
 		assert.throws(() => readFileSync(path.join(hub, denied)), { code: "ERR_ACCESS_DENIED" });
@@ -52,8 +52,9 @@ async function main() {
 	let HubStore, HubIdentity, migrate, loadIdentity, closeStore;
 	const requiredAsset = path.join(import.meta.dirname, mode === "missing-revision-immutability"
 		? "drafts/migrations/0002_immutable_revisions.sql"
-		: mode.endsWith("devices") ? "devices-migrations/0001_devices.sql"
-			: "credentials/migrations/0001_credentials.sql");
+		: mode === "missing-sealed-credentials" ? "credentials/migrations/0002_sealed_credentials.sql"
+			: mode.endsWith("devices") ? "devices-migrations/0001_devices.sql"
+				: "credentials/migrations/0001_credentials.sql");
 	const heldAsset = path.join(import.meta.dirname, "held-schema.sql");
 	let savedAsset;
 	let assetMissing = false;
@@ -70,14 +71,11 @@ async function main() {
 			const actual = db.all("SELECT name FROM main.sqlite_schema WHERE type='table'")
 				.map((row) => row.name);
 			assert.deepEqual(actual.filter((name) => businessTables.includes(name)).sort(), businessTables);
-			for (const [namespace, migration] of migrations) {
+			for (const [namespace, names] of migrations) {
 				assert.ok(actual.includes(`_migrations_${namespace}`));
 				assert.ok(actual.includes(`_migrations_${namespace}_lock`));
-				const versions = namespace === "revisions" ? [migration, "0002_immutable_revisions"] : [migration];
-				assert.deepEqual(
-					db.all(`SELECT name FROM main._migrations_${namespace} ORDER BY name`),
-					versions.map((name) => ({ name })),
-				);
+				assert.deepEqual(db.all(`SELECT name FROM main._migrations_${namespace} ORDER BY name`),
+					names.map((name) => ({ name })));
 			}
 		});
 		migrate = HubStore.prototype.migrate;
@@ -149,6 +147,10 @@ async function main() {
 			refused = "STORE_UNAVAILABLE";
 			assert.equal(closed, beforeClose + 1);
 			assert.equal(identities, 0);
+			if (mode === "missing-sealed-credentials") {
+				assert.equal(order.filter((namespace) => namespace === "credentials").length, 1);
+				assert.equal(order.includes("tickets"), false);
+			}
 			erased(failedKey);
 			// Inspect the encrypted file after the failed session closed its actual connection.
 			const probeKey = key();

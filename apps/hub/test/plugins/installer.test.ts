@@ -179,7 +179,7 @@ describe("bundled plugin installation", () => {
 		expect(globals[EXECUTED]).toBeUndefined();
 	});
 
-	it("takes no master key or extension host and exposes only install and close", async () => {
+	it("takes no master key or extension host and exposes only artifact operations and close", async () => {
 		const f = fixture();
 		const item = bundle();
 		for (const extra of [{ extensions: {} }, { masterKey: {} }]) {
@@ -187,7 +187,7 @@ describe("bundled plugin installation", () => {
 			await expect(openPluginInstaller(options)).rejects.toEqual(refusal);
 		}
 		const installer = await f.open([item]);
-		expect(Reflect.ownKeys(installer).sort()).toEqual(["close", "install"]);
+		expect(Reflect.ownKeys(installer).sort()).toEqual(["close", "inspect", "install"]);
 		expect(Object.isFrozen(installer)).toBe(true);
 	});
 
