@@ -50,7 +50,7 @@ const open = (filename: string, create = false, audit = auditDir): HubStore => {
 		nativeBinding,
 		masterKey: f.key,
 		create,
-		migrations: { audit },
+		migrations: { ...f.migrations, audit },
 	});
 	stores.push(store);
 	return store;
@@ -92,14 +92,15 @@ it("cannot sign reset-to-empty audit storage in the same open or after reopening
 		audit.append(tx, event);
 	});
 	reset();
-	await expect(f.store.migrate("audit")).rejects.toThrow(
-		"Audit storage is missing or incomplete. Restore a valid backup; remove and recreate the database only if it was never used.",
-	);
-	expect(f.store.read((db) => db.get("SELECT COUNT(*) AS n FROM test_rows"))).toEqual({ n: 1 });
-	unavailable(f.store);
+	// The open store refuses before any migration SQL: its file is no longer the accepted schema.
+	await expect(f.store.migrate("audit")).rejects.toThrow("Database schema is not recognized");
+	expect(() => f.store.read((db) => db.get("SELECT 1"))).toThrow("unavailable");
 	f.store.close();
 	const reopened = open(f.filename);
-	await expect(reopened.migrate("audit")).rejects.toThrow("Audit storage is missing or incomplete");
+	expect(reopened.read((db) => db.get("SELECT COUNT(*) AS n FROM test_rows"))).toEqual({ n: 1 });
+	await expect(reopened.migrate("audit")).rejects.toThrow(
+		"Audit storage is missing or incomplete. Restore a valid backup; remove and recreate the database only if it was never used.",
+	);
 	unavailable(reopened);
 	expect(
 		reopened.read((db) =>
@@ -174,8 +175,11 @@ it("consumes genesis authority even if a post-commit setting check fails", async
 	failure.mockRestore();
 	store.read((db) => audit.verify(db));
 	reset(filename);
-	await expect(store.migrate("audit")).rejects.toThrow("Audit storage is missing or incomplete");
-	unavailable(store);
+	await expect(store.migrate("audit")).rejects.toThrow("Database schema is not recognized");
+	store.close();
+	const reopened = open(filename);
+	await expect(reopened.migrate("audit")).rejects.toThrow("Audit storage is missing or incomplete");
+	unavailable(reopened);
 });
 
 it("does not mistake SQL-cleared storage after a post-commit fault for a rollback", async () => {
@@ -222,7 +226,7 @@ it("reads each open option once and cannot convert an existing file into fresh a
 	f.store.close();
 	const reads = { filename: 0, nativeBinding: 0, masterKey: 0, create: 0 };
 	const store = new HubStore({
-		migrations: { audit: auditDir },
+		migrations: { ...f.migrations, audit: auditDir },
 		get filename() {
 			return ++reads.filename === 1 ? f.filename : path.join(f.dir, "wrong.db");
 		},
