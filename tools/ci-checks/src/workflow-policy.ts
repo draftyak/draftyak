@@ -58,7 +58,26 @@ const ciControls: Readonly<Record<string, YamlMap>> = {
 	},
 	required: { needs: ["changes", "cheap", "full", "windows"], if: "always()" },
 };
+const ciChangesOutputs: YamlMap = {
+	areas: `\${{ steps.areas.outputs.areas }}`,
+	"docs-only": `\${{ steps.areas.outputs.docs-only }}`,
+	rust: `\${{ steps.areas.outputs.rust }}`,
+	spikes: `\${{ steps.areas.outputs.spikes }}`,
+	heavy: `\${{ steps.areas.outputs.heavy }}`,
+	"template-smoke": `\${{ steps.areas.outputs.template-smoke }}`,
+	source: `\${{ steps.source.outputs.source }}`,
+};
 const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
+	changes: [
+		{
+			id: "areas",
+			env: {
+				BASE_SHA: `\${{ github.event.pull_request.base.sha || github.event.before }}`,
+				HEAD_SHA: `\${{ github.event.pull_request.head.sha || github.sha }}`,
+			},
+			run: "node tools/ci-checks/src/changes.ts",
+		},
+	],
 	cheap: [
 		{
 			if: "needs.changes.outputs.docs-only == 'true'",
@@ -89,7 +108,7 @@ const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
 				'if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then',
 				'  filters+=("--filter=!./packages/create-plugin")',
 				"fi",
-				`node tools/verify/turbo.ts run test:heavy "\${filters[@]}"`,
+				`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
 				"",
 			].join("\n"),
 		},
@@ -121,6 +140,99 @@ const prTitleCommands: readonly YamlMap[] = [
 const readOnly = (permissions: Yaml | undefined): boolean => {
 	const map = asMap(permissions);
 	return Object.keys(map).join() === "contents" && map.contents === "read";
+};
+
+const nativeStoreFile = ".github/workflows/native-store.yml";
+// The receipt-only upload exception requires the complete trusted execution contract.
+const nativeStoreContract: Yaml = {
+	name: "Native macOS store",
+	on: {
+		workflow_dispatch: {
+			inputs: {
+				pr: { description: "Open owner PR into m2", required: true, type: "string" },
+				head: {
+					description: "Exact current PR head (40 lowercase hex characters)",
+					required: true,
+					type: "string",
+				},
+			},
+		},
+	},
+	permissions: { contents: "read" },
+	env: { DO_NOT_TRACK: "1", TURBO_TELEMETRY_DISABLED: "1" },
+	defaults: { run: { shell: "bash" } },
+	jobs: {
+		"native-store": {
+			if: `\${{ github.event_name == 'workflow_dispatch' && github.repository == 'draftyak/draftyak' && github.actor == 'nicksavov' && github.triggering_actor == 'nicksavov' && github.ref == 'refs/heads/m0' }}`,
+			"runs-on": "macos-15",
+			"timeout-minutes": 15,
+			steps: [
+				{
+					name: "Check out trusted controls",
+					uses: `actions/checkout@${actionPins["actions/checkout"]?.[0]}`,
+					with: { ref: `\${{ github.sha }}`, "persist-credentials": false },
+				},
+				{
+					name: "Set up Node",
+					uses: `actions/setup-node@${actionPins["actions/setup-node"]?.[0]}`,
+					with: { "node-version-file": ".node-version" },
+				},
+				{
+					name: "Admit the exact owner PR head",
+					id: "source",
+					env: { NATIVE_STORE_PR: `\${{ inputs.pr }}`, NATIVE_STORE_HEAD: `\${{ inputs.head }}` },
+					run: "node tools/ci-checks/src/native-store.ts admit",
+				},
+				{
+					name: "Check out admitted source",
+					uses: `actions/checkout@${actionPins["actions/checkout"]?.[0]}`,
+					with: {
+						repository: "draftyak/draftyak",
+						ref: `\${{ steps.source.outputs.head }}`,
+						path: "source",
+						"persist-credentials": false,
+					},
+				},
+				{
+					name: "Verify the source checkout",
+					env: {
+						NATIVE_STORE_PR: `\${{ steps.source.outputs.pr }}`,
+						NATIVE_STORE_HEAD: `\${{ steps.source.outputs.head }}`,
+					},
+					run: "node tools/ci-checks/src/native-store.ts verify-source",
+				},
+				{
+					name: "Set up pnpm",
+					uses: `pnpm/action-setup@${actionPins["pnpm/action-setup"]?.[0]}`,
+				},
+				{
+					name: "Install locked source dependencies",
+					"working-directory": "source",
+					run: "pnpm install --frozen-lockfile",
+				},
+				{
+					name: "Run and verify the native store case",
+					id: "native",
+					env: {
+						NATIVE_STORE_PR: `\${{ steps.source.outputs.pr }}`,
+						NATIVE_STORE_HEAD: `\${{ steps.source.outputs.head }}`,
+					},
+					run: "node tools/ci-checks/src/native-store.ts run",
+				},
+				{
+					name: "Upload the verified native receipt",
+					if: `\${{ success() && steps.native.outputs.receipt == 'ready' }}`,
+					uses: `actions/upload-artifact@${actionPins["actions/upload-artifact"]?.[0]}`,
+					with: {
+						name: `native-store-receipt-\${{ github.run_id }}-\${{ github.run_attempt }}`,
+						path: `\${{ runner.temp }}/native-store-receipt.json`,
+						"if-no-files-found": "error",
+						"retention-days": 1,
+					},
+				},
+			],
+		},
+	},
 };
 
 const labelsFile = ".github/workflows/labels.yml";
@@ -193,7 +305,15 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 			const step = Object.fromEntries(
 				Object.entries(steps[index] ?? {}).filter(([key]) => key !== "name"),
 			);
-			if (matches.length !== 1 || index <= previous || !isDeepStrictEqual(step, expected)) {
+			const duplicateId =
+				typeof expected.id === "string" &&
+				steps.filter((step) => step.id === expected.id).length !== 1;
+			if (
+				matches.length !== 1 ||
+				index <= previous ||
+				duplicateId ||
+				!isDeepStrictEqual(step, expected)
+			) {
 				report(
 					["jobs", job, "steps"],
 					`must preserve ${job} command and its execution controls: ${expected.run}`,
@@ -206,6 +326,11 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	const reviewedLabels = file === labelsFile && isDeepStrictEqual(doc.value, labelsContract);
 	if (file === labelsFile && !reviewedLabels) {
 		report([], "labels.yml must exactly match the reviewed owner-only labels contract");
+	}
+	const reviewedNativeStore =
+		file === nativeStoreFile && isDeepStrictEqual(doc.value, nativeStoreContract);
+	if (file === nativeStoreFile && !reviewedNativeStore) {
+		report([], "native-store.yml must exactly match the trusted native receipt contract");
 	}
 	if (file === ".github/workflows/ci.yml") {
 		const checkFailurePolicy = (value: Yaml, at: YamlPath): void => {
@@ -281,6 +406,9 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	if (file === ".github/workflows/ci.yml") {
 		if (!isDeepStrictEqual(workflow.defaults, { run: { shell: "bash" } })) {
 			report(["defaults"], "must preserve the CI execution shell");
+		}
+		if (!isDeepStrictEqual(asMap(asMap(workflow.jobs).changes).outputs, ciChangesOutputs)) {
+			report(["jobs", "changes", "outputs"], "must preserve classifier job output mappings");
 		}
 		for (const [job, controls] of Object.entries(ciControls)) {
 			const definition = asMap(asMap(workflow.jobs)[job]);
@@ -374,14 +502,16 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				uploads[0] === `\${{ runner.temp }}/ci-verification.json` &&
 				inputs["retention-days"] === 7 &&
 				inputs["if-no-files-found"] === "error";
+			const nativeReceipt = reviewedNativeStore && job === "native-store";
 			if (
 				action === "actions/upload-artifact" &&
 				!receipt &&
+				!nativeReceipt &&
 				(uploads.length === 0 || uploads.some((p) => !evidence.test(p) || p.includes("..")))
 			) {
 				report(
 					at,
-					"upload-artifact may only upload spikes/*/evidence/ or the fixed CI receipt, never an installable build",
+					"upload-artifact may only upload spikes/*/evidence/, the fixed CI receipt or the trusted native receipt, never an installable build",
 				);
 			}
 			for (const [expression, body = ""] of String(step.run ?? "").matchAll(expressions)) {

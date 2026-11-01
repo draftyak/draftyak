@@ -2,7 +2,7 @@
 
 > **Status: draft.** Until the M1 gate, M1 items may change this file; after it, it changes only through contract PRs, under the versioning rule in [README.md](README.md). The EKM parameters may still change with ADR 0007 (see [The EKM parameters and ADR 0007](#the-ekm-parameters-and-adr-0007)).
 
-How a device pairs with a hub: the pairing window, the payload the hub shows, the TLS connection and its keying-material exporter (EKM), the claim and its proof, the hub's checks and answer, the short authentication string (SAS), and confirmation. `@draftyak/protocol/pairing` (`packages/protocol/src/pairing.ts`) implements the formats and checks; `vectors/pairing/` holds the shared vectors. Encodings follow [README.md](README.md): hashes as lower-case hex, public keys as base64url SPKI DER in the 91-byte P-256 form, base64url unpadded and canonical, instants as UTC milliseconds.
+How a device pairs with a hub: the pairing window, the payload the hub shows, the TLS connection and its keying-material exporter (EKM), the claim with its commitment and proof, the hub's checks and answer, the reveal, the short authentication string (SAS), and confirmation. `@draftyak/protocol/pairing` (`packages/protocol/src/pairing.ts`) implements the formats and checks; `vectors/pairing/` holds the shared vectors. Encodings follow [README.md](README.md): hashes as lower-case hex, public keys as base64url SPKI DER in the 91-byte P-256 form, base64url unpadded and canonical, instants as UTC milliseconds.
 
 ## Roles
 
@@ -17,7 +17,7 @@ A window pairs one role, which its payload names. A claim names its role too, an
 
 - An owner opens a window from a trusted surface: the desktop approval window on the hub, `draftyak pair` with the PIN, or an existing approver.
 - The hub draws `pid` (16 bytes: the window's id and the exporter's context) and `sec` (16 bytes, 128 bits: the window's secret, which keys the proof) from a CSPRNG, and sets `exp` to the opening time plus 300,000 ms. The sidecar's window derives them instead ([Sidecar auto-pairing](#sidecar-auto-pairing)).
-- A window accepts one successful claim and then closes. Three failed claims burn it, and it closes at `exp` by the hub's clock.
+- A window accepts one successful claim and then closes to claims; that claim's reveal follows before `exp` (section 8). Three failed claims burn it, and it closes at `exp` by the hub's clock.
 - While a window is open, `/pair/v1/*` is the only L2 path a client certificate the hub doesn't know may reach.
 
 ## 2. The payload
@@ -95,7 +95,7 @@ M0.21 (S5a) showed rustls 0.23.46 with `ring` equal to Node 26.12.0 (OpenSSL 3.5
 
 ## 7. The claim
 
-The device sends `POST /pair/v1/claim` on the same connection, with a JSON body of exactly these members:
+For each claim the device draws `nd`, 16 bytes from a CSPRNG, and sends `POST /pair/v1/claim` on the same connection, with a JSON body of exactly these members:
 
 | Field | Form | Meaning |
 |---|---|---|
@@ -104,17 +104,20 @@ The device sends `POST /pair/v1/claim` on the same connection, with a JSON body 
 | `name` | a display name | the device's own name, which the approver sees |
 | `transportSpkiSha256` | 64 lower-case hex digits | the SHA-256 of its client certificate's SPKI |
 | `signingKey` | base64url SPKI DER, the 91-byte P-256 form | its signing key |
-| `proof` | 64 lower-case hex digits | `HMAC-SHA-256(sec, "draftyak/pair/v1" ‖ ekm ‖ pubs)` |
+| `c` | 64 lower-case hex digits | `SHA-256("draftyak/sas-commit/v1" ‖ nd)`, its commitment to `nd` (`pairingCommitment`) |
+| `proof` | 64 lower-case hex digits | `HMAC-SHA-256(sec, "draftyak/pair/v1" ‖ ekm ‖ pubs ‖ c)` |
 
-`"draftyak/pair/v1"` is those 16 ASCII bytes, `ekm` the 32 bytes above, and
+`"draftyak/sas-commit/v1"` is those 22 ASCII bytes and `"draftyak/pair/v1"` those 16, `ekm` the 32 bytes above, `c` in the proof its 32 bytes, and
 
 ```
 pubs = transportSpkiSha256 (32 bytes) ‖ the uncompressed SEC1 point of signingKey (65 bytes: 0x04 ‖ x ‖ y)
 ```
 
-97 bytes in all: what the S10 transport skeleton's `claim_body` puts in `pubs` (ADR 0012), its 32-byte SPKI hash followed by the SEC1 approval key, so M1b's Rust side keeps the skeleton's formula and its kept test. The point is the last 65 bytes of the signing key's SPKI. The body is strict JSON, as [README.md](README.md) defines it, of at most 4,096 bytes; it needn't be canonical, because nothing signs its bytes.
+97 bytes in all: what the S10 transport skeleton's `claim_body` puts in `pubs` (ADR 0012), its 32-byte SPKI hash followed by the SEC1 approval key. The point is the last 65 bytes of the signing key's SPKI. Every part has a fixed length, so the proof's message is 177 bytes. The skeleton's `pair_proof(sec, ekm, pubs)` gives this proof when it is passed `pubs ‖ c`, as `pairingProof` is, so M1b's Rust side keeps the skeleton's formula and its kept test. The body is strict JSON, as [README.md](README.md) defines it, of at most 4,096 bytes; it needn't be canonical, because nothing signs its bytes. A claim without `c`, as M1.21 made it, is refused.
 
-**Why the signing key is in `pubs`.** The proof makes the window's secret and this connection's EKM vouch for both keys the hub records, not only the transport key. TLS already protects the body in transit, but the binding should hold in the pairing check itself, whatever sits between the TLS layer and that check (a proxy, a multiplexed stream, a request mix-up): no one can attach another signing key to a transport key that verified. And the signing key is the key that later signs every approval, so it is covered by the same check that the SAS and the approver confirm. The device's `name` stays outside the proof: it is a label the owner chose, and the SAS and the confirmation, not the name, tell the owner which device claimed.
+The device keeps `nd` to itself until it holds the hub's answer to this claim, then reveals it on this connection (section 8), and uses it for no other claim. Once it has revealed, it makes no further claim from that pairing code, whatever the answer.
+
+**Why the signing key and `c` are in the proof.** The proof makes the window's secret and this connection's EKM vouch for both keys the hub records and for the commitment, not only the transport key. TLS already protects the body in transit, but the binding should hold in the pairing check itself, whatever sits between the TLS layer and that check (a proxy, a multiplexed stream, a request mix-up): no one can attach another signing key or another commitment to a transport key that verified. And the signing key is the key that later signs every approval, so it is covered by the same check that the SAS and the approver confirm. The device's `name` stays outside the proof: whoever claims chooses it, and it can imitate a code, so the SAS and the confirmation, not the name, tell the owner which device claimed (section 9).
 
 ## 8. The hub's checks and answer
 
@@ -127,19 +130,40 @@ The hub checks a claim in this order:
 
 `verifyPairingClaim` makes checks 2 to 4 on a claim `readPairingClaim` has accepted (check 1). Each refusal of a claim whose `pid` names an open window counts one failure against it, and the third burns it. `PAIR_PROOF_INVALID` covers both halves of check 4, so a claimant can't tell which failed.
 
-The hub answers a claim that holds with 200 and `{deviceId, epoch}`: the new device's ULID and the hub's current epoch, which its statements carry. It answers a refusal with 403 and `{code}`, one of `PAIR_WINDOW_CLOSED`, `PAIR_CLAIM_INVALID`, `PAIR_ROLE_MISMATCH` and `PAIR_PROOF_INVALID`. Both objects are strict (`PairingResult`, `PairingRefusal`). The hub answers and logs a refusal by its code alone, as its logs are content-free; a `PairingError`'s message counts the members it didn't expect rather than repeating names the sender chose.
+The hub answers a claim that holds with 200 and `{deviceId, epoch, nh}`: the new device's ULID, the hub's current epoch, which its statements carry, and `nh`, 16 bytes the hub draws from a CSPRNG for this claim once it holds, in base64url (22 characters). It answers a refusal with 403 and `{code}`, one of `PAIR_WINDOW_CLOSED`, `PAIR_CLAIM_INVALID`, `PAIR_ROLE_MISMATCH` and `PAIR_PROOF_INVALID`. Both objects are strict (`PairingResult`, `PairingRefusal`). The hub answers and logs a refusal by its code alone, as its logs are content-free; a `PairingError`'s message counts the members it didn't expect rather than repeating names the sender chose.
+
+**The reveal.** Once it holds the answer, the device sends `POST /pair/v1/reveal` on the same connection, with a JSON body of exactly these members:
+
+| Field | Form | Meaning |
+|---|---|---|
+| `pid` | as in the claim | the window whose claim it opens |
+| `nd` | base64url of 16 bytes, 22 characters | the nonce that claim's `c` commits to |
+
+The hub checks a reveal in this order:
+
+1. the body is at most 1,024 bytes of strict JSON with exactly these members in their forms, or `PAIR_REVEAL_INVALID`;
+2. a claim on the window `pid` names held on this connection and awaits its reveal, and that window's `exp` hasn't passed by the hub's clock, or `PAIR_WINDOW_CLOSED`;
+3. `SHA-256("draftyak/sas-commit/v1" ‖ nd)` equals that claim's `c`, or `PAIR_COMMITMENT_MISMATCH`.
+
+`readPairingReveal` makes check 1, and `verifyPairingReveal` makes check 3 and check 2's comparison of `pid` against the claim the hub holds; the rest of check 2 is the hub's own state. Both readers count a body's bytes as received, before anything parses it, so non-ASCII text counts in UTF-8 bytes, not in characters or UTF-16 units. Once a reveal holds, the hub records the candidate (section 10) and answers 204 with no body; if it can't record it, or its epoch has changed since its answer, it answers `PAIR_WINDOW_CLOSED` instead and discards the claim. It answers a refusal with 403 and `{code}`, a `PairingRefusal` with one of these three codes.
+
+The window's five minutes bound the claim and its reveal, with no second timeout: the device reveals as soon as it holds the answer. The claim that holds closes the window to claims, and the hub keeps it, with its `c`, its `nh` and its connection, for one reveal. The first reveal to reach check 3 ends the exchange, whether it holds or not, and so do `exp` and the end of that connection; a reveal refused at check 1 or 2 changes nothing and counts no failure. A claim whose reveal is refused, or that has none when its exchange ends, is discarded with its pending device: it gets no SAS, no pair-confirm review and no confirmation, and the owner opens a new window. A reveal that holds grants nothing: the device stays pending, with no capability, until it is confirmed (section 10). The window's clock and counter, the claims the hub keeps and these outcomes are the hub's (M4.5); the vectors cover checks 1 and 3 and the comparison of `pid`.
 
 ## 9. The SAS
 
-After a claim holds, both screens show
+Once a reveal holds, both screens show
 
 ```
-sas = u32_be(SHA-256("draftyak/sas/v1" ‖ ekm)[0..4]) mod 1,000,000
+sas = u32_be(SHA-256("draftyak/sas/v1" ‖ ekm ‖ nd ‖ nh)[0..4]) mod 1,000,000
 ```
 
-as six digits with leading zeros (`006520`; `pairingSas`, the skeleton's `sas()`): the device from its EKM, the hub's trusted surface from its own. The SAS is never sent.
+as six digits with leading zeros (`pairingSas`): `"draftyak/sas/v1"` is those 15 ASCII bytes, `ekm` the 32 bytes of the claim's connection, and `nd` and `nh` their 16 bytes each, 79 bytes in all. The device computes it from its own EKM, its `nd` and the `nh` of the answer it held before revealing; the hub from its EKM of that connection, the revealed `nd` and its own `nh`. This supersedes M1.21's skeleton formula, `u32_be(SHA-256("draftyak/sas/v1" ‖ ekm)[0..4]) mod 1,000,000` (the S10 skeleton's `sas()`), with its acceptance and its kept numbers (`982166` and `006520`, for EKMs of zeros and of `0xff` bytes): nothing computes or accepts it, and M1b's Rust side replaces the skeleton's kept `sas()` test with this file's vectors.
 
-What it shows: when the device's TLS connection ends at the hub, both ends hold the same EKM and show the same code, and a claim that none of the owner's devices made shows a code that none of them shows. What it doesn't: it gives no assurance against an active attacker who is the TLS server toward the device, after replacing the code's `hid` and `addr` on its way or with a stolen hub key. That attacker claims at the hub over its own connection, so it knows the hub's code, and the device's EKM depends on handshake values it chooses (RFC 8446 §7.1: the exporter secret covers the transcript up to the server's Finished). About a million tries, each one signature and a few hashes, find a handshake for which the device shows the same six digits, within seconds. Against a replaced `hid`, the owner's comparison of the hub ID at consent (step 3) is the defence. Whether to add a commitment before the codes are shown, which would make the SAS hold, is an owner decision that is still open; until then, the formula stays the skeleton's.
+The hub's SAS appears on its trusted surface and in the pending pair-confirm review that a current confirmed `approve` device fetches over L2, as the `sas` of the review's subject ([device-api-v1.md](device-api-v1.md)), so a remote approver can compare it with the candidate's screen. It appears nowhere else: never to the candidate, in a claim, an answer to a claim or a reveal, a status answer, the pairing code, events, browsers, agents or logs. The candidate computes its own; receiving `nh` isn't receiving the hub's SAS. A claim whose reveal didn't hold has no SAS, so no pair-confirm review of it exists.
+
+What it shows: when the device's TLS connection ends at the hub, both ends hold the same EKM, `nd` and `nh` and show the same code, and a claim that none of the owner's devices made shows a code that none of them shows. It also holds against an active attacker who is the TLS server toward the device, after replacing the code's `hid` and `addr` on its way or with a stolen hub key, and who claims at the hub over its own connection. That attacker must commit to its own `nd` in its claim before the hub draws `nh`, and must send the device an `nh` before the device reveals its `nd`, which stays hidden behind the device's `c` until then. So when it makes its last choice, it knows at most one of the two codes, and they match by chance, one time in a million, once for each window, as a window takes one claim and a device reveals once for each code. Choosing its handshake values no longer helps either, as the device's code also depends on its `nd`. The owner's comparison of the hub ID at consent (step 3) still catches a replaced `hid` before anything connects.
+
+**Names beside the code.** Neither name is vouched for: the claim's `name` is chosen by whoever claims, and the pairing code's hub `name` by whoever made the code, and either can imitate a code (`496984`, `Phone 496984`, or the same in fullwidth or Arabic-Indic digits). The attacker above can finish the device side first and then claim under a name that is the device's code, or put the hub's code in a forged code's `name`. So every screen shows the code on its own and labelled, taken only from `sas` or from its own computation, and shows a name apart from it as unverified text, never in the code's place or style.
 
 ## 10. Confirmation and record
 
@@ -150,16 +174,17 @@ What it shows: when the device's TLS connection ends at the hub, both ends hold 
 
 ## Sidecar auto-pairing
 
-On the desktop, the supervisor sends the hub a 16-byte bootstrap secret from a CSPRNG in the stdin unlock frame, as M0.22's supervisor does (`bootstrapSecret`, 32 lower-case hex digits, sent first on every spawn). Both sides derive the bootstrap window's `pid` and `sec` from it, 16 bytes each, with HKDF-SHA-256 (RFC 5869), an empty salt and the info `draftyak/pair/v1/sidecar-pid` or `draftyak/pair/v1/sidecar-sec` (`sidecarWindowSecrets`). Until `bootstrap_done` is set, the hub opens a `device` window with them and shows no payload. The secret of each unlock frame replaces any unclaimed sidecar window, so after a restart the window is the one its frame gives; M0.22's supervisor sends the same secret to every spawn of one app launch. The window closes at the first claim that holds, after three failures, or once `bootstrap_done` is set.
+On the desktop, the supervisor sends the hub a 16-byte bootstrap secret from a CSPRNG in the stdin unlock frame, as M0.22's supervisor does (`bootstrapSecret`, 32 lower-case hex digits, sent first on every spawn). Both sides derive the bootstrap window's `pid` and `sec` from it, 16 bytes each, with HKDF-SHA-256 (RFC 5869), an empty salt and the info `draftyak/pair/v1/sidecar-pid` or `draftyak/pair/v1/sidecar-sec` (`sidecarWindowSecrets`). Until `bootstrap_done` is set, the hub opens a `device` window with them and shows no payload. The secret of each unlock frame replaces any unclaimed sidecar window, so after a restart the window is the one its frame gives; M0.22's supervisor sends the same secret to every spawn of one app launch. The window closes at the first claim that holds, after three failures, or once `bootstrap_done` is set. A sidecar claim that held and was then discarded (section 8) leaves that secret's window closed, and the app treats each bootstrap secret as one pairing code (section 7), so pairing again waits for the next app launch's secret.
 
-The hub's ready frame reports its L2 port and its full SPKI hash. M0.22's ready frame, `{ready, l2Port, hubId}`, carries only the display ID, 64 bits of the hash, which is too short to pin, so M4 adds the 64-hex-digit hash beside it and changes the frame codec's kept test (`spikes/s05-desktop/tauri-app/src-tauri/tests/sidecar.rs`) to match, as an ADR 0007 follow-up. The app connects to `127.0.0.1:<l2Port>`, pins that hash as `hid`, and claims exactly as in step 7, with the same proof. It becomes the first approve and admin device once the owner sets the PIN (bootstrap, step 10).
+The hub's ready frame reports its L2 port and its full SPKI hash. M0.22's ready frame, `{ready, l2Port, hubId}`, carries only the display ID, 64 bits of the hash, which is too short to pin, so M4 adds the 64-hex-digit hash beside it and changes the frame codec's kept test (`spikes/s05-desktop/tauri-app/src-tauri/tests/sidecar.rs`) to match, as an ADR 0007 follow-up. The app connects to `127.0.0.1:<l2Port>`, pins that hash as `hid`, claims exactly as in step 7, with the same proof, and reveals as in step 8. It becomes the first approve and admin device once the owner sets the PIN (bootstrap, step 10).
 
 ## Threats
 
 From the plan's threat table (§9.2):
 
-- **A device↔hub man in the middle.** The device pins `hid`, so while the code is intact, a proxy with another key fails at the handshake and a relay that only forwards bytes reads nothing. Someone who holds the code can claim over their own connection, but the hub binds each claim to that connection's client certificate and EKM (check 4), so the device's proof can't be moved to another connection, and a replayed proof fails, because every connection has its own EKM and a window accepts one claim. An attacker who replaced the code's `hid` and `addr`, or holds the hub's key, is the TLS server toward the device and can make the two SAS match (section 9); against a replaced `hid`, the owner's comparison of the hub ID at consent is the defence.
+- **A device↔hub man in the middle.** The device pins `hid`, so while the code is intact, a proxy with another key fails at the handshake and a relay that only forwards bytes reads nothing. Someone who holds the code can claim over their own connection, but the hub binds each claim to that connection's client certificate and EKM (check 4), so the device's proof can't be moved to another connection, and a replayed proof fails, because every connection has its own EKM and a window accepts one claim. An attacker who replaced the code's `hid` and `addr`, or holds the hub's key, is the TLS server toward the device, but the commit-reveal exchange leaves it one chance in a million for each window to make the two SAS match (section 9); against a replaced `hid`, the owner's comparison of the hub ID at consent is a further defence.
 - **An intercepted pairing code or link.** Whoever holds it can claim, but can't be confirmed without an approver, the PIN and a SAS that matches the owner's device. Because a window takes one claim, the owner's own device then gets `PAIR_WINDOW_CLOSED`. That code also answers a window that expired or was burned, so it doesn't prove that someone else claimed: the owner opens a new window, and no approver confirms a claim whose SAS none of their devices shows. The window lasts five minutes, and a link never pairs by itself.
+- **A name that imitates the code.** The claim's `name` and the pairing code's hub `name` are chosen by whoever claims or made the code, and either can read as a SAS: an owner who compared a name with the other screen's code would confirm the attacker's keys. So every screen shows the code on its own and labelled, from `sas` or its own computation, and a name apart from it as unverified text, never in the code's place or style (section 9).
 
 ## The EKM parameters and ADR 0007
 
@@ -175,8 +200,8 @@ Before the M1 gate such a change edits v1 in place. After it, it is a breaking c
 
 `pnpm --filter @draftyak/protocol vectors` writes them from `packages/protocol/scripts/vectors/pairing.ts`, and `vectors --check` (part of `pnpm test`) fails on any drift:
 
-- `vectors/pairing/proofs.json`: the EKM parameters; proofs with their HMAC input, valid or not; SAS with their hash; hub IDs; the sidecar window's `pid` and `sec` from bootstrap secrets. Cases whose id starts with `skeleton` are the S10 transport skeleton's own numbers from its kept test (ADR 0012), so the TypeScript side is checked against them.
+- `vectors/pairing/proofs.json`: the EKM parameters; proofs with their HMAC input, valid or not, among them a claim's over `pubs ‖ c` and M1.21's without `c`; commitments with their input; SAS with their input and hash, with an EKM, `nd` and `nh` that differ so that reordering them changes the code, and one with leading zeros; hub IDs; the sidecar window's `pid` and `sec` from bootstrap secrets. Proof cases whose id starts with `skeleton` are the S10 transport skeleton's own `pair_proof()` numbers from its kept test (ADR 0012), so the TypeScript side is checked against them; its `sas()` numbers are superseded (section 9).
 - `vectors/pairing/payloads.json`: codes decoded at a fixed instant, accepted with their payload and canonical JSON, or refused with their code: prefixes, the length limit at and over its boundary, encodings, the order of the checks, every field form, the address grammar and the display-name rules.
-- `vectors/pairing/claims.json`: claims as the hub receives them, with the window and the connection it checks them against, and their outcome: accepted, a client certificate with another key, an EKM from another connection, another window's secret, swapped keys, a flipped proof bit, refused forms, and the skeleton's stand-in body, which isn't the wire form.
+- `vectors/pairing/claims.json`: claims as the hub receives them, with the window and the connection it checks them against, and their outcome: accepted, a client certificate with another key, an EKM from another connection, another window's secret, swapped keys, a flipped proof bit, another commitment under the same proof, M1.21's proof and claim without `c`, refused forms, the size limit at and past its boundary (with a multibyte name too), and the skeleton's stand-in body, which isn't the wire form. Then reveals, each with the claim that held on its connection, that connection's EKM and the hub's `nh`, and their outcome: accepted with the SAS both screens show, another window's `pid`, an `nd` that doesn't open `c` (changed, another claim's, or against another claim), refused forms, and the size limit at and past its boundary (with a nonce in fullwidth letters too).
 
 The EKMs and keys are synthetic and test-only; the keys are public keys made from fixed scalars, so the files hold no private key. M1b adds the Rust side and checks both ways; the SMS contract adds its `host:sms` cases from its own generator file under `scripts/vectors/pairing/`.

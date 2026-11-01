@@ -1,4 +1,4 @@
-import { createFake, createToolUpstream } from "@draftyak/fakes";
+import { createFake, createToolUpstream, TOOL_FEED, TOOL_UPSTREAM_HOST } from "@draftyak/fakes";
 import { afterEach, expect, it, vi } from "vitest";
 import { createMockHub, type MockHub } from "../src/index.ts";
 import { channelFixture } from "./fixtures/channel/plugin.ts";
@@ -94,31 +94,34 @@ it("accepts exactly 33554432 tool response bytes and refuses the first excess by
 	}
 });
 it("returns a fixed timeout before a bounded slow response can be admitted", async () => {
-	// Host time moves only after dispatch, so a busy runner can't use up the 5 ms budget first.
-	// The upstream's delay runs on real time, so it stays far beyond that budget.
+	// Host time moves only when the test advances it, after the request has reached the upstream,
+	// and the upstream holds its bounded answer until the test releases it.
 	vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
-	const fake = createToolUpstream({ slowMs: 30_000 });
-	const dispatched = Promise.withResolvers<void>();
+	const arrived = Promise.withResolvers<void>();
+	const release = Promise.withResolvers<void>();
+	const fake = createFake(
+		{
+			async fetch() {
+				arrived.resolve();
+				await release.promise;
+				return new Response(TOOL_FEED);
+			},
+		},
+		{ host: TOOL_UPSTREAM_HOST },
+	);
 	const hub = track(
 		createMockHub({
 			mode: "in-memory",
 			plugin: toolFixture(undefined, { timeoutMs: 5 }),
-			upstreams: [
-				{
-					...fake,
-					fetch(input, init) {
-						dispatched.resolve();
-						return fake.fetch(input, init);
-					},
-				},
-			],
-			secrets: { calendarUrl: `https://${fake.host}/slow.ics` },
+			upstreams: [fake],
+			secrets: { calendarUrl: `https://${fake.host}/feed.ics` },
 		}),
 	);
 	const result = hub.call("kb.lookup", { topic: "test" });
-	await Promise.race([dispatched.promise, result]);
+	await Promise.race([arrived.promise, result]);
 	await vi.advanceTimersByTimeAsync(5);
 	expect(hub.host.denials[0]?.reason).toBe("FETCH_TIMEOUT");
+	release.resolve();
 	expect((await result).isError).toBe(true);
 	expect(fake.recorder.takeRequests()).toHaveLength(1);
 });

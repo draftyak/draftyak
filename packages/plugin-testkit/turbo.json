@@ -1,0 +1,19 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test:heavy": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/sdk/test/definitions-fixtures.ts",
+        "$TURBO_ROOT$/packages/sdk/test/fixtures/provider-progress-stdio.ts",
+        "$TURBO_ROOT$/packages/sdk/test/stdio-readiness.ts",
+        "$TURBO_ROOT$/tools/fetch-node/fetch-node.mjs",
+        "$TURBO_ROOT$/tools/fetch-node/package.json",
+        "$TURBO_ROOT$/tools/fetch-node/versions.json",
+        "$TURBO_ROOT$/tools/fetch-node/images.json",
+        "$TURBO_ROOT$/tools/fetch-node/keys/keys.json",
+        "$TURBO_ROOT$/tools/fetch-node/keys/pubring.kbx"
+      ]
+    }
+  }
+}

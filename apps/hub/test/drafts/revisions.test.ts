@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { NativeDraftRevisions } from "../../src/drafts/revisions.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import { HubStore, type SqlTransaction } from "../../src/store/store.ts";
+import { corruptRevisionStorage } from "./revision-corruption.ts";
 import { revisionFixture } from "./revision-fixture.ts";
 
 const fixtures: Awaited<ReturnType<typeof revisionFixture>>[] = [];
@@ -52,7 +53,7 @@ describe("encrypted immutable native revision storage", () => {
 		expect(next.revisions.current(bound)).toEqual(two);
 		expect(next.revisions.history(bound, 0, 1)).toEqual([one.revision]);
 	});
-	it("uses expectedRev CAS so concurrent append callers retain exactly one next revision", async () => {
+	it("uses expectedRev CAS so queued sequential callers retain exactly one next revision", async () => {
 		const f = await fixture(),
 			input = f.make();
 		f.create(input);
@@ -169,18 +170,16 @@ describe("encrypted immutable native revision storage", () => {
 				content: { ...input.content, body: "two" },
 			}),
 		);
-		f.store.write((tx) => {
-			const row = tx.get<{ payload: string }>(
-				"SELECT payload FROM native_draft_revisions WHERE draft_id=? AND rev=1",
-				[input.draftId],
-			);
+		corruptRevisionStorage(f, (database) => {
+			const row = database
+				.prepare("SELECT payload FROM native_draft_revisions WHERE draft_id=? AND rev=1")
+				.get(input.draftId) as { payload: string } | undefined;
 			if (!row) throw new Error("missing row");
 			const payload = JSON.parse(row.payload);
 			payload.author.id = newId();
-			tx.run("UPDATE native_draft_revisions SET payload=? WHERE draft_id=? AND rev=1", [
-				canonicalize(payload),
-				input.draftId,
-			]);
+			database
+				.prepare("UPDATE native_draft_revisions SET payload=? WHERE draft_id=? AND rev=1")
+				.run(canonicalize(payload), input.draftId);
 		});
 		expect(() => f.revisions.current(f.bind(input))).toThrow("Draft revision unavailable");
 		expect(() =>
@@ -302,18 +301,16 @@ describe("encrypted immutable native revision storage", () => {
 		f.services.push(other);
 		expect(f.revisions.current(f.bind(input))).toEqual(other.current(f.bind(input)));
 		expect(calls).toBe(0);
-		f.store.write((tx) => {
-			const row = tx.get<{ payload: string }>(
-				"SELECT payload FROM native_draft_revisions WHERE draft_id=? AND rev=1",
-				[input.draftId],
-			);
+		corruptRevisionStorage(f, (database) => {
+			const row = database
+				.prepare("SELECT payload FROM native_draft_revisions WHERE draft_id=? AND rev=1")
+				.get(input.draftId) as { payload: string } | undefined;
 			if (!row) throw new Error("missing history");
 			const payload = JSON.parse(row.payload);
 			payload.author.id = newId();
-			tx.run("UPDATE native_draft_revisions SET payload=? WHERE draft_id=? AND rev=1", [
-				canonicalize(payload),
-				input.draftId,
-			]);
+			database
+				.prepare("UPDATE native_draft_revisions SET payload=? WHERE draft_id=? AND rev=1")
+				.run(canonicalize(payload), input.draftId);
 		});
 		expect(() => f.revisions.current(f.bind(input))).toThrow("Draft revision unavailable");
 		expect(calls).toBe(0);

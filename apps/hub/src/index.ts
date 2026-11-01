@@ -9,16 +9,41 @@ export {
 	type AuditInput,
 } from "./audit/chain.ts";
 export {
+	Authorizer,
+	assertAuthorizerStore,
+	type ConfirmationTarget,
+	type RouteGrant,
+} from "./authz/authorizer.ts";
+export { AuthzError, type AuthzErrorCode, deviceApiError } from "./authz/errors.ts";
+export { type NativeDevicePeer, NativeDeviceTls } from "./authz/native-peer.ts";
+export { cliConfirmPinScope, pairConfirmPinScope, revokePinScope } from "./authz/scopes.ts";
+export {
 	type CredentialBinding,
 	type CredentialDescriptor,
 	CredentialError,
 	type CredentialKind,
+	CredentialRefreshError,
+	type CredentialRefreshFailure,
 	type CredentialRequest,
 	type CredentialUse,
 	type CredentialValue,
 	CredentialVault,
 } from "./credentials/vault.ts";
+export {
+	type FrozenRevisionFacts,
+	type FrozenRevisionProof,
+	NativeDraftFreeze,
+} from "./drafts/freeze.ts";
 export { normalizeDraftBody, normalizeDraftContent } from "./drafts/normalize.ts";
+export {
+	type DraftAppend,
+	type DraftBinding,
+	type DraftCreation,
+	DraftRevisionError,
+	type ModelBodyAppend,
+	NativeDraftRevisions,
+	type NativeRevision,
+} from "./drafts/revisions.ts";
 export {
 	EVENT_KINDS,
 	EVENT_MIGRATIONS,
@@ -32,6 +57,29 @@ export {
 	type EventPurgeProgress,
 	type EventRecord,
 } from "./events/log.ts";
+export { SINGLE_OWNER_IDENTITY, singleOwnerIdentity } from "./extensions/free/identity.ts";
+export {
+	ExtensionError,
+	type ExtensionErrorCode,
+	type ExtensionHost,
+	type ExtensionLogEntry,
+	type ExtensionModuleInfo,
+	type ExtensionStartOptions,
+	type ProviderService,
+	type RegisteredProvider,
+	type SendPolicyDecision,
+	startExtensions,
+} from "./extensions/index.ts";
+export {
+	type ApproverConfirmation,
+	type AuthorityState,
+	DEVICE_MIGRATIONS,
+	type DeviceFacts,
+	type DeviceGrant,
+	DeviceRegistry,
+	type RevocationActor,
+} from "./identity/devices.ts";
+export { DevicePairingAuthority } from "./identity/devices-pairing.ts";
 export { HubIdentity } from "./identity/hub-key.ts";
 export {
 	PinError,
@@ -60,12 +108,84 @@ export { WorkError } from "./jobs/values.ts";
 export {
 	type Clock,
 	checkWait,
+	type DeadlineResult,
+	isAbortError,
 	MAX_WAIT_MS,
+	nextTick,
 	systemClock,
+	type TimeoutSignal,
 	type TimerClock,
+	timeoutSignal,
+	withDeadline,
 } from "./kernel/clock.ts";
 export { isKnownSyncedPath } from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
+export {
+	type InitialMaterial,
+	receiveSidecarInput,
+	type SidecarControl,
+	type SidecarFaultCode,
+	type SidecarInput,
+	type SidecarInputCode,
+	SidecarInputError,
+	type SidecarInputOptions,
+	type SidecarInputState,
+	type SidecarResumed,
+	type SidecarStop,
+	type SidecarStopReason,
+} from "./kernel/sidecar-input.ts";
+export {
+	createLifecycleScheduler,
+	type LifecycleSchedulerOptions,
+} from "./lifecycle/scheduler.ts";
+export {
+	type HubSession,
+	HubSessionError,
+	type HubSessionErrorCode,
+	type HubSessionOptions,
+	openHubSession,
+} from "./lifecycle/session.ts";
+export {
+	bindSidecarResumes,
+	type SidecarResumeCode,
+	SidecarResumeError,
+} from "./lifecycle/sidecar-resume.ts";
+export {
+	bindSidecarShutdown,
+	SIDECAR_SHUTDOWN_MS,
+	SidecarShutdownError,
+	type SidecarShutdownErrorCode,
+	type SidecarShutdownOptions,
+	type SidecarShutdownReport,
+} from "./lifecycle/sidecar-stop.ts";
+export {
+	type ClaimPermit,
+	createHubLifecycle,
+	HUB_DRAIN_MS,
+	type HubLifecycle,
+	HubLifecycleError,
+	type HubLifecycleErrorCode,
+	type HubLifecycleSession,
+	type HubState,
+	type HubStopReport,
+	type MaintenanceLease,
+} from "./lifecycle/state.ts";
+export { type NativeStorageOptions, openNativeStorage } from "./native-storage.ts";
+export {
+	SchedulerLoop,
+	type SchedulerLoopError,
+	type SchedulerLoopOptions,
+	type SchedulerStatus,
+	type SchedulerTick,
+	type TickContext,
+	type TickReason,
+} from "./outbox/scheduler-loop.ts";
+export { SchedulerError, type SchedulerErrorCode } from "./outbox/scheduler-ports.ts";
+export {
+	scheduleAt,
+	schedulingAvailable,
+	type WallScheduleInput,
+} from "./outbox/scheduler-time.ts";
 export {
 	type AiCandidateRequest,
 	type AiProfileRegistry,
@@ -111,4 +231,24 @@ export {
 	type ProviderHttpStream,
 	type ProviderStreamSink,
 } from "./plugins/broker/provider-http.ts";
+export {
+	BUNDLED_PLUGIN_IDS,
+	type BundledPluginId,
+	type BundledPluginPin,
+	type InstalledPlugin,
+	openPluginInstaller,
+	PluginInstallError,
+	type PluginInstaller,
+	type PluginInstallerOptions,
+} from "./plugins/installer/index.ts";
+export {
+	openPluginRegistry,
+	PLUGIN_REGISTRY_MIGRATIONS,
+	type PluginRecord,
+	type PluginRecordState,
+	type PluginRegistry,
+	PluginRegistryError,
+	type PluginRegistryErrorCode,
+	type PluginRegistryOptions,
+} from "./plugins/registry/index.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";
