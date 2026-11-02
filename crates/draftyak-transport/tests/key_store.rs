@@ -289,6 +289,201 @@ mod mock_cases {
             assert!(!format!("{error:?}").contains("dytest"));
         }
     }
+
+    #[test]
+    fn forget_identity_is_profile_scoped_and_idempotent_after_reopen() {
+        let backend = TestStore::new();
+        let store = backend.open("dytest-forget-selected").unwrap();
+        store.forget_identity().unwrap();
+        assert!(matches!(store.load_identity(), Err(StoreError::Missing)));
+        drop(store.create_identity([0x31; 32]).unwrap());
+        let (transport, signing) = {
+            let identity = backend
+                .open("dytest-forget-other")
+                .unwrap()
+                .create_identity([0x32; 32])
+                .unwrap();
+            (
+                identity.transport_spki_hash(),
+                identity.signing_public_key(),
+            )
+        };
+
+        store.forget_identity().unwrap();
+        assert!(matches!(store.load_identity(), Err(StoreError::Missing)));
+        let reopened = backend.open("dytest-forget-selected").unwrap();
+        assert!(matches!(reopened.load_identity(), Err(StoreError::Missing)));
+        reopened.forget_identity().unwrap();
+        assert!(backend.record("dytest-forget-selected").unwrap().is_none());
+        assert!(matches!(
+            backend
+                .open("dytest-forget-selected")
+                .unwrap()
+                .load_identity(),
+            Err(StoreError::Missing)
+        ));
+
+        let other = backend
+            .open("dytest-forget-other")
+            .unwrap()
+            .load_identity()
+            .unwrap();
+        assert!(
+            other.transport_spki_hash() == transport,
+            "other transport changed"
+        );
+        assert!(
+            other.signing_public_key() == signing,
+            "other signing key changed"
+        );
+        assert!(other.hub_pin() == [0x32; 32], "other hub pin changed");
+    }
+
+    #[test]
+    fn forget_delete_failure_preserves_identity_and_fixed_diagnostics() {
+        let backend = TestStore::new();
+        let store = backend.open("dytest-forget-delete-failure").unwrap();
+        let (transport, signing) = {
+            let identity = store.create_identity([0x43; 32]).unwrap();
+            (
+                identity.transport_spki_hash(),
+                identity.signing_public_key(),
+            )
+        };
+        backend.fail_writes(true).unwrap();
+        let error = store.forget_identity().unwrap_err();
+        assert!(
+            error == StoreError::WriteFailed,
+            "delete failure must stay typed"
+        );
+        assert!(
+            error.code() == "STORE_WRITE_FAILED",
+            "delete error code changed"
+        );
+        assert!(
+            error.to_string() == "native store write failed",
+            "delete error is not fixed"
+        );
+        assert!(
+            format!("{error:?}") == "WriteFailed",
+            "delete error debug is not fixed"
+        );
+        assert!(
+            format!("{store:?}") == "NativeStore([redacted])",
+            "store is not redacted"
+        );
+        assert!(
+            format!("{backend:?}") == "TestStore([redacted])",
+            "backend is not redacted"
+        );
+        let unchanged = backend
+            .open("dytest-forget-delete-failure")
+            .unwrap()
+            .load_identity()
+            .unwrap();
+        assert!(
+            unchanged.transport_spki_hash() == transport,
+            "failed delete changed transport"
+        );
+        assert!(
+            unchanged.signing_public_key() == signing,
+            "failed delete changed signing key"
+        );
+        assert!(
+            unchanged.hub_pin() == [0x43; 32],
+            "failed delete changed pin"
+        );
+        drop(unchanged);
+        backend.fail_writes(false).unwrap();
+        store.forget_identity().unwrap();
+        assert!(matches!(store.load_identity(), Err(StoreError::Missing)));
+    }
+
+    #[test]
+    fn forget_refuses_a_successful_delete_that_left_the_record_behind() {
+        let backend = TestStore::new();
+        let store = backend.open("dytest-forget-ignored-delete").unwrap();
+        drop(store.create_identity([0x54; 32]).unwrap());
+        let original = backend
+            .record("dytest-forget-ignored-delete")
+            .unwrap()
+            .unwrap();
+        backend.ignore_removes(true).unwrap();
+        assert!(matches!(
+            store.forget_identity(),
+            Err(StoreError::WriteFailed)
+        ));
+        assert!(
+            backend
+                .record("dytest-forget-ignored-delete")
+                .unwrap()
+                .unwrap()
+                .as_slice()
+                == original.as_slice(),
+            "ignored delete changed the stored record"
+        );
+        backend.ignore_removes(false).unwrap();
+        store.forget_identity().unwrap();
+        assert!(matches!(store.load_identity(), Err(StoreError::Missing)));
+    }
+
+    #[test]
+    fn forget_does_not_treat_a_corrupt_remaining_record_as_absence() {
+        let backend = TestStore::new();
+        let bytes = b"DYTEST corrupt identity record";
+        backend
+            .replace_record("dytest-forget-corrupt", bytes)
+            .unwrap();
+        let store = backend.open("dytest-forget-corrupt").unwrap();
+        assert!(matches!(store.load_identity(), Err(StoreError::Corrupt)));
+        backend.ignore_removes(true).unwrap();
+        assert!(matches!(
+            store.forget_identity(),
+            Err(StoreError::WriteFailed)
+        ));
+        assert!(
+            backend
+                .record("dytest-forget-corrupt")
+                .unwrap()
+                .unwrap()
+                .as_slice()
+                == bytes,
+            "corrupt remaining record changed"
+        );
+        backend.ignore_removes(false).unwrap();
+        store.forget_identity().unwrap();
+        assert!(matches!(
+            backend
+                .open("dytest-forget-corrupt")
+                .unwrap()
+                .load_identity(),
+            Err(StoreError::Missing)
+        ));
+    }
+
+    #[test]
+    fn forget_readback_failure_reports_unavailable_without_recreating_identity() {
+        let backend = TestStore::new();
+        let store = backend.open("dytest-forget-readback-failure").unwrap();
+        drop(store.create_identity([0x65; 32]).unwrap());
+        backend.fail_reads(true).unwrap();
+        assert!(matches!(
+            store.forget_identity(),
+            Err(StoreError::Unavailable)
+        ));
+        backend.fail_reads(false).unwrap();
+        assert!(
+            backend
+                .record("dytest-forget-readback-failure")
+                .unwrap()
+                .is_none()
+        );
+        assert!(matches!(store.load_identity(), Err(StoreError::Missing)));
+        let reopened = backend.open("dytest-forget-readback-failure").unwrap();
+        assert!(matches!(reopened.load_identity(), Err(StoreError::Missing)));
+        reopened.forget_identity().unwrap();
+        assert!(matches!(reopened.load_identity(), Err(StoreError::Missing)));
+    }
 }
 
 #[cfg(feature = "mock-store")]
