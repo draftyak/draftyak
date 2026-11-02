@@ -39,7 +39,7 @@ export interface CargoGraphProjection {
 const graphDomain = "draftyak/native-dependency-policy/graph/v1\0";
 const ancestorDomain = "draftyak/native-dependency-policy/ancestor/v1\0";
 const packageKeys =
-	"authors categories default_run dependencies description documentation edition features homepage id keywords license license_file links manifest_path metadata name publish readme repository rust_version source targets version";
+	"authors categories default_run dependencies description documentation edition features hints homepage id keywords license license_file links manifest_path metadata name publish readme repository rust_version source targets version";
 const topKeys =
 	"build_directory metadata packages resolve target_directory version workspace_default_members workspace_members workspace_root";
 
@@ -221,6 +221,12 @@ function project(
 		const node = nodes.get(pkg.id);
 		if (!node) throw new InputError();
 		const data = pkg.data;
+		let hintsRow: ProjectionTuple | undefined;
+		if (Object.hasOwn(data, "hints")) {
+			const hints = object(data.hints, "mostly-unused");
+			if (!Object.hasOwn(hints, "mostly-unused")) throw new InputError();
+			hintsRow = ["hints", [["mostly-unused", boolean(hints["mostly-unused"])]]];
+		}
 		const binding = bindingById.get(pkg.id);
 		const targetBindings = binding
 			? array(binding.targets).map((entry) => object(entry, "name kinds sourcePath relativePath"))
@@ -329,6 +335,8 @@ function project(
 			nullable(data.links),
 			nullable(data.default_run),
 		];
+		// The optional tagged tail preserves existing digests for metadata without hints.
+		if (hintsRow !== undefined) pkg.row = [...pkg.row, hintsRow];
 	}
 	const edgeRows = uniqueRows(edges.map((edge) => edge.row));
 	const forward = new Map<string, Set<string>>();

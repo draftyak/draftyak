@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { type ProjectionTuple, projectCargoGraph } from "../src/cargo-graph.ts";
-import { InputError } from "../src/strict-json.ts";
+import { InputError, parseStrictJson } from "../src/strict-json.ts";
 
 type Row = Record<string, unknown>;
 interface Fixture {
@@ -147,6 +147,92 @@ describe("portable complete Cargo projection", () => {
 				.digest("hex"),
 		);
 		expect(ancestor.digest).not.toBe(result.digest);
+	});
+
+	it("preserves exact legacy payload bytes and digests when hints are omitted", () => {
+		const result = project(fixture());
+		const ancestor = first(result.ancestorDigests);
+		const bytesHash = (value: unknown) =>
+			createHash("sha256").update(JSON.stringify(value)).digest("hex");
+		expect(bytesHash(result.tuplePayload)).toBe(
+			"e05c5499f9af4fe446f5592245819f450e27d800b773cbe14675aa024699c2af",
+		);
+		expect(result.digest).toBe("a21570f10fa9990b791d0bacd8a0c6bbc7e8cba40dcd97be0bc067af4f8919c1");
+		expect(bytesHash(ancestor.tuplePayload)).toBe(
+			"895c2b3f02fa1a74bbcf4c6ba34904929a61598d346ee5622f147449b9bba866",
+		);
+		expect(ancestor.digest).toBe(
+			"6864087eab4b522243d46879f5ecec687ae295f8e8ae6f48f395ad952d507940",
+		);
+		expect(bytesHash(result)).toBe(
+			"95b61d1c77979cc2008be98ecd084bdc950f6903da07ebbf76a8262f9ec836ce",
+		);
+		expect((result.tuplePayload[3] as readonly ProjectionTuple[]).map((row) => row.length)).toEqual(
+			[10, 10, 10, 10],
+		);
+	});
+
+	it("binds absent, false and true hints as distinct graph and ancestor identities", () => {
+		const absent = project(fixture());
+		const hinted = [false, true].map((value) => {
+			const f = fixture();
+			pkg(f, "helper").hints = { "mostly-unused": value };
+			return project(f);
+		});
+		expect(new Set([absent, ...hinted].map((result) => result.digest)).size).toBe(3);
+		expect(
+			new Set([absent, ...hinted].map((result) => first(result.ancestorDigests).digest)).size,
+		).toBe(3);
+		for (const [index, result] of hinted.entries()) {
+			const packageRows = result.tuplePayload[3] as readonly ProjectionTuple[];
+			const row = first(
+				packageRows.filter((entry) => (entry[0] as ProjectionTuple)[1] === "helper"),
+			);
+			expect(row[10]).toEqual(["hints", [["mostly-unused", index === 1]]]);
+		}
+	});
+
+	it("binds an upstream hint only into the affected ancestor closure", () => {
+		const f = fixture();
+		f.affected.push({ source: registry, name: "safe", version: "1.0.0" });
+		const before = project(f);
+		pkg(f, "helper").hints = { "mostly-unused": true };
+		const after = project(f);
+		const ancestor = (result: ReturnType<typeof project>, name: string) =>
+			first(result.ancestorDigests.filter((entry) => entry.target.name === name));
+		expect(after.digest).not.toBe(before.digest);
+		expect(ancestor(after, "glib").digest).not.toBe(ancestor(before, "glib").digest);
+		expect(ancestor(after, "safe")).toEqual(ancestor(before, "safe"));
+	});
+
+	it("accepts supported hints from strict JSON records", () => {
+		const f = fixture();
+		pkg(f, "helper").hints = { "mostly-unused": false };
+		const expected = project(f);
+		f.metadata = parseStrictJson(Buffer.from(JSON.stringify(f.metadata))) as Row;
+		expect(project(f)).toEqual(expected);
+	});
+
+	it.each([
+		{ name: "null object", hints: null },
+		{ name: "undefined object", hints: undefined },
+		{ name: "array object", hints: [] },
+		{ name: "boolean object", hints: false },
+		{ name: "string object", hints: "unused" },
+		{ name: "empty object", hints: {} },
+		{ name: "unknown key", hints: { future: true } },
+		{ name: "extra key", hints: { "mostly-unused": false, future: true } },
+		{ name: "underscore alias", hints: { mostly_unused: true } },
+		{ name: "null value", hints: { "mostly-unused": null } },
+		{ name: "undefined value", hints: { "mostly-unused": undefined } },
+		{ name: "string value", hints: { "mostly-unused": "false" } },
+		{ name: "numeric value", hints: { "mostly-unused": 0 } },
+		{ name: "array value", hints: { "mostly-unused": [] } },
+		{ name: "object value", hints: { "mostly-unused": {} } },
+	])("refuses Cargo hints: $name", ({ hints }) => {
+		const f = fixture();
+		pkg(f, "helper").hints = hints;
+		expect(() => project(f)).toThrow(InputError);
 	});
 
 	it("is invariant to row/property order and checked workspace relocation", () => {
