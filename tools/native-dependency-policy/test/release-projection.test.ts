@@ -16,6 +16,11 @@ function release(version: string) {
 		yanked: version.includes("beta"),
 		checksum: "a".repeat(64),
 		license: "MIT OR Apache-2.0" as string | null,
+		features: {
+			default: ["std", "dep:synthetic-dependency"],
+			std: [],
+			format: ["synthetic-dependency?/format"],
+		} as Record<string, string[]>,
 		dependencies: [
 			{
 				name: "synthetic-dependency",
@@ -90,6 +95,125 @@ function normalize(crates: ReleaseBasis["crates"], observedAt = epoch + 1) {
 }
 
 describe("closed technical release join", () => {
+	it("preserves and freezes complete package feature maps independently of dependency features", () => {
+		const input = fixture();
+		const result = projectReleaseCrates(input);
+		const output = result[0]?.versions[0];
+		expect(output?.features).toEqual({
+			default: ["dep:synthetic-dependency", "std"],
+			format: ["synthetic-dependency?/format"],
+			std: [],
+		});
+		expect(output?.dependencies[0]?.features).toEqual(["alpha", "beta"]);
+		expect(Object.isFrozen(output?.features)).toBe(true);
+		expect(Object.isFrozen(output?.features.default)).toBe(true);
+		first(input, "api").features.default?.push("later-input-change");
+		expect(output?.features.default).toEqual(["dep:synthetic-dependency", "std"]);
+	});
+	it("joins package feature definitions as literal sets and binds every map change", () => {
+		const input = fixture();
+		for (const crate of input.index)
+			for (const row of crate.versions)
+				row.features = Object.fromEntries(
+					Object.entries(row.features)
+						.reverse()
+						.map(([key, values]) => [key, [...values].reverse()]),
+				);
+		expect(projectReleaseCrates(input)).toEqual(projectReleaseCrates(fixture()));
+		const original = normalize(projectReleaseCrates(fixture()));
+		const maps: Record<string, string[]>[] = [
+			{},
+			{ default: ["std"], std: [], format: ["synthetic-dependency?/format"] },
+			{ default: ["std", "dep:synthetic-dependency"], std: [], added: [] },
+		];
+		for (const map of maps) {
+			const changed = fixture();
+			first(changed).features = structuredClone(map);
+			refusal(changed);
+			first(changed, "api").features = structuredClone(map);
+			const next = normalize(projectReleaseCrates(changed));
+			expect(next.releasesDigest).not.toBe(original.releasesDigest);
+			expect(next.basisDigest).toBe(original.basisDigest);
+		}
+	});
+	it.each([
+		undefined,
+		null,
+		[],
+		{ "": [] },
+		{ default: [""] },
+		{ default: ["std", "std"] },
+		{ default: ["std\n"] },
+		{ default: ["\ud800"] },
+		{ default: {} },
+		{ default: ["a".repeat(65_537)] },
+		{ ["a".repeat(65_537)]: [] },
+		{ default: new Array(100_001).fill("std") },
+	])("refuses malformed package feature maps", (map) => {
+		const input = fixture();
+		Object.assign(first(input), { features: map });
+		refusal(input);
+	});
+	it("refuses effectful or excessive feature maps before any property trap", () => {
+		let reads = 0;
+		const accessor = Object.defineProperty({}, "default", {
+			get() {
+				reads++;
+				return [];
+			},
+		});
+		const proxy = new Proxy(
+			{},
+			{
+				ownKeys() {
+					reads++;
+					return [];
+				},
+				getPrototypeOf() {
+					reads++;
+					return null;
+				},
+			},
+		);
+		const symbol = { [Symbol("feature")]: [] };
+		for (const map of [
+			accessor,
+			proxy,
+			symbol,
+			Object.create({ inherited: [] }),
+			Object.fromEntries(Array.from({ length: 100_001 }, (_, i) => [`feature${i}`, []])),
+		]) {
+			const input = fixture();
+			Object.assign(first(input), { features: map });
+			refusal(input);
+		}
+		expect(reads).toBe(0);
+		const missing = fixture();
+		Reflect.deleteProperty(first(missing), "features");
+		refusal(missing);
+	});
+	it("retains literal special feature names as frozen own data without prototype effects", () => {
+		const input = fixture();
+		for (const side of ["api", "index"] as const) {
+			const map: Record<string, string[]> = Object.create(null);
+			Object.defineProperty(map, "__proto__", {
+				value: ["dep:synthetic-dependency"],
+				enumerable: true,
+			});
+			Object.defineProperty(map, "constructor", { value: [], enumerable: true });
+			map["unicode-α"] = ["synthetic-dependency?/format"];
+			first(input, side).features = map;
+		}
+		const output = projectReleaseCrates(input)[0]?.versions[0]?.features;
+		expect(Object.getPrototypeOf(output)).toBe(null);
+		expect(Object.keys(output ?? {})).toEqual(["__proto__", "constructor", "unicode-α"]);
+		const special = output && Object.getOwnPropertyDescriptor(output, "__proto__")?.value;
+		expect(special).toEqual(["dep:synthetic-dependency"]);
+		expect(Object.isFrozen(special)).toBe(true);
+		expect(normalize(projectReleaseCrates(input)).releasesDigest).not.toBe(
+			normalize(projectReleaseCrates(fixture())).releasesDigest,
+		);
+	});
 	it("preserves every supplied version, prerelease and yank as accepted basis payload", () => {
 		const input = fixture();
 		const before = structuredClone(input);
@@ -140,6 +264,7 @@ describe("closed technical release join", () => {
 					"checksum",
 					"createdAt",
 					"dependencies",
+					"features",
 					"license",
 					"version",
 					"yanked",

@@ -89,8 +89,8 @@ function list(value: unknown, budget: Budget): unknown[] {
 	}
 	return result;
 }
-function scalar(value: unknown, budget: Budget): string {
-	budget.touch();
+function scalar(value: unknown, budget: Budget, countNode = true): string {
+	if (countNode) budget.touch();
 	if (typeof value !== "string") refuse();
 	budget.text(value);
 	for (let index = 0; index < value.length; index++) {
@@ -147,6 +147,45 @@ function features(value: unknown, budget: Budget): string[] {
 		list(value, budget).map((item) => token(item, budget)),
 		(item) => item,
 	);
+}
+function featureText(value: unknown, budget: Budget, countNode = true): string {
+	const text = scalar(value, budget, countNode);
+	if (text.length === 0) refuse();
+	for (let index = 0; index < text.length; index++) {
+		const code = text.charCodeAt(index);
+		if (code < 32 || code === 127) refuse();
+	}
+	return text;
+}
+function packageFeatures(
+	value: unknown,
+	budget: Budget,
+): Readonly<Record<string, readonly string[]>> {
+	budget.touch();
+	if (
+		value === null ||
+		typeof value !== "object" ||
+		types.isProxy(value) ||
+		Array.isArray(value) ||
+		![null, Object.prototype].includes(Object.getPrototypeOf(value))
+	)
+		refuse();
+	const keys = Reflect.ownKeys(value);
+	if (keys.length > MAX_ROWS || keys.some((key) => typeof key !== "string")) refuse();
+	const result: Record<string, readonly string[]> = Object.create(null);
+	for (const key of (keys as string[]).sort(compare)) {
+		// As for other JSON object keys, charge its bytes but not a second logical node.
+		const name = featureText(key, budget, false);
+		const descriptor = Object.getOwnPropertyDescriptor(value, key);
+		if (!descriptor || !("value" in descriptor)) refuse();
+		result[name] = Object.freeze(
+			uniqueRows(
+				list(descriptor.value, budget).map((item) => featureText(item, budget)),
+				(item) => item,
+			),
+		);
+	}
+	return Object.freeze(result);
 }
 function requirement(value: unknown, budget: Budget): string {
 	const text = scalar(value, budget);
@@ -246,7 +285,16 @@ function publication(value: unknown, epoch: number, budget: Budget): string {
 function release(value: unknown, budget: Budget): TechnicalReleaseVersion {
 	const row = object(
 		value,
-		["version", "createdAt", "publishedAt", "yanked", "checksum", "license", "dependencies"],
+		[
+			"version",
+			"createdAt",
+			"publishedAt",
+			"yanked",
+			"checksum",
+			"license",
+			"features",
+			"dependencies",
+		],
 		budget,
 	);
 	const createdAt = integer(row.createdAt, budget);
@@ -260,6 +308,7 @@ function release(value: unknown, budget: Budget): TechnicalReleaseVersion {
 		yanked: boolean(row.yanked, budget),
 		checksum: checked(row.checksum, /^[a-f0-9]{64}$(?![\s\S])/, budget),
 		license,
+		features: packageFeatures(row.features, budget),
 		dependencies: Object.freeze(
 			uniqueRows(
 				list(row.dependencies, budget).map((item) => dependency(item, budget)),
