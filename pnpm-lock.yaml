@@ -385,6 +385,8 @@ importers:
 
   tools/fetch-node: {}
 
+  tools/transport-tests: {}
+
   tools/vendor-guard: {}
 
   tools/verify: {}
