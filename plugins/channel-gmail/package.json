@@ -1,0 +1,36 @@
+{
+  "name": "@draftyak/channel-gmail",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./history/page": "./src/history/page.ts",
+    "./history/reduce": "./src/history/reduce.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      "./history/page": {
+        "types": "./dist/history/page.d.mts",
+        "default": "./dist/history/page.mjs"
+      },
+      "./history/reduce": {
+        "types": "./dist/history/reduce.d.mts",
+        "default": "./dist/history/reduce.mjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "build": "tsdown"
+  },
+  "dependencies": {
+    "@draftyak/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "tsdown": "0.23.1"
+  }
+}
