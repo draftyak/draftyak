@@ -29,6 +29,9 @@ const fake = vi.hoisted(() => ({
 	afterRead: undefined as (() => void) | undefined,
 	flags: [] as number[],
 	opened: [] as string[],
+	closed: [] as string[],
+	closeAttempts: [] as number[],
+	closeFailure: undefined as "before" | "after" | undefined,
 }));
 
 vi.mock("node:fs", async (original) => {
@@ -66,7 +69,14 @@ vi.mock("node:fs", async (original) => {
 			return fd;
 		},
 		closeSync: (fd: number) => {
+			fake.closeAttempts.push(fd);
+			const file = fake.handles.get(fd);
+			if (file !== undefined) fake.closed.push(file);
+			if (file === EVIDENCE && fake.closeFailure === "before")
+				throw new Error("DYTEST evidence close failed before release");
 			expect(fake.handles.delete(fd)).toBe(true);
+			if (file === EVIDENCE && fake.closeFailure === "after")
+				throw new Error("DYTEST evidence close failed after release");
 		},
 		fsyncSync: (fd: number) => {
 			held(fd);
@@ -141,6 +151,9 @@ beforeEach(() => {
 	fake.handles.clear();
 	fake.flags = [];
 	fake.opened = [];
+	fake.closed = [];
+	fake.closeAttempts = [];
+	fake.closeFailure = undefined;
 	fake.writeLimit = Infinity;
 	fake.readLimit = Infinity;
 	fake.afterRead = undefined;
@@ -363,6 +376,40 @@ describe("typed producer and exact evidence binding", () => {
 		expect(bytes().toString()).not.toContain('"artifact"');
 		expect(fake.handles.size).toBe(0);
 	});
+	it.each([
+		["before", false],
+		["after", false],
+		["before", true],
+		["after", true],
+	] as const)(
+		"normalizes evidence close failure %s release after a prior refusal=%s without retrying",
+		async (failure, priorRefusal) => {
+			const original = Buffer.from(data(EVIDENCE).data);
+			await withSessionControl(ENV, EVIDENCE, async (control) => {
+				control?.cue("send");
+				control?.cue("uninstall");
+				control?.cue("delete");
+				const prefix = bytes();
+				fake.closeFailure = failure;
+				if (priorRefusal)
+					fake.afterRead = () => {
+						data(EVIDENCE).changed++;
+					};
+				expect(() => control?.artifact(EVIDENCE)).toThrow(/^S6 session control refused$/);
+				expect(bytes()).toEqual(prefix);
+				expect(() => control?.cue("send")).toThrow(/^S6 session control refused$/);
+				expect(() => control?.artifact(EVIDENCE)).toThrow(/^S6 session control refused$/);
+				control?.close();
+			});
+			expect(fake.closed.filter((file) => file === FILE)).toHaveLength(1);
+			expect(fake.closed.filter((file) => file === EVIDENCE)).toHaveLength(1);
+			expect(fake.closeAttempts).toHaveLength(2);
+			expect([...fake.handles.values()]).toEqual(failure === "before" ? [EVIDENCE] : []);
+			expect(fake.opened.filter((file) => file === EVIDENCE)).toHaveLength(1);
+			expect(data(EVIDENCE).data).toEqual(original);
+			expect(bytes().toString()).not.toContain('"artifact"');
+		},
+	);
 	it("closes on body failure and never invents an artifact", async () => {
 		await expect(
 			withSessionControl(ENV, EVIDENCE, async (control) => {

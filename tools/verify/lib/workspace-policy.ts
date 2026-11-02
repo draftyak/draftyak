@@ -110,8 +110,19 @@ export async function namedFiles(
 ): Promise<string[]> {
 	if (!basename || /[/\\\0*?[\]]/.test(basename)) throw new Error("invalid basename");
 	root = path.resolve(root);
-	const equal = (name: string): boolean =>
-		insensitive ? name.toLowerCase() === basename.toLowerCase() : name === basename;
+	const wanted = insensitive ? basename.toLowerCase() : basename;
+	const equal = (name: string): boolean => (insensitive ? name.toLowerCase() : name) === wanted;
+	const relativeName = (directory: string, name: string): string =>
+		directory === "." ||
+		directory.endsWith("/") ||
+		name === "" ||
+		name === "." ||
+		name === ".." ||
+		name.includes("/")
+			? path.posix.join(directory, name)
+			: directory === ""
+				? name
+				: `${directory}/${name}`;
 	const attempt = async (target: string): Promise<readonly Entry[] | undefined> => {
 		try {
 			return await readDirectory(target);
@@ -124,10 +135,14 @@ export async function namedFiles(
 		missingDirectory(target, readDirectory, statPath, root);
 	// Other checkouts add and remove folders mid-walk. The root must list; below it, a vanished
 	// folder is skipped and any other failed folder is listed once more before validation is refused.
-	const list = async (dir: string): Promise<readonly Entry[]> => {
-		const target = path.join(root, dir);
+	const list = async (dir: string, target: string): Promise<readonly Entry[]> => {
 		if (dir === "") return readDirectory(target);
-		const first = await attempt(target);
+		let first: readonly Entry[] | undefined;
+		try {
+			first = await readDirectory(target);
+		} catch {
+			// Failed reads retain the fresh disappearance proof and bounded retry below.
+		}
 		if (first) return first;
 		if (await gone(target)) return [];
 		await sleep(RETRY_DELAY_MS);
@@ -147,22 +162,48 @@ export async function namedFiles(
 		if (await gone(target)) return [];
 		throw new Error("file-name inventory failed");
 	};
-	type PendingDirectory = { readonly directory: string; next?: PendingDirectory };
-	let first: PendingDirectory | undefined = { directory: "" };
+	type PendingDirectory = {
+		readonly directory: string;
+		readonly target: string;
+		readonly plain: boolean;
+		next?: PendingDirectory;
+	};
+	let first: PendingDirectory | undefined = { directory: "", target: root, plain: true };
 	let last: PendingDirectory | undefined = first;
 	const found: string[] = [];
 	await new Promise<void>((resolve, reject) => {
 		let active = 0;
 		let failed = false;
-		const visit = async (directory: string): Promise<void> => {
+		const visit = async (
+			directory: string,
+			absolute: string,
+			plainAncestry: boolean,
+		): Promise<void> => {
 			try {
-				const children = await list(directory);
+				const children = await list(directory, absolute);
 				if (failed) return;
 				for (const entry of children) {
-					const relative = path.posix.join(directory, entry.name);
-					if (equal(entry.name)) found.push(relative);
-					if (entry.isDirectory() && !entry.isSymbolicLink()) {
-						const pending: PendingDirectory = { directory: relative };
+					const name = entry.name;
+					if (typeof name !== "string") throw inventoryFailed();
+					const matches = equal(name);
+					const descend = entry.isDirectory() && !entry.isSymbolicLink();
+					// Ordinary files need no relative path; keep normalization for synthetic edge names.
+					if (matches || descend) {
+						const relative = relativeName(directory, name);
+						if (matches) found.push(relative);
+						if (!descend) continue;
+						// Ordinary components can extend an already-normalized native target. Keep the
+						// original whole-path normalization for every unusual component and descendant.
+						const plain =
+							plainAncestry &&
+							name !== "" &&
+							name !== "." &&
+							name !== ".." &&
+							!/[\\/:\0]/.test(name);
+						const target = plain
+							? `${absolute}${absolute.endsWith(path.sep) ? "" : path.sep}${name}`
+							: path.join(root, relative);
+						const pending: PendingDirectory = { directory: relative, target, plain };
 						if (last) last.next = pending;
 						else first = pending;
 						last = pending;
@@ -184,7 +225,8 @@ export async function namedFiles(
 				first = current.next;
 				if (!first) last = undefined;
 				active += 1;
-				void visit(current.directory);
+				// Passing only values prevents a slow read from retaining a dequeued node's tail.
+				void visit(current.directory, current.target, current.plain);
 			}
 			// Stop admitting work on failure, but drain every read already in flight before settling.
 			if (active === 0) {
