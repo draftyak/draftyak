@@ -157,7 +157,9 @@ describe("compatible provider SDK mount", () => {
 		const io = await mounted(fetch);
 		try {
 			const listed = (await io.begin("tools/list").response).result?.tools as { name: string }[];
-			expect(listed.map((tool) => tool.name).sort()).toEqual(Object.keys(aiProviderV1.tools).sort());
+			expect(listed.map((tool) => tool.name).sort()).toEqual(
+				Object.keys(aiProviderV1.tools).sort(),
+			);
 			expect(success(await io.call("ai_describe"))).toEqual(core().describe());
 			expect(fetch).not.toHaveBeenCalled();
 		} finally {
@@ -170,22 +172,19 @@ describe("compatible provider SDK mount", () => {
 		async (format) => {
 			const provider = core(format);
 			const seen: HostFetchParams[] = [];
-			const io = await mounted(
-				(method, params, signal) => {
-					expect(method).toBe("host/fetch");
-					expect(signal.aborted).toBe(false);
-					const request = params as HostFetchParams;
-					seen.push(request);
-					return request.method === "GET"
-						? inline(
-								JSON.stringify(
-									format === "ollama" ? { models: [{ name: MODEL }] } : { data: [{ id: MODEL }] },
-								),
-							)
-						: inline(completion(provider).body);
-				},
-				format,
-			);
+			const io = await mounted((method, params, signal) => {
+				expect(method).toBe("host/fetch");
+				expect(signal.aborted).toBe(false);
+				const request = params as HostFetchParams;
+				seen.push(request);
+				return request.method === "GET"
+					? inline(
+							JSON.stringify(
+								format === "ollama" ? { models: [{ name: MODEL }] } : { data: [{ id: MODEL }] },
+							),
+						)
+					: inline(completion(provider).body);
+			}, format);
 			try {
 				expect(success(await io.call("ai_models_list"))).toEqual({
 					models: [{ id: MODEL, fallbacks: false }],
@@ -296,7 +295,9 @@ describe("compatible provider SDK mount", () => {
 		{ status: 500, code: "TRANSIENT" },
 	])("returns only canonical $code for HTTP $status", async ({ status, code, retryAfterMs }) => {
 		const fetch = vi.fn(() =>
-			inline(JSON.stringify({ error: { message: PRIVATE_DETAIL } }), status, [["retry-after", "2"]]),
+			inline(JSON.stringify({ error: { message: PRIVATE_DETAIL } }), status, [
+				["retry-after", "2"],
+			]),
 		);
 		const io = await mounted(fetch);
 		try {
@@ -309,9 +310,11 @@ describe("compatible provider SDK mount", () => {
 
 	it("preserves quota and retry hints without exposing provider error text", async () => {
 		const io = await mounted(() =>
-			inline(JSON.stringify({ error: { code: "insufficient_quota", message: PRIVATE_DETAIL } }), 429, [
-				["retry-after", "2"],
-			]),
+			inline(
+				JSON.stringify({ error: { code: "insufficient_quota", message: PRIVATE_DETAIL } }),
+				429,
+				[["retry-after", "2"]],
+			),
 		);
 		try {
 			failure(await io.call("ai_draft_generate", REQUEST), "QUOTA_EXCEEDED", 2000);
@@ -324,60 +327,73 @@ describe("compatible provider SDK mount", () => {
 		{ kind: "denied", code: "PERMISSION_DENIED" },
 		{ kind: "timeout", code: "TRANSIENT" },
 		{ kind: "untrusted", code: "TRANSIENT" },
-	])("normalizes $kind broker failures without reading arbitrary error details", async ({ kind, code }) => {
-		const io = await mounted(() => {
-			if (kind !== "untrusted") throw new HostError(kind === "denied" ? "DENIED" : "TIMEOUT");
-			throw new Error(PRIVATE_DETAIL);
-		});
-		try {
-			failure(await io.call("ai_draft_generate", REQUEST), code);
-		} finally {
-			await io.close();
-		}
-	});
-
-	it.each([0, 1])("bounds the aggregate completed response at MAX_RESPONSE_BYTES + %i", async (extra) => {
-		const provider = core();
-		const base = JSON.parse(Buffer.from(completion(provider).body).toString("utf8"));
-		const empty = JSON.stringify({ ...base, padding: "" });
-		const body = Buffer.from(
-			JSON.stringify({
-				...base,
-				padding: "x".repeat(MAX_RESPONSE_BYTES + extra - Buffer.byteLength(empty)),
-			}),
-		);
-		expect(body.byteLength).toBe(MAX_RESPONSE_BYTES + extra);
-		let calls = 0;
-		const io = await mounted(() => {
-			calls++;
-			let sequence = 0;
-			for (let offset = 0; offset < body.byteLength; offset += 65_536) {
-				const chunk = body.subarray(offset, offset + 65_536);
-				io.host.notify({
-					method: "host/stream.chunk",
-					params: {
-						streamId: "bounded-completion",
-						sequence: sequence++,
-						base64: chunk.toString("base64url"),
-						done: offset + chunk.byteLength === body.byteLength,
-					},
-				});
+	])(
+		"normalizes $kind broker failures without reading arbitrary error details",
+		async ({ kind, code }) => {
+			const io = await mounted(() => {
+				if (kind !== "untrusted") throw new HostError(kind === "denied" ? "DENIED" : "TIMEOUT");
+				throw new Error(PRIVATE_DETAIL);
+			});
+			try {
+				failure(await io.call("ai_draft_generate", REQUEST), code);
+			} finally {
+				await io.close();
 			}
-			return {
-				status: 200,
-				headers: [["content-type", "application/json"]],
-				streamId: "bounded-completion",
-			};
-		});
-		try {
-			const reply = await io.call("ai_draft_generate", REQUEST);
-			if (extra === 0) expect(success(reply)).toMatchObject({ kind: "draft", output: OUTPUT });
-			else failure(reply, "TRANSIENT");
-			expect(calls).toBe(1);
-		} finally {
-			await io.close();
-		}
-	});
+		},
+	);
+
+	it.each([0, 1])(
+		"bounds the aggregate completed response at MAX_RESPONSE_BYTES + %i",
+		async (extra) => {
+			const provider = core();
+			const base = JSON.parse(Buffer.from(completion(provider).body).toString("utf8"));
+			const empty = JSON.stringify({ ...base, padding: "" });
+			const body = Buffer.from(
+				JSON.stringify({
+					...base,
+					padding: "x".repeat(MAX_RESPONSE_BYTES + extra - Buffer.byteLength(empty)),
+				}),
+			);
+			expect(body.byteLength).toBe(MAX_RESPONSE_BYTES + extra);
+			let calls = 0;
+			let emittedBytes = 0;
+			let emittedChunks = 0;
+			const io = await mounted(() => {
+				calls++;
+				let sequence = 0;
+				for (let offset = 0; offset < body.byteLength; offset += 65_536) {
+					const chunk = body.subarray(offset, offset + 65_536);
+					io.host.notify({
+						jsonrpc: "2.0",
+						method: "host/stream.chunk",
+						params: {
+							streamId: "bounded-completion",
+							sequence: sequence++,
+							base64: chunk.toString("base64url"),
+							done: offset + chunk.byteLength === body.byteLength,
+						},
+					});
+					emittedBytes += chunk.byteLength;
+					emittedChunks++;
+				}
+				return {
+					status: 200,
+					headers: [["content-type", "application/json"]],
+					streamId: "bounded-completion",
+				};
+			});
+			try {
+				const reply = await io.call("ai_draft_generate", REQUEST);
+				expect(emittedBytes).toBe(body.byteLength);
+				expect(emittedChunks).toBe(extra === 0 ? 4 : 5);
+				if (extra === 0) expect(success(reply)).toMatchObject({ kind: "draft", output: OUTPUT });
+				else failure(reply, "TRANSIENT");
+				expect(calls).toBe(1);
+			} finally {
+				await io.close();
+			}
+		},
+	);
 
 	it("propagates MCP cancellation to the actual SDK host signal while broker work unwinds", async () => {
 		const entered = Promise.withResolvers<AbortSignal>();

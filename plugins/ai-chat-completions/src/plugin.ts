@@ -22,9 +22,7 @@ function pluginError(error: unknown): PluginError {
 			return new PluginError("TRANSIENT");
 		default:
 			return new PluginError(normalized.code, {
-				...(normalized.retryAfterMs === undefined
-					? {}
-					: { retryAfterMs: normalized.retryAfterMs }),
+				...(normalized.retryAfterMs === undefined ? {} : { retryAfterMs: normalized.retryAfterMs }),
 			});
 	}
 }
@@ -103,12 +101,14 @@ function transport(context: PluginContext): CompatibleTransport {
 			}
 			const body = await readBody(response, signal);
 			const retryAfter = response.headers.get("retry-after");
+			const headers: Record<string, string> = {};
+			if (retryAfter !== null) headers["retry-after"] = retryAfter;
 			return {
 				status: response.status,
 				// SDK host responses omit URL metadata; the broker owns redirect refusal.
 				url: request.url,
 				contentType: response.headers.get("content-type") ?? "",
-				headers: retryAfter === null ? {} : { "retry-after": retryAfter },
+				headers,
 				body,
 			};
 		} catch (error) {
