@@ -497,6 +497,7 @@ describe("redaction", () => {
 			"identityProvider",
 			"extensions",
 			"plugins",
+			"accountApprovals",
 			"close",
 		]);
 		expect(Object.isFrozen(session)).toBe(true);

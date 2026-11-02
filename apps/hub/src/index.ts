@@ -102,6 +102,7 @@ export {
 } from "./identity/devices.ts";
 export { DevicePairingAuthority } from "./identity/devices-pairing.ts";
 export { HubIdentity } from "./identity/hub-key.ts";
+export type { NativeAccountApprovals } from "./identity/native-account-approvals.ts";
 export {
 	PinError,
 	type PinInitialization,
