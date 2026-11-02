@@ -3,15 +3,18 @@ import { canonicalize } from "@draftyak/protocol/jcs";
 import { Sha256Hex, Ulid, UtcMs } from "@draftyak/protocol/scalars";
 import { CurrentSendSnapshotV1, contentHash } from "@draftyak/protocol/snapshot";
 import { newId } from "../kernel/ids.ts";
-import type { SqlReader, SqlTransaction } from "../store/store.ts";
+import type { SqlTransaction } from "../store/store.ts";
 import {
 	captureDraftBinding,
 	captureDraftData,
 	type DraftBinding,
+	type DraftLockAction,
 	draftRecord,
 	immutableDraftData,
+	LOCK_LINK_SQL,
 	NativeDraftRevisions,
 	type NativeRevision,
+	OUTBOX_USED_SQL,
 	revisionUnavailable,
 } from "./revisions.ts";
 
@@ -36,6 +39,7 @@ interface FreezePayload {
 	readonly status: "active" | "released" | "consumed";
 	readonly createdAt: number;
 	readonly updatedAt: number;
+	readonly auditEventMac: string;
 }
 interface FreezeRow {
 	id: string;
@@ -117,7 +121,7 @@ export class NativeDraftFreeze {
 			snapshot: payload.snapshot,
 		});
 	}
-	#load(db: SqlReader, id: string): { row: FreezeRow; payload: FreezePayload } {
+	#load(db: SqlTransaction, id: string): { row: FreezeRow; payload: FreezePayload } {
 		if (!Ulid.safeParse(id).success) throw revisionUnavailable();
 		const row = db.get<FreezeRow>(SELECT, [id]);
 		if (
@@ -140,6 +144,7 @@ export class NativeDraftFreeze {
 				"status",
 				"createdAt",
 				"updatedAt",
+				"auditEventMac",
 			]),
 			binding = captureDraftBinding(data.binding as DraftBinding),
 			snapshot = CurrentSendSnapshotV1.parse(data.snapshot);
@@ -147,6 +152,7 @@ export class NativeDraftFreeze {
 			canonicalize(data) !== row.payload ||
 			!Sha256Hex.safeParse(data.revisionContentHash).success ||
 			!Sha256Hex.safeParse(data.flagsHash).success ||
+			!Sha256Hex.safeParse(data.auditEventMac).success ||
 			!["active", "released", "consumed"].includes(data.status as string) ||
 			!UtcMs.safeParse(data.createdAt).success ||
 			!UtcMs.safeParse(data.updatedAt).success ||
@@ -155,11 +161,12 @@ export class NativeDraftFreeze {
 			row.outbox_id !== snapshot.outbox
 		)
 			throw revisionUnavailable();
-		const latest = db.get<{ seq: number }>(
-			"SELECT seq FROM main.audit_events WHERE refs=? ORDER BY seq DESC LIMIT 1",
-			[canonicalize({ draft: row.draft_id, freeze: row.id, outbox: row.outbox_id })],
-		);
-		if (latest?.seq !== row.audit_seq) throw revisionUnavailable();
+		const latest = db.get<{ seq: number; mac: string }>(LOCK_LINK_SQL, [
+			canonicalize({ draft: row.draft_id, freeze: row.id, outbox: row.outbox_id }),
+		]);
+		if (latest?.seq !== row.audit_seq || latest.mac !== data.auditEventMac)
+			throw revisionUnavailable();
+		methods.assertTransaction.call(this.#revisions, db, row.audit_seq);
 		return {
 			row,
 			payload: {
@@ -170,25 +177,35 @@ export class NativeDraftFreeze {
 				status: data.status as FreezePayload["status"],
 				createdAt: Number(data.createdAt),
 				updatedAt: Number(data.updatedAt),
+				auditEventMac: data.auditEventMac as string,
 			},
 		};
 	}
-	#save(tx: SqlTransaction, id: string, payload: FreezePayload, insert: boolean): void {
+	#save(
+		tx: SqlTransaction,
+		id: string,
+		payload: Omit<FreezePayload, "auditEventMac">,
+		insert: boolean,
+	): void {
 		methods.assertTransaction.call(this.#revisions, tx);
-		const audit_seq = methods.auditInTransaction.call(
-				this.#revisions,
-				tx,
-				`draft.freeze_${payload.status}`,
-				{ draft: payload.binding.draftId, freeze: id, outbox: payload.snapshot.outbox },
-			),
+		const action: DraftLockAction = `draft.freeze_${payload.status}`;
+		if (Buffer.byteLength(canonicalize({ ...payload, auditEventMac: "0".repeat(64) })) > 2097152)
+			throw revisionUnavailable();
+		const receipt = methods.auditInTransaction.call(this.#revisions, tx, action, {
+				draft: payload.binding.draftId,
+				freeze: id,
+				outbox: payload.snapshot.outbox,
+			}),
+			audit_seq = receipt.seq,
+			text = canonicalize({ ...payload, auditEventMac: receipt.mac }),
 			row = {
 				id,
 				draft_id: payload.binding.draftId,
 				outbox_id: payload.snapshot.outbox,
-				payload: canonicalize(payload),
+				payload: text,
 				audit_seq,
 			};
-		if (Buffer.byteLength(row.payload) > 2097152) throw revisionUnavailable();
+		if (Buffer.byteLength(text) > 2097152) throw revisionUnavailable();
 		const mac = methods.sign.call(this.#revisions, "freeze", row);
 		if (insert)
 			tx.run(
@@ -247,12 +264,7 @@ export class NativeDraftFreeze {
 			)
 				throw revisionUnavailable();
 			matches(current, bound, snapshot);
-			if (
-				tx.get("SELECT 1 FROM main.audit_events WHERE json_extract(refs,'$.outbox')=? LIMIT 1", [
-					snapshot.outbox,
-				])
-			)
-				throw revisionUnavailable();
+			if (tx.get(OUTBOX_USED_SQL, [snapshot.outbox])) throw revisionUnavailable();
 			const observedAt = methods.now.call(this.#revisions),
 				at = Math.max(observedAt, current.draft.updatedAt, current.revision.createdAt),
 				id = newId(at);
@@ -260,7 +272,7 @@ export class NativeDraftFreeze {
 				methods.auditInTransaction.call(this.#revisions, tx, "draft.clock_skew", {
 					clockSkewDraft: bound.draftId,
 				});
-			const locked = methods.setLockInTransaction.call(
+			const prepared = methods.prepareLockInTransaction.call(
 				this.#revisions,
 				tx,
 				bound,
@@ -278,11 +290,12 @@ export class NativeDraftFreeze {
 					revisionContentHash: current.revision.contentSha256,
 					flagsHash: current.flagsHash,
 					status: "active",
-					createdAt: locked.draft.updatedAt,
-					updatedAt: locked.draft.updatedAt,
+					createdAt: prepared.at,
+					updatedAt: prepared.at,
 				},
 				true,
 			);
+			methods.setPreparedLockInTransaction.call(this.#revisions, tx, prepared);
 			return this.#proof(id);
 		} catch {
 			throw revisionUnavailable();
@@ -310,8 +323,9 @@ export class NativeDraftFreeze {
 			if (!saved || !methods.sameStore.call(this.#revisions, saved.revisions))
 				throw revisionUnavailable();
 			const loaded = this.#load(tx, saved.lockId),
-				{ row, payload, current } = this.#current(tx, loaded.payload.binding, loaded.row.outbox_id),
-				rawAt = methods.now.call(this.#revisions),
+				{ row, payload, current } = this.#current(tx, loaded.payload.binding, loaded.row.outbox_id);
+			if (row.id !== saved.lockId) throw revisionUnavailable();
+			const rawAt = methods.now.call(this.#revisions),
 				at = Math.max(
 					rawAt,
 					payload.updatedAt,
@@ -333,8 +347,9 @@ export class NativeDraftFreeze {
 		try {
 			methods.assertTransaction.call(this.#revisions, tx);
 			const bound = captureDraftBinding(binding),
-				{ row, payload, current } = this.#current(tx, bound, outboxId),
-				rawAt = methods.now.call(this.#revisions),
+				{ row, payload, current } = this.#current(tx, bound, outboxId);
+			if (current.draft.state !== "open") throw revisionUnavailable();
+			const rawAt = methods.now.call(this.#revisions),
 				at = Math.max(
 					rawAt,
 					payload.updatedAt,
@@ -345,8 +360,7 @@ export class NativeDraftFreeze {
 				methods.auditInTransaction.call(this.#revisions, tx, "draft.clock_skew", {
 					clockSkewDraft: bound.draftId,
 				});
-			this.#save(tx, row.id, { ...payload, status: "released", updatedAt: at }, false);
-			methods.setLockInTransaction.call(
+			const prepared = methods.prepareLockInTransaction.call(
 				this.#revisions,
 				tx,
 				bound,
@@ -355,6 +369,8 @@ export class NativeDraftFreeze {
 				null,
 				at,
 			);
+			this.#save(tx, row.id, { ...payload, status: "released", updatedAt: prepared.at }, false);
+			methods.setPreparedLockInTransaction.call(this.#revisions, tx, prepared);
 		} catch {
 			throw revisionUnavailable();
 		}
