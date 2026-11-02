@@ -12,6 +12,7 @@ struct State {
     fail_reads: bool,
     fail_writes: bool,
     corrupt_writes: bool,
+    ignore_removes: bool,
 }
 #[derive(Clone)]
 pub struct TestStore {
@@ -81,6 +82,13 @@ impl TestStore {
             .corrupt_writes = enabled;
         Ok(())
     }
+    pub fn ignore_removes(&self, enabled: bool) -> Result<(), StoreError> {
+        self.state
+            .lock()
+            .map_err(|_| StoreError::Unavailable)?
+            .ignore_removes = enabled;
+        Ok(())
+    }
 }
 struct TestRecord {
     state: Arc<Mutex<State>>,
@@ -117,7 +125,9 @@ impl RecordStore for TestRecord {
         if state.fail_writes {
             return Err(StoreError::WriteFailed);
         }
-        state.records.remove(&self.name);
+        if !state.ignore_removes {
+            state.records.remove(&self.name);
+        }
         Ok(())
     }
 }
