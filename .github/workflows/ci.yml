@@ -191,7 +191,7 @@ jobs:
           if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then
             filters+=("--filter=!./packages/create-plugin")
           fi
-          node tools/verify/turbo.ts run test:heavy --concurrency=1 "${filters[@]}"
+          node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "${filters[@]}"
       - name: Run native transport checks
         id: native
         if: needs.changes.outputs.native-transport == 'true'
