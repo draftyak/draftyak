@@ -197,7 +197,6 @@ fn profile(value: &str) -> Result<(), StoreError> {
 trait RecordStore: Send + Sync {
     fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, StoreError>;
     fn write(&self, bytes: &[u8]) -> Result<(), StoreError>;
-    #[cfg(any(test, feature = "mock-store"))]
     fn remove(&self) -> Result<(), StoreError>;
 }
 
@@ -264,13 +263,19 @@ impl NativeStore {
         }
         Ok(identity)
     }
-    #[cfg(any(test, feature = "mock-store"))]
-    fn remove_for_test(&self) -> Result<(), StoreError> {
+    /// Removes only this profile's persisted identity and verifies its absence.
+    /// Already-loaded identities and transports must be disposed of separately by the caller.
+    /// The process operation lock does not provide a cross-process lifecycle lease.
+    pub fn forget_identity(&self) -> Result<(), StoreError> {
         let _guard = OPERATIONS.lock().map_err(|_| StoreError::Unavailable)?;
         self.record.remove()?;
         if self.read()?.is_some() {
             return Err(StoreError::WriteFailed);
         }
         Ok(())
+    }
+    #[cfg(any(test, feature = "mock-store"))]
+    fn remove_for_test(&self) -> Result<(), StoreError> {
+        self.forget_identity()
     }
 }
