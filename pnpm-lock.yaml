@@ -60,6 +60,9 @@ importers:
         specifier: 0.2.2
         version: 0.2.2
     devDependencies:
+      '@draftyak/egress-recorder':
+        specifier: workspace:*
+        version: link:../../tools/egress-recorder
       '@draftyak/fake-commercial':
         specifier: workspace:*
         version: link:../../packages/fake-commercial

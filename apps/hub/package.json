@@ -22,6 +22,7 @@
     "reflect-metadata": "0.2.2"
   },
   "devDependencies": {
+    "@draftyak/egress-recorder": "workspace:*",
     "@draftyak/fake-commercial": "workspace:*",
     "@draftyak/sdk": "workspace:*",
     "fast-check": "4.10.2",
