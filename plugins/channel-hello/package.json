@@ -1,0 +1,22 @@
+{
+  "name": "@draftyak/channel-hello",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:heavy": "vitest run --mode heavy --passWithNoTests=false",
+    "typecheck": "tsc -b",
+    "build": "tsdown"
+  },
+  "dependencies": {
+    "@draftyak/protocol": "workspace:*",
+    "@draftyak/sdk": "workspace:*",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@draftyak/fakes": "workspace:*",
+    "@draftyak/plugin-testkit": "workspace:*",
+    "tsdown": "0.23.1"
+  }
+}

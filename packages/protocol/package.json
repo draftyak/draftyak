@@ -44,6 +44,7 @@
     "./flags": "./src/flags.ts",
     "./hash": "./src/hash.ts",
     "./host-channel": "./src/host-channel.ts",
+    "./hub-runtime": "./src/hub-runtime.ts",
     "./index": "./src/index.ts",
     "./jcs": "./src/jcs.ts",
     "./json-template": "./src/json-template.ts",
@@ -53,6 +54,7 @@
     "./manifest/auth-fields": "./src/manifest/auth-fields.ts",
     "./manifest/egress": "./src/manifest/egress.ts",
     "./manifest/json": "./src/manifest/json.ts",
+    "./manifest/responses-http": "./src/manifest/responses-http.ts",
     "./manifest/runtime": "./src/manifest/runtime.ts",
     "./manifest/text": "./src/manifest/text.ts",
     "./manifest/tool": "./src/manifest/tool.ts",
@@ -67,6 +69,7 @@
     "./mcp/tools": "./src/mcp/tools.ts",
     "./mcp/views": "./src/mcp/views.ts",
     "./normalized-change": "./src/normalized-change.ts",
+    "./oauth-relay": "./src/oauth-relay.ts",
     "./pairing": "./src/pairing.ts",
     "./plugin-argv": {
       "node": "./src/plugin-argv.ts"
@@ -76,6 +79,7 @@
     },
     "./scalars": "./src/scalars.ts",
     "./schedule": "./src/schedule.ts",
+    "./scheduled-summary": "./src/scheduled-summary.ts",
     "./send-ticket": "./src/send-ticket.ts",
     "./sign": "./src/sign.ts",
     "./snapshot": "./src/snapshot.ts",
@@ -257,6 +261,10 @@
         "types": "./dist/host-channel.d.mts",
         "default": "./dist/host-channel.mjs"
       },
+      "./hub-runtime": {
+        "types": "./dist/hub-runtime.d.mts",
+        "default": "./dist/hub-runtime.mjs"
+      },
       "./index": {
         "types": "./dist/index.d.mts",
         "default": "./dist/index.mjs"
@@ -292,6 +300,10 @@
       "./manifest/json": {
         "types": "./dist/manifest/json.d.mts",
         "default": "./dist/manifest/json.mjs"
+      },
+      "./manifest/responses-http": {
+        "types": "./dist/manifest/responses-http.d.mts",
+        "default": "./dist/manifest/responses-http.mjs"
       },
       "./manifest/runtime": {
         "types": "./dist/manifest/runtime.d.mts",
@@ -349,6 +361,10 @@
         "types": "./dist/normalized-change.d.mts",
         "default": "./dist/normalized-change.mjs"
       },
+      "./oauth-relay": {
+        "types": "./dist/oauth-relay.d.mts",
+        "default": "./dist/oauth-relay.mjs"
+      },
       "./pairing": {
         "types": "./dist/pairing.d.mts",
         "default": "./dist/pairing.mjs"
@@ -372,6 +388,10 @@
       "./schedule": {
         "types": "./dist/schedule.d.mts",
         "default": "./dist/schedule.mjs"
+      },
+      "./scheduled-summary": {
+        "types": "./dist/scheduled-summary.d.mts",
+        "default": "./dist/scheduled-summary.mjs"
       },
       "./send-ticket": {
         "types": "./dist/send-ticket.d.mts",

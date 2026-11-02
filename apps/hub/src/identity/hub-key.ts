@@ -11,7 +11,8 @@ import {
 	X509Certificate,
 } from "node:crypto";
 import { types } from "node:util";
-import { exportSpki } from "@draftyak/protocol/sign";
+import { exportSpki, importSpki, signStatement } from "@draftyak/protocol/sign";
+import type { HubKeyRotateStatement } from "@draftyak/protocol/statements/hub-key-rotate";
 import {
 	BasicConstraintsExtension,
 	ExtendedKeyUsage,
@@ -148,9 +149,49 @@ async function certificate(privateKey: KeyObject): Promise<string> {
 	});
 	return cert.toString("pem");
 }
+function assertIdentityKey(privateKey: KeyObject): void {
+	if (
+		!types.isKeyObject(privateKey) ||
+		types.isProxy(privateKey) ||
+		privateKey.type !== "private" ||
+		privateKey.asymmetricKeyType !== "ec" ||
+		privateKey.asymmetricKeyDetails?.namedCurve !== "prime256v1"
+	)
+		throw new Error("Invalid hub key algorithm");
+}
+/** Internal to identity rotation: a successor certificate HubIdentity accepts. */
+export async function identityCertificate(privateKey: KeyObject): Promise<string> {
+	assertIdentityKey(privateKey);
+	return certificate(privateKey);
+}
+/** Internal to identity rotation: the identity wrapping loadOrCreate unwraps. */
+export function wrapIdentityKey(privateKey: KeyObject, secretsKey: Buffer): Buffer {
+	assertIdentityKey(privateKey);
+	return wrap(privateKey, secretsKey, "identity");
+}
+const SUCCESSOR_FIELDS = ["v", "hub", "epoch", "keyUse", "newKey", "iat"] as const;
+const successorRefused = (): IdentityError => new IdentityError("Hub identity successor refused");
+function successorBody(statement: unknown): HubKeyRotateStatement {
+	if (
+		statement === null ||
+		typeof statement !== "object" ||
+		types.isProxy(statement) ||
+		Object.getPrototypeOf(statement) !== Object.prototype ||
+		Reflect.ownKeys(statement).length !== SUCCESSOR_FIELDS.length
+	)
+		throw successorRefused();
+	const [v, hub, epoch, keyUse, newKey, iat] = SUCCESSOR_FIELDS.map((name) => {
+		const descriptor = Object.getOwnPropertyDescriptor(statement, name);
+		if (!descriptor || !("value" in descriptor)) throw successorRefused();
+		return descriptor.value as unknown;
+	});
+	return { v, hub, epoch, keyUse, newKey, iat } as HubKeyRotateStatement;
+}
+let signSuccessor: ((identity: HubIdentity, statement: unknown) => string) | undefined;
 
 export class HubIdentity {
 	#identity: KeyObject | undefined;
+	readonly #statementKey: string;
 	readonly certificate: string;
 	readonly hid: string;
 	readonly hubId: string;
@@ -165,9 +206,17 @@ export class HubIdentity {
 			.update(Buffer.from(exportSpki(parsed.publicKey), "base64url"))
 			.digest("hex");
 		this.hubId = `DYK-${this.hid.slice(0, 16).toUpperCase().match(/.{4}/g)?.join("-")}`;
-		this.statementKey = exportSpki(createPublicKey(statement));
+		this.#statementKey = exportSpki(createPublicKey(statement));
+		this.statementKey = this.#statementKey;
 	}
-	static async loadOrCreate(store: HubStore, masterKey: MasterKey): Promise<HubIdentity> {
+	static loadOrCreate(store: HubStore, masterKey: MasterKey): Promise<HubIdentity> {
+		return HubIdentity.#load(store, masterKey, true);
+	}
+	/** Loads an initialized identity without ever generating or persisting replacement keys. */
+	static loadExisting(store: HubStore, masterKey: MasterKey): Promise<HubIdentity> {
+		return HubIdentity.#load(store, masterKey, false);
+	}
+	static async #load(store: HubStore, masterKey: MasterKey, create: boolean): Promise<HubIdentity> {
 		let key: Buffer | undefined;
 		let identity: KeyObject | undefined;
 		let statement: KeyObject | undefined;
@@ -190,6 +239,7 @@ export class HubIdentity {
 				);
 			if (saved.identity_wrapped || saved.statement_wrapped || saved.identity_cert)
 				throw new IdentityError("Hub key state is incomplete");
+			if (!create) throw new IdentityError("Hub identity record unavailable");
 			identity = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey;
 			statement = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey;
 			const cert = await certificate(identity);
@@ -232,5 +282,44 @@ export class HubIdentity {
 	}
 	lock(): void {
 		this.#identity = undefined;
+	}
+	static {
+		signSuccessor = (identity, statement) => {
+			if (types.isProxy(identity) || !(#identity in identity)) throw successorRefused();
+			const key = identity.#identity;
+			if (!key) throw successorRefused();
+			const body = successorBody(statement);
+			const own = exportSpki(createPublicKey(key));
+			const hid = createHash("sha256").update(Buffer.from(own, "base64url")).digest("hex");
+			if (
+				body.v !== 1 ||
+				body.keyUse !== "identity" ||
+				body.hub !== hid ||
+				identity.hid !== hid ||
+				typeof body.newKey !== "string" ||
+				body.newKey === own ||
+				body.newKey === identity.#statementKey ||
+				!Number.isSafeInteger(body.epoch) ||
+				body.epoch < 0 ||
+				!Number.isSafeInteger(body.iat) ||
+				body.iat < 0
+			)
+				throw successorRefused();
+			importSpki(body.newKey);
+			return signStatement("hub-key-rotate.v1", body, key);
+		};
+	}
+}
+
+/** Internal to identity rotation: the outgoing key signs only its own hub-key-rotate.v1 successor. */
+export function signIdentitySuccessor(
+	identity: HubIdentity,
+	statement: HubKeyRotateStatement,
+): string {
+	try {
+		if (!signSuccessor) throw successorRefused();
+		return signSuccessor(identity, statement);
+	} catch {
+		throw new Error("Hub identity successor refused");
 	}
 }

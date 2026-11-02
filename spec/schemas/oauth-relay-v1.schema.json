@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/schemas/oauth-relay-v1.schema.json",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/draftyak.oauth-relay.GmailFlowClientRequest"
+    },
+    {
+      "$ref": "#/$defs/draftyak.oauth-relay.GmailFlowAuthorizeRequest"
+    },
+    {
+      "$ref": "#/$defs/draftyak.oauth-relay.GmailFlowRelayRequest"
+    },
+    {
+      "$ref": "#/$defs/draftyak.oauth-relay.GmailFlowAuthorization"
+    },
+    {
+      "$ref": "#/$defs/draftyak.oauth-relay.GmailFlowView"
+    }
+  ],
+  "title": "DraftYak OAuth relay v1",
+  "description": "The Gmail code relay's L2 requests, the authorization view and the flow view's outer form. Byte caps and admission are in oauth-relay-v1.md.",
+  "$defs": {
+    "draftyak.oauth-relay.GmailFlowClientRequest": {
+      "type": "object",
+      "properties": {
+        "flowId": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "client": {
+          "type": "object",
+          "properties": {
+            "clientId": {
+              "type": "string",
+              "description": "The OAuth client's ID.",
+              "pattern": "^[!-~]+$(?![\\s\\S])",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "clientSecret": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "description": "The OAuth client's secret.",
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "clientId",
+            "clientSecret"
+          ],
+          "additionalProperties": false
+        },
+        "redirectUri": {
+          "type": "string",
+          "description": "The desktop's loopback callback, http://127.0.0.1:<port>/oauth/google/callback.",
+          "pattern": "^http://127\\.0\\.0\\.1:(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])/oauth/google/callback$(?![\\s\\S])",
+          "maxLength": 44
+        }
+      },
+      "required": [
+        "flowId",
+        "client",
+        "redirectUri"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.oauth-relay.GmailFlowAuthorizeRequest": {
+      "type": "object",
+      "properties": {
+        "flowId": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        }
+      },
+      "required": [
+        "flowId"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.oauth-relay.GmailFlowRelayRequest": {
+      "type": "object",
+      "properties": {
+        "flowId": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "state": {
+          "type": "string",
+          "description": "The hub's state: 32 bytes as canonical, unpadded base64url.",
+          "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$(?![\\s\\S])",
+          "minLength": 43,
+          "maxLength": 43
+        },
+        "code": {
+          "type": "string",
+          "description": "Google's code, visible ASCII.",
+          "pattern": "^[!-~]+$(?![\\s\\S])",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "redirectUri": {
+          "type": "string",
+          "description": "The desktop's loopback callback, http://127.0.0.1:<port>/oauth/google/callback.",
+          "pattern": "^http://127\\.0\\.0\\.1:(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])/oauth/google/callback$(?![\\s\\S])",
+          "maxLength": 44
+        }
+      },
+      "required": [
+        "flowId",
+        "state",
+        "code",
+        "redirectUri"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.oauth-relay.GmailFlowAuthorization": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "authorizationUrl": {
+          "type": "string",
+          "description": "Google's authorization endpoint with the hub's query.",
+          "pattern": "^https://accounts\\.google\\.com/o/oauth2/v2/auth(?:\\?(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*)?$(?![\\s\\S])"
+        },
+        "expiresAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+        },
+        "remainingMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "authorizationUrl",
+        "expiresAt",
+        "remainingMs"
+      ],
+      "additionalProperties": false
+    },
+    "draftyak.oauth-relay.GmailFlowView": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {},
+      "description": "The hub's flow view, which carries no secret, code or token. This contract checks only that it is a JSON object within the cap."
+    }
+  }
+}
