@@ -21,6 +21,11 @@ import {
 import { dataMember, inertRecord, isPlainFunction } from "../extensions/values.ts";
 import { DeviceRegistry } from "../identity/devices.ts";
 import { HubIdentity } from "../identity/hub-key.ts";
+import {
+	createNativeAccountApprovalsHandle,
+	type NativeAccountApprovals,
+	type NativeAccountApprovalsHandle,
+} from "../identity/native-account-approvals.ts";
 import { PinService } from "../identity/pin.ts";
 import { WorkDatabase } from "../jobs/database.ts";
 import { systemClock, type TimerClock } from "../kernel/clock.ts";
@@ -89,6 +94,8 @@ export interface HubSession {
 	readonly extensions: ExtensionHost;
 	/** The configured native registry, after genuine bootstrap. Accepts no configuration arguments. */
 	plugins(): Promise<PluginRegistry>;
+	/** Account approvals bound to this original session. Accepts no configuration arguments. */
+	accountApprovals(): NativeAccountApprovals;
 	/**
 	 * Closes the extensions, locks device authority, the PIN service and identity, destroys the audit key, closes
 	 * the store and erases the master key. Idempotent; a store close that fails is retried next call.
@@ -151,6 +158,8 @@ interface NativeOwner {
 	native?: NativePluginSessionParts;
 	rootStat?: BigIntStats;
 	pluginsPromise?: Promise<PluginRegistry>;
+	accountApprovals?: NativeAccountApprovalsHandle;
+	accountApprovalsClosed: boolean;
 	closePromise?: Promise<void>;
 	stopped: boolean;
 	drained: boolean;
@@ -359,6 +368,7 @@ function session(
 		phase: "open",
 		stopped: false,
 		drained: false,
+		accountApprovalsClosed: false,
 		storeClosed: false,
 	};
 	const close = (): Promise<void> => {
@@ -368,11 +378,47 @@ function session(
 			return owner.closePromise;
 		}
 		owner.phase = "closing";
-		const draining = owner.native && !owner.drained ? drainNativePlugins(result) : undefined;
+		const { promise: closing, resolve, reject } = Promise.withResolvers<void>();
+		owner.closePromise = closing;
+		const draining: Promise<void>[] = [];
+		const approvals = owner.accountApprovals;
+		if (approvals && !owner.accountApprovalsClosed) {
+			try {
+				approvals.beginClose();
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
+		if (owner.native && !owner.drained) {
+			try {
+				draining.push(
+					drainNativePlugins(result).then(() => {
+						owner.drained = true;
+					}),
+				);
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
+		if (approvals && !owner.accountApprovalsClosed) {
+			try {
+				draining.push(
+					approvals.close().then(() => {
+						owner.accountApprovalsClosed = true;
+					}),
+				);
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
 		let clean = true;
 		if (!owner.stopped) {
 			owner.stopped = true;
-			clean = stop(parts);
+			try {
+				clean = stop(parts);
+			} catch {
+				clean = false;
+			}
 		}
 		const finish = (): void => {
 			if (!owner.storeClosed) {
@@ -384,29 +430,25 @@ function session(
 			live.delete(folder);
 			if (!clean) throw new HubSessionError("CLOSE_INCOMPLETE");
 		};
-		let closing: Promise<void>;
-		if (draining) {
-			closing = draining
-				.then(() => {
-					owner.drained = true;
-					finish();
-				})
-				.catch(() => {
-					throw new HubSessionError("CLOSE_INCOMPLETE");
-				})
-				.finally(() => erase(masterKey));
-		} else {
-			// Keep the genuine busy-store refusal synchronous, even though completion is awaitable.
+		const settle = (drained: boolean): void => {
 			try {
+				if (!drained) throw new HubSessionError("CLOSE_INCOMPLETE");
 				finish();
-				closing = Promise.resolve();
+				resolve();
 			} catch {
-				closing = Promise.reject(new HubSessionError("CLOSE_INCOMPLETE"));
+				reject(new HubSessionError("CLOSE_INCOMPLETE"));
 			} finally {
 				erase(masterKey);
 			}
+		};
+		if (draining.length > 0) {
+			void Promise.allSettled(draining).then((outcomes) => {
+				settle(outcomes.every((outcome) => outcome.status === "fulfilled"));
+			});
+		} else {
+			// Keep the genuine busy-store refusal synchronous, even though completion is awaitable.
+			settle(true);
 		}
-		owner.closePromise = closing;
 		void closing.catch(() => {
 			if (owner.closePromise === closing) owner.closePromise = undefined;
 		});
@@ -440,8 +482,31 @@ function session(
 		}
 		return owner.pluginsPromise;
 	};
+	const accountApprovals = (...arguments_: unknown[]): NativeAccountApprovals => {
+		try {
+			if (arguments_.length !== 0) throw new HubSessionError("SESSION_UNAVAILABLE");
+			sessionOwner(result, "open");
+			owner.accountApprovals ??= createNativeAccountApprovalsHandle(
+				result,
+				masterKey,
+				config.clock,
+			);
+			const approvals = owner.accountApprovals.get();
+			sessionOwner(result, "open");
+			return approvals;
+		} catch {
+			throw new HubSessionError("SESSION_UNAVAILABLE");
+		}
+	};
 	const { identity } = parts;
-	const result = { hubId: identity.hubId, hid: identity.hid, ...parts, plugins, close };
+	const result = {
+		hubId: identity.hubId,
+		hid: identity.hid,
+		...parts,
+		plugins,
+		accountApprovals,
+		close,
+	};
 	nativeOwners.set(result, owner);
 	Object.defineProperty(result, "toJSON", { value: redacted });
 	Object.defineProperty(result, inspect.custom, { value: redacted });
