@@ -22,9 +22,11 @@ async function run() {
 	const namespaces = [
 		"audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets", "accounts", "pluginregistry",
 		"outbox", "challenges", "verifier", "admin", "adminchallenges", "backup",
+		"backupops", "backupchallenges",
 	];
 	const approvalTables = [
 		"outbox", "approval_challenges", "pair_confirm_operations", "approvals", "native_admin_operations", "native_admin_challenges",
+		"native_backup_operations", "native_backup_challenges",
 	];
 	const filename = path.join(import.meta.dirname, "native-storage.db");
 	const bytes = randomBytes(32);
@@ -147,7 +149,7 @@ async function run() {
 						assert.ok(ordinal(coreTable) < ordinal(name), "Core schema must precede component schemas");
 					}
 				}
-				assert.equal(namespaces.length, 16);
+				assert.equal(namespaces.length, 18);
 				assert.deepEqual(
 					rows.map(({ name }) => name).filter((name) => name.startsWith("_migrations_")).sort(),
 					namespaces.flatMap((namespace) => [`_migrations_${namespace}`, `_migrations_${namespace}_lock`]).sort(),
@@ -168,7 +170,7 @@ async function run() {
 						namespace === "credentials" || namespace === "revisions" ? 2 : 1);
 					appliedMigrations += applied;
 				}
-				assert.equal(appliedMigrations, 18);
+				assert.equal(appliedMigrations, 20);
 				assert.equal(sql.get("SELECT count(*) AS n FROM audit_meta").n, 1);
 				assert.equal(sql.get("SELECT count(*) AS n FROM hub_meta").n, 1);
 				const core = sql.get("SELECT singleton,identity_wrapped,statement_wrapped,identity_cert FROM hub_meta");

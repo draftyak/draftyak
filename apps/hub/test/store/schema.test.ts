@@ -30,6 +30,8 @@ const COMPONENT_SCHEMAS = [
 	["admin", "0001_operations", ["native_admin_operations"]],
 	["adminchallenges", "0001_admin_challenges", ["native_admin_challenges"]],
 	["backup", "0001_backup_recovery", ["native_backup_recovery"]],
+	["backupops", "0001_backup_operations", ["native_backup_operations"]],
+	["backupchallenges", "0001_backup_challenges", ["native_backup_challenges"]],
 ] as const;
 const require = createRequire(import.meta.url);
 const addon = require(nativeBinding) as { Database: { prototype: { close(): unknown } } };

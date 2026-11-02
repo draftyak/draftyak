@@ -13,6 +13,14 @@ export const ADMIN_CHALLENGE_MIGRATIONS: string = fileURLToPath(
 		import.meta.url,
 	),
 );
+export const BACKUP_CHALLENGE_MIGRATIONS: string = fileURLToPath(
+	new URL(
+		import.meta.url.endsWith(".ts")
+			? "./backup-challenge-migrations/"
+			: "./identity/backup-challenge-migrations/",
+		import.meta.url,
+	),
+);
 
 /** Internal type only. Only the challenge coordinator can issue its runtime authority. */
 export interface AdminAcceptContext {
@@ -37,6 +45,13 @@ export function adminOperationPinScope(operation: string, nonce: string): string
 	return `admin.account-mode-full:${operation.toLowerCase()}:${Buffer.from(bytes).toString("hex")}`;
 }
 
+/** Fixed backup domain; an operation id or scope string grants no PIN authority. */
+export function backupOperationPinScope(operation: string, nonce: string): string {
+	const bytes = typeof nonce === "string" && nonce.length === 22 ? fromBase64Url(nonce) : undefined;
+	if (!Ulid.safeParse(operation).success || bytes?.length !== 16) refuse("CHALLENGE_INVALID");
+	return `admin.data-backup:${operation.toLowerCase()}:${Buffer.from(bytes).toString("hex")}`;
+}
+
 export const ADMIN_CHALLENGE_SQL: string = `SELECT CASE WHEN typeof(id)='text' AND length(CAST(id AS BLOB))=26 THEN id END AS id,
  CASE WHEN typeof(nonce)='text' AND length(CAST(nonce AS BLOB))=22 THEN nonce END AS nonce,
  CASE WHEN kind='admin.v1' THEN kind END AS kind,
@@ -49,3 +64,8 @@ export const ADMIN_CHALLENGE_SQL: string = `SELECT CASE WHEN typeof(id)='text' A
  CASE WHEN typeof(issued_at)='integer' THEN issued_at END AS wall,
  CASE WHEN typeof(expires_at)='integer' THEN expires_at END AS expires,
  target_version AS targetVersion,consumed_at,burned_at,signature FROM main.native_admin_challenges WHERE id=?`;
+
+export const BACKUP_CHALLENGE_SQL: string = ADMIN_CHALLENGE_SQL.replace(
+	"FROM main.native_admin_challenges",
+	"FROM main.native_backup_challenges",
+);

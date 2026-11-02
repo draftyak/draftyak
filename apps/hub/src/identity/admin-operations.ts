@@ -260,6 +260,11 @@ export class NativeAccountModeOperations {
 	assertActive(): void {
 		this.#active();
 	}
+	/** Routing DATA only; prepare still proves the live operation and current authority. */
+	ownsOperation(operationId: string): boolean {
+		this.#active();
+		return this.#live.has(id(operationId));
+	}
 	#active(): void {
 		if (!this.#key || owners.get(this) !== this.#store) refuse();
 		registryStore.call(this.#devices, this.#store);
@@ -646,6 +651,7 @@ export class NativeAccountModeOperations {
 
 const original = Object.freeze({
 	active: NativeAccountModeOperations.prototype.assertActive,
+	owns: NativeAccountModeOperations.prototype.ownsOperation,
 	write: NativeAccountModeOperations.prototype.write,
 	assertScope: NativeAccountModeOperations.prototype.assertScope,
 	abortScope: NativeAccountModeOperations.prototype.abortScope,
@@ -662,6 +668,9 @@ function actual(issuer: unknown): NativeAccountModeOperations {
 	if (!store) refuse();
 	assertNativeAdminOperations(issuer, store);
 	return issuer as NativeAccountModeOperations;
+}
+export function ownsNativeAdminOperation(issuer: unknown, operationId: string): boolean {
+	return original.owns.call(actual(issuer), operationId);
 }
 export function writeNativeAdminOperations<T>(
 	issuer: unknown,
