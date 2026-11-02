@@ -64,6 +64,7 @@ export {
 	type EventRecord,
 } from "./events/log.ts";
 export { SINGLE_OWNER_IDENTITY, singleOwnerIdentity } from "./extensions/free/identity.ts";
+export { SINGLE_OWNER_WORKSPACE, singleOwnerWorkspace } from "./extensions/free/workspace.ts";
 export {
 	ExtensionError,
 	type ExtensionErrorCode,
