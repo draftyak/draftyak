@@ -555,7 +555,7 @@ describe("workflow policy", () => {
 		["heavy condition", "if: needs.changes.outputs.spikes != ''", "if: false"],
 		[
 			"heavy condition removal",
-			"        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''\n",
+			"        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n",
 			"",
 		],
 		[
@@ -587,17 +587,17 @@ describe("workflow policy", () => {
 		["heavy selection environment", `SPIKES: \${{ needs.changes.outputs.spikes }}`, "SPIKES: ''"],
 		[
 			"heavy package condition removal",
-			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''",
+			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
 			"if: needs.changes.outputs.spikes != ''",
 		],
 		[
 			"heavy package selection environment",
-			`HEAVY: \${{ needs.changes.outputs.heavy }}`,
+			`HEAVY: \${{ needs.changes.outputs.ordinary-heavy }}`,
 			"HEAVY: ''",
 		],
 		[
 			"heavy package selection environment removal",
-			`          HEAVY: \${{ needs.changes.outputs.heavy }}\n`,
+			`          HEAVY: \${{ needs.changes.outputs.ordinary-heavy }}\n`,
 			"",
 		],
 		[
@@ -712,11 +712,11 @@ describe("workflow policy", () => {
 			(parseYaml(read(`.github/workflows/${name}`)).value as { jobs: Record<string, unknown> })
 				.jobs;
 		const ci = jobs("ci.yml");
-		expect(Object.keys(ci)).toEqual(["changes", "cheap", "full", "windows", "required"]);
+		expect(Object.keys(ci)).toEqual(["changes", "cheap", "full", "windows", "macos", "required"]);
 		expect(ci.required).toMatchObject({
 			if: "always()",
 			name: `\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`,
-			needs: ["changes", "cheap", "full", "windows"],
+			needs: ["changes", "cheap", "full", "windows", "macos"],
 		});
 		const reportedJobs = files.flatMap((file) =>
 			Object.entries(jobs(path.basename(file))).map(([id, job]) => ({
@@ -804,13 +804,16 @@ describe("workflow policy", () => {
 			}
 		).jobs;
 		expect(ci.windows?.if).toBe(
-			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft))",
+			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && needs.changes.outputs.native-transport == 'true'))",
 		);
-		expect(ci.windows?.steps.at(-1)).toEqual({
+		expect(ci.windows?.steps.find((step) => step.run === "pnpm verify")).toEqual({
 			run: "pnpm verify",
 			env: { TURBO_CONCURRENCY: "1" },
 		});
-		for (const name of ["changes", "cheap", "full", "windows"]) {
+		expect(ci.windows?.steps.at(-1)?.run).toBe(
+			"pnpm exec node tools/ci-checks/src/native-transport.ts run",
+		);
+		for (const name of ["changes", "cheap", "full", "windows", "macos"]) {
 			const job = ci[name];
 			expect(job?.outputs?.source, name).toBe(`\${{ steps.source.outputs.source }}`);
 			const steps = job?.steps ?? [];
