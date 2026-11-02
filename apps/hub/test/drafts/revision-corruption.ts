@@ -1,6 +1,25 @@
+import { createHmac } from "node:crypto";
+import { canonicalize } from "@draftyak/protocol/jcs";
 import Database from "better-sqlite3-multiple-ciphers";
 import { nativeBinding } from "../store/helpers.ts";
 import type { RevisionFixture } from "./revision-fixture.ts";
+
+/** Test-owned key access preserves authenticated corruption coverage without a service signer. */
+export function signFixtureDraftRow(
+	fixture: Pick<RevisionFixture, "key">,
+	domain: "header" | "revision" | "freeze",
+	value: unknown,
+): string {
+	const key = fixture.key.derive("drafts");
+	try {
+		return createHmac("sha256", key)
+			.update(`draftyak/draft-${domain}/v1\n`)
+			.update(canonicalize(value))
+			.digest("hex");
+	} finally {
+		key.fill(0);
+	}
+}
 
 /** Deliberately bypass the SQL fence to exercise independent authenticated-read defenses. */
 export function corruptRevisionStorage(

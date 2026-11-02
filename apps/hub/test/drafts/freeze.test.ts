@@ -7,6 +7,7 @@ import { type DraftBinding, NativeDraftRevisions } from "../../src/drafts/revisi
 import { PinService } from "../../src/identity/pin.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import { HubStore, type SqlTransaction } from "../../src/store/store.ts";
+import { signFixtureDraftRow } from "./revision-corruption.ts";
 import { type RevisionFixture, revisionFixture } from "./revision-fixture.ts";
 
 const fixtures: Awaited<ReturnType<typeof revisionFixture>>[] = [];
@@ -46,7 +47,7 @@ const discard = (f: RevisionFixture, bound: DraftBinding): void => {
 			};
 		tx.run("UPDATE native_drafts SET payload=?,mac=? WHERE id=?", [
 			signed.payload,
-			f.revisions.sign("header", signed),
+			signFixtureDraftRow(f, "header", signed),
 			row.id,
 		]);
 	});

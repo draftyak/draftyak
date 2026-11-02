@@ -2,13 +2,14 @@ import { createHmac } from "node:crypto";
 import { rmSync } from "node:fs";
 import { canonicalize } from "@draftyak/protocol/jcs";
 import { type CurrentSendSnapshotV1, contentHash } from "@draftyak/protocol/snapshot";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { NativeDraftFreeze } from "../../src/drafts/freeze.ts";
-import { NativeDraftRevisions } from "../../src/drafts/revisions.ts";
+import { type DraftBinding, NativeDraftRevisions } from "../../src/drafts/revisions.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import { openEncrypted } from "../../src/store/open.ts";
 import { HubStore, type SqlTransaction } from "../../src/store/store.ts";
 import { nativeBinding } from "../store/helpers.ts";
+import { signFixtureDraftRow } from "./revision-corruption.ts";
 import { type RevisionFixture, revisionFixture } from "./revision-fixture.ts";
 
 const fixtures: RevisionFixture[] = [];
@@ -18,7 +19,6 @@ async function fixture(): Promise<RevisionFixture> {
 	return f;
 }
 afterEach(() => {
-	vi.restoreAllMocks();
 	for (const f of fixtures.splice(0)) {
 		for (const service of f.services) service.destroy();
 		for (const store of f.stores) store.close();
@@ -77,6 +77,50 @@ const auditHead = (tx: SqlTransaction): string =>
 	tx.get<{ audit_head: string }>("SELECT audit_head FROM audit_meta WHERE singleton=1")
 		?.audit_head as string;
 
+// Stage an authenticated release with fixture-owned keys, then exercise the real bind directly.
+function preparedRelease(
+	f: RevisionFixture,
+	tx: SqlTransaction,
+	bound: DraftBinding,
+	outboxId: string,
+) {
+	const row = tx.get<{
+		id: string;
+		draft_id: string;
+		outbox_id: string;
+		payload: string;
+		audit_seq: number;
+	}>("SELECT id,draft_id,outbox_id,payload,audit_seq FROM native_draft_locks WHERE outbox_id=?", [
+		outboxId,
+	]);
+	if (!row) throw new Error("missing lock");
+	const operation = f.revisions.prepareLockInTransaction(tx, bound, 1, row.id, null);
+	f.audit.append(tx, {
+		id: newId(operation.at),
+		at: operation.at,
+		action: "draft.freeze_released",
+		actor: { kind: "hub", id: null },
+		refs: { draft: bound.draftId, freeze: row.id, outbox: outboxId },
+	});
+	const signed = {
+		...row,
+		payload: canonicalize({
+			...JSON.parse(row.payload),
+			status: "released",
+			updatedAt: operation.at,
+			auditEventMac: auditHead(tx),
+		}),
+		audit_seq: auditSeq(tx),
+	};
+	tx.run("UPDATE native_draft_locks SET payload=?,audit_seq=?,mac=? WHERE id=?", [
+		signed.payload,
+		signed.audit_seq,
+		signFixtureDraftRow(f, "freeze", signed),
+		row.id,
+	]);
+	return operation;
+}
+
 describe("native draft guards each refuse on their own", () => {
 	it.each(["copied", "foreign service"] as const)(
 		"binds only the original prepared operation after a %s attempt",
@@ -89,21 +133,17 @@ describe("native draft guards each refuse on their own", () => {
 			const foreign = new NativeDraftRevisions(f.store, f.audit, f.key, f.clock);
 			f.services.push(foreign);
 			const bind = NativeDraftRevisions.prototype.setPreparedLockInTransaction;
-			let attempts = 0;
-			vi.spyOn(NativeDraftRevisions.prototype, "setPreparedLockInTransaction").mockImplementation(
-				function (this: NativeDraftRevisions, tx, operation) {
-					expect(Object.isFrozen(operation)).toBe(true);
-					if (kind === "copied")
-						expect(() => bind.call(this, tx, Object.freeze({ ...operation }))).toThrow(refused);
-					else expect(() => bind.call(foreign, tx, operation)).toThrow(refused);
-					attempts++;
-					const result = bind.call(this, tx, operation);
-					expect(() => bind.call(this, tx, operation)).toThrow(refused);
-					return result;
-				},
-			);
-			f.store.write((tx) => f.freeze.releaseInTransaction(tx, bound, snapshot.outbox));
-			expect(attempts).toBe(1);
+			f.store.write((tx) => {
+				const operation = preparedRelease(f, tx, bound, snapshot.outbox);
+				expect(Object.isFrozen(operation)).toBe(true);
+				if (kind === "copied")
+					expect(() => bind.call(f.revisions, tx, Object.freeze({ ...operation }))).toThrow(
+						refused,
+					);
+				else expect(() => bind.call(foreign, tx, operation)).toThrow(refused);
+				bind.call(f.revisions, tx, operation);
+				expect(() => bind.call(f.revisions, tx, operation)).toThrow(refused);
+			});
 			expect(f.revisions.current(bound).lockId).toBeNull();
 			expect(statusOf(f, lockRow(f, snapshot.outbox).id)).toBe("released");
 			f.store.read((db) => f.audit.verify(db));
@@ -126,23 +166,21 @@ describe("native draft guards each refuse on their own", () => {
 				})),
 				bind = NativeDraftRevisions.prototype.setPreparedLockInTransaction;
 			let refusedBinding = false;
-			vi.spyOn(NativeDraftRevisions.prototype, "setPreparedLockInTransaction").mockImplementation(
-				function (this: NativeDraftRevisions, tx, operation) {
+			expect(() =>
+				f.store.write((tx) => {
+					const operation = preparedRelease(f, tx, bound, snapshot.outbox);
 					if (kind === "changed header") {
-						const current = this.currentInTransaction(tx, bound);
-						this.setLockInTransaction(tx, bound, 1, current.lockId, null);
+						const current = f.revisions.currentInTransaction(tx, bound);
+						f.revisions.setLockInTransaction(tx, bound, 1, current.lockId, null);
 					}
 					try {
-						bind.call(this, kind === "retired transaction" ? retired : tx, operation);
+						bind.call(f.revisions, kind === "retired transaction" ? retired : tx, operation);
 					} catch (error) {
 						refusedBinding = (error as { code?: string }).code === "DRAFT_REVISION_UNAVAILABLE";
 						throw error;
 					}
 					throw new Error("Prepared operation must roll back");
-				},
-			);
-			expect(() =>
-				f.store.write((tx) => f.freeze.releaseInTransaction(tx, bound, snapshot.outbox)),
+				}),
 			).toThrow(refused);
 			expect(refusedBinding).toBe(true);
 			expect(
@@ -272,12 +310,7 @@ describe("native draft guards each refuse on their own", () => {
 		expect(() => f.store.write((tx) => f.revisions.currentInTransaction(tx, bound))).toThrow(
 			refused,
 		);
-		expect(() => f.revisions.read((db) => db.get("SELECT 1 AS one"))).toThrow(
-			"Audit chain verification failed",
-		);
-		expect(() => f.revisions.write((tx) => tx.get("SELECT 1 AS one"))).toThrow(
-			"Audit chain verification failed",
-		);
+		expect(() => f.revisions.assertStore(f.store)).toThrow("Audit chain verification failed");
 	});
 	it("keeps an old released-outbox proof and release away from the next outbox's live lock", async () => {
 		const f = await fixture(),
