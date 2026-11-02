@@ -78,6 +78,13 @@ export {
 	startExtensions,
 } from "./extensions/index.ts";
 export {
+	CHALLENGE_MIGRATIONS,
+	ChallengeError,
+	type ChallengeErrorCode,
+	ChallengeService,
+	type ChallengeServiceOptions,
+} from "./identity/challenges.ts";
+export {
 	type ApproverConfirmation,
 	type AuthorityState,
 	DEVICE_MIGRATIONS,
@@ -191,6 +198,19 @@ export {
 } from "./lifecycle/state.ts";
 export { type NativeStorageOptions, openNativeStorage } from "./native-storage.ts";
 export {
+	NATIVE_OUTBOX_DEFAULT_TTL_MS,
+	NATIVE_OUTBOX_DEFAULT_UNDO_MS,
+	NativeOutboxProposals,
+	type NativeOutboxSettings,
+	type NativeProposalFacts,
+	type NativeProposalInput,
+	type NativeProposalProviders,
+	type NativeProposalRecord,
+	OUTBOX_MIGRATIONS,
+	tallyApprovals,
+} from "./outbox/propose.ts";
+export { ProposalError, type ProposalErrorCode } from "./outbox/propose-errors.ts";
+export {
 	SchedulerLoop,
 	type SchedulerLoopError,
 	type SchedulerLoopOptions,
@@ -205,6 +225,16 @@ export {
 	schedulingAvailable,
 	type WallScheduleInput,
 } from "./outbox/scheduler-time.ts";
+export {
+	APPROVAL_MIGRATIONS,
+	SendApprovalVerifier,
+	type SendApprovalVerifierOptions,
+} from "./outbox/verifier.ts";
+export type {
+	SendApprovalPolicy,
+	SendApprovalPolicyInput,
+	SendApprovalPolicyResult,
+} from "./outbox/verifier-types.ts";
 export {
 	type AiCandidateRequest,
 	type AiProfileRegistry,
