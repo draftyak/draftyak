@@ -14,10 +14,17 @@ const EXPECTED = [
 	["tickets", ["0001_send_attempts"]],
 	["accounts", ["0001_accounts"]],
 	["pluginregistry", ["0001_registry"]],
+	["outbox", ["0001_proposals"]],
+	["challenges", ["0001_challenges"]],
+	["verifier", ["0001_approvals"]],
+	["admin", ["0001_operations"]],
+	["adminchallenges", ["0001_admin_challenges"]],
 ] as const;
 const DOMAIN_TABLES = [
 	"accounts",
+	"approval_challenges",
 	"approval_pins",
+	"approvals",
 	"audit_events",
 	"audit_meta",
 	"credentials",
@@ -28,10 +35,14 @@ const DOMAIN_TABLES = [
 	"hub_meta",
 	"jobs",
 	"jobs_meta",
+	"native_admin_challenges",
+	"native_admin_operations",
 	"native_draft_locks",
 	"native_draft_revisions",
 	"native_drafts",
 	"native_send_attempts",
+	"outbox",
+	"pair_confirm_operations",
 	"plugin_generations",
 	"plugin_versions",
 	"users",
@@ -81,6 +92,12 @@ function expectSchemas(store: HubStore): void {
 			"native_send_attempts",
 			"plugin_generations",
 			"plugin_versions",
+			"outbox",
+			"approval_challenges",
+			"pair_confirm_operations",
+			"approvals",
+			"native_admin_operations",
+			"native_admin_challenges",
 		])
 			expect(db.get(`SELECT COUNT(*) AS count FROM main.${table}`)).toEqual({ count: 0 });
 	});
@@ -152,43 +169,48 @@ describe("native component schemas in an unlocked session", () => {
 		}
 	});
 
-	it("closes the real failed store, erases the handed key and recovers the folder after a late migration fault", async () => {
-		let failedStore: HubStore | undefined;
-		let pendingIdentity: unknown;
-		const order: string[] = [];
-		const spy = vi.spyOn(HubStore.prototype, "migrate").mockImplementation(async function (
-			this: HubStore,
-			namespace: string,
-		) {
-			order.push(namespace);
-			if (namespace === "pluginregistry") {
-				failedStore = this;
-				pendingIdentity = this.read((db) => db.get(PENDING_IDENTITY));
-				throw new Error("DYTEST-PRIVATE-PLUGINS-MIGRATION");
+	it.each(["accounts", "pluginregistry", "adminchallenges"] as const)(
+		"closes the real failed store, erases the handed key and recovers after a %s migration fault",
+		async (failedNamespace) => {
+			let failedStore: HubStore | undefined;
+			let pendingIdentity: unknown;
+			const order: string[] = [];
+			const spy = vi.spyOn(HubStore.prototype, "migrate").mockImplementation(async function (
+				this: HubStore,
+				namespace: string,
+			) {
+				order.push(namespace);
+				if (namespace === failedNamespace) {
+					failedStore = this;
+					pendingIdentity = this.read((db) => db.get(PENDING_IDENTITY));
+					throw new Error("DYTEST-PRIVATE-SCHEMA-MIGRATION");
+				}
+				return migrateStore.call(this, namespace);
+			});
+			try {
+				const key = f.key();
+				const error = await refusal(f.open({ masterKey: key }));
+				expect(error).toMatchObject({ code: "STORE_UNAVAILABLE", message: "STORE_UNAVAILABLE" });
+				expect(error.cause).toBeUndefined();
+				expect(String(error)).not.toContain("DYTEST-PRIVATE-SCHEMA-MIGRATION");
+				expectErased(key);
+				const failedIndex = EXPECTED.findIndex(([namespace]) => namespace === failedNamespace);
+				expect(failedIndex).toBeGreaterThanOrEqual(0);
+				expect(order).toEqual(EXPECTED.slice(0, failedIndex + 1).map(([namespace]) => namespace));
+				expect(pendingIdentity).toEqual({ transport: 1, signing: 1, certificate: 1 });
+				expect(failedStore).toBeInstanceOf(HubStore);
+				expect(() =>
+					readStore.call(failedStore as HubStore, (db: SqlReader) => db.get("SELECT 1")),
+				).toThrow("unavailable");
+				spy.mockRestore();
+				const recovered = await f.open();
+				expectSchemas(recovered.store);
+				recovered.store.read((db) => recovered.audit.verify(db));
+				expect(recovered.hubId).toBe(recovered.identity.hubId);
+			} finally {
+				spy.mockRestore();
+				if (failedStore) closeStore.call(failedStore);
 			}
-			return migrateStore.call(this, namespace);
-		});
-		try {
-			const key = f.key();
-			const error = await refusal(f.open({ masterKey: key }));
-			expect(error).toMatchObject({ code: "STORE_UNAVAILABLE", message: "STORE_UNAVAILABLE" });
-			expect(error.cause).toBeUndefined();
-			expect(String(error)).not.toContain("DYTEST-PRIVATE-PLUGINS-MIGRATION");
-			expectErased(key);
-			expect(order).toEqual(EXPECTED.map(([namespace]) => namespace));
-			expect(pendingIdentity).toEqual({ transport: 1, signing: 1, certificate: 1 });
-			expect(failedStore).toBeInstanceOf(HubStore);
-			expect(() =>
-				readStore.call(failedStore as HubStore, (db: SqlReader) => db.get("SELECT 1")),
-			).toThrow("unavailable");
-			spy.mockRestore();
-			const recovered = await f.open();
-			expectSchemas(recovered.store);
-			recovered.store.read((db) => recovered.audit.verify(db));
-			expect(recovered.hubId).toBe(recovered.identity.hubId);
-		} finally {
-			spy.mockRestore();
-			if (failedStore) closeStore.call(failedStore);
-		}
-	});
+		},
+	);
 });
