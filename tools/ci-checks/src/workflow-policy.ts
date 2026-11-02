@@ -45,6 +45,8 @@ const requiredPrTypes: Readonly<Record<string, readonly string[]>> = {
 	".github/workflows/pr-title.yml": ["opened", "edited", "synchronize", "reopened"],
 };
 const nonDocs = "needs.changes.outputs.docs-only != 'true'";
+const nativeSelected = "needs.changes.outputs.native-transport == 'true'";
+const readyRun = "(github.event_name != 'pull_request' || !github.event.pull_request.draft)";
 const ciControls: Readonly<Record<string, YamlMap>> = {
 	changes: {},
 	cheap: { needs: "changes" },
@@ -54,9 +56,10 @@ const ciControls: Readonly<Record<string, YamlMap>> = {
 	},
 	windows: {
 		needs: "changes",
-		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft))`,
+		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ${nativeSelected}))`,
 	},
-	required: { needs: ["changes", "cheap", "full", "windows"], if: "always()" },
+	macos: { needs: "changes", if: `${nonDocs} && ${readyRun} && ${nativeSelected}` },
+	required: { needs: ["changes", "cheap", "full", "windows", "macos"], if: "always()" },
 };
 const ciChangesOutputs: YamlMap = {
 	areas: `\${{ steps.areas.outputs.areas }}`,
@@ -64,10 +67,23 @@ const ciChangesOutputs: YamlMap = {
 	rust: `\${{ steps.areas.outputs.rust }}`,
 	spikes: `\${{ steps.areas.outputs.spikes }}`,
 	heavy: `\${{ steps.areas.outputs.heavy }}`,
+	"native-transport": `\${{ steps.native.outputs.native-transport }}`,
+	"ordinary-heavy": `\${{ steps.native.outputs.ordinary-heavy }}`,
 	"template-smoke": `\${{ steps.areas.outputs.template-smoke }}`,
 	source: `\${{ steps.source.outputs.source }}`,
 };
-const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
+const browserRequired = "steps.browser-setup.outputs.required == 'true'";
+const browserPath = `\${{ steps.browser-setup.outputs.path }}`;
+const browserCache: YamlMap = {
+	id: "browser-cache",
+	if: browserRequired,
+	uses: `actions/cache@${actionPins["actions/cache"]?.[0]}`,
+	with: {
+		path: browserPath,
+		key: `playwright-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('pnpm-lock.yaml') }}`,
+	},
+};
+const ciCommands: Record<string, readonly YamlMap[]> = {
 	changes: [
 		{
 			id: "areas",
@@ -76,6 +92,14 @@ const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
 				HEAD_SHA: `\${{ github.event.pull_request.head.sha || github.sha }}`,
 			},
 			run: "node tools/ci-checks/src/changes.ts",
+		},
+		{
+			id: "native",
+			env: {
+				HEAVY: `\${{ steps.areas.outputs.heavy }}`,
+				RUST: `\${{ steps.areas.outputs.rust }}`,
+			},
+			run: "node tools/ci-checks/src/native-transport.ts select",
 		},
 	],
 	cheap: [
@@ -90,10 +114,27 @@ const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
 		{ run: "pnpm install --frozen-lockfile" },
 		{ run: "pnpm build" },
 		{
-			if: "needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''",
+			id: "browser-setup",
 			env: {
 				SPIKES: `\${{ needs.changes.outputs.spikes }}`,
-				HEAVY: `\${{ needs.changes.outputs.heavy }}`,
+				PLAYWRIGHT_BROWSERS_PATH: `\${{ runner.temp }}/draftyak-playwright`,
+			},
+			run: "node tools/ci-checks/src/browser-setup.ts plan",
+		},
+		{
+			if: browserRequired,
+			env: {
+				SPIKES: `\${{ needs.changes.outputs.spikes }}`,
+				PLAYWRIGHT_BROWSERS_PATH: browserPath,
+			},
+			run: "node tools/ci-checks/src/browser-setup.ts install",
+		},
+		{
+			if: "needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+			env: {
+				SPIKES: `\${{ needs.changes.outputs.spikes }}`,
+				HEAVY: `\${{ needs.changes.outputs.ordinary-heavy }}`,
+				PLAYWRIGHT_BROWSERS_PATH: browserPath,
 				SMOKE: `\${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}`,
 				DRAFTYAK_STRICT_SKIPS: "1",
 			},
@@ -118,6 +159,31 @@ const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
 		{ run: "pnpm verify", env: { TURBO_CONCURRENCY: "1" } },
 	],
 };
+
+const nativePlatforms = {
+	full: { platform: "linux", architecture: "x64", runner: "ubuntu-24.04" },
+	windows: { platform: "win32", architecture: "x64", runner: "windows-2025" },
+	macos: { platform: "darwin", architecture: "arm64", runner: "macos-15" },
+} as const;
+for (const [job, platform] of Object.entries(nativePlatforms)) {
+	const conditional: YamlMap = job === "macos" ? {} : { if: nativeSelected };
+	const env = { NATIVE_PLATFORM: platform.platform, NATIVE_ARCHITECTURE: platform.architecture };
+	const platformCheck: YamlMap = {
+		...conditional,
+		env,
+		run: "node tools/ci-checks/src/native-transport.ts platform",
+	};
+	const execute: YamlMap = {
+		id: "native",
+		...conditional,
+		env,
+		run: "pnpm exec node tools/ci-checks/src/native-transport.ts run",
+	};
+	ciCommands[job] =
+		job === "macos"
+			? [platformCheck, { run: "pnpm install --frozen-lockfile" }, execute]
+			: [platformCheck, ...(ciCommands[job] ?? []), execute];
+}
 const prTitleCommands: readonly YamlMap[] = [
 	{
 		env: {
@@ -430,7 +496,80 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 			) {
 				report(["jobs", job], `must preserve ${job} job execution controls`);
 			}
-			checkCommands(job, definition, ciCommands[job] ?? []);
+			if (job !== "required" && job !== "changes") {
+				const expectedOutputs: YamlMap = {
+					source: `\${{ steps.source.outputs.source }}`,
+					...(job in nativePlatforms
+						? { "native-transport": `\${{ steps.native.outputs.native-transport }}` }
+						: {}),
+				};
+				if (!isDeepStrictEqual(definition.outputs, expectedOutputs))
+					report(["jobs", job, "outputs"], "must preserve source and native completion outputs");
+			}
+			checkCommands(job, definition, [
+				...(job === "required"
+					? []
+					: [{ id: "source", run: "node tools/ci-checks/src/verification-receipt.ts capture" }]),
+				...(ciCommands[job] ?? []),
+			]);
+			if (job in nativePlatforms) {
+				const platform = nativePlatforms[job as keyof typeof nativePlatforms];
+				if (definition["runs-on"] !== platform.runner || definition["timeout-minutes"] !== 30)
+					report(["jobs", job], "must preserve the native runner and time budget");
+				const rustSteps = asList(definition.steps)
+					.map(asMap)
+					.filter((step) => String(step.uses).startsWith("dtolnay/rust-toolchain@"));
+				const expectedRust: YamlMap = {
+					uses: `dtolnay/rust-toolchain@${actionPins["dtolnay/rust-toolchain"]?.[0]}`,
+					...(job === "full"
+						? { if: "needs.changes.outputs.rust != ''" }
+						: job === "windows"
+							? {
+									if: "hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'",
+								}
+							: {}),
+					with: { toolchain: rustToolchain, components: "clippy, rustfmt" },
+				};
+				if (rustSteps.length !== 1 || !isDeepStrictEqual(rustSteps[0], expectedRust))
+					report(["jobs", job, "steps"], "must preserve the pinned native Rust setup");
+				for (const step of asList(definition.steps).map(asMap)) {
+					const ordinaryCondition = Object.hasOwn(asMap(step.env), "SPIKES")
+						? "needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''"
+						: "needs.changes.outputs.ordinary-heavy != ''";
+					if (
+						job === "full" &&
+						String(step.run).includes("tools/verify/turbo.ts run test:heavy") &&
+						Object.hasOwn(asMap(step.env), "HEAVY") &&
+						(asMap(step.env).HEAVY !== `\${{ needs.changes.outputs.ordinary-heavy }}` ||
+							step.if !== ordinaryCondition)
+					)
+						report(
+							["jobs", job, "steps"],
+							"ordinary heavy suites must exclude the dedicated native selector",
+						);
+				}
+			}
+		}
+		const steps = asList(asMap(asMap(workflow.jobs).full).steps).map(asMap);
+		const caches = steps.flatMap((step, index) => (step.id === "browser-cache" ? [index] : []));
+		const cacheAt = caches[0] ?? -1;
+		const cache = Object.fromEntries(
+			Object.entries(steps[cacheAt] ?? {}).filter(([key]) => key !== "name"),
+		);
+		const planAt = steps.findIndex((step) => step.id === "browser-setup");
+		const installAt = steps.findIndex(
+			(step) => step.run === "node tools/ci-checks/src/browser-setup.ts install",
+		);
+		if (
+			caches.length !== 1 ||
+			!isDeepStrictEqual(cache, browserCache) ||
+			cacheAt <= planAt ||
+			cacheAt >= installAt
+		) {
+			report(
+				["jobs", "full", "steps"],
+				"must preserve the selected browser cache between its plan and install",
+			);
 		}
 	}
 	if (file === ".github/workflows/pr-title.yml") {
