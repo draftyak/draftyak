@@ -21,7 +21,7 @@ async function run() {
 	checkpoint = 3;
 	const namespaces = [
 		"audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets", "accounts", "pluginregistry",
-		"outbox", "challenges", "verifier", "admin", "adminchallenges",
+		"outbox", "challenges", "verifier", "admin", "adminchallenges", "backup",
 	];
 	const approvalTables = [
 		"outbox", "approval_challenges", "pair_confirm_operations", "approvals", "native_admin_operations", "native_admin_challenges",
@@ -138,7 +138,7 @@ async function run() {
 				for (const name of [
 					"device_authority", "devices", "jobs", "jobs_meta", "events", "event_meta", "native_drafts",
 					"native_draft_revisions", "native_draft_locks", "credentials", "native_send_attempts", "accounts",
-					"plugin_versions", "plugin_generations",
+					"plugin_versions", "plugin_generations", "native_backup_recovery",
 					...approvalTables,
 				]) {
 					assert.ok(ordinal("audit_meta") < ordinal(name), "Audit schema must migrate first");
@@ -147,7 +147,7 @@ async function run() {
 						assert.ok(ordinal(coreTable) < ordinal(name), "Core schema must precede component schemas");
 					}
 				}
-				assert.equal(namespaces.length, 15);
+				assert.equal(namespaces.length, 16);
 				assert.deepEqual(
 					rows.map(({ name }) => name).filter((name) => name.startsWith("_migrations_")).sort(),
 					namespaces.flatMap((namespace) => [`_migrations_${namespace}`, `_migrations_${namespace}_lock`]).sort(),
@@ -168,7 +168,7 @@ async function run() {
 						namespace === "credentials" || namespace === "revisions" ? 2 : 1);
 					appliedMigrations += applied;
 				}
-				assert.equal(appliedMigrations, 17);
+				assert.equal(appliedMigrations, 18);
 				assert.equal(sql.get("SELECT count(*) AS n FROM audit_meta").n, 1);
 				assert.equal(sql.get("SELECT count(*) AS n FROM hub_meta").n, 1);
 				const core = sql.get("SELECT singleton,identity_wrapped,statement_wrapped,identity_cert FROM hub_meta");
@@ -180,6 +180,7 @@ async function run() {
 				assert.equal(sql.get("SELECT count(*) AS n FROM devices").n, 0);
 				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_versions").n, 0);
 				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_generations").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM native_backup_recovery").n, 0);
 				for (const table of approvalTables) {
 					assert.equal(sql.get(`SELECT count(*) AS n FROM ${table}`).n, 0);
 				}

@@ -69,6 +69,10 @@ const assets = [
 		"identity/admin-challenge-migrations/0001_admin_challenges.sql",
 		"identity/admin-challenge-migrations/0001_admin_challenges.sql",
 	],
+	[
+		"recovery/backup-migrations/0001_backup_recovery.sql",
+		"recovery/backup-migrations/0001_backup_recovery.sql",
+	],
 ] as const;
 
 function checkRuntimeNames(directory: string): void {
@@ -180,7 +184,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 			path.join(import.meta.dirname, "fixtures/compiled-native-storage.mjs"),
 			path.join(stage, "fixture.mjs"),
 		);
-		expect(assets).toHaveLength(17);
+		expect(assets).toHaveLength(18);
 		for (const [source, built] of assets) {
 			const file = path.join(hub, "dist", built);
 			const original = path.join(hub, "src", source);
@@ -257,7 +261,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 				receipt.mode === mode &&
 				receipt.networkAllowed === false &&
 				receipt.nativeAddonPermission === true &&
-				receipt.schemas === 15,
+				receipt.schemas === 16,
 			"Native fixture success receipt",
 		).toBe(true);
 		// Stderr stays opaque. Allowing native addons does not establish OS isolation.
