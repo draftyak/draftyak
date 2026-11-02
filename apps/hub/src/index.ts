@@ -271,3 +271,4 @@ export {
 	type PluginRegistryOptions,
 } from "./plugins/registry/index.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";
+export * from "./sync/apply.ts";
