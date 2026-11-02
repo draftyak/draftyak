@@ -1,0 +1,18 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/bundle-hub/src/**",
+        "$TURBO_ROOT$/tools/vendor-guard/src/rules.ts",
+        "$TURBO_ROOT$/tools/vendor-guard/rules/secrets.ts",
+        "$TURBO_ROOT$/tools/fetch-node/fetch-node.mjs",
+        "$TURBO_ROOT$/tools/fetch-node/test/archives.ts"
+      ]
+    },
+    "test": {
+      "cache": false
+    }
+  }
+}
