@@ -19,6 +19,11 @@ const config: UserConfig = defineConfig({
 		{ from: "src/identity/challenges-migrations/*.sql", to: "dist/identity/challenges-migrations" },
 		{ from: "src/outbox/verifier-migrations/*.sql", to: "dist/outbox/verifier-migrations" },
 		{ from: "src/outbox/propose-migrations/*.sql", to: "dist/outbox/propose-migrations" },
+		{ from: "src/identity/admin-migrations/*.sql", to: "dist/identity/admin-migrations" },
+		{
+			from: "src/identity/admin-challenge-migrations/*.sql",
+			to: "dist/identity/admin-challenge-migrations",
+		},
 	],
 });
 export default config;

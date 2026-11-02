@@ -3,6 +3,7 @@ import { DEVICE_API_ERRORS } from "@draftyak/protocol/device-api";
 import { AuthzError, deviceApiError } from "../authz/errors.ts";
 import type { Clock } from "../kernel/clock.ts";
 import { NativeOutboxError } from "../outbox/propose-errors.ts";
+import { NativeAdminError } from "./admin-errors.ts";
 import { PinError } from "./pin.ts";
 
 export type ChallengeErrorCode =
@@ -44,6 +45,8 @@ export function refuse(code: ChallengeErrorCode): never {
 }
 export function failure(error: unknown): ChallengeError {
 	if (!types.isProxy(error) && error instanceof ChallengeError) return error;
+	if (!types.isProxy(error) && error instanceof NativeAdminError)
+		return new ChallengeError(error.code);
 	if (!types.isProxy(error) && error instanceof NativeOutboxError)
 		return new ChallengeError("STALE");
 	if (!types.isProxy(error) && error instanceof AuthzError)

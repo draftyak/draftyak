@@ -78,12 +78,19 @@ export {
 	startExtensions,
 } from "./extensions/index.ts";
 export {
+	ADMIN_OPERATION_MIGRATIONS,
+	NativeAccountModeOperations,
+	NativeAdminError,
+	type NativeAdminErrorCode,
+} from "./identity/admin-operations.ts";
+export {
 	CHALLENGE_MIGRATIONS,
 	ChallengeError,
 	type ChallengeErrorCode,
 	ChallengeService,
 	type ChallengeServiceOptions,
 } from "./identity/challenges.ts";
+export { ADMIN_CHALLENGE_MIGRATIONS } from "./identity/challenges-admin.ts";
 export {
 	type ApproverConfirmation,
 	type AuthorityState,
