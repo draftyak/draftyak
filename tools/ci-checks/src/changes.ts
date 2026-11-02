@@ -31,6 +31,7 @@ const globalFiles = new Set([
 	"vitest.shared.ts",
 ]);
 const protocol = "packages/protocol";
+const transportTests = "tools/transport-tests";
 const smokePackages = new Set([
 	"packages/create-plugin",
 	"packages/plugin-testkit",
@@ -208,7 +209,21 @@ function heavyPackages(root: string): string[] {
 		const manifest = JSON.parse(readFileSync(path.join(root, dir, "package.json"), "utf8"));
 		return typeof manifest?.scripts?.["test:heavy"] === "string";
 	});
-	return isPackage(root, "tools/verify") ? [...heavy, "tools/verify"] : heavy;
+	return [
+		...heavy,
+		...(isPackage(root, "tools/verify") ? ["tools/verify"] : []),
+		...(isPackage(root, transportTests) ? [requiredTransportTests(root)] : []),
+	];
+}
+
+function requiredTransportTests(root: string): string {
+	const file = path.join(root, transportTests, "package.json");
+	if (!existsSync(file) || !existsSync(path.join(root, "crates/Cargo.toml")))
+		throw new Error("Required native-store test package or Rust workspace is missing");
+	const manifest = JSON.parse(readFileSync(file, "utf8"));
+	if (manifest?.scripts?.["test:heavy"] !== "vitest run --mode heavy")
+		throw new Error("Required native-store heavy test command is missing or invalid");
+	return transportTests;
 }
 
 // Rust kept tests and clippy run in their spike's test:heavy, so a Rust workspace selects its spike
@@ -269,9 +284,20 @@ export function classify(
 		return true;
 	};
 	const noPackageJson = !files.some((file) => path.posix.basename(file) === "package.json");
+	const hasTransport = (): boolean =>
+		existsSync(path.join(root, "crates/draftyak-transport/Cargo.toml"));
 	for (const file of files) {
 		if (isDocs(file)) continue;
 		docsOnly = false;
+		if (
+			file.startsWith("crates/draftyak-transport/") ||
+			file.startsWith(`${transportTests}/`) ||
+			((file === "crates/Cargo.toml" || file === "crates/Cargo.lock" || toolchainFiles.has(file)) &&
+				hasTransport())
+		) {
+			alone.add(requiredTransportTests(root));
+			rust.add("crates");
+		}
 		shared ||= sharedSpikeFiles.has(file);
 		if (file.startsWith(".github/")) workflows = true;
 		else if (toolchainFiles.has(file)) {
