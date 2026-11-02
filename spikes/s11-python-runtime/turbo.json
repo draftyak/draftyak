@@ -1,0 +1,8 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test:heavy": {
+      "passThroughEnv": ["GITHUB_ACTIONS", "GITHUB_WORKFLOW", "GITHUB_JOB"]
+    }
+  }
+}

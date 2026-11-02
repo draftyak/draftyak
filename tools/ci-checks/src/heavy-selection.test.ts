@@ -25,9 +25,14 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 		(step) => step.name === "test:heavy for the touched spikes and the selected packages",
 	);
 	expect(heavy).toBeDefined();
-	expect(heavy?.if).toBe("needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''");
+	expect(heavy?.if).toBe(
+		"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+	);
 	expect(object(heavy?.env).SPIKES).toBe(`\${{ needs.changes.outputs.spikes }}`);
-	expect(object(heavy?.env).HEAVY).toBe(`\${{ needs.changes.outputs.heavy }}`);
+	expect(object(heavy?.env).HEAVY).toBe(`\${{ needs.changes.outputs.ordinary-heavy }}`);
+	expect(object(heavy?.env).PLAYWRIGHT_BROWSERS_PATH).toBe(
+		`\${{ steps.browser-setup.outputs.path }}`,
+	);
 	expect(heavy?.run).toBe(
 		[
 			"filters=()",
@@ -40,7 +45,7 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 			'if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then',
 			'  filters+=("--filter=!./packages/create-plugin")',
 			"fi",
-			`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
+			`node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
 			"",
 		].join("\n"),
 	);
@@ -91,12 +96,16 @@ describe("heavy selection contract", () => {
 	it.each([
 		"missing selectors",
 		"wrong spike source",
+		"wrong ordinary heavy source",
+		"wrong browser cache",
 		"missing Rust setup",
 		"wrong Rust cache",
 		"strict skips",
 		"wrong condition",
 		"missing serial execution",
 		"concurrent heavy packages",
+		"grouped heavy output",
+		"missing task prefixes",
 		"echoed heavy command",
 	])("rejects %s in a synthetic workflow variant", (attack) => {
 		const changed = workflow();
@@ -109,6 +118,10 @@ describe("heavy selection contract", () => {
 		if (attack === "missing selectors")
 			heavy.run = String(heavy.run).replace(` "\${filters[@]}"`, "");
 		if (attack === "wrong spike source") object(heavy.env).SPIKES = "one-spike";
+		if (attack === "wrong ordinary heavy source")
+			object(heavy.env).HEAVY = `\${{ needs.changes.outputs.heavy }}`;
+		if (attack === "wrong browser cache")
+			object(heavy.env).PLAYWRIGHT_BROWSERS_PATH = "another-cache";
 		if (attack === "missing Rust setup")
 			full.steps = steps.filter((step) => !String(step.uses).startsWith("dtolnay/"));
 		if (attack === "wrong Rust cache") {
@@ -122,6 +135,10 @@ describe("heavy selection contract", () => {
 			heavy.run = String(heavy.run).replace(" --concurrency=1", "");
 		if (attack === "concurrent heavy packages")
 			heavy.run = String(heavy.run).replace("--concurrency=1", "--concurrency=2");
+		if (attack === "grouped heavy output")
+			heavy.run = String(heavy.run).replace("--log-order=stream", "--log-order=grouped");
+		if (attack === "missing task prefixes")
+			heavy.run = String(heavy.run).replace("--log-prefix=task", "--log-prefix=none");
 		if (attack === "echoed heavy command")
 			heavy.run = String(heavy.run).replace(
 				"node tools/verify/turbo.ts",
