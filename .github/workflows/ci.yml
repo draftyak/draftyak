@@ -135,10 +135,30 @@ jobs:
           workspaces: ${{ needs.changes.outputs.rust }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Plan browser prerequisites
+        id: browser-setup
+        env:
+          SPIKES: ${{ needs.changes.outputs.spikes }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/draftyak-playwright
+        run: node tools/ci-checks/src/browser-setup.ts plan
+      - name: Cache Playwright browsers
+        id: browser-cache
+        if: steps.browser-setup.outputs.required == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.browser-setup.outputs.path }}
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install browser prerequisites
+        if: steps.browser-setup.outputs.required == 'true'
+        env:
+          SPIKES: ${{ needs.changes.outputs.spikes }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ steps.browser-setup.outputs.path }}
+        run: node tools/ci-checks/src/browser-setup.ts install
       - name: test:heavy for the touched spikes
         if: needs.changes.outputs.spikes != ''
         env:
           SPIKES: ${{ needs.changes.outputs.spikes }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ steps.browser-setup.outputs.path }}
         run: |
           filters=()
           for dir in $SPIKES; do filters+=("--filter=./$dir"); done

@@ -72,6 +72,17 @@ const ciChangesOutputs: YamlMap = {
 	"template-smoke": "false",
 	source: `\${{ steps.source.outputs.source }}`,
 };
+const browserRequired = "steps.browser-setup.outputs.required == 'true'";
+const browserPath = `\${{ steps.browser-setup.outputs.path }}`;
+const browserCache: YamlMap = {
+	id: "browser-cache",
+	if: browserRequired,
+	uses: `actions/cache@${actionPins["actions/cache"]?.[0]}`,
+	with: {
+		path: browserPath,
+		key: `playwright-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('pnpm-lock.yaml') }}`,
+	},
+};
 const ciCommands: Record<string, readonly YamlMap[]> = {
 	changes: [
 		{
@@ -103,8 +114,27 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 		{ run: "pnpm install --frozen-lockfile" },
 		{ run: "pnpm build" },
 		{
+			id: "browser-setup",
+			env: {
+				SPIKES: `\${{ needs.changes.outputs.spikes }}`,
+				PLAYWRIGHT_BROWSERS_PATH: `\${{ runner.temp }}/draftyak-playwright`,
+			},
+			run: "node tools/ci-checks/src/browser-setup.ts plan",
+		},
+		{
+			if: browserRequired,
+			env: {
+				SPIKES: `\${{ needs.changes.outputs.spikes }}`,
+				PLAYWRIGHT_BROWSERS_PATH: browserPath,
+			},
+			run: "node tools/ci-checks/src/browser-setup.ts install",
+		},
+		{
 			if: "needs.changes.outputs.spikes != ''",
-			env: { SPIKES: `\${{ needs.changes.outputs.spikes }}` },
+			env: {
+				SPIKES: `\${{ needs.changes.outputs.spikes }}`,
+				PLAYWRIGHT_BROWSERS_PATH: browserPath,
+			},
 			run: [
 				"filters=()",
 				'for dir in $SPIKES; do filters+=("--filter=./$dir"); done',
@@ -506,6 +536,27 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 						);
 				}
 			}
+		}
+		const steps = asList(asMap(asMap(workflow.jobs).full).steps).map(asMap);
+		const caches = steps.flatMap((step, index) => (step.id === "browser-cache" ? [index] : []));
+		const cacheAt = caches[0] ?? -1;
+		const cache = Object.fromEntries(
+			Object.entries(steps[cacheAt] ?? {}).filter(([key]) => key !== "name"),
+		);
+		const planAt = steps.findIndex((step) => step.id === "browser-setup");
+		const installAt = steps.findIndex(
+			(step) => step.run === "node tools/ci-checks/src/browser-setup.ts install",
+		);
+		if (
+			caches.length !== 1 ||
+			!isDeepStrictEqual(cache, browserCache) ||
+			cacheAt <= planAt ||
+			cacheAt >= installAt
+		) {
+			report(
+				["jobs", "full", "steps"],
+				"must preserve the selected browser cache between its plan and install",
+			);
 		}
 	}
 	if (file === ".github/workflows/pr-title.yml") {
