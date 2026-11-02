@@ -16,12 +16,19 @@ const migrations = [
 	["tickets", ["0001_send_attempts"]],
 	["accounts", ["0001_accounts"]],
 	["pluginregistry", ["0001_registry"]],
+	["outbox", ["0001_proposals"]],
+	["challenges", ["0001_challenges"]],
+	["verifier", ["0001_approvals"]],
+	["admin", ["0001_operations"]],
+	["adminchallenges", ["0001_admin_challenges"]],
 ];
 const businessTables = [
 	"audit_meta", "audit_events", "hub_meta", "users", "approval_pins", "jobs", "jobs_meta",
 	"events", "event_meta", "native_drafts", "native_draft_revisions", "native_draft_locks",
 	"credentials", "native_send_attempts", "device_authority", "devices", "accounts",
 	"plugin_generations", "plugin_versions",
+	"outbox", "approval_challenges", "pair_confirm_operations", "approvals",
+	"native_admin_operations", "native_admin_challenges",
 ].sort();
 let phase = "admission";
 
@@ -29,7 +36,7 @@ async function main() {
 	assert.equal(process.permission?.has("net"), false);
 	const [nativeBinding, mode, hub] = process.argv.slice(2);
 	assert.equal(typeof nativeBinding, "string");
-	assert.ok(["positive", "missing-credentials", "missing-sealed-credentials", "invalid-credentials", "missing-revision-immutability", "missing-devices", "invalid-devices", "missing-accounts", "missing-pluginregistry"].includes(mode));
+	assert.ok(["positive", "missing-credentials", "missing-sealed-credentials", "invalid-credentials", "missing-revision-immutability", "missing-devices", "invalid-devices", "missing-accounts", "missing-pluginregistry", "missing-outbox", "missing-challenges", "missing-verifier", "missing-admin", "missing-adminchallenges"].includes(mode));
 	assert.equal(typeof hub, "string");
 	for (const denied of ["src/store/migrations/audit/0001_chain.sql", "dist/index.mjs"]) {
 		assert.throws(() => readFileSync(path.join(hub, denied)), { code: "ERR_ACCESS_DENIED" });
@@ -58,6 +65,11 @@ async function main() {
 		: mode === "missing-sealed-credentials" ? "credentials/migrations/0002_sealed_credentials.sql"
 			: mode === "missing-accounts" ? "accounts/migrations/0001_accounts.sql"
 				: mode === "missing-pluginregistry" ? "plugins/registry/migrations/0001_registry.sql"
+				: mode === "missing-outbox" ? "outbox/propose-migrations/0001_proposals.sql"
+				: mode === "missing-challenges" ? "identity/challenges-migrations/0001_challenges.sql"
+				: mode === "missing-verifier" ? "outbox/verifier-migrations/0001_approvals.sql"
+				: mode === "missing-admin" ? "identity/admin-migrations/0001_operations.sql"
+				: mode === "missing-adminchallenges" ? "identity/admin-challenge-migrations/0001_admin_challenges.sql"
 				: mode.endsWith("devices") ? "devices-migrations/0001_devices.sql"
 					: "credentials/migrations/0001_credentials.sql");
 	const heldAsset = path.join(import.meta.dirname, "held-schema.sql");
@@ -75,7 +87,7 @@ async function main() {
 		const inspectSchemas = (store) => store.read((db) => {
 			const actual = db.all("SELECT name FROM main.sqlite_schema WHERE type='table'")
 				.map((row) => row.name);
-			assert.deepEqual(actual.filter((name) => businessTables.includes(name)).sort(), businessTables);
+			assert.deepEqual(actual.filter((name) => !name.startsWith("_migrations_") && !name.startsWith("sqlite_")).sort(), businessTables);
 			for (const [namespace, names] of migrations) {
 				assert.ok(actual.includes(`_migrations_${namespace}`));
 				assert.ok(actual.includes(`_migrations_${namespace}_lock`));
@@ -164,6 +176,19 @@ async function main() {
 				assert.equal(order.filter((namespace) => namespace === "accounts").length, 1);
 				assert.equal(order.includes("pluginregistry"), false);
 			}
+			const missingGroup = {
+				"missing-outbox": "outbox",
+				"missing-challenges": "challenges",
+				"missing-verifier": "verifier",
+				"missing-admin": "admin",
+				"missing-adminchallenges": "adminchallenges",
+			}[mode];
+			if (missingGroup !== undefined) {
+				const index = migrations.findIndex(([namespace]) => namespace === missingGroup);
+				assert.ok(index >= 0);
+				assert.deepEqual(order, migrations.slice(0, index).map(([namespace]) => namespace));
+				assert.equal(order.includes(missingGroup), false);
+			}
 			erased(failedKey);
 			// Inspect the encrypted file after the failed session closed its actual connection.
 			const probeKey = key();
@@ -232,7 +257,7 @@ async function main() {
 		assert.deepEqual(order.slice(beforeHealthy), [...migrations, ...migrations].map(([namespace]) => namespace));
 		assert.equal(modules, 0);
 		process.stdout.write(`${JSON.stringify({
-			ok: true, mode, schemas: 10, businessTables: businessTables.length, bookkeepingTables: 20,
+			ok: true, mode, schemas: 15, businessTables: businessTables.length, bookkeepingTables: 30,
 			beforeIdentity: true, refused, failedOpenClosed: mode !== "positive",
 			failedKeyErased: mode !== "positive", reopened: true, auditVerified: true, accountsRoundTrip: true, modules,
 		})}\n`);

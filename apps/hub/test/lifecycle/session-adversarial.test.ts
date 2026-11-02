@@ -295,6 +295,11 @@ describe("first run", () => {
 				["tickets"],
 				["accounts"],
 				["pluginregistry"],
+				["outbox"],
+				["challenges"],
+				["verifier"],
+				["admin"],
+				["adminchallenges"],
 			]);
 		} finally {
 			spy.mockRestore();

@@ -84,9 +84,14 @@ const compiledSessionModes = [
 	"invalid-devices",
 	"missing-accounts",
 	"missing-pluginregistry",
+	"missing-outbox",
+	"missing-challenges",
+	"missing-verifier",
+	"missing-admin",
+	"missing-adminchallenges",
 ] as const;
 it.each(compiledSessionModes)(
-	"opens and reopens a compiled session using all ten staged schemas (%s)",
+	"opens and reopens a compiled session using all fifteen staged schemas (%s)",
 	(mode) => {
 		const hub = path.resolve(import.meta.dirname, "../.."),
 			workspace = path.resolve(hub, "../..");
@@ -138,6 +143,26 @@ it.each(compiledSessionModes)(
 					"plugins/registry/migrations/0001_registry.sql",
 					"plugins/registry/migrations/0001_registry.sql",
 				],
+				[
+					"outbox/propose-migrations/0001_proposals.sql",
+					"outbox/propose-migrations/0001_proposals.sql",
+				],
+				[
+					"identity/challenges-migrations/0001_challenges.sql",
+					"identity/challenges-migrations/0001_challenges.sql",
+				],
+				[
+					"outbox/verifier-migrations/0001_approvals.sql",
+					"outbox/verifier-migrations/0001_approvals.sql",
+				],
+				[
+					"identity/admin-migrations/0001_operations.sql",
+					"identity/admin-migrations/0001_operations.sql",
+				],
+				[
+					"identity/admin-challenge-migrations/0001_admin_challenges.sql",
+					"identity/admin-challenge-migrations/0001_admin_challenges.sql",
+				],
 			] as const) {
 				const built = path.join(hub, "dist", relative);
 				expect(readFileSync(built)).toEqual(readFileSync(path.join(hub, "src", source)));
@@ -172,9 +197,9 @@ it.each(compiledSessionModes)(
 			expect(JSON.parse(run.stdout)).toEqual({
 				ok: true,
 				mode,
-				schemas: 10,
-				businessTables: 19,
-				bookkeepingTables: 20,
+				schemas: 15,
+				businessTables: 25,
+				bookkeepingTables: 30,
 				beforeIdentity: true,
 				refused: mode === "positive" ? null : "STORE_UNAVAILABLE",
 				failedOpenClosed: mode !== "positive",

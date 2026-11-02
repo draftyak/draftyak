@@ -52,6 +52,23 @@ const assets = [
 		"plugins/registry/migrations/0001_registry.sql",
 		"plugins/registry/migrations/0001_registry.sql",
 	],
+	["outbox/propose-migrations/0001_proposals.sql", "outbox/propose-migrations/0001_proposals.sql"],
+	[
+		"identity/challenges-migrations/0001_challenges.sql",
+		"identity/challenges-migrations/0001_challenges.sql",
+	],
+	[
+		"outbox/verifier-migrations/0001_approvals.sql",
+		"outbox/verifier-migrations/0001_approvals.sql",
+	],
+	[
+		"identity/admin-migrations/0001_operations.sql",
+		"identity/admin-migrations/0001_operations.sql",
+	],
+	[
+		"identity/admin-challenge-migrations/0001_admin_challenges.sql",
+		"identity/admin-challenge-migrations/0001_admin_challenges.sql",
+	],
 ] as const;
 
 function checkRuntimeNames(directory: string): void {
@@ -163,11 +180,15 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 			path.join(import.meta.dirname, "fixtures/compiled-native-storage.mjs"),
 			path.join(stage, "fixture.mjs"),
 		);
+		expect(assets).toHaveLength(17);
 		for (const [source, built] of assets) {
 			const file = path.join(hub, "dist", built);
+			const original = path.join(hub, "src", source);
 			expect(lstatSync(file).isFile()).toBe(true);
 			expect(lstatSync(file).isSymbolicLink()).toBe(false);
-			expect(readFileSync(file)).toEqual(readFileSync(path.join(hub, "src", source)));
+			expect(lstatSync(original).isFile()).toBe(true);
+			expect(lstatSync(original).isSymbolicLink()).toBe(false);
+			expect(readFileSync(file)).toEqual(readFileSync(original));
 			const target = path.join(stage, built);
 			mkdirSync(path.dirname(target), { recursive: true });
 			copyFileSync(file, target);
@@ -236,7 +257,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 				receipt.mode === mode &&
 				receipt.networkAllowed === false &&
 				receipt.nativeAddonPermission === true &&
-				receipt.schemas === 10,
+				receipt.schemas === 15,
 			"Native fixture success receipt",
 		).toBe(true);
 		// Stderr stays opaque. Allowing native addons does not establish OS isolation.
