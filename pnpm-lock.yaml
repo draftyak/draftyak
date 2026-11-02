@@ -185,10 +185,16 @@ importers:
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@draftyak/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
     devDependencies:
       '@draftyak/hub':
         specifier: workspace:*
         version: link:../../apps/hub
+      '@modelcontextprotocol/server':
+        specifier: 2.3.1
+        version: 2.3.1
       fast-check:
         specifier: 4.10.2
         version: 4.10.2
