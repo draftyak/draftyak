@@ -3,6 +3,7 @@ import { canonicalize } from "@draftyak/protocol/jcs";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FrozenRevisionProof } from "../../src/drafts/freeze.ts";
 import { newId } from "../../src/kernel/ids.ts";
+import { signFixtureDraftRow } from "./revision-corruption.ts";
 import { type RevisionFixture, revisionFixture } from "./revision-fixture.ts";
 
 const fixtures: RevisionFixture[] = [];
@@ -97,7 +98,7 @@ function editHeader(
 	f.store.write((tx) =>
 		tx.run("UPDATE native_drafts SET payload=?,mac=? WHERE id=?", [
 			signed.payload,
-			f.revisions.sign("header", signed),
+			signFixtureDraftRow(f, "header", signed),
 			id,
 		]),
 	);
@@ -186,7 +187,7 @@ describe("native draft record links", () => {
 			f.store.write((tx) =>
 				tx.run("UPDATE native_draft_locks SET payload=?,mac=? WHERE id=?", [
 					signed.payload,
-					f.revisions.sign("freeze", signed),
+					signFixtureDraftRow(f, "freeze", signed),
 					row.id,
 				]),
 			);
@@ -219,7 +220,7 @@ describe("native draft record links", () => {
 		f.store.write((tx) =>
 			tx.run("UPDATE native_draft_locks SET payload=?,mac=? WHERE id=?", [
 				reordered,
-				f.revisions.sign("freeze", signed),
+				signFixtureDraftRow(f, "freeze", signed),
 				row.id,
 			]),
 		);

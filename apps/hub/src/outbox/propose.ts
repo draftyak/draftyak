@@ -139,10 +139,10 @@ const storeRead = HubStore.prototype.read;
 const assertMasterKey = HubStore.prototype.assertMasterKey;
 const derive = MasterKey.prototype.derive;
 const revision = Object.freeze({
-	read: NativeDraftRevisions.prototype.read,
+	assertStore: NativeDraftRevisions.prototype.assertStore,
 	currentInTransaction: NativeDraftRevisions.prototype.currentInTransaction,
 	appendInTransaction: NativeDraftRevisions.prototype.appendInTransaction,
-	auditInTransaction: NativeDraftRevisions.prototype.auditInTransaction,
+	auditOutboxInTransaction: NativeDraftRevisions.prototype.auditOutboxInTransaction,
 });
 const freeze = Object.freeze({
 	freezeInTransaction: NativeDraftFreeze.prototype.freezeInTransaction,
@@ -380,12 +380,8 @@ export class NativeOutboxProposals {
 				auditVerify.call(audit, db);
 				return readStamp(db)?.owner;
 			});
-			if (
-				typeof owner !== "object" ||
-				owner === null ||
-				revision.read.call(revisions, (db: SqlReader) => readStamp(db)?.owner) !== owner
-			)
-				refused();
+			if (typeof owner !== "object" || owner === null) refused();
+			revision.assertStore.call(revisions, store);
 			this.#owner = owner;
 			const config = fields(
 				captureDraftData(settings),
@@ -631,9 +627,12 @@ export class NativeOutboxProposals {
 			) > 1048576
 		)
 			refused();
-		const audit_seq = revision.auditInTransaction.call(this.#revisions, tx, action, {
-				outbox: value.id,
-			}).seq,
+		const audit_seq = revision.auditOutboxInTransaction.call(
+				this.#revisions,
+				tx,
+				action,
+				value.id,
+			).seq,
 			signed = {
 				id: value.id,
 				user_id: value.userId,

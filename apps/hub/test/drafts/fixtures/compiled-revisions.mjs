@@ -30,6 +30,8 @@ try {
 	await store.migrate("audit");
 	await store.migrate("revisions");
 	revisions = new NativeDraftRevisions(store, audit, key);
+	for (const name of ["sign", "checkMac", "read", "write", "auditInTransaction"])
+		assert.equal(Reflect.get(revisions, name), undefined);
 	const first = store.write(tx => revisions.createInTransaction(tx, {
 		...bound, author, content: { channel: "chat", body: "DYTEST original", threadTs: "100.200", broadcast: false }, flags: [],
 	}));
