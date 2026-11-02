@@ -125,6 +125,8 @@ const readStore = HubStore.prototype.read,
 	verifySegment = AuditChain.prototype.verifySegment,
 	derive = MasterKey.prototype.derive;
 const bindingKeys = ["draftId", "accountId", "conversationId", "channel"] as const;
+// Match the native array resource budget, including history reads that bypass input capture.
+const MAX_NATIVE_FLAGS = 1000;
 // The only audit actions that link a header or a lock row; other modules' events never count.
 const DRAFT_HEADER_ACTIONS = [
 	"draft.created",
@@ -237,7 +239,7 @@ export function immutableDraftData<T>(input: T): T {
 }
 function flags(input: unknown): Flag[] {
 	const value = captureDraftData(input);
-	if (!Array.isArray(value) || value.length > 128) throw revisionUnavailable();
+	if (!Array.isArray(value) || value.length > MAX_NATIVE_FLAGS) throw revisionUnavailable();
 	return Flags.parse(value);
 }
 function bindHeader(header: Header, bound: DraftBinding): void {
@@ -590,7 +592,7 @@ export class NativeDraftRevisions {
 					jcsSha256(revision.content) !== revision.contentSha256 ||
 					canonicalize(normalizeDraftContent(revision.content)) !==
 						canonicalize(revision.content) ||
-					revision.flags.length > 128 ||
+					revision.flags.length > MAX_NATIVE_FLAGS ||
 					revision.createdAt < header.draft.createdAt ||
 					revision.createdAt > header.draft.updatedAt ||
 					revision.createdAt < previousAt
