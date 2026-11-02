@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/reduce.ts",
-    "./reduce": "./src/reduce.ts"
+    "./reduce": "./src/reduce.ts",
+    "./poll": "./src/poll.ts"
   },
   "publishConfig": {
     "exports": {
@@ -16,6 +17,10 @@
       "./reduce": {
         "types": "./dist/reduce.d.mts",
         "default": "./dist/reduce.mjs"
+      },
+      "./poll": {
+        "types": "./dist/poll.d.mts",
+        "default": "./dist/poll.mjs"
       }
     }
   },
@@ -28,9 +33,11 @@
     "build": "tsdown"
   },
   "dependencies": {
-    "@draftyak/protocol": "workspace:*"
+    "@draftyak/protocol": "workspace:*",
+    "@draftyak/sdk": "workspace:*"
   },
   "devDependencies": {
+    "@draftyak/fakes": "workspace:*",
     "tsdown": "0.23.1"
   }
 }
