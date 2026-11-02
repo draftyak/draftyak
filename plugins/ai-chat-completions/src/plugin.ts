@@ -1,5 +1,6 @@
 import { types } from "node:util";
 import {
+	type AiProviderContext,
 	defineAiProviderPlugin,
 	HostError,
 	type PluginContext,
@@ -125,6 +126,85 @@ function transport(context: PluginContext): CompatibleTransport {
 	};
 }
 
+type PendingResult<T> =
+	| { readonly kind: "value"; readonly value: T }
+	| { readonly kind: "error"; readonly error: unknown };
+
+async function progressStep<T>(
+	pending: Promise<PendingResult<T>>,
+	signal: AbortSignal,
+): Promise<PendingResult<T> | "tick"> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let aborted: (() => void) | undefined;
+	try {
+		return await Promise.race([
+			pending,
+			new Promise<"tick">((resolve) => {
+				timer = setTimeout(() => resolve("tick"), 5_000);
+			}),
+			new Promise<never>((_resolve, reject) => {
+				aborted = () => reject(new CompatibleError("ABORTED"));
+				signal.addEventListener("abort", aborted, { once: true });
+				if (signal.aborted) aborted();
+			}),
+		]);
+	} finally {
+		clearTimeout(timer);
+		if (aborted) signal.removeEventListener("abort", aborted);
+	}
+}
+
+async function requestProgress<T>(
+	context: AiProviderContext,
+	work: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+	const owner = new AbortController();
+	const signal = AbortSignal.any([context.signal, owner.signal]);
+	const completed: { current?: PendingResult<T> } = {};
+	let pending: Promise<PendingResult<T>> | undefined;
+	try {
+		if (signal.aborted) throw new CompatibleError("ABORTED");
+		await context.progress(0, 1);
+		if (signal.aborted) throw new CompatibleError("ABORTED");
+		pending = Promise.resolve()
+			.then(() => work(signal))
+			.then(
+				(value) => {
+					const result = { kind: "value", value } as const;
+					completed.current = result;
+					return result;
+				},
+				(error: unknown) => {
+					const result = { kind: "error", error } as const;
+					completed.current = result;
+					return result;
+				},
+			);
+		while (true) {
+			if (signal.aborted) throw new CompatibleError("ABORTED");
+			const result = completed.current;
+			if (result) {
+				if (result.kind === "error") throw result.error;
+				await context.progress(1, 1);
+				return result.value;
+			}
+			if ((await progressStep(pending, signal)) === "tick" && completed.current === undefined) {
+				if (signal.aborted) throw new CompatibleError("ABORTED");
+				// One request remains pending, so zero of its one unit is complete.
+				await context.progress(0, 1);
+			}
+		}
+	} catch (error) {
+		// Preserve an already observed broker/core failure over a failing notification or cleanup.
+		const primary = completed.current?.kind === "error" ? completed.current.error : error;
+		owner.abort();
+		await pending;
+		throw primary;
+	} finally {
+		owner.abort();
+	}
+}
+
 /** Mount the existing completed-response core through the accepted provider SDK. */
 export function createPlugin(
 	input: Parameters<typeof createCompatibleCore>[0],
@@ -150,11 +230,8 @@ export function createPlugin(
 				return core.probe(transport(context), context.signal);
 			}),
 		generateDraft: (request, context) =>
-			canonical(async () => {
-				await context.progress(0, 1);
-				const outcome = await core.generate(request, transport(context), context.signal);
-				await context.progress(1, 1);
-				return outcome;
-			}),
+			canonical(() =>
+				requestProgress(context, (signal) => core.generate(request, transport(context), signal)),
+			),
 	});
 }

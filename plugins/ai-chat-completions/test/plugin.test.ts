@@ -9,6 +9,8 @@ import { type CompatibleFormat, createPlugin, MAX_RESPONSE_BYTES } from "../src/
 import { completion, core, MODEL, OUTPUT, REQUEST } from "./helpers.ts";
 
 const PRIVATE_DETAIL = "DYTEST_UNTRUSTED_PROVIDER_DETAIL";
+const fixtureSetTimeout = setTimeout;
+const fixtureClearTimeout = clearTimeout;
 const metadata = {
 	"io.modelcontextprotocol/protocolVersion": "2026-07-28",
 	"io.modelcontextprotocol/clientCapabilities": {},
@@ -54,7 +56,11 @@ function wireBody(request: HostFetchParams): string {
 }
 
 /** Public MCP serving and SDK host transport; no testkit or native authority is constructed. */
-async function mounted(handler: HostHandler, format: CompatibleFormat = "json_schema") {
+async function mounted(
+	handler: HostHandler,
+	format: CompatibleFormat = "json_schema",
+	failProgressAt = 0,
+) {
 	const entry = createPlugin(configured(format), {
 		hostname: "127.0.0.1",
 		destination: "local",
@@ -64,23 +70,27 @@ async function mounted(handler: HostHandler, format: CompatibleFormat = "json_sc
 	const pending = new Map<number, Pending>();
 	const notifications: unknown[] = [];
 	let sequence = 0;
+	let progressWrites = 0;
 	const wire: Transport = {
 		async start() {
 			started.resolve();
 		},
 		async send(message) {
-			if ("method" in message) notifications.push(message);
-			else if (typeof message.id === "number") {
+			if ("method" in message) {
+				notifications.push(message);
+				if (message.method === "notifications/progress" && ++progressWrites === failProgressAt)
+					throw new Error(PRIVATE_DETAIL);
+			} else if (typeof message.id === "number") {
 				const waiting = pending.get(message.id);
 				if (!waiting) return;
 				pending.delete(message.id);
-				clearTimeout(waiting.timer);
+				fixtureClearTimeout(waiting.timer);
 				waiting.resolve(message as Reply);
 			}
 		},
 		async close() {
 			for (const waiting of pending.values()) {
-				clearTimeout(waiting.timer);
+				fixtureClearTimeout(waiting.timer);
 				waiting.reject(new Error("MCP fixture closed"));
 			}
 			pending.clear();
@@ -93,7 +103,7 @@ async function mounted(handler: HostHandler, format: CompatibleFormat = "json_sc
 		const id = ++sequence;
 		const reply = Promise.withResolvers<Reply>();
 		void reply.promise.catch(() => {});
-		const timer = setTimeout(() => {
+		const timer = fixtureSetTimeout(() => {
 			pending.delete(id);
 			reply.reject(new Error("MCP fixture reply timeout"));
 		}, 2000);
@@ -150,6 +160,103 @@ function failure(reply: Reply, code: string, retryAfterMs?: number): void {
 }
 
 describe("compatible provider SDK mount", () => {
+	it.each(["complete", "no-token", "broker-error", "cancel", "progress-error"] as const)(
+		"keeps real pending broker work within the progress cadence (%s)",
+		async (mode) => {
+			const entered = Promise.withResolvers<AbortSignal>();
+			const release = Promise.withResolvers<void>();
+			const drained = Promise.withResolvers<void>();
+			let hostEntered = false;
+			let hostDrained = false;
+			let closed = false;
+			const io = await mounted(
+				async (_method, _params, signal) => {
+					hostEntered = true;
+					entered.resolve(signal);
+					const stop = Promise.withResolvers<void>();
+					const abort = (): void => stop.resolve();
+					signal.addEventListener("abort", abort, { once: true });
+					try {
+						if (signal.aborted) abort();
+						await Promise.race([release.promise, stop.promise]);
+						if (signal.aborted) throw new HostError("DENIED");
+						return mode === "broker-error" ? inline("{}", 401) : inline(completion(core()).body);
+					} finally {
+						signal.removeEventListener("abort", abort);
+						hostDrained = true;
+						drained.resolve();
+					}
+				},
+				"json_schema",
+				mode === "progress-error" ? 2 : 0,
+			);
+			const values = (): number[] =>
+				io.notifications.map(
+					(message) => (message as { params: { progress: number } }).params.progress,
+				);
+			let call: ReturnType<typeof io.begin> | undefined;
+			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+			try {
+				call = io.begin("tools/call", {
+					name: "ai_draft_generate",
+					arguments: REQUEST,
+					_meta: mode === "no-token" ? {} : { progressToken: "pending-completion" },
+				});
+				const signal = await Promise.race([
+					entered.promise,
+					call.response.then(() => {
+						throw new Error("Broker request did not start");
+					}),
+				]);
+				expect(signal.aborted).toBe(false);
+				expect(values()).toEqual(mode === "no-token" ? [] : [0]);
+				await vi.advanceTimersByTimeAsync(5_000);
+				expect(values()).toEqual(mode === "no-token" ? [] : [0, 0]);
+				if (mode === "progress-error") {
+					expect(signal.aborted).toBe(true);
+					failure(await call.response, "TRANSIENT");
+					expect(hostDrained).toBe(true);
+				} else {
+					await vi.advanceTimersByTimeAsync(5_000);
+					expect(signal.aborted).toBe(false);
+					expect(values()).toEqual(mode === "no-token" ? [] : [0, 0, 0]);
+					if (mode === "cancel") {
+						io.cancel(call.id);
+						await vi.advanceTimersByTimeAsync(0);
+						expect(signal.aborted).toBe(true);
+						expect(hostDrained).toBe(true);
+					} else {
+						release.resolve();
+						if (mode === "broker-error") failure(await call.response, "AUTH_REVOKED");
+						else
+							expect(success(await call.response)).toMatchObject({ kind: "draft", output: OUTPUT });
+					}
+				}
+				release.resolve();
+				await drained.promise;
+				await io.close();
+				closed = true;
+				const final =
+					mode === "no-token"
+						? []
+						: mode === "complete"
+							? [0, 0, 0, 1]
+							: mode === "progress-error"
+								? [0, 0]
+								: [0, 0, 0];
+				expect(values()).toEqual(final);
+				await vi.advanceTimersByTimeAsync(15_000);
+				expect(values()).toEqual(final);
+				expect(vi.getTimerCount()).toBe(0);
+			} finally {
+				release.resolve();
+				if (hostEntered) await drained.promise;
+				if (!closed) await io.close();
+				vi.useRealTimers();
+			}
+		},
+	);
+
 	it.each([false, true])(
 		"reports completed-request progress only when requested (%s)",
 		async (requested) => {
