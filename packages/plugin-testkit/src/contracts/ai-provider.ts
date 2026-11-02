@@ -13,6 +13,7 @@ import { parseJSONRPCMessage, type Transport } from "@modelcontextprotocol/serve
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { createMockHub } from "../mock-hub.ts";
 import {
+	copyCompatibleHttpInputs,
 	copyResponsesHttpInputs,
 	type MockHub,
 	type MockHubOptions,
@@ -23,6 +24,8 @@ export interface AiProviderFixtures {
 	readonly upstreams: readonly Fake[];
 	/** Trusted constructor comparisons, independent of plugin request fields or metadata. */
 	readonly responsesHttp?: MockHubOptions["responsesHttp"];
+	/** Independent fixture comparison inputs; configuration alone grants no egress. */
+	readonly compatibleHttp?: MockHubOptions["compatibleHttp"];
 	readonly request: DraftRequest;
 	/** The successful scripted response for this request, including its usage. */
 	readonly expected: Extract<DraftOutcome, { kind: "draft" }>;
@@ -71,6 +74,13 @@ async function run(
 	try {
 		const fixtures = await options.fixtures();
 		if (types.isProxy(fixtures)) return result;
+		const compatibleSlot = Object.getOwnPropertyDescriptor(fixtures, "compatibleHttp");
+		if (compatibleSlot && (!compatibleSlot.enumerable || !Object.hasOwn(compatibleSlot, "value")))
+			return result;
+		const compatibleBindings =
+			compatibleSlot?.value === undefined
+				? undefined
+				: copyCompatibleHttpInputs(compatibleSlot.value);
 		const bindingSlot = Object.getOwnPropertyDescriptor(fixtures, "responsesHttp");
 		if (bindingSlot && (!bindingSlot.enumerable || !Object.hasOwn(bindingSlot, "value")))
 			return result;
@@ -86,6 +96,7 @@ async function run(
 			plugin: options.plugin,
 			upstreams: fixtures.upstreams,
 			...(bindings === undefined ? {} : { responsesHttp: bindings }),
+			...(compatibleBindings === undefined ? {} : { compatibleHttp: compatibleBindings }),
 		});
 		failure = "AI_CHECK_FAILED";
 		result = await check(hub, fixtures);
