@@ -2,11 +2,14 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AuditChain } from "../../src/audit/chain.ts";
+import type { EventLog } from "../../src/events/log.ts";
 import type { ExtensionHost } from "../../src/extensions/registry.ts";
 import type { DeviceRegistry } from "../../src/identity/devices.ts";
 import { HubIdentity } from "../../src/identity/hub-key.ts";
 import type { PinService } from "../../src/identity/pin.ts";
+import type { WorkDatabase } from "../../src/jobs/database.ts";
 import type { MasterKey } from "../../src/kernel/master-key.ts";
+import { assertHubSessionAdmission, HubSessionError } from "../../src/lifecycle/session.ts";
 import type { HubStore } from "../../src/store/store.ts";
 import {
 	configureModule,
@@ -27,8 +30,13 @@ const seen = vi.hoisted(() => ({
 	devices: [] as DeviceRegistry[],
 	deviceRevocation: [] as boolean[],
 	hosts: [] as ExtensionHost[],
+	databases: [] as WorkDatabase[],
+	events: [] as EventLog[],
 }));
-const faults = vi.hoisted(() => ({ identityProvider: false }));
+const faults = vi.hoisted(() => ({
+	identityProvider: false,
+	onClose: undefined as (() => void) | undefined,
+}));
 vi.mock("../../src/extensions/free/identity.ts", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../src/extensions/free/identity.ts")>();
 	return {
@@ -48,11 +56,32 @@ vi.mock("../../src/extensions/registry.ts", async (importOriginal) => {
 			...host,
 			close: () => {
 				seen.steps.push("extensions.close");
+				faults.onClose?.();
 				host.close();
 			},
 		});
 	};
 	return { ...actual, startExtensions };
+});
+vi.mock("../../src/jobs/database.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../src/jobs/database.ts")>();
+	class RecordedDatabase extends actual.WorkDatabase {
+		constructor(...args: ConstructorParameters<typeof actual.WorkDatabase>) {
+			super(...args);
+			seen.databases.push(this);
+		}
+	}
+	return { ...actual, WorkDatabase: RecordedDatabase };
+});
+vi.mock("../../src/events/log.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../src/events/log.ts")>();
+	class RecordedEvents extends actual.EventLog {
+		constructor(...args: ConstructorParameters<typeof actual.EventLog>) {
+			super(...args);
+			seen.events.push(this);
+		}
+	}
+	return { ...actual, EventLog: RecordedEvents };
 });
 vi.mock("../../src/identity/pin.ts", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../src/identity/pin.ts")>();
@@ -145,9 +174,11 @@ let f: SessionFixture;
 beforeEach(() => {
 	f = sessionFixture();
 	faults.identityProvider = false;
+	faults.onClose = undefined;
 	for (const list of Object.values(seen)) list.length = 0;
 });
 afterEach(async () => {
+	faults.onClose = undefined;
 	try {
 		for (const host of seen.hosts) host.close();
 	} finally {
@@ -156,6 +187,75 @@ afterEach(async () => {
 });
 
 const ERASED = Buffer.alloc(32);
+
+it("asserts original admission without constructing plugin database or event services", async () => {
+	const session = await f.open();
+	const state = session.devices.currentState();
+	expect(state.bootstrapDone).toBe(false);
+	expect([seen.databases.length, seen.events.length]).toEqual([0, 0]);
+	expect(assertHubSessionAdmission(session)).toBeUndefined();
+	expect(assertHubSessionAdmission(session)).toBeUndefined();
+	expect([seen.databases.length, seen.events.length]).toEqual([0, 0]);
+	expect(session.devices.currentState()).toEqual(state);
+	expect(seen.steps).toEqual([]);
+	session.store.read((db) => session.audit.verify(db));
+});
+
+it("rejects admission as close begins while the original Store and key are still live", async () => {
+	const key = f.key();
+	const session = await f.open({ masterKey: key });
+	expect(assertHubSessionAdmission(session)).toBeUndefined();
+	let calls = 0;
+	const observed = {
+		storeLive: false,
+		keyLive: false,
+		error: undefined as unknown,
+		returned: undefined as unknown,
+	};
+	faults.onClose = () => {
+		calls++;
+		let storeLive = false;
+		let keyLive = false;
+		let error: unknown;
+		let returned: unknown;
+		try {
+			storeLive =
+				session.store.read((db) => db.get<{ alive: number }>("SELECT 1 AS alive"))?.alive === 1;
+		} catch {
+			// Record the actual boundary; assertions run outside stop()'s failure-catching callback.
+		}
+		let derived: Uint8Array | undefined;
+		try {
+			derived = key.derive("db");
+			keyLive = derived.byteLength === 32;
+		} catch {
+			// A dead key must not masquerade as a phase-only refusal.
+		} finally {
+			derived?.fill(0);
+		}
+		try {
+			returned = assertHubSessionAdmission(session);
+		} catch (reason) {
+			error = reason;
+		}
+		Object.assign(observed, { storeLive, keyLive, error, returned });
+	};
+	const closing = session.close();
+	faults.onClose = undefined;
+	await closing;
+	expect(calls).toBe(1);
+	expect(observed.storeLive).toBe(true);
+	expect(observed.keyLive).toBe(true);
+	expect(observed.error).toBeInstanceOf(HubSessionError);
+	expect(observed.error).toMatchObject({
+		name: "HubSessionError",
+		code: "SESSION_UNAVAILABLE",
+		message: "SESSION_UNAVAILABLE",
+	});
+	expect(Object.hasOwn(observed.error as object, "cause")).toBe(false);
+	expect(observed.returned).toBeUndefined();
+	expectErased(key);
+});
 
 it("makes one audit chain and one PIN service per open and erases the audit subkey", async () => {
 	const session = await f.open();
