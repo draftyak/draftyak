@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/reduce.ts",
     "./reduce": "./src/reduce.ts",
-    "./poll": "./src/poll.ts"
+    "./poll": "./src/poll.ts",
+    "./conversations": "./src/conversations.ts",
+    "./socket-mode": "./src/socket-mode.ts"
   },
   "publishConfig": {
     "exports": {
@@ -21,6 +23,14 @@
       "./poll": {
         "types": "./dist/poll.d.mts",
         "default": "./dist/poll.mjs"
+      },
+      "./conversations": {
+        "types": "./dist/conversations.d.mts",
+        "default": "./dist/conversations.mjs"
+      },
+      "./socket-mode": {
+        "types": "./dist/socket-mode.d.mts",
+        "default": "./dist/socket-mode.mjs"
       }
     }
   },
