@@ -32,7 +32,7 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 		[
 			"filters=()",
 			'for dir in $SPIKES; do filters+=("--filter=./$dir"); done',
-			`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
+			`node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
 			"",
 		].join("\n"),
 	);
@@ -89,6 +89,8 @@ describe("heavy selection contract", () => {
 		"wrong condition",
 		"missing serial execution",
 		"concurrent heavy packages",
+		"grouped heavy output",
+		"missing task prefixes",
 		"echoed heavy command",
 	])("rejects %s in a synthetic workflow variant", (attack) => {
 		const changed = workflow();
@@ -114,6 +116,10 @@ describe("heavy selection contract", () => {
 			heavy.run = String(heavy.run).replace(" --concurrency=1", "");
 		if (attack === "concurrent heavy packages")
 			heavy.run = String(heavy.run).replace("--concurrency=1", "--concurrency=2");
+		if (attack === "grouped heavy output")
+			heavy.run = String(heavy.run).replace("--log-order=stream", "--log-order=grouped");
+		if (attack === "missing task prefixes")
+			heavy.run = String(heavy.run).replace("--log-prefix=task", "--log-prefix=none");
 		if (attack === "echoed heavy command")
 			heavy.run = String(heavy.run).replace(
 				"node tools/verify/turbo.ts",

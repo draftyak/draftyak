@@ -142,7 +142,7 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 			run: [
 				"filters=()",
 				'for dir in $SPIKES; do filters+=("--filter=./$dir"); done',
-				`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
+				`node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
 				"",
 			].join("\n"),
 		},

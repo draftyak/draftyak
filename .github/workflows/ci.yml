@@ -162,7 +162,7 @@ jobs:
         run: |
           filters=()
           for dir in $SPIKES; do filters+=("--filter=./$dir"); done
-          node tools/verify/turbo.ts run test:heavy --concurrency=1 "${filters[@]}"
+          node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "${filters[@]}"
       - name: Run native transport checks
         id: native
         if: needs.changes.outputs.native-transport == 'true'
