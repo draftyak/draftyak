@@ -14,6 +14,20 @@ const network = vi.hoisted(() => ({
 	stall: false,
 	calls: [] as { url: unknown; options: unknown }[],
 }));
+const fileSystem = vi.hoisted(() => ({
+	statHook: undefined as ((filename: string) => Promise<void>) | undefined,
+}));
+vi.mock("node:fs/promises", async (original) => {
+	const actual = await original<typeof import("node:fs/promises")>();
+	return {
+		...actual,
+		lstat: async (...args: Parameters<typeof actual.lstat>) => {
+			const result = await actual.lstat(...args);
+			await fileSystem.statHook?.(String(args[0]));
+			return result;
+		},
+	};
+});
 const gitDiagnostics = vi.hoisted(() => ({
 	commands: [] as {
 		stage: string;
@@ -174,6 +188,7 @@ function code(value: string) {
 	});
 }
 beforeEach(async () => {
+	fileSystem.statHook = undefined;
 	base = await fs.realpath(process.cwd());
 	network.status = 200;
 	network.media = "application/vnd.github.sha";
@@ -183,6 +198,7 @@ beforeEach(async () => {
 	gitDiagnostics.commands.length = 0;
 });
 afterEach(async () => {
+	fileSystem.statHook = undefined;
 	vi.restoreAllMocks();
 	for (const root of roots.splice(0)) {
 		const resolved = await fs.realpath(root);
@@ -190,6 +206,176 @@ afterEach(async () => {
 			throw Error("test cleanup containment refused");
 		await fs.rm(resolved, { recursive: true, force: true });
 	}
+});
+
+describe("fresh directory-name snapshots", () => {
+	it("accepts a genuine member rename between checks instead of retaining stale names", async () => {
+		const data = await fixture();
+		const renamed = path.join(path.dirname(data.file), "DYTEST-renamed.toml");
+		await expect(
+			databaseSourceTestInterface.checkedPaths([data.file, renamed], async () => {
+				await fs.rename(data.file, renamed);
+			}),
+		).resolves.toBeUndefined();
+	});
+	it("rereads a replacement directory at the same path before checking its new member", async () => {
+		const data = await fixture(),
+			directory = path.dirname(data.file);
+		const held = path.join(data.root, "DYTEST-held-directory");
+		const replacement = path.join(directory, "DYTEST-replacement.toml");
+		await expect(
+			databaseSourceTestInterface.checkedPaths([data.file, replacement], async () => {
+				await fs.rename(directory, held);
+				await fs.mkdir(directory);
+				await fs.writeFile(replacement, "DYTEST replacement\n");
+			}),
+		).resolves.toBeUndefined();
+	});
+	it("rejects a case-renamed ancestor through its old alias after warming the path", async () => {
+		const data = await fixture(),
+			directory = path.dirname(data.file);
+		const alias = path.join(data.root, "ADVISORIES");
+		try {
+			await expect(
+				databaseSourceTestInterface.checkedPaths([data.file, data.file], async () => {
+					await fs.rename(directory, alias);
+				}),
+			).rejects.toBeInstanceOf(DatabaseSourceError);
+		} finally {
+			await fs.rename(alias, directory);
+		}
+	});
+	it("rejects a directory link introduced after warming a genuine directory", async () => {
+		const data = await fixture(),
+			directory = path.dirname(data.file);
+		const held = path.join(data.root, "DYTEST-held-directory");
+		try {
+			await expect(
+				databaseSourceTestInterface.checkedPaths([data.file, data.file], async () => {
+					await fs.rename(directory, held);
+					await fs.symlink(held, directory, process.platform === "win32" ? "junction" : "dir");
+				}),
+			).rejects.toBeInstanceOf(DatabaseSourceError);
+		} finally {
+			if (process.platform === "win32") await fs.rmdir(directory);
+			else await fs.unlink(directory);
+			await fs.rename(held, directory);
+		}
+	});
+	it("refuses an unstable cached lookup while an independent concurrent check completes", async () => {
+		const data = await fixture(),
+			stable = await fixture(),
+			directory = path.dirname(data.file);
+		const held = path.join(data.root, "DYTEST-held-directory");
+		let releaseStable!: () => void, readyStable!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			releaseStable = resolve;
+		});
+		const ready = new Promise<void>((resolve) => {
+			readyStable = resolve;
+		});
+		let stableRun: Promise<void> | undefined;
+		try {
+			const unstable = databaseSourceTestInterface.checkedPaths(
+				[data.file, data.file],
+				async () => {
+					stableRun = databaseSourceTestInterface.checkedPaths(
+						[stable.file, stable.file],
+						async () => {
+							readyStable();
+							await gate;
+						},
+					);
+					await ready;
+					let stats = 0;
+					fileSystem.statHook = async (filename) => {
+						if (filename !== directory || ++stats !== 2) return;
+						fileSystem.statHook = undefined;
+						await fs.rename(directory, held);
+						await fs.mkdir(directory);
+						await fs.writeFile(data.file, data.blob.bytes);
+					};
+				},
+			);
+			await expect(unstable).rejects.toEqual(code("DATABASE_SOURCE_CHANGED"));
+		} finally {
+			fileSystem.statHook = undefined;
+			releaseStable();
+		}
+		expect(stableRun).toBeDefined();
+		await expect(stableRun).resolves.toBeUndefined();
+	});
+	it("keeps valid path checks working after a bounded cache must evict old directories", async () => {
+		const data = await fixture(),
+			files: string[] = [];
+		for (let index = 0; index < 130; index++) {
+			const directory = path.join(data.root, `DYTEST-${index}`);
+			await fs.mkdir(directory);
+			const file = path.join(directory, "DYTEST.txt");
+			await fs.writeFile(file, "DYTEST\n");
+			files.push(file);
+		}
+		await expect(databaseSourceTestInterface.checkedPaths(files)).resolves.toBeUndefined();
+	});
+	it("refreshes one same-inode namespace change and checks the current member name", async () => {
+		const data = await fixture(),
+			directory = path.dirname(data.file);
+		const renamed = path.join(directory, "DYTEST-current.toml");
+		await expect(
+			databaseSourceTestInterface.checkedPaths([data.file, renamed], async () => {
+				let stats = 0;
+				fileSystem.statHook = async (filename) => {
+					if (filename !== directory || ++stats !== 2) return;
+					fileSystem.statHook = undefined;
+					await fs.rename(data.file, renamed);
+					await fs.utimes(directory, new Date(NOW), new Date(NOW));
+				};
+			}),
+		).resolves.toBeUndefined();
+	});
+	it("refuses persistent namespace churn after exactly two snapshots", async () => {
+		const data = await fixture(),
+			directory = path.dirname(data.file);
+		let changes = 0;
+		await expect(
+			databaseSourceTestInterface.checkedPaths([data.file, data.file], async () => {
+				let stats = 0;
+				fileSystem.statHook = async (filename) => {
+					if (filename !== directory || ![2, 4].includes(++stats)) return;
+					await fs.writeFile(path.join(directory, `DYTEST-churn-${++changes}.toml`), "DYTEST\n");
+					await fs.utimes(
+						directory,
+						new Date(NOW + changes * 1000),
+						new Date(NOW + changes * 1000),
+					);
+				};
+			}),
+		).rejects.toEqual(code("DATABASE_SOURCE_CHANGED"));
+		expect(changes).toBe(2);
+	});
+	it("refuses an inode replacement between the permitted namespace snapshots", async () => {
+		const data = await fixture(),
+			directory = path.dirname(data.file);
+		const held = path.join(data.root, "DYTEST-held-between-snapshots");
+		await expect(
+			databaseSourceTestInterface.checkedPaths([data.file, data.file], async () => {
+				let stats = 0;
+				fileSystem.statHook = async (filename) => {
+					if (filename !== directory) return;
+					if (++stats === 2) {
+						await fs.writeFile(path.join(directory, "DYTEST-first-change"), "DYTEST\n");
+						await fs.utimes(directory, new Date(NOW), new Date(NOW));
+					}
+					if (stats === 3) {
+						fileSystem.statHook = undefined;
+						await fs.rename(directory, held);
+						await fs.mkdir(directory);
+						await fs.writeFile(data.file, data.blob.bytes);
+					}
+				};
+			}),
+		).rejects.toEqual(code("DATABASE_SOURCE_CHANGED"));
+	});
 });
 
 describe("official-source and physical database observations", () => {

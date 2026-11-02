@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { type BigIntStats, constants } from "node:fs";
@@ -75,6 +76,82 @@ interface Receipt {
 	readonly tool: string;
 }
 const receipts = new WeakMap<DatabaseObservation, Receipt>();
+interface DirectoryNames {
+	readonly identity: string;
+	readonly names: readonly string[];
+	readonly characters: number;
+}
+interface DirectoryContext {
+	readonly entries: Map<string, DirectoryNames>;
+	names: number;
+	characters: number;
+}
+const directoryContexts = new AsyncLocalStorage<DirectoryContext>();
+const DIRECTORY_CACHE_LIMITS = { directories: 128, names: 32_768, characters: 1_048_576 } as const;
+function withPathChecks<T>(operation: () => Promise<T>): Promise<T> {
+	return directoryContexts.run({ entries: new Map(), names: 0, characters: 0 }, operation);
+}
+function forgetDirectory(context: DirectoryContext, directory: string): void {
+	const entry = context.entries.get(directory);
+	if (!entry) return;
+	context.entries.delete(directory);
+	context.names -= entry.names.length;
+	context.characters -= entry.characters;
+}
+async function directoryNames(directory: string): Promise<readonly string[]> {
+	const context = directoryContexts.getStore();
+	let original: BigIntStats | undefined;
+	for (let snapshot = 0; snapshot < 2; snapshot++) {
+		const beforeStat = await fs.lstat(directory, { bigint: true });
+		const before = identity(beforeStat, false);
+		if (original && (beforeStat.dev !== original.dev || beforeStat.ino !== original.ino))
+			return refuse("DATABASE_SOURCE_CHANGED");
+		original = beforeStat;
+		if (snapshot !== 0 && context) forgetDirectory(context, directory);
+		let entry = snapshot === 0 ? context?.entries.get(directory) : undefined;
+		if (entry && entry.identity !== before) {
+			if (context) forgetDirectory(context, directory);
+			entry = undefined;
+		}
+		const names = entry?.names ?? Object.freeze(await fs.readdir(directory));
+		if (names.length > 50_000) return refuse();
+		const afterStat = await fs.lstat(directory, { bigint: true });
+		const after = identity(afterStat, false);
+		if (after !== before) {
+			if (context) forgetDirectory(context, directory);
+			if (snapshot === 0 && afterStat.dev === beforeStat.dev && afterStat.ino === beforeStat.ino)
+				continue;
+			return refuse("DATABASE_SOURCE_CHANGED");
+		}
+		if (context) {
+			if (entry) {
+				context.entries.delete(directory);
+				context.entries.set(directory, entry);
+			} else {
+				const characters = names.reduce((total, name) => total + name.length, 0);
+				if (
+					names.length <= DIRECTORY_CACHE_LIMITS.names &&
+					characters <= DIRECTORY_CACHE_LIMITS.characters
+				) {
+					while (
+						context.entries.size >= DIRECTORY_CACHE_LIMITS.directories ||
+						context.names + names.length > DIRECTORY_CACHE_LIMITS.names ||
+						context.characters + characters > DIRECTORY_CACHE_LIMITS.characters
+					) {
+						const oldest = context.entries.keys().next().value;
+						if (oldest === undefined) break;
+						forgetDirectory(context, oldest);
+					}
+					context.entries.set(directory, { identity: before, names, characters });
+					context.names += names.length;
+					context.characters += characters;
+				}
+			}
+		}
+		return names;
+	}
+	return refuse("DATABASE_SOURCE_CHANGED");
+}
 
 function clock(value: number): number {
 	if (!Number.isSafeInteger(value) || value < 0) return refuse("DATABASE_SOURCE_CLOCK");
@@ -128,7 +205,7 @@ async function checked(filename: string, file: boolean, executable = false): Pro
 	let current = path.parse(full).root;
 	identity(await fs.lstat(current, { bigint: true }), false);
 	for (const segment of full.slice(current.length).split(path.sep).filter(Boolean)) {
-		const names = await fs.readdir(current);
+		const names = await directoryNames(current);
 		if (
 			names.length > 50_000 ||
 			names.filter((name) => name.toLowerCase() === segment.toLowerCase()).length !== 1 ||
@@ -694,10 +771,10 @@ function source(root: string, services: Services): DatabaseSource {
 		return value;
 	};
 	const result: DatabaseSource = Object.freeze({
-		observe: async () => issue(await collect(root, services, result)),
+		observe: async () => issue(await withPathChecks(() => collect(root, services, result))),
 		revalidate: async (previous: DatabaseObservation) => {
 			const before = saved(previous),
-				after = await collect(root, services, result);
+				after = await withPathChecks(() => collect(root, services, result));
 			if (
 				before.commit !== after.commit ||
 				before.revision !== after.revision ||
@@ -728,6 +805,7 @@ export function createDatabaseSource(options: { readonly databaseRoot: string })
 
 /** Simulated source facts never become a production DatabaseBasis or an authorization grant. */
 export const databaseSourceTestInterface: {
+	checkedPaths(paths: readonly string[], between?: (index: number) => Promise<void>): Promise<void>;
 	create(options: {
 		readonly databaseRoot: string;
 		readonly head: () => Promise<string>;
@@ -738,6 +816,15 @@ export const databaseSourceTestInterface: {
 		observation: DatabaseObservation,
 	): Readonly<Omit<DatabaseBasis, "delivery"> & { delivery: "test-only" }>;
 } = Object.freeze({
+	checkedPaths: (paths, between) =>
+		withPathChecks(async () => {
+			for (let index = 0; index < paths.length; index++) {
+				const filename = paths[index];
+				if (filename === undefined) return refuse();
+				await checked(filename, true);
+				if (index + 1 < paths.length) await between?.(index);
+			}
+		}),
 	create: (options) =>
 		source(absolute(options.databaseRoot), {
 			native: false,
