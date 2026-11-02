@@ -580,7 +580,11 @@ describe("workflow policy", () => {
 			'          for dir in $SPIKES; do filters+=("--filter=./$dir"); done\n',
 			"",
 		],
-		["heavy selection environment", `SPIKES: \${{ needs.changes.outputs.spikes }}`, "SPIKES: ''"],
+		[
+			"heavy selection environment",
+			`name: test:heavy for the touched spikes\n        if: needs.changes.outputs.spikes != ''\n        env:\n          SPIKES: \${{ needs.changes.outputs.spikes }}`,
+			`name: test:heavy for the touched spikes\n        if: needs.changes.outputs.spikes != ''\n        env:\n          SPIKES: ''`,
+		],
 		[
 			"Windows condition",
 			"      - run: pnpm verify\n",
@@ -1499,5 +1503,59 @@ describe("workflow policy", () => {
 		["a lone CR", workflow(["push:", "  branches: [main] #\r    tags: ['v*']"]), "U+000D"],
 	])("refuses %s", (_, source, problem) => {
 		expect(checkWorkflow("x.yml", source, "1.95.0").join("\n")).toContain(problem);
+	});
+});
+
+describe("selected browser provisioning contract", () => {
+	const file = ".github/workflows/ci.yml";
+	it.each([
+		["missing plan", "node tools/ci-checks/src/browser-setup.ts plan", "echo no-plan"],
+		["wrong plan source", "id: browser-setup", "id: another-plan"],
+		[
+			"unconditional cache",
+			"id: browser-cache\n        if: steps.browser-setup.outputs.required == 'true'",
+			"id: browser-cache\n        if: true",
+		],
+		[
+			"different cache path",
+			"path: ${{ steps.browser-setup.outputs.path }}",
+			"path: another-cache",
+		],
+		[
+			"different lock cache key",
+			"key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}",
+			"key: playwright-unlocked",
+		],
+		[
+			"ignored setup failure",
+			"run: node tools/ci-checks/src/browser-setup.ts install",
+			"run: node tools/ci-checks/src/browser-setup.ts install || true",
+		],
+		[
+			"cache-hit install bypass",
+			"name: Install browser prerequisites\n        if: steps.browser-setup.outputs.required == 'true'",
+			"name: Install browser prerequisites\n        if: steps.browser-cache.outputs.cache-hit != 'true'",
+		],
+	])("rejects %s in the actual workflow", (_, before, after) => {
+		const source = read(file).replaceAll("\r\n", "\n");
+		const mutated = source.replace(before, after);
+		expect(mutated).not.toBe(source);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain("must preserve");
+	});
+	it("requires the cache between the plan and install", () => {
+		const source = read(file).replaceAll("\r\n", "\n");
+		const start = source.indexOf("      - name: Cache Playwright browsers\n");
+		const end = source.indexOf("      - name: Install browser prerequisites\n", start);
+		expect(start).toBeGreaterThan(0);
+		expect(end).toBeGreaterThan(start);
+		const cache = source.slice(start, end);
+		const without = source.slice(0, start) + source.slice(end);
+		const mutated = without.replace(
+			"      - name: test:heavy for the touched spikes\n",
+			cache + "      - name: test:heavy for the touched spikes\n",
+		);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"must preserve the selected browser cache",
+		);
 	});
 });

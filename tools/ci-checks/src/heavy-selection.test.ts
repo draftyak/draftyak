@@ -25,6 +25,9 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 	expect(heavy).toBeDefined();
 	expect(heavy?.if).toBe("needs.changes.outputs.spikes != ''");
 	expect(object(heavy?.env).SPIKES).toBe(`\${{ needs.changes.outputs.spikes }}`);
+	expect(object(heavy?.env).PLAYWRIGHT_BROWSERS_PATH).toBe(
+		`\${{ steps.browser-setup.outputs.path }}`,
+	);
 	expect(heavy?.run).toBe(
 		[
 			"filters=()",
@@ -79,6 +82,7 @@ describe("heavy selection contract", () => {
 	it.each([
 		"missing selectors",
 		"wrong spike source",
+		"wrong browser cache",
 		"missing Rust setup",
 		"wrong Rust cache",
 		"strict skips",
@@ -95,6 +99,8 @@ describe("heavy selection contract", () => {
 		if (attack === "missing selectors")
 			heavy.run = String(heavy.run).replace(` "\${filters[@]}"`, "");
 		if (attack === "wrong spike source") object(heavy.env).SPIKES = "one-spike";
+		if (attack === "wrong browser cache")
+			object(heavy.env).PLAYWRIGHT_BROWSERS_PATH = "another-cache";
 		if (attack === "missing Rust setup")
 			full.steps = steps.filter((step) => !String(step.uses).startsWith("dtolnay/"));
 		if (attack === "wrong Rust cache") {
