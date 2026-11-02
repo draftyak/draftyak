@@ -17,6 +17,7 @@ const config: UserConfig = defineConfig({
 		{ from: "src/plugins/registry/migrations/*.sql", to: "dist/plugins/registry/migrations" },
 		{ from: "src/accounts/migrations/*.sql", to: "dist/accounts/migrations" },
 		{ from: "src/sync/migrations/*.sql", to: "dist/sync/migrations" },
+		{ from: "src/sync/raw-migrations/*.sql", to: "dist/sync/raw-migrations" },
 	],
 });
 export default config;
