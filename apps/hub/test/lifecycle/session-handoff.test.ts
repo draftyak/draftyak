@@ -147,11 +147,11 @@ beforeEach(() => {
 	faults.identityProvider = false;
 	for (const list of Object.values(seen)) list.length = 0;
 });
-afterEach(() => {
+afterEach(async () => {
 	try {
 		for (const host of seen.hosts) host.close();
 	} finally {
-		f.remove();
+		await f.remove();
 	}
 });
 
@@ -171,8 +171,8 @@ it("makes one audit chain and one PIN service per open and erases the audit subk
 
 it("closes the extensions, PIN service, identity, audit key and store, then erases the key", async () => {
 	const session = await f.open();
-	session.close();
-	session.close();
+	await session.close();
+	await session.close();
 	expect(seen.deviceRevocation).toEqual([true]);
 	expect(seen.steps).toEqual([
 		"extensions.close",

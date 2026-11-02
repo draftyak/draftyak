@@ -15,6 +15,7 @@ const requiredCredentialAsset = path.join(
 	"0002_sealed_credentials.sql",
 );
 const requiredAccountAsset = path.join(HUB_NAMESPACES.accounts, "0001_accounts.sql");
+const requiredRegistryAsset = path.join(HUB_NAMESPACES.pluginregistry, "0001_registry.sql");
 const access = vi.mocked(accessSync);
 
 afterEach(() => access.mockReset());
@@ -31,12 +32,13 @@ function recorder(): { store: HubStore; calls: string[] } {
 	return { store, calls };
 }
 
-it("checks the required assets and migrates all nine namespaces exactly once", async () => {
+it("checks the required assets and migrates all ten namespaces exactly once", async () => {
 	const { store, calls } = recorder();
 	await migrateHubSchemas(store);
 	expect(access).toHaveBeenCalledWith(requiredRevisionAsset, constants.R_OK);
 	expect(access).toHaveBeenCalledWith(requiredCredentialAsset, constants.R_OK);
 	expect(access).toHaveBeenCalledWith(requiredAccountAsset, constants.R_OK);
+	expect(access).toHaveBeenCalledWith(requiredRegistryAsset, constants.R_OK);
 	expect(calls).toEqual([
 		"audit",
 		"core",
@@ -47,8 +49,9 @@ it("checks the required assets and migrates all nine namespaces exactly once", a
 		"credentials",
 		"tickets",
 		"accounts",
+		"pluginregistry",
 	]);
-	expect(new Set(calls).size).toBe(9);
+	expect(new Set(calls).size).toBe(10);
 });
 
 it("refuses a missing revision immutability asset before later namespaces can migrate", async () => {
@@ -86,4 +89,16 @@ it("refuses a missing account asset before its namespace can migrate", async () 
 	await expect(migrateHubSchemas(store)).rejects.toBe(missing);
 	expect(calls).toContain("tickets");
 	expect(calls).not.toContain("accounts");
+});
+
+it("refuses a missing plugin registry asset before its namespace can migrate", async () => {
+	const { store, calls } = recorder();
+	const missing = Object.assign(new Error("Required registry asset missing"), { code: "ENOENT" });
+	access.mockImplementation((filename) => {
+		if (filename === requiredRegistryAsset) throw missing;
+	});
+	await expect(migrateHubSchemas(store)).rejects.toBe(missing);
+	expect(access).toHaveBeenCalledWith(requiredRegistryAsset, constants.R_OK);
+	expect(calls).toContain("accounts");
+	expect(calls).not.toContain("pluginregistry");
 });

@@ -45,9 +45,9 @@ describe("open", () => {
 		]);
 		first.store.read((db) => first.audit.verify(db));
 		expect(first.extensions.modules).toEqual([]);
-		first.close();
+		await first.close();
 		expectErased(key);
-		expect(listing(f.folder)).toEqual(["draftyak.db"]);
+		expect(listing(f.folder)).toEqual(["draftyak.db", "run"]);
 		const second = await f.open();
 		expect([second.hubId, second.hid, second.identity.certificate]).toEqual([
 			first.hubId,
@@ -58,7 +58,7 @@ describe("open", () => {
 
 	it("refuses another key without writing, deleting or creating an identity", async () => {
 		const first = await f.open();
-		first.close();
+		await first.close();
 		const before = { files: listing(f.folder), hash: digest(f.database) };
 		const wrong = f.otherKey();
 		expect((await refusal(f.open({ masterKey: wrong }))).code).toBe("UNLOCK_REFUSED");
@@ -76,7 +76,7 @@ describe("open", () => {
 			"Database was never initialized; remove this unused empty database before creating it again",
 		]);
 		expectErased(key);
-		expect(listing(f.folder)).toEqual(["draftyak.db"]);
+		expect(listing(f.folder)).toEqual(["draftyak.db", "run"]);
 		expect(statSync(f.database).size).toBe(0);
 	});
 
@@ -98,7 +98,7 @@ describe("open", () => {
 				"Audit storage is missing or incomplete. Restore a valid backup; remove and recreate the database only if it was never used.",
 			]);
 			expectErased(key);
-			expect(listing(f.folder)).toEqual(["draftyak.db"]);
+			expect(listing(f.folder)).toEqual(["draftyak.db", "run"]);
 		}
 		const check = new HubStore({ filename: f.database, nativeBinding, masterKey: f.key() });
 		try {
@@ -117,10 +117,10 @@ describe("close", () => {
 		await expect(session.pins.verify("not-a-user", PIN, "approval")).rejects.toThrow("PIN_INVALID");
 		expect(() => session.audit.verify(noRows)).toThrow("Audit head verification failed");
 		expectUsable(key);
-		session.close();
+		await session.close();
 		await expectLocked(session);
 		expectErased(key);
-		session.close();
+		await session.close();
 		expectErased(key);
 	});
 
@@ -134,7 +134,7 @@ describe("close", () => {
 		);
 		await first.pins.initialize(user, PIN);
 		const proof = await first.pins.verify(user, PIN, "approval");
-		first.close();
+		await first.close();
 		await expect(first.pins.verify(user, PIN, "approval")).rejects.toThrow("PIN_REQUIRED");
 		const second = await f.open({ clock });
 		expect(() =>
@@ -161,16 +161,16 @@ describe("close", () => {
 		expectErased(waiting);
 		first.store.read((db) => first.audit.verify(db));
 		first.identity.tlsPrivateKey().fill(0);
-		first.close();
+		await first.close();
 		const second = await f.open();
 		expect(second.hubId).toBe(first.hubId);
 	});
 
 	it("ignores a repeated close of an earlier session while a later one holds the folder", async () => {
 		const first = await f.open();
-		first.close();
+		await first.close();
 		const second = await f.open();
-		first.close();
+		await first.close();
 		const waiting = f.key();
 		expect((await refusal(f.open({ masterKey: waiting }))).code).toBe("SESSION_ACTIVE");
 		expectErased(waiting);
@@ -190,7 +190,7 @@ describe("extensions", () => {
 		const [sink] = session.extensions.providers("auditSink");
 		expect(sink?.id).toBe("sink");
 		expect(listing(f.folder)).toContain("ext-probe.db");
-		session.close();
+		await session.close();
 		expect(session.extensions.providers("auditSink")).toEqual([]);
 		expect(() => sink?.append({} as never)).toThrow(ExtensionError);
 		const reopened = await f.open();

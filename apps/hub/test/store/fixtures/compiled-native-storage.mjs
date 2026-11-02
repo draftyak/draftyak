@@ -19,7 +19,7 @@ async function run() {
 	const mode = process.argv[3];
 	assert.ok(["healthy", "missing-asset", "invalid-sql", "refused-schema"].includes(mode));
 	checkpoint = 3;
-	const namespaces = ["audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets", "accounts"];
+	const namespaces = ["audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets", "accounts", "pluginregistry"];
 	const filename = path.join(import.meta.dirname, "native-storage.db");
 	const bytes = randomBytes(32);
 	const masterKey = new MasterKey(bytes);
@@ -132,6 +132,7 @@ async function run() {
 				for (const name of [
 					"device_authority", "devices", "jobs", "jobs_meta", "events", "event_meta", "native_drafts",
 					"native_draft_revisions", "native_draft_locks", "credentials", "native_send_attempts", "accounts",
+					"plugin_versions", "plugin_generations",
 				]) {
 					assert.ok(ordinal("audit_meta") < ordinal(name), "Audit schema must migrate first");
 					assert.ok(ordinal("audit_events") < ordinal(name), "Audit events must migrate first");
@@ -152,6 +153,8 @@ async function run() {
 				assert.deepEqual(sql.get("SELECT singleton,epoch,bootstrap_done,owner_user_id FROM device_authority"),
 					{ singleton: 1, epoch: 0, bootstrap_done: 0, owner_user_id: null });
 				assert.equal(sql.get("SELECT count(*) AS n FROM devices").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_versions").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_generations").n, 0);
 				const genesis = sql.get("SELECT audit_seq,audit_head,audit_tag FROM audit_meta");
 				assert.match(genesis.audit_tag, /^[0-9a-f]{64}$/);
 				audit.verify(sql);
