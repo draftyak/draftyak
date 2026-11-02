@@ -1,9 +1,21 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
+import { DecompressionStream, ReadableStream as NodeReadableStream } from "node:stream/web";
 import { types } from "node:util";
 import type { Fake } from "@draftyak/fakes";
+import {
+	admitJsonMemberFetch,
+	createJsonMemberDecoder,
+	createJsonMemberErrorBody,
+	type JsonMember,
+	JsonMemberRefusal,
+	type JsonMemberWriter,
+	writeJsonMember,
+} from "@draftyak/json-member";
 import { type HeaderList, headersSha256, sha256Hex } from "@draftyak/protocol/hash";
 import {
+	HOST_JSON_MEMBER_MAX_DECODED_BYTES,
+	HOST_JSON_MEMBER_MAX_ENTITY_BYTES,
 	HOST_MAX_ACTIVE_REQUESTS,
 	HOST_MAX_STREAM_BYTES,
 	HOST_METHOD_SCHEMAS,
@@ -91,7 +103,7 @@ const streamLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, "byteL
 const validateStreamView = Uint8Array.prototype.values;
 const copyStreamBytes = Uint8Array.prototype.set;
 
-function captureStreamChunk(value: unknown, remaining: number): Uint8Array {
+function captureStreamChunk(value: unknown, remaining: number): Uint8Array<ArrayBuffer> {
 	try {
 		if (types.isProxy(value) || !types.isUint8Array(value)) throw new HostError("BAD_REQUEST");
 		// Iterator creation validates detached and out-of-bounds views without reading caller fields.
@@ -210,6 +222,8 @@ export function createMockHost(
 	const reserved = new Set<string>();
 	const tickets = new Map<string, { ticket: SendTicket; headers: HeaderList }>();
 	const blobs = new Map<string, Uint8Array>();
+	let stagedBlobBytes = 0;
+	let stagedBlobCount = 0;
 	const kv = new Map<string, unknown>();
 	const denials: Denial[] = [];
 	const alerts: { readonly reason: TicketMismatch }[] = [];
@@ -273,8 +287,8 @@ export function createMockHost(
 			closed ||
 			!(bytes instanceof Uint8Array) ||
 			bytes.byteLength > BODY_LIMIT ||
-			blobs.size >= STATE_LIMIT ||
-			bytes.byteLength > STATE_BYTES - blobBytes
+			blobs.size + stagedBlobCount >= STATE_LIMIT ||
+			bytes.byteLength > STATE_BYTES - blobBytes - stagedBlobBytes
 		)
 			throw new MockHubError("BLOB_LIMIT");
 		const ref = id();
@@ -397,8 +411,6 @@ export function createMockHost(
 		const foundTicket = takeTicket(params);
 		if (manifest.kind !== "tool" && params.lookupPermit !== undefined)
 			return deny("LOOKUP_PERMIT_FORBIDDEN");
-		if (params.saveAs !== undefined && params.saveAs !== "blob")
-			return deny("STORAGE_MODE_UNSUPPORTED", "UNSUPPORTED");
 		if (manifest.kind === "tool") {
 			if (
 				!["GET", "HEAD"].includes(params.method) ||
@@ -418,6 +430,19 @@ export function createMockHost(
 		});
 		if (!matched) return deny("OFF_RULE");
 		const { rule, url } = matched;
+		let member: JsonMember | undefined;
+		if (params.saveAs !== undefined && params.saveAs !== "blob") {
+			try {
+				member = admitJsonMemberFetch({
+					pluginKind: manifest.kind,
+					requestClass: rule.class,
+					params,
+				});
+			} catch (error) {
+				if (error instanceof JsonMemberRefusal) return deny(error.code, error.hostError);
+				throw error;
+			}
+		}
 		if (rule.class === "organize" && account?.mode !== "full") return deny("FULL_MODE_REQUIRED");
 		if (rule.class === "send") {
 			if (manifest.kind !== "channel" || !manifest.send) return deny("RENDERER_REQUIRED");
@@ -521,6 +546,162 @@ export function createMockHost(
 			const common = { status: response.status, headers: responseHeaders };
 			if (!representable(common)) return deny("RESPONSE_INVALID", "BAD_REQUEST");
 			admit();
+			if (member !== undefined) {
+				const limit = Math.min(rule.maxBytes, HOST_JSON_MEMBER_MAX_ENTITY_BYTES);
+				const limits = { compressedEntityBytes: limit, decompressedEntityBytes: limit };
+				const success = response.status >= 200 && response.status < 300;
+				const decoder = success
+					? createJsonMemberDecoder(member, {
+							...limits,
+							decodedBytes: Math.min(rule.maxBytes, HOST_JSON_MEMBER_MAX_DECODED_BYTES),
+						})
+					: undefined;
+				const errorBody = success ? undefined : createJsonMemberErrorBody(limits);
+				const counter = decoder ?? errorBody;
+				if (!counter) return deny("RESPONSE_INVALID", "BAD_REQUEST");
+				const upstreamReader = reader;
+				let transportFailure: unknown;
+				// Fake transports supply wire bytes. Count them before Content-Encoding is removed.
+				const raw = new NodeReadableStream<NodeJS.BufferSource>(
+					{
+						async pull(controller) {
+							try {
+								admit();
+								const next = upstreamReader
+									? await interrupted(track(upstreamReader.read()), signal)
+									: { done: true as const, value: undefined };
+								admit();
+								if (next.done) controller.close();
+								else {
+									const chunk = captureStreamChunk(next.value, limit);
+									counter.countCompressed(chunk.byteLength);
+									controller.enqueue(chunk);
+								}
+							} catch (error) {
+								transportFailure ??= error;
+								controller.error(error);
+							}
+						},
+						cancel() {
+							return track(upstreamReader?.cancel().catch(() => {}) ?? Promise.resolve());
+						},
+					},
+					{ highWaterMark: 0 },
+				);
+				const encoding = response.headers.get("content-encoding")?.trim().toLowerCase();
+				const format =
+					encoding === "gzip" || encoding === "deflate"
+						? encoding
+						: encoding === "br"
+							? "brotli"
+							: undefined;
+				if (encoding && encoding !== "identity" && format === undefined)
+					return deny("CONTENT_ENCODING_UNSUPPORTED", "UNSUPPORTED");
+				const entityReader = (
+					format ? raw.pipeThrough(new DecompressionStream(format)) : raw
+				).getReader();
+				const entity = async function* (): AsyncGenerator<Uint8Array> {
+					for (;;) {
+						const next = await interrupted(track(entityReader.read()), signal);
+						admit();
+						if (next.done) return;
+						if (!types.isUint8Array(next.value)) throw new JsonMemberRefusal("ENTITY_FAILED");
+						yield next.value;
+					}
+				};
+				try {
+					if (errorBody) {
+						for await (const chunk of entity()) errorBody.push(chunk);
+						admit();
+						return {
+							...common,
+							body: { base64: Buffer.from(errorBody.end()).toString("base64url") },
+						};
+					}
+					if (!decoder) return deny("RESPONSE_INVALID", "BAD_REQUEST");
+					if (blobs.size + stagedBlobCount >= STATE_LIMIT) return deny("BLOB_LIMIT", "TOO_LARGE");
+					stagedBlobCount++;
+					const chunks: Uint8Array[] = [];
+					let bytes = 0;
+					let staging = true;
+					let committed: string | undefined;
+					const release = (): void => {
+						if (!staging) return;
+						staging = false;
+						stagedBlobCount--;
+						stagedBlobBytes -= bytes;
+						for (const chunk of chunks) chunk.fill(0);
+						chunks.length = 0;
+					};
+					const writer: JsonMemberWriter = {
+						async write(chunk) {
+							admit();
+							if (!staging) throw new JsonMemberRefusal("STORAGE_FAILED");
+							if (chunk.byteLength > STATE_BYTES - blobBytes - stagedBlobBytes)
+								throw new JsonMemberRefusal("DECODED_TOO_LARGE");
+							// Coalesce tiny transport writes into bounded 64 KiB storage blocks.
+							for (let offset = 0; offset < chunk.byteLength; ) {
+								const used = bytes % MAX_INLINE_BYTES;
+								if (used === 0) chunks.push(new Uint8Array(MAX_INLINE_BYTES));
+								const tail = chunks[chunks.length - 1];
+								if (!tail) throw new JsonMemberRefusal("STORAGE_FAILED");
+								const size = Math.min(chunk.byteLength - offset, MAX_INLINE_BYTES - used);
+								tail.set(chunk.subarray(offset, offset + size), used);
+								offset += size;
+								bytes += size;
+								stagedBlobBytes += size;
+							}
+						},
+						async commit() {
+							admit();
+							if (!staging) throw new JsonMemberRefusal("STORAGE_FAILED");
+							const body = Buffer.concat(chunks, bytes);
+							// Release this reservation and publish synchronously, without an intervening await.
+							release();
+							try {
+								const result = putBlob(body);
+								committed = result.ref;
+								admit();
+								return result;
+							} finally {
+								body.fill(0);
+							}
+						},
+						async abort() {
+							release();
+							const stored = committed === undefined ? undefined : blobs.get(committed);
+							if (committed !== undefined && stored) {
+								blobs.delete(committed);
+								blobBytes -= stored.byteLength;
+								stored.fill(0);
+							}
+						},
+					};
+					try {
+						const body = await writeJsonMember(decoder, entity(), writer, signal);
+						admit();
+						return { ...common, body };
+					} catch (error) {
+						await writer.abort();
+						throw error;
+					}
+				} catch (error) {
+					if (transportFailure instanceof HostError)
+						return deny(
+							transportFailure.code === "TOO_LARGE" ? "RESPONSE_TOO_LARGE" : "ENTITY_FAILED",
+							transportFailure.code,
+						);
+					if (transportFailure instanceof JsonMemberRefusal)
+						return deny(transportFailure.code, transportFailure.hostError);
+					if (error instanceof JsonMemberRefusal) return deny(error.code, error.hostError);
+					throw error;
+				} finally {
+					// Also release the entity reader when quota refuses before iteration starts.
+					void track(entityReader.cancel().catch(() => {}))
+						.then(() => entityReader.releaseLock())
+						.catch(() => {});
+				}
+			}
 			if (reservation) {
 				const streamId = id();
 				const ownedReader = reader;
@@ -662,7 +843,8 @@ export function createMockHost(
 				const ownedReader = reader;
 				if (ownedReader) {
 					const cancellation = track(ownedReader.cancel().catch(() => {}));
-					if (reservation) void cancellation.then(() => ownedReader.releaseLock());
+					if (reservation || member !== undefined)
+						void cancellation.then(() => ownedReader.releaseLock()).catch(() => {});
 					else ownedReader.releaseLock();
 				}
 				retired = true;

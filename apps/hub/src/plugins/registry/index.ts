@@ -8,6 +8,11 @@ import { fields, integer, id as ulid } from "../../jobs/values.ts";
 import { type Clock, systemClock } from "../../kernel/clock.ts";
 import { newId } from "../../kernel/ids.ts";
 import {
+	assertNativePluginOwner,
+	type NativePluginSessionParts,
+	nativePluginInputs,
+} from "../../lifecycle/native-session-context.ts";
+import {
 	assertStoreTransaction,
 	HubStore,
 	type SqlReader,
@@ -15,7 +20,9 @@ import {
 } from "../../store/store.ts";
 import {
 	type BundledPluginId,
+	closeNativePluginInstaller,
 	type InstalledPlugin,
+	openNativePluginInstaller,
 	openPluginInstaller,
 	type PluginInstaller,
 	type PluginInstallerOptions,
@@ -77,6 +84,86 @@ export interface PluginRegistry {
 	upgrade(): never;
 	close(): Promise<void>;
 }
+interface NativeRegistryOwner {
+	readonly session: unknown;
+	readonly parts: NativePluginSessionParts;
+}
+interface NativeRegistry {
+	readonly parts: NativePluginSessionParts;
+	readonly opening: Promise<PluginRegistry>;
+	value?: PluginRegistry;
+	closing: boolean;
+	closePromise?: Promise<void>;
+}
+const nativeRegistries = new WeakMap<object, NativeRegistry>();
+
+/** Internal construction shares the original session's one installer and registry lifetime. */
+export function openNativePluginRegistry(session: unknown): Promise<PluginRegistry> {
+	try {
+		const parts = nativePluginInputs(session),
+			key = session as object;
+		const previous = nativeRegistries.get(key);
+		if (previous) {
+			if (previous.closing || previous.parts !== parts) refuse("unavailable");
+			return previous.opening;
+		}
+		let owner: NativeRegistry;
+		const opening = Promise.resolve()
+			.then(async () => {
+				assertNativePluginOwner(session, parts);
+				const value = await createPluginRegistry(
+					{
+						store: parts.store,
+						database: parts.database,
+						devices: parts.devices,
+						audit: parts.audit,
+						events: parts.events,
+						clock: parts.clock,
+						installer: {
+							directory: parts.directory,
+							bundles: parts.bundles,
+							nativeBinding: parts.nativeBinding,
+						},
+					},
+					{ session, parts },
+				);
+				owner.value = value;
+				if (owner.closing) refuse("unavailable");
+				return value;
+			})
+			.catch(() => {
+				throw new PluginRegistryError("unavailable");
+			});
+		owner = { parts, opening, closing: false };
+		nativeRegistries.set(key, owner);
+		void opening.catch(() => undefined);
+		return opening;
+	} catch {
+		return Promise.reject(new PluginRegistryError("unavailable"));
+	}
+}
+
+export function closeNativePluginRegistry(session: unknown): Promise<void> {
+	const owner =
+		session !== null && typeof session === "object" ? nativeRegistries.get(session) : undefined;
+	if (!owner) return Promise.resolve();
+	owner.closing = true;
+	if (owner.closePromise) return owner.closePromise;
+	const immediate = owner.value?.close();
+	if (immediate) void immediate.catch(() => undefined);
+	const closing = Promise.allSettled([owner.opening])
+		.then(async () => {
+			if (immediate) await immediate;
+			else if (owner.value) await owner.value.close();
+		})
+		.catch(() => {
+			owner.closePromise = undefined;
+			throw new PluginRegistryError("unavailable");
+		});
+	owner.closePromise = closing;
+	void closing.catch(() => undefined);
+	return closing;
+}
 interface Owner {
 	readonly id: string;
 	readonly epoch: number;
@@ -118,20 +205,26 @@ class Records {
 	readonly #root: string;
 	readonly #pins: ReadonlyMap<string, PackageLock>;
 	readonly #active = new Set<string>();
+	readonly #settling = new Set<Promise<void>>();
+	readonly #native: NativeRegistryOwner | undefined;
 	#closed = false;
+	#closePromise: Promise<void> | undefined;
 	constructor(
 		options: PluginRegistryOptions,
 		installer: PluginInstaller,
 		root: string,
 		catalog: ReadonlyMap<string, PackageLock>,
+		native?: NativeRegistryOwner,
 	) {
 		this.#options = options;
 		this.#installer = installer;
 		this.#root = root;
 		this.#pins = catalog;
+		this.#native = native;
 	}
 	#owner(sql: SqlReader): Owner {
 		if (this.#closed) refuse("unavailable");
+		if (this.#native) assertNativePluginOwner(this.#native.session, this.#native.parts);
 		assertDevices.call(this.#options.devices, this.#options.store);
 		const current = deviceState.call(this.#options.devices, sql);
 		if (!current.bootstrapDone || current.ownerUserId === null) refuse("unavailable");
@@ -167,7 +260,9 @@ class Records {
 		try {
 			const sql = workSql.call(this.#options.database, scope);
 			assertStoreTransaction(this.#options.store, sql);
-			return operation(sql, this.#owner(sql));
+			const result = operation(sql, this.#owner(sql));
+			if (this.#native) assertNativePluginOwner(this.#native.session, this.#native.parts);
+			return result;
 		} catch (error) {
 			try {
 				abort.call(this.#options.database, scope);
@@ -213,7 +308,22 @@ class Records {
 			ids: [record.id],
 		});
 	}
-	async stageBundled(
+	stageBundled(
+		rawId: BundledPluginId,
+		version: string,
+		archive: Uint8Array,
+		rawExpected: number,
+	): Promise<PluginRecord> {
+		const result = this.#stageBundled(rawId, version, archive, rawExpected);
+		const settled = result.then(
+			() => undefined,
+			() => undefined,
+		);
+		this.#settling.add(settled);
+		void settled.then(() => this.#settling.delete(settled));
+		return result;
+	}
+	async #stageBundled(
 		rawId: BundledPluginId,
 		version: string,
 		archive: Uint8Array,
@@ -222,6 +332,7 @@ class Records {
 		let id: BundledPluginId | undefined;
 		let reserved = false;
 		try {
+			if (this.#closed) refuse("unavailable");
 			id = pluginId(rawId);
 			const expected = integer(rawExpected, 0, Number.MAX_SAFE_INTEGER - 1);
 			if (typeof version !== "string") refuse("input");
@@ -338,16 +449,36 @@ class Records {
 	upgrade(): never {
 		return refuse("admin");
 	}
-	async close(): Promise<void> {
+	close(): Promise<void> {
 		this.#closed = true;
-		await this.#installer.close();
+		if (!this.#closePromise) {
+			this.#closePromise = Promise.allSettled([...this.#settling, this.#installer.close()])
+				.then((results) => {
+					if (results.some((result) => result.status === "rejected"))
+						throw new PluginRegistryError("unavailable");
+				})
+				.catch(() => {
+					this.#closePromise = undefined;
+					throw new PluginRegistryError("unavailable");
+				});
+			void this.#closePromise.catch(() => undefined);
+		}
+		return this.#closePromise;
 	}
 }
 
 /** Native composition only: this stages verified records and never activates or reviews a plugin. */
 export async function openPluginRegistry(raw: PluginRegistryOptions): Promise<PluginRegistry> {
+	return createPluginRegistry(raw);
+}
+
+async function createPluginRegistry(
+	raw: PluginRegistryOptions,
+	native?: NativeRegistryOwner,
+): Promise<PluginRegistry> {
 	let installer: PluginInstaller | undefined;
 	try {
+		if (native) assertNativePluginOwner(native.session, native.parts);
 		const input = fields(
 			raw,
 			["store", "database", "devices", "audit", "events", "installer"],
@@ -362,16 +493,21 @@ export async function openPluginRegistry(raw: PluginRegistryOptions): Promise<Pl
 		const config = fields(input.installer, ["directory", "bundles", "nativeBinding"]),
 			catalog = pins(config.bundles);
 		const root = await canonicalDirectory(config.directory);
-		installer = await openPluginInstaller({
-			directory: root,
-			bundles: catalog,
-			nativeBinding: config.nativeBinding as string,
-		});
+		if (native) assertNativePluginOwner(native.session, native.parts);
+		installer = native
+			? await openNativePluginInstaller(native.session)
+			: await openPluginInstaller({
+					directory: root,
+					bundles: catalog,
+					nativeBinding: config.nativeBinding as string,
+				});
+		if (native) assertNativePluginOwner(native.session, native.parts);
 		const records = new Records(
 			options,
 			installer,
 			root,
 			new Map(catalog.map((pin) => [pinKey(pin.id, pin.package.version), pin.package])),
+			native,
 		);
 		return Object.freeze({
 			stageBundled: records.stageBundled.bind(records),
@@ -384,7 +520,8 @@ export async function openPluginRegistry(raw: PluginRegistryOptions): Promise<Pl
 			close: records.close.bind(records),
 		});
 	} catch {
-		await installer?.close();
+		if (native) await closeNativePluginInstaller(native.session);
+		else await installer?.close();
 		throw new PluginRegistryError("unavailable");
 	}
 }

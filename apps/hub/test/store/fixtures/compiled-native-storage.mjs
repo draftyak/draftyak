@@ -19,7 +19,13 @@ async function run() {
 	const mode = process.argv[3];
 	assert.ok(["healthy", "missing-asset", "invalid-sql", "refused-schema"].includes(mode));
 	checkpoint = 3;
-	const namespaces = ["audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets", "accounts"];
+	const namespaces = [
+		"audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets", "accounts", "pluginregistry",
+		"outbox", "challenges", "verifier", "admin", "adminchallenges", "backup",
+	];
+	const approvalTables = [
+		"outbox", "approval_challenges", "pair_confirm_operations", "approvals", "native_admin_operations", "native_admin_challenges",
+	];
 	const filename = path.join(import.meta.dirname, "native-storage.db");
 	const bytes = randomBytes(32);
 	const masterKey = new MasterKey(bytes);
@@ -132,6 +138,8 @@ async function run() {
 				for (const name of [
 					"device_authority", "devices", "jobs", "jobs_meta", "events", "event_meta", "native_drafts",
 					"native_draft_revisions", "native_draft_locks", "credentials", "native_send_attempts", "accounts",
+					"plugin_versions", "plugin_generations", "native_backup_recovery",
+					...approvalTables,
 				]) {
 					assert.ok(ordinal("audit_meta") < ordinal(name), "Audit schema must migrate first");
 					assert.ok(ordinal("audit_events") < ordinal(name), "Audit events must migrate first");
@@ -139,10 +147,28 @@ async function run() {
 						assert.ok(ordinal(coreTable) < ordinal(name), "Core schema must precede component schemas");
 					}
 				}
+				assert.equal(namespaces.length, 16);
+				assert.deepEqual(
+					rows.map(({ name }) => name).filter((name) => name.startsWith("_migrations_")).sort(),
+					namespaces.flatMap((namespace) => [`_migrations_${namespace}`, `_migrations_${namespace}_lock`]).sort(),
+				);
+				let appliedMigrations = 0;
 				for (const namespace of namespaces) {
-					assert.equal(sql.get(`SELECT count(*) AS n FROM _migrations_${namespace}`).n,
+					if (namespace !== "audit" && namespace !== "core") {
+						for (const ledger of [`_migrations_${namespace}`, `_migrations_${namespace}_lock`]) {
+							assert.ok(ordinal("audit_meta") < ordinal(ledger), "Audit schema must precede component ledgers");
+							assert.ok(ordinal("audit_events") < ordinal(ledger), "Audit events must precede component ledgers");
+							for (const table of coreTables) {
+								assert.ok(ordinal(table) < ordinal(ledger), "Core schema must precede component ledgers");
+							}
+						}
+					}
+					const applied = sql.get(`SELECT count(*) AS n FROM _migrations_${namespace}`).n;
+					assert.equal(applied,
 						namespace === "credentials" || namespace === "revisions" ? 2 : 1);
+					appliedMigrations += applied;
 				}
+				assert.equal(appliedMigrations, 18);
 				assert.equal(sql.get("SELECT count(*) AS n FROM audit_meta").n, 1);
 				assert.equal(sql.get("SELECT count(*) AS n FROM hub_meta").n, 1);
 				const core = sql.get("SELECT singleton,identity_wrapped,statement_wrapped,identity_cert FROM hub_meta");
@@ -152,6 +178,12 @@ async function run() {
 				assert.deepEqual(sql.get("SELECT singleton,epoch,bootstrap_done,owner_user_id FROM device_authority"),
 					{ singleton: 1, epoch: 0, bootstrap_done: 0, owner_user_id: null });
 				assert.equal(sql.get("SELECT count(*) AS n FROM devices").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_versions").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_generations").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM native_backup_recovery").n, 0);
+				for (const table of approvalTables) {
+					assert.equal(sql.get(`SELECT count(*) AS n FROM ${table}`).n, 0);
+				}
 				const genesis = sql.get("SELECT audit_seq,audit_head,audit_tag FROM audit_meta");
 				assert.match(genesis.audit_tag, /^[0-9a-f]{64}$/);
 				audit.verify(sql);

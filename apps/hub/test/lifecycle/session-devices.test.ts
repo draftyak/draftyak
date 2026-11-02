@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { DeviceRegistry, isDeviceRegistry } from "../../src/identity/devices.ts";
-import {
-	expectErased,
-	refusalNow,
-	type SessionFixture,
-	sessionFixture,
-} from "./session-helpers.ts";
+import { expectErased, refusal, type SessionFixture, sessionFixture } from "./session-helpers.ts";
 
 let f: SessionFixture;
 beforeEach(() => {
@@ -35,19 +30,22 @@ it("owns one real native device registry bound to the session's store", async ()
 		const foreign = await other.open();
 		expect(() => session.devices.assertStore(foreign.store)).toThrow("UNAVAILABLE");
 	} finally {
-		other.remove();
+		await other.remove();
 	}
 });
 
 it("locks the registry when a real busy store forces a close retry", async () => {
 	const key = f.key();
 	const session = await f.open({ masterKey: key });
+	let closing: Promise<void> | undefined;
 	session.store.read(() => {
-		expect(refusalNow(() => session.close()).code).toBe("CLOSE_INCOMPLETE");
+		closing = session.close();
 		expect(() => session.devices.currentState()).toThrow("UNAVAILABLE");
 	});
+	if (!closing) throw new Error("Close was not started");
+	expect((await refusal(closing)).code).toBe("CLOSE_INCOMPLETE");
 	expectErased(key);
-	session.close();
+	await session.close();
 	const next = await f.open();
 	expect(next.devices).not.toBe(session.devices);
 	expect(next.devices.currentState()).toEqual({

@@ -25,6 +25,16 @@ const DELIVERED: ReadonlyMap<string, string> = new Map([
 	["credentials", delivered("credentials/migrations", "credentials/migrations")],
 	["tickets", delivered("outbox/migrations", "outbox/migrations")],
 	["accounts", delivered("accounts/migrations", "accounts/migrations")],
+	["pluginregistry", delivered("plugins/registry/migrations", "plugins/registry/migrations")],
+	["outbox", delivered("outbox/propose-migrations", "outbox/propose-migrations")],
+	["challenges", delivered("identity/challenges-migrations", "identity/challenges-migrations")],
+	["verifier", delivered("outbox/verifier-migrations", "outbox/verifier-migrations")],
+	["admin", delivered("identity/admin-migrations", "identity/admin-migrations")],
+	[
+		"adminchallenges",
+		delivered("identity/admin-challenge-migrations", "identity/admin-challenge-migrations"),
+	],
+	["backup", delivered("recovery/backup-migrations", "recovery/backup-migrations")],
 	["content", delivered("sync/migrations", "sync/migrations")],
 	["rawcontent", delivered("sync/raw-migrations", "sync/raw-migrations")],
 ]);

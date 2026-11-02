@@ -1,5 +1,6 @@
 import { hkdfSync } from "node:crypto";
 import { types } from "node:util";
+import { BackupCapsuleError, sealRecoveryCapsule } from "../recovery/backup-capsule.ts";
 
 const byteLength = Object.getOwnPropertyDescriptor(
 	Object.getPrototypeOf(Uint8Array.prototype),
@@ -14,7 +15,10 @@ export type KeyPurpose =
 	| "backup"
 	| "handles"
 	| "mcp-state"
-	| "tool-tokens";
+	| "tool-tokens"
+	| "drafts"
+	| "outbox"
+	| "approvals";
 const PURPOSES = new Set<string>([
 	"db",
 	"secrets",
@@ -24,6 +28,9 @@ const PURPOSES = new Set<string>([
 	"handles",
 	"mcp-state",
 	"tool-tokens",
+	"drafts",
+	"outbox",
+	"approvals",
 ]);
 
 // The hub owns one native buffer. Callers own and must erase every returned subkey.
@@ -43,6 +50,15 @@ export class MasterKey {
 		return Buffer.from(
 			hkdfSync("sha256", this.#bytes, Buffer.alloc(0), `draftyak/v1/${purpose}`, 32),
 		);
+	}
+	/** Returns the legacy encrypted recovery capsule without exposing the owned key bytes. */
+	wrapRecovery(code: unknown): Buffer {
+		try {
+			if (!this.#bytes) throw new BackupCapsuleError();
+			return sealRecoveryCapsule(this.#bytes, code);
+		} catch {
+			throw new BackupCapsuleError();
+		}
 	}
 	destroy(): void {
 		this.#bytes?.fill(0);

@@ -1,5 +1,6 @@
 import { CHANNEL_V1, channelV1 } from "@draftyak/protocol/channel-v1";
 import { extensionDeclaration } from "@draftyak/protocol/extension";
+import { HostJsonMemberSaveAs, type HostSaveAs } from "@draftyak/protocol/host-channel";
 import { SEND_TICKET_META } from "@draftyak/protocol/send-ticket";
 import type { HostFetchInit, PluginTool } from "@draftyak/sdk";
 import * as z from "zod";
@@ -19,9 +20,9 @@ export function channelFixture(handler?: PluginTool["handler"], account?: string
 		},
 		entry: { name: "mock-channel", version: "1.0.0", plugin: "@example/mock-channel", ...(account ? { account } : {}), extensions: { [CHANNEL_V1]: extensionDeclaration(channelV1) }, tools: [{
 			name: "channel_fetch",
-			inputSchema: z.strictObject({ url: z.string(), method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]).optional(), headers: z.record(z.string(), z.string()).optional(), body: z.unknown().optional(), saveAs: z.literal("blob").optional() }),
+			inputSchema: z.strictObject({ url: z.string(), method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]).optional(), headers: z.record(z.string(), z.string()).optional(), body: z.unknown().optional(), saveAs: z.union([z.literal("blob"), HostJsonMemberSaveAs]).optional() }),
 			handler: handler ?? (async (input, context, metadata) => {
-				const args = input as { url: string; method?: string; headers?: Record<string, string>; body?: HostFetchInit["body"]; saveAs?: "blob" };
+				const args = input as { url: string; method?: string; headers?: Record<string, string>; body?: HostFetchInit["body"]; saveAs?: HostSaveAs };
 				const response = await context.fetch(args.url, { method: args.method ?? "GET", ...(args.headers ? { headers: args.headers } : {}), ...(args.body === undefined ? {} : { body: args.body }), ...(args.saveAs ? { saveAs: args.saveAs } : {}), ...(metadata[SEND_TICKET_META] === undefined ? {} : { sendTicket: metadata[SEND_TICKET_META] }) });
 				return { status: response.status, headers: Object.fromEntries(response.headers), ...(response.bodyRef ? { ref: response.bodyRef.ref } : { text: await response.text() }) };
 			}),
