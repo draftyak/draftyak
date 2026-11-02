@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { types } from "node:util";
+import { DataClass } from "@draftyak/protocol/data-class";
 import {
 	type Accepted,
 	Challenge,
@@ -18,6 +19,7 @@ import {
 	parseStatement,
 	STATEMENT_TTL_MS,
 } from "@draftyak/protocol/statements";
+import type { AdminStatement } from "@draftyak/protocol/statements/admin";
 import type { PairConfirmStatement } from "@draftyak/protocol/statements/pair-confirm";
 import type { SendStatement } from "@draftyak/protocol/statements/send";
 import { AuditChain } from "../audit/chain.ts";
@@ -25,6 +27,7 @@ import { Authorizer, assertAuthorizerStore } from "../authz/authorizer.ts";
 import { plainRecord } from "../authz/decide.ts";
 import type { NativeDevicePeer } from "../authz/native-peer.ts";
 import { pairConfirmPinScope } from "../authz/scopes.ts";
+import type { WorkScope } from "../jobs/database.ts";
 import { type Clock, systemClock } from "../kernel/clock.ts";
 import { newId } from "../kernel/ids.ts";
 import {
@@ -42,6 +45,21 @@ import {
 	type SqlReader,
 	type SqlTransaction,
 } from "../store/store.ts";
+import {
+	abortNativeAdminScope,
+	applyNativeAdminOperation,
+	assertNativeAdminOperations,
+	assertNativeAdminScope,
+	type NativeAccountModeOperations,
+	prepareNativeAdminOperation,
+	writeNativeAdminOperations,
+} from "./admin-operations.ts";
+import {
+	ADMIN_CHALLENGE_SQL,
+	type AdminAcceptContext,
+	type AdminAcceptedFacts,
+	adminOperationPinScope,
+} from "./challenges-admin.ts";
 import { PairConfirmOperations } from "./challenges-pair-confirm.ts";
 import {
 	type ChallengeError,
@@ -158,7 +176,7 @@ export function assertChallengeContext(
 interface OpenChallenge {
 	readonly id: string;
 	readonly nonce: string;
-	readonly kind: "approval.send.v1" | "pair-confirm.v1";
+	readonly kind: "approval.send.v1" | "pair-confirm.v1" | "admin.v1";
 	readonly target: string;
 	readonly device: string;
 	readonly user: string;
@@ -172,6 +190,44 @@ interface OpenChallenge {
 	busy: boolean;
 }
 const coordinators = new WeakMap<HubStore, object>();
+interface AdminContextState {
+	readonly service: object;
+	readonly admin: NativeAccountModeOperations;
+	readonly store: HubStore;
+	readonly tx: SqlTransaction;
+	readonly scope: WorkScope;
+	readonly facts: AdminAcceptedFacts;
+	consumed: boolean;
+}
+const adminContexts = new WeakMap<object, AdminContextState>();
+/** Internal consumption only: no caller can register or mint an accepted admin context. */
+export function consumeAdminChallengeContext(
+	value: AdminAcceptContext,
+	issuer: unknown,
+	tx: SqlTransaction,
+	scope: WorkScope,
+): AdminAcceptedFacts {
+	if (value === null || typeof value !== "object" || types.isProxy(value)) refuse("UNAVAILABLE");
+	const state = adminContexts.get(value);
+	adminContexts.delete(value);
+	if (
+		!state ||
+		state.consumed ||
+		state.admin !== issuer ||
+		state.tx !== tx ||
+		state.scope !== scope ||
+		!services.get(state.service)?.active ||
+		coordinators.get(state.store) !== state.service
+	)
+		refuse("UNAVAILABLE");
+	assertNativeAdminOperations(issuer, state.store);
+	assertStoreTransaction(state.store, tx);
+	assertNativeAdminScope(issuer, tx, scope);
+	state.consumed = true;
+	return state.facts;
+}
+const challengeTable = (kind: OpenChallenge["kind"]): string =>
+	kind === "admin.v1" ? "main.native_admin_challenges" : "main.approval_challenges";
 const equalBytes = (left: Buffer, right: Buffer): boolean =>
 	left.length === right.length && timingSafeEqual(left, right);
 const read = HubStore.prototype.read,
@@ -204,6 +260,8 @@ export interface ChallengeServiceOptions {
 	readonly identity: HubIdentity;
 	readonly clock?: Clock;
 	readonly send: SendApprovalVerifier;
+	/** The genuine same-store native account-mode issuer; absent keeps admin unavailable. */
+	readonly admin?: NativeAccountModeOperations;
 	/** Native composition data only. Absent retained SAS makes pairing review unavailable. */
 	readonly pairConfirmSas?: (candidateId: string) => string | undefined;
 }
@@ -214,6 +272,7 @@ export class ChallengeService {
 	readonly #registry: DeviceRegistry;
 	readonly #authorizer: Authorizer;
 	readonly #send: SendApprovalVerifier;
+	readonly #admin: NativeAccountModeOperations | undefined;
 	readonly #clock: Clock;
 	readonly #hub: string;
 	readonly #open: Map<string, OpenChallenge>;
@@ -230,7 +289,7 @@ export class ChallengeService {
 		const settings = plainRecord(
 			options,
 			["identity", "send"],
-			["clock", "pairConfirmSas"],
+			["clock", "pairConfirmSas", "admin"],
 		) as unknown as ChallengeServiceOptions | undefined;
 		if (!settings) refuse("UNAVAILABLE");
 		guard(() => {
@@ -240,6 +299,7 @@ export class ChallengeService {
 			registryIdentity.call(registry, settings.identity);
 			assertAuthorizerStore(authorizer, store);
 			assertSendApprovalVerifier(settings.send, store);
+			if (settings.admin !== undefined) assertNativeAdminOperations(settings.admin, store);
 			discardPin.call(pins, Object.freeze(Object.create(null)));
 			read.call(store, (db: SqlReader) => verifyAudit.call(audit, db));
 		});
@@ -249,6 +309,7 @@ export class ChallengeService {
 		this.#registry = registry;
 		this.#authorizer = authorizer;
 		this.#send = settings.send;
+		this.#admin = settings.admin;
 		this.#clock = settings.clock ?? systemClock;
 		this.#hub = settings.identity.hid;
 		if (
@@ -271,6 +332,68 @@ export class ChallengeService {
 	#ready(): void {
 		if (this.#locked || coordinators.get(this.#store) !== this) refuse("UNAVAILABLE");
 		registryStore.call(this.#registry, this.#store);
+	}
+	#accepted(kind: unknown): boolean {
+		return kind === "admin.v1"
+			? this.#admin !== undefined
+			: statementKindDisposition(kind) === "accepted";
+	}
+	#writeAdmin<T>(work: (tx: SqlTransaction, scope: WorkScope) => T): T {
+		let callbackFailed = false;
+		let callbackFailure: unknown;
+		try {
+			return writeNativeAdminOperations(this.#admin, (tx, scope) => {
+				try {
+					return work(tx, scope);
+				} catch (error) {
+					callbackFailed = true;
+					callbackFailure = error;
+					try {
+						abortNativeAdminScope(this.#admin, scope);
+					} catch {
+						/* The refusal still throws through the genuine native writer. */
+					}
+					throw error;
+				}
+			});
+		} catch (error) {
+			// Preserve the refusal only after the native writer has exited and rolled back.
+			throw callbackFailed ? callbackFailure : error;
+		}
+	}
+	#adminContext(
+		peer: NativeDevicePeer,
+		grant: DeviceGrant,
+		now: ClockSample,
+		statement: AdminStatement,
+		item: OpenChallenge,
+		tx: SqlTransaction,
+		scope: WorkScope,
+	): { context: AdminAcceptContext; state: AdminContextState } {
+		const admin = this.#admin ?? refuse("KIND_UNAVAILABLE");
+		const context = Object.freeze(Object.create(null)) as AdminAcceptContext;
+		const facts: AdminAcceptedFacts = Object.freeze({
+			statement: Object.freeze({ ...statement }),
+			peer,
+			operationVersion: item.targetVersion ?? refuse("CHALLENGE_INVALID"),
+			owner: grant.ownerUserId,
+			epoch: grant.epoch,
+			deviceId: grant.deviceId,
+			approvalKey: grant.approvalKey,
+			now,
+			challengeId: item.id,
+		});
+		const state: AdminContextState = {
+			service: this,
+			admin,
+			store: this.#store,
+			tx,
+			scope,
+			facts,
+			consumed: false,
+		};
+		adminContexts.set(context, state);
+		return { context, state };
 	}
 	#context(
 		grant: DeviceGrant,
@@ -313,32 +436,51 @@ export class ChallengeService {
 	issue(peer: NativeDevicePeer, raw: unknown): Challenge {
 		if (raw !== null && typeof raw === "object" && !types.isProxy(raw)) {
 			const kind = Object.getOwnPropertyDescriptor(raw, "kind");
-			if (kind && "value" in kind && statementKindDisposition(kind.value) !== "accepted")
-				refuse("KIND_UNAVAILABLE");
+			if (kind && "value" in kind && !this.#accepted(kind.value)) refuse("KIND_UNAVAILABLE");
 		}
 		this.#ready();
 		const record = plainRecord(raw, ["kind", "id"], ["flagsAcked"]);
 		if (!record) refuse("INVALID_REQUEST");
-		if (statementKindDisposition(record.kind) !== "accepted") refuse("KIND_UNAVAILABLE");
+		if (!this.#accepted(record.kind)) refuse("KIND_UNAVAILABLE");
 		const parsed = ChallengeRequest.safeParse(dataCopy(record));
 		if (!parsed.success) refuse("INVALID_REQUEST");
 		const request = parsed.data;
-		if (request.kind !== "approval.send.v1" && request.kind !== "pair-confirm.v1")
+		if (
+			request.kind !== "approval.send.v1" &&
+			request.kind !== "pair-confirm.v1" &&
+			request.kind !== "admin.v1"
+		)
 			refuse("KIND_UNAVAILABLE");
 		const now = guard(() => sample(this.#clock));
 		for (const [nonce, item] of this.#open)
 			if (now.mono < item.mono || now.mono - item.mono > CHALLENGE_TTL_MS) this.#open.delete(nonce);
 		const old: OpenChallenge[] = [];
-		const writeChallenge = (work: (tx: SqlTransaction) => OpenChallenge): OpenChallenge =>
+		const writeChallenge = (
+			work: (tx: SqlTransaction, scope?: WorkScope) => OpenChallenge,
+		): OpenChallenge =>
 			request.kind === "approval.send.v1"
 				? writeSendApproval(this.#send, (tx) => work(tx))
-				: (write.call(this.#store, work) as OpenChallenge);
+				: request.kind === "admin.v1"
+					? this.#writeAdmin(work)
+					: (write.call(this.#store, work) as OpenChallenge);
 		const opened = guard(
 			() =>
-				writeChallenge((tx: SqlTransaction) => {
+				writeChallenge((tx: SqlTransaction, scope?: WorkScope) => {
 					this.#ready();
+					if (request.kind === "admin.v1")
+						assertNativeAdminScope(this.#admin, tx, scope ?? refuse("UNAVAILABLE"));
+					const adminPrepared =
+						request.kind === "admin.v1"
+							? prepareNativeAdminOperation(
+									this.#admin,
+									tx,
+									scope ?? refuse("UNAVAILABLE"),
+									peer,
+									request.id,
+								)
+							: undefined;
 					// Pair route policy needs the native operation's preset, checked by prepare below.
-					if (request.kind === "approval.send.v1")
+					if (request.kind === "approval.send.v1" || request.kind === "admin.v1")
 						requireRoute.call(this.#authorizer, tx, peer, "challenge", { kind: request.kind });
 					const grant = requireKind.call(this.#authorizer, tx, peer, request.kind);
 					const deviceOpen = [...this.#open.values()].filter(
@@ -376,6 +518,13 @@ export class ChallengeService {
 						} finally {
 							contexts.delete(context);
 						}
+					} else if (request.kind === "admin.v1") {
+						const prepared = adminPrepared ?? refuse("UNAVAILABLE");
+						if (prepared.fields.op !== request.id || prepared.fields.kind !== "account.mode-full")
+							refuse("UNAVAILABLE");
+						fields = prepared.fields;
+						dataClass = DataClass.parse(prepared.dataClass);
+						targetVersion = prepared.operationVersion;
 					} else {
 						fields = this.#pair.prepare(tx, peer, request.id, now);
 						dataClass = "hub.state";
@@ -405,13 +554,13 @@ export class ChallengeService {
 							previous.target === item.target
 						) {
 							tx.run(
-								"UPDATE main.approval_challenges SET burned_at=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL",
+								`UPDATE ${challengeTable(previous.kind)} SET burned_at=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL`,
 								[now.wall, previous.id],
 							);
 							old.push(previous);
 						}
 					tx.run(
-						"INSERT INTO main.approval_challenges(id,nonce,kind,target_id,device_id,user_id,data_class,epoch,statement,issued_at,expires_at,target_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+						`INSERT INTO ${challengeTable(item.kind)}(id,nonce,kind,target_id,device_id,user_id,data_class,epoch,statement,issued_at,expires_at,target_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
 						[
 							item.id,
 							item.nonce,
@@ -428,9 +577,22 @@ export class ChallengeService {
 						],
 					);
 					tx.run(
-						"DELETE FROM main.approval_challenges WHERE id IN(SELECT id FROM main.approval_challenges WHERE consumed_at IS NULL AND burned_at IS NULL AND expires_at<? ORDER BY expires_at LIMIT 64)",
+						`DELETE FROM ${challengeTable(item.kind)} WHERE id IN(SELECT id FROM ${challengeTable(item.kind)} WHERE consumed_at IS NULL AND burned_at IS NULL AND expires_at<? ORDER BY expires_at LIMIT 64)`,
 						[Math.max(0, now.wall - 86_400_000)],
 					);
+					if (request.kind === "admin.v1") {
+						const finalGrant = requireKind.call(this.#authorizer, tx, peer, request.kind);
+						if (
+							finalGrant.deviceId !== grant.deviceId ||
+							finalGrant.userId !== grant.userId ||
+							finalGrant.ownerUserId !== grant.ownerUserId ||
+							finalGrant.epoch !== grant.epoch ||
+							finalGrant.approvalKey !== grant.approvalKey
+						)
+							refuse("CHALLENGE_INVALID");
+						assertGrant.call(this.#authorizer, tx, finalGrant);
+						this.#checkTime(item, sample(this.#clock));
+					}
 					return item;
 				}) as OpenChallenge,
 		);
@@ -455,7 +617,7 @@ export class ChallengeService {
 				burned_at: number | null;
 				signature: string | null;
 			}
-		>(CHALLENGE_SQL, [item.id]);
+		>(item.kind === "admin.v1" ? ADMIN_CHALLENGE_SQL : CHALLENGE_SQL, [item.id]);
 		if (
 			!row ||
 			row.id !== item.id ||
@@ -498,7 +660,7 @@ export class ChallengeService {
 			write.call(this.#store, (tx: SqlTransaction) => {
 				const now = sample(this.#clock);
 				tx.run(
-					"UPDATE main.approval_challenges SET burned_at=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL",
+					`UPDATE ${challengeTable(item.kind)} SET burned_at=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL`,
 					[now.wall, item.id],
 				);
 				append.call(this.#audit, tx, {
@@ -512,12 +674,13 @@ export class ChallengeService {
 		);
 	}
 	async accept(peer: NativeDevicePeer, kind: string, raw: unknown): Promise<Accepted> {
-		if (statementKindDisposition(kind) !== "accepted") refuse("KIND_UNAVAILABLE");
+		if (!this.#accepted(kind)) refuse("KIND_UNAVAILABLE");
 		this.#ready();
 		const envelope = SignedEnvelope.safeParse(dataCopy(raw));
 		if (!envelope.success) refuse("INVALID_REQUEST");
 		const bytes = Buffer.from(fromBase64Url(envelope.data.statement) ?? refuse("INVALID_REQUEST"));
-		if (kind !== "approval.send.v1" && kind !== "pair-confirm.v1") refuse("KIND_UNAVAILABLE");
+		if (kind !== "approval.send.v1" && kind !== "pair-confirm.v1" && kind !== "admin.v1")
+			refuse("KIND_UNAVAILABLE");
 		if (!decodeDeviceStatement(kind, envelope.data.statement)) refuse("INVALID_REQUEST");
 		const shape = parseStatement(kind, bytes);
 		if (!shape) refuse("INVALID_REQUEST");
@@ -551,7 +714,9 @@ export class ChallengeService {
 				envelope.data.pin,
 				kind === "approval.send.v1"
 					? sendApprovalPinScope(shape.nonce)
-					: pairConfirmPinScope(shape.nonce),
+					: kind === "admin.v1"
+						? adminOperationPinScope((shape as AdminStatement).op, shape.nonce)
+						: pairConfirmPinScope(shape.nonce),
 			);
 			this.#ready();
 			if (kind === "approval.send.v1") {
@@ -568,7 +733,30 @@ export class ChallengeService {
 			const apply = (tx: SqlTransaction, scope?: SendTargetScope): Accepted => {
 				this.#ready();
 				assertStoreTransaction(this.#store, tx);
-				// Current native peer rights are the first phase-two read, after all asynchronous work.
+				if (kind === "admin.v1") {
+					const liveScope = scope ?? refuse("UNAVAILABLE");
+					assertNativeAdminScope(this.#admin, tx, liveScope);
+					requireKind.call(this.#authorizer, tx, peer, kind);
+					const prepared = prepareNativeAdminOperation(
+						this.#admin,
+						tx,
+						liveScope,
+						peer,
+						held.target,
+					);
+					const statement = shape as AdminStatement;
+					if (
+						prepared.fields.op !== held.target ||
+						prepared.fields.op !== statement.op ||
+						prepared.fields.kind !== "account.mode-full" ||
+						prepared.fields.kind !== statement.kind ||
+						prepared.fields.digest !== statement.digest ||
+						prepared.operationVersion !== held.targetVersion ||
+						DataClass.parse(prepared.dataClass) !== held.dataClass
+					)
+						refuse("STALE");
+				}
+				// Refresh native peer rights after asynchronous work and native scope preparation.
 				const grant = requireKind.call(this.#authorizer, tx, peer, kind),
 					now = sample(this.#clock);
 				if (grant.approvalKey !== initial.grant.approvalKey || grant.epoch !== initial.grant.epoch)
@@ -577,17 +765,19 @@ export class ChallengeService {
 				if (!openTypedStatement(kind, bytes, envelope.data.signature, grant.approvalKey))
 					refuse("SIGNATURE_INVALID");
 				assertGrant.call(this.#authorizer, tx, grant);
-				if (kind === "approval.send.v1")
+				if (kind === "approval.send.v1" || kind === "admin.v1")
 					consumePin.call(
 						this.#pins,
 						tx,
 						pin as PinProof,
 						grant.userId,
-						sendApprovalPinScope(shape.nonce),
+						kind === "approval.send.v1"
+							? sendApprovalPinScope(shape.nonce)
+							: adminOperationPinScope((shape as AdminStatement).op, shape.nonce),
 					);
 				if (
 					tx.run(
-						"UPDATE main.approval_challenges SET consumed_at=?,signature=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL",
+						`UPDATE ${challengeTable(held.kind)} SET consumed_at=?,signature=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL`,
 						[now.wall, envelope.data.signature, held.id],
 					).changes !== 1
 				)
@@ -607,6 +797,23 @@ export class ChallengeService {
 					} finally {
 						contexts.delete(current);
 					}
+				} else if (kind === "admin.v1") {
+					const liveScope = scope ?? refuse("UNAVAILABLE");
+					const accepted = this.#adminContext(
+						peer,
+						grant,
+						now,
+						shape as AdminStatement,
+						held,
+						tx,
+						liveScope,
+					);
+					try {
+						applyNativeAdminOperation(this.#admin, tx, liveScope, accepted.context);
+						if (!accepted.state.consumed) refuse("UNAVAILABLE");
+					} finally {
+						adminContexts.delete(accepted.context);
+					}
 				} else
 					this.#pair.apply(
 						tx,
@@ -625,6 +832,7 @@ export class ChallengeService {
 					finalGrant.deviceId !== held.device ||
 					finalGrant.userId !== held.user ||
 					finalGrant.epoch !== held.epoch ||
+					(kind === "admin.v1" && finalGrant.ownerUserId !== initial.grant.ownerUserId) ||
 					finalGrant.approvalKey !== initial.grant.approvalKey
 				)
 					refuse("CHALLENGE_INVALID");
@@ -637,7 +845,9 @@ export class ChallengeService {
 			const result =
 				kind === "approval.send.v1"
 					? writeSendApproval(this.#send, (tx, scope) => apply(tx, scope))
-					: (write.call(this.#store, (tx: SqlTransaction) => apply(tx)) as Accepted);
+					: kind === "admin.v1"
+						? this.#writeAdmin((tx, scope) => apply(tx, scope))
+						: (write.call(this.#store, (tx: SqlTransaction) => apply(tx)) as Accepted);
 			this.#open.delete(held.nonce);
 			return result as Accepted;
 		} catch (error) {
