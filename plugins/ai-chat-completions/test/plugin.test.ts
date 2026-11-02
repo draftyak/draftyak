@@ -150,6 +150,69 @@ function failure(reply: Reply, code: string, retryAfterMs?: number): void {
 }
 
 describe("compatible provider SDK mount", () => {
+	it.each([false, true])(
+		"reports completed-request progress only when requested (%s)",
+		async (requested) => {
+			const entered = Promise.withResolvers<void>();
+			const release = Promise.withResolvers<void>();
+			const token = "compatible-completion";
+			const io = await mounted(async () => {
+				entered.resolve();
+				await release.promise;
+				return inline(completion(core()).body);
+			});
+			let call: Promise<Reply> | undefined;
+			let complete = false;
+			const progress = (value: number) => ({
+				jsonrpc: "2.0",
+				method: "notifications/progress",
+				params: { progressToken: token, progress: value, total: 1 },
+			});
+			try {
+				call = io.call("ai_draft_generate", REQUEST, requested ? { progressToken: token } : {});
+				void call.then(
+					() => {
+						complete = true;
+					},
+					() => {
+						complete = true;
+					},
+				);
+				await entered.promise;
+				expect(complete).toBe(false);
+				expect(io.notifications).toEqual(requested ? [progress(0)] : []);
+				release.resolve();
+				expect(success(await call)).toMatchObject({ kind: "draft", output: OUTPUT });
+				expect(io.notifications).toEqual(requested ? [progress(0), progress(1)] : []);
+			} finally {
+				release.resolve();
+				await call?.catch(() => {});
+				await io.close();
+			}
+		},
+	);
+
+	it("does not report completed progress after a broker failure", async () => {
+		const io = await mounted(() => {
+			throw new HostError("TIMEOUT");
+		});
+		try {
+			failure(
+				await io.call("ai_draft_generate", REQUEST, { progressToken: "failed-completion" }),
+				"TRANSIENT",
+			);
+			expect(io.notifications).toEqual([
+				{
+					jsonrpc: "2.0",
+					method: "notifications/progress",
+					params: { progressToken: "failed-completion", progress: 0, total: 1 },
+				},
+			]);
+		} finally {
+			await io.close();
+		}
+	});
+
 	it("serves exactly four provider tools and describes without fetching", async () => {
 		const fetch = vi.fn(() => {
 			throw new Error("Unexpected broker call");
@@ -227,7 +290,13 @@ describe("compatible provider SDK mount", () => {
 				expect(success(await io.call("ai_probe", { model: MODEL }))).toEqual({ status: "ok" });
 				expect(seen).toHaveLength(3);
 				expect(seen[2]).toMatchObject({ method: "POST", url: expected.url, stream: true });
-				expect(io.notifications).toEqual([]);
+				expect(io.notifications).toEqual(
+					[0, 1].map((progress) => ({
+						jsonrpc: "2.0",
+						method: "notifications/progress",
+						params: { progressToken: "completed", progress, total: 1 },
+					})),
+				);
 			} finally {
 				await io.close();
 			}
@@ -395,31 +464,48 @@ describe("compatible provider SDK mount", () => {
 		},
 	);
 
-	it("propagates MCP cancellation to the actual SDK host signal while broker work unwinds", async () => {
-		const entered = Promise.withResolvers<AbortSignal>();
-		const release = Promise.withResolvers<void>();
-		const settled = Promise.withResolvers<void>();
-		const io = await mounted(async (_method, _params, signal) => {
-			entered.resolve(signal);
+	it.each([false, true])(
+		"propagates MCP cancellation without reporting completed progress (%s)",
+		async (requested) => {
+			const entered = Promise.withResolvers<AbortSignal>();
+			const release = Promise.withResolvers<void>();
+			const settled = Promise.withResolvers<void>();
+			const io = await mounted(async (_method, _params, signal) => {
+				entered.resolve(signal);
+				try {
+					await release.promise;
+					return inline(completion(core()).body);
+				} finally {
+					settled.resolve();
+				}
+			});
 			try {
-				await release.promise;
-				return inline(completion(core()).body);
+				const call = io.begin("tools/call", {
+					name: "ai_draft_generate",
+					arguments: REQUEST,
+					_meta: requested ? { progressToken: "cancelled-completion" } : {},
+				});
+				const signal = await entered.promise;
+				expect(signal.aborted).toBe(false);
+				io.cancel(call.id);
+				await expect.poll(() => signal.aborted).toBe(true);
+				release.resolve();
+				await settled.promise;
+				expect(io.notifications).toEqual(
+					requested
+						? [
+								{
+									jsonrpc: "2.0",
+									method: "notifications/progress",
+									params: { progressToken: "cancelled-completion", progress: 0, total: 1 },
+								},
+							]
+						: [],
+				);
 			} finally {
-				settled.resolve();
+				release.resolve();
+				await io.close();
 			}
-		});
-		try {
-			const call = io.begin("tools/call", { name: "ai_draft_generate", arguments: REQUEST });
-			const signal = await entered.promise;
-			expect(signal.aborted).toBe(false);
-			io.cancel(call.id);
-			await expect.poll(() => signal.aborted).toBe(true);
-			release.resolve();
-			await settled.promise;
-			expect(io.notifications).toEqual([]);
-		} finally {
-			release.resolve();
-			await io.close();
-		}
-	});
+		},
+	);
 });

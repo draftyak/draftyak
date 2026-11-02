@@ -150,6 +150,11 @@ export function createPlugin(
 				return core.probe(transport(context), context.signal);
 			}),
 		generateDraft: (request, context) =>
-			canonical(() => core.generate(request, transport(context), context.signal)),
+			canonical(async () => {
+				await context.progress(0, 1);
+				const outcome = await core.generate(request, transport(context), context.signal);
+				await context.progress(1, 1);
+				return outcome;
+			}),
 	});
 }
