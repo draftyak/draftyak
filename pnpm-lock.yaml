@@ -53,11 +53,24 @@ importers:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)
 
+  packages/json-member:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
   packages/plugin-testkit:
     dependencies:
       '@draftyak/fakes':
         specifier: workspace:*
         version: link:../fakes
+      '@draftyak/json-member':
+        specifier: workspace:*
+        version: link:../json-member
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../protocol
