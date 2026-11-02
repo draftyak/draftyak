@@ -4,14 +4,17 @@ import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
 import path from "node:path";
 import { evidenceFormat, evidenceSubject, rules } from "../rules/index.ts";
 import {
+	type Budget,
 	evidenceHits,
 	type Hit,
+	LINE_COST,
 	lineHits,
 	lines,
 	type MarkRule,
 	markHits,
 	type PatternRule,
 } from "./rules.ts";
+import { CAPS, type Part, unpack } from "./unpack.ts";
 
 export interface Finding {
 	readonly file?: string;
@@ -102,24 +105,44 @@ export function listFiles(root: string): string[] {
 	return [...new Set(listed.split("\0").filter((file) => file !== ""))].sort();
 }
 
+export interface Reading {
+	readonly text: string;
+	// For findings, such as "read as UTF-16LE" or "in zip entry 2".
+	readonly where: string;
+}
+
 export interface Content {
 	readonly text: string;
 	// Valid UTF-8 without a BOM, as writeEvidence() writes it.
 	readonly plain: boolean;
+	// Other readings of the bytes, which the line rules check too: UTF-16 or UTF-8 where NUL bytes
+	// leave the encoding open, and compressed content, decoded as the scan reaches it.
+	readonly more?: Iterable<Reading>;
+	// Why compressed content wasn't read within the caps.
+	readonly problem?: string;
+	// What line rules may read of it in all its readings (see Budget): twice the most its compressed
+	// content may expand to. A file that needs more fails, with the hits found before that.
+	readonly budget?: number;
+}
+
+interface Decoded {
+	readonly text: string;
+	readonly plain: boolean;
+	readonly others: readonly Reading[];
 }
 
 // UTF-16 without a BOM: in mostly-ASCII text, every other byte is 0.
-function utf16Order(head: Uint8Array): "le" | "be" | undefined {
+function utf16Order(bytes: Uint8Array): { order?: "le" | "be"; even: number; odd: number } {
 	let even = 0;
 	let odd = 0;
-	for (let i = 0; i + 1 < head.length; i += 2) {
-		if (head[i] === 0) even++;
-		if (head[i + 1] === 0) odd++;
+	for (let i = 0; i + 1 < bytes.length; i += 2) {
+		if (bytes[i] === 0) even++;
+		if (bytes[i + 1] === 0) odd++;
 	}
-	const pairs = head.length >> 1;
-	if (odd > pairs / 2 && even * 8 < odd) return "le";
-	if (even > pairs / 2 && odd * 8 < even) return "be";
-	return undefined;
+	const pairs = bytes.length >> 1;
+	if (odd > pairs / 2 && even * 8 < odd) return { order: "le", even, odd };
+	if (even > pairs / 2 && odd * 8 < even) return { order: "be", even, odd };
+	return { even, odd };
 }
 
 function utf16(bytes: Uint8Array, order: "le" | "be"): string {
@@ -127,16 +150,8 @@ function utf16(bytes: Uint8Array, order: "le" | "be"): string {
 	return (order === "be" ? units.swap16() : units).toString("utf16le");
 }
 
-// UTF-16 by its BOM or its NUL bytes, otherwise UTF-8, decoded as far as it is valid. Binaries are
-// read too, so a token stored in one is still found.
-function decode(bytes: Buffer): Content {
-	const [a, b, c] = bytes;
-	if ((a === 0xff && b === 0xfe) || (a === 0xfe && b === 0xff)) {
-		return { text: utf16(bytes.subarray(2), a === 0xff ? "le" : "be"), plain: false };
-	}
-	const order = bytes.includes(0) ? utf16Order(bytes.subarray(0, 8000)) : undefined;
-	if (order) return { text: utf16(bytes, order), plain: false };
-	const bom = a === 0xef && b === 0xbb && c === 0xbf;
+function utf8(bytes: Buffer): { text: string; plain: boolean } {
+	const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
 	try {
 		return { text: new TextDecoder("utf-8", { fatal: true }).decode(bytes), plain: !bom };
 	} catch {
@@ -144,19 +159,65 @@ function decode(bytes: Buffer): Content {
 	}
 }
 
+// UTF-16 by its BOM or its NUL bytes over the whole file, otherwise UTF-8, decoded as far as it is
+// valid. Binaries are read too, so a token stored in one is still found. Without a BOM, bytes with
+// NULs are also read in each other encoding their NULs fit, so UTF-16 with too few NULs to tell,
+// such as text that starts in a non-Latin script, can't hide an ASCII token; with a UTF-16 BOM,
+// they are also read as UTF-8, so the BOM can't hide UTF-8.
+function decode(bytes: Buffer): Decoded {
+	const [a, b] = bytes;
+	const text = utf8(bytes);
+	if ((a === 0xff && b === 0xfe) || (a === 0xfe && b === 0xff)) {
+		const others = [{ text: text.text, where: "read as UTF-8" }];
+		return { text: utf16(bytes.subarray(2), a === 0xff ? "le" : "be"), plain: false, others };
+	}
+	if (!bytes.includes(0)) return { ...text, others: [] };
+	const { order, even, odd } = utf16Order(bytes);
+	const others: Reading[] = order ? [{ text: text.text, where: "read as UTF-8" }] : [];
+	if (odd > 0 && order !== "le") {
+		others.push({ text: utf16(bytes, "le"), where: "read as UTF-16LE" });
+	}
+	if (even > 0 && order !== "be") {
+		others.push({ text: utf16(bytes, "be"), where: "read as UTF-16BE" });
+	}
+	return order ? { text: utf16(bytes, order), plain: false, others } : { ...text, others };
+}
+
+function* readings(others: readonly Reading[], parts: readonly Part[]): Generator<Reading> {
+	yield* others;
+	for (const { bytes, label } of parts) {
+		const decoded = decode(bytes);
+		yield { text: decoded.text, where: `in ${label}` };
+		for (const other of decoded.others) {
+			yield { text: other.text, where: `in ${label}, ${other.where}` };
+		}
+	}
+}
+
+function contentOf(file: string, bytes: Buffer): Content {
+	const { text, plain, others } = decode(bytes);
+	const { parts, problem } = unpack(bytes, CAPS, file);
+	const more = { [Symbol.iterator]: () => readings(others, parts) };
+	const budget = 2 * Math.min(CAPS.max, Math.max(CAPS.min, CAPS.ratio * bytes.length));
+	return { text, plain, more, budget, ...(problem ? { problem } : {}) };
+}
+
 // A file's content, a symlink's target (never followed), "large" above MAX_BYTES, or undefined for
 // folders (submodules) and files that are gone.
 function read(root: string, file: string): Content | "large" | undefined {
 	const full = path.join(root, file);
+	let bytes: Buffer;
 	try {
 		const stat = lstatSync(full);
 		if (stat.isSymbolicLink()) return { text: readlinkSync(full), plain: false };
 		if (!stat.isFile()) return undefined;
-		return stat.size > MAX_BYTES ? "large" : decode(readFileSync(full));
+		if (stat.size > MAX_BYTES) return "large";
+		bytes = readFileSync(full);
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
 		throw new Error(`${file}: ${message(error)}`);
 	}
+	return contentOf(file, bytes);
 }
 
 const isDataOnly = (file: string): boolean =>
@@ -172,8 +233,9 @@ function evidenceFile(file: string, content: Content): Hit[] {
 	}
 }
 
-// Every rule hit in one file, its path included, before allow.json.
-export function fileHits(file: string, content: Content): Hit[] {
+// Every rule hit in one file, its path included, before allow.json. With a budget, its lines are
+// read only as far as it pays for them, and no reading after that is decoded.
+export function fileHits(file: string, content: Content, budget?: Budget): Hit[] {
 	const rulesDir = file.startsWith(RULES_DIR);
 	const set = rulesDir || isDataOnly(file) ? shared : [...vendor, ...shared];
 	const hits = lineHits(`/${file}`, set).map((hit) => ({
@@ -183,7 +245,14 @@ export function fileHits(file: string, content: Content): Hit[] {
 	}));
 	const isEvidence = EVIDENCE_DIR.test(file) || EVIDENCE_JSON.test(file);
 	if (isEvidence) hits.push(...evidenceFile(file, content));
-	hits.push(...lineHits(content.text, set));
+	hits.push(...lineHits(content.text, set, budget));
+	const spent = (): boolean => budget !== undefined && budget.left < 0;
+	if (!spent()) {
+		for (const { text, where } of content.more ?? []) {
+			for (const hit of lineHits(text, set, budget)) hits.push({ ...hit, where });
+			if (spent()) break;
+		}
+	}
 	if (!rulesDir) for (const rule of marks) hits.push(...markHits(rule, file, content.text));
 	return hits.sort((a, b) => a.line - b.line || a.column - b.column);
 }
@@ -252,6 +321,8 @@ export interface FileScan {
 	readonly files: number;
 }
 
+const mib = (count: number): number => Number((count / 2 ** 20).toFixed(1));
+
 export function scanFiles(
 	root: string,
 	files: readonly string[],
@@ -272,8 +343,18 @@ export function scanFiles(
 			findings.push({ file, line: 1, column: 1, rule: "too-large", reason });
 			content = { text: "", plain: false };
 		}
-		for (const { rule, line, column, text: source } of fileHits(file, content)) {
-			const prose = PROSE.test(file) && rule.kind === "vendor" && line > 0;
+		if (content.problem !== undefined) {
+			findings.push({ file, line: 1, column: 1, rule: "compressed", reason: content.problem });
+		}
+		const limit = content.budget ?? Number.POSITIVE_INFINITY;
+		const budget: Budget = { left: limit };
+		const hits = fileHits(file, content, budget);
+		if (budget.left < 0) {
+			const reason = `its readings and decoded lines come to over ${mib(limit)} Mi characters (each line counting ${LINE_COST} more), too large to scan; keep it out of the repository`;
+			findings.push({ file, line: 1, column: 1, rule: "too-large", reason });
+		}
+		for (const { rule, line, column, text: source, where: inside } of hits) {
+			const prose = PROSE.test(file) && rule.kind === "vendor" && line > 0 && inside === undefined;
 			const lineSha256 = prose ? sha256(source) : undefined;
 			const entry =
 				lineSha256 === undefined ? undefined : allowed.get(allowKey(file, rule.id, lineSha256));
@@ -282,13 +363,13 @@ export function scanFiles(
 				continue;
 			}
 			const { id, reason } = rule;
-			const where = line === 0 ? " (in the file's path)" : "";
+			const where = line === 0 ? "in the file's path" : inside;
 			findings.push({
 				file,
 				line,
 				column,
 				rule: id,
-				reason: `${reason}${where}`,
+				reason: where === undefined ? reason : `${reason} (${where})`,
 				...(lineSha256 ? { lineSha256 } : {}),
 			});
 		}

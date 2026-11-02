@@ -117,7 +117,7 @@ pub struct AgentSessionReviewSubject {
     pub authorization: AgentSessionReviewAuthorization,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReviewWire {
     principal: AgentSessionPrincipal,
@@ -128,8 +128,7 @@ struct ReviewWire {
 
 impl<'de> Deserialize<'de> for AgentSessionReviewSubject {
     fn deserialize<D: serde::Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        let wire = ReviewWire::deserialize(decoder)
-            .map_err(|_| serde::de::Error::custom("STATEMENT_INVALID"))?;
+        let wire: ReviewWire = super::decode_from(decoder, "STATEMENT_INVALID")?;
         let subject = Self {
             principal: wire.principal,
             account: wire.account,

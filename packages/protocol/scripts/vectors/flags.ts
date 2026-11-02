@@ -94,6 +94,9 @@ function cases(): object[] {
 		invalid("detail-1001-code-points", [{ ...ana, detail: "a".repeat(1001) }]),
 		invalid("not-a-list", ana),
 		invalid("flag-not-an-object", ["NEW_RECIPIENT"]),
+		invalid("positional-flag", [["NEW_RECIPIENT", "ack"]]),
+		invalid("object-form-code", [{ code: { NEW_RECIPIENT: null }, severity: "ack" }]),
+		invalid("object-form-severity", [{ code: "NEW_RECIPIENT", severity: { ack: null } }]),
 		refused("duplicate", [links[0], links[0]], "FLAGS_DUPLICATE"),
 		refused("duplicate-without-detail", [every[3], every[3]], "FLAGS_DUPLICATE"),
 	];

@@ -1,3 +1,4 @@
+export * from "./compatible.ts";
 export * from "./faults.ts";
 export * from "./gmail.ts";
 export * from "./google-oauth.ts";

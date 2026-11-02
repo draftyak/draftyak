@@ -130,6 +130,7 @@ export class PinService {
 	readonly #clock: PinWallClock;
 	readonly #proofs = new Map<PinProof, Authorization>();
 	readonly #initial = new Map<PinInitialization, InitialPin>();
+	readonly #unrecorded = new Set<string>();
 	#inFlight = 0;
 	#locked = false;
 	constructor(store: HubStore, audit: AuditChain, clock: PinWallClock = systemWallClock) {
@@ -237,45 +238,57 @@ export class PinService {
 			if (this.#locked) throw new PinError("PIN_REQUIRED");
 			if (this.#proofs.size >= MAX_PROOFS) throw new PinError("PIN_BUSY");
 			const matches = derived !== undefined && timingSafeEqual(derived, initial.hash);
-			const outcome = writeStore.call(this.#store, (tx: SqlTransaction) => {
-				const now = utcMs(this.#clock.wallMs());
-				const row = readPin(tx, user);
-				if (!row) return "PIN_CHANGED" as const;
-				try {
-					if (
-						row.version !== original.version ||
-						!timingSafeEqual(row.hash, original.hash) ||
-						!timingSafeEqual(row.salt, original.salt)
-					)
-						return "PIN_CHANGED" as const;
-					if (row.locked_until > now) return "PIN_LOCKED" as const;
-					const failures = row.locked_until > 0 ? 0 : row.failures;
-					if (!matches) {
-						const count = failures + 1;
-						const lock = count >= 5 ? utcMs(now + 15 * 60_000) : 0;
-						tx.run(
-							"UPDATE main.approval_pins SET failures=?,locked_until=? WHERE user_id=? AND version=?",
-							[count, lock, user, row.version],
-						);
-						appendAudit.call(this.#audit, tx, {
-							id: newId(),
-							at: now,
-							action: count >= 5 ? "pin.locked" : "pin.failed",
-							actor: { kind: "hub", id: null },
-							refs: { user },
-						});
-						return count >= 5 ? ("PIN_LOCKED" as const) : ("PIN_INVALID" as const);
+			const pending = this.#unrecorded.has(user);
+			let recorded = false;
+			let outcome: "PIN_CHANGED" | "PIN_LOCKED" | "PIN_INVALID" | null;
+			try {
+				outcome = writeStore.call(this.#store, (tx: SqlTransaction) => {
+					const now = utcMs(this.#clock.wallMs());
+					const row = readPin(tx, user);
+					if (!row) return "PIN_CHANGED" as const;
+					try {
+						if (
+							row.version !== original.version ||
+							!timingSafeEqual(row.hash, original.hash) ||
+							!timingSafeEqual(row.salt, original.salt)
+						)
+							return "PIN_CHANGED" as const;
+						if (row.locked_until > now) return "PIN_LOCKED" as const;
+						const failures = row.locked_until > 0 ? 0 : row.failures;
+						// A match runs the same update and append, so it commits only where a failure would.
+						const attempt = (prior: number, failed: boolean) => {
+							const count = prior + 1;
+							const lock = count >= 5 ? utcMs(now + 15 * 60_000) : 0;
+							tx.run(
+								"UPDATE main.approval_pins SET failures=?,locked_until=? WHERE user_id=? AND version=?",
+								failed ? [count, lock, user, row.version] : [0, 0, user, row.version],
+							);
+							appendAudit.call(this.#audit, tx, {
+								id: newId(),
+								at: now,
+								action: !failed ? "pin.verified" : count >= 5 ? "pin.locked" : "pin.failed",
+								actor: { kind: "hub", id: null },
+								refs: { user },
+							});
+							if (!failed) return null;
+							return count >= 5 ? ("PIN_LOCKED" as const) : ("PIN_INVALID" as const);
+						};
+						if (!pending) return attempt(failures, !matches);
+						// A failure this service could not record is written first, in the same transaction.
+						const first = attempt(failures, true);
+						recorded = true;
+						return first === "PIN_LOCKED" ? first : attempt(failures + 1, !matches);
+					} finally {
+						row.hash.fill(0);
+						row.salt.fill(0);
 					}
-					tx.run(
-						"UPDATE main.approval_pins SET failures=0,locked_until=0 WHERE user_id=? AND version=?",
-						[user, row.version],
-					);
-					return null;
-				} finally {
-					row.hash.fill(0);
-					row.salt.fill(0);
-				}
-			}) as "PIN_CHANGED" | "PIN_LOCKED" | "PIN_INVALID" | null;
+				}) as "PIN_CHANGED" | "PIN_LOCKED" | "PIN_INVALID" | null;
+			} catch (error) {
+				// An unrecorded wrong PIN stays pending until a committed write records it.
+				if (!matches) this.#unrecorded.add(user);
+				throw error;
+			}
+			if (recorded) this.#unrecorded.delete(user);
 			if (outcome !== null) throw new PinError(outcome);
 			const proof = Object.freeze(Object.create(null)) as PinProof;
 			this.#proofs.set(proof, {
