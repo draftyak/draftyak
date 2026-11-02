@@ -555,7 +555,7 @@ describe("workflow policy", () => {
 		["heavy condition", "if: needs.changes.outputs.spikes != ''", "if: false"],
 		[
 			"heavy condition removal",
-			"        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''\n",
+			"        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n",
 			"",
 		],
 		[
@@ -565,39 +565,43 @@ describe("workflow policy", () => {
 		],
 		[
 			"heavy command replacement",
-			`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
+			`node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
 			"echo heavy-suite-disabled",
 		],
 		[
 			"heavy serial flag removal",
-			`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
-			`node tools/verify/turbo.ts run test:heavy "\${filters[@]}"`,
+			`node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
+			`node tools/verify/turbo.ts run test:heavy --log-order=stream --log-prefix=task "\${filters[@]}"`,
 		],
 		["heavy parallel execution", "test:heavy --concurrency=1", "test:heavy --concurrency=2"],
 		[
 			"heavy echo prefix",
-			`node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
-			`echo node tools/verify/turbo.ts run test:heavy --concurrency=1 "\${filters[@]}"`,
+			`node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
+			`echo node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
 		],
 		[
 			"heavy filter removal",
 			'          for dir in $SPIKES; do filters+=("--filter=./$dir"); done\n',
 			"",
 		],
-		["heavy selection environment", `SPIKES: \${{ needs.changes.outputs.spikes }}`, "SPIKES: ''"],
+		[
+			"heavy selection environment",
+			`name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n        env:\n          SPIKES: \${{ needs.changes.outputs.spikes }}`,
+			`name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n        env:\n          SPIKES: ''`,
+		],
 		[
 			"heavy package condition removal",
-			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''",
+			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
 			"if: needs.changes.outputs.spikes != ''",
 		],
 		[
 			"heavy package selection environment",
-			`HEAVY: \${{ needs.changes.outputs.heavy }}`,
+			`HEAVY: \${{ needs.changes.outputs.ordinary-heavy }}`,
 			"HEAVY: ''",
 		],
 		[
 			"heavy package selection environment removal",
-			`          HEAVY: \${{ needs.changes.outputs.heavy }}\n`,
+			`          HEAVY: \${{ needs.changes.outputs.ordinary-heavy }}\n`,
 			"",
 		],
 		[
@@ -712,11 +716,11 @@ describe("workflow policy", () => {
 			(parseYaml(read(`.github/workflows/${name}`)).value as { jobs: Record<string, unknown> })
 				.jobs;
 		const ci = jobs("ci.yml");
-		expect(Object.keys(ci)).toEqual(["changes", "cheap", "full", "windows", "required"]);
+		expect(Object.keys(ci)).toEqual(["changes", "cheap", "full", "windows", "macos", "required"]);
 		expect(ci.required).toMatchObject({
 			if: "always()",
 			name: `\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`,
-			needs: ["changes", "cheap", "full", "windows"],
+			needs: ["changes", "cheap", "full", "windows", "macos"],
 		});
 		const reportedJobs = files.flatMap((file) =>
 			Object.entries(jobs(path.basename(file))).map(([id, job]) => ({
@@ -804,13 +808,16 @@ describe("workflow policy", () => {
 			}
 		).jobs;
 		expect(ci.windows?.if).toBe(
-			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft))",
+			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && needs.changes.outputs.native-transport == 'true'))",
 		);
-		expect(ci.windows?.steps.at(-1)).toEqual({
+		expect(ci.windows?.steps.find((step) => step.run === "pnpm verify")).toEqual({
 			run: "pnpm verify",
 			env: { TURBO_CONCURRENCY: "1" },
 		});
-		for (const name of ["changes", "cheap", "full", "windows"]) {
+		expect(ci.windows?.steps.at(-1)?.run).toBe(
+			"pnpm exec node tools/ci-checks/src/native-transport.ts run",
+		);
+		for (const name of ["changes", "cheap", "full", "windows", "macos"]) {
 			const job = ci[name];
 			expect(job?.outputs?.source, name).toBe(`\${{ steps.source.outputs.source }}`);
 			const steps = job?.steps ?? [];
@@ -1557,5 +1564,60 @@ describe("workflow policy", () => {
 		["a lone CR", workflow(["push:", "  branches: [main] #\r    tags: ['v*']"]), "U+000D"],
 	])("refuses %s", (_, source, problem) => {
 		expect(checkWorkflow("x.yml", source, "1.95.0").join("\n")).toContain(problem);
+	});
+});
+
+describe("selected browser provisioning contract", () => {
+	const file = ".github/workflows/ci.yml";
+	it.each([
+		["missing plan", "node tools/ci-checks/src/browser-setup.ts plan", "echo no-plan"],
+		["wrong plan source", "id: browser-setup", "id: another-plan"],
+		[
+			"unconditional cache",
+			"id: browser-cache\n        if: steps.browser-setup.outputs.required == 'true'",
+			"id: browser-cache\n        if: true",
+		],
+		[
+			"different cache path",
+			"path: ${{ steps.browser-setup.outputs.path }}",
+			"path: another-cache",
+		],
+		[
+			"different lock cache key",
+			"key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}",
+			"key: playwright-unlocked",
+		],
+		[
+			"ignored setup failure",
+			"run: node tools/ci-checks/src/browser-setup.ts install",
+			"run: node tools/ci-checks/src/browser-setup.ts install || true",
+		],
+		[
+			"cache-hit install bypass",
+			"name: Install browser prerequisites\n        if: steps.browser-setup.outputs.required == 'true'",
+			"name: Install browser prerequisites\n        if: steps.browser-cache.outputs.cache-hit != 'true'",
+		],
+	])("rejects %s in the actual workflow", (_, before, after) => {
+		const source = read(file).replaceAll("\r\n", "\n");
+		const mutated = source.replace(before, after);
+		expect(mutated).not.toBe(source);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain("must preserve");
+	});
+	it("requires the cache between the plan and install", () => {
+		const source = read(file).replaceAll("\r\n", "\n");
+		const start = source.indexOf("      - name: Cache Playwright browsers\n");
+		const end = source.indexOf("      - name: Install browser prerequisites\n", start);
+		expect(start).toBeGreaterThan(0);
+		expect(end).toBeGreaterThan(start);
+		const cache = source.slice(start, end);
+		const without = source.slice(0, start) + source.slice(end);
+		const mutated = without.replace(
+			"      - name: test:heavy for the touched spikes and the selected packages\n",
+			cache + "      - name: test:heavy for the touched spikes and the selected packages\n",
+		);
+		expect(mutated).not.toBe(without);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"must preserve the selected browser cache",
+		);
 	});
 });
