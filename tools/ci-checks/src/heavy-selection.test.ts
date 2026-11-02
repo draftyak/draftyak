@@ -25,9 +25,17 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 		(step) => step.name === "test:heavy for the touched spikes and the selected packages",
 	);
 	expect(heavy).toBeDefined();
-	expect(heavy?.if).toBe("needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''");
+	expect(heavy?.if).toBe(
+		"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+	);
 	expect(object(heavy?.env).SPIKES).toBe(`\${{ needs.changes.outputs.spikes }}`);
-	expect(object(heavy?.env).HEAVY).toBe(`\${{ needs.changes.outputs.heavy }}`);
+	expect(object(heavy?.env).HEAVY).toBe(`\${{ needs.changes.outputs.ordinary-heavy }}`);
+	const outputs = object(object(object(workflow.jobs).changes).outputs);
+	expect(outputs.heavy).toBe(`\${{ steps.areas.outputs.heavy }}`);
+	expect(outputs["ordinary-heavy"]).toBe(`\${{ steps.native.outputs.ordinary-heavy }}`);
+	expect(object(heavy?.env).PLAYWRIGHT_BROWSERS_PATH).toBe(
+		`\${{ steps.browser-setup.outputs.path }}`,
+	);
 	expect(heavy?.run).toBe(
 		[
 			"filters=()",
@@ -91,10 +99,14 @@ describe("heavy selection contract", () => {
 	it.each([
 		"missing selectors",
 		"wrong spike source",
+		"wrong browser cache",
 		"missing Rust setup",
 		"wrong Rust cache",
 		"strict skips",
 		"wrong condition",
+		"raw heavy execution",
+		"raw metadata discarded",
+		"spike-only guard lost",
 		"missing serial execution",
 		"concurrent heavy packages",
 		"echoed heavy command",
@@ -109,6 +121,8 @@ describe("heavy selection contract", () => {
 		if (attack === "missing selectors")
 			heavy.run = String(heavy.run).replace(` "\${filters[@]}"`, "");
 		if (attack === "wrong spike source") object(heavy.env).SPIKES = "one-spike";
+		if (attack === "wrong browser cache")
+			object(heavy.env).PLAYWRIGHT_BROWSERS_PATH = "another-cache";
 		if (attack === "missing Rust setup")
 			full.steps = steps.filter((step) => !String(step.uses).startsWith("dtolnay/"));
 		if (attack === "wrong Rust cache") {
@@ -118,6 +132,12 @@ describe("heavy selection contract", () => {
 		}
 		if (attack === "strict skips") object(heavy.env).DRAFTYAK_STRICT_SKIPS = "0";
 		if (attack === "wrong condition") heavy.if = "true";
+		if (attack === "raw heavy execution")
+			object(heavy.env).HEAVY = `\${{ needs.changes.outputs.heavy }}`;
+		if (attack === "raw metadata discarded")
+			object(object(object(changed.jobs).changes).outputs).heavy =
+				`\${{ steps.native.outputs.ordinary-heavy }}`;
+		if (attack === "spike-only guard lost") heavy.if = "needs.changes.outputs.ordinary-heavy != ''";
 		if (attack === "missing serial execution")
 			heavy.run = String(heavy.run).replace(" --concurrency=1", "");
 		if (attack === "concurrent heavy packages")

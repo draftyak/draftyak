@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { classify } from "./changes.ts";
+import { nativeTransportSelection } from "./native-transport.ts";
 import { parseYaml } from "./yaml.ts";
 
 const repository = path.resolve(import.meta.dirname, "..", "..", "..");
@@ -22,7 +23,11 @@ const run = step.run;
 const environment = step.env;
 const bash = process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "/bin/bash";
 
-function exercise(files: string[], fail = false): { status: number | null; calls: unknown[] } {
+function exercise(
+	files: string[],
+	fail = false,
+	overlay: Partial<Record<"spikes" | "heavy" | "rust", readonly string[]>> = {},
+): { status: number | null; calls: unknown[] } {
 	const root = mkdtempSync(path.join(tmpdir(), "draftyak-app-heavy-shell-"));
 	try {
 		for (const app of ["cli", "hub"]) {
@@ -38,18 +43,43 @@ function exercise(files: string[], fail = false): { status: number | null; calls
 		}
 		mkdirSync(path.join(root, "packages", "create-plugin"), { recursive: true });
 		writeFileSync(path.join(root, "packages", "create-plugin", "package.json"), "{}");
-		const selected = classify(
-			files,
-			root,
-			() => [],
-			() => [],
-		);
+		const selected = {
+			...classify(
+				files,
+				root,
+				() => [],
+				() => [],
+			),
+			...overlay,
+		};
+		const split = nativeTransportSelection(selected.heavy.join("\n"), selected.rust.join("\n"));
+		const outputs: Record<string, string> = {
+			spikes: selected.spikes.join("\n"),
+			heavy: selected.heavy.join("\n"),
+			"ordinary-heavy": split.ordinaryHeavy,
+		};
+		const clauses = String(step?.if)
+			.split(" || ")
+			.map((clause) => {
+				const field = /^needs\.changes\.outputs\.([a-z-]+) != ''$/.exec(clause)?.[1];
+				if (field === undefined || !Object.hasOwn(outputs, field))
+					throw new Error("unknown heavy condition");
+				return outputs[field] !== "";
+			});
+		if (!clauses.some(Boolean)) return { status: 0, calls: [] };
+		const heavyField = /^\$\{\{ needs\.changes\.outputs\.([a-z-]+) \}\}$/.exec(
+			String(environment.HEAVY),
+		)?.[1];
+		if (heavyField === undefined || !Object.hasOwn(outputs, heavyField))
+			throw new Error("unknown heavy binding");
+		const browserPath = path.join(root, "browsers");
 		const capture = path.join(root, "capture.mjs");
 		const output = path.join(root, "calls.jsonl");
 		writeFileSync(
 			capture,
 			[
 				'import {appendFileSync} from "node:fs";',
+				"if(process.env.PLAYWRIGHT_BROWSERS_PATH!==process.env.CAPTURE_BROWSER_EXPECTED)process.exit(24);",
 				'appendFileSync(process.env.CAPTURE_OUTPUT, JSON.stringify({args:process.argv.slice(2), strict:process.env.DRAFTYAK_STRICT_SKIPS})+"\\n");',
 				'if(process.env.CAPTURE_FAIL==="1")process.exit(23);',
 			].join("\n"),
@@ -72,8 +102,13 @@ function exercise(files: string[], fail = false): { status: number | null; calls
 					CAPTURE_SCRIPT: capture.replaceAll("\\", "/"),
 					CAPTURE_OUTPUT: output,
 					CAPTURE_FAIL: fail ? "1" : "0",
+					CAPTURE_BROWSER_EXPECTED: browserPath,
 					SPIKES: selected.spikes.join("\n"),
-					HEAVY: selected.heavy.join("\n"),
+					HEAVY: outputs[heavyField],
+					PLAYWRIGHT_BROWSERS_PATH:
+						environment.PLAYWRIGHT_BROWSERS_PATH === "${{ steps.browser-setup.outputs.path }}"
+							? browserPath
+							: String(environment.PLAYWRIGHT_BROWSERS_PATH ?? ""),
 					SMOKE: String(selected.templateSmoke),
 					DRAFTYAK_STRICT_SKIPS: String(environment.DRAFTYAK_STRICT_SKIPS ?? ""),
 				},
@@ -95,7 +130,11 @@ function exercise(files: string[], fail = false): { status: number | null; calls
 
 describe("actual selected-heavy workflow application arguments", () => {
 	it("keeps the existing condition, build prerequisite and explicit strict skips", () => {
-		expect(step.if).toBe("needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''");
+		expect(step.if).toBe(
+			"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+		);
+		expect(environment.HEAVY).toBe("${{ needs.changes.outputs.ordinary-heavy }}");
+		expect(environment.PLAYWRIGHT_BROWSERS_PATH).toBe("${{ steps.browser-setup.outputs.path }}");
 		expect(environment.DRAFTYAK_STRICT_SKIPS).toBe("1");
 		expect(steps.findIndex((entry) => entry.run === "pnpm build")).toBeGreaterThan(-1);
 		expect(steps.findIndex((entry) => entry.run === "pnpm build")).toBeLessThan(
@@ -142,6 +181,52 @@ describe("actual selected-heavy workflow application arguments", () => {
 		const result = exercise(["apps/hub/src/main.ts"], true);
 		expect(result.status).toBe(23);
 		expect(result.calls).toHaveLength(1);
+	});
+	it.each([
+		["no work", { heavy: [] }],
+		["native only", { heavy: ["./tools/transport-tests"], rust: ["crates"] }],
+	] as const)("does not run an empty-filter ordinary command for %s", (_, overlay) => {
+		expect(exercise([], false, overlay)).toEqual({ status: 0, calls: [] });
+	});
+	it("excludes the dedicated native wrapper from real ordinary shell arguments", () => {
+		const result = exercise([], false, {
+			heavy: ["./tools/transport-tests", "...{./apps/cli}"],
+			rust: ["crates"],
+		});
+		expect(result).toEqual({
+			status: 0,
+			calls: [
+				{
+					args: [
+						"tools/verify/turbo.ts",
+						"run",
+						"test:heavy",
+						"--concurrency=1",
+						"--filter=...{./apps/cli}",
+						"--filter=!./packages/create-plugin",
+					],
+					strict: "1",
+				},
+			],
+		});
+	});
+	it("retains the actual spike-only shell execution with empty ordinary selection", () => {
+		expect(exercise([], false, { spikes: ["spikes/kit"], heavy: [] })).toEqual({
+			status: 0,
+			calls: [
+				{
+					args: [
+						"tools/verify/turbo.ts",
+						"run",
+						"test:heavy",
+						"--concurrency=1",
+						"--filter=./spikes/kit",
+						"--filter=!./packages/create-plugin",
+					],
+					strict: "1",
+				},
+			],
+		});
 	});
 	it("invalidates the CI test cache when either reviewed app manifest changes", () => {
 		const config = JSON.parse(
