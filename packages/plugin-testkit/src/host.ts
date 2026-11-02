@@ -55,8 +55,14 @@ import {
 	toolKindsV1,
 } from "@draftyak/protocol/tool-v1";
 import { HostError, type HostRequestOptions, memoryHost } from "@draftyak/sdk";
+import {
+	type CompatibleHttpBinding,
+	type CompatibleHttpBindingInput,
+	createCompatibleHttpBinding,
+} from "./compatible-http.ts";
 import { matchRequest } from "./policy.ts";
 import {
+	copyCompatibleHttpInputs,
 	copyResponsesHttpInputs,
 	type Denial,
 	type MockAccount,
@@ -174,6 +180,7 @@ export function createMockHost(
 		readonly upstreams: readonly Fake[];
 		readonly secrets?: Readonly<Record<string, string>>;
 		readonly responsesHttp?: readonly ResponsesHttpBindingInput[];
+		readonly compatibleHttp?: readonly CompatibleHttpBindingInput[];
 	},
 	controls: { readonly entropy?: () => Uint8Array } = {},
 ): {
@@ -184,7 +191,24 @@ export function createMockHost(
 		args?: unknown,
 	): Promise<T>;
 } {
+	const compatibleSlot = Object.getOwnPropertyDescriptor(options, "compatibleHttp");
+	if (compatibleSlot && (!compatibleSlot.enumerable || !Object.hasOwn(compatibleSlot, "value")))
+		throw new MockHubError("INVALID_COMPATIBLE_BINDINGS");
+	const compatibleInputs =
+		compatibleSlot?.value === undefined ? [] : copyCompatibleHttpInputs(compatibleSlot.value);
+	const compatibleBindings: CompatibleHttpBinding[] = [];
+	for (const input of compatibleInputs) {
+		const issued = createCompatibleHttpBinding(input);
+		if (!issued.ok) throw new MockHubError("INVALID_COMPATIBLE_BINDINGS");
+		compatibleBindings.push(issued.binding);
+	}
+	Object.freeze(compatibleBindings);
 	const manifest = options.manifest;
+	if (
+		compatibleBindings.length > 0 &&
+		(manifest.kind !== "ai-provider" || manifest.egress.profile !== "chat-completions-v1")
+	)
+		throw new MockHubError("INVALID_COMPATIBLE_BINDINGS");
 	const bindingSlot = Object.getOwnPropertyDescriptor(options, "responsesHttp");
 	if (bindingSlot && !Object.hasOwn(bindingSlot, "value"))
 		throw new MockHubError("INVALID_RESPONSES_BINDINGS");
@@ -423,11 +447,14 @@ export function createMockHost(
 		// Presented tickets are consumed even when a subsequent policy check refuses the request.
 		let ticketHeaders =
 			params.sendTicket === undefined ? undefined : consumeTicket(params, body, foundTicket);
-		const matched = matchRequest(manifest, params.url, params.method, secrets, {
-			bindings: responsesBindings,
-			headers: params.headers,
-			body,
-		});
+		const matched = matchRequest(
+			manifest,
+			params.url,
+			params.method,
+			secrets,
+			{ bindings: responsesBindings, headers: params.headers, body },
+			{ bindings: compatibleBindings, headers: params.headers, body },
+		);
 		if (!matched) return deny("OFF_RULE");
 		const { rule, url } = matched;
 		let member: JsonMember | undefined;

@@ -11,6 +11,7 @@ import { createMockHost } from "./host.ts";
 import { createInMemory } from "./in-memory.ts";
 import { createProcess } from "./process.ts";
 import {
+	copyCompatibleHttpInputs,
 	copyMockCallOptions,
 	copyResponsesHttpInputs,
 	type MockHub,
@@ -28,7 +29,7 @@ function freeze<T>(value: T): T {
 
 function ownOption(
 	options: MockHubOptions,
-	name: "instance" | "responsesHttp",
+	name: "instance" | "responsesHttp" | "compatibleHttp",
 	code: string,
 ): unknown {
 	const slot = Object.getOwnPropertyDescriptor(options, name);
@@ -82,6 +83,9 @@ export function createMockHub(options: MockHubOptions): MockHub {
 		![Object.prototype, null].includes(Object.getPrototypeOf(options))
 	)
 		throw new MockHubError("INVALID_OPTIONS");
+	const compatibleSupplied = ownOption(options, "compatibleHttp", "INVALID_COMPATIBLE_BINDINGS");
+	const compatibleBindings =
+		compatibleSupplied === undefined ? undefined : copyCompatibleHttpInputs(compatibleSupplied);
 	const checked = validateManifest(options.plugin.manifest);
 	if (!checked.ok) throw new MockHubError(checked.problems[0]?.code ?? "MANIFEST_INVALID");
 	const manifest = freeze(checked.manifest);
@@ -123,6 +127,7 @@ export function createMockHub(options: MockHubOptions): MockHub {
 		upstreams: options.upstreams,
 		...(options.secrets ? { secrets: options.secrets } : {}),
 		...(bindings ? { responsesHttp: bindings } : {}),
+		...(compatibleBindings === undefined ? {} : { compatibleHttp: compatibleBindings }),
 	});
 	const memory = (() => {
 		try {
