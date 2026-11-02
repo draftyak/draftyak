@@ -1,9 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { InputError, type JsonLimits, parseStrictJson } from "../src/strict-json.ts";
+import {
+	InputError,
+	type JsonLimits,
+	parseStrictJson,
+	parseStrictJsonWithNumberSources,
+} from "../src/strict-json.ts";
 
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
 const parse = (text: string, limits?: Partial<JsonLimits>): unknown =>
 	parseStrictJson(encode(text), limits);
+
+describe("number-token evidence", () => {
+	it("retains original tokens bound to their parsed member, without changing legacy numeric semantics", () => {
+		const bytes = encode(
+			'{"id":9007199254740991.1,"items":[1e0,{"id":2}],"other":{"id":3},"tail":[]}',
+		);
+		const p = parseStrictJsonWithNumberSources(bytes),
+			r = p.value as {
+				id: number;
+				items: [number, { id: number }];
+				other: { id: number };
+				tail: unknown[];
+			};
+		expect(r.id).toBe(Number.MAX_SAFE_INTEGER);
+		expect(p.numberSource(r, "id")).toBe("9007199254740991.1");
+		expect(p.numberSource(r.items, "0")).toBe("1e0");
+		expect(p.numberSource(r.items[1], "id")).toBe("2");
+		expect(p.numberSource(r.other, "id")).toBe("3");
+		expect(p.numberSource(r, "tail")).toBeUndefined();
+		expect(p.numberSource({ id: 2 }, "id")).toBeUndefined();
+		expect(JSON.stringify(p.value)).toBe(JSON.stringify(parseStrictJson(bytes)));
+	});
+	it.each(['{"a":1,"a":2}', '{"id":9007199254740992}', '{"a":[1,]}'])(
+		"keeps the same strict refusals: %s",
+		(s) => {
+			expect(() => parseStrictJsonWithNumberSources(encode(s))).toThrow(InputError);
+			expect(() => parseStrictJson(encode(s))).toThrow(InputError);
+		},
+	);
+});
 
 function refuses(input: Uint8Array, limits?: Partial<JsonLimits>): void {
 	expect(() => parseStrictJson(input, limits)).toThrow(InputError);

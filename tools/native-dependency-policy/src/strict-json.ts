@@ -48,6 +48,22 @@ class Reader {
 	private nodes = 0;
 	private readonly text: string;
 	private readonly limits: JsonLimits;
+	private lastNumberSource: string | undefined;
+	private readonly numberSources = new WeakMap<object, Map<string, string>>();
+
+	numberSource(object: object, key: string): string | undefined {
+		return this.numberSources.get(object)?.get(key);
+	}
+
+	private saveNumberSource(object: object, key: string): void {
+		if (this.lastNumberSource === undefined) return;
+		let members = this.numberSources.get(object);
+		if (!members) {
+			members = new Map();
+			this.numberSources.set(object, members);
+		}
+		members.set(key, this.lastNumberSource);
+	}
 
 	constructor(text: string, limits: JsonLimits) {
 		this.text = text;
@@ -74,13 +90,16 @@ class Reader {
 	}
 
 	private value(depth: number): unknown {
+		this.lastNumberSource = undefined;
 		this.space();
 		this.node();
 		const character = this.text[this.offset];
 		if (character === '"') return this.string();
 		if (character === "[" || character === "{") {
 			if (depth >= this.limits.maxDepth) throw new InputError();
-			return character === "[" ? this.array(depth + 1) : this.object(depth + 1);
+			const result = character === "[" ? this.array(depth + 1) : this.object(depth + 1);
+			this.lastNumberSource = undefined;
+			return result;
 		}
 		for (const [literal, value] of [
 			["true", true],
@@ -105,6 +124,7 @@ class Reader {
 		}
 		while (true) {
 			values.push(this.value(depth));
+			this.saveNumberSource(values, String(values.length - 1));
 			this.space();
 			const next = this.text[this.offset++];
 			if (next === "]") return values;
@@ -130,6 +150,7 @@ class Reader {
 			this.space();
 			if (this.text[this.offset++] !== ":") throw new InputError();
 			result[key] = this.value(depth);
+			this.saveNumberSource(result, key);
 			this.space();
 			const next = this.text[this.offset++];
 			if (next === "}") return result;
@@ -204,6 +225,7 @@ class Reader {
 		);
 		if (!match) throw new InputError();
 		this.offset += match[0].length;
+		this.lastNumberSource = match[0];
 		const value = Number(match[0]);
 		if (
 			!Number.isFinite(value) ||
@@ -217,7 +239,17 @@ class Reader {
 }
 
 /** Strict UTF-8 JSON, with depth measured in containers and nodes including member names. */
-export function parseStrictJson(input: Uint8Array, limits: Partial<JsonLimits> = {}): unknown {
+export interface JsonNumberSources {
+	readonly value: unknown;
+	/** Exact original token on this parsed object only; no inferred or rounded spelling. */
+	numberSource(object: object, key: string): string | undefined;
+}
+
+/** Same parser and refusals, with object-bound lexical number evidence for selected consumers. */
+export function parseStrictJsonWithNumberSources(
+	input: Uint8Array,
+	limits: Partial<JsonLimits> = {},
+): JsonNumberSources {
 	try {
 		const checked = checkedLimits(limits);
 		const length: unknown = byteLength?.call(input);
@@ -226,9 +258,19 @@ export function parseStrictJson(input: Uint8Array, limits: Partial<JsonLimits> =
 		Uint8Array.prototype.set.call(snapshot, input);
 		// Keep a BOM as input, so the JSON grammar refuses it rather than silently stripping it.
 		const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(snapshot);
-		return new Reader(text, checked).read();
+		const reader = new Reader(text, checked);
+		return Object.freeze({
+			value: reader.read(),
+			numberSource: (object: object, key: string): string | undefined =>
+				reader.numberSource(object, key),
+		});
 	} catch (error) {
 		if (error instanceof InputError) throw error;
 		throw new InputError();
 	}
+}
+
+/** Strict UTF-8 JSON; numeric semantics for existing callers are unchanged. */
+export function parseStrictJson(input: Uint8Array, limits: Partial<JsonLimits> = {}): unknown {
+	return parseStrictJsonWithNumberSources(input, limits).value;
 }
