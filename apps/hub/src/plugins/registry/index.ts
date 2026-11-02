@@ -359,10 +359,14 @@ export async function openPluginRegistry(raw: PluginRegistryOptions): Promise<Pl
 			const state = deviceState.call(options.devices, sql);
 			if (!state.bootstrapDone || state.ownerUserId === null) refuse("unavailable");
 		});
-		const config = fields(input.installer, ["directory", "bundles"]),
+		const config = fields(input.installer, ["directory", "bundles", "nativeBinding"]),
 			catalog = pins(config.bundles);
 		const root = await canonicalDirectory(config.directory);
-		installer = await openPluginInstaller({ directory: root, bundles: catalog });
+		installer = await openPluginInstaller({
+			directory: root,
+			bundles: catalog,
+			nativeBinding: config.nativeBinding as string,
+		});
 		const records = new Records(
 			options,
 			installer,

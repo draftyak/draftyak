@@ -64,6 +64,7 @@ export {
 	type EventRecord,
 } from "./events/log.ts";
 export { SINGLE_OWNER_IDENTITY, singleOwnerIdentity } from "./extensions/free/identity.ts";
+export { SINGLE_OWNER_WORKSPACE, singleOwnerWorkspace } from "./extensions/free/workspace.ts";
 export {
 	ExtensionError,
 	type ExtensionErrorCode,
@@ -124,7 +125,12 @@ export {
 	timeoutSignal,
 	withDeadline,
 } from "./kernel/clock.ts";
-export { isKnownSyncedPath } from "./kernel/data-directory.ts";
+export {
+	admitDataFolder,
+	type DataFolder,
+	type DataFolderOptions,
+	isKnownSyncedPath,
+} from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
 export {
 	type InitialMaterial,
@@ -140,6 +146,13 @@ export {
 	type SidecarStop,
 	type SidecarStopReason,
 } from "./kernel/sidecar-input.ts";
+export {
+	checkLaunch,
+	type LaunchCheck,
+	type LaunchInput,
+	StartupRefusal,
+	type StartupRefusalCode,
+} from "./lifecycle/preflight.ts";
 export {
 	createLifecycleScheduler,
 	type LifecycleSchedulerOptions,
