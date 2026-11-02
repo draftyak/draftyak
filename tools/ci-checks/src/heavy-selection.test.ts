@@ -17,6 +17,26 @@ const workflow = () =>
 			.value,
 	);
 
+const windowsRustUnion =
+	"hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'";
+
+function windowsRustSelected(hasCrates: boolean, native: boolean): boolean {
+	const windows = object(object(workflow().jobs).windows);
+	const steps = (windows.steps as Yaml[]).map(object);
+	const rust = steps.filter((step) => String(step.uses).startsWith("dtolnay/rust-toolchain@"));
+	expect(rust).toHaveLength(1);
+	const [left, operator, right] = String(rust[0]?.if).split(/\s+(\|\||&&)\s+/);
+	const terms = new Map([
+		["hashFiles('crates/Cargo.toml') != ''", hasCrates],
+		["needs.changes.outputs.native-transport == 'true'", native],
+	]);
+	if (!terms.has(left ?? "") || !terms.has(right ?? ""))
+		throw new Error("unrecognized Windows Rust condition");
+	if (operator === "||") return Boolean(terms.get(left ?? "") || terms.get(right ?? ""));
+	if (operator === "&&") return Boolean(terms.get(left ?? "") && terms.get(right ?? ""));
+	throw new Error("unrecognized Windows Rust operator");
+}
+
 function selectionContract(workflow: { [key: string]: Yaml }): void {
 	const full = object(object(workflow.jobs).full);
 	if (!Array.isArray(full.steps)) throw new Error("expected full job steps");
@@ -25,9 +45,14 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 		(step) => step.name === "test:heavy for the touched spikes and the selected packages",
 	);
 	expect(heavy).toBeDefined();
-	expect(heavy?.if).toBe("needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''");
+	expect(heavy?.if).toBe(
+		"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+	);
 	expect(object(heavy?.env).SPIKES).toBe(`\${{ needs.changes.outputs.spikes }}`);
-	expect(object(heavy?.env).HEAVY).toBe(`\${{ needs.changes.outputs.heavy }}`);
+	expect(object(heavy?.env).HEAVY).toBe(`\${{ needs.changes.outputs.ordinary-heavy }}`);
+	expect(object(heavy?.env).PLAYWRIGHT_BROWSERS_PATH).toBe(
+		`\${{ steps.browser-setup.outputs.path }}`,
+	);
 	expect(heavy?.run).toBe(
 		[
 			"filters=()",
@@ -60,6 +85,20 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 	}
 	expect(object(heavy?.env).DRAFTYAK_STRICT_SKIPS).toBe("1");
 	expect(heavy?.run).not.toContain("DRAFTYAK_STRICT_SKIPS");
+	const windows = object(object(workflow.jobs).windows);
+	const windowsSteps = (windows.steps as Yaml[]).map(object);
+	const windowsRust = windowsSteps.filter((step) =>
+		String(step.uses).startsWith("dtolnay/rust-toolchain@"),
+	);
+	expect(windowsRust).toHaveLength(1);
+	expect(windowsRust[0]?.if).toBe(windowsRustUnion);
+	const windowsCache = windowsSteps.find((step) =>
+		String(step.uses).startsWith("Swatinem/rust-cache@"),
+	);
+	expect(windowsCache).toBeDefined();
+	expect(windowsSteps.indexOf(windowsRust[0] ?? {})).toBeLessThan(
+		windowsSteps.indexOf(windowsCache ?? {}),
+	);
 }
 
 describe("heavy selection contract", () => {
@@ -87,10 +126,19 @@ describe("heavy selection contract", () => {
 	it("passes the complete classifier spike set to exact selectors and final Rust setup with strict skips", () => {
 		selectionContract(workflow());
 	});
+	it.each([
+		[false, false, false],
+		[true, false, true],
+		[false, true, true],
+		[true, true, true],
+	])("selects Windows Rust for crates=%s/native=%s as %s", (crates, native, selected) => {
+		expect(windowsRustSelected(crates, native)).toBe(selected);
+	});
 
 	it.each([
 		"missing selectors",
 		"wrong spike source",
+		"wrong browser cache",
 		"missing Rust setup",
 		"wrong Rust cache",
 		"strict skips",
@@ -109,6 +157,8 @@ describe("heavy selection contract", () => {
 		if (attack === "missing selectors")
 			heavy.run = String(heavy.run).replace(` "\${filters[@]}"`, "");
 		if (attack === "wrong spike source") object(heavy.env).SPIKES = "one-spike";
+		if (attack === "wrong browser cache")
+			object(heavy.env).PLAYWRIGHT_BROWSERS_PATH = "another-cache";
 		if (attack === "missing Rust setup")
 			full.steps = steps.filter((step) => !String(step.uses).startsWith("dtolnay/"));
 		if (attack === "wrong Rust cache") {

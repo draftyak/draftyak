@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { classify } from "./changes.ts";
+import { nativeTransportFilter, nativeTransportSelection } from "./native-transport.ts";
 import { parseYaml } from "./yaml.ts";
 
 const repository = path.resolve(import.meta.dirname, "..", "..", "..");
@@ -22,7 +23,11 @@ const run = step.run;
 const environment = step.env;
 const bash = process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "/bin/bash";
 
-function exercise(files: string[], fail = false): { status: number | null; calls: unknown[] } {
+function exercise(
+	files: string[],
+	fail = false,
+	includeNative = false,
+): { status: number | null; calls: unknown[] } {
 	const root = mkdtempSync(path.join(tmpdir(), "draftyak-app-heavy-shell-"));
 	try {
 		for (const app of ["cli", "hub"]) {
@@ -44,6 +49,29 @@ function exercise(files: string[], fail = false): { status: number | null; calls
 			() => [],
 			() => [],
 		);
+		const rawHeavy = [...selected.heavy, ...(includeNative ? [nativeTransportFilter] : [])].join(
+			"\n",
+		);
+		const ordinary = nativeTransportSelection(
+			rawHeavy,
+			includeNative ? "crates" : selected.rust.join("\n"),
+		).ordinaryHeavy;
+		const bindings = new Map([
+			[`\${{ needs.changes.outputs.heavy }}`, rawHeavy],
+			[`\${{ needs.changes.outputs.ordinary-heavy }}`, ordinary],
+		]);
+		const heavy = bindings.get(String(environment.HEAVY));
+		if (heavy === undefined) throw new Error("unknown heavy environment binding");
+		const terms = new Map([
+			["needs.changes.outputs.spikes != ''", '[ -n "$SPIKES" ]'],
+			["needs.changes.outputs.heavy != ''", '[ -n "$RAW_HEAVY" ]'],
+			["needs.changes.outputs.ordinary-heavy != ''", '[ -n "$ORDINARY_HEAVY" ]'],
+		]);
+		const [left, operator, right] = String(step?.if).split(/\s+(\|\||&&)\s+/);
+		const lhs = terms.get(left ?? ""),
+			rhs = terms.get(right ?? "");
+		if (!lhs || !rhs || (operator !== "||" && operator !== "&&"))
+			throw new Error("unknown selected-heavy condition");
 		const capture = path.join(root, "capture.mjs");
 		const output = path.join(root, "calls.jsonl");
 		writeFileSync(
@@ -56,7 +84,7 @@ function exercise(files: string[], fail = false): { status: number | null; calls
 		);
 		// Absolute executable and script, no PATH interception or fallback. Only fixed argv metadata
 		// reaches this stand-in: neither Turbo nor an application/heavy/live command is executed.
-		const command = `node() { "$CAPTURE_NODE" "$CAPTURE_SCRIPT" "$@"; }\nreadonly -f node\n${run}`;
+		const command = `node() { "$CAPTURE_NODE" "$CAPTURE_SCRIPT" "$@"; }\nreadonly -f node\nif ${lhs} ${operator} ${rhs}; then\n${run}\nfi`;
 		const result = spawnSync(
 			bash,
 			["--noprofile", "--norc", "-e", "-o", "pipefail", "-c", command],
@@ -73,7 +101,9 @@ function exercise(files: string[], fail = false): { status: number | null; calls
 					CAPTURE_OUTPUT: output,
 					CAPTURE_FAIL: fail ? "1" : "0",
 					SPIKES: selected.spikes.join("\n"),
-					HEAVY: selected.heavy.join("\n"),
+					HEAVY: heavy,
+					RAW_HEAVY: rawHeavy,
+					ORDINARY_HEAVY: ordinary,
 					SMOKE: String(selected.templateSmoke),
 					DRAFTYAK_STRICT_SKIPS: String(environment.DRAFTYAK_STRICT_SKIPS ?? ""),
 				},
@@ -95,7 +125,10 @@ function exercise(files: string[], fail = false): { status: number | null; calls
 
 describe("actual selected-heavy workflow application arguments", () => {
 	it("keeps the existing condition, build prerequisite and explicit strict skips", () => {
-		expect(step.if).toBe("needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''");
+		expect(step.if).toBe(
+			"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+		);
+		expect(environment.HEAVY).toBe(`\${{ needs.changes.outputs.ordinary-heavy }}`);
 		expect(environment.DRAFTYAK_STRICT_SKIPS).toBe("1");
 		expect(steps.findIndex((entry) => entry.run === "pnpm build")).toBeGreaterThan(-1);
 		expect(steps.findIndex((entry) => entry.run === "pnpm build")).toBeLessThan(
@@ -119,6 +152,14 @@ describe("actual selected-heavy workflow application arguments", () => {
 				},
 			],
 		});
+	});
+	it("does not start ordinary heavy with empty selectors for a native-only selection", () => {
+		expect(exercise([], false, true)).toEqual({ status: 0, calls: [] });
+	});
+	it("keeps a mixed app/native selection out of the ordinary native suite", () => {
+		expect(exercise(["apps/hub/src/main.ts"], false, true)).toEqual(
+			exercise(["apps/hub/src/main.ts"]),
+		);
 	});
 	it("passes the exact bounded global targets without the optional-smoke exclusion", () => {
 		expect(exercise(["package.json"])).toEqual({
