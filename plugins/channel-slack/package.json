@@ -1,0 +1,36 @@
+{
+  "name": "@draftyak/channel-slack",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/reduce.ts",
+    "./reduce": "./src/reduce.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/reduce.d.mts",
+        "default": "./dist/reduce.mjs"
+      },
+      "./reduce": {
+        "types": "./dist/reduce.d.mts",
+        "default": "./dist/reduce.mjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "build": "tsdown"
+  },
+  "dependencies": {
+    "@draftyak/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "tsdown": "0.23.1"
+  }
+}
