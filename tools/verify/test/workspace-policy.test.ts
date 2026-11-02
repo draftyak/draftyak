@@ -1,8 +1,9 @@
 import { existsSync, globSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { runInventoryAfter } from "../lib/inventory-process.ts";
 import { capture } from "../lib/spawn.ts";
-import { approvedWorkspace, listedWorktrees, namedWorktreeFiles } from "../lib/workspace-policy.ts";
+import { approvedWorkspace } from "../lib/workspace-policy.ts";
 
 // ADR 0001's kept test. It reads the whole repo, so tools/verify/turbo.json keeps `test` uncached.
 // It imports nothing but lib/, so it doesn't depend on the M0-only prefetch.ts and profiles/m0.ts.
@@ -196,45 +197,14 @@ describe("workspace policy", () => {
 	});
 
 	it("ignores .env.live, which only the main checkout may hold, and lists names only in the example", async () => {
-		expect((await git("check-ignore", "-q", ".env.live")).code).toBe(0);
-		expect((await git("check-ignore", "-q", ".env.live.example")).code).toBe(1);
-		const values = read(".env.live.example")
-			.split(/\r?\n/)
-			.filter((line) => line.trim() !== "" && !line.startsWith("#"))
-			.filter((line) => !/^[A-Z][A-Z0-9_]*=$/.test(line));
-		expect(values).toEqual([]);
-
-		const common = (await git("rev-parse", "--path-format=absolute", "--git-common-dir")).stdout;
-		const key = (dir: string): string => {
-			const resolved = path.resolve(dir);
-			return process.platform === "win32" ? resolved.toLowerCase() : resolved;
-		};
-		const main = key(path.dirname(common.trim()));
-		const refreshWorktrees = async () => {
-			const result = await git("worktree", "list", "--porcelain", "-z");
-			if (result.code !== 0) throw new Error("file-name inventory failed");
-			return listedWorktrees(result.stdout);
-		};
-		const worktrees = (await refreshWorktrees())
-			.map(({ directory }) => directory)
-			.filter((dir) => key(dir) !== main);
-		const holding: string[] = [];
-		const scan = async (dir: string): Promise<void> => {
-			const files = await namedWorktreeFiles(".env.live", dir, refreshWorktrees);
-			for (const file of files) {
-				holding.push(`${dir}/${file}`);
-			}
-		};
-		// Sixteen at a time, read-only: the dev box has hundreds of worktrees, some of them in use.
-		let next = 0;
-		const worker = async (): Promise<void> => {
-			while (next < worktrees.length) {
-				const dir = worktrees[next];
-				next += 1;
-				if (dir !== undefined) await scan(dir);
-			}
-		};
-		await Promise.all(Array.from({ length: 16 }, worker));
-		expect(holding.toSorted()).toEqual([]);
+		await runInventoryAfter(async () => {
+			expect((await git("check-ignore", "-q", ".env.live")).code).toBe(0);
+			expect((await git("check-ignore", "-q", ".env.live.example")).code).toBe(1);
+			const values = read(".env.live.example")
+				.split(/\r?\n/)
+				.filter((line) => line.trim() !== "" && !line.startsWith("#"))
+				.filter((line) => !/^[A-Z][A-Z0-9_]*=$/.test(line));
+			expect(values).toEqual([]);
+		});
 	}, 300_000);
 });
