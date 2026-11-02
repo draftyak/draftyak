@@ -69,6 +69,8 @@ it("enforces actual bytes against a lower declared rule cap even when Content-Le
 it("accepts exactly 33554432 tool response bytes and refuses the first excess byte", {
 	timeout: 20_000,
 }, async () => {
+	// This case measures byte admission, independent of the runner's stream-processing speed.
+	vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
 	for (const size of [33_554_432, 33_554_433]) {
 		const fake = createToolUpstream({ oversizeBytes: size });
 		const hub = track(
