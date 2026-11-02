@@ -13,6 +13,7 @@ const EXPECTED = [
 	["credentials", ["0001_credentials", "0002_sealed_credentials"]],
 	["tickets", ["0001_send_attempts"]],
 	["accounts", ["0001_accounts"]],
+	["pluginregistry", ["0001_registry"]],
 ] as const;
 const DOMAIN_TABLES = [
 	"accounts",
@@ -31,6 +32,8 @@ const DOMAIN_TABLES = [
 	"native_draft_revisions",
 	"native_drafts",
 	"native_send_attempts",
+	"plugin_generations",
+	"plugin_versions",
 	"users",
 ];
 const PENDING_IDENTITY =
@@ -76,6 +79,8 @@ function expectSchemas(store: HubStore): void {
 			"native_draft_revisions",
 			"native_draft_locks",
 			"native_send_attempts",
+			"plugin_generations",
+			"plugin_versions",
 		])
 			expect(db.get(`SELECT COUNT(*) AS count FROM main.${table}`)).toEqual({ count: 0 });
 	});
@@ -130,7 +135,7 @@ describe("native component schemas in an unlocked session", () => {
 			const audit = first.store.read((db) => first.audit.exportVerifiedJsonl(db));
 			expect(audit.count).toBe(1);
 			expect(JSON.parse(audit.jsonl).action).toBe("session.schema.ready");
-			first.close();
+			await first.close();
 			expectErased(firstKey);
 
 			firstOpening = false;
@@ -156,10 +161,10 @@ describe("native component schemas in an unlocked session", () => {
 			namespace: string,
 		) {
 			order.push(namespace);
-			if (namespace === "accounts") {
+			if (namespace === "pluginregistry") {
 				failedStore = this;
 				pendingIdentity = this.read((db) => db.get(PENDING_IDENTITY));
-				throw new Error("DYTEST-PRIVATE-ACCOUNTS-MIGRATION");
+				throw new Error("DYTEST-PRIVATE-PLUGINS-MIGRATION");
 			}
 			return migrateStore.call(this, namespace);
 		});
@@ -168,7 +173,7 @@ describe("native component schemas in an unlocked session", () => {
 			const error = await refusal(f.open({ masterKey: key }));
 			expect(error).toMatchObject({ code: "STORE_UNAVAILABLE", message: "STORE_UNAVAILABLE" });
 			expect(error.cause).toBeUndefined();
-			expect(String(error)).not.toContain("DYTEST-PRIVATE-ACCOUNTS-MIGRATION");
+			expect(String(error)).not.toContain("DYTEST-PRIVATE-PLUGINS-MIGRATION");
 			expectErased(key);
 			expect(order).toEqual(EXPECTED.map(([namespace]) => namespace));
 			expect(pendingIdentity).toEqual({ transport: 1, signing: 1, certificate: 1 });

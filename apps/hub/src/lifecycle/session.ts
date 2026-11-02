@@ -1,8 +1,17 @@
-import { lstatSync, readdirSync, realpathSync, type Stats, statSync } from "node:fs";
+import {
+	type BigIntStats,
+	lstatSync,
+	mkdirSync,
+	readdirSync,
+	realpathSync,
+	type Stats,
+	statSync,
+} from "node:fs";
 import path from "node:path";
 import { inspect, types } from "node:util";
 import type { IdentityProvider } from "@draftyak/extensions";
 import { AuditChain } from "../audit/chain.ts";
+import { EventLog } from "../events/log.ts";
 import { singleOwnerIdentity } from "../extensions/free/identity.ts";
 import {
 	type ExtensionHost,
@@ -13,10 +22,18 @@ import { dataMember, inertRecord, isPlainFunction } from "../extensions/values.t
 import { DeviceRegistry } from "../identity/devices.ts";
 import { HubIdentity } from "../identity/hub-key.ts";
 import { PinService } from "../identity/pin.ts";
+import { WorkDatabase } from "../jobs/database.ts";
 import { systemClock, type TimerClock } from "../kernel/clock.ts";
+import { admitDataFolder, type DataFolder } from "../kernel/data-directory.ts";
 import { MasterKey } from "../kernel/master-key.ts";
 import { HUB_NAMESPACES, migrateHubSchemas } from "../kernel/namespaces.ts";
+import type { BundledPluginPin } from "../plugins/installer/index.ts";
+import { rootDirectory } from "../plugins/installer/tree.ts";
+import { openNativePluginRegistry, type PluginRegistry } from "../plugins/registry/index.ts";
+import { pins as snapshotPins } from "../plugins/registry/values.ts";
 import { HubStore } from "../store/store.ts";
+import { drainNativePlugins, type NativePluginSessionParts } from "./native-session-context.ts";
+import { StartupRefusal } from "./preflight.ts";
 
 export type HubSessionErrorCode =
 	| "SESSION_OPTIONS"
@@ -29,6 +46,7 @@ export type HubSessionErrorCode =
 	| "DEVICES_UNAVAILABLE"
 	| "IDENTITY_PROVIDER_UNAVAILABLE"
 	| "EXTENSIONS_UNAVAILABLE"
+	| "PLUGINS_UNAVAILABLE"
 	| "CLOSE_INCOMPLETE";
 
 /** Fixed and content-free: no path, key material or cause is carried. */
@@ -50,6 +68,8 @@ export interface HubSessionOptions {
 	readonly masterKey: MasterKey;
 	readonly clock?: TimerClock;
 	readonly log?: (entry: ExtensionLogEntry) => void;
+	/** Immutable native startup pins; no request or archive supplies this catalog. */
+	readonly bundles?: readonly BundledPluginPin[];
 }
 
 /** The unlocked hub's services. JSON and inspection show none of them. */
@@ -66,11 +86,13 @@ export interface HubSession {
 	/** The captured configured provider, or the native single-owner default; never grants rights. */
 	readonly identityProvider: IdentityProvider;
 	readonly extensions: ExtensionHost;
+	/** The configured native registry, after genuine bootstrap. Accepts no configuration arguments. */
+	plugins(): Promise<PluginRegistry>;
 	/**
 	 * Closes the extensions, locks device authority, the PIN service and identity, destroys the audit key, closes
 	 * the store and erases the master key. Idempotent; a store close that fails is retried next call.
 	 */
-	close(): void;
+	close(): Promise<void>;
 }
 
 interface Settings {
@@ -79,6 +101,7 @@ interface Settings {
 	readonly masterKey: MasterKey;
 	readonly clock: TimerClock;
 	readonly log: HubSessionOptions["log"];
+	readonly bundles: readonly BundledPluginPin[] | undefined;
 }
 interface Parts {
 	readonly store: HubStore;
@@ -97,12 +120,14 @@ const AUDIT_INCOMPLETE =
 	"Audit storage is missing or incomplete. Restore a valid backup; remove and recreate the database only if it was never used.";
 // Without the database, any of these means a lost database rather than a first run.
 const HUB_STATE =
-	/^(?:draftyak\.db-(?:wal|shm|journal)|mk\.recovery|ext-.+\.db(?:-wal|-shm|-journal)?)$/;
+	/^(?:draftyak\.db-(?:wal|shm|journal)|mk\.recovery|plugins|ext-.+\.db(?:-wal|-shm|-journal)?)$/;
 const AUDIT_TABLE =
 	"SELECT 1 AS found FROM main.sqlite_schema WHERE type='table' AND name='audit_meta'";
 const deriveKey = MasterKey.prototype.derive;
 const destroyKey = MasterKey.prototype.destroy;
 const closeStore = HubStore.prototype.close;
+const assertStoreKey = HubStore.prototype.assertMasterKey;
+const currentDevices = DeviceRegistry.prototype.currentState;
 const destroyAudit = AuditChain.prototype.destroy;
 const lockIdentity = HubIdentity.prototype.lock;
 const lockPins = PinService.prototype.lock;
@@ -111,7 +136,93 @@ const redacted = (): string => "[REDACTED]";
 // One session per data folder in this process, from the start of its open until its store closes.
 const live = new Set<string>();
 // Stores that a failed open could not close; every later open retries them first.
-const unclosed = new Set<HubStore>();
+const unclosed = new Set<{
+	readonly store: HubStore | undefined;
+	readonly admission: DataFolder;
+}>();
+
+interface NativeOwner {
+	readonly config: Settings;
+	readonly admission: DataFolder;
+	readonly folderStat: BigIntStats;
+	readonly parts: Parts;
+	phase: "open" | "closing" | "closed";
+	native?: NativePluginSessionParts;
+	rootStat?: BigIntStats;
+	pluginsPromise?: Promise<PluginRegistry>;
+	closePromise?: Promise<void>;
+	stopped: boolean;
+	drained: boolean;
+	storeClosed: boolean;
+}
+// Only the original constructing factory registers a session. There is no exported proof mint.
+const nativeOwners = new WeakMap<object, NativeOwner>();
+
+function assertFolder(admission: DataFolder, folder: string, original: BigIntStats): void {
+	admission.assertHeld();
+	const stat = lstatSync(folder, { bigint: true });
+	if (
+		!stat.isDirectory() ||
+		stat.ino === 0n ||
+		stat.ino !== original.ino ||
+		stat.dev !== original.dev ||
+		realpathSync.native(folder) !== folder
+	)
+		throw new HubSessionError("PLUGINS_UNAVAILABLE");
+}
+
+/** Internal consuming seam only; not exported from the package root. */
+export function nativePluginSession(
+	session: unknown,
+	phase: "open" | "held",
+): NativePluginSessionParts {
+	try {
+		const owner =
+			session !== null && typeof session === "object" && !types.isProxy(session)
+				? nativeOwners.get(session)
+				: undefined;
+		if (
+			!owner ||
+			(phase !== "open" && phase !== "held") ||
+			owner.phase === "closed" ||
+			owner.storeClosed ||
+			(phase === "open" && owner.phase !== "open")
+		)
+			throw new HubSessionError("PLUGINS_UNAVAILABLE");
+		assertFolder(owner.admission, owner.config.folder, owner.folderStat);
+		if (phase === "open") assertStoreKey.call(owner.parts.store, owner.config.masterKey);
+		if (!owner.native) {
+			if (phase !== "open" || !owner.config.bundles)
+				throw new HubSessionError("PLUGINS_UNAVAILABLE");
+			const state = currentDevices.call(owner.parts.devices);
+			if (!state.bootstrapDone || state.ownerUserId === null)
+				throw new HubSessionError("PLUGINS_UNAVAILABLE");
+			const directory = path.join(owner.config.folder, "plugins");
+			try {
+				mkdirSync(directory, { mode: 0o700 });
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			}
+			owner.rootStat = rootDirectory(directory);
+			const database = new WorkDatabase(owner.parts.store);
+			owner.native = Object.freeze({
+				store: owner.parts.store,
+				database,
+				devices: owner.parts.devices,
+				audit: owner.parts.audit,
+				events: new EventLog(database, () => owner.config.clock.wallMs()),
+				directory,
+				nativeBinding: owner.config.nativeBinding,
+				bundles: owner.config.bundles,
+				clock: owner.config.clock,
+			});
+		}
+		rootDirectory(owner.native.directory, owner.rootStat);
+		return owner.native;
+	} catch {
+		throw new HubSessionError("PLUGINS_UNAVAILABLE");
+	}
+}
 
 function erase(key: unknown): void {
 	try {
@@ -149,7 +260,13 @@ function settings(options: unknown): Settings {
 		masterKey,
 		clock = systemClock,
 		log,
-	} = inertRecord(options, ["folder", "nativeBinding", "masterKey"], ["clock", "log"], "config");
+		bundles,
+	} = inertRecord(
+		options,
+		["folder", "nativeBinding", "masterKey"],
+		["clock", "log", "bundles"],
+		"config",
+	);
 	if (
 		types.isProxy(masterKey) ||
 		!(masterKey instanceof MasterKey) ||
@@ -174,6 +291,7 @@ function settings(options: unknown): Settings {
 		masterKey,
 		clock: clock as TimerClock,
 		log: log as Settings["log"],
+		bundles: bundles === undefined ? undefined : snapshotPins(bundles),
 	};
 }
 
@@ -211,26 +329,105 @@ function stop(parts: Partial<Parts>): boolean {
 	return clean;
 }
 
-function session(folder: string, masterKey: MasterKey, parts: Parts): HubSession {
-	let stopped = false,
-		done = false;
-	const close = (): void => {
-		if (done) return;
+function session(
+	config: Settings,
+	admission: DataFolder,
+	folderStat: BigIntStats,
+	parts: Parts,
+): HubSession {
+	const { folder, masterKey } = config;
+	const owner: NativeOwner = {
+		config,
+		admission,
+		folderStat,
+		parts,
+		phase: "open",
+		stopped: false,
+		drained: false,
+		storeClosed: false,
+	};
+	const close = (): Promise<void> => {
+		if (owner.closePromise) return owner.closePromise;
+		if (owner.phase === "closed") {
+			owner.closePromise = Promise.resolve();
+			return owner.closePromise;
+		}
+		owner.phase = "closing";
+		const draining = owner.native && !owner.drained ? drainNativePlugins(result) : undefined;
 		let clean = true;
-		if (!stopped) {
-			stopped = true;
+		if (!owner.stopped) {
+			owner.stopped = true;
 			clean = stop(parts);
 		}
-		// A store whose close fails stays with this session until a later call proves it closed.
-		if (tryClose(parts.store)) {
-			done = true;
+		const finish = (): void => {
+			if (!owner.storeClosed) {
+				if (!tryClose(parts.store)) throw new HubSessionError("CLOSE_INCOMPLETE");
+				owner.storeClosed = true;
+			}
+			admission.release();
+			owner.phase = "closed";
 			live.delete(folder);
-		} else clean = false;
-		erase(masterKey);
-		if (!clean) throw new HubSessionError("CLOSE_INCOMPLETE");
+			if (!clean) throw new HubSessionError("CLOSE_INCOMPLETE");
+		};
+		let closing: Promise<void>;
+		if (draining) {
+			closing = draining
+				.then(() => {
+					owner.drained = true;
+					finish();
+				})
+				.catch(() => {
+					throw new HubSessionError("CLOSE_INCOMPLETE");
+				})
+				.finally(() => erase(masterKey));
+		} else {
+			// Keep the genuine busy-store refusal synchronous, even though completion is awaitable.
+			try {
+				finish();
+				closing = Promise.resolve();
+			} catch {
+				closing = Promise.reject(new HubSessionError("CLOSE_INCOMPLETE"));
+			} finally {
+				erase(masterKey);
+			}
+		}
+		owner.closePromise = closing;
+		void closing.catch(() => {
+			if (owner.closePromise === closing) owner.closePromise = undefined;
+		});
+		return closing;
+	};
+	const plugins = (...arguments_: unknown[]): Promise<PluginRegistry> => {
+		if (arguments_.length !== 0 || owner.phase !== "open")
+			return Promise.reject(new HubSessionError("PLUGINS_UNAVAILABLE"));
+		try {
+			const state = currentDevices.call(parts.devices);
+			if (!state.bootstrapDone || state.ownerUserId === null)
+				throw new HubSessionError("PLUGINS_UNAVAILABLE");
+			nativePluginSession(result, "open");
+		} catch {
+			return Promise.reject(new HubSessionError("PLUGINS_UNAVAILABLE"));
+		}
+		if (!owner.pluginsPromise) {
+			let opening: Promise<PluginRegistry>;
+			try {
+				opening = openNativePluginRegistry(result);
+			} catch {
+				return Promise.reject(new HubSessionError("PLUGINS_UNAVAILABLE"));
+			}
+			const pending = opening.catch(() => {
+				throw new HubSessionError("PLUGINS_UNAVAILABLE");
+			});
+			owner.pluginsPromise = pending;
+			void pending.catch(() => {
+				if (owner.pluginsPromise === pending) owner.pluginsPromise = undefined;
+			});
+		}
+		return owner.pluginsPromise;
 	};
 	const { identity } = parts;
-	const result = { hubId: identity.hubId, hid: identity.hid, ...parts, close };
+	const result = { hubId: identity.hubId, hid: identity.hid, ...parts, plugins, close };
+	nativeOwners.set(result, owner);
 	Object.defineProperty(result, "toJSON", { value: redacted });
 	Object.defineProperty(result, inspect.custom, { value: redacted });
 	return Object.freeze(result);
@@ -252,7 +449,15 @@ export async function openHubSession(options: HubSessionOptions): Promise<HubSes
 		throw new HubSessionError("SESSION_OPTIONS");
 	}
 	const { folder, nativeBinding, masterKey, clock, log } = config;
-	for (const store of unclosed) if (tryClose(store)) unclosed.delete(store);
+	for (const pending of unclosed)
+		if (!pending.store || tryClose(pending.store)) {
+			try {
+				pending.admission.release();
+				unclosed.delete(pending);
+			} catch {
+				/* Retain the original admission for retry. */
+			}
+		}
 	if (live.has(folder) || unclosed.size > 0) {
 		erase(masterKey);
 		throw new HubSessionError(live.has(folder) ? "SESSION_ACTIVE" : "STORE_UNAVAILABLE");
@@ -264,8 +469,23 @@ export async function openHubSession(options: HubSessionOptions): Promise<HubSes
 		identity: HubIdentity | undefined,
 		pins: PinService | undefined,
 		devices: DeviceRegistry | undefined,
-		extensions: ExtensionHost | undefined;
+		extensions: ExtensionHost | undefined,
+		admission: DataFolder | undefined;
 	try {
+		// Authenticate the offered native key before admission creates any filesystem state.
+		const checkedKey = deriveKey.call(masterKey, "db");
+		checkedKey.fill(0);
+		try {
+			admission = admitDataFolder(folder, { nativeBinding });
+		} catch (error) {
+			throw new HubSessionError(
+				error instanceof StartupRefusal && error.code === "DATA_DIR_LOCKED"
+					? "SESSION_ACTIVE"
+					: "STORE_UNAVAILABLE",
+			);
+		}
+		const folderStat = lstatSync(folder, { bigint: true });
+		assertFolder(admission, folder, folderStat);
 		const filename = path.join(folder, DATABASE);
 		const existing = existingDatabase(folder, filename);
 		try {
@@ -283,6 +503,7 @@ export async function openHubSession(options: HubSessionOptions): Promise<HubSes
 		if (existing && !store.read((db) => db.get(AUDIT_TABLE)))
 			throw new HubSessionError("FIRST_RUN_INTERRUPTED", AUDIT_INCOMPLETE);
 		await migrateHubSchemas(store);
+		assertFolder(admission, folder, folderStat);
 		const auditKey = deriveKey.call(masterKey, "audit");
 		try {
 			audit = new AuditChain(auditKey);
@@ -304,7 +525,8 @@ export async function openHubSession(options: HubSessionOptions): Promise<HubSes
 		});
 		code = "IDENTITY_PROVIDER_UNAVAILABLE";
 		const identityProvider = extensions.providers("identity")[0] ?? singleOwnerIdentity(devices);
-		return session(folder, masterKey, {
+		assertFolder(admission, folder, folderStat);
+		return session(config, admission, folderStat, {
 			store,
 			audit,
 			identity,
@@ -315,7 +537,14 @@ export async function openHubSession(options: HubSessionOptions): Promise<HubSes
 		});
 	} catch (error) {
 		stop({ extensions, devices, pins, identity, audit });
-		if (store && !tryClose(store)) unclosed.add(store);
+		if (store && !tryClose(store) && admission) unclosed.add({ store, admission });
+		else if (admission) {
+			try {
+				admission.release();
+			} catch {
+				unclosed.add({ store, admission });
+			}
+		}
 		erase(masterKey);
 		live.delete(folder);
 		throw error instanceof HubSessionError ? error : new HubSessionError(code);

@@ -433,9 +433,9 @@ describe("compositions", () => {
 			const session = await f.open();
 			expect(session.extensions.modules).toEqual([{ id: "schemaprobe", version: "1.0.0" }]);
 			session.store.read((db) => session.audit.verify(db));
-			session.close();
+			await session.close();
 		} finally {
-			f.remove();
+			await f.remove();
 		}
 	});
 });

@@ -57,6 +57,8 @@ it("refuses every later open after a hard kill between file creation and audit g
 			holder.once("error", reject);
 			holder.once("exit", (code) => reject(new Error(`holder exited (${code}): ${errors}`)));
 		});
+		expect(attempt(f.folder)).toEqual({ refused: "SESSION_ACTIVE" });
+		expect(attempt(f.scratch())).toEqual({ opened: expect.any(String) });
 	} finally {
 		if (holder.exitCode === null && holder.signalCode === null) {
 			const exited = new Promise((resolve) => holder.once("exit", resolve));
@@ -81,9 +83,10 @@ const compiledSessionModes = [
 	"missing-devices",
 	"invalid-devices",
 	"missing-accounts",
+	"missing-pluginregistry",
 ] as const;
 it.each(compiledSessionModes)(
-	"opens and reopens a compiled session using all nine staged schemas (%s)",
+	"opens and reopens a compiled session using all ten staged schemas (%s)",
 	(mode) => {
 		const hub = path.resolve(import.meta.dirname, "../.."),
 			workspace = path.resolve(hub, "../..");
@@ -131,6 +134,10 @@ it.each(compiledSessionModes)(
 				],
 				["outbox/migrations/0001_send_attempts.sql", "outbox/migrations/0001_send_attempts.sql"],
 				["accounts/migrations/0001_accounts.sql", "accounts/migrations/0001_accounts.sql"],
+				[
+					"plugins/registry/migrations/0001_registry.sql",
+					"plugins/registry/migrations/0001_registry.sql",
+				],
 			] as const) {
 				const built = path.join(hub, "dist", relative);
 				expect(readFileSync(built)).toEqual(readFileSync(path.join(hub, "src", source)));
@@ -165,9 +172,9 @@ it.each(compiledSessionModes)(
 			expect(JSON.parse(run.stdout)).toEqual({
 				ok: true,
 				mode,
-				schemas: 9,
-				businessTables: 17,
-				bookkeepingTables: 18,
+				schemas: 10,
+				businessTables: 19,
+				bookkeepingTables: 20,
 				beforeIdentity: true,
 				refused: mode === "positive" ? null : "STORE_UNAVAILABLE",
 				failedOpenClosed: mode !== "positive",
