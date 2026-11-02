@@ -28,6 +28,14 @@ export class CaptureError extends Error {
 export interface EvidenceDirectory {
 	readonly runId: string;
 }
+export interface EvidenceReaderStatus {
+	readonly active: number;
+	readonly pending: number;
+}
+export interface EvidenceReaderCloseResult extends EvidenceReaderStatus {
+	readonly attempted: number;
+	readonly closed: number;
+}
 export interface CaptureFile {
 	readonly file: string;
 	readonly bytes: number;
@@ -52,6 +60,18 @@ interface EvidenceState {
 	readonly checkout: string;
 	readonly identity: Identity;
 	readonly ids: Set<string>;
+	readonly readers: Set<EvidenceReader>;
+	readersRetired: boolean;
+	readersClosing: Promise<EvidenceReaderCloseResult> | undefined;
+}
+interface EvidenceReader {
+	readonly state: EvidenceState;
+	readonly settled: Promise<void>;
+	readonly settle: () => void;
+	active: boolean;
+	handle: FileHandle | undefined;
+	closed: boolean;
+	closing: Promise<void> | undefined;
 }
 interface CapturedState {
 	readonly evidence: EvidenceState;
@@ -61,6 +81,10 @@ interface CapturedState {
 const directories = new WeakMap<EvidenceDirectory, EvidenceState>();
 const captures = new WeakMap<NativeCaptureResult, CapturedState>();
 const sessions = new WeakSet<CaptureSession>();
+const retainedReaders = new Set<EvidenceReader>();
+const READER_LIMIT = 32;
+let readersDraining = false;
+let retainedReadersClosing: Promise<EvidenceReaderCloseResult> | undefined;
 const noFollow = constants.O_NOFOLLOW ?? 0;
 const typedArray = Object.getPrototypeOf(Uint8Array.prototype);
 const lengthGetter = Object.getOwnPropertyDescriptor(typedArray, "byteLength")?.get;
@@ -139,6 +163,135 @@ function stateOf(evidence: EvidenceDirectory): EvidenceState {
 	return state ?? refuse();
 }
 
+function readerStatus(readers: Iterable<EvidenceReader>): EvidenceReaderStatus {
+	let active = 0;
+	let pending = 0;
+	for (const reader of readers) {
+		if (reader.active) active++;
+		if (reader.handle && !reader.closed) pending++;
+	}
+	return Object.freeze({ active, pending });
+}
+function releaseReader(reader: EvidenceReader): void {
+	if (!reader.active && (!reader.handle || reader.closed)) {
+		reader.state.readers.delete(reader);
+		retainedReaders.delete(reader);
+	}
+}
+function beginReader(state: EvidenceState): EvidenceReader {
+	if (state.readersRetired || readersDraining || retainedReaders.size >= READER_LIMIT)
+		return refuse();
+	let settle = () => {};
+	const settled = new Promise<void>((resolve) => {
+		settle = resolve;
+	});
+	const reader: EvidenceReader = {
+		state,
+		settled,
+		settle,
+		active: true,
+		handle: undefined,
+		closed: false,
+		closing: undefined,
+	};
+	state.readers.add(reader);
+	retainedReaders.add(reader);
+	return reader;
+}
+function closeReader(reader: EvidenceReader): Promise<void> {
+	const handle = reader.handle;
+	if (!handle || reader.closed) return Promise.resolve();
+	if (reader.closing) return reader.closing;
+	const closing: Promise<void> = Promise.resolve()
+		.then(() => handle.close())
+		.then(
+			() => {
+				reader.closed = true;
+				releaseReader(reader);
+			},
+			() => {
+				reader.state.readersRetired = true;
+				return refuse();
+			},
+		)
+		.finally(() => {
+			if (reader.closing === closing) reader.closing = undefined;
+		});
+	reader.closing = closing;
+	return closing;
+}
+async function closeReaders(
+	readers: readonly EvidenceReader[],
+	scope: ReadonlySet<EvidenceReader>,
+): Promise<EvidenceReaderCloseResult> {
+	const attempted = new Set<FileHandle>();
+	const closed = new Set<FileHandle>();
+	await Promise.all(
+		readers.map(async (reader) => {
+			// An active read owns its finally-close. Join it without closing beneath I/O
+			// or retrying a failure twice within this cleanup invocation.
+			if (reader.active) await reader.settled;
+			else await closeReader(reader).catch(() => undefined);
+			if (reader.handle) {
+				attempted.add(reader.handle);
+				if (reader.closed) closed.add(reader.handle);
+			}
+		}),
+	);
+	return Object.freeze({
+		attempted: attempted.size,
+		closed: closed.size,
+		...readerStatus(scope),
+	});
+}
+
+/** Active includes finally-close; pending is an actual opened handle not confirmed closed. */
+export function evidenceReaderStatus(evidence: EvidenceDirectory): EvidenceReaderStatus {
+	return readerStatus(stateOf(evidence).readers);
+}
+/**
+ * Permanently retires this owner's reader admission before awaiting active reads.
+ * Counts unique actual handles joined or retried; a failed close stays pending for
+ * a later explicit retry. This closes reader resources only, never capture writers
+ * or a withCapturedFile callback/process lifetime, and opens or deletes no data.
+ */
+export async function closeEvidenceReaders(
+	evidence: EvidenceDirectory,
+): Promise<EvidenceReaderCloseResult> {
+	const state = stateOf(evidence);
+	state.readersRetired = true;
+	if (state.readersClosing) return state.readersClosing;
+	const readers = [...state.readers];
+	const closing: Promise<EvidenceReaderCloseResult> = Promise.resolve()
+		.then(() => closeReaders(readers, state.readers))
+		.finally(() => {
+			if (state.readersClosing === closing) state.readersClosing = undefined;
+		});
+	state.readersClosing = closing;
+	return closing;
+}
+/** Resource counts remain available even when a caller loses its genuine owner token. */
+export function retainedEvidenceReaderStatus(): EvidenceReaderStatus {
+	return readerStatus(retainedReaders);
+}
+/** Fences all read admission during cleanup and retires owners of the retained resources. */
+export function closeRetainedEvidenceReaders(): Promise<EvidenceReaderCloseResult> {
+	if (retainedReadersClosing) return retainedReadersClosing;
+	readersDraining = true;
+	const readers = [...retainedReaders];
+	for (const reader of readers) reader.state.readersRetired = true;
+	const closing: Promise<EvidenceReaderCloseResult> = Promise.resolve()
+		.then(() => closeReaders(readers, retainedReaders))
+		.finally(() => {
+			if (retainedReadersClosing === closing) {
+				retainedReadersClosing = undefined;
+				readersDraining = false;
+			}
+		});
+	retainedReadersClosing = closing;
+	return closing;
+}
+
 /** Creates an exclusive external directory. No existing directory can become a new run. */
 export async function createEvidenceDirectory(options: {
 	readonly checkoutRoot: string;
@@ -163,7 +316,15 @@ export async function createEvidenceDirectory(options: {
 		}
 		directory = await existingDirectory(directory);
 		const identity = await lstat(directory, { bigint: true });
-		const state: EvidenceState = { directory, checkout, identity, ids: new Set() };
+		const state: EvidenceState = {
+			directory,
+			checkout,
+			identity,
+			ids: new Set(),
+			readers: new Set(),
+			readersRetired: false,
+			readersClosing: undefined,
+		};
 		await checkDirectory(state);
 		const evidence = Object.freeze({ runId });
 		directories.set(evidence, state);
@@ -355,7 +516,7 @@ export async function readCapturedBytes(
 	result: NativeCaptureResult,
 	stream: "stdout" | "stderr",
 ): Promise<Uint8Array> {
-	let handle: FileHandle | undefined;
+	let reader: EvidenceReader | undefined;
 	try {
 		const state = stateOf(evidence);
 		const recorded = captures.get(result);
@@ -367,6 +528,7 @@ export async function readCapturedBytes(
 			!["stdout", "stderr"].includes(stream)
 		)
 			return refuse();
+		reader = beginReader(state);
 		await checkDirectory(state);
 		const metadata = result[stream];
 		const expected = recorded[stream];
@@ -382,7 +544,8 @@ export async function readCapturedBytes(
 			metadata.bytes > limit
 		)
 			return refuse();
-		handle = await open(file, constants.O_RDONLY | noFollow);
+		const handle = await open(file, constants.O_RDONLY | noFollow);
+		reader.handle = handle;
 		if (!same(await handle.stat({ bigint: true }), expected)) return refuse();
 		const bytes = Buffer.alloc(metadata.bytes);
 		let offset = 0;
@@ -408,7 +571,16 @@ export async function readCapturedBytes(
 		if (error instanceof CaptureError) throw error;
 		return refuse();
 	} finally {
-		await handle?.close().catch(() => undefined);
+		if (reader) {
+			try {
+				await closeReader(reader);
+				if (reader.state.readersRetired) refuse();
+			} finally {
+				reader.active = false;
+				releaseReader(reader);
+				reader.settle();
+			}
+		}
 	}
 }
 
