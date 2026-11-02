@@ -1053,6 +1053,7 @@ const original = Object.freeze({
 	assertScope: NativeOutboxProposals.prototype.assertScope,
 	abortScope: NativeOutboxProposals.prototype.abortScope,
 	abortTransaction: NativeOutboxProposals.prototype.abortTransaction,
+	destroy: NativeOutboxProposals.prototype.destroy,
 });
 export function assertNativeOutboxTarget(
 	target: unknown,
@@ -1158,4 +1159,7 @@ export function assertNativeOutboxScope(
 export function abortNativeOutboxScope(target: unknown, scope: WorkScope): void {
 	// The original method's native private-field access and WorkDatabase's owner map reject copies.
 	original.abortScope.call(target as NativeOutboxProposals, scope);
+}
+export function destroyNativeOutboxProposals(receiver: NativeOutboxProposals): void {
+	original.destroy.call(receiver);
 }
