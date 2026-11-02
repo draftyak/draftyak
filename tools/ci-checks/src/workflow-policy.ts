@@ -1,4 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
+import {
+	nativeSupervisorWorkflowContract,
+	nativeSupervisorWorkflowFile,
+} from "./native-supervisor-workflow.ts";
 import { parseYaml, type Yaml, type YamlDocument, type YamlPath } from "./yaml.ts";
 
 // The single source of truth for action pins: [SHA, version comment], each SHA checked against its
@@ -387,6 +391,12 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	if (file === nativeStoreFile && !reviewedNativeStore) {
 		report([], "native-store.yml must exactly match the trusted native receipt contract");
 	}
+	const reviewedNativeSupervisor =
+		file === nativeSupervisorWorkflowFile &&
+		isDeepStrictEqual(doc.value, nativeSupervisorWorkflowContract(actionPins));
+	if (file === nativeSupervisorWorkflowFile && !reviewedNativeSupervisor) {
+		report([], "native-supervisor.yml must exactly match the trusted native supervisor contract");
+	}
 	if (file === ".github/workflows/ci.yml") {
 		const checkFailurePolicy = (value: Yaml, at: YamlPath): void => {
 			if (Array.isArray(value)) {
@@ -628,7 +638,9 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				uploads[0] === `\${{ runner.temp }}/ci-verification.json` &&
 				inputs["retention-days"] === 7 &&
 				inputs["if-no-files-found"] === "error";
-			const nativeReceipt = reviewedNativeStore && job === "native-store";
+			const nativeReceipt =
+				(reviewedNativeStore && job === "native-store") ||
+				(reviewedNativeSupervisor && job === "native-supervisor");
 			if (
 				action === "actions/upload-artifact" &&
 				!receipt &&
