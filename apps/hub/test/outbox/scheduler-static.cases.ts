@@ -98,7 +98,7 @@ export function schedulerStaticCases(): void {
 
 		it("root-exports the concrete loop, ready helpers, error, and schedule creation", async () => {
 			const index = read("index.ts");
-			const outboxModules = imports(index).filter((name) => name.startsWith("./outbox/"));
+			const outboxModules = imports(index).filter((name) => name.startsWith("./outbox/scheduler-"));
 			expect(outboxModules).toEqual([
 				"./outbox/scheduler-loop.ts",
 				"./outbox/scheduler-ports.ts",

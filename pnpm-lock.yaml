@@ -60,6 +60,9 @@ importers:
         specifier: 0.2.2
         version: 0.2.2
     devDependencies:
+      '@draftyak/egress-recorder':
+        specifier: workspace:*
+        version: link:../../tools/egress-recorder
       '@draftyak/fake-commercial':
         specifier: workspace:*
         version: link:../../packages/fake-commercial
@@ -145,6 +148,16 @@ importers:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)
 
+  packages/json-member:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
   packages/mime:
     dependencies:
       '@draftyak/protocol':
@@ -163,6 +176,9 @@ importers:
       '@draftyak/fakes':
         specifier: workspace:*
         version: link:../fakes
+      '@draftyak/json-member':
+        specifier: workspace:*
+        version: link:../json-member
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../protocol

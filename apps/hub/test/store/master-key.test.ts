@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { inspect } from "node:util";
 import { runInNewContext } from "node:vm";
 import { expect, it } from "vitest";
-import { MasterKey } from "../../src/kernel/master-key.ts";
+import { type KeyPurpose, MasterKey } from "../../src/kernel/master-key.ts";
 
 const refused = (input: unknown): void => {
 	let key: MasterKey | undefined;
@@ -124,4 +124,30 @@ it("separates every subkey, copies intake and locks after destruction", () => {
 	db.fill(0);
 	audit.fill(0);
 	ext.fill(0);
+});
+
+it("pins the drafts subkey and keeps it apart from handles and every other purpose", () => {
+	const key = new MasterKey(new Uint8Array(32).fill(0x0b)),
+		others: KeyPurpose[] = [
+			"db",
+			"secrets",
+			"audit",
+			"oauth",
+			"backup",
+			"handles",
+			"mcp-state",
+			"tool-tokens",
+		],
+		drafts = key.derive("drafts"),
+		derived = others.map((purpose) => key.derive(purpose));
+	try {
+		expect(drafts.toString("hex")).toBe(
+			"25857e00d26aaa369d511272bb299d65f18b0e74ed397347645aaeac4e489f5e",
+		);
+		for (const other of derived) expect(other).not.toEqual(drafts);
+	} finally {
+		drafts.fill(0);
+		for (const other of derived) other.fill(0);
+		key.destroy();
+	}
 });

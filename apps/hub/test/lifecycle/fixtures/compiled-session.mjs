@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -15,11 +15,24 @@ const migrations = [
 	["credentials", ["0001_credentials", "0002_sealed_credentials"]],
 	["tickets", ["0001_send_attempts"]],
 	["accounts", ["0001_accounts"]],
+	["pluginregistry", ["0001_registry"]],
+	["outbox", ["0001_proposals"]],
+	["challenges", ["0001_challenges"]],
+	["verifier", ["0001_approvals"]],
+	["admin", ["0001_operations"]],
+	["adminchallenges", ["0001_admin_challenges"]],
+	["backup", ["0001_backup_recovery"]],
+	["backupops", ["0001_backup_operations"]],
+	["backupchallenges", ["0001_backup_challenges"]],
 ];
 const businessTables = [
 	"audit_meta", "audit_events", "hub_meta", "users", "approval_pins", "jobs", "jobs_meta",
 	"events", "event_meta", "native_drafts", "native_draft_revisions", "native_draft_locks",
 	"credentials", "native_send_attempts", "device_authority", "devices", "accounts",
+	"plugin_generations", "plugin_versions",
+	"outbox", "approval_challenges", "pair_confirm_operations", "approvals",
+	"native_admin_operations", "native_admin_challenges", "native_backup_recovery",
+	"native_backup_operations", "native_backup_challenges",
 ].sort();
 let phase = "admission";
 
@@ -27,7 +40,7 @@ async function main() {
 	assert.equal(process.permission?.has("net"), false);
 	const [nativeBinding, mode, hub] = process.argv.slice(2);
 	assert.equal(typeof nativeBinding, "string");
-	assert.ok(["positive", "missing-credentials", "missing-sealed-credentials", "invalid-credentials", "missing-revision-immutability", "missing-devices", "invalid-devices", "missing-accounts"].includes(mode));
+	assert.ok(["positive", "missing-credentials", "missing-sealed-credentials", "invalid-credentials", "missing-revision-immutability", "missing-devices", "invalid-devices", "missing-accounts", "missing-pluginregistry", "missing-outbox", "missing-challenges", "missing-verifier", "missing-admin", "missing-adminchallenges", "missing-backup", "missing-backupops", "missing-backupchallenges"].includes(mode));
 	assert.equal(typeof hub, "string");
 	for (const denied of ["src/store/migrations/audit/0001_chain.sql", "dist/index.mjs"]) {
 		assert.throws(() => readFileSync(path.join(hub, denied)), { code: "ERR_ACCESS_DENIED" });
@@ -42,6 +55,7 @@ async function main() {
 	const sessions = [];
 	const stores = new Set();
 	let closed = 0;
+	let recoveryCapsule = false;
 	// Install before importing the bundle: the store captures the actual native close once.
 	Database.prototype.close = function (...args) {
 		const owned = this.name === filename;
@@ -55,6 +69,15 @@ async function main() {
 		? "drafts/migrations/0002_immutable_revisions.sql"
 		: mode === "missing-sealed-credentials" ? "credentials/migrations/0002_sealed_credentials.sql"
 			: mode === "missing-accounts" ? "accounts/migrations/0001_accounts.sql"
+				: mode === "missing-pluginregistry" ? "plugins/registry/migrations/0001_registry.sql"
+				: mode === "missing-outbox" ? "outbox/propose-migrations/0001_proposals.sql"
+				: mode === "missing-challenges" ? "identity/challenges-migrations/0001_challenges.sql"
+				: mode === "missing-verifier" ? "outbox/verifier-migrations/0001_approvals.sql"
+				: mode === "missing-admin" ? "identity/admin-migrations/0001_operations.sql"
+				: mode === "missing-adminchallenges" ? "identity/admin-challenge-migrations/0001_admin_challenges.sql"
+				: mode === "missing-backup" ? "recovery/backup-migrations/0001_backup_recovery.sql"
+				: mode === "missing-backupops" ? "identity/backup-migrations/0001_backup_operations.sql"
+				: mode === "missing-backupchallenges" ? "identity/backup-challenge-migrations/0001_backup_challenges.sql"
 				: mode.endsWith("devices") ? "devices-migrations/0001_devices.sql"
 					: "credentials/migrations/0001_credentials.sql");
 	const heldAsset = path.join(import.meta.dirname, "held-schema.sql");
@@ -72,13 +95,14 @@ async function main() {
 		const inspectSchemas = (store) => store.read((db) => {
 			const actual = db.all("SELECT name FROM main.sqlite_schema WHERE type='table'")
 				.map((row) => row.name);
-			assert.deepEqual(actual.filter((name) => businessTables.includes(name)).sort(), businessTables);
+			assert.deepEqual(actual.filter((name) => !name.startsWith("_migrations_") && !name.startsWith("sqlite_")).sort(), businessTables);
 			for (const [namespace, names] of migrations) {
 				assert.ok(actual.includes(`_migrations_${namespace}`));
 				assert.ok(actual.includes(`_migrations_${namespace}_lock`));
 				assert.deepEqual(db.all(`SELECT name FROM main._migrations_${namespace} ORDER BY name`),
 					names.map((name) => ({ name })));
 			}
+			assert.equal(db.get("SELECT count(*) AS n FROM main.native_backup_recovery").n, 0);
 		});
 		migrate = HubStore.prototype.migrate;
 		HubStore.prototype.migrate = function (namespace) {
@@ -113,6 +137,33 @@ async function main() {
 		const open = async (ownedKey = key()) => {
 			const session = await openHubSession({ folder, nativeBinding, masterKey: ownedKey });
 			sessions.push(session);
+			if (mode === "positive") {
+				session.store.assertMasterKey(ownedKey);
+				const code = randomBytes(20);
+				let capsule, wrapping, plain, tail, decipher;
+				try {
+					capsule = ownedKey.wrapRecovery(code);
+					assert.equal(capsule.length, 94);
+					assert.equal(capsule.subarray(0, 18).equals(Buffer.concat([
+						Buffer.from("draftyak-recovery"), Buffer.of(1),
+					])), true);
+					wrapping = Buffer.from(hkdfSync("sha256", code, capsule.subarray(18, 34),
+						"draftyak/v1/recovery", 32));
+					decipher = createDecipheriv("aes-256-gcm", wrapping, capsule.subarray(34, 46),
+						{ authTagLength: 16 });
+					decipher.setAAD(capsule.subarray(0, 18));
+					decipher.setAuthTag(capsule.subarray(78));
+					plain = decipher.update(capsule.subarray(46, 78));
+					tail = decipher.final();
+					assert.equal(tail.length, 0);
+					assert.equal(plain.equals(bytes), true);
+					recoveryCapsule = true;
+				} finally {
+					try { decipher?.destroy(); } finally {
+						for (const secret of [code, capsule, wrapping, plain, tail]) secret?.fill(0);
+					}
+				}
+			}
 			return { session, ownedKey };
 		};
 		const restoreAsset = () => {
@@ -157,6 +208,26 @@ async function main() {
 				assert.equal(order.filter((namespace) => namespace === "tickets").length, 1);
 				assert.equal(order.includes("accounts"), false);
 			}
+			if (mode === "missing-pluginregistry") {
+				assert.equal(order.filter((namespace) => namespace === "accounts").length, 1);
+				assert.equal(order.includes("pluginregistry"), false);
+			}
+			const missingGroup = {
+				"missing-outbox": "outbox",
+				"missing-challenges": "challenges",
+				"missing-verifier": "verifier",
+				"missing-admin": "admin",
+				"missing-adminchallenges": "adminchallenges",
+				"missing-backup": "backup",
+				"missing-backupops": "backupops",
+				"missing-backupchallenges": "backupchallenges",
+			}[mode];
+			if (missingGroup !== undefined) {
+				const index = migrations.findIndex(([namespace]) => namespace === missingGroup);
+				assert.ok(index >= 0);
+				assert.deepEqual(order, migrations.slice(0, index).map(([namespace]) => namespace));
+				assert.equal(order.includes(missingGroup), false);
+			}
 			erased(failedKey);
 			// Inspect the encrypted file after the failed session closed its actual connection.
 			const probeKey = key();
@@ -199,7 +270,7 @@ async function main() {
 			native.database.write((scope) => native.accounts.create(scope, account));
 			modules = first.session.extensions.modules.length;
 		} finally {
-			first.session.close();
+			await first.session.close();
 		}
 		erased(first.ownedKey);
 		phase = "healthy-reopen";
@@ -218,21 +289,21 @@ async function main() {
 			});
 			assert.equal(second.session.extensions.modules.length, modules);
 		} finally {
-			second.session.close();
+			await second.session.close();
 		}
 		erased(second.ownedKey);
 		assert.equal(identities, 2);
 		assert.deepEqual(order.slice(beforeHealthy), [...migrations, ...migrations].map(([namespace]) => namespace));
 		assert.equal(modules, 0);
 		process.stdout.write(`${JSON.stringify({
-			ok: true, mode, schemas: 9, businessTables: businessTables.length, bookkeepingTables: 18,
+			ok: true, mode, schemas: 18, businessTables: businessTables.length, bookkeepingTables: 36, recoveryCapsule,
 			beforeIdentity: true, refused, failedOpenClosed: mode !== "positive",
 			failedKeyErased: mode !== "positive", reopened: true, auditVerified: true, accountsRoundTrip: true, modules,
 		})}\n`);
 	} finally {
 		let cleanupFailed = false;
 		for (const session of sessions) {
-			try { session.close(); } catch { cleanupFailed = true; }
+			try { await session.close(); } catch { cleanupFailed = true; }
 		}
 		for (const store of stores) {
 			try { Reflect.apply(closeStore, store, []); } catch { cleanupFailed = true; }
