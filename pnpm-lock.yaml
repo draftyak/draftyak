@@ -449,6 +449,15 @@ importers:
 
   tools/adr-check: {}
 
+  tools/bundle-hub:
+    dependencies:
+      '@draftyak/bounded-files':
+        specifier: workspace:*
+        version: link:../../packages/bounded-files
+      '@draftyak/cli':
+        specifier: workspace:*
+        version: link:../../apps/cli
+
   tools/ci-checks: {}
 
   tools/doctor:
@@ -471,6 +480,30 @@ importers:
         version: 0.23.1(typescript@7.0.2)
 
   tools/fetch-node: {}
+
+  tools/packaging:
+    dependencies:
+      '@draftyak/bundle-hub':
+        specifier: workspace:*
+        version: link:../bundle-hub
+      '@draftyak/cli':
+        specifier: workspace:*
+        version: link:../../apps/cli
+      '@draftyak/release-guard':
+        specifier: workspace:*
+        version: link:../release-guard
+
+  tools/release-guard:
+    dependencies:
+      '@draftyak/bounded-files':
+        specifier: workspace:*
+        version: link:../../packages/bounded-files
+      '@draftyak/bundle-hub':
+        specifier: workspace:*
+        version: link:../bundle-hub
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
 
   tools/vendor-guard: {}
 

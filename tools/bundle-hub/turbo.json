@@ -1,0 +1,36 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/release-guard/src/integrity.ts",
+        "$TURBO_ROOT$/tools/release-guard/src/file-records.ts",
+        "$TURBO_ROOT$/tools/fetch-node/fetch-node.mjs",
+        "$TURBO_ROOT$/tools/fetch-node/test/archives.ts",
+        "$TURBO_ROOT$/tools/vendor-guard/src/rules.ts",
+        "$TURBO_ROOT$/tools/vendor-guard/rules/secrets.ts",
+        "$TURBO_ROOT$/apps/cli/src/payload-contract.ts",
+        "$TURBO_ROOT$/packages/bounded-files/src/**"
+      ]
+    },
+    "test": {
+      "dependsOn": ["^build", "@draftyak/hub#build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/tools/release-guard/src/integrity.ts",
+        "$TURBO_ROOT$/tools/release-guard/src/file-records.ts",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/tools/packaging/templates/draftyak.mjs",
+        "$TURBO_ROOT$/tools/fetch-node/fetch-node.mjs",
+        "$TURBO_ROOT$/tools/fetch-node/versions.json",
+        "$TURBO_ROOT$/tools/fetch-node/keys/**",
+        "$TURBO_ROOT$/tools/fetch-node/test/archives.ts",
+        "$TURBO_ROOT$/tools/vendor-guard/src/rules.ts",
+        "$TURBO_ROOT$/tools/vendor-guard/rules/secrets.ts",
+        "$TURBO_ROOT$/apps/cli/src/payload-contract.ts",
+        "$TURBO_ROOT$/packages/bounded-files/src/**"
+      ]
+    }
+  }
+}
