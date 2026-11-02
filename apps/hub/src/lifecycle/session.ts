@@ -38,6 +38,7 @@ import { StartupRefusal } from "./preflight.ts";
 export type HubSessionErrorCode =
 	| "SESSION_OPTIONS"
 	| "SESSION_ACTIVE"
+	| "SESSION_UNAVAILABLE"
 	| "HUB_STATE_INCOMPLETE"
 	| "FIRST_RUN_INTERRUPTED"
 	| "UNLOCK_REFUSED"
@@ -171,26 +172,40 @@ function assertFolder(admission: DataFolder, folder: string, original: BigIntSta
 		throw new HubSessionError("PLUGINS_UNAVAILABLE");
 }
 
+function sessionOwner(session: unknown, phase: "open" | "held"): NativeOwner {
+	const owner =
+		session !== null && typeof session === "object" && !types.isProxy(session)
+			? nativeOwners.get(session)
+			: undefined;
+	if (
+		!owner ||
+		(phase !== "open" && phase !== "held") ||
+		owner.phase === "closed" ||
+		owner.storeClosed ||
+		(phase === "open" && owner.phase !== "open")
+	)
+		throw new HubSessionError("SESSION_UNAVAILABLE");
+	assertFolder(owner.admission, owner.config.folder, owner.folderStat);
+	if (phase === "open") assertStoreKey.call(owner.parts.store, owner.config.masterKey);
+	return owner;
+}
+
+/** Checks the original unlocked session's admission without creating plugin state. */
+export function assertHubSessionAdmission(session: unknown): void {
+	try {
+		sessionOwner(session, "open");
+	} catch {
+		throw new HubSessionError("SESSION_UNAVAILABLE");
+	}
+}
+
 /** Internal consuming seam only; not exported from the package root. */
 export function nativePluginSession(
 	session: unknown,
 	phase: "open" | "held",
 ): NativePluginSessionParts {
 	try {
-		const owner =
-			session !== null && typeof session === "object" && !types.isProxy(session)
-				? nativeOwners.get(session)
-				: undefined;
-		if (
-			!owner ||
-			(phase !== "open" && phase !== "held") ||
-			owner.phase === "closed" ||
-			owner.storeClosed ||
-			(phase === "open" && owner.phase !== "open")
-		)
-			throw new HubSessionError("PLUGINS_UNAVAILABLE");
-		assertFolder(owner.admission, owner.config.folder, owner.folderStat);
-		if (phase === "open") assertStoreKey.call(owner.parts.store, owner.config.masterKey);
+		const owner = sessionOwner(session, phase);
 		if (!owner.native) {
 			if (phase !== "open" || !owner.config.bundles)
 				throw new HubSessionError("PLUGINS_UNAVAILABLE");
