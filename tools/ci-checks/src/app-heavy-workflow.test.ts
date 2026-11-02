@@ -22,7 +22,11 @@ const run = step.run;
 const environment = step.env;
 const bash = process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "/bin/bash";
 
-function exercise(files: string[], fail = false): { status: number | null; calls: unknown[] } {
+function exercise(
+	files: string[],
+	fail = false,
+	doctor = false,
+): { status: number | null; calls: unknown[] } {
 	const root = mkdtempSync(path.join(tmpdir(), "draftyak-app-heavy-shell-"));
 	try {
 		for (const app of ["cli", "hub"]) {
@@ -32,6 +36,17 @@ function exercise(files: string[], fail = false): { status: number | null; calls
 				path.join(directory, "package.json"),
 				JSON.stringify({
 					name: `@draftyak/${app}`,
+					scripts: { "test:heavy": "vitest run --mode heavy" },
+				}),
+			);
+		}
+		if (doctor) {
+			const directory = path.join(root, "tools/doctor");
+			mkdirSync(directory, { recursive: true });
+			writeFileSync(
+				path.join(directory, "package.json"),
+				JSON.stringify({
+					name: "@draftyak/doctor",
 					scripts: { "test:heavy": "vitest run --mode heavy" },
 				}),
 			);
@@ -143,11 +158,59 @@ describe("actual selected-heavy workflow application arguments", () => {
 		expect(result.status).toBe(23);
 		expect(result.calls).toHaveLength(1);
 	});
+	it("passes the dependent doctor filter through the actual workflow with strict skips", () => {
+		expect(exercise(["tools/doctor/test/compiled.heavy.test.ts"], false, true)).toEqual({
+			status: 0,
+			calls: [
+				{
+					args: [
+						"tools/verify/turbo.ts",
+						"run",
+						"test:heavy",
+						"--concurrency=1",
+						"--filter=...{./tools/doctor}",
+						"--filter=!./packages/create-plugin",
+					],
+					strict: "1",
+				},
+			],
+		});
+	});
+	it("preserves both application targets when global inputs also admit doctor", () => {
+		expect(exercise(["package.json"], false, true)).toEqual({
+			status: 0,
+			calls: [
+				{
+					args: [
+						"tools/verify/turbo.ts",
+						"run",
+						"test:heavy",
+						"--concurrency=1",
+						"--filter=./apps/cli",
+						"--filter=./apps/hub",
+						"--filter=./tools/doctor",
+					],
+					strict: "1",
+				},
+			],
+		});
+	});
+	it("propagates the selected doctor command failure", () => {
+		const result = exercise(["tools/doctor/src/check.ts"], true, true);
+		expect(result.status).toBe(23);
+		expect(result.calls).toHaveLength(1);
+	});
 	it("invalidates the CI test cache when either reviewed app manifest changes", () => {
 		const config = JSON.parse(
 			readFileSync(path.join(repository, "tools/ci-checks/turbo.json"), "utf8"),
 		);
 		expect(config.tasks.test.inputs).toContain("$TURBO_ROOT$/apps/cli/package.json");
 		expect(config.tasks.test.inputs).toContain("$TURBO_ROOT$/apps/hub/package.json");
+	});
+	it("invalidates the CI test cache when the actual doctor manifest changes", () => {
+		const config = JSON.parse(
+			readFileSync(path.join(repository, "tools/ci-checks/turbo.json"), "utf8"),
+		);
+		expect(config.tasks.test.inputs).toContain("$TURBO_ROOT$/tools/doctor/package.json");
 	});
 });
