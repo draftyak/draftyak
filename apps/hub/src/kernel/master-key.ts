@@ -14,7 +14,8 @@ export type KeyPurpose =
 	| "backup"
 	| "handles"
 	| "mcp-state"
-	| "tool-tokens";
+	| "tool-tokens"
+	| "drafts";
 const PURPOSES = new Set<string>([
 	"db",
 	"secrets",
@@ -24,6 +25,7 @@ const PURPOSES = new Set<string>([
 	"handles",
 	"mcp-state",
 	"tool-tokens",
+	"drafts",
 ]);
 
 // The hub owns one native buffer. Callers own and must erase every returned subkey.

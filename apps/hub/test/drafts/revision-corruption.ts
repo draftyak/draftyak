@@ -15,12 +15,44 @@ export function corruptRevisionStorage(
 		database.pragma("cipher='chacha20'");
 		database.key(key);
 		key.fill(0);
-		database.exec(
-			"DROP TRIGGER IF EXISTS native_draft_revisions_no_update; DROP TRIGGER IF EXISTS native_draft_revisions_no_replace",
-		);
-		work(database);
+		const connection = database;
+		const catalog = () =>
+			JSON.stringify(
+				connection
+					.prepare(
+						"SELECT type,name,tbl_name,sql FROM main.sqlite_schema ORDER BY type,name,tbl_name,sql",
+					)
+					.all(),
+			);
+		database.exec("BEGIN IMMEDIATE");
+		const before = catalog(),
+			trigger = database
+				.prepare(
+					"SELECT sql FROM main.sqlite_schema WHERE type='trigger' AND name='native_draft_revisions_no_update'",
+				)
+				.get() as { sql: string } | undefined,
+			replacement = database
+				.prepare(
+					"SELECT sql FROM main.sqlite_schema WHERE type='trigger' AND name='native_draft_revisions_no_replace'",
+				)
+				.get() as { sql: string } | undefined;
+		if (typeof trigger?.sql !== "string" || typeof replacement?.sql !== "string")
+			throw new Error("Revision corruption fixture requires the original fences");
+		const changes = () =>
+			(connection.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+		const previous = changes();
+		database.exec("DROP TRIGGER native_draft_revisions_no_update");
+		if (work(database) !== undefined || changes() !== previous + 1)
+			throw new Error("Revision corruption fixture requires one synchronous row change");
+		database.exec(trigger.sql);
+		if (catalog() !== before) throw new Error("Revision corruption fixture changed the schema");
+		database.exec("COMMIT");
 	} finally {
 		key.fill(0);
-		database?.close();
+		try {
+			if (database?.inTransaction) database.exec("ROLLBACK");
+		} finally {
+			database?.close();
+		}
 	}
 }
