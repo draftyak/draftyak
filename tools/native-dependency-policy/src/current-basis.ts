@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { types } from "node:util";
 import type { AuditFinding } from "./cargo-deny.ts";
 import type { ProjectionTuple } from "./cargo-graph.ts";
 import { BOUNDED_TUPLES } from "./decision.ts";
@@ -43,6 +44,8 @@ export interface ReleaseVersion {
 	readonly yanked: boolean;
 	readonly checksum: string;
 	readonly license: string | null;
+	/** Package feature definitions, separately from each dependency's requested features. */
+	readonly features: Readonly<Record<string, readonly string[]>>;
 	readonly dependencies: readonly ReleaseDependency[];
 }
 export interface ReleaseBasis {
@@ -123,7 +126,7 @@ function snapshot(value: unknown): unknown {
 		if (v === null || typeof v === "boolean") return v;
 		if (typeof v === "string") return string(v);
 		if (typeof v === "number") return integer(v);
-		if (typeof v !== "object" || depth >= MAX_DEPTH || active.has(v)) invalid();
+		if (typeof v !== "object" || types.isProxy(v) || depth >= MAX_DEPTH || active.has(v)) invalid();
 		active.add(v);
 		try {
 			if (Array.isArray(v)) return list(v).map((child) => visit(child, depth + 1));
@@ -238,6 +241,35 @@ function sorted(value: unknown, check: (v: unknown) => string = token): string[]
 	const result = list(value).map(check).sort(compare);
 	if (result.some((x, i) => i > 0 && x === result[i - 1])) invalid();
 	return result;
+}
+function featureText(value: unknown): string {
+	const text = scalar(value);
+	if (text.length === 0) invalid();
+	for (let index = 0; index < text.length; index++) {
+		const code = text.charCodeAt(index);
+		if (code < 32 || code === 127) invalid();
+	}
+	return text;
+}
+function packageFeatures(value: unknown): ProjectionTuple {
+	if (
+		value === null ||
+		typeof value !== "object" ||
+		Array.isArray(value) ||
+		types.isProxy(value) ||
+		![null, Object.prototype].includes(Object.getPrototypeOf(value))
+	)
+		invalid();
+	const keys = Reflect.ownKeys(value);
+	if (keys.length > MAX_ROWS || keys.some((key) => typeof key !== "string")) invalid();
+	return Object.freeze(
+		(keys as string[]).sort(compare).map((key) => {
+			const feature = featureText(key);
+			const descriptor = Object.getOwnPropertyDescriptor(value, key);
+			if (!descriptor || !("value" in descriptor)) invalid();
+			return Object.freeze([feature, Object.freeze(sorted(descriptor.value, featureText))]);
+		}),
+	);
 }
 function rows(
 	value: unknown,
@@ -405,6 +437,7 @@ function releaseCrate(value: unknown, observedAt: number): ProjectionTuple {
 				"yanked",
 				"checksum",
 				"license",
+				"features",
 				"dependencies",
 			]);
 			const createdAt = integer(v.createdAt);
@@ -417,6 +450,7 @@ function releaseCrate(value: unknown, observedAt: number): ProjectionTuple {
 				boolean(v.yanked),
 				revision(v.checksum, 64),
 				license,
+				packageFeatures(v.features),
 				rows(v.dependencies, dependency),
 			];
 		},

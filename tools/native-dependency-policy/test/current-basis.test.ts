@@ -62,6 +62,7 @@ function fixture(): CurrentBasisInput {
 						yanked: false,
 						checksum: "d".repeat(64),
 						license: "MIT OR Apache-2.0",
+						features: { default: ["std", "dep:invented-dependency"], std: [] },
 						dependencies: [
 							{
 								name: "invented-dependency",
@@ -128,6 +129,64 @@ function producer(input: CurrentBasisInput): CurrentBasisProducer {
 }
 
 describe("semantic basis and separate observation bindings", () => {
+	it("includes complete package feature maps in the release semantic identity", () => {
+		const input = fixture();
+		const original = normalizeCurrentBasis(input);
+		for (const features of [
+			{},
+			{ default: ["std"], std: [] },
+			{ default: ["std", "dep:invented-dependency"], std: [], added: [] },
+		]) {
+			const next = normalizeCurrentBasis(
+				change(input, ["releases", "crates", 0, "versions", 0, "features"], features),
+			);
+			expect(next.releasesDigest).not.toBe(original.releasesDigest);
+			expect(next.basisDigest).toBe(original.basisDigest);
+			expect(next.observationDigest).toBe(original.observationDigest);
+		}
+		const reordered = change(input, ["releases", "crates", 0, "versions", 0, "features"], {
+			std: [],
+			default: ["dep:invented-dependency", "std"],
+		});
+		expect(normalizeCurrentBasis(reordered)).toEqual(original);
+	});
+	it("refuses malformed, oversized and effectful package feature maps without reading them", () => {
+		const path = ["releases", "crates", 0, "versions", 0, "features"] as const;
+		for (const map of [
+			undefined,
+			null,
+			[],
+			{ "": [] },
+			{ default: [""] },
+			{ default: ["std", "std"] },
+			{ default: ["std\r"] },
+			{ default: ["\ud800"] },
+			{ default: {} },
+			{ default: ["a".repeat(65_537)] },
+			Object.fromEntries(Array.from({ length: 100_001 }, (_, i) => [`feature${i}`, []])),
+			Object.create({ inherited: [] }),
+		])
+			refuses(change(fixture(), path, map));
+		let reads = 0;
+		const accessor = Object.defineProperty({}, "default", {
+			get() {
+				reads++;
+				return [];
+			},
+		});
+		refuses(change(fixture(), path, accessor));
+		const proxy = new Proxy(
+			{},
+			{
+				ownKeys() {
+					reads++;
+					return [];
+				},
+			},
+		);
+		refuses(change(fixture(), path, proxy));
+		expect(reads).toBe(0);
+	});
 	it("binds three complete field-only sources and independently domain-separated payloads", () => {
 		const result = normalizeCurrentBasis(fixture());
 		expect(result.observedAt).toBe(NOW - 3000);
