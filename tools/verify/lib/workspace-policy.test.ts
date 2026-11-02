@@ -336,6 +336,77 @@ describe("basename inventory", () => {
 		).toEqual(["a\nb/.gate-sentinel"]);
 	});
 
+	it.each([null, 17, Object("ordinary")])(
+		"refuses a non-string injected file name %j",
+		async (name) => {
+			const fs = synthetic({ "": [[entry(name as unknown as string)]] });
+			await expect(fs.run()).rejects.toThrow("file-name inventory failed");
+			expect(fs.listed).toEqual([""]);
+		},
+	);
+
+	it.each([
+		[".", ".gate-sentinel"],
+		["a/..", ".gate-sentinel"],
+		["a/", "a/.gate-sentinel"],
+		["/", "/.gate-sentinel"],
+	])("preserves normalized results below injected directory %s", async (directory, expected) => {
+		let reads = 0;
+		const found = await namedFiles(".gate-sentinel", path.resolve("synthetic"), false, async () =>
+			reads++ === 0 ? [entry(directory, true)] : [entry(".gate-sentinel")],
+		);
+		expect(found).toEqual([expected]);
+		expect(reads).toBe(2);
+	});
+
+	it("preserves native read targets and relative matches across ordinary and unusual ancestors", async () => {
+		const components = [
+			"plain",
+			"with spaces",
+			"a\nb",
+			"",
+			".",
+			"..",
+			"a/..",
+			"a/",
+			"/",
+			"a\\b",
+			"\\",
+			"a\\..\\b",
+			"C:relative",
+			"D:\\absolute",
+			"//server/share",
+			".hidden",
+			"x.y",
+			"trailing.",
+			"..suffix",
+			"snow\u2603",
+			"null\0name",
+		];
+		const nestedRoot = path.resolve("synthetic-native-targets");
+		for (const root of [nestedRoot, path.parse(nestedRoot).root]) {
+			for (const parent of components) {
+				for (const child of components) {
+					const first = path.posix.join("", parent);
+					const second = path.posix.join(first, child);
+					const calls: string[] = [];
+					const listings = [[entry(parent, true)], [entry(child, true)], sentinel];
+					const found = await namedFiles(".gate-sentinel", root, false, async (target) => {
+						const listed = listings[calls.length] ?? [];
+						calls.push(target);
+						return listed;
+					});
+					expect(calls, JSON.stringify([parent, child])).toEqual([
+						root,
+						path.join(root, first),
+						path.join(root, second),
+					]);
+					expect(found).toEqual([path.posix.join(second, ".gate-sentinel")]);
+				}
+			}
+		}
+	});
+
 	it.each(["trailing", "forward"] as const)(
 		"stops disappearance proof at a %s-spelled root",
 		async (spelling) => {
@@ -749,6 +820,7 @@ describe("basename inventory", () => {
 						entry(name, true),
 					);
 				if (directory === "bad") throw failure("EACCES");
+				if (directory.endsWith("/late")) throw new Error("refused descendant must not be listed");
 				active += 1;
 				await release.promise;
 				active -= 1;
