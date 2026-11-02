@@ -1,10 +1,18 @@
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
+import { createDecipheriv, type DecipherGCM, hkdfSync, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { types } from "node:util";
 import { readBoundedRegularFile } from "@draftyak/bounded-files";
 import { MasterKey } from "../kernel/master-key.ts";
 import { flushDirectory, flushFile, reserveExclusiveFile } from "../store/durable-file.ts";
+import {
+	captureRecoveryCapsule,
+	RECOVERY_CAPSULE_V1,
+	RECOVERY_FILE_SIZE,
+	sealRecoveryCapsule,
+} from "./backup-capsule.ts";
+
+export { RECOVERY_FILE_SIZE } from "./backup-capsule.ts";
 
 export type RecoveryErrorCode = "code" | "write" | "open";
 
@@ -21,18 +29,7 @@ export class RecoveryError extends Error {
 type Reservation = ReturnType<typeof reserveExclusiveFile>;
 
 export const RECOVERY_FILE = "mk.recovery";
-const CODE_BYTES = 20;
-const KEY_BYTES = 32;
-const SALT_BYTES = 16;
-const NONCE_BYTES = 12;
-const TAG_BYTES = 16;
-// Header (magic, then format version; also the associated data), salt, nonce, ciphertext, tag.
-const HEADER = Buffer.concat([Buffer.from("draftyak-recovery"), Buffer.of(1)]);
-const SALT_AT = HEADER.length;
-const NONCE_AT = SALT_AT + SALT_BYTES;
-const SEALED_AT = NONCE_AT + NONCE_BYTES;
-const TAG_AT = SEALED_AT + KEY_BYTES;
-export const RECOVERY_FILE_SIZE: number = TAG_AT + TAG_BYTES;
+const { codeBytes: CODE_BYTES, keyBytes: KEY_BYTES } = RECOVERY_CAPSULE_V1;
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const CODE_TEXT = /^(?:[A-Za-z2-7]{4}-){7}[A-Za-z2-7]{4}$|^[A-Za-z2-7]{32}$/;
@@ -40,6 +37,11 @@ const byteLength = Object.getOwnPropertyDescriptor(
 	Object.getPrototypeOf(Uint8Array.prototype),
 	"byteLength",
 )?.get;
+const backingBuffer = Object.getOwnPropertyDescriptor(
+	Object.getPrototypeOf(Uint8Array.prototype),
+	"buffer",
+)?.get;
+const copyBytes = Uint8Array.prototype.set;
 
 function exactBytes(input: unknown, length: number, code: RecoveryErrorCode): Uint8Array {
 	if (!types.isUint8Array(input) || byteLength?.call(input) !== length)
@@ -47,14 +49,25 @@ function exactBytes(input: unknown, length: number, code: RecoveryErrorCode): Ui
 	return input;
 }
 
+function captureCode(input: unknown): Buffer {
+	let captured: Buffer | undefined;
+	try {
+		const value = exactBytes(input, CODE_BYTES, "code");
+		if (!backingBuffer || types.isSharedArrayBuffer(backingBuffer.call(value))) throw new Error();
+		captured = Buffer.alloc(CODE_BYTES);
+		copyBytes.call(captured, value);
+		return captured;
+	} catch {
+		captured?.fill(0);
+		throw new RecoveryError("code");
+	}
+}
+
 // As the bounded reader requires: the folder names its own real path.
 function canonicalFolder(folder: string): string {
 	if (fs.realpathSync.native(folder) !== folder) throw new Error();
 	return folder;
 }
-
-const wrappingKey = (code: Uint8Array, salt: Uint8Array): Buffer =>
-	Buffer.from(hkdfSync("sha256", code, salt, "draftyak/v1/recovery", KEY_BYTES));
 
 /** 160 bits from the system's secure random source. The caller shows them once and erases them. */
 export function generateRecoveryCode(): Buffer {
@@ -89,20 +102,6 @@ export function parseRecoveryCode(text: string): Buffer {
 		}
 	}
 	return code;
-}
-
-function seal(masterKey: Uint8Array, code: Uint8Array): Buffer {
-	const salt = randomBytes(SALT_BYTES);
-	const nonce = randomBytes(NONCE_BYTES);
-	const key = wrappingKey(code, salt);
-	try {
-		const cipher = createCipheriv("aes-256-gcm", key, nonce, { authTagLength: TAG_BYTES });
-		cipher.setAAD(HEADER);
-		const sealed = cipher.update(masterKey);
-		return Buffer.concat([HEADER, salt, nonce, sealed, cipher.final(), cipher.getAuthTag()]);
-	} finally {
-		key.fill(0);
-	}
 }
 
 const sameFile = (a: Reservation, b: Reservation): boolean => a.dev === b.dev && a.ino === b.ino;
@@ -154,7 +153,7 @@ export function writeRecoveryFile(folder: string, masterKey: Uint8Array, code: U
 	try {
 		const directory = canonicalFolder(folder);
 		filename = path.join(directory, RECOVERY_FILE);
-		const file = seal(exactBytes(masterKey, KEY_BYTES, "write"), secret);
+		const file = sealRecoveryCapsule(exactBytes(masterKey, KEY_BYTES, "write"), secret);
 		if (!missing(filename)) throw new Error();
 		reserved = reserveExclusiveFile(filename);
 		fill(filename, reserved, file);
@@ -171,27 +170,64 @@ export function writeRecoveryFile(folder: string, masterKey: Uint8Array, code: U
  * give the same refusal.
  */
 export function openRecoveryFile(folder: string, code: Uint8Array): MasterKey {
-	const secret = exactBytes(code, CODE_BYTES, "code");
-	let key: Buffer | undefined;
-	let plain: Buffer | undefined;
+	const secret = captureCode(code);
 	try {
 		const file = readBoundedRegularFile(path.join(canonicalFolder(folder), RECOVERY_FILE), {
 			maximum: RECOVERY_FILE_SIZE,
 			expectedSize: RECOVERY_FILE_SIZE,
 		});
-		if (!file.subarray(0, SALT_AT).equals(HEADER)) throw new Error();
-		key = wrappingKey(secret, file.subarray(SALT_AT, NONCE_AT));
-		const nonce = file.subarray(NONCE_AT, SEALED_AT);
-		const decipher = createDecipheriv("aes-256-gcm", key, nonce, { authTagLength: TAG_BYTES });
-		decipher.setAAD(HEADER);
-		decipher.setAuthTag(file.subarray(TAG_AT, RECOVERY_FILE_SIZE));
-		plain = decipher.update(file.subarray(SEALED_AT, TAG_AT));
-		decipher.final();
-		return new MasterKey(plain);
+		return openRecoveryBytes(file, secret);
 	} catch {
 		throw new RecoveryError("open");
 	} finally {
-		key?.fill(0);
-		plain?.fill(0);
+		secret.fill(0);
 	}
+}
+
+/** Authenticates these exact captured bytes and returns only an opaque recovered key. */
+export function openRecoveryBytes(capsule: unknown, code: unknown): MasterKey {
+	const secret = captureCode(code);
+	let file: Buffer | undefined;
+	let key: Buffer | undefined;
+	let plain: Buffer | undefined;
+	let tail: Buffer | undefined;
+	let decipher: DecipherGCM | undefined;
+	let recovered: MasterKey | undefined;
+	let failed = false;
+	let cleanupFailed = false;
+	try {
+		file = captureRecoveryCapsule(capsule);
+		const { saltAt, nonceAt, sealedAt, tagAt, tagBytes, wrappingInfo } = RECOVERY_CAPSULE_V1;
+		key = Buffer.from(
+			hkdfSync("sha256", secret, file.subarray(saltAt, nonceAt), wrappingInfo, KEY_BYTES),
+		);
+		decipher = createDecipheriv("aes-256-gcm", key, file.subarray(nonceAt, sealedAt), {
+			authTagLength: tagBytes,
+		});
+		decipher.setAAD(file.subarray(0, saltAt));
+		decipher.setAuthTag(file.subarray(tagAt, RECOVERY_FILE_SIZE));
+		plain = decipher.update(file.subarray(sealedAt, tagAt));
+		tail = decipher.final();
+		if (plain.length !== KEY_BYTES || tail.length !== 0) throw new Error();
+		recovered = new MasterKey(plain);
+	} catch {
+		failed = true;
+	} finally {
+		try {
+			decipher?.destroy();
+		} catch {
+			cleanupFailed = true;
+		} finally {
+			secret.fill(0);
+			file?.fill(0);
+			key?.fill(0);
+			plain?.fill(0);
+			tail?.fill(0);
+		}
+	}
+	if (failed || cleanupFailed || !recovered) {
+		recovered?.destroy();
+		throw new RecoveryError("open");
+	}
+	return recovered;
 }

@@ -23,12 +23,13 @@ import { migrations as delivered, nativeBinding } from "./helpers.ts";
 
 const REFUSED = "Database schema is not recognized";
 const CLEANUP = "Database initialization cleanup unavailable";
-const APPROVAL_SCHEMAS = [
+const COMPONENT_SCHEMAS = [
 	["outbox", "0001_proposals", ["outbox"]],
 	["challenges", "0001_challenges", ["approval_challenges", "pair_confirm_operations"]],
 	["verifier", "0001_approvals", ["approvals"]],
 	["admin", "0001_operations", ["native_admin_operations"]],
 	["adminchallenges", "0001_admin_challenges", ["native_admin_challenges"]],
+	["backup", "0001_backup_recovery", ["native_backup_recovery"]],
 ] as const;
 const require = createRequire(import.meta.url);
 const addon = require(nativeBinding) as { Database: { prototype: { close(): unknown } } };
@@ -92,9 +93,9 @@ async function created(migrations: Readonly<Record<string, string>>): Promise<vo
 	for (const namespace of Object.keys(migrations)) await store.migrate(namespace);
 	closeAll();
 }
-function expectApprovalSchemas(store: HubStore): void {
+function expectComponentSchemas(store: HubStore): void {
 	store.read((db) => {
-		for (const [namespace, migration, tables] of APPROVAL_SCHEMAS) {
+		for (const [namespace, migration, tables] of COMPONENT_SCHEMAS) {
 			expect(db.all(`SELECT name FROM main._migrations_${namespace} ORDER BY name`)).toEqual([
 				{ name: migration },
 			]);
@@ -372,14 +373,19 @@ describe("migration ledger", () => {
 		});
 	});
 
-	it("does not recognize a delivered namespace's longer prefix as a delivered alias", async () => {
-		const outboxextra = folder("outboxextra", { "0001_extra.sql": "CREATE TABLE extra(x);" });
-		await created({ outboxextra });
-		expect(() => open()).toThrow(REFUSED);
-		expect(open({ outboxextra }).read((db) => db.get("SELECT count(*) AS n FROM extra"))).toEqual({
-			n: 0,
-		});
-	});
+	it.each(["outboxextra", "backupextra"])(
+		"does not recognize %s as a delivered alias",
+		async (namespace) => {
+			const extra = folder(namespace, { "0001_extra.sql": "CREATE TABLE extra(x);" });
+			await created({ [namespace]: extra });
+			expect(() => open()).toThrow(REFUSED);
+			expect(
+				open({ [namespace]: extra }).read((db) => db.get("SELECT count(*) AS n FROM extra")),
+			).toEqual({
+				n: 0,
+			});
+		},
+	);
 
 	it("runs the SQL captured when migrate() is called, not later folder bytes", async () => {
 		const app = folder("app", { "0001_items.sql": ITEMS });
@@ -417,15 +423,62 @@ describe("compositions", () => {
 		(await openNativeStorage(options)).close();
 		open({ ...HUB_NAMESPACES });
 		closeAll();
-		expectApprovalSchemas(open());
+		expectComponentSchemas(open());
 		closeAll();
-		for (const namespace of ["jobs", ...APPROVAL_SCHEMAS.map(([name]) => name)]) {
+		for (const namespace of ["jobs", ...COMPONENT_SCHEMAS.map(([name]) => name)]) {
 			await expect(open().migrate(namespace)).rejects.toThrow("not registered");
 			closeAll();
 		}
 	});
 
-	it("upgrades the earlier native schema prefix and reopens all approval schemas without registration", async () => {
+	it("stores one exact-size binding DATA row and reopens it without registration", async () => {
+		(await openNativeStorage({ filename, nativeBinding, masterKey: key, create: true })).close();
+		const store = open();
+		const count = () =>
+			store.read((db) => db.get("SELECT count(*) AS n FROM native_backup_recovery"));
+		expect(count()).toEqual({ n: 0 });
+		for (const [singleton, binding] of [
+			[0, Buffer.alloc(69)],
+			[2, Buffer.alloc(69)],
+			[1, Buffer.alloc(68)],
+			[1, Buffer.alloc(70)],
+			[1, "x".repeat(69)],
+			[1, null],
+		] as const) {
+			expect(() =>
+				store.write((tx) =>
+					tx.run("INSERT INTO native_backup_recovery(singleton,binding) VALUES(?,?)", [
+						singleton,
+						binding,
+					]),
+				),
+			).toThrow();
+			expect(count()).toEqual({ n: 0 });
+		}
+		// This synthetic row is DATA, not proof of enrollment or a binding to this key.
+		store.write((tx) =>
+			tx.run("INSERT INTO native_backup_recovery(singleton,binding) VALUES(1,?)", [
+				Buffer.alloc(69),
+			]),
+		);
+		expect(() =>
+			store.write((tx) =>
+				tx.run("INSERT INTO native_backup_recovery(singleton,binding) VALUES(1,?)", [
+					Buffer.alloc(69),
+				]),
+			),
+		).toThrow();
+		closeAll();
+		expect(
+			open().read((db) =>
+				db.all(
+					"SELECT singleton,typeof(binding) AS type,length(binding) AS bytes FROM native_backup_recovery",
+				),
+			),
+		).toEqual([{ singleton: 1, type: "blob", bytes: 69 }]);
+	});
+
+	it("upgrades the earlier native schema prefix and reopens all component schemas without registration", async () => {
 		const original = [
 			"audit",
 			"core",
@@ -451,7 +504,7 @@ describe("compositions", () => {
 		(await openNativeStorage({ filename, nativeBinding, masterKey: key })).close();
 		const reopened = open();
 		expect(ledgers(reopened)).toEqual(before);
-		expectApprovalSchemas(reopened);
+		expectComponentSchemas(reopened);
 	});
 
 	it("reopens the device authority schema without registering it again", async () => {

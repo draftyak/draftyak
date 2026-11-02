@@ -300,6 +300,7 @@ describe("first run", () => {
 				["verifier"],
 				["admin"],
 				["adminchallenges"],
+				["backup"],
 			]);
 		} finally {
 			spy.mockRestore();

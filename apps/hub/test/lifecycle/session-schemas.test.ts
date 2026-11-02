@@ -19,6 +19,7 @@ const EXPECTED = [
 	["verifier", ["0001_approvals"]],
 	["admin", ["0001_operations"]],
 	["adminchallenges", ["0001_admin_challenges"]],
+	["backup", ["0001_backup_recovery"]],
 ] as const;
 const DOMAIN_TABLES = [
 	"accounts",
@@ -37,6 +38,7 @@ const DOMAIN_TABLES = [
 	"jobs_meta",
 	"native_admin_challenges",
 	"native_admin_operations",
+	"native_backup_recovery",
 	"native_draft_locks",
 	"native_draft_revisions",
 	"native_drafts",
@@ -98,6 +100,7 @@ function expectSchemas(store: HubStore): void {
 			"approvals",
 			"native_admin_operations",
 			"native_admin_challenges",
+			"native_backup_recovery",
 		])
 			expect(db.get(`SELECT COUNT(*) AS count FROM main.${table}`)).toEqual({ count: 0 });
 	});
@@ -169,7 +172,7 @@ describe("native component schemas in an unlocked session", () => {
 		}
 	});
 
-	it.each(["accounts", "pluginregistry", "adminchallenges"] as const)(
+	it.each(["accounts", "pluginregistry", "adminchallenges", "backup"] as const)(
 		"closes the real failed store, erases the handed key and recovers after a %s migration fault",
 		async (failedNamespace) => {
 			let failedStore: HubStore | undefined;

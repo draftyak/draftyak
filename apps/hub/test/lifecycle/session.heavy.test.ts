@@ -89,9 +89,10 @@ const compiledSessionModes = [
 	"missing-verifier",
 	"missing-admin",
 	"missing-adminchallenges",
+	"missing-backup",
 ] as const;
 it.each(compiledSessionModes)(
-	"opens and reopens a compiled session using all fifteen staged schemas (%s)",
+	"opens and reopens a compiled session using all sixteen staged schemas (%s)",
 	(mode) => {
 		const hub = path.resolve(import.meta.dirname, "../.."),
 			workspace = path.resolve(hub, "../..");
@@ -163,6 +164,10 @@ it.each(compiledSessionModes)(
 					"identity/admin-challenge-migrations/0001_admin_challenges.sql",
 					"identity/admin-challenge-migrations/0001_admin_challenges.sql",
 				],
+				[
+					"recovery/backup-migrations/0001_backup_recovery.sql",
+					"recovery/backup-migrations/0001_backup_recovery.sql",
+				],
 			] as const) {
 				const built = path.join(hub, "dist", relative);
 				expect(readFileSync(built)).toEqual(readFileSync(path.join(hub, "src", source)));
@@ -197,9 +202,10 @@ it.each(compiledSessionModes)(
 			expect(JSON.parse(run.stdout)).toEqual({
 				ok: true,
 				mode,
-				schemas: 15,
-				businessTables: 25,
-				bookkeepingTables: 30,
+				schemas: 16,
+				businessTables: 26,
+				bookkeepingTables: 32,
+				recoveryCapsule: mode === "positive",
 				beforeIdentity: true,
 				refused: mode === "positive" ? null : "STORE_UNAVAILABLE",
 				failedOpenClosed: mode !== "positive",
