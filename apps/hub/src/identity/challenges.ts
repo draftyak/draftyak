@@ -46,19 +46,34 @@ import {
 	type SqlTransaction,
 } from "../store/store.ts";
 import {
+	type AccountModePrepared,
 	abortNativeAdminScope,
 	applyNativeAdminOperation,
 	assertNativeAdminOperations,
 	assertNativeAdminScope,
 	type NativeAccountModeOperations,
+	ownsNativeAdminOperation,
 	prepareNativeAdminOperation,
 	writeNativeAdminOperations,
 } from "./admin-operations.ts";
+import {
+	abortNativeBackupScope,
+	applyNativeBackupOperation,
+	assertNativeBackupOperations,
+	assertNativeBackupScope,
+	type BackupPrepared,
+	type NativeBackupOperations,
+	ownsNativeBackupOperation,
+	prepareNativeBackupOperation,
+	writeNativeBackupOperations,
+} from "./backup-operations.ts";
 import {
 	ADMIN_CHALLENGE_SQL,
 	type AdminAcceptContext,
 	type AdminAcceptedFacts,
 	adminOperationPinScope,
+	BACKUP_CHALLENGE_SQL,
+	backupOperationPinScope,
 } from "./challenges-admin.ts";
 import { PairConfirmOperations } from "./challenges-pair-confirm.ts";
 import {
@@ -173,6 +188,8 @@ export function assertChallengeContext(
 		refuse("UNAVAILABLE");
 	if (tx) assertStoreTransaction(store, tx);
 }
+type NativeAdminIssuer = NativeAccountModeOperations | NativeBackupOperations;
+
 interface OpenChallenge {
 	readonly id: string;
 	readonly nonce: string;
@@ -183,6 +200,7 @@ interface OpenChallenge {
 	readonly epoch: number;
 	readonly dataClass: string;
 	readonly targetVersion: number | null;
+	readonly admin?: NativeAdminIssuer;
 	readonly bytes: Buffer;
 	readonly wall: number;
 	readonly mono: number;
@@ -192,7 +210,8 @@ interface OpenChallenge {
 const coordinators = new WeakMap<HubStore, object>();
 interface AdminContextState {
 	readonly service: object;
-	readonly admin: NativeAccountModeOperations;
+	readonly admin: NativeAdminIssuer;
+	readonly issuerKind: "account" | "backup";
 	readonly store: HubStore;
 	readonly tx: SqlTransaction;
 	readonly scope: WorkScope;
@@ -220,14 +239,17 @@ export function consumeAdminChallengeContext(
 		coordinators.get(state.store) !== state.service
 	)
 		refuse("UNAVAILABLE");
-	assertNativeAdminOperations(issuer, state.store);
 	assertStoreTransaction(state.store, tx);
-	assertNativeAdminScope(issuer, tx, scope);
+	if (state.issuerKind === "backup") {
+		assertNativeBackupOperations(issuer, state.store);
+		assertNativeBackupScope(issuer, tx, scope);
+	} else {
+		assertNativeAdminOperations(issuer, state.store);
+		assertNativeAdminScope(issuer, tx, scope);
+	}
 	state.consumed = true;
 	return state.facts;
 }
-const challengeTable = (kind: OpenChallenge["kind"]): string =>
-	kind === "admin.v1" ? "main.native_admin_challenges" : "main.approval_challenges";
 const equalBytes = (left: Buffer, right: Buffer): boolean =>
 	left.length === right.length && timingSafeEqual(left, right);
 const read = HubStore.prototype.read,
@@ -260,8 +282,10 @@ export interface ChallengeServiceOptions {
 	readonly identity: HubIdentity;
 	readonly clock?: Clock;
 	readonly send: SendApprovalVerifier;
-	/** The genuine same-store native account-mode issuer; absent keeps admin unavailable. */
+	/** The genuine same-store native account-mode issuer. */
 	readonly admin?: NativeAccountModeOperations;
+	/** A genuine same-store backup issuer; no structural target or callback is accepted. */
+	readonly backup?: NativeBackupOperations;
 	/** Native composition data only. Absent retained SAS makes pairing review unavailable. */
 	readonly pairConfirmSas?: (candidateId: string) => string | undefined;
 }
@@ -273,6 +297,7 @@ export class ChallengeService {
 	readonly #authorizer: Authorizer;
 	readonly #send: SendApprovalVerifier;
 	readonly #admin: NativeAccountModeOperations | undefined;
+	readonly #backup: NativeBackupOperations | undefined;
 	readonly #clock: Clock;
 	readonly #hub: string;
 	readonly #open: Map<string, OpenChallenge>;
@@ -289,7 +314,7 @@ export class ChallengeService {
 		const settings = plainRecord(
 			options,
 			["identity", "send"],
-			["clock", "pairConfirmSas", "admin"],
+			["clock", "pairConfirmSas", "admin", "backup"],
 		) as unknown as ChallengeServiceOptions | undefined;
 		if (!settings) refuse("UNAVAILABLE");
 		guard(() => {
@@ -300,6 +325,7 @@ export class ChallengeService {
 			assertAuthorizerStore(authorizer, store);
 			assertSendApprovalVerifier(settings.send, store);
 			if (settings.admin !== undefined) assertNativeAdminOperations(settings.admin, store);
+			if (settings.backup !== undefined) assertNativeBackupOperations(settings.backup, store);
 			discardPin.call(pins, Object.freeze(Object.create(null)));
 			read.call(store, (db: SqlReader) => verifyAudit.call(audit, db));
 		});
@@ -310,6 +336,7 @@ export class ChallengeService {
 		this.#authorizer = authorizer;
 		this.#send = settings.send;
 		this.#admin = settings.admin;
+		this.#backup = settings.backup;
 		this.#clock = settings.clock ?? systemClock;
 		this.#hub = settings.identity.hid;
 		if (
@@ -335,27 +362,86 @@ export class ChallengeService {
 	}
 	#accepted(kind: unknown): boolean {
 		return kind === "admin.v1"
-			? this.#admin !== undefined
+			? this.#admin !== undefined || this.#backup !== undefined
 			: statementKindDisposition(kind) === "accepted";
 	}
-	#writeAdmin<T>(work: (tx: SqlTransaction, scope: WorkScope) => T): T {
+	#isBackupIssuer(issuer: NativeAdminIssuer): boolean {
+		if (this.#backup !== undefined && issuer === this.#backup) return true;
+		if (this.#admin !== undefined && issuer === this.#admin) return false;
+		return refuse("UNAVAILABLE");
+	}
+	#ownedAdmin(operationId: string): NativeAdminIssuer {
+		const account = this.#admin !== undefined && ownsNativeAdminOperation(this.#admin, operationId);
+		const backup =
+			this.#backup !== undefined && ownsNativeBackupOperation(this.#backup, operationId);
+		if (account && backup) refuse("UNAVAILABLE");
+		if (backup && this.#backup) return this.#backup;
+		if (account && this.#admin) return this.#admin;
+		return refuse("STALE");
+	}
+	#heldAdmin(item: OpenChallenge): NativeAdminIssuer {
+		if (item.kind !== "admin.v1" || item.admin === undefined) refuse("UNAVAILABLE");
+		this.#isBackupIssuer(item.admin);
+		return item.admin;
+	}
+	#challengeTable(item: OpenChallenge): string {
+		if (item.kind !== "admin.v1") return "main.approval_challenges";
+		return this.#isBackupIssuer(this.#heldAdmin(item))
+			? "main.native_backup_challenges"
+			: "main.native_admin_challenges";
+	}
+	#adminPinScope(item: OpenChallenge, nonce: string): string {
+		return this.#isBackupIssuer(this.#heldAdmin(item))
+			? backupOperationPinScope(item.target, nonce)
+			: adminOperationPinScope(item.target, nonce);
+	}
+	#assertAdminScope(issuer: NativeAdminIssuer, tx: SqlTransaction, scope: WorkScope): void {
+		if (this.#isBackupIssuer(issuer)) assertNativeBackupScope(issuer, tx, scope);
+		else assertNativeAdminScope(issuer, tx, scope);
+	}
+	#prepareAdmin(
+		issuer: NativeAdminIssuer,
+		tx: SqlTransaction,
+		scope: WorkScope,
+		peer: NativeDevicePeer,
+		operationId: string,
+	): AccountModePrepared | BackupPrepared {
+		return this.#isBackupIssuer(issuer)
+			? prepareNativeBackupOperation(issuer, tx, scope, peer, operationId)
+			: prepareNativeAdminOperation(issuer, tx, scope, peer, operationId);
+	}
+	#applyAdmin(
+		issuer: NativeAdminIssuer,
+		tx: SqlTransaction,
+		scope: WorkScope,
+		context: AdminAcceptContext,
+	): void {
+		if (this.#isBackupIssuer(issuer)) applyNativeBackupOperation(issuer, tx, scope, context);
+		else applyNativeAdminOperation(issuer, tx, scope, context);
+	}
+	#writeAdmin<T>(issuer: NativeAdminIssuer, work: (tx: SqlTransaction, scope: WorkScope) => T): T {
+		const backup = this.#isBackupIssuer(issuer);
 		let callbackFailed = false;
 		let callbackFailure: unknown;
 		try {
-			return writeNativeAdminOperations(this.#admin, (tx, scope) => {
+			const perform = (tx: SqlTransaction, scope: WorkScope): T => {
 				try {
 					return work(tx, scope);
 				} catch (error) {
 					callbackFailed = true;
 					callbackFailure = error;
 					try {
-						abortNativeAdminScope(this.#admin, scope);
+						if (backup) abortNativeBackupScope(issuer, scope);
+						else abortNativeAdminScope(issuer, scope);
 					} catch {
 						/* The refusal still throws through the genuine native writer. */
 					}
 					throw error;
 				}
-			});
+			};
+			return backup
+				? writeNativeBackupOperations(issuer, perform)
+				: writeNativeAdminOperations(issuer, perform);
 		} catch (error) {
 			// Preserve the refusal only after the native writer has exited and rolled back.
 			throw callbackFailed ? callbackFailure : error;
@@ -370,7 +456,7 @@ export class ChallengeService {
 		tx: SqlTransaction,
 		scope: WorkScope,
 	): { context: AdminAcceptContext; state: AdminContextState } {
-		const admin = this.#admin ?? refuse("KIND_UNAVAILABLE");
+		const admin = this.#heldAdmin(item);
 		const context = Object.freeze(Object.create(null)) as AdminAcceptContext;
 		const facts: AdminAcceptedFacts = Object.freeze({
 			statement: Object.freeze({ ...statement }),
@@ -386,6 +472,7 @@ export class ChallengeService {
 		const state: AdminContextState = {
 			service: this,
 			admin,
+			issuerKind: this.#isBackupIssuer(admin) ? "backup" : "account",
 			store: this.#store,
 			tx,
 			scope,
@@ -452,6 +539,8 @@ export class ChallengeService {
 		)
 			refuse("KIND_UNAVAILABLE");
 		const now = guard(() => sample(this.#clock));
+		const adminIssuer =
+			request.kind === "admin.v1" ? guard(() => this.#ownedAdmin(request.id)) : undefined;
 		for (const [nonce, item] of this.#open)
 			if (now.mono < item.mono || now.mono - item.mono > CHALLENGE_TTL_MS) this.#open.delete(nonce);
 		const old: OpenChallenge[] = [];
@@ -461,18 +550,22 @@ export class ChallengeService {
 			request.kind === "approval.send.v1"
 				? writeSendApproval(this.#send, (tx) => work(tx))
 				: request.kind === "admin.v1"
-					? this.#writeAdmin(work)
+					? this.#writeAdmin(adminIssuer ?? refuse("UNAVAILABLE"), work)
 					: (write.call(this.#store, work) as OpenChallenge);
 		const opened = guard(
 			() =>
 				writeChallenge((tx: SqlTransaction, scope?: WorkScope) => {
 					this.#ready();
 					if (request.kind === "admin.v1")
-						assertNativeAdminScope(this.#admin, tx, scope ?? refuse("UNAVAILABLE"));
+						this.#assertAdminScope(
+							adminIssuer ?? refuse("UNAVAILABLE"),
+							tx,
+							scope ?? refuse("UNAVAILABLE"),
+						);
 					const adminPrepared =
 						request.kind === "admin.v1"
-							? prepareNativeAdminOperation(
-									this.#admin,
+							? this.#prepareAdmin(
+									adminIssuer ?? refuse("UNAVAILABLE"),
 									tx,
 									scope ?? refuse("UNAVAILABLE"),
 									peer,
@@ -520,7 +613,10 @@ export class ChallengeService {
 						}
 					} else if (request.kind === "admin.v1") {
 						const prepared = adminPrepared ?? refuse("UNAVAILABLE");
-						if (prepared.fields.op !== request.id || prepared.fields.kind !== "account.mode-full")
+						const expectedKind = this.#isBackupIssuer(adminIssuer ?? refuse("UNAVAILABLE"))
+							? "data.backup"
+							: "account.mode-full";
+						if (prepared.fields.op !== request.id || prepared.fields.kind !== expectedKind)
 							refuse("UNAVAILABLE");
 						fields = prepared.fields;
 						dataClass = DataClass.parse(prepared.dataClass);
@@ -546,6 +642,7 @@ export class ChallengeService {
 						mono: now.mono,
 						expires: base.exp,
 						busy: false,
+						...(adminIssuer === undefined ? {} : { admin: adminIssuer }),
 					};
 					for (const previous of this.#open.values())
 						if (
@@ -554,13 +651,13 @@ export class ChallengeService {
 							previous.target === item.target
 						) {
 							tx.run(
-								`UPDATE ${challengeTable(previous.kind)} SET burned_at=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL`,
+								`UPDATE ${this.#challengeTable(previous)} SET burned_at=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL`,
 								[now.wall, previous.id],
 							);
 							old.push(previous);
 						}
 					tx.run(
-						`INSERT INTO ${challengeTable(item.kind)}(id,nonce,kind,target_id,device_id,user_id,data_class,epoch,statement,issued_at,expires_at,target_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+						`INSERT INTO ${this.#challengeTable(item)}(id,nonce,kind,target_id,device_id,user_id,data_class,epoch,statement,issued_at,expires_at,target_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
 						[
 							item.id,
 							item.nonce,
@@ -577,7 +674,7 @@ export class ChallengeService {
 						],
 					);
 					tx.run(
-						`DELETE FROM ${challengeTable(item.kind)} WHERE id IN(SELECT id FROM ${challengeTable(item.kind)} WHERE consumed_at IS NULL AND burned_at IS NULL AND expires_at<? ORDER BY expires_at LIMIT 64)`,
+						`DELETE FROM ${this.#challengeTable(item)} WHERE id IN(SELECT id FROM ${this.#challengeTable(item)} WHERE consumed_at IS NULL AND burned_at IS NULL AND expires_at<? ORDER BY expires_at LIMIT 64)`,
 						[Math.max(0, now.wall - 86_400_000)],
 					);
 					if (request.kind === "admin.v1") {
@@ -617,7 +714,14 @@ export class ChallengeService {
 				burned_at: number | null;
 				signature: string | null;
 			}
-		>(item.kind === "admin.v1" ? ADMIN_CHALLENGE_SQL : CHALLENGE_SQL, [item.id]);
+		>(
+			item.kind === "admin.v1"
+				? this.#isBackupIssuer(this.#heldAdmin(item))
+					? BACKUP_CHALLENGE_SQL
+					: ADMIN_CHALLENGE_SQL
+				: CHALLENGE_SQL,
+			[item.id],
+		);
 		if (
 			!row ||
 			row.id !== item.id ||
@@ -660,7 +764,7 @@ export class ChallengeService {
 			write.call(this.#store, (tx: SqlTransaction) => {
 				const now = sample(this.#clock);
 				tx.run(
-					`UPDATE ${challengeTable(item.kind)} SET burned_at=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL`,
+					`UPDATE ${this.#challengeTable(item)} SET burned_at=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL`,
 					[now.wall, item.id],
 				);
 				append.call(this.#audit, tx, {
@@ -715,7 +819,7 @@ export class ChallengeService {
 				kind === "approval.send.v1"
 					? sendApprovalPinScope(shape.nonce)
 					: kind === "admin.v1"
-						? adminOperationPinScope((shape as AdminStatement).op, shape.nonce)
+						? this.#adminPinScope(held, shape.nonce)
 						: pairConfirmPinScope(shape.nonce),
 			);
 			this.#ready();
@@ -735,20 +839,16 @@ export class ChallengeService {
 				assertStoreTransaction(this.#store, tx);
 				if (kind === "admin.v1") {
 					const liveScope = scope ?? refuse("UNAVAILABLE");
-					assertNativeAdminScope(this.#admin, tx, liveScope);
+					const issuer = this.#heldAdmin(held);
+					this.#assertAdminScope(issuer, tx, liveScope);
 					requireKind.call(this.#authorizer, tx, peer, kind);
-					const prepared = prepareNativeAdminOperation(
-						this.#admin,
-						tx,
-						liveScope,
-						peer,
-						held.target,
-					);
+					const prepared = this.#prepareAdmin(issuer, tx, liveScope, peer, held.target);
 					const statement = shape as AdminStatement;
+					const expectedKind = this.#isBackupIssuer(issuer) ? "data.backup" : "account.mode-full";
 					if (
 						prepared.fields.op !== held.target ||
 						prepared.fields.op !== statement.op ||
-						prepared.fields.kind !== "account.mode-full" ||
+						prepared.fields.kind !== expectedKind ||
 						prepared.fields.kind !== statement.kind ||
 						prepared.fields.digest !== statement.digest ||
 						prepared.operationVersion !== held.targetVersion ||
@@ -773,11 +873,11 @@ export class ChallengeService {
 						grant.userId,
 						kind === "approval.send.v1"
 							? sendApprovalPinScope(shape.nonce)
-							: adminOperationPinScope((shape as AdminStatement).op, shape.nonce),
+							: this.#adminPinScope(held, shape.nonce),
 					);
 				if (
 					tx.run(
-						`UPDATE ${challengeTable(held.kind)} SET consumed_at=?,signature=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL`,
+						`UPDATE ${this.#challengeTable(held)} SET consumed_at=?,signature=? WHERE id=? AND consumed_at IS NULL AND burned_at IS NULL`,
 						[now.wall, envelope.data.signature, held.id],
 					).changes !== 1
 				)
@@ -809,7 +909,7 @@ export class ChallengeService {
 						liveScope,
 					);
 					try {
-						applyNativeAdminOperation(this.#admin, tx, liveScope, accepted.context);
+						this.#applyAdmin(this.#heldAdmin(held), tx, liveScope, accepted.context);
 						if (!accepted.state.consumed) refuse("UNAVAILABLE");
 					} finally {
 						adminContexts.delete(accepted.context);
@@ -846,7 +946,7 @@ export class ChallengeService {
 				kind === "approval.send.v1"
 					? writeSendApproval(this.#send, (tx, scope) => apply(tx, scope))
 					: kind === "admin.v1"
-						? this.#writeAdmin((tx, scope) => apply(tx, scope))
+						? this.#writeAdmin(this.#heldAdmin(held), (tx, scope) => apply(tx, scope))
 						: (write.call(this.#store, (tx: SqlTransaction) => apply(tx)) as Accepted);
 			this.#open.delete(held.nonce);
 			return result as Accepted;
@@ -872,4 +972,28 @@ export class ChallengeService {
 		if (state) state.active = false;
 		this.#open.clear();
 	}
+}
+
+const originalChallengeMethods = Object.freeze({
+	issue: ChallengeService.prototype.issue,
+	accept: ChallengeService.prototype.accept,
+	lock: ChallengeService.prototype.lock,
+});
+export function issueNativeChallenge(
+	service: ChallengeService,
+	peer: NativeDevicePeer,
+	raw: unknown,
+): Challenge {
+	return originalChallengeMethods.issue.call(service, peer, raw);
+}
+export function acceptNativeChallenge(
+	service: ChallengeService,
+	peer: NativeDevicePeer,
+	kind: string,
+	raw: unknown,
+): Promise<Accepted> {
+	return originalChallengeMethods.accept.call(service, peer, kind, raw);
+}
+export function lockNativeChallenges(service: ChallengeService): void {
+	originalChallengeMethods.lock.call(service);
 }

@@ -35,6 +35,11 @@ const DELIVERED: ReadonlyMap<string, string> = new Map([
 		delivered("identity/admin-challenge-migrations", "identity/admin-challenge-migrations"),
 	],
 	["backup", delivered("recovery/backup-migrations", "recovery/backup-migrations")],
+	["backupops", delivered("identity/backup-migrations", "identity/backup-migrations")],
+	[
+		"backupchallenges",
+		delivered("identity/backup-challenge-migrations", "identity/backup-challenge-migrations"),
+	],
 ]);
 
 const CATALOG = "SELECT type, name, tbl_name, sql FROM main.sqlite_schema";

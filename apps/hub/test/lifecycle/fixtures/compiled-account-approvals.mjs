@@ -6,10 +6,12 @@ import path from "node:path";
 const namespaces = [
 	"audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets",
 	"accounts", "pluginregistry", "outbox", "challenges", "verifier", "admin", "adminchallenges", "backup",
+	"backupops", "backupchallenges",
 ].sort();
 const approvalTables = [
 	"outbox", "approval_challenges", "pair_confirm_operations", "approvals",
 	"native_admin_operations", "native_admin_challenges",
+	"native_backup_operations", "native_backup_challenges",
 ];
 let phase = "arguments";
 
@@ -54,7 +56,10 @@ async function main() {
 			assert.deepEqual(tables.filter((name) => name.startsWith("_migrations_") && !name.endsWith("_lock"))
 				.map((name) => name.slice("_migrations_".length)).sort(), namespaces);
 			for (const table of approvalTables) assert.ok(tables.includes(table));
-			for (const table of ["users", "devices", "plugin_versions", "native_backup_recovery"]) {
+			for (const table of [
+				"users", "devices", "plugin_versions", "native_backup_recovery",
+				"native_backup_operations", "native_backup_challenges",
+			]) {
 				assert.deepEqual(db.get(`SELECT count(*) AS n FROM main.${table}`), { n: 0 });
 			}
 		});

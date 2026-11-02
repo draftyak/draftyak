@@ -22,6 +22,8 @@ const migrations = [
 	["admin", ["0001_operations"]],
 	["adminchallenges", ["0001_admin_challenges"]],
 	["backup", ["0001_backup_recovery"]],
+	["backupops", ["0001_backup_operations"]],
+	["backupchallenges", ["0001_backup_challenges"]],
 ];
 const businessTables = [
 	"audit_meta", "audit_events", "hub_meta", "users", "approval_pins", "jobs", "jobs_meta",
@@ -30,6 +32,7 @@ const businessTables = [
 	"plugin_generations", "plugin_versions",
 	"outbox", "approval_challenges", "pair_confirm_operations", "approvals",
 	"native_admin_operations", "native_admin_challenges", "native_backup_recovery",
+	"native_backup_operations", "native_backup_challenges",
 ].sort();
 let phase = "admission";
 
@@ -37,7 +40,7 @@ async function main() {
 	assert.equal(process.permission?.has("net"), false);
 	const [nativeBinding, mode, hub] = process.argv.slice(2);
 	assert.equal(typeof nativeBinding, "string");
-	assert.ok(["positive", "missing-credentials", "missing-sealed-credentials", "invalid-credentials", "missing-revision-immutability", "missing-devices", "invalid-devices", "missing-accounts", "missing-pluginregistry", "missing-outbox", "missing-challenges", "missing-verifier", "missing-admin", "missing-adminchallenges", "missing-backup"].includes(mode));
+	assert.ok(["positive", "missing-credentials", "missing-sealed-credentials", "invalid-credentials", "missing-revision-immutability", "missing-devices", "invalid-devices", "missing-accounts", "missing-pluginregistry", "missing-outbox", "missing-challenges", "missing-verifier", "missing-admin", "missing-adminchallenges", "missing-backup", "missing-backupops", "missing-backupchallenges"].includes(mode));
 	assert.equal(typeof hub, "string");
 	for (const denied of ["src/store/migrations/audit/0001_chain.sql", "dist/index.mjs"]) {
 		assert.throws(() => readFileSync(path.join(hub, denied)), { code: "ERR_ACCESS_DENIED" });
@@ -73,6 +76,8 @@ async function main() {
 				: mode === "missing-admin" ? "identity/admin-migrations/0001_operations.sql"
 				: mode === "missing-adminchallenges" ? "identity/admin-challenge-migrations/0001_admin_challenges.sql"
 				: mode === "missing-backup" ? "recovery/backup-migrations/0001_backup_recovery.sql"
+				: mode === "missing-backupops" ? "identity/backup-migrations/0001_backup_operations.sql"
+				: mode === "missing-backupchallenges" ? "identity/backup-challenge-migrations/0001_backup_challenges.sql"
 				: mode.endsWith("devices") ? "devices-migrations/0001_devices.sql"
 					: "credentials/migrations/0001_credentials.sql");
 	const heldAsset = path.join(import.meta.dirname, "held-schema.sql");
@@ -214,6 +219,8 @@ async function main() {
 				"missing-admin": "admin",
 				"missing-adminchallenges": "adminchallenges",
 				"missing-backup": "backup",
+				"missing-backupops": "backupops",
+				"missing-backupchallenges": "backupchallenges",
 			}[mode];
 			if (missingGroup !== undefined) {
 				const index = migrations.findIndex(([namespace]) => namespace === missingGroup);
@@ -289,7 +296,7 @@ async function main() {
 		assert.deepEqual(order.slice(beforeHealthy), [...migrations, ...migrations].map(([namespace]) => namespace));
 		assert.equal(modules, 0);
 		process.stdout.write(`${JSON.stringify({
-			ok: true, mode, schemas: 16, businessTables: businessTables.length, bookkeepingTables: 32, recoveryCapsule,
+			ok: true, mode, schemas: 18, businessTables: businessTables.length, bookkeepingTables: 36, recoveryCapsule,
 			beforeIdentity: true, refused, failedOpenClosed: mode !== "positive",
 			failedKeyErased: mode !== "positive", reopened: true, auditVerified: true, accountsRoundTrip: true, modules,
 		})}\n`);

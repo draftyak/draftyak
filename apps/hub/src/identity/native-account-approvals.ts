@@ -14,11 +14,21 @@ import {
 	type HubSession,
 	HubSessionError,
 } from "../lifecycle/session.ts";
-import { NativeOutboxProposals } from "../outbox/propose.ts";
-import { SendApprovalVerifier } from "../outbox/verifier.ts";
+import { destroyNativeOutboxProposals, NativeOutboxProposals } from "../outbox/propose.ts";
+import { lockSendApprovalVerifier, SendApprovalVerifier } from "../outbox/verifier.ts";
 import { HubStore } from "../store/store.ts";
-import { NativeAccountModeOperations } from "./admin-operations.ts";
-import { ChallengeService } from "./challenges.ts";
+import {
+	lockNativeAdminOperations,
+	NativeAccountModeOperations,
+	openNativeAdminOperation,
+	reviewNativeAdminOperation,
+} from "./admin-operations.ts";
+import {
+	acceptNativeChallenge,
+	ChallengeService,
+	issueNativeChallenge,
+	lockNativeChallenges,
+} from "./challenges.ts";
 
 /** Native account-mode approval only; constituent services and keys stay with the session. */
 export interface NativeAccountApprovals {
@@ -37,14 +47,14 @@ export interface NativeAccountApprovalsHandle {
 
 const original = Object.freeze({
 	assertKey: HubStore.prototype.assertMasterKey,
-	open: NativeAccountModeOperations.prototype.open,
-	review: NativeAccountModeOperations.prototype.review,
-	issue: ChallengeService.prototype.issue,
-	accept: ChallengeService.prototype.accept,
-	lockChallenges: ChallengeService.prototype.lock,
-	lockVerifier: SendApprovalVerifier.prototype.lock,
-	lockOperations: NativeAccountModeOperations.prototype.lock,
-	destroyProposals: NativeOutboxProposals.prototype.destroy,
+	open: openNativeAdminOperation,
+	review: reviewNativeAdminOperation,
+	issue: issueNativeChallenge,
+	accept: acceptNativeChallenge,
+	lockChallenges: lockNativeChallenges,
+	lockVerifier: lockSendApprovalVerifier,
+	lockOperations: lockNativeAdminOperations,
+	destroyProposals: destroyNativeOutboxProposals,
 	destroyRevisions: NativeDraftRevisions.prototype.destroy,
 });
 
@@ -99,28 +109,28 @@ export function createNativeAccountApprovalsHandle(
 		let complete = true;
 		if (resources.challenges)
 			try {
-				original.lockChallenges.call(resources.challenges);
+				original.lockChallenges(resources.challenges);
 				resources.challenges = undefined;
 			} catch {
 				complete = false;
 			}
 		if (resources.verifier)
 			try {
-				original.lockVerifier.call(resources.verifier);
+				original.lockVerifier(resources.verifier);
 				resources.verifier = undefined;
 			} catch {
 				complete = false;
 			}
 		if (resources.operations)
 			try {
-				original.lockOperations.call(resources.operations);
+				original.lockOperations(resources.operations);
 				resources.operations = undefined;
 			} catch {
 				complete = false;
 			}
 		if (resources.proposals)
 			try {
-				original.destroyProposals.call(resources.proposals);
+				original.destroyProposals(resources.proposals);
 				resources.proposals = undefined;
 			} catch {
 				complete = false;
@@ -220,19 +230,19 @@ export function createNativeAccountApprovalsHandle(
 			facade = Object.freeze({
 				open(peer: NativeDevicePeer, request: OperationRequest): OperationReview {
 					active();
-					const result = original.open.call(operations, peer, request);
+					const result = original.open(operations, peer, request);
 					active();
 					return result;
 				},
 				review(peer: NativeDevicePeer, operationId: string): OperationReview {
 					active();
-					const result = original.review.call(operations, peer, operationId);
+					const result = original.review(operations, peer, operationId);
 					active();
 					return result;
 				},
 				issue(peer: NativeDevicePeer, operationId: string): Challenge {
 					active();
-					const result = original.issue.call(challenges, peer, {
+					const result = original.issue(challenges, peer, {
 						kind: "admin.v1",
 						id: operationId,
 					});
@@ -241,7 +251,7 @@ export function createNativeAccountApprovalsHandle(
 				},
 				accept(peer: NativeDevicePeer, raw: unknown): Promise<Accepted> {
 					active();
-					const accepting = original.accept.call(challenges, peer, "admin.v1", raw);
+					const accepting = original.accept(challenges, peer, "admin.v1", raw);
 					const tracked: Promise<Accepted> = accepting
 						.then((result) => {
 							active();

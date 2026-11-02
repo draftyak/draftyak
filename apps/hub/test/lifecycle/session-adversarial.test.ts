@@ -301,6 +301,8 @@ describe("first run", () => {
 				["admin"],
 				["adminchallenges"],
 				["backup"],
+				["backupops"],
+				["backupchallenges"],
 			]);
 		} finally {
 			spy.mockRestore();

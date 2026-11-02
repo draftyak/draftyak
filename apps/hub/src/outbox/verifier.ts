@@ -565,6 +565,7 @@ const prepareOriginal = SendApprovalVerifier.prototype.prepareSend;
 const gateOriginal = SendApprovalVerifier.prototype.gateSend;
 const writeOriginal = SendApprovalVerifier.prototype.writeSend;
 const applyOriginal = SendApprovalVerifier.prototype.applySend;
+const lockOriginal = SendApprovalVerifier.prototype.lock;
 export function prepareSendApproval(
 	value: SendApprovalVerifier,
 	tx: SqlTransaction,
@@ -592,4 +593,7 @@ export function applySendApproval(
 	context: SendAcceptContext,
 ): void {
 	applyOriginal.call(value, tx, scope, context);
+}
+export function lockSendApprovalVerifier(receiver: SendApprovalVerifier): void {
+	lockOriginal.call(receiver);
 }

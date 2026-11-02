@@ -35,6 +35,8 @@ const expectedFolders = [
 	["admin", "identity/admin-migrations"],
 	["adminchallenges", "identity/admin-challenge-migrations"],
 	["backup", "recovery/backup-migrations"],
+	["backupops", "identity/backup-migrations"],
+	["backupchallenges", "identity/backup-challenge-migrations"],
 ] as const;
 const namespaces = expectedFolders.map(([namespace]) => namespace);
 const requiredAssets = [
@@ -56,6 +58,8 @@ const requiredAssets = [
 	"identity/admin-migrations/0001_operations.sql",
 	"identity/admin-challenge-migrations/0001_admin_challenges.sql",
 	"recovery/backup-migrations/0001_backup_recovery.sql",
+	"identity/backup-migrations/0001_backup_operations.sql",
+	"identity/backup-challenge-migrations/0001_backup_challenges.sql",
 ].map((file) => path.join(source, file));
 const approvalAssets = [
 	["outbox", "outbox/propose-migrations/0001_proposals.sql"],
@@ -63,6 +67,8 @@ const approvalAssets = [
 	["verifier", "outbox/verifier-migrations/0001_approvals.sql"],
 	["admin", "identity/admin-migrations/0001_operations.sql"],
 	["adminchallenges", "identity/admin-challenge-migrations/0001_admin_challenges.sql"],
+	["backupops", "identity/backup-migrations/0001_backup_operations.sql"],
+	["backupchallenges", "identity/backup-challenge-migrations/0001_backup_challenges.sql"],
 ] as const;
 const access = vi.mocked(accessSync);
 
@@ -80,7 +86,7 @@ function recorder(): { store: HubStore; calls: string[] } {
 	return { store, calls };
 }
 
-it("checks all eighteen required assets and migrates all sixteen namespaces exactly once", async () => {
+it("checks all twenty required assets and migrates all eighteen namespaces exactly once", async () => {
 	const { store, calls } = recorder();
 	await migrateHubSchemas(store);
 	expect(Object.keys(HUB_NAMESPACES)).toEqual(namespaces);
@@ -103,7 +109,7 @@ it("checks all eighteen required assets and migrates all sixteen namespaces exac
 	expect(access).toHaveBeenCalledWith(requiredRegistryAsset, constants.R_OK);
 	expect(access).toHaveBeenCalledWith(requiredBackupAsset, constants.R_OK);
 	expect(calls).toEqual(namespaces);
-	expect(new Set(calls).size).toBe(16);
+	expect(new Set(calls).size).toBe(18);
 });
 
 it("refuses a missing revision immutability asset before later namespaces can migrate", async () => {
@@ -162,8 +168,12 @@ it("refuses a missing backup binding asset before its namespace can migrate", as
 		if (filename === requiredBackupAsset) throw missing;
 	});
 	await expect(migrateHubSchemas(store)).rejects.toBe(missing);
-	expect(access.mock.calls).toEqual(requiredAssets.map((file) => [file, constants.R_OK]));
-	expect(calls).toEqual(namespaces.slice(0, -1));
+	expect(access.mock.calls).toEqual(
+		requiredAssets
+			.slice(0, requiredAssets.indexOf(requiredBackupAsset) + 1)
+			.map((file) => [file, constants.R_OK]),
+	);
+	expect(calls).toEqual(namespaces.slice(0, namespaces.indexOf("backup")));
 	expect(calls).not.toContain("backup");
 });
 

@@ -260,6 +260,11 @@ export class NativeAccountModeOperations {
 	assertActive(): void {
 		this.#active();
 	}
+	/** Routing DATA only; prepare still proves the live operation and current authority. */
+	ownsOperation(operationId: string): boolean {
+		this.#active();
+		return this.#live.has(id(operationId));
+	}
 	#active(): void {
 		if (!this.#key || owners.get(this) !== this.#store) refuse();
 		registryStore.call(this.#devices, this.#store);
@@ -646,12 +651,33 @@ export class NativeAccountModeOperations {
 
 const original = Object.freeze({
 	active: NativeAccountModeOperations.prototype.assertActive,
+	open: NativeAccountModeOperations.prototype.open,
+	review: NativeAccountModeOperations.prototype.review,
+	lock: NativeAccountModeOperations.prototype.lock,
+	owns: NativeAccountModeOperations.prototype.ownsOperation,
 	write: NativeAccountModeOperations.prototype.write,
 	assertScope: NativeAccountModeOperations.prototype.assertScope,
 	abortScope: NativeAccountModeOperations.prototype.abortScope,
 	prepare: NativeAccountModeOperations.prototype.prepare,
 	apply: NativeAccountModeOperations.prototype.apply,
 });
+export function openNativeAdminOperation(
+	issuer: NativeAccountModeOperations,
+	peer: NativeDevicePeer,
+	request: OperationRequest,
+): OperationReview {
+	return original.open.call(issuer, peer, request);
+}
+export function reviewNativeAdminOperation(
+	issuer: NativeAccountModeOperations,
+	peer: NativeDevicePeer,
+	operationId: string,
+): OperationReview {
+	return original.review.call(issuer, peer, operationId);
+}
+export function lockNativeAdminOperations(issuer: NativeAccountModeOperations): void {
+	original.lock.call(issuer);
+}
 export function assertNativeAdminOperations(issuer: unknown, store: HubStore): void {
 	if (!issuer || typeof issuer !== "object" || owners.get(issuer) !== store) refuse();
 	original.active.call(issuer as NativeAccountModeOperations);
@@ -662,6 +688,9 @@ function actual(issuer: unknown): NativeAccountModeOperations {
 	if (!store) refuse();
 	assertNativeAdminOperations(issuer, store);
 	return issuer as NativeAccountModeOperations;
+}
+export function ownsNativeAdminOperation(issuer: unknown, operationId: string): boolean {
+	return original.owns.call(actual(issuer), operationId);
 }
 export function writeNativeAdminOperations<T>(
 	issuer: unknown,
