@@ -111,7 +111,17 @@ export async function namedFiles(
 	if (!basename || /[/\\\0*?[\]]/.test(basename)) throw new Error("invalid basename");
 	root = path.resolve(root);
 	const wanted = insensitive ? basename.toLowerCase() : basename;
-	const equal = (name: string): boolean => (insensitive ? name.toLowerCase() : name) === wanted;
+	const dotWanted = wanted.charCodeAt(0) === 0x2e;
+	const equal = (name: string): boolean => {
+		if (!insensitive) return name === wanted;
+		// A non-dot ASCII first code unit cannot lowercase to the target's leading dot.
+		// Every other name retains the complete comparison, including Unicode expansion.
+		if (dotWanted) {
+			const first = name.charCodeAt(0);
+			if (first <= 0x7f && first !== 0x2e) return false;
+		}
+		return name.toLowerCase() === wanted;
+	};
 	const relativeName = (directory: string, name: string): string =>
 		directory === "." ||
 		directory.endsWith("/") ||
