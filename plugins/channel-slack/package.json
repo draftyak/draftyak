@@ -17,7 +17,9 @@
     "./reconcile": "./src/reconcile.ts",
     "./sync-state": "./src/sync-state.ts",
     "./body": "./src/body.ts",
-    "./threads": "./src/threads.ts"
+    "./threads": "./src/threads.ts",
+    "./legacy-sync-state": "./src/legacy-sync-state.ts",
+    "./legacy-sync": "./src/legacy-sync.ts"
   },
   "publishConfig": {
     "exports": {
@@ -76,6 +78,14 @@
       "./threads": {
         "types": "./dist/threads.d.mts",
         "default": "./dist/threads.mjs"
+      },
+      "./legacy-sync-state": {
+        "types": "./dist/legacy-sync-state.d.mts",
+        "default": "./dist/legacy-sync-state.mjs"
+      },
+      "./legacy-sync": {
+        "types": "./dist/legacy-sync.d.mts",
+        "default": "./dist/legacy-sync.mjs"
       }
     }
   },
