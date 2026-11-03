@@ -1,0 +1,52 @@
+{
+  "id": "@draftyak/channel-slack",
+  "version": "0.0.0",
+  "kind": "channel",
+  "contract": {
+    "extension": "io.github.draftyak/channel",
+    "version": 1
+  },
+  "sdk": "1.0.0",
+  "runtime": "node",
+  "isolation": "standard",
+  "auth": {
+    "kind": "manifest-app",
+    "scopes": [
+      "channels:history",
+      "channels:read",
+      "groups:history",
+      "groups:read",
+      "im:history",
+      "im:read",
+      "mpim:history",
+      "mpim:read",
+      "users:read",
+      "chat:write"
+    ],
+    "requiredGrantedScopes": [
+      "channels:history",
+      "channels:read",
+      "groups:history",
+      "groups:read",
+      "im:history",
+      "im:read",
+      "mpim:history",
+      "mpim:read",
+      "users:read",
+      "chat:write"
+    ]
+  },
+  "credentials": {
+    "mode": "brokered",
+    "urlSecrets": []
+  },
+  "permissions": {},
+  "dataClasses": ["slack.metadata", "slack.content"],
+  "egress": {
+    "profile": "slack-v1"
+  },
+  "send": {
+    "render": "slack-postmessage"
+  },
+  "license": "Apache-2.0"
+}
