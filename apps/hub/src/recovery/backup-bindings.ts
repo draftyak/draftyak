@@ -23,19 +23,33 @@ export class RecoveryBindingError extends Error {
 	}
 }
 
-function captureBinding(value: unknown): Buffer {
-	if (!types.isUint8Array(value) || byteLength?.call(value) !== RECOVERY_BINDING_SIZE)
+/** Captures owned DYRBv1 DATA; this does not authenticate its digest or MAC. */
+export function captureRecoveryBinding(value: unknown): Buffer {
+	let captured: Buffer | undefined;
+	try {
+		if (
+			types.isProxy(value) ||
+			!types.isUint8Array(value) ||
+			byteLength?.call(value) !== RECOVERY_BINDING_SIZE
+		)
+			throw new RecoveryBindingError();
+		const backing = bufferOf?.call(value);
+		const offset = byteOffset?.call(value);
+		if (
+			!types.isArrayBuffer(backing) ||
+			types.isSharedArrayBuffer(backing) ||
+			!Number.isSafeInteger(offset) ||
+			offset < 0
+		)
+			throw new RecoveryBindingError();
+		captured = Buffer.from(new Uint8Array(backing, offset, RECOVERY_BINDING_SIZE));
+		for (let index = 0; index < HEADER.length; index++)
+			if (captured[index] !== HEADER[index]) throw new RecoveryBindingError();
+		return captured;
+	} catch {
+		captured?.fill(0);
 		throw new RecoveryBindingError();
-	const backing = bufferOf?.call(value);
-	const offset = byteOffset?.call(value);
-	if (
-		!types.isArrayBuffer(backing) ||
-		types.isSharedArrayBuffer(backing) ||
-		!Number.isSafeInteger(offset) ||
-		offset < 0
-	)
-		throw new RecoveryBindingError();
-	return Buffer.from(new Uint8Array(backing, offset, RECOVERY_BINDING_SIZE));
+	}
 }
 
 function keyBytes(masterKey: MasterKey): Buffer {
@@ -87,8 +101,7 @@ export function verifyRecoveryBinding(
 	let mac: Buffer | undefined;
 	try {
 		captured = captureRecoveryCapsule(capsule);
-		encoded = captureBinding(binding);
-		if (!encoded.subarray(0, DIGEST_AT).equals(HEADER)) return false;
+		encoded = captureRecoveryBinding(binding);
 		key = keyBytes(masterKey);
 		digest = createHash("sha256").update(captured).digest();
 		mac = createHmac("sha256", key).update(DOMAIN).update(encoded.subarray(0, MAC_AT)).digest();

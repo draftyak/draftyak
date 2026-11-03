@@ -69,14 +69,16 @@ function captureBytes(value: unknown, length: number): Buffer {
  * that its ciphertext is authentic or wraps any particular master key.
  */
 export function captureRecoveryCapsule(value: unknown): Buffer {
+	let captured: Buffer | undefined;
 	try {
 		// Intrinsics ignore caller accessors/iterators; validate only this snapshot.
-		const captured = captureBytes(value, RECOVERY_FILE_SIZE);
+		captured = captureBytes(value, RECOVERY_FILE_SIZE);
 		for (let i = 0; i < HEADER.length; i++) {
 			if (captured[i] !== HEADER[i]) throw new BackupCapsuleError();
 		}
 		return captured;
 	} catch {
+		captured?.fill(0);
 		throw new BackupCapsuleError();
 	}
 }
