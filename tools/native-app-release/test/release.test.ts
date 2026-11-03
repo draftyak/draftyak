@@ -410,7 +410,7 @@ const manifestFaults: { name: string; change: (value: NativeAppReleaseManifest) 
 		name: "per-file byte bound",
 		change: (m) => ({
 			...m,
-			files: m.files.map((file, i) => (i ? file : { ...file, bytes: 128 * MIB + 1 })),
+			files: m.files.map((file, i) => (i ? file : { ...file, bytes: 256 * MIB + 1 })),
 		}),
 	},
 	{
@@ -495,6 +495,17 @@ describe("closed release schema", () => {
 		expect(bytes.byteLength).toBeLessThan(MIB);
 		expect(() => parseNativeAppRelease(bytes)).toThrow(REFUSAL);
 	});
+	it("accepts the exact 256-MiB per-file DATA bound below the aggregate limit", async () => {
+		const f = await fixture();
+		const value = f.expected();
+		const files = value.files.map((file, i) => (i === 0 ? { ...file, bytes: 256 * MIB } : file));
+		const manifest = { ...value, files };
+		expect(files[0]?.bytes).toBe(256 * MIB);
+		expect(files.reduce((total, file) => total + file.bytes, 0)).toBeLessThan(512 * MIB);
+		const bytes = encoded(manifest);
+		expect(parseNativeAppRelease(bytes)).toEqual(manifest);
+		expect(Buffer.from(nativeAppReleaseBytes(manifest))).toEqual(bytes);
+	});
 	it("accepts the exact 512-MiB aggregate DATA bound with no file above 128 MiB", async () => {
 		const f = await fixture();
 		const value = f.expected();
@@ -561,7 +572,7 @@ describe("owned release file builder", () => {
 	});
 	it("refuses an oversized actual sparse file before accepting its advertised length", async () => {
 		const f = await fixture();
-		await truncate(path.join(f.root, f.descriptor.entry), 128 * MIB + 1);
+		await truncate(path.join(f.root, f.descriptor.entry), 256 * MIB + 1);
 		await refused(builder(f.root).build(f.descriptor));
 	});
 	it("is one-shot even after the first descriptor is refused", async () => {
