@@ -52,6 +52,92 @@ const trustSource = path.join(hub, "src/installer/native-app-trust.ts");
 const domain = Buffer.from("DraftYak native application release v1\0");
 const prelude =
 	'import { constants } from "node:fs";\nimport promises from "node:fs/promises";\nimport { syncBuiltinESMExports } from "node:module";\nimport path from "node:path";\nimport { fileURLToPath } from "node:url";\nconst appRoot=path.dirname(fileURLToPath(import.meta.url));\nconst tcp=process.binding("tcp_wrap"),cares=process.binding("cares_wrap");\nconst denied=process.binding("uv").UV_EACCES;\nconst loopback=(address)=>typeof address==="string"&&(address==="127.0.0.1"||address==="::1");\nfor(const name of ["connect","connect6"]){const original=tcp.TCP.prototype[name];Object.defineProperty(tcp.TCP.prototype,name,{value:function(...args){return loopback(args[1])?Reflect.apply(original,this,args):denied;},writable:false,configurable:false});}\nfor(const name of ["getaddrinfo","getnameinfo"])Object.defineProperty(cares,name,{value:()=>denied,writable:false,configurable:false});\nfor(const name of Object.getOwnPropertyNames(cares.ChannelWrap.prototype))if(name.startsWith("query")||name==="getHostByAddr")Object.defineProperty(cares.ChannelWrap.prototype,name,{value:()=>denied,writable:false,configurable:false});\nlet openRelease,openEnter,closeRelease,closeEnter,otherCloseResolve;\nconst otherCloseSettled=new Promise(r=>otherCloseResolve=r);\nconst openReached=new Promise(r=>openEnter=r),openGate=new Promise(r=>openRelease=r);\nconst closeReached=new Promise(r=>closeEnter=r),closeGate=new Promise(r=>closeRelease=r);\nconst records=[];\nconst state={openReached,closeReached,otherCloseSettled,releaseOpen:()=>openRelease(),releaseClose:()=>closeRelease(),failClose:false,opened:0,attempts:0,closed:0,remaining:()=>records.filter(r=>!r.closed).length,appOnly:()=>records.every(r=>r.inApp===true),firstIsManifest:()=>records.length>0&&records[0].manifest===true,firstAttempts:()=>records[0]?.attempts??0,async cleanup(){const results=await Promise.allSettled(records.map(async r=>{let failed=false;try{await r.original();r.closed=true;}catch{failed=true;}try{if(r.descriptor)Object.defineProperty(r.handle,"close",r.descriptor);else Reflect.deleteProperty(r.handle,"close");}catch{failed=true;}if(failed)throw new Error("DYTEST owned IO cleanup incomplete");}));if(results.some(r=>r.status==="rejected"))throw new Error("DYTEST owned IO cleanup incomplete");}};\nObject.defineProperty(globalThis,Symbol.for("draftyak.test.native-app-io"),{value:state});\nconst mode=process.argv[2];\nif(mode==="during-capture"||mode==="drain-retry"){\n const original=promises.open;\n promises.open=async function(...args){\n  const handle=await Reflect.apply(original,this,args);const name=typeof args[0]==="string"?path.resolve(args[0]):undefined;const relative=name===undefined?undefined:path.relative(appRoot,name);const inApp=relative!==undefined&&relative!==""&&!path.isAbsolute(relative)&&relative!==".."&&!relative.startsWith(".."+path.sep);if(!inApp)return handle;const manifest=path.join(appRoot,"release.manifest.json");if(records.length===0&&name!==manifest)return handle;\n  const descriptor=Object.getOwnPropertyDescriptor(handle,"close"),close=handle.close.bind(handle);\n  const record={handle,descriptor,original:close,closed:false,otherSettled:false,attempts:0,inApp:true,manifest:name===manifest};records.push(record);state.opened++;\n  const first=records.length===1;\n  Object.defineProperty(handle,"close",{configurable:true,enumerable:descriptor?.enumerable??false,writable:true,value:async()=>{\n   record.attempts++;state.attempts++;\n   if(first&&state.failClose){state.failClose=false;closeEnter();await closeGate;throw new Error("DYTEST controlled owned close");}\n   try{await close();}catch(error){if(!first)otherCloseResolve(false);throw error;}if(!record.closed){record.closed=true;state.closed++;}if(!first){record.otherSettled=true;if(records.slice(1).every(r=>r.otherSettled))otherCloseResolve(true);}\n  }});\n  if(first&&mode==="during-capture"){openEnter();await openGate;}\n  return handle;\n };\n syncBuiltinESMExports();\n}\n';
+const combinedModes = ["recovery-starts", "recovery-held", "recovery-retry"] as const;
+const recoveryPrelude = [
+	'import { RecoveryCapsuleFileWrite } from "draftyak-test-recovery-file";',
+	'import { MasterKey } from "draftyak-test-recovery-master-key";',
+	prelude,
+	String.raw`
+if (new Set(["recovery-starts", "recovery-held", "recovery-retry"]).has(mode)) {
+ const deferred = () => Promise.withResolvers();
+ const openGate = deferred(), openReached = deferred(), appGate = deferred();
+ const appStarted = deferred(), appDone = deferred(), writerStarted = deferred();
+ const records = [];
+ const writerDescriptor = Object.getOwnPropertyDescriptor(RecoveryCapsuleFileWrite.prototype, "close");
+ const deriveDescriptor = Object.getOwnPropertyDescriptor(MasterKey.prototype, "derive");
+ const originalOpen = promises.open;
+ let sealed = false;
+ const io = {
+  openReached: openReached.promise, appStarted: appStarted.promise, appDone: appDone.promise,
+  writerStarted: writerStarted.promise, writerCloseCalls: 0, writerCloseSettled: 0,
+  derives: 0, holdApp: false, failRecoveryClose: false, openReleased: false,
+  releaseOpen() { io.openReleased = true; openGate.resolve(); },
+  releaseApp() { appGate.resolve(); },
+  sealApp() { sealed = true; if (records.some(r => r.role === "app") && records.filter(r => r.role === "app").every(r => r.closed)) appDone.resolve(true); },
+  appCount: () => records.filter(r => r.role === "app").length,
+  remainingApp: () => records.filter(r => r.role === "app" && !r.closed).length,
+  remainingRecovery: () => records.filter(r => r.role === "recovery" && !r.closed).length,
+  async recoveryHandleLive() {
+   const record = records.find(r => r.role === "recovery" && !r.closed);
+   if (!record) return false;
+   try { return (await record.handle.stat()).isFile(); } catch { return false; }
+  },
+  async cleanup() {
+   io.failRecoveryClose = false; io.releaseOpen(); io.releaseApp();
+   const results = await Promise.allSettled(records.map(async r => {
+    if (!r.closed) { await Reflect.apply(r.originalClose, r.handle, []); r.closed = true; }
+    if (r.descriptor) Object.defineProperty(r.handle, "close", r.descriptor);
+    else Reflect.deleteProperty(r.handle, "close");
+   }));
+   Object.defineProperty(RecoveryCapsuleFileWrite.prototype, "close", writerDescriptor);
+   Object.defineProperty(MasterKey.prototype, "derive", deriveDescriptor);
+   promises.open = originalOpen;
+   syncBuiltinESMExports();
+   if (results.some(r => r.status === "rejected")) throw new Error("DYTEST combined IO cleanup incomplete");
+  },
+ };
+ Object.defineProperty(state, "recovery", { value: io });
+ if (typeof writerDescriptor?.value !== "function" || typeof deriveDescriptor?.value !== "function") throw new Error("DYTEST original methods unavailable");
+ Object.defineProperty(RecoveryCapsuleFileWrite.prototype, "close", { ...writerDescriptor, value: function(...args) {
+  const result = Reflect.apply(writerDescriptor.value, this, args);
+  io.writerCloseCalls++; writerStarted.resolve();
+  void result.then(() => { io.writerCloseSettled++; }, () => { io.writerCloseSettled++; });
+  return result;
+ }});
+ Object.defineProperty(MasterKey.prototype, "derive", { ...deriveDescriptor, value: function(...args) {
+  io.derives++; return Reflect.apply(deriveDescriptor.value, this, args);
+ }});
+ const recoveryPath = path.join(process.argv[3], "data", "mk.recovery");
+ promises.open = async function(...args) {
+  const handle = await Reflect.apply(originalOpen, this, args);
+  const name = typeof args[0] === "string" ? path.resolve(args[0]) : undefined;
+  const relative = name === undefined ? undefined : path.relative(appRoot, name);
+  const inApp = relative !== undefined && relative !== "" && !path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(".." + path.sep);
+  const role = name === recoveryPath ? "recovery" : inApp ? "app" : undefined;
+  if (!role) return handle;
+  if (role === "app" && !records.some(r => r.role === "app") && name !== path.join(appRoot, "release.manifest.json")) return handle;
+  const descriptor = Object.getOwnPropertyDescriptor(handle, "close");
+  const originalClose = handle.close;
+  const record = { handle, descriptor, originalClose, role, closed: false };
+  records.push(record);
+  const firstApp = role === "app" && records.filter(r => r.role === "app").length === 1;
+  Object.defineProperty(handle, "close", { configurable: true, enumerable: descriptor?.enumerable ?? false, writable: true, value: function(...closeArgs) {
+   if (this !== handle) return Reflect.apply(originalClose, this, closeArgs);
+   return (async () => {
+    if (firstApp) { appStarted.resolve(); if (io.holdApp) await appGate.promise; }
+    if (role === "recovery" && io.failRecoveryClose) throw new Error("DYTEST controlled recovery close");
+    await Reflect.apply(originalClose, this, closeArgs);
+    record.closed = true;
+    if (sealed && records.some(r => r.role === "app") && records.filter(r => r.role === "app").every(r => r.closed)) appDone.resolve(true);
+   })();
+  }});
+  if (role === "recovery") { openReached.resolve(); await openGate.promise; }
+  return handle;
+ };
+ syncBuiltinESMExports();
+}
+`,
+].join("\n");
 const folders = [
 	["store/migrations/audit", "store/migrations/audit"],
 	["store/migrations/core", "store/migrations/core"],
@@ -333,6 +419,10 @@ async function prepare(configured: boolean): Promise<Built> {
 				name: "fixed-application-fixture-policy",
 				resolveId(id, importer) {
 					if (id === "draftyak-test-native-app-prelude") return "\0fixture-prelude";
+					if (id === "draftyak-test-recovery-file")
+						return path.join(hub, "src/recovery/backup-file.ts");
+					if (id === "draftyak-test-recovery-master-key")
+						return path.join(hub, "src/kernel/master-key.ts");
 					if (
 						configured &&
 						importer &&
@@ -342,7 +432,7 @@ async function prepare(configured: boolean): Promise<Built> {
 						return "\0fixture-fixed-trust";
 				},
 				load(id) {
-					if (id === "\0fixture-prelude") return prelude;
+					if (id === "\0fixture-prelude") return recoveryPrelude;
 					if (
 						id === "\0fixture-fixed-trust" ||
 						(configured && path.normalize(id) === trustSource)
@@ -493,6 +583,7 @@ function execute(base: Built, mode: string): void {
 				"during-capture",
 				"drain-retry",
 				"unconfigured",
+				...combinedModes,
 			];
 			const markers = [
 				...diagnostic.matchAll(/^DYTEST native application fixture failed \(([a-z-]+)\)\r?$/gm),
@@ -679,6 +770,9 @@ it.each([
 it.each(["during-capture", "drain-retry"] as const)(
 	"joins configured Node capture resources during session close (%s)",
 	(mode) => execute(configured, mode),
+);
+it.each(combinedModes)("joins real App and recovery lifetimes (%s)", (mode) =>
+	execute(configured, mode),
 );
 it("keeps the actual unconfigured production trust build without application authority", async () => {
 	execute(await prepare(false), "unconfigured");
