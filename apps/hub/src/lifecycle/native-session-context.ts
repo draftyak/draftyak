@@ -1,6 +1,7 @@
 import type { AuditChain } from "../audit/chain.ts";
 import type { EventLog } from "../events/log.ts";
 import type { DeviceRegistry } from "../identity/devices.ts";
+import { closeNativeAppAdmission } from "../installer/native-app-admission.ts";
 import type { WorkDatabase } from "../jobs/database.ts";
 import type { Clock } from "../kernel/clock.ts";
 import { type BundledPluginPin, closeNativePluginInstaller } from "../plugins/installer/index.ts";
@@ -38,11 +39,12 @@ export function assertNativePluginOwner(
 		throw new Error("Native plugin session unavailable");
 }
 
-/** Starts both real closes immediately, including resources opened directly by internal consumers. */
+/** Starts all real closes immediately, including resources opened directly by internal consumers. */
 export async function drainNativePlugins(session: unknown): Promise<void> {
 	const results = await Promise.allSettled([
 		closeNativePluginRegistry(session),
 		closeNativePluginInstaller(session),
+		closeNativeAppAdmission(session),
 	]);
 	if (results.some((result) => result.status === "rejected"))
 		throw new Error("Native plugin drain incomplete");
