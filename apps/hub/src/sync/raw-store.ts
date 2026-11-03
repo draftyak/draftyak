@@ -12,7 +12,7 @@ import type { Clock } from "../kernel/clock.ts";
 import { newId } from "../kernel/ids.ts";
 import type { JsonMemberWriter } from "../plugins/broker/blob/projection.ts";
 import type { SqlTransaction } from "../store/store.ts";
-import type { MetadataAccountRef } from "./apply.ts";
+import type { MetadataAccountRef } from "./account-ref.ts";
 
 export const RAW_CONTENT_MIGRATIONS: string = fileURLToPath(
 	new URL(
