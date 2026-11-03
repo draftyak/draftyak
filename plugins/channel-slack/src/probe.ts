@@ -51,7 +51,7 @@ async function probe(input: ProbeTransport): Promise<ProbeResult> {
 		assertActive(input.signal);
 		const received: HostResponse = await Reflect.apply(input.fetch, input.receiver, [
 			"https://slack.com/api/auth.test",
-			{ method: "GET", stream: false, signal },
+			{ method: "POST", stream: false, signal },
 		]);
 		response = received;
 		assertActive(input.signal);
