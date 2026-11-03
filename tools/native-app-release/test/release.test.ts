@@ -427,7 +427,8 @@ describe("closed release schema", () => {
 		const manifest = manifestAtSize(f.expected(), MIB);
 		const bytes = encoded(manifest);
 		expect(parseNativeAppRelease(bytes)).toEqual(manifest);
-		expect(Buffer.from(nativeAppReleaseBytes(manifest))).toEqual(Buffer.from(bytes));
+		const serialized = Buffer.from(nativeAppReleaseBytes(manifest));
+		expect(serialized.equals(Buffer.from(bytes))).toBe(true);
 	});
 	it("refuses one byte above one MiB of otherwise valid canonical manifest DATA", async () => {
 		const f = await fixture();
