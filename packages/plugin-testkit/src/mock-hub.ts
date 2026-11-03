@@ -12,6 +12,7 @@ import { createInMemory } from "./in-memory.ts";
 import { createProcess } from "./process.ts";
 import {
 	copyCompatibleHttpInputs,
+	copyMessagesHttpInputs,
 	copyMockCallOptions,
 	copyResponsesHttpInputs,
 	type MockHub,
@@ -29,7 +30,7 @@ function freeze<T>(value: T): T {
 
 function ownOption(
 	options: MockHubOptions,
-	name: "instance" | "responsesHttp" | "compatibleHttp",
+	name: "instance" | "responsesHttp" | "compatibleHttp" | "messagesHttp",
 	code: string,
 ): unknown {
 	const slot = Object.getOwnPropertyDescriptor(options, name);
@@ -83,6 +84,9 @@ export function createMockHub(options: MockHubOptions): MockHub {
 		![Object.prototype, null].includes(Object.getPrototypeOf(options))
 	)
 		throw new MockHubError("INVALID_OPTIONS");
+	const messagesSupplied = ownOption(options, "messagesHttp", "INVALID_MESSAGES_BINDINGS");
+	const messagesBindings =
+		messagesSupplied === undefined ? undefined : copyMessagesHttpInputs(messagesSupplied);
 	const compatibleSupplied = ownOption(options, "compatibleHttp", "INVALID_COMPATIBLE_BINDINGS");
 	const compatibleBindings =
 		compatibleSupplied === undefined ? undefined : copyCompatibleHttpInputs(compatibleSupplied);
@@ -128,6 +132,7 @@ export function createMockHub(options: MockHubOptions): MockHub {
 		...(options.secrets ? { secrets: options.secrets } : {}),
 		...(bindings ? { responsesHttp: bindings } : {}),
 		...(compatibleBindings === undefined ? {} : { compatibleHttp: compatibleBindings }),
+		...(messagesBindings === undefined ? {} : { messagesHttp: messagesBindings }),
 	});
 	const memory = (() => {
 		try {

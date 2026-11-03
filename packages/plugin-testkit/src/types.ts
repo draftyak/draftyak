@@ -7,6 +7,7 @@ import type { ResponsesHttpBindingInput } from "@draftyak/protocol/manifest/resp
 import type { SendTicket, TicketMismatch } from "@draftyak/protocol/send-ticket";
 import type { HostChannel, PluginEntry } from "@draftyak/sdk";
 import { type CompatibleHttpBindingInput, snapshotCompatibleHttpInput } from "./compatible-http.ts";
+import { type MessagesHttpBindingInput, snapshotMessagesHttpInput } from "./messages-http.ts";
 
 export interface MockPlugin {
 	readonly manifest: unknown;
@@ -29,6 +30,8 @@ export interface MockHubOptions {
 	readonly responsesHttp?: readonly ResponsesHttpBindingInput[];
 	/** Independent completed-response fixture inputs; never call metadata or native authority. */
 	readonly compatibleHttp?: readonly CompatibleHttpBindingInput[];
+	/** Original Messages SDK request comparisons from independent constructor fixture DATA. */
+	readonly messagesHttp?: readonly MessagesHttpBindingInput[];
 }
 export interface RenderedRequest {
 	readonly outboxId: string;
@@ -166,6 +169,34 @@ export function copyCompatibleHttpInputs(value: unknown): readonly CompatibleHtt
 	}
 	return Object.freeze(inputs);
 }
+export function copyMessagesHttpInputs(value: unknown): readonly MessagesHttpBindingInput[] {
+	const invalid: () => never = () => {
+		throw new MockHubError("INVALID_MESSAGES_BINDINGS");
+	};
+	if (isProxy(value) || !Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype)
+		invalid();
+	const length: unknown = Object.getOwnPropertyDescriptor(value, "length")?.value;
+	if (
+		typeof length !== "number" ||
+		!Number.isSafeInteger(length) ||
+		length < 0 ||
+		length > HOST_MAX_ACTIVE_REQUESTS ||
+		Reflect.ownKeys(value).length !== length + 1
+	)
+		invalid();
+	const inputs: MessagesHttpBindingInput[] = [];
+	for (let index = 0; index < length; index++) {
+		const slot = Object.getOwnPropertyDescriptor(value, String(index));
+		if (!slot?.enumerable || !Object.hasOwn(slot, "value")) invalid();
+		try {
+			inputs.push(snapshotMessagesHttpInput(slot.value));
+		} catch {
+			invalid();
+		}
+	}
+	return Object.freeze(inputs);
+}
+
 export class MockHubError extends Error {
 	readonly code: string;
 	constructor(code: string) {

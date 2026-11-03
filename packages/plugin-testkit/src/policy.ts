@@ -10,6 +10,7 @@ import {
 import { SendUrl } from "@draftyak/protocol/send-ticket";
 import { checkUrlSecret, parseSecretRef, type ToolEgressRule } from "@draftyak/protocol/tool-v1";
 import { type CompatibleHttpBinding, checkCompatibleHttpRequest } from "./compatible-http.ts";
+import { checkMessagesHttpRequest, type MessagesHttpBinding } from "./messages-http.ts";
 
 export type MatchedRule = { readonly rule: EgressRule | ToolEgressRule; readonly url: string };
 
@@ -20,6 +21,11 @@ export interface ResponsesMatchContext {
 }
 export interface CompatibleMatchContext {
 	readonly bindings: readonly CompatibleHttpBinding[];
+	readonly headers: HeaderList;
+	readonly body: Uint8Array;
+}
+export interface MessagesMatchContext {
+	readonly bindings: readonly MessagesHttpBinding[];
 	readonly headers: HeaderList;
 	readonly body: Uint8Array;
 }
@@ -114,6 +120,7 @@ export function matchRequest(
 	secrets: ReadonlyMap<string, string>,
 	responses?: ResponsesMatchContext,
 	compatible?: CompatibleMatchContext,
+	messages?: MessagesMatchContext,
 ): MatchedRule | undefined {
 	if (manifest.kind === "ai-provider") {
 		if (manifest.egress.profile === "responses-api-v1") {
@@ -130,6 +137,16 @@ export function matchRequest(
 				body: compatible.body,
 			};
 			if (!compatible.bindings.some((binding) => checkCompatibleHttpRequest(request, binding).ok))
+				return;
+		} else if (manifest.egress.profile === "messages-api-v1") {
+			if (!messages) return;
+			const request = {
+				method,
+				url: requested,
+				headers: messages.headers,
+				body: messages.body,
+			};
+			if (!messages.bindings.some((binding) => checkMessagesHttpRequest(request, binding).ok))
 				return;
 		} else return;
 		// The issued binding checks the original request before any host header filtering.

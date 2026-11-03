@@ -60,9 +60,15 @@ import {
 	type CompatibleHttpBindingInput,
 	createCompatibleHttpBinding,
 } from "./compatible-http.ts";
+import {
+	createMessagesHttpBinding,
+	type MessagesHttpBinding,
+	type MessagesHttpBindingInput,
+} from "./messages-http.ts";
 import { matchRequest } from "./policy.ts";
 import {
 	copyCompatibleHttpInputs,
+	copyMessagesHttpInputs,
 	copyResponsesHttpInputs,
 	type Denial,
 	type MockAccount,
@@ -181,6 +187,7 @@ export function createMockHost(
 		readonly secrets?: Readonly<Record<string, string>>;
 		readonly responsesHttp?: readonly ResponsesHttpBindingInput[];
 		readonly compatibleHttp?: readonly CompatibleHttpBindingInput[];
+		readonly messagesHttp?: readonly MessagesHttpBindingInput[];
 	},
 	controls: { readonly entropy?: () => Uint8Array } = {},
 ): {
@@ -191,6 +198,19 @@ export function createMockHost(
 		args?: unknown,
 	): Promise<T>;
 } {
+	if (types.isProxy(options)) throw new MockHubError("INVALID_MESSAGES_BINDINGS");
+	const messagesSlot = Object.getOwnPropertyDescriptor(options, "messagesHttp");
+	if (messagesSlot && (!messagesSlot.enumerable || !Object.hasOwn(messagesSlot, "value")))
+		throw new MockHubError("INVALID_MESSAGES_BINDINGS");
+	const messagesInputs =
+		messagesSlot?.value === undefined ? [] : copyMessagesHttpInputs(messagesSlot.value);
+	const messagesBindings: MessagesHttpBinding[] = [];
+	for (const input of messagesInputs) {
+		const issued = createMessagesHttpBinding(input);
+		if (!issued.ok) throw new MockHubError("INVALID_MESSAGES_BINDINGS");
+		messagesBindings.push(issued.binding);
+	}
+	Object.freeze(messagesBindings);
 	const compatibleSlot = Object.getOwnPropertyDescriptor(options, "compatibleHttp");
 	if (compatibleSlot && (!compatibleSlot.enumerable || !Object.hasOwn(compatibleSlot, "value")))
 		throw new MockHubError("INVALID_COMPATIBLE_BINDINGS");
@@ -204,6 +224,11 @@ export function createMockHost(
 	}
 	Object.freeze(compatibleBindings);
 	const manifest = options.manifest;
+	if (
+		messagesBindings.length > 0 &&
+		(manifest.kind !== "ai-provider" || manifest.egress.profile !== "messages-api-v1")
+	)
+		throw new MockHubError("INVALID_MESSAGES_BINDINGS");
 	if (
 		compatibleBindings.length > 0 &&
 		(manifest.kind !== "ai-provider" || manifest.egress.profile !== "chat-completions-v1")
@@ -454,6 +479,7 @@ export function createMockHost(
 			secrets,
 			{ bindings: responsesBindings, headers: params.headers, body },
 			{ bindings: compatibleBindings, headers: params.headers, body },
+			{ bindings: messagesBindings, headers: params.headers, body },
 		);
 		if (!matched) return deny("OFF_RULE");
 		const { rule, url } = matched;
@@ -535,7 +561,9 @@ export function createMockHost(
 					? TOOL_REQUEST_HEADERS
 					: ["accept", "content-type", "if-none-match", "if-modified-since"];
 			const headers =
-				manifest.kind === "ai-provider" && manifest.egress.profile === "responses-api-v1"
+				manifest.kind === "ai-provider" &&
+				(manifest.egress.profile === "responses-api-v1" ||
+					manifest.egress.profile === "messages-api-v1")
 					? params.headers
 					: (ticketHeaders ?? keepToolHeaders(params.headers, allowed));
 			admit();
