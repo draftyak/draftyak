@@ -68,6 +68,7 @@ function prepare(files: Readonly<Record<string, string>> = {}): Fixture {
 		path.join(repositoryRoot, "tsconfig.base.json"),
 		path.join(workspace, "tsconfig.base.json"),
 	);
+	cpSync(path.join(repositoryRoot, "pnpm-lock.yaml"), path.join(workspace, "pnpm-lock.yaml"));
 	const tooling = path.join(workspace, "node_modules/typescript");
 	mkdirSync(path.dirname(tooling), { recursive: true });
 	symlinkSync(path.dirname(require.resolve("typescript/package.json")), tooling, "junction");
