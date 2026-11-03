@@ -4,17 +4,18 @@ import path from "node:path";
 const applications = [
 	["apps/cli", "@draftyak/cli"],
 	["apps/hub", "@draftyak/hub"],
+	["tools/doctor", "@draftyak/doctor"],
 ] as const;
 
 export type HeavyApplication = (typeof applications)[number][0];
 
-// Only the reviewed native application roots participate. A directory or a manifest without a
+// Only the reviewed application and doctor roots participate. A directory or a manifest without a
 // genuine heavy script is not a suite; in particular, an older hub package remains ineligible.
 export function heavyApplications(root: string): readonly HeavyApplication[] {
 	return applications.flatMap(([dir, name]) => {
 		const manifestPath = path.join(root, dir, "package.json");
 		try {
-			for (const folder of ["apps", dir]) {
+			for (const folder of [path.posix.dirname(dir), dir]) {
 				const entry = lstatSync(path.join(root, folder));
 				if (!entry.isDirectory() || entry.isSymbolicLink()) return [];
 			}
