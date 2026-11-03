@@ -28,6 +28,22 @@ export interface NativeToolProvenance {
 	readonly tools: readonly NativeToolFact[];
 	readonly [provenanceBrand]: true;
 }
+export interface NativeToolResources {
+	readonly activeOperations: number;
+	readonly pendingFiles: number;
+	readonly complete: boolean;
+}
+export interface NativeToolProvenanceSource {
+	capture(
+		repositoryRoot: string,
+		probe: NativeVersionProbe,
+		environment?: Readonly<Record<string, string | undefined>>,
+	): Promise<NativeToolProvenance>;
+	nativeToolPath(snapshot: NativeToolProvenance, name: NativeToolName): Promise<string>;
+	assertUnchanged(snapshot: NativeToolProvenance): Promise<void>;
+	resourceStatus(): NativeToolResources;
+	closeResources(): Promise<NativeToolResources>;
+}
 export class ToolProvenanceError extends Error {
 	readonly code = "TOOL_PROVENANCE_REFUSED";
 	constructor() {
@@ -56,15 +72,127 @@ interface FileObservation {
 interface ToolState {
 	readonly platform: Platform;
 	readonly files: ReadonlyMap<NativeToolName, FileObservation>;
+	readonly owner: ResourceOwner;
+}
+interface ResourceOwner {
+	readonly handles: Set<fs.FileHandle>;
+	readonly pending: Set<fs.FileHandle>;
+	readonly operations: Set<Promise<unknown>>;
+	readonly fileCloses: Map<fs.FileHandle, Promise<void>>;
+	stopping: boolean;
+	closing: Promise<NativeToolResources> | undefined;
+}
+// Owners with active work or an unconfirmed FileHandle remain reachable independently of callers.
+const retainedOwners = new Set<ResourceOwner>();
+function resourceOwner(): ResourceOwner {
+	return {
+		handles: new Set(),
+		pending: new Set(),
+		operations: new Set(),
+		fileCloses: new Map(),
+		stopping: false,
+		closing: undefined,
+	};
+}
+const defaultOwner = resourceOwner();
+function updateOwner(owner: ResourceOwner): void {
+	if (owner.handles.size || owner.operations.size) retainedOwners.add(owner);
+	else retainedOwners.delete(owner);
+}
+function resources(owner: ResourceOwner): NativeToolResources {
+	return Object.freeze({
+		activeOperations: owner.operations.size,
+		pendingFiles: owner.handles.size,
+		complete: owner.operations.size === 0 && owner.handles.size === 0,
+	});
+}
+function owned<T>(owner: ResourceOwner, action: () => Promise<T>): Promise<T> {
+	if (owner.stopping || owner.pending.size !== 0) return Promise.reject(new ToolProvenanceError());
+	let operation: Promise<T>;
+	try {
+		operation = action();
+	} catch (error) {
+		operation = Promise.reject(error);
+	}
+	owner.operations.add(operation);
+	updateOwner(owner);
+	void operation
+		.finally(() => {
+			owner.operations.delete(operation);
+			updateOwner(owner);
+		})
+		.catch(() => undefined);
+	return operation;
+}
+function closeOwnedFile(owner: ResourceOwner, file: fs.FileHandle): Promise<void> {
+	const current = owner.fileCloses.get(file);
+	if (current) return current;
+	if (!owner.handles.has(file)) return Promise.resolve();
+	const closing = Promise.resolve()
+		.then(() => file.close())
+		.then(
+			() => {
+				owner.handles.delete(file);
+				owner.pending.delete(file);
+				updateOwner(owner);
+			},
+			(error) => {
+				owner.pending.add(file);
+				updateOwner(owner);
+				throw error;
+			},
+		)
+		.finally(() => {
+			if (owner.fileCloses.get(file) === closing) owner.fileCloses.delete(file);
+		});
+	owner.fileCloses.set(file, closing);
+	return closing;
+}
+function closeOwner(owner: ResourceOwner): Promise<NativeToolResources> {
+	owner.stopping = true;
+	if (!owner.closing) {
+		const closing = Promise.resolve()
+			.then(async () => {
+				await Promise.allSettled([...owner.operations]);
+				await Promise.allSettled([...owner.handles].map((file) => closeOwnedFile(owner, file)));
+				return resources(owner);
+			})
+			.finally(() => {
+				if (owner.closing === closing) owner.closing = undefined;
+			});
+		owner.closing = closing;
+	}
+	return owner.closing;
+}
+/** Global fallback is resource-only; scoped collectors use their own source status instead. */
+export function retainedNativeToolResourceStatus(): NativeToolResources {
+	let activeOperations = 0,
+		pendingFiles = 0;
+	for (const owner of retainedOwners) {
+		activeOperations += owner.operations.size;
+		pendingFiles += owner.handles.size;
+	}
+	return Object.freeze({
+		activeOperations,
+		pendingFiles,
+		complete: activeOperations === 0 && pendingFiles === 0,
+	});
+}
+export async function closeRetainedNativeToolResources(): Promise<NativeToolResources> {
+	await Promise.allSettled([...retainedOwners].map((owner) => closeOwner(owner)));
+	return retainedNativeToolResourceStatus();
 }
 const snapshots = new WeakMap<NativeToolProvenance, ToolState>();
 const observations = new WeakMap<
 	object,
-	{ readonly file: FileObservation; readonly platform: Platform }
+	{ readonly file: FileObservation; readonly platform: Platform; readonly owner: ResourceOwner }
 >();
 const refuse = (): never => {
 	throw new ToolProvenanceError();
 };
+function ownerOpen(owner: ResourceOwner): void {
+	if (owner.stopping || owner.pending.size !== 0) refuse();
+}
 function platform(value: string, arch: string): Platform {
 	if (arch !== "x64" || (value !== "win32" && value !== "linux")) return refuse();
 	return value;
@@ -140,15 +268,25 @@ function nativeFormat(bytes: Uint8Array, host: Platform): NativeToolFact["format
 function denyHash(host: Platform, sha256: string): void {
 	if (sha256 !== DENY[host]) refuse();
 }
-async function observe(requestedPath: string, host: Platform): Promise<FileObservation> {
+async function observe(
+	requestedPath: string,
+	host: Platform,
+	owner: ResourceOwner,
+): Promise<FileObservation> {
+	ownerOpen(owner);
 	const requested = absolute(requestedPath);
 	if (host === "win32" && !requested.toLowerCase().endsWith(".exe")) return refuse();
 	const canonical = absolute(await fs.realpath(requested));
 	if (host === "win32" && !canonical.toLowerCase().endsWith(".exe")) return refuse();
 	const initial = await fs.lstat(canonical, { bigint: true });
 	const id = identity(initial, host);
+	ownerOpen(owner);
 	const file = await fs.open(canonical, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+	owner.handles.add(file);
+	updateOwner(owner);
+	let failed = false;
 	try {
+		ownerOpen(owner);
 		if (identity(await file.stat({ bigint: true }), host) !== id) return refuse();
 		const hash = createHash("sha256");
 		const header = Buffer.alloc(Math.min(HEADER, Number(initial.size)));
@@ -177,12 +315,24 @@ async function observe(requestedPath: string, host: Platform): Promise<FileObser
 			sha256: hash.digest("hex"),
 			format: nativeFormat(header, host),
 		};
+	} catch (error) {
+		failed = true;
+		throw error;
 	} finally {
-		await file.close();
+		try {
+			await closeOwnedFile(owner, file);
+		} catch (error) {
+			// biome-ignore lint/correctness/noUnsafeFinally: Reject a successful read when closing fails, while preserving an earlier failure.
+			if (!failed) throw error;
+		}
 	}
 }
-async function unchanged(before: FileObservation, host: Platform): Promise<void> {
-	const now = await observe(before.requested, host);
+async function unchanged(
+	before: FileObservation,
+	host: Platform,
+	owner: ResourceOwner,
+): Promise<void> {
+	const now = await observe(before.requested, host, owner);
 	if (
 		now.canonical !== before.canonical ||
 		now.identity !== before.identity ||
@@ -191,8 +341,12 @@ async function unchanged(before: FileObservation, host: Platform): Promise<void>
 	)
 		return refuse();
 }
-async function executionPath(file: FileObservation, host: Platform): Promise<string> {
-	await unchanged(file, host);
+async function executionPath(
+	file: FileObservation,
+	host: Platform,
+	owner: ResourceOwner,
+): Promise<string> {
+	await unchanged(file, host, owner);
 	// A native rustup proxy dispatches by invocation basename, not its realpath target name.
 	return file.requested;
 }
@@ -296,55 +450,112 @@ function state(snapshot: NativeToolProvenance): ToolState {
 	return value;
 }
 
-/** Fixed production policy; the callback only executes the supplied version command. */
-export async function captureNativeToolProvenance(
+function environmentSnapshot(
+	value: Readonly<Record<string, string | undefined>>,
+): NodeJS.ProcessEnv {
+	if (
+		value === null ||
+		typeof value !== "object" ||
+		types.isProxy(value) ||
+		Array.isArray(value) ||
+		![null, Object.prototype].includes(Object.getPrototypeOf(value))
+	)
+		return refuse();
+	const keys = Reflect.ownKeys(value);
+	if (keys.length > 256) return refuse();
+	const result: NodeJS.ProcessEnv = Object.create(null);
+	let bytes = 0;
+	for (const key of keys) {
+		if (typeof key !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(key)) return refuse();
+		const descriptor = Object.getOwnPropertyDescriptor(value, key);
+		if (!descriptor || !("value" in descriptor)) return refuse();
+		const entry: unknown = descriptor.value;
+		if (
+			entry !== undefined &&
+			(typeof entry !== "string" ||
+				entry.length > 32768 ||
+				!entry.isWellFormed() ||
+				// biome-ignore lint/suspicious/noControlCharactersInRegex: Refuse control characters in the explicit tool environment.
+				/[\u0000-\u001f\u007f]/u.test(entry))
+		)
+			return refuse();
+		bytes += Buffer.byteLength(key) + (entry === undefined ? 0 : Buffer.byteLength(entry));
+		if (bytes > 1_048_576) return refuse();
+		result[key] = entry;
+	}
+	return Object.freeze(result);
+}
+
+/** Fixed policy and version commands; undefined selects ambient resolution, otherwise the supplied map is snapshotted. */
+function captureOwned(
+	owner: ResourceOwner,
 	repositoryRoot: string,
 	probe: NativeVersionProbe,
+	selectedEnvironment?: Readonly<Record<string, string | undefined>>,
 ): Promise<NativeToolProvenance> {
-	return guarded(async () => {
-		const host = platform(process.platform, process.arch);
-		const repository = absolute(repositoryRoot);
-		const environment = { ...process.env };
-		const files = new Map<NativeToolName, FileObservation>();
-		for (const name of NAMES)
-			files.set(name, await observe(await resolveTool(name, repository, host, environment), host));
-		const deny = files.get("cargo-deny");
-		if (!deny) return refuse();
-		denyHash(host, deny.sha256);
-		const facts: NativeToolFact[] = [];
-		for (const name of NAMES) {
-			const file = files.get(name);
-			if (!file) return refuse();
-			const invocation = await executionPath(file, host);
-			const args = Object.freeze(
-				name === "cargo-deny" ? ["--version"] : ["--version", "--verbose"],
-			);
-			const release = version(name, await probe(invocation, args), host);
-			await unchanged(file, host);
-			facts.push(
-				Object.freeze({
+	return owned(owner, () =>
+		guarded(async () => {
+			// Snapshot before the first await. An explicit map never consults ambient PATH/configuration.
+			const environment =
+				selectedEnvironment === undefined
+					? Object.freeze({ ...process.env })
+					: environmentSnapshot(selectedEnvironment);
+			const host = platform(process.platform, process.arch);
+			const repository = absolute(repositoryRoot);
+			const files = new Map<NativeToolName, FileObservation>();
+			for (const name of NAMES) {
+				ownerOpen(owner);
+				files.set(
 					name,
-					...release,
-					sha256: file.sha256,
-					format: file.format,
-					identityBoundary:
-						name === "cargo-deny" ? "official-release-executable" : "trusted-host-toolchain",
-				}),
-			);
-		}
-		for (const file of files.values()) await unchanged(file, host);
-		const tuple = [
-			"tools",
-			1,
-			facts.map((f) => [f.name, f.version, f.host, f.sha256, f.format, f.identityBoundary]),
-		];
-		const result = Object.freeze({
-			digest: createHash("sha256").update(DOMAIN).update(JSON.stringify(tuple)).digest("hex"),
-			tools: Object.freeze(facts),
-		}) as NativeToolProvenance;
-		snapshots.set(result, { platform: host, files });
-		return result;
-	});
+					await observe(await resolveTool(name, repository, host, environment), host, owner),
+				);
+			}
+			const deny = files.get("cargo-deny");
+			if (!deny) return refuse();
+			denyHash(host, deny.sha256);
+			const facts: NativeToolFact[] = [];
+			for (const name of NAMES) {
+				ownerOpen(owner);
+				const file = files.get(name);
+				if (!file) return refuse();
+				const invocation = await executionPath(file, host, owner);
+				const args = Object.freeze(
+					name === "cargo-deny" ? ["--version"] : ["--version", "--verbose"],
+				);
+				const release = version(name, await probe(invocation, args), host);
+				await unchanged(file, host, owner);
+				facts.push(
+					Object.freeze({
+						name,
+						...release,
+						sha256: file.sha256,
+						format: file.format,
+						identityBoundary:
+							name === "cargo-deny" ? "official-release-executable" : "trusted-host-toolchain",
+					}),
+				);
+			}
+			for (const file of files.values()) await unchanged(file, host, owner);
+			const tuple = [
+				"tools",
+				1,
+				facts.map((f) => [f.name, f.version, f.host, f.sha256, f.format, f.identityBoundary]),
+			];
+			const result = Object.freeze({
+				digest: createHash("sha256").update(DOMAIN).update(JSON.stringify(tuple)).digest("hex"),
+				tools: Object.freeze(facts),
+			}) as NativeToolProvenance;
+			snapshots.set(result, { platform: host, files, owner });
+			return result;
+		}),
+	);
+}
+export function captureNativeToolProvenance(
+	repositoryRoot: string,
+	probe: NativeVersionProbe,
+	selectedEnvironment?: Readonly<Record<string, string | undefined>>,
+): Promise<NativeToolProvenance> {
+	return captureOwned(defaultOwner, repositoryRoot, probe, selectedEnvironment);
 }
 
 /** Recheck immediately before spawning; the caller also checks again after completion. */
@@ -356,13 +567,39 @@ export async function nativeToolPath(
 		const value = state(snapshot);
 		const file = value.files.get(name);
 		if (!file) return refuse();
-		return executionPath(file, value.platform);
+		return owned(value.owner, () => executionPath(file, value.platform, value.owner));
 	});
 }
 export async function assertNativeToolsUnchanged(snapshot: NativeToolProvenance): Promise<void> {
 	return guarded(async () => {
 		const value = state(snapshot);
-		for (const file of value.files.values()) await unchanged(file, value.platform);
+		return owned(value.owner, async () => {
+			for (const file of value.files.values()) await unchanged(file, value.platform, value.owner);
+		});
+	});
+}
+
+/** Owns every provenance read and retained FileHandle before capture can fail. */
+export function createNativeToolProvenanceSource(): NativeToolProvenanceSource {
+	const owner = resourceOwner();
+	return Object.freeze({
+		capture: (
+			repositoryRoot: string,
+			probe: NativeVersionProbe,
+			environment?: Readonly<Record<string, string | undefined>>,
+		) => captureOwned(owner, repositoryRoot, probe, environment),
+		nativeToolPath: (snapshot: NativeToolProvenance, name: NativeToolName) =>
+			guarded(async () => {
+				if (state(snapshot).owner !== owner) return refuse();
+				return nativeToolPath(snapshot, name);
+			}),
+		assertUnchanged: (snapshot: NativeToolProvenance) =>
+			guarded(async () => {
+				if (state(snapshot).owner !== owner) return refuse();
+				return assertNativeToolsUnchanged(snapshot);
+			}),
+		resourceStatus: () => resources(owner),
+		closeResources: () => closeOwner(owner),
 	});
 }
 
@@ -400,23 +637,25 @@ export const toolProvenanceTestInterface: {
 			resolveTool(name, absolute(repository), platform(platformName, arch), environment),
 		),
 	observe: (filename, platformName, arch) =>
-		guarded(async () => {
-			const host = platform(platformName, arch);
-			const file = await observe(filename, host);
-			const result = Object.freeze({ sha256: file.sha256, format: file.format });
-			observations.set(result, { file, platform: host });
-			return result;
-		}),
+		owned(defaultOwner, () =>
+			guarded(async () => {
+				const host = platform(platformName, arch);
+				const file = await observe(filename, host, defaultOwner);
+				const result = Object.freeze({ sha256: file.sha256, format: file.format });
+				observations.set(result, { file, platform: host, owner: defaultOwner });
+				return result;
+			}),
+		),
 	unchanged: (observation) =>
 		guarded(async () => {
 			const value = observations.get(observation);
 			if (!value) return refuse();
-			await unchanged(value.file, value.platform);
+			await owned(value.owner, () => unchanged(value.file, value.platform, value.owner));
 		}),
 	invocationPath: (observation) =>
 		guarded(async () => {
 			const value = observations.get(observation);
 			if (!value) return refuse();
-			return executionPath(value.file, value.platform);
+			return owned(value.owner, () => executionPath(value.file, value.platform, value.owner));
 		}),
 });

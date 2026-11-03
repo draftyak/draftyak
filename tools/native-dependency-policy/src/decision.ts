@@ -45,7 +45,11 @@ interface ActiveScope {
 type ActiveDecision = ActiveScope &
 	(
 		| { readonly version: 1; readonly gate: "open" }
-		| { readonly version: 2; readonly termination: "release-or-validated-fix" }
+		| {
+				readonly version: 2;
+				readonly termination: "release-or-validated-fix";
+				readonly releaseBasisSchemaVersion?: 2;
+		  }
 	);
 type Decision =
 	| ActiveDecision
@@ -152,6 +156,7 @@ function decision(value: unknown): Decision {
 		return invalid();
 	}
 	const renewed = (value as Record<string, unknown>).version === 2;
+	const marked = Object.hasOwn(value, "releaseBasisSchemaVersion");
 	const input = object(value, [
 		"version",
 		"state",
@@ -161,13 +166,15 @@ function decision(value: unknown): Decision {
 		"binding",
 		"review",
 		"exceptions",
+		...(marked ? ["releaseBasisSchemaVersion"] : []),
 	]);
 	if (
 		(renewed ? input.version !== 2 : input.version !== 1) ||
 		state !== "active" ||
 		(renewed ? input.termination !== "release-or-validated-fix" : input.gate !== "open") ||
 		input.evidenceKind !== "actual-source" ||
-		input.confirmation !== "unchanged-scope"
+		input.confirmation !== "unchanged-scope" ||
+		(marked && (!renewed || input.releaseBasisSchemaVersion !== 2))
 	)
 		return invalid();
 	const review = object(input.review, ["at", "due"]);
@@ -180,7 +187,11 @@ function decision(value: unknown): Decision {
 	if (new Set(exceptions.map((row) => row.advisory)).size !== exceptions.length) return invalid();
 	return {
 		...(renewed
-			? { version: 2 as const, termination: "release-or-validated-fix" as const }
+			? {
+					version: 2 as const,
+					termination: "release-or-validated-fix" as const,
+					...(marked ? { releaseBasisSchemaVersion: 2 as const } : {}),
+				}
 			: { version: 1 as const, gate: "open" as const }),
 		state: "active",
 		evidenceKind: "actual-source",
@@ -214,6 +225,24 @@ export function preflightDecision(value: unknown): PolicyVerdict | null {
 		if (trusted.state === "refusal-only")
 			return { verdict: "refuse", reason: "ACTUAL_SOURCE_CONFIRMATION_REQUIRED" };
 		if (trusted.state !== "active") return { verdict: "refuse", reason: "TERMINAL_STATE" };
+		return null;
+	} catch {
+		return { verdict: "refuse", reason: "AUTHORITY_INVALID" };
+	}
+}
+
+/** The schema2 production route cannot fall back to a historical unmarked authority. */
+export function preflightReleaseBasisV2Authority(value: unknown): PolicyVerdict | null {
+	const unavailable = preflightDecision(value);
+	if (unavailable) return unavailable;
+	try {
+		const trusted = decision(value);
+		if (
+			trusted.state !== "active" ||
+			trusted.version !== 2 ||
+			trusted.releaseBasisSchemaVersion !== 2
+		)
+			return { verdict: "refuse", reason: "AUTHORITY_INVALID" };
 		return null;
 	} catch {
 		return { verdict: "refuse", reason: "AUTHORITY_INVALID" };

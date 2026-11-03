@@ -4,6 +4,9 @@ import { request } from "node:https";
 import { parseStrictJson } from "./strict-json.ts";
 
 export const AUTHORITY_RECORD_PATH = "tools/native-dependency-policy/records/authority.json";
+export const MANUAL_ASSESSMENT_RECORD_PATH =
+	"tools/native-dependency-policy/records/manual-assessment.json";
+export const MANUAL_ASSESSMENT_MAX_BYTES: number = 8 * 1024 * 1024;
 const API_ROOT = "https://api.github.com/repos/draftyak/draftyak";
 const MAX_RESPONSE_BYTES = 524_288;
 const DEADLINE_MS = 10_000;
@@ -13,11 +16,13 @@ export type AuthorityCode = "AUTHORITY_UNAVAILABLE" | "AUTHORITY_INVALID" | "AUT
 
 export class AuthorityError extends Error {
 	readonly code: AuthorityCode;
+	readonly httpStatus: number | null;
 
-	constructor(code: AuthorityCode) {
+	constructor(code: AuthorityCode, httpStatus: number | null = null) {
 		super("native dependency policy authority refused");
 		this.name = "AuthorityError";
 		this.code = code;
+		this.httpStatus = httpStatus;
 	}
 }
 
@@ -96,16 +101,19 @@ export async function assertAuthorityCurrent(
 	}
 }
 
-async function fetchFixed(path: string): Promise<Uint8Array> {
+async function fetchFixed(path: string, maxBytes = MAX_RESPONSE_BYTES): Promise<Uint8Array> {
 	return new Promise((resolve, reject) => {
 		let operation: ClientRequest | undefined;
 		let response: IncomingMessage | undefined;
 		let settled = false;
-		const fail = (code: AuthorityCode = "AUTHORITY_UNAVAILABLE"): void => {
+		const fail = (
+			code: AuthorityCode = "AUTHORITY_UNAVAILABLE",
+			httpStatus: number | null = null,
+		): void => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
-			reject(new AuthorityError(code));
+			reject(new AuthorityError(code, httpStatus));
 			response?.destroy();
 			operation?.destroy();
 		};
@@ -130,7 +138,7 @@ async function fetchFixed(path: string): Promise<Uint8Array> {
 						return;
 					}
 					if (incoming.statusCode !== 200) {
-						fail();
+						fail("AUTHORITY_UNAVAILABLE", incoming.statusCode ?? null);
 						return;
 					}
 					const chunks: Buffer[] = [];
@@ -138,7 +146,7 @@ async function fetchFixed(path: string): Promise<Uint8Array> {
 					incoming.on("data", (chunk: Buffer) => {
 						if (settled) return;
 						length += chunk.byteLength;
-						if (length > MAX_RESPONSE_BYTES) {
+						if (length > maxBytes) {
 							fail("AUTHORITY_INVALID");
 							return;
 						}
@@ -180,18 +188,45 @@ export class RepositoryAuthority implements AuthorityTransport {
 	}
 
 	async recordAt(selected: string): Promise<Uint8Array> {
+		return this.#fixedFileAt(
+			selected,
+			AUTHORITY_RECORD_PATH,
+			MAX_RESPONSE_BYTES,
+			MAX_RESPONSE_BYTES,
+		);
+	}
+
+	/** A second fixed file at the same immutable protected revision; never a caller-selected path. */
+	async manualAssessmentAt(selected: string): Promise<Uint8Array> {
+		return this.#fixedFileAt(
+			selected,
+			MANUAL_ASSESSMENT_RECORD_PATH,
+			MANUAL_ASSESSMENT_MAX_BYTES,
+			12 * 1024 * 1024,
+		);
+	}
+
+	async #fixedFileAt(
+		selected: string,
+		file: typeof AUTHORITY_RECORD_PATH | typeof MANUAL_ASSESSMENT_RECORD_PATH,
+		maxBytes: number,
+		responseBytes: number,
+	): Promise<Uint8Array> {
 		const ref = revision(selected);
 		const envelope = record(
-			parseStrictJson(await fetchFixed(`/contents/${AUTHORITY_RECORD_PATH}?ref=${ref}`)),
+			parseStrictJson(await fetchFixed(`/contents/${file}?ref=${ref}`, responseBytes), {
+				maxBytes: responseBytes,
+				maxStringBytes: responseBytes,
+			}),
 		);
 		if (
 			envelope.type !== "file" ||
-			envelope.path !== AUTHORITY_RECORD_PATH ||
+			envelope.path !== file ||
 			envelope.encoding !== "base64" ||
 			typeof envelope.content !== "string" ||
 			!Number.isSafeInteger(envelope.size) ||
 			(envelope.size as number) < 0 ||
-			(envelope.size as number) > MAX_RESPONSE_BYTES
+			(envelope.size as number) > maxBytes
 		) {
 			return refuse();
 		}
