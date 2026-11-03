@@ -11,7 +11,7 @@ import { WorkDatabase, type WorkScope } from "../../src/jobs/database.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import { MasterKey } from "../../src/kernel/master-key.ts";
 import { HUB_NAMESPACES, migrateHubSchemas } from "../../src/kernel/namespaces.ts";
-import { HubStore } from "../../src/store/store.ts";
+import { HubStore, type SqlTransaction } from "../../src/store/store.ts";
 import { nativeBinding } from "../store/helpers.ts";
 
 const owner = newId();
@@ -415,5 +415,101 @@ describe("native encrypted account records and lifecycle notifications", () => {
 			expect(f.accounts.hasLiveAccounts(scope, plugin)).toBe(true);
 			expect(f.accounts.hasLiveAccounts(scope, newId())).toBe(false);
 		});
+	});
+});
+
+describe("original native account transaction projection", () => {
+	it("reads a same-store writer without adopting its foreign WorkScope", () => {
+		const value = email();
+		f.database.write((scope) => f.accounts.create(scope, value));
+		const before = f.count();
+		const otherDatabase = new WorkDatabase(f.store);
+		otherDatabase.write((scope) => {
+			const sql = otherDatabase.sql(scope);
+			expect(() => f.accounts.get(scope, owner, value.id)).toThrow(AccountError);
+			expect(() => f.database.sql(scope)).toThrow();
+			expect(f.database.assertTransaction(sql)).toBeUndefined();
+			const current = f.accounts.getInTransaction(sql, owner, value.id);
+			expect(current?.account.id === value.id && current.generation === 1).toBe(true);
+			expect(Object.isFrozen(current) && Object.isFrozen(current?.account)).toBe(true);
+			expect(f.accounts.getInTransaction(sql, newId(), value.id)).toBeUndefined();
+			expect(() => f.database.sql(scope)).toThrow();
+		});
+		expect(f.count()).toEqual(before);
+	});
+
+	it("reads current uncommitted metadata while the original writer still owns rollback", () => {
+		const value = email();
+		f.database.write((scope) => f.accounts.create(scope, value));
+		const before = f.count();
+		expect(() =>
+			f.database.write((scope) => {
+				const sql = f.database.sql(scope);
+				f.accounts.replace(scope, { ...value, alias: "dytest-uncommitted" }, 1);
+				const current = f.accounts.getInTransaction(sql, owner, value.id);
+				expect(current?.generation === 2 && current.account.alias === "dytest-uncommitted").toBe(
+					true,
+				);
+				throw new Error("OWNED_ACCOUNT_ROLLBACK");
+			}),
+		).toThrow("OWNED_ACCOUNT_ROLLBACK");
+		f.database.write((scope) => {
+			const current = f.accounts.get(scope, owner, value.id);
+			expect(current?.generation === 1 && current.account.alias === value.alias).toBe(true);
+		});
+		expect(f.count()).toEqual(before);
+	});
+
+	it("refuses retired/read/foreign-store/fabricated SQL without invoking hostile hooks", async () => {
+		const value = email();
+		f.database.write((scope) => f.accounts.create(scope, value));
+		let retired: SqlTransaction | undefined;
+		f.database.write((scope) => {
+			retired = f.database.sql(scope);
+		});
+		expect(() => f.accounts.getInTransaction(retired as SqlTransaction, owner, value.id)).toThrow(
+			AccountError,
+		);
+		f.store.read((sql) => {
+			expect(() => f.accounts.getInTransaction(sql as SqlTransaction, owner, value.id)).toThrow(
+				AccountError,
+			);
+		});
+		const other = await fixture();
+		try {
+			other.database.write((scope) => {
+				expect(() =>
+					f.accounts.getInTransaction(other.database.sql(scope), owner, value.id),
+				).toThrow(AccountError);
+			});
+		} finally {
+			other.cleanup();
+		}
+		let hooks = 0;
+		f.database.write((scope) => {
+			const sql = f.database.sql(scope);
+			const proxy = new Proxy(sql, {
+				get() {
+					hooks++;
+					throw new Error("OWNED_SQL_HOOK");
+				},
+			});
+			expect(() => f.accounts.getInTransaction(proxy, owner, value.id)).toThrow(AccountError);
+			const fake = {
+				get() {
+					hooks++;
+				},
+				all() {
+					hooks++;
+				},
+				run() {
+					hooks++;
+				},
+			};
+			expect(() =>
+				f.accounts.getInTransaction(fake as unknown as SqlTransaction, owner, value.id),
+			).toThrow(AccountError);
+		});
+		expect(hooks === 0).toBe(true);
 	});
 });

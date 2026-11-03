@@ -366,8 +366,11 @@ export class CredentialVault {
 	readonly #audit: AuditChain;
 	readonly #clock: VaultClock;
 	readonly #coordination: Coordination;
-	readonly #exchanges = new Set<AbortController>();
+	readonly #controllers = new Set<AbortController>();
+	readonly #watchers = new Set<AbortController>();
+	readonly #jobs = new Set<Promise<void>>();
 	#masterKey: MasterKey | undefined;
+	#draining: Promise<void> | undefined;
 	constructor(
 		store: HubStore,
 		audit: AuditChain,
@@ -500,7 +503,9 @@ export class CredentialVault {
 			if (!this.#coordination.using.has(controller)) controller.abort();
 	}
 	#track(reference: string): AbortController {
+		if (!this.#masterKey) throw unavailable();
 		const controller = new AbortController();
+		this.#controllers.add(controller);
 		let pending = this.#coordination.pending.get(reference);
 		if (!pending) {
 			pending = new Set();
@@ -510,9 +515,37 @@ export class CredentialVault {
 		return controller;
 	}
 	#untrack(reference: string, controller: AbortController): void {
+		this.#controllers.delete(controller);
 		const pending = this.#coordination.pending.get(reference);
 		pending?.delete(controller);
 		if (pending?.size === 0) this.#coordination.pending.delete(reference);
+	}
+	// Reserve completion before invoking a producer, including one that throws or re-enters.
+	// Only the completion is retained; settled credential values and callback errors are not.
+	#own<T>(produce: () => T | PromiseLike<T>): Promise<T> {
+		let complete: () => void = () => undefined;
+		const completion = new Promise<void>((resolve) => {
+			complete = resolve;
+		});
+		this.#jobs.add(completion);
+		const operation = new Promise<T>((resolve) => resolve(produce()));
+		const settled = (): void => {
+			this.#jobs.delete(completion);
+			complete();
+		};
+		void operation.then(settled, settled);
+		return operation;
+	}
+	#stopOwned(): boolean {
+		let stopped = true;
+		for (const controller of [...this.#controllers, ...this.#watchers]) {
+			try {
+				controller.abort();
+			} catch {
+				if (!controller.signal.aborted) stopped = false;
+			}
+		}
+		return stopped;
 	}
 	// Puts the value a refresh kept back in use under the next generation. Callers still waiting on
 	// that refresh fail with it; uses already running on that value go on.
@@ -747,6 +780,26 @@ export class CredentialVault {
 			throw unavailable();
 		}
 	}
+	/** Current bound metadata only; it grants no account or credential-use authority. */
+	describeBindingInTransaction(tx: SqlTransaction, owner: CredentialBinding): CredentialDescriptor {
+		try {
+			this.#unlocked();
+			assertStoreTransaction(this.#store, tx);
+			const bound = binding(owner);
+			const rows = tx.all<{ id: unknown }>(
+				"SELECT CASE WHEN typeof(id)='text' AND length(CAST(id AS BLOB))=26 THEN id ELSE NULL END AS id FROM main.credentials WHERE owner_kind=? AND owner_id=? AND kind=? AND status='active' ORDER BY id LIMIT 2",
+				[bound.ownerKind, bound.ownerId, bound.kind],
+			);
+			if (rows.length !== 1) throw unavailable();
+			const reference = rows[0]?.id;
+			if (typeof reference !== "string") throw unavailable();
+			const row = saved(tx, reference, bound);
+			if (row.status !== "active") throw unavailable();
+			return Object.freeze({ reference, generation: row.generation, binding: bound });
+		} catch {
+			throw unavailable();
+		}
+	}
 	async #serialized<T>(reference: string, signal: AbortSignal, work: () => Promise<T>): Promise<T> {
 		signal.throwIfAborted();
 		let lock = this.#coordination.locks.get(reference);
@@ -788,26 +841,32 @@ export class CredentialVault {
 		controller: AbortController,
 	): Promise<CredentialValue> {
 		const stop = new AbortController();
-		void (async () => {
+		this.#watchers.add(stop);
+		void this.#own(async () => {
 			try {
-				const wall = this.#clock.wall(),
-					monotonic = this.#clock.monotonic();
-				for (;;) {
-					const remaining = Math.min(
-						wall + CREDENTIAL_REFRESH_TIMEOUT_MS - this.#clock.wall(),
-						monotonic + CREDENTIAL_REFRESH_TIMEOUT_MS - this.#clock.monotonic(),
-					);
-					if (!Number.isFinite(remaining) || remaining <= 0) break;
-					await this.#clock.after(Math.min(MAX_WAIT_MS, Math.ceil(remaining)), stop.signal);
+				try {
+					const wall = this.#clock.wall(),
+						monotonic = this.#clock.monotonic();
+					for (;;) {
+						const remaining = Math.min(
+							wall + CREDENTIAL_REFRESH_TIMEOUT_MS - this.#clock.wall(),
+							monotonic + CREDENTIAL_REFRESH_TIMEOUT_MS - this.#clock.monotonic(),
+						);
+						if (!Number.isFinite(remaining) || remaining <= 0) break;
+						await this.#clock.after(Math.min(MAX_WAIT_MS, Math.ceil(remaining)), stop.signal);
+					}
+				} catch {
+					// A failed clock ends the exchange as well.
 				}
-			} catch {
-				// A failed clock ends the exchange as well.
+				if (!stop.signal.aborted) controller.abort();
+			} finally {
+				this.#watchers.delete(stop);
 			}
-			if (!stop.signal.aborted) controller.abort();
-		})();
+		});
 		try {
+			controller.signal.throwIfAborted();
 			return await cancellable(
-				new Promise<CredentialValue>((resolve) => resolve(refresh(value, context))),
+				this.#own(() => refresh(value, context)),
 				controller.signal,
 			);
 		} finally {
@@ -854,15 +913,16 @@ export class CredentialVault {
 		// The exchange has its own signal: a caller that stops waiting leaves the adapter to answer or
 		// classify its failure, while the time limit, a revoke, a replacement or a purge ends it.
 		const exchange = this.#track(reference);
-		this.#exchanges.add(exchange);
 		try {
 			let returned: CredentialValue;
 			try {
-				returned = await this.#exchange(
-					refresh,
-					value,
-					Object.freeze({ reference, binding: bound, generation, signal: exchange.signal }),
-					exchange,
+				returned = await this.#own(() =>
+					this.#exchange(
+						refresh,
+						value,
+						Object.freeze({ reference, binding: bound, generation, signal: exchange.signal }),
+						exchange,
+					),
 				);
 			} catch (error) {
 				const failure = refreshFailure(error);
@@ -907,12 +967,24 @@ export class CredentialVault {
 			});
 			return { value: rotated, generation };
 		} finally {
-			this.#exchanges.delete(exchange);
 			this.#untrack(reference, exchange);
 		}
 	}
 	/** Trusted hub callback only; propagate its signal to network I/O and return brokered results. */
-	async withCredential<T>(
+	withCredential<T>(
+		reference: string,
+		owner: CredentialBinding,
+		request: CredentialRequest,
+		use: (value: CredentialValue, context: CredentialUse) => T | Promise<T>,
+	): Promise<T> {
+		try {
+			if (!this.#masterKey) throw unavailable();
+			return this.#own(() => this.#withCredential(reference, owner, request, use));
+		} catch {
+			return Promise.reject(unavailable());
+		}
+	}
+	async #withCredential<T>(
 		reference: string,
 		owner: CredentialBinding,
 		request: CredentialRequest,
@@ -932,8 +1004,10 @@ export class CredentialVault {
 				external = addAbortListener(options.signal, () => currentController.abort());
 			}
 			const prepared = await cancellable(
-				this.#serialized(reference, controller.signal, () =>
-					this.#prepare(reference, bound, options, currentController),
+				this.#own(() =>
+					this.#serialized(reference, currentController.signal, () =>
+						this.#own(() => this.#prepare(reference, bound, options, currentController)),
+					),
 				),
 				controller.signal,
 			);
@@ -953,7 +1027,7 @@ export class CredentialVault {
 			};
 			assertCurrent();
 			const result = await cancellable(
-				Promise.resolve(use(prepared.value, context)),
+				this.#own(() => use(prepared.value, context)),
 				controller.signal,
 			);
 			assertCurrent();
@@ -966,12 +1040,35 @@ export class CredentialVault {
 		}
 	}
 	/**
-	 * Drops this facade's master key and ends its running refresh exchanges. Kept values stay
+	 * Drops this facade's master key and aborts its own uses and refresh exchanges. Kept values stay
 	 * sealed and unavailable until authorized replacement; every later call refuses.
 	 */
 	destroy(): void {
 		this.#masterKey = undefined;
-		for (const exchange of this.#exchanges) exchange.abort();
+		this.#stopOwned();
+	}
+	async #joinOwned(): Promise<void> {
+		while (this.#jobs.size) await Promise.all([...this.#jobs]);
+		if (!this.#stopOwned()) throw unavailable();
+	}
+	/**
+	 * Fences this facade immediately, then joins its original callbacks, refreshes and timer cleanup.
+	 * A callback that ignores cancellation must actually settle. This does not join provider processes
+	 * or other facades, and never retries a credential change or callback.
+	 */
+	drain(): Promise<void> {
+		try {
+			this.destroy();
+			if (this.#draining) return this.#draining;
+			const draining = this.#joinOwned();
+			this.#draining = draining;
+			void draining.catch(() => {
+				if (this.#draining === draining) this.#draining = undefined;
+			});
+			return draining;
+		} catch {
+			return Promise.reject(unavailable());
+		}
 	}
 	toJSON(): string {
 		return "[REDACTED]";
