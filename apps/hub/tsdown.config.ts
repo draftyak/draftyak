@@ -6,6 +6,10 @@ const config: UserConfig = defineConfig({
 	platform: "node",
 	dts: { generator: "oxc" },
 	copy: [
+		{
+			from: "src/channels/gmail/connection/credential-migrations/*.sql",
+			to: "dist/credential-migrations",
+		},
 		{ from: "src/drafts/migrations/*.sql", to: "dist/drafts/migrations" },
 		{ from: "src/identity/devices-migrations/*.sql", to: "dist/devices-migrations" },
 		{ from: "src/jobs/jobs-migrations/*.sql", to: "dist/jobs-migrations" },
