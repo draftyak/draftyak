@@ -87,6 +87,23 @@ const browserCache: YamlMap = {
 		key: `playwright-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('pnpm-lock.yaml') }}`,
 	},
 };
+const offlineNodePreparation: YamlMap = {
+	id: "offline-node",
+	if: "needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+	env: { DRAFTYAK_CACHE_DIR: `\${{ runner.temp }}/draftyak-node-input` },
+	run: [
+		"pnpm fetch-node --version bundled --platform linux --arch x64",
+		"node --input-type=module <<'NODE'",
+		"import { appendFileSync, readFileSync } from 'node:fs';",
+		"import path from 'node:path';",
+		"const { bundled } = JSON.parse(readFileSync('tools/fetch-node/versions.json', 'utf8'));",
+		"const cache = path.join(process.env.DRAFTYAK_CACHE_DIR, 'node', bundled);",
+		"appendFileSync(process.env.GITHUB_OUTPUT, `cache=${cache}\\n`);",
+		"NODE",
+		"",
+	].join("\n"),
+};
+
 const ciCommands: Record<string, readonly YamlMap[]> = {
 	changes: [
 		{
@@ -117,6 +134,7 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 	full: [
 		{ run: "pnpm install --frozen-lockfile" },
 		{ run: "pnpm build" },
+		offlineNodePreparation,
 		{
 			id: "browser-setup",
 			env: {
@@ -138,6 +156,8 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 			env: {
 				SPIKES: `\${{ needs.changes.outputs.spikes }}`,
 				PLAYWRIGHT_BROWSERS_PATH: browserPath,
+				DRAFTYAK_TEST_NODE_CACHE: `\${{ steps.offline-node.outputs.cache }}`,
+				DRAFTYAK_CACHE_DIR: `\${{ runner.temp }}/draftyak-node-scratch`,
 			},
 			run: [
 				"filters=()",

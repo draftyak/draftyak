@@ -152,7 +152,12 @@ describe("required native transport workflow controls", () => {
 			);
 		expect(check(combined)).toEqual([]);
 		expect(
-			check(combined.replace("needs.changes.outputs.spikes != '' || ", "")).join("\n"),
+			check(
+				combined.replace(
+					"name: Product heavy tests\n        if: needs.changes.outputs.spikes != '' || ",
+					"name: Product heavy tests\n        if: ",
+				),
+			).join("\n"),
 		).toContain("ordinary heavy suites must exclude");
 	});
 });
