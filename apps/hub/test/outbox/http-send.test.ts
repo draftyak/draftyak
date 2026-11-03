@@ -14,6 +14,7 @@ import { systemClock } from "../../src/kernel/clock.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import { MasterKey } from "../../src/kernel/master-key.ts";
 import type { NativeHttpSendTransport } from "../../src/outbox/http-send.ts";
+import { renderGmailRequest } from "../../src/outbox/renderers/gmail-rfc5322.ts";
 import { type SendTicketInsert, SendTicketStorage } from "../../src/outbox/ticket-storage.ts";
 import { SendTicketLedger } from "../../src/outbox/tickets.ts";
 import {
@@ -126,15 +127,48 @@ async function fixture(kind: "slack-token" | "gmail-oauth" = "slack-token", expi
 		transports: NativeHttpSendTransport[] = [],
 		servers: Server[] = [];
 	fixtures.push({ dir, store, key, audit, ledger, storage, transports, servers });
+	const rendered =
+		kind === "gmail-oauth"
+			? await renderGmailRequest({
+					snapshot: {
+						v: 1,
+						hub: "d".repeat(64),
+						epoch: 3,
+						outbox: newId(),
+						account: owner.ownerId,
+						conversation: null,
+						kind: "email",
+						email: {
+							from: "owner@example.test",
+							to: ["recipient@example.test"],
+							cc: [],
+							bcc: [],
+							subject: "Synthetic Gmail transport",
+							threadId: "DYTEST-thread",
+							references: [],
+						},
+						body: { text: "Synthetic Gmail body", footer: "Synthetic footer" },
+						attachments: [],
+						schedule: { kind: "now" },
+						source: { draft: newId(), rev: 1, authors: [{ kind: "owner", id: newId() }] },
+					},
+					stamp: {
+						messageId: "<DYTEST-native-send@example.test>",
+						dateMs: time.wall,
+						mimeBoundary: "ab".repeat(16),
+						uploadBoundary: "DYTEST_native_upload_01",
+					},
+					attachments: [],
+				})
+			: {
+					method: "POST" as const,
+					url: "https://slack.com/api/chat.postMessage",
+					contentType: "application/json",
+					headers: [["content-type", "application/json"]] as const,
+					body: Buffer.from(JSON.stringify({ channel: "C1", text: "fixture message" })),
+				};
 	const issue = (change: Partial<SendTicketInsert> = {}) => {
-		const headers = [["content-type", "application/json"]] as const,
-			body = Buffer.from(
-				JSON.stringify(
-					kind === "slack-token"
-						? { channel: "C1", text: "fixture message" }
-						: { raw: Buffer.from("synthetic message").toString("base64url") },
-				),
-			);
+		const { headers, body } = rendered;
 		const input: SendTicketInsert = {
 			accountId: owner.ownerId,
 			credentialReference: reference,
@@ -147,12 +181,9 @@ async function fixture(kind: "slack-token" | "gmail-oauth" = "slack-token", expi
 			deliverBy: time.wall + 120_000,
 			outboxId: newId(),
 			instanceId: newId(),
-			method: "POST",
-			url:
-				kind === "slack-token"
-					? "https://slack.com/api/chat.postMessage"
-					: "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-			contentType: "application/json",
+			method: rendered.method,
+			url: rendered.url,
+			contentType: rendered.contentType,
 			headers,
 			body,
 			approvedHeadersSha256: headersSha256(headers),
@@ -246,13 +277,15 @@ describe("ticket-gated native HTTP send observations", () => {
 				wireAuth: string | undefined,
 				wireHost: string | undefined,
 				wirePath: string | undefined,
-				wireMethod: string | undefined;
+				wireMethod: string | undefined,
+				wireType: string | undefined;
 			const upstream = await f.server((req, res) => {
 				expect(f.ledger.getAttempt(issued.input.outboxId)?.state).toBe("SENDING");
 				wireAuth = req.headers.authorization;
 				wireHost = req.headers.host;
 				wirePath = req.url;
 				wireMethod = req.method;
+				wireType = req.headers["content-type"];
 				const parts: Buffer[] = [];
 				req.on("data", (raw) => parts.push(raw));
 				req.on("end", () => {
@@ -270,10 +303,19 @@ describe("ticket-gated native HTTP send observations", () => {
 			if (observed.kind !== "response") throw new Error("missing response");
 			expect(observed.status).toBe(200);
 			expect(Buffer.from(observed.body).toString()).toBe('{"ok":true}');
-			expect(wireBody).toEqual(issued.input.body);
+			expect(wireBody).toEqual(Buffer.from(issued.input.body));
 			expect(wireAuth).toBe(`Bearer ${f.secret}`);
 			expect(wireHost).toBe(new URL(issued.input.url).hostname);
-			expect(wirePath).toBe(new URL(issued.input.url).pathname);
+			expect(wirePath).toBe(
+				kind === "gmail-oauth"
+					? "/upload/gmail/v1/users/me/messages/send?uploadType=multipart"
+					: "/api/chat.postMessage",
+			);
+			expect(wireType).toBe(
+				kind === "gmail-oauth"
+					? 'multipart/related; boundary="DYTEST_native_upload_01"'
+					: "application/json",
+			);
 			expect(wireMethod).toBe("POST");
 			expect(upstream.sni()).toContain(wireHost);
 			expect(f.ledger.getAttempt(issued.input.outboxId)?.state).toBe("SENDING");
@@ -288,6 +330,7 @@ describe("ticket-gated native HTTP send observations", () => {
 		"https://example.test/api/chat.postMessage",
 		"https://slack.com/api/chat.postMessage?x=1",
 		"https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+		"https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart",
 	])("refuses unbound send route %s before any DNS or socket", async (url) => {
 		const f = await fixture(),
 			issued = f.issue({ url });
@@ -306,6 +349,74 @@ describe("ticket-gated native HTTP send observations", () => {
 			kind: "transport",
 			written: "none",
 			error: "SEND_HTTP_UNAVAILABLE",
+			attempt: { state: "FAILED" },
+		});
+		expect(dns).toBe(0);
+	});
+	it.each([
+		{
+			name: "legacy JSON endpoint",
+			url: "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+			contentType: "application/json",
+		},
+		{
+			name: "media upload",
+			url: "https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media",
+		},
+		{
+			name: "extra query",
+			url: "https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart&extra=1",
+		},
+		{
+			name: "duplicate query",
+			url: "https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart&uploadType=multipart",
+		},
+		{
+			name: "encoded query",
+			url: "https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart%2F",
+		},
+		{
+			name: "unquoted boundary",
+			contentType: "multipart/related; boundary=DYTEST_native_upload_01",
+		},
+		{ name: "short boundary", contentType: 'multipart/related; boundary="short"' },
+		{ name: "long boundary", contentType: `multipart/related; boundary="${"a".repeat(65)}"` },
+		{ name: "wrong subtype", contentType: 'multipart/mixed; boundary="DYTEST_native_upload_01"' },
+		{
+			name: "extra parameter",
+			contentType: 'multipart/related; boundary="DYTEST_native_upload_01"; charset=UTF-8',
+		},
+		{ name: "method override", method: "PATCH" as const },
+	])("refuses Gmail $name before any DNS or socket", async (change) => {
+		const f = await fixture("gmail-oauth");
+		const url = "url" in change && typeof change.url === "string" ? change.url : undefined,
+			method = "method" in change && change.method === "PATCH" ? change.method : undefined,
+			contentType =
+				"contentType" in change && typeof change.contentType === "string"
+					? change.contentType
+					: undefined,
+			headers = contentType === undefined ? undefined : ([["content-type", contentType]] as const);
+		const overrides: Partial<SendTicketInsert> = {
+			...(url === undefined ? {} : { url }),
+			...(method === undefined ? {} : { method }),
+			...(headers === undefined
+				? {}
+				: { contentType: headers[0][1], headers, approvedHeadersSha256: headersSha256(headers) }),
+		};
+		const issued = f.issue(overrides);
+		let dns = 0;
+		const handle = await withNetworkTestHooks(
+			{
+				resolve: async () => {
+					dns++;
+					throw new Error("unexpected network");
+				},
+			},
+			() => f.transport().send(issued.redemption, new AbortController().signal),
+		);
+		expect(consumeNativeSendObservation(handle)).toMatchObject({
+			kind: "transport",
+			written: "none",
 			attempt: { state: "FAILED" },
 		});
 		expect(dns).toBe(0);

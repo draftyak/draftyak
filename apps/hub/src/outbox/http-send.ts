@@ -148,21 +148,24 @@ function route(render: NativeDispatchRequest): URL {
 		kind = render.credential.binding.kind;
 	if (
 		render.method !== "POST" ||
-		render.contentType !== "application/json" ||
 		render.headers.length !== 1 ||
 		render.headers[0]?.[0] !== "content-type" ||
 		render.headers[0]?.[1] !== render.contentType ||
 		render.credential.binding.ownerKind !== "account" ||
 		url.protocol !== "https:" ||
+		url.href !== render.url ||
 		url.port ||
-		url.search ||
 		url.hash ||
 		url.username ||
 		url.password ||
 		!(
-			(kind === "slack-token" && url.href === "https://slack.com/api/chat.postMessage") ||
+			(kind === "slack-token" &&
+				url.href === "https://slack.com/api/chat.postMessage" &&
+				render.contentType === "application/json") ||
 			(kind === "gmail-oauth" &&
-				url.href === "https://gmail.googleapis.com/gmail/v1/users/me/messages/send")
+				url.href ===
+					"https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart" &&
+				/^multipart\/related; boundary="[A-Za-z0-9_-]{16,64}"(?![\s\S])/.test(render.contentType))
 		)
 	)
 		throw refused();
@@ -442,7 +445,7 @@ function fetchPinnedSend(
 			req = request({
 				...connection.options,
 				method: "POST",
-				path: url.pathname,
+				path: url.pathname + url.search,
 				headers: { ...connection.options.headers },
 			});
 			req.once("error", fail);

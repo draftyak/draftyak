@@ -15,6 +15,7 @@
   "dependencies": {
     "@draftyak/bounded-files": "workspace:*",
     "@draftyak/extensions": "workspace:*",
+    "@draftyak/mime": "workspace:*",
     "@draftyak/protocol": "workspace:*",
     "@peculiar/x509": "2.2.0",
     "better-sqlite3-multiple-ciphers": "13.0.3",
