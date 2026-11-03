@@ -36,6 +36,11 @@ import type { BundledPluginPin } from "../plugins/installer/index.ts";
 import { rootDirectory } from "../plugins/installer/tree.ts";
 import { openNativePluginRegistry, type PluginRegistry } from "../plugins/registry/index.ts";
 import { pins as snapshotPins } from "../plugins/registry/values.ts";
+import {
+	createNativeBackupRecoveryHandle,
+	type NativeBackupRecovery,
+	type NativeBackupRecoveryHandle,
+} from "../recovery/backup-recovery.ts";
 import { HubStore } from "../store/store.ts";
 import { drainNativePlugins, type NativePluginSessionParts } from "./native-session-context.ts";
 import { StartupRefusal } from "./preflight.ts";
@@ -160,6 +165,8 @@ interface NativeOwner {
 	pluginsPromise?: Promise<PluginRegistry>;
 	accountApprovals?: NativeAccountApprovalsHandle;
 	accountApprovalsClosed: boolean;
+	recovery?: NativeBackupRecoveryHandle;
+	recoveryClosed: boolean;
 	closePromise?: Promise<void>;
 	stopped: boolean;
 	drained: boolean;
@@ -206,6 +213,30 @@ export function assertHubSessionAdmission(session: unknown): void {
 	} catch {
 		throw new HubSessionError("SESSION_UNAVAILABLE");
 	}
+}
+
+/** Internal assertion only: no service parts or proof object leave the original owner. */
+export function assertNativeBackupRecoveryOwner(
+	session: unknown,
+	expectedHandle: NativeBackupRecoveryHandle,
+): void {
+	const owner = sessionOwner(session, "open");
+	if (owner.recovery !== expectedHandle || owner.recoveryClosed)
+		throw new HubSessionError("SESSION_UNAVAILABLE");
+}
+
+/** Deep consuming seam; the public Session shape and package runtime exports stay fixed. */
+export function nativeBackupRecovery(session: unknown): NativeBackupRecovery {
+	const owner = sessionOwner(session, "open");
+	owner.recovery ??= createNativeBackupRecoveryHandle(
+		session,
+		owner.parts.store,
+		owner.config.masterKey,
+		owner.config.folder,
+	);
+	const facade = owner.recovery.get();
+	assertNativeBackupRecoveryOwner(session, owner.recovery);
+	return facade;
 }
 
 /** Internal consuming seam only; not exported from the package root. */
@@ -369,6 +400,7 @@ function session(
 		stopped: false,
 		drained: false,
 		accountApprovalsClosed: false,
+		recoveryClosed: false,
 		storeClosed: false,
 	};
 	const close = (): Promise<void> => {
@@ -382,6 +414,14 @@ function session(
 		owner.closePromise = closing;
 		const draining: Promise<void>[] = [];
 		const approvals = owner.accountApprovals;
+		const recovery = owner.recovery;
+		if (recovery && !owner.recoveryClosed) {
+			try {
+				recovery.beginClose();
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
 		if (approvals && !owner.accountApprovalsClosed) {
 			try {
 				approvals.beginClose();
@@ -405,6 +445,17 @@ function session(
 				draining.push(
 					approvals.close().then(() => {
 						owner.accountApprovalsClosed = true;
+					}),
+				);
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
+		if (recovery && !owner.recoveryClosed) {
+			try {
+				draining.push(
+					recovery.close().then(() => {
+						owner.recoveryClosed = true;
 					}),
 				);
 			} catch {
