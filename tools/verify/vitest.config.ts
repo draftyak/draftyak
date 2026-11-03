@@ -2,5 +2,6 @@ import type { ConfigEnv, ViteUserConfig } from "vitest/config";
 import { vitestConfig } from "../../vitest.shared.ts";
 
 export default function config(env: ConfigEnv): ViteUserConfig {
-	return vitestConfig(env);
+	const base = vitestConfig(env);
+	return { ...base, test: { ...base.test, fileParallelism: false } };
 }
