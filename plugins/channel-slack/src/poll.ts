@@ -1,6 +1,7 @@
 import { isProxy } from "node:util/types";
 import { HOST_MAX_STREAM_BYTES } from "@draftyak/protocol/host-channel";
 import type { PluginContext } from "@draftyak/sdk/context";
+import { PluginError } from "@draftyak/sdk/errors";
 import type { HostFetch, HostResponse } from "@draftyak/sdk/fetch";
 import { reduceMessagesPage, type SlackReadPage } from "./reduce.ts";
 
@@ -121,6 +122,24 @@ function assertActive(signal: AbortSignal): void {
 	}
 }
 
+function expiredCursor(raw: unknown): boolean {
+	if (raw === null || typeof raw !== "object" || isProxy(raw)) return false;
+	const prototype = Object.getPrototypeOf(raw);
+	if (prototype !== null && prototype !== Object.prototype) return false;
+	const keys = Reflect.ownKeys(raw);
+	if (keys.length !== 2 || !keys.includes("ok") || !keys.includes("error")) return false;
+	const ok = Object.getOwnPropertyDescriptor(raw, "ok");
+	const error = Object.getOwnPropertyDescriptor(raw, "error");
+	return (
+		ok?.enumerable === true &&
+		"value" in ok &&
+		ok.value === false &&
+		error?.enumerable === true &&
+		"value" in error &&
+		error.value === "invalid_cursor"
+	);
+}
+
 function transport(raw: unknown): { fetch: HostFetch; signal: AbortSignal; receiver: unknown } {
 	const data = record(raw, ["fetch", "signal"]);
 	if (typeof data.fetch !== "function" || isProxy(data.fetch)) invalid();
@@ -154,6 +173,9 @@ async function readPage(
 	const signal = AbortSignal.any([input.signal, owned.signal]);
 	let response: HostResponse | undefined;
 	let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+	const expired = new PluginError("CURSOR_EXPIRED");
+	let cursorExpired = false;
+	let result: SlackReadPage | undefined;
 	try {
 		assertActive(input.signal);
 		const received: HostResponse = await Reflect.apply(input.fetch, input.receiver, [
@@ -163,7 +185,7 @@ async function readPage(
 		response = received;
 		assertActive(input.signal);
 		if (
-			!response.ok ||
+			(!response.ok && !(cursor !== undefined && response.status === 400)) ||
 			response.bodyRef !== undefined ||
 			response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
 				"application/json" ||
@@ -184,12 +206,15 @@ async function readPage(
 			text.push(decoder.decode(part.value, { stream: true }));
 		}
 		text.push(decoder.decode());
-		const page = reduceMessagesPage(request.channelId, JSON.parse(text.join("")));
+		const body: unknown = JSON.parse(text.join(""));
+		if (cursor !== undefined && expiredCursor(body)) throw expired;
+		if (!response.ok) invalid();
+		result = reduceMessagesPage(request.channelId, body);
 		assertActive(input.signal);
-		return page;
-	} catch {
-		assertActive(input.signal);
-		return invalid();
+	} catch (error) {
+		result = undefined;
+		// Only this request's fully read provider response can establish expiry.
+		cursorExpired = error === expired;
 	} finally {
 		// SDK body cancellation removes its abort listener, so abort our request first.
 		owned.abort();
@@ -203,10 +228,16 @@ async function readPage(
 			try {
 				reader?.releaseLock();
 			} catch {
-				invalid();
+				result = undefined;
+				cursorExpired = false;
 			}
 		}
 	}
+	// Cleanup is awaited on both paths; a late caller cancellation wins over expiry.
+	assertActive(input.signal);
+	if (cursorExpired) throw expired;
+	if (result === undefined) return invalid();
+	return result;
 }
 
 async function* pages(

@@ -2,6 +2,7 @@ import { isProxy } from "node:util/types";
 import { HOST_MAX_STREAM_BYTES } from "@draftyak/protocol/host-channel";
 import type { ChatConversationChange } from "@draftyak/protocol/normalized-change";
 import type { PluginContext } from "@draftyak/sdk/context";
+import { PluginError } from "@draftyak/sdk/errors";
 import type { HostFetch, HostResponse } from "@draftyak/sdk/fetch";
 import {
 	reduceConversationInfo,
@@ -82,6 +83,24 @@ function assertActive(signal: AbortSignal): void {
 	}
 }
 
+function expiredCursor(raw: unknown): boolean {
+	if (raw === null || typeof raw !== "object" || isProxy(raw)) return false;
+	const prototype = Object.getPrototypeOf(raw);
+	if (prototype !== null && prototype !== Object.prototype) return false;
+	const keys = Reflect.ownKeys(raw);
+	if (keys.length !== 2 || !keys.includes("ok") || !keys.includes("error")) return false;
+	const ok = Object.getOwnPropertyDescriptor(raw, "ok");
+	const error = Object.getOwnPropertyDescriptor(raw, "error");
+	return (
+		ok?.enumerable === true &&
+		"value" in ok &&
+		ok.value === false &&
+		error?.enumerable === true &&
+		"value" in error &&
+		error.value === "invalid_cursor"
+	);
+}
+
 function listUrl(cursor: string | undefined): URL {
 	const url = new URL("https://slack.com/api/users.conversations");
 	url.searchParams.set("types", "public_channel,private_channel,mpim,im");
@@ -99,6 +118,10 @@ async function readJson<T>(
 	const signal = AbortSignal.any([input.signal, owned.signal]);
 	let response: HostResponse | undefined;
 	let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+	const hasCursor = url.searchParams.has("cursor");
+	const expired = new PluginError("CURSOR_EXPIRED");
+	let cursorExpired = false;
+	let result: { value: T } | undefined;
 	try {
 		assertActive(input.signal);
 		const received: HostResponse = await Reflect.apply(input.fetch, input.receiver, [
@@ -108,7 +131,7 @@ async function readJson<T>(
 		response = received;
 		assertActive(input.signal);
 		if (
-			!response.ok ||
+			(!response.ok && !(hasCursor && response.status === 400)) ||
 			response.bodyRef !== undefined ||
 			response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
 				"application/json" ||
@@ -128,12 +151,15 @@ async function readJson<T>(
 			text.push(decoder.decode(part.value, { stream: true }));
 		}
 		text.push(decoder.decode());
-		const value = decode(JSON.parse(text.join("")));
+		const body: unknown = JSON.parse(text.join(""));
+		if (hasCursor && expiredCursor(body)) throw expired;
+		if (!response.ok) invalid();
+		result = { value: decode(body) };
 		assertActive(input.signal);
-		return value;
-	} catch {
-		assertActive(input.signal);
-		return invalid();
+	} catch (error) {
+		result = undefined;
+		// A same-code error from another source is not a provider-expiry observation.
+		cursorExpired = error === expired;
 	} finally {
 		// Cancellation must reach our request before SDK body cancellation removes its listener.
 		owned.abort();
@@ -147,10 +173,15 @@ async function readJson<T>(
 			try {
 				reader?.releaseLock();
 			} catch {
-				invalid();
+				result = undefined;
+				cursorExpired = false;
 			}
 		}
 	}
+	assertActive(input.signal);
+	if (cursorExpired) throw expired;
+	if (result === undefined) return invalid();
+	return result.value;
 }
 
 async function* listPages(

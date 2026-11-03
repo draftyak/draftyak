@@ -5,6 +5,7 @@ const config: UserConfig = {
 		"src/reduce.ts",
 		"src/poll.ts",
 		"src/conversations.ts",
+		"src/thread-index.ts",
 		"src/socket-mode.ts",
 		"src/socket-lease.ts",
 		"src/catalog.ts",

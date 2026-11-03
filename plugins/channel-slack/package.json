@@ -8,6 +8,7 @@
     "./reduce": "./src/reduce.ts",
     "./poll": "./src/poll.ts",
     "./conversations": "./src/conversations.ts",
+    "./thread-index": "./src/thread-index.ts",
     "./socket-mode": "./src/socket-mode.ts",
     "./socket-lease": "./src/socket-lease.ts",
     "./catalog": "./src/catalog.ts",
@@ -33,6 +34,10 @@
       "./conversations": {
         "types": "./dist/conversations.d.mts",
         "default": "./dist/conversations.mjs"
+      },
+      "./thread-index": {
+        "types": "./dist/thread-index.d.mts",
+        "default": "./dist/thread-index.mjs"
       },
       "./socket-mode": {
         "types": "./dist/socket-mode.d.mts",
