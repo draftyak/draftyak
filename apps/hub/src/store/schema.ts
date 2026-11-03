@@ -34,6 +34,7 @@ const DELIVERED: ReadonlyMap<string, string> = new Map([
 		"adminchallenges",
 		delivered("identity/admin-challenge-migrations", "identity/admin-challenge-migrations"),
 	],
+	["rawcontent", delivered("sync/raw-migrations", "sync/raw-migrations")],
 	["backup", delivered("recovery/backup-migrations", "recovery/backup-migrations")],
 	["backupops", delivered("identity/backup-migrations", "identity/backup-migrations")],
 	[
