@@ -11,6 +11,7 @@ const config: UserConfig = {
 		"src/probe.ts",
 		"src/send.ts",
 		"src/reconcile.ts",
+		"src/sync-state.ts",
 	],
 	format: "esm",
 	platform: "node",
