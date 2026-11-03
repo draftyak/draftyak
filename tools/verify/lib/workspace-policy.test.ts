@@ -325,6 +325,92 @@ describe("basename inventory", () => {
 		expect(await inventory(dir, true)).toEqual([".GATE-SENTINEL"]);
 	});
 
+	it("does not lowercase impossible ASCII names while still listing every synthetic descendant", async () => {
+		const root = path.resolve("synthetic-ascii-frontier");
+		const folders = Array.from({ length: 64 }, (_, i) => `DYTEST-DIRECTORY-${i}`);
+		const files = [
+			"NOT-A-SENTINEL",
+			...Array.from({ length: 255 }, (_, i) => `DYTEST-ORDINARY-FILE-${i}`),
+		];
+		const mismatches = new Set([...folders, ...files]);
+		const original = String.prototype.toLowerCase;
+		const descriptor = Object.getOwnPropertyDescriptor(String.prototype, "toLowerCase");
+		if (!descriptor) throw failure();
+		let loweredMismatches = 0;
+		let reads = 0;
+		let active = 0;
+		let peak = 0;
+		let found: string[] = [];
+		Object.defineProperty(String.prototype, "toLowerCase", {
+			...descriptor,
+			value: function (this: string): string {
+				if (mismatches.has(this)) loweredMismatches++;
+				return original.call(this);
+			},
+		});
+		try {
+			found = await namedFiles(".gate-sentinel", root, true, async (target) => {
+				reads++;
+				active++;
+				peak = Math.max(peak, active);
+				try {
+					await Promise.resolve();
+					if (target === root)
+						return [
+							...folders.map((name) => entry(name, true)),
+							...files.map((name) => entry(name)),
+						];
+					if (!folders.some((name) => path.join(root, name) === target)) throw failure();
+					return [entry(".GATE-SENTINEL")];
+				} finally {
+					active--;
+				}
+			});
+		} finally {
+			Object.defineProperty(String.prototype, "toLowerCase", descriptor);
+		}
+		expect(loweredMismatches).toBe(0);
+		expect(reads).toBe(65);
+		expect(peak).toBe(4);
+		expect(active).toBe(0);
+		expect(found).toEqual(folders.map((name) => `${name}/.GATE-SENTINEL`).toSorted());
+	});
+
+	it.each([
+		["\u0130", ["i\u0307", "\u0130"]],
+		["i\u0307", ["i\u0307", "\u0130"]],
+		[".\u0130", [".i\u0307", ".\u0130"]],
+		[".i\u0307", [".i\u0307", ".\u0130"]],
+	] as const)(
+		"preserves expanding Unicode lowercase matches for %s",
+		async (basename, expected) => {
+			const found = await namedFiles(
+				basename,
+				path.resolve("synthetic-unicode-casing"),
+				true,
+				async () => [
+					entry("\u0130"),
+					entry("i\u0307"),
+					entry(".\u0130"),
+					entry(".i\u0307"),
+					entry("i"),
+					entry("ordinary"),
+				],
+			);
+			expect(found).toEqual(expected);
+		},
+	);
+
+	it("keeps non-ASCII names on the complete lowercase path for an ASCII target", async () => {
+		const found = await namedFiles(
+			"key",
+			path.resolve("synthetic-unicode-ascii-target"),
+			true,
+			async () => [entry("\u212Aey"), entry("KEY"), entry("key-longer"), entry("ordinary")],
+		);
+		expect(found).toEqual(["KEY", "\u212Aey"]);
+	});
+
 	it("does not confuse nonmatching basenames or paths containing newlines", async () => {
 		const root = path.resolve("synthetic");
 		expect(
@@ -405,6 +491,39 @@ describe("basename inventory", () => {
 				}
 			}
 		}
+	});
+
+	it.each([
+		"ordinary",
+		"",
+		".",
+		"..",
+		"a/..",
+		"a/",
+		"/",
+		"a\\b",
+		"C:relative",
+		"snow\u2603",
+		"a\nb",
+	])("preserves deep relative matches and native callback paths through %j", async (unusual) => {
+		const root = path.resolve("synthetic-deferred-relative");
+		const components = ["plain0", "plain1", "plain2", unusual, "after"];
+		const expectedRelative = [""];
+		for (const component of components)
+			expectedRelative.push(path.posix.join(expectedRelative.at(-1) ?? "", component));
+		const reads: string[] = [];
+		const found = await namedFiles(".gate-sentinel", root, false, async (target) => {
+			const index = reads.length;
+			reads.push(target);
+			return [
+				entry(".gate-sentinel"),
+				...(index < components.length ? [entry(components[index] ?? "", true)] : []),
+			];
+		});
+		expect(reads).toEqual(expectedRelative.map((relative) => path.join(root, relative)));
+		expect(found).toEqual(
+			expectedRelative.map((relative) => path.posix.join(relative, ".gate-sentinel")).toSorted(),
+		);
 	});
 
 	it.each(["trailing", "forward"] as const)(
