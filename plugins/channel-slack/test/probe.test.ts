@@ -155,7 +155,7 @@ afterEach(async () => {
 });
 
 describe("Slack advisory probe", () => {
-	it("uses one fixed credential-free auth.test GET and returns no provider identity", async () => {
+	it("uses one fixed credential-free auth.test POST and returns no provider identity", async () => {
 		const owned = fixture(
 			json({
 				ok: true,
@@ -171,13 +171,13 @@ describe("Slack advisory probe", () => {
 		expect(owned.requests).toHaveLength(1);
 		expect(owned.methods).toEqual(["host/fetch"]);
 		expect(owned.requests[0]).toMatchObject({
-			method: "GET",
+			method: "POST",
 			url: "https://slack.com/api/auth.test",
 			headers: [],
 		});
 		for (const key of ["body", "sendTicket", "saveAs", "lookupPermit"])
 			expect(owned.requests[0]).not.toHaveProperty(key);
-		expect(owned.fetchCalls[0]).toMatchObject({ method: "GET", stream: false });
+		expect(owned.fetchCalls[0]).toMatchObject({ method: "POST", stream: false });
 		expect(JSON.stringify(result)).not.toContain("DYTEST");
 		expect(owned.fetchCalls[0]?.signal?.aborted).toBe(true);
 		expect(owned.controller.signal.aborted).toBe(false);
