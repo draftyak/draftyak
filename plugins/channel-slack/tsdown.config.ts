@@ -15,6 +15,8 @@ const config: UserConfig = {
 		"src/sync-state.ts",
 		"src/body.ts",
 		"src/threads.ts",
+		"src/legacy-sync-state.ts",
+		"src/legacy-sync.ts",
 	],
 	format: "esm",
 	platform: "node",
