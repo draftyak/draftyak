@@ -7,7 +7,7 @@ export type { NativeAppReleaseCode } from "./paths.ts";
 export { NativeAppReleaseError } from "./paths.ts";
 
 export const MAX_MANIFEST_BYTES: number = 1024 * 1024;
-export const MAX_FILE_BYTES: number = 128 * 1024 * 1024;
+export const MAX_FILE_BYTES: number = 256 * 1024 * 1024;
 export const MAX_TOTAL_BYTES: number = 512 * 1024 * 1024;
 export const MAX_FILES = 4096;
 export const NATIVE_APP_BUNDLE_IDS: readonly [
