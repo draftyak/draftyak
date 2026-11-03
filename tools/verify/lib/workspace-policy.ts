@@ -180,7 +180,6 @@ export async function namedFiles(
 		next?: PendingDirectory;
 	};
 	let first: PendingDirectory | undefined = { directory: "", target: root, plain: true };
-	let last: PendingDirectory | undefined = first;
 	const found: string[] = [];
 	await new Promise<void>((resolve, reject) => {
 		let active = 0;
@@ -193,6 +192,8 @@ export async function namedFiles(
 			try {
 				const children = await list(directory, absolute);
 				if (failed) return;
+				let discoveredFirst: PendingDirectory | undefined;
+				let discoveredLast: PendingDirectory | undefined;
 				for (const entry of children) {
 					const name = entry.name;
 					if (typeof name !== "string") throw inventoryFailed();
@@ -233,15 +234,20 @@ export async function namedFiles(
 							target,
 							plain,
 						};
-						if (last) last.next = pending;
-						else first = pending;
-						last = pending;
+						if (discoveredLast) discoveredLast.next = pending;
+						else discoveredFirst = pending;
+						discoveredLast = pending;
 					}
+				}
+				// Keep each listing's order, but descend before older pending siblings instead
+				// of retaining every directory in a breadth-level frontier at once.
+				if (discoveredLast) {
+					discoveredLast.next = first;
+					first = discoveredFirst;
 				}
 			} catch {
 				failed = true;
 				first = undefined;
-				last = undefined;
 			} finally {
 				active -= 1;
 				advance();
@@ -252,7 +258,6 @@ export async function namedFiles(
 			while (!failed && active < 4 && first) {
 				const current = first;
 				first = current.next;
-				if (!first) last = undefined;
 				active += 1;
 				// Passing only values prevents a slow read from retaining a dequeued node's tail.
 				void visit(current.directory, current.target, current.plain);

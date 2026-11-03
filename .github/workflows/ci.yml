@@ -135,6 +135,20 @@ jobs:
           workspaces: ${{ needs.changes.outputs.rust }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Prepare authenticated offline Node fixture
+        id: offline-node
+        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''
+        env:
+          DRAFTYAK_CACHE_DIR: ${{ runner.temp }}/draftyak-node-input
+        run: |
+          pnpm fetch-node --version bundled --platform linux --arch x64
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import path from 'node:path';
+          const { bundled } = JSON.parse(readFileSync('tools/fetch-node/versions.json', 'utf8'));
+          const cache = path.join(process.env.DRAFTYAK_CACHE_DIR, 'node', bundled);
+          appendFileSync(process.env.GITHUB_OUTPUT, `cache=${cache}\n`);
+          NODE
       # Also on workflow changes, so an edit to the pin or the download is tested on its own PR.
       - name: cargo-deny 0.20.2, checked against its published SHA-256
         if: contains(fromJSON(needs.changes.outputs.areas), 'rust:crates') || contains(fromJSON(needs.changes.outputs.areas), 'workflows')
@@ -180,6 +194,8 @@ jobs:
           SMOKE: ${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}
           DRAFTYAK_STRICT_SKIPS: '1'
           PLAYWRIGHT_BROWSERS_PATH: ${{ steps.browser-setup.outputs.path }}
+          DRAFTYAK_TEST_NODE_CACHE: ${{ steps.offline-node.outputs.cache }}
+          DRAFTYAK_CACHE_DIR: ${{ runner.temp }}/draftyak-node-scratch
         run: |
           filters=()
           for dir in $SPIKES; do filters+=("--filter=./$dir"); done
