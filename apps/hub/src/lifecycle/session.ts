@@ -42,6 +42,7 @@ import {
 	type NativeBackupRecoveryHandle,
 } from "../recovery/backup-recovery.ts";
 import { HubStore } from "../store/store.ts";
+import { RAW_CONTENT_MIGRATIONS } from "../sync/raw-store.ts";
 import { drainNativePlugins, type NativePluginSessionParts } from "./native-session-context.ts";
 import { StartupRefusal } from "./preflight.ts";
 
@@ -625,7 +626,7 @@ export async function openHubSession(options: HubSessionOptions): Promise<HubSes
 				nativeBinding,
 				masterKey,
 				create: !existing,
-				migrations: HUB_NAMESPACES,
+				migrations: { ...HUB_NAMESPACES, rawcontent: RAW_CONTENT_MIGRATIONS },
 			});
 		} catch (error) {
 			throw new HubSessionError(notADatabase(error) ? "UNLOCK_REFUSED" : "STORE_UNAVAILABLE");
