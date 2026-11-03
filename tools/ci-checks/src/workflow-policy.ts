@@ -1,4 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
+import {
+	nativeSupervisorWorkflowContract,
+	nativeSupervisorWorkflowFile,
+} from "./native-supervisor-workflow.ts";
 import { parseYaml, type Yaml, type YamlDocument, type YamlPath } from "./yaml.ts";
 
 // The single source of truth for action pins: [SHA, version comment], each SHA checked against its
@@ -45,6 +49,8 @@ const requiredPrTypes: Readonly<Record<string, readonly string[]>> = {
 	".github/workflows/pr-title.yml": ["opened", "edited", "synchronize", "reopened"],
 };
 const nonDocs = "needs.changes.outputs.docs-only != 'true'";
+const nativeSelected = "needs.changes.outputs.native-transport == 'true'";
+const readyRun = "(github.event_name != 'pull_request' || !github.event.pull_request.draft)";
 const ciControls: Readonly<Record<string, YamlMap>> = {
 	changes: {},
 	cheap: { needs: "changes" },
@@ -54,11 +60,52 @@ const ciControls: Readonly<Record<string, YamlMap>> = {
 	},
 	windows: {
 		needs: "changes",
-		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft))`,
+		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ${nativeSelected}))`,
 	},
-	required: { needs: ["changes", "cheap", "full", "windows"], if: "always()" },
+	macos: { needs: "changes", if: `${nonDocs} && ${readyRun} && ${nativeSelected}` },
+	required: { needs: ["changes", "cheap", "full", "windows", "macos"], if: "always()" },
 };
-const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
+const ciChangesOutputs: YamlMap = {
+	areas: `\${{ steps.areas.outputs.areas }}`,
+	"docs-only": `\${{ steps.areas.outputs.docs-only }}`,
+	rust: `\${{ steps.areas.outputs.rust }}`,
+	spikes: `\${{ steps.areas.outputs.spikes }}`,
+	heavy: `\${{ steps.areas.outputs.heavy }}`,
+	"native-transport": `\${{ steps.native.outputs.native-transport }}`,
+	"ordinary-heavy": `\${{ steps.native.outputs.ordinary-heavy }}`,
+	"template-smoke": `\${{ steps.areas.outputs.template-smoke }}`,
+	source: `\${{ steps.source.outputs.source }}`,
+};
+const browserRequired = "steps.browser-setup.outputs.required == 'true'";
+const browserPath = `\${{ steps.browser-setup.outputs.path }}`;
+const browserCache: YamlMap = {
+	id: "browser-cache",
+	if: browserRequired,
+	uses: `actions/cache@${actionPins["actions/cache"]?.[0]}`,
+	with: {
+		path: browserPath,
+		key: `playwright-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('pnpm-lock.yaml') }}`,
+	},
+};
+const ciCommands: Record<string, readonly YamlMap[]> = {
+	changes: [
+		{
+			id: "areas",
+			env: {
+				BASE_SHA: `\${{ github.event.pull_request.base.sha || github.event.before }}`,
+				HEAD_SHA: `\${{ github.event.pull_request.head.sha || github.sha }}`,
+			},
+			run: "node tools/ci-checks/src/changes.ts",
+		},
+		{
+			id: "native",
+			env: {
+				HEAVY: `\${{ steps.areas.outputs.heavy }}`,
+				RUST: `\${{ steps.areas.outputs.rust }}`,
+			},
+			run: "node tools/ci-checks/src/native-transport.ts select",
+		},
+	],
 	cheap: [
 		{
 			if: "needs.changes.outputs.docs-only == 'true'",
@@ -71,12 +118,29 @@ const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
 		{ run: "pnpm install --frozen-lockfile" },
 		{ run: "pnpm build" },
 		{
-			if: "needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''",
+			id: "browser-setup",
 			env: {
 				SPIKES: `\${{ needs.changes.outputs.spikes }}`,
-				HEAVY: `\${{ needs.changes.outputs.heavy }}`,
+				PLAYWRIGHT_BROWSERS_PATH: `\${{ runner.temp }}/draftyak-playwright`,
+			},
+			run: "node tools/ci-checks/src/browser-setup.ts plan",
+		},
+		{
+			if: browserRequired,
+			env: {
+				SPIKES: `\${{ needs.changes.outputs.spikes }}`,
+				PLAYWRIGHT_BROWSERS_PATH: browserPath,
+			},
+			run: "node tools/ci-checks/src/browser-setup.ts install",
+		},
+		{
+			if: "needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+			env: {
+				SPIKES: `\${{ needs.changes.outputs.spikes }}`,
+				HEAVY: `\${{ needs.changes.outputs.ordinary-heavy }}`,
 				SMOKE: `\${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}`,
 				DRAFTYAK_STRICT_SKIPS: "1",
+				PLAYWRIGHT_BROWSERS_PATH: browserPath,
 			},
 			run: [
 				"filters=()",
@@ -89,7 +153,7 @@ const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
 				'if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then',
 				'  filters+=("--filter=!./packages/create-plugin")',
 				"fi",
-				`node tools/verify/turbo.ts run test:heavy "\${filters[@]}"`,
+				`node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
 				"",
 			].join("\n"),
 		},
@@ -99,6 +163,31 @@ const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
 		{ run: "pnpm verify", env: { TURBO_CONCURRENCY: "1" } },
 	],
 };
+
+const nativePlatforms = {
+	full: { platform: "linux", architecture: "x64", runner: "ubuntu-24.04" },
+	windows: { platform: "win32", architecture: "x64", runner: "windows-2025" },
+	macos: { platform: "darwin", architecture: "arm64", runner: "macos-15" },
+} as const;
+for (const [job, platform] of Object.entries(nativePlatforms)) {
+	const conditional: YamlMap = job === "macos" ? {} : { if: nativeSelected };
+	const env = { NATIVE_PLATFORM: platform.platform, NATIVE_ARCHITECTURE: platform.architecture };
+	const platformCheck: YamlMap = {
+		...conditional,
+		env,
+		run: "node tools/ci-checks/src/native-transport.ts platform",
+	};
+	const execute: YamlMap = {
+		id: "native",
+		...conditional,
+		env,
+		run: "pnpm exec node tools/ci-checks/src/native-transport.ts run",
+	};
+	ciCommands[job] =
+		job === "macos"
+			? [platformCheck, { run: "pnpm install --frozen-lockfile" }, execute]
+			: [platformCheck, ...(ciCommands[job] ?? []), execute];
+}
 const prTitleCommands: readonly YamlMap[] = [
 	{
 		env: {
@@ -121,6 +210,99 @@ const prTitleCommands: readonly YamlMap[] = [
 const readOnly = (permissions: Yaml | undefined): boolean => {
 	const map = asMap(permissions);
 	return Object.keys(map).join() === "contents" && map.contents === "read";
+};
+
+const nativeStoreFile = ".github/workflows/native-store.yml";
+// The receipt-only upload exception requires the complete trusted execution contract.
+const nativeStoreContract: Yaml = {
+	name: "Native macOS store",
+	on: {
+		workflow_dispatch: {
+			inputs: {
+				pr: { description: "Open owner PR into m2", required: true, type: "string" },
+				head: {
+					description: "Exact current PR head (40 lowercase hex characters)",
+					required: true,
+					type: "string",
+				},
+			},
+		},
+	},
+	permissions: { contents: "read" },
+	env: { DO_NOT_TRACK: "1", TURBO_TELEMETRY_DISABLED: "1" },
+	defaults: { run: { shell: "bash" } },
+	jobs: {
+		"native-store": {
+			if: `\${{ github.event_name == 'workflow_dispatch' && github.repository == 'draftyak/draftyak' && github.actor == 'nicksavov' && github.triggering_actor == 'nicksavov' && github.ref == 'refs/heads/m0' }}`,
+			"runs-on": "macos-15",
+			"timeout-minutes": 15,
+			steps: [
+				{
+					name: "Check out trusted controls",
+					uses: `actions/checkout@${actionPins["actions/checkout"]?.[0]}`,
+					with: { ref: `\${{ github.sha }}`, "persist-credentials": false },
+				},
+				{
+					name: "Set up Node",
+					uses: `actions/setup-node@${actionPins["actions/setup-node"]?.[0]}`,
+					with: { "node-version-file": ".node-version" },
+				},
+				{
+					name: "Admit the exact owner PR head",
+					id: "source",
+					env: { NATIVE_STORE_PR: `\${{ inputs.pr }}`, NATIVE_STORE_HEAD: `\${{ inputs.head }}` },
+					run: "node tools/ci-checks/src/native-store.ts admit",
+				},
+				{
+					name: "Check out admitted source",
+					uses: `actions/checkout@${actionPins["actions/checkout"]?.[0]}`,
+					with: {
+						repository: "draftyak/draftyak",
+						ref: `\${{ steps.source.outputs.head }}`,
+						path: "source",
+						"persist-credentials": false,
+					},
+				},
+				{
+					name: "Verify the source checkout",
+					env: {
+						NATIVE_STORE_PR: `\${{ steps.source.outputs.pr }}`,
+						NATIVE_STORE_HEAD: `\${{ steps.source.outputs.head }}`,
+					},
+					run: "node tools/ci-checks/src/native-store.ts verify-source",
+				},
+				{
+					name: "Set up pnpm",
+					uses: `pnpm/action-setup@${actionPins["pnpm/action-setup"]?.[0]}`,
+				},
+				{
+					name: "Install locked source dependencies",
+					"working-directory": "source",
+					run: "pnpm install --frozen-lockfile",
+				},
+				{
+					name: "Run and verify the native store case",
+					id: "native",
+					env: {
+						NATIVE_STORE_PR: `\${{ steps.source.outputs.pr }}`,
+						NATIVE_STORE_HEAD: `\${{ steps.source.outputs.head }}`,
+					},
+					run: "node tools/ci-checks/src/native-store.ts run",
+				},
+				{
+					name: "Upload the verified native receipt",
+					if: `\${{ success() && steps.native.outputs.receipt == 'ready' }}`,
+					uses: `actions/upload-artifact@${actionPins["actions/upload-artifact"]?.[0]}`,
+					with: {
+						name: `native-store-receipt-\${{ github.run_id }}-\${{ github.run_attempt }}`,
+						path: `\${{ runner.temp }}/native-store-receipt.json`,
+						"if-no-files-found": "error",
+						"retention-days": 1,
+					},
+				},
+			],
+		},
+	},
 };
 
 const labelsFile = ".github/workflows/labels.yml";
@@ -193,7 +375,15 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 			const step = Object.fromEntries(
 				Object.entries(steps[index] ?? {}).filter(([key]) => key !== "name"),
 			);
-			if (matches.length !== 1 || index <= previous || !isDeepStrictEqual(step, expected)) {
+			const duplicateId =
+				typeof expected.id === "string" &&
+				steps.filter((step) => step.id === expected.id).length !== 1;
+			if (
+				matches.length !== 1 ||
+				index <= previous ||
+				duplicateId ||
+				!isDeepStrictEqual(step, expected)
+			) {
 				report(
 					["jobs", job, "steps"],
 					`must preserve ${job} command and its execution controls: ${expected.run}`,
@@ -206,6 +396,17 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	const reviewedLabels = file === labelsFile && isDeepStrictEqual(doc.value, labelsContract);
 	if (file === labelsFile && !reviewedLabels) {
 		report([], "labels.yml must exactly match the reviewed owner-only labels contract");
+	}
+	const reviewedNativeStore =
+		file === nativeStoreFile && isDeepStrictEqual(doc.value, nativeStoreContract);
+	if (file === nativeStoreFile && !reviewedNativeStore) {
+		report([], "native-store.yml must exactly match the trusted native receipt contract");
+	}
+	const reviewedNativeSupervisor =
+		file === nativeSupervisorWorkflowFile &&
+		isDeepStrictEqual(doc.value, nativeSupervisorWorkflowContract(actionPins));
+	if (file === nativeSupervisorWorkflowFile && !reviewedNativeSupervisor) {
+		report([], "native-supervisor.yml must exactly match the trusted native supervisor contract");
 	}
 	if (file === ".github/workflows/ci.yml") {
 		const checkFailurePolicy = (value: Yaml, at: YamlPath): void => {
@@ -282,6 +483,9 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 		if (!isDeepStrictEqual(workflow.defaults, { run: { shell: "bash" } })) {
 			report(["defaults"], "must preserve the CI execution shell");
 		}
+		if (!isDeepStrictEqual(asMap(asMap(workflow.jobs).changes).outputs, ciChangesOutputs)) {
+			report(["jobs", "changes", "outputs"], "must preserve classifier job output mappings");
+		}
 		for (const [job, controls] of Object.entries(ciControls)) {
 			const definition = asMap(asMap(workflow.jobs)[job]);
 			const actual = Object.fromEntries(
@@ -302,7 +506,80 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 			) {
 				report(["jobs", job], `must preserve ${job} job execution controls`);
 			}
-			checkCommands(job, definition, ciCommands[job] ?? []);
+			if (job !== "required" && job !== "changes") {
+				const expectedOutputs: YamlMap = {
+					source: `\${{ steps.source.outputs.source }}`,
+					...(job in nativePlatforms
+						? { "native-transport": `\${{ steps.native.outputs.native-transport }}` }
+						: {}),
+				};
+				if (!isDeepStrictEqual(definition.outputs, expectedOutputs))
+					report(["jobs", job, "outputs"], "must preserve source and native completion outputs");
+			}
+			checkCommands(job, definition, [
+				...(job === "required"
+					? []
+					: [{ id: "source", run: "node tools/ci-checks/src/verification-receipt.ts capture" }]),
+				...(ciCommands[job] ?? []),
+			]);
+			if (job in nativePlatforms) {
+				const platform = nativePlatforms[job as keyof typeof nativePlatforms];
+				if (definition["runs-on"] !== platform.runner || definition["timeout-minutes"] !== 30)
+					report(["jobs", job], "must preserve the native runner and time budget");
+				const rustSteps = asList(definition.steps)
+					.map(asMap)
+					.filter((step) => String(step.uses).startsWith("dtolnay/rust-toolchain@"));
+				const expectedRust: YamlMap = {
+					uses: `dtolnay/rust-toolchain@${actionPins["dtolnay/rust-toolchain"]?.[0]}`,
+					...(job === "full"
+						? { if: "needs.changes.outputs.rust != ''" }
+						: job === "windows"
+							? {
+									if: `(hashFiles('crates/Cargo.toml') != '' || ${nativeSelected})`,
+								}
+							: {}),
+					with: { toolchain: rustToolchain, components: "clippy, rustfmt" },
+				};
+				if (rustSteps.length !== 1 || !isDeepStrictEqual(rustSteps[0], expectedRust))
+					report(["jobs", job, "steps"], "must preserve the pinned native Rust setup");
+				for (const step of asList(definition.steps).map(asMap)) {
+					const ordinaryCondition = Object.hasOwn(asMap(step.env), "SPIKES")
+						? "needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''"
+						: "needs.changes.outputs.ordinary-heavy != ''";
+					if (
+						job === "full" &&
+						String(step.run).includes("tools/verify/turbo.ts run test:heavy") &&
+						Object.hasOwn(asMap(step.env), "HEAVY") &&
+						(asMap(step.env).HEAVY !== `\${{ needs.changes.outputs.ordinary-heavy }}` ||
+							step.if !== ordinaryCondition)
+					)
+						report(
+							["jobs", job, "steps"],
+							"ordinary heavy suites must exclude the dedicated native selector",
+						);
+				}
+			}
+		}
+		const steps = asList(asMap(asMap(workflow.jobs).full).steps).map(asMap);
+		const caches = steps.flatMap((step, index) => (step.id === "browser-cache" ? [index] : []));
+		const cacheAt = caches[0] ?? -1;
+		const cache = Object.fromEntries(
+			Object.entries(steps[cacheAt] ?? {}).filter(([key]) => key !== "name"),
+		);
+		const planAt = steps.findIndex((step) => step.id === "browser-setup");
+		const installAt = steps.findIndex(
+			(step) => step.run === "node tools/ci-checks/src/browser-setup.ts install",
+		);
+		if (
+			caches.length !== 1 ||
+			!isDeepStrictEqual(cache, browserCache) ||
+			cacheAt <= planAt ||
+			cacheAt >= installAt
+		) {
+			report(
+				["jobs", "full", "steps"],
+				"must preserve the selected browser cache between its plan and install",
+			);
 		}
 	}
 	if (file === ".github/workflows/pr-title.yml") {
@@ -374,14 +651,18 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				uploads[0] === `\${{ runner.temp }}/ci-verification.json` &&
 				inputs["retention-days"] === 7 &&
 				inputs["if-no-files-found"] === "error";
+			const nativeReceipt =
+				(reviewedNativeStore && job === "native-store") ||
+				(reviewedNativeSupervisor && job === "native-supervisor");
 			if (
 				action === "actions/upload-artifact" &&
 				!receipt &&
+				!nativeReceipt &&
 				(uploads.length === 0 || uploads.some((p) => !evidence.test(p) || p.includes("..")))
 			) {
 				report(
 					at,
-					"upload-artifact may only upload spikes/*/evidence/ or the fixed CI receipt, never an installable build",
+					"upload-artifact may only upload spikes/*/evidence/, the fixed CI receipt or the trusted native receipt, never an installable build",
 				);
 			}
 			for (const [expression, body = ""] of String(step.run ?? "").matchAll(expressions)) {

@@ -1,13 +1,11 @@
-import { strictSkips } from "@draftyak/spike-kit";
 import type { Capability } from "@draftyak/spike-kit/vitest";
 import { ANDROID_TARGET, androidSdk, ndkHostTag } from "./android.ts";
+import { isDedicatedSpikeBuild } from "./build-context.ts";
 import { rustTargetInstalled } from "./cargo.ts";
 import { IOS_SIMULATOR, xcodeReady } from "./ios.ts";
 
-// spikes-run: GitHub Actions with strict skips. CI's full job has GITHUB_ACTIONS too, but no
-// strict skips.
-export const spikesRun = (env: NodeJS.ProcessEnv): boolean =>
-	env.GITHUB_ACTIONS === "true" && strictSkips(env);
+// Strict skips also apply outside the workflow that provisions mobile toolchains.
+export const spikesRun = (env: NodeJS.ProcessEnv): boolean => isDedicatedSpikeBuild(env);
 
 // spikes-run's mobile jobs must build: there a capability counts as present on its own OS, so a
 // missing toolchain fails its tests instead of a routed skip passing. CI's full job routes the
