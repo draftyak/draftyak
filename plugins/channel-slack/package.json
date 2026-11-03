@@ -13,7 +13,8 @@
     "./catalog": "./src/catalog.ts",
     "./probe": "./src/probe.ts",
     "./send": "./src/send.ts",
-    "./reconcile": "./src/reconcile.ts"
+    "./reconcile": "./src/reconcile.ts",
+    "./sync-state": "./src/sync-state.ts"
   },
   "publishConfig": {
     "exports": {
@@ -56,6 +57,10 @@
       "./reconcile": {
         "types": "./dist/reconcile.d.mts",
         "default": "./dist/reconcile.mjs"
+      },
+      "./sync-state": {
+        "types": "./dist/sync-state.d.mts",
+        "default": "./dist/sync-state.mjs"
       }
     }
   },
