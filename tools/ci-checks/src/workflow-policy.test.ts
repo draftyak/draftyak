@@ -544,12 +544,12 @@ describe("workflow policy", () => {
 		["build removal", "      - run: pnpm build\n", ""],
 		[
 			"Windows Rust setup loses ordinary crates coverage",
-			"if: (hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true')",
+			"if: hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'",
 			"if: needs.changes.outputs.native-transport == 'true'",
 		],
 		[
 			"Windows Rust setup loses native coverage",
-			"if: (hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true')",
+			"if: hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'",
 			"if: hashFiles('crates/Cargo.toml') != ''",
 		],
 		["build condition", "      - run: pnpm build", "      - if: false\n        run: pnpm build"],
