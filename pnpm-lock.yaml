@@ -240,6 +240,25 @@ importers:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)
 
+  plugins/channel-gmail:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@draftyak/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+    devDependencies:
+      '@draftyak/fakes':
+        specifier: workspace:*
+        version: link:../../packages/fakes
+      '@draftyak/plugin-testkit':
+        specifier: workspace:*
+        version: link:../../packages/plugin-testkit
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
   plugins/channel-hello:
     dependencies:
       '@draftyak/protocol':
