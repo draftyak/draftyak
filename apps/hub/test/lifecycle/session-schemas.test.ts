@@ -13,6 +13,7 @@ const EXPECTED = [
 	["credentials", ["0001_credentials", "0002_sealed_credentials"]],
 	["tickets", ["0001_send_attempts"]],
 	["accounts", ["0001_accounts"]],
+	["gmailcredentials", ["0001_credentials"]],
 ] as const;
 const DOMAIN_TABLES = [
 	"accounts",
@@ -24,6 +25,7 @@ const DOMAIN_TABLES = [
 	"devices",
 	"event_meta",
 	"events",
+	"gmail_credentials",
 	"hub_meta",
 	"jobs",
 	"jobs_meta",
@@ -170,7 +172,11 @@ describe("native component schemas in an unlocked session", () => {
 			expect(error.cause).toBeUndefined();
 			expect(String(error)).not.toContain("DYTEST-PRIVATE-ACCOUNTS-MIGRATION");
 			expectErased(key);
-			expect(order).toEqual(EXPECTED.map(([namespace]) => namespace));
+			expect(order).toEqual(
+				EXPECTED.slice(0, EXPECTED.findIndex(([namespace]) => namespace === "accounts") + 1).map(
+					([namespace]) => namespace,
+				),
+			);
 			expect(pendingIdentity).toEqual({ transport: 1, signing: 1, certificate: 1 });
 			expect(failedStore).toBeInstanceOf(HubStore);
 			expect(() =>

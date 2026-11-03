@@ -296,6 +296,7 @@ describe("first run", () => {
 				["credentials"],
 				["tickets"],
 				["accounts"],
+				["gmailcredentials"],
 			]);
 		} finally {
 			spy.mockRestore();
