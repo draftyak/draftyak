@@ -1,0 +1,25 @@
+{
+  "productName": "DraftYak",
+  "version": "0.0.0",
+  "identifier": "com.draftyak.client",
+  "build": {
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "freezePrototype": true,
+      "pattern": {
+        "use": "isolation",
+        "options": { "dir": "isolation" }
+      },
+      "capabilities": ["main", "approval"],
+      "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "macOS": { "infoPlist": "Info.plist" }
+  }
+}

@@ -1,78 +1,123 @@
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { NativePolicyCollector } from "../src/runner.ts";
 
-const injected = vi.hoisted(() => ({ create: vi.fn(), wrap: vi.fn(), database: vi.fn() }));
-vi.mock("../src/evidence.ts", () => ({ createEvidenceDirectory: injected.create }));
-vi.mock("../src/runner.ts", () => ({ createNativePolicyProducer: injected.wrap }));
-vi.mock("../src/current-basis.ts", async (original) => {
-	const actual = await original<typeof import("../src/current-basis.ts")>();
-	return {
-		...actual,
-		UnavailableCurrentBasisProducer: class {
-			database = injected.database;
-		},
-	};
-});
+const injected = vi.hoisted(() => ({
+	wrap: vi.fn(),
+	manual: vi.fn(),
+	audit: vi.fn(),
+	c2: vi.fn(),
+	github: vi.fn(),
+}));
+vi.mock("../src/runner.ts", async (original) => ({
+	...(await original<typeof import("../src/runner.ts")>()),
+	createNativePolicyProducer: injected.wrap,
+}));
+vi.mock("../src/protected-manual-assessment-source.ts", async (original) => ({
+	...(await original<typeof import("../src/protected-manual-assessment-source.ts")>()),
+	createNativeProtectedManualAssessmentSource: injected.manual,
+}));
+vi.mock("../src/native-audit-source.ts", async (original) => ({
+	...(await original<typeof import("../src/native-audit-source.ts")>()),
+	createNativeAuditSource: injected.audit,
+}));
+vi.mock("../src/release-c2-source.ts", async (original) => ({
+	...(await original<typeof import("../src/release-c2-source.ts")>()),
+	createNativeC2Collector: injected.c2,
+}));
+vi.mock("../src/github-security-source.ts", async (original) => ({
+	...(await original<typeof import("../src/github-security-source.ts")>()),
+	createGitHubSecuritySource: injected.github,
+}));
 
-import { BasisError } from "../src/current-basis.ts";
-import { createProductionProducer } from "../src/production.ts";
+import { createProductionProducer, type ProductionProducerOptions } from "../src/production.ts";
 
-const runId = "2c7b1e7a-9398-4f14-8fbb-13cb96357927";
+const root = path.resolve("synthetic-checkout");
+const invalidEnvironments: readonly Readonly<Record<string, string>>[] = [
+	{ HTTPS_PROXY: "https://invalid.example" },
+	{ NODE_OPTIONS: "--inspect" },
+	{ CARGO_NET_OFFLINE: "false" },
+	{ CARGO_TERM_COLOR: "always" },
+	{ NO_COLOR: "0" },
+	{ PATH: "safe", Path: "different" },
+	{ PATH: "safe\nunsafe" },
+];
 beforeEach(() => {
-	injected.create.mockReset().mockResolvedValue({ runId });
-	injected.wrap.mockReset().mockReturnValue({});
-	injected.database.mockReset().mockRejectedValue(new BasisError("BASIS_UNAVAILABLE"));
+	for (const fn of Object.values(injected)) fn.mockReset();
 });
-function callbacks() {
-	const value = injected.wrap.mock.calls[0]?.[0];
+function callbacks(): NativePolicyCollector {
+	const value = injected.wrap.mock.calls[0]?.[0] as NativePolicyCollector | undefined;
 	expect(value).toBeDefined();
-	return value;
+	return value!;
 }
-describe("initial production refusal boundary", () => {
-	it("constructs without starting a producer or touching files", () => {
-		createProductionProducer({ repositoryRoot: "/synthetic-checkout" });
-		expect(injected.create).not.toHaveBeenCalled();
-		expect(injected.database).not.toHaveBeenCalled();
+function noSource() {
+	for (const fn of [injected.manual, injected.audit, injected.c2, injected.github])
+		expect(fn).not.toHaveBeenCalled();
+}
+describe("production placement boundary", () => {
+	it("constructs without creating any source or touching placement", () => {
+		createProductionProducer({ repositoryRoot: root });
+		noSource();
+		expect(callbacks().finalize).toBeTypeOf("function");
 	});
-	it("keeps unavailable evidence distinct from a successful empty audit", async () => {
-		createProductionProducer({ repositoryRoot: "/synthetic-checkout" });
-		expect(await callbacks().collect()).toEqual({
-			runId,
-			reportDigest: null,
-			binding: null,
-			audit: null,
-			rawExits: { full: null, advisory: null },
-			evidenceObservedAt: null,
-			sourceRevisions: null,
-			failure: "BASIS_UNAVAILABLE",
+	it("rejects a copied context before constructing any source", async () => {
+		createProductionProducer({ repositoryRoot: root });
+		await expect(
+			callbacks().collect({ phase: "item", startedAt: 1 } as never),
+		).rejects.toMatchObject({ code: "EVIDENCE_INVALID" });
+		await callbacks().finalize?.();
+		noSource();
+	});
+	it.each([
+		"transport",
+		"authority",
+		"verified",
+		"sources",
+		"completionClock",
+		"maxAgeMs",
+		"capture",
+	])("rejects a caller supplied capability: %s", (key) => {
+		expect(() =>
+			createProductionProducer({ repositoryRoot: root, [key]: {} } as ProductionProducerOptions),
+		).toThrow();
+		noSource();
+	});
+	it("refuses accessors without evaluating them", () => {
+		const getter = vi.fn(() => root);
+		const input = Object.defineProperty({}, "repositoryRoot", { get: getter, enumerable: true });
+		expect(() => createProductionProducer(input as ProductionProducerOptions)).toThrow();
+		expect(getter).not.toHaveBeenCalled();
+		noSource();
+	});
+	it("refuses proxy placement without invoking its traps", () => {
+		const trap = vi.fn(() => {
+			throw Error("unexpected proxy trap");
 		});
-		expect(await callbacks().revalidate()).toEqual({
-			reportDigest: null,
-			binding: null,
-			sourceRevisions: null,
-		});
+		const input = new Proxy({ repositoryRoot: root }, { ownKeys: trap, getPrototypeOf: trap });
+		expect(() => createProductionProducer(input)).toThrow();
+		expect(trap).not.toHaveBeenCalled();
 	});
-	it("snapshots the fixed output location before authority awaits", async () => {
-		const options = {
-			repositoryRoot: "/synthetic-checkout",
-			evidenceDirectory: "/synthetic-evidence",
-		};
-		createProductionProducer(options);
-		options.repositoryRoot = "/changed-checkout";
-		options.evidenceDirectory = "/changed-evidence";
-		await callbacks().collect();
-		expect(injected.create).toHaveBeenCalledWith({
-			checkoutRoot: "/synthetic-checkout",
-			directory: "/synthetic-evidence",
-		});
+	it.each(invalidEnvironments)(
+		"rejects environment overrides outside the controlled map",
+		(environment) => {
+			expect(() => createProductionProducer({ repositoryRoot: root, environment })).toThrow();
+			noSource();
+		},
+	);
+	it("refuses an environment getter before authority or native operations", () => {
+		const getter = vi.fn(() => "safe");
+		const environment = Object.defineProperty({}, "PATH", { get: getter, enumerable: true });
+		expect(() => createProductionProducer({ repositoryRoot: root, environment })).toThrow();
+		expect(getter).not.toHaveBeenCalled();
 	});
-	it("does not classify unexpected producer errors as verified unavailability", async () => {
-		createProductionProducer({ repositoryRoot: "/synthetic-checkout" });
-		injected.database.mockRejectedValue(new Error("synthetic private diagnostic"));
-		await expect(callbacks().collect()).rejects.toThrow("synthetic private diagnostic");
-	});
-	it("cannot activate merely because one unavailable adapter gains a value", async () => {
-		createProductionProducer({ repositoryRoot: "/synthetic-checkout" });
-		injected.database.mockResolvedValue({});
-		await expect(callbacks().collect()).rejects.toMatchObject({ code: "BASIS_UNAVAILABLE" });
+	it("refuses conflicting cargo home placement", () => {
+		expect(() =>
+			createProductionProducer({
+				repositoryRoot: root,
+				cargoHome: path.resolve("home-a"),
+				environment: { CARGO_HOME: path.resolve("home-b") },
+			}),
+		).toThrow();
+		noSource();
 	});
 });

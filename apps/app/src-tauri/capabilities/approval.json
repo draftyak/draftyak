@@ -1,0 +1,7 @@
+{
+  "identifier": "approval",
+  "description": "The separate trusted document has no native commands.",
+  "local": true,
+  "windows": ["approval"],
+  "permissions": []
+}

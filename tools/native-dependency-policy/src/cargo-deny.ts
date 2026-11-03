@@ -82,8 +82,10 @@ const codes: Readonly<Record<string, AuditCategory>> = {
 	notice: "advisories",
 	yanked: "advisories",
 	duplicate: "bans",
+	banned: "bans",
 	"no-license-field": "licenses",
 	unlicensed: "licenses",
+	rejected: "licenses",
 };
 const MAX_BYTES = 32 * 1024 * 1024;
 const MAX_RECORDS = 100_000;

@@ -5,6 +5,7 @@ import {
 	type EvaluationInput,
 	evaluate,
 	preflightDecision,
+	preflightReleaseBasisV2Authority,
 } from "../src/decision.ts";
 
 const HOUR = 3_600_000;
@@ -462,4 +463,48 @@ describe("explicit release-or-validated-fix policy version", () => {
 			});
 		},
 	);
+});
+
+describe("explicit schema2 release authority", () => {
+	it("requires its own marker separately from the release/fix policy version", () => {
+		const { record, input } = renewedFixture();
+		expect(preflightReleaseBasisV2Authority(record)).toMatchObject({ reason: "AUTHORITY_INVALID" });
+		const marked = { ...record, releaseBasisSchemaVersion: 2 };
+		expect(preflightReleaseBasisV2Authority(marked)).toBeNull();
+		expect(evaluate({ ...input, trustedRecord: marked })).toEqual(evaluate(input));
+	});
+	it.each([undefined, null, 1, 3, "2", true])("refuses malformed release marker %s", (marker) => {
+		const { record, input } = renewedFixture();
+		const marked = { ...record, releaseBasisSchemaVersion: marker };
+		expect(preflightReleaseBasisV2Authority(marked)).toMatchObject({ reason: "AUTHORITY_INVALID" });
+		expect(evaluate({ ...input, trustedRecord: marked })).toMatchObject({
+			reason: "AUTHORITY_INVALID",
+		});
+	});
+	it("does not upgrade an old active-v1 record by adding the new marker", () => {
+		const { record } = fixture();
+		for (const value of [record, { ...record, releaseBasisSchemaVersion: 2 }])
+			expect(preflightReleaseBasisV2Authority(value)).toMatchObject({
+				reason: "AUTHORITY_INVALID",
+			});
+	});
+	it("keeps default refusal and terminal history closed before any producer", () => {
+		expect(
+			preflightReleaseBasisV2Authority({
+				version: 1,
+				state: "refusal-only",
+				reason: "ACTUAL_SOURCE_CONFIRMATION_REQUIRED",
+			}),
+		).toMatchObject({ reason: "ACTUAL_SOURCE_CONFIRMATION_REQUIRED" });
+		for (const state of ["release-closed", "removed", "revoked"])
+			expect(preflightReleaseBasisV2Authority({ version: 2, state })).toMatchObject({
+				reason: "TERMINAL_STATE",
+			});
+	});
+	it("keeps the marked shape closed to extra authority claims", () => {
+		const { record } = renewedFixture();
+		expect(
+			preflightReleaseBasisV2Authority({ ...record, releaseBasisSchemaVersion: 2, verified: true }),
+		).toMatchObject({ reason: "AUTHORITY_INVALID" });
+	});
 });

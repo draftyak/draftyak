@@ -7,6 +7,7 @@ import {
 	type AuthorityTransport,
 	assertAuthorityCurrent,
 	loadCurrentAuthority,
+	MANUAL_ASSESSMENT_RECORD_PATH,
 	RepositoryAuthority,
 } from "../src/authority.ts";
 
@@ -207,6 +208,61 @@ describe("fixed repository HTTPS envelopes", () => {
 			`https://api.github.com/repos/draftyak/draftyak/contents/tools/native-dependency-policy/records/authority.json?ref=${CURRENT}`,
 		);
 	});
+
+	it("reads the manual assessment only at its second fixed path and exact revision", async () => {
+		const bytes = json({ version: 1, kind: "OWNER_MANUAL_RELEASE_ASSESSMENT" });
+		const f = respond(
+			json({
+				type: "file",
+				path: MANUAL_ASSESSMENT_RECORD_PATH,
+				encoding: "base64",
+				content: Buffer.from(bytes).toString("base64"),
+				size: bytes.length,
+				sha: createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex"),
+			}),
+		);
+		expect(await new RepositoryAuthority().manualAssessmentAt(CURRENT)).toEqual(bytes);
+		expect(f.calls[0]?.[0]).toBe(
+			`https://api.github.com/repos/draftyak/draftyak/contents/${MANUAL_ASSESSMENT_RECORD_PATH}?ref=${CURRENT}`,
+		);
+	});
+
+	it.each([
+		{ type: "symlink" },
+		{ path: "tools/native-dependency-policy/records/authority.json" },
+		{ encoding: "none" },
+		{ size: 8 * 1024 * 1024 + 1 },
+		{ size: 1 },
+		{ content: "e31=" },
+		{ sha: OLD },
+	])("refuses a substituted manual assessment file/blob %j", async (change) => {
+		const bytes = Buffer.from("{}");
+		respond(
+			json({
+				type: "file",
+				path: MANUAL_ASSESSMENT_RECORD_PATH,
+				encoding: "base64",
+				content: bytes.toString("base64"),
+				size: bytes.length,
+				sha: createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex"),
+				...change,
+			}),
+		);
+		await expect(new RepositoryAuthority().manualAssessmentAt(CURRENT)).rejects.toBeInstanceOf(
+			AuthorityError,
+		);
+	});
+
+	it.each([403, 429])(
+		"retains known HTTP status %i without inventing its cause",
+		async (status) => {
+			respond(json({}), status);
+			await expect(new RepositoryAuthority().manualAssessmentAt(CURRENT)).rejects.toMatchObject({
+				code: "AUTHORITY_UNAVAILABLE",
+				httpStatus: status,
+			});
+		},
+	);
 
 	it.each([
 		{ type: "symlink" },

@@ -96,6 +96,8 @@ export interface NativePolicyCollector {
 		context: NativeRunContext,
 		evidence: ProducedPolicyEvidence,
 	): Promise<CurrentEvidenceBinding>;
+	/** Close owned resources; throw if completion is pending or unknown. This never grants authority. */
+	finalize?(): Promise<void>;
 }
 export interface RunnerInput {
 	readonly phase: Phase;
@@ -116,6 +118,7 @@ export interface RunnerOutput {
 	readonly audit: ValidatedAudit | null;
 	readonly rawExits: RawAuditExits | null;
 	readonly accepted: readonly ScopedFinding[];
+	readonly finalizerFailure?: ProducerCode;
 }
 export interface RunnerResult {
 	readonly exitCode: 0 | 1 | 2;
@@ -124,6 +127,7 @@ export interface RunnerResult {
 interface ProducerState {
 	readonly collect: NativePolicyCollector["collect"];
 	readonly revalidate: NativePolicyCollector["revalidate"];
+	readonly finalize: NativePolicyCollector["finalize"];
 }
 interface ReceiptState {
 	readonly producer: NativePolicyProducer;
@@ -133,7 +137,8 @@ interface ReceiptState {
 }
 const producers = new WeakMap<NativePolicyProducer, ProducerState>();
 const receipts = new WeakMap<NativePolicyEvidence, ReceiptState>();
-const contexts = new WeakSet<NativeRunContext>();
+const contexts = new WeakMap<NativeRunContext, AuthoritySnapshot>();
+const enteredCollections = new WeakMap<NativeRunContext, ProducerState>();
 const collected = new WeakSet<NativeRunContext>();
 const runIds = new Set<string>();
 const categories: readonly AuditCategory[] = ["advisories", "bans", "licenses", "sources"];
@@ -395,17 +400,23 @@ function current(value: unknown): CurrentEvidenceBinding {
 
 /** Only the fixed production factory supplies this collector; no report input is accepted by the CLI. */
 export function createNativePolicyProducer(collector: NativePolicyCollector): NativePolicyProducer {
-	const selected = record(collector, ["collect", "revalidate"]);
-	if (typeof selected.collect !== "function" || typeof selected.revalidate !== "function")
+	const selected = record(collector, ["collect", "revalidate"], ["finalize"]);
+	if (
+		typeof selected.collect !== "function" ||
+		typeof selected.revalidate !== "function" ||
+		(selected.finalize !== undefined && typeof selected.finalize !== "function")
+	)
 		invalid();
 	const state: ProducerState = {
 		collect: selected.collect as NativePolicyCollector["collect"],
 		revalidate: selected.revalidate as NativePolicyCollector["revalidate"],
+		finalize: selected.finalize as NativePolicyCollector["finalize"],
 	};
 	const producer: NativePolicyProducer = {
 		produce: async (context) => {
 			if (!contexts.has(context) || collected.has(context)) invalid();
 			collected.add(context);
+			enteredCollections.set(context, state);
 			const data = evidence(await state.collect(context));
 			if (runIds.has(data.runId) || runIds.size >= 100_000) invalid();
 			runIds.add(data.runId);
@@ -416,6 +427,22 @@ export function createNativePolicyProducer(collector: NativePolicyCollector): Na
 	};
 	producers.set(producer, state);
 	return producer;
+}
+
+/** The loaded snapshot for this active genuine run, never proof of currentness or source verification. */
+export function nativeRunAuthority(context: NativeRunContext): AuthoritySnapshot {
+	const authority = contexts.get(context);
+	if (!authority) invalid();
+	return authority;
+}
+
+function finalizerCode(error: unknown): ProducerCode {
+	try {
+		if (error instanceof ProducerError && producerCodes.includes(error.code)) return error.code;
+	} catch {
+		return "PRODUCER_UNAVAILABLE";
+	}
+	return "PRODUCER_UNAVAILABLE";
 }
 function failureCode(error: unknown): RunnerReason {
 	try {
@@ -455,6 +482,7 @@ function result(
 	authority: AuthoritySnapshot | null,
 	data: ProducedPolicyEvidence | null,
 	verdict: PolicyVerdict | RunnerReason,
+	finalizerFailure: ProducerCode | null = null,
 ): RunnerResult {
 	const decision: PolicyVerdict =
 		typeof verdict === "string" ? { verdict: "refuse", reason: verdict as Reason } : verdict;
@@ -473,9 +501,10 @@ function result(
 		audit: data?.audit ?? null,
 		rawExits: data?.rawExits ?? null,
 		accepted: decision.verdict === "pass-with-scoped-exceptions" ? decision.accepted : [],
+		...(finalizerFailure === null ? {} : { finalizerFailure }),
 	};
 	if (Buffer.byteLength(JSON.stringify(output)) > 32_768)
-		return result(phase, null, null, "EVIDENCE_INVALID");
+		return result(phase, null, null, "EVIDENCE_INVALID", finalizerFailure);
 	return freeze({ exitCode: reason === null ? 0 : exitFor(reason), output });
 }
 
@@ -513,8 +542,9 @@ export async function runNativePolicy(input: RunnerInput): Promise<RunnerResult>
 		);
 	}
 	const context = Object.freeze({ phase, startedAt }) as NativeRunContext;
-	contexts.add(context);
+	contexts.set(context, authority);
 	let pending: RunnerReason | null = null;
+	let finalizerFailure: ProducerCode | null = null;
 	try {
 		const owner = producers.get(producer);
 		if (!owner) invalid();
@@ -534,7 +564,18 @@ export async function runNativePolicy(input: RunnerInput): Promise<RunnerResult>
 		else pending = data.failure;
 	} catch (error) {
 		pending = failureCode(error);
+	} finally {
+		const entered = enteredCollections.get(context);
+		enteredCollections.delete(context);
+		try {
+			if (entered?.finalize) await entered.finalize();
+		} catch (error) {
+			finalizerFailure = finalizerCode(error);
+		} finally {
+			contexts.delete(context);
+		}
 	}
+	// Cleanup can await and source/terminal state can change during it. Check authority and time afterwards.
 	try {
 		await assertAuthorityCurrent(transport, authority);
 	} catch (error) {
@@ -543,25 +584,26 @@ export async function runNativePolicy(input: RunnerInput): Promise<RunnerResult>
 	let completedAt: number;
 	try {
 		completedAt = integer(clock());
-		if (completedAt < startedAt) return result(phase, authority, data, "CLOCK_INVALID");
+		if (completedAt < startedAt)
+			return result(phase, authority, data, "CLOCK_INVALID", finalizerFailure);
 	} catch {
-		return result(phase, authority, data, "CLOCK_INVALID");
+		return result(phase, authority, data, "CLOCK_INVALID", finalizerFailure);
 	}
-	if (pending !== null) return result(phase, authority, data, pending);
+	if (pending !== null) return result(phase, authority, data, pending, finalizerFailure);
 	if (!data?.audit || !data.binding || data.evidenceObservedAt === null || !data.sourceRevisions)
-		return result(phase, authority, data, "EVIDENCE_INVALID");
-	return result(
+		return result(phase, authority, data, "EVIDENCE_INVALID", finalizerFailure);
+	const verdict = evaluateDecision({
+		trustedRecord: authority.record,
 		phase,
-		authority,
-		data,
-		evaluateDecision({
-			trustedRecord: authority.record,
-			phase,
-			startedAt,
-			completedAt,
-			evidenceObservedAt: data.evidenceObservedAt,
-			binding: data.binding,
-			audit: data.audit,
-		}),
-	);
+		startedAt,
+		completedAt,
+		evidenceObservedAt: data.evidenceObservedAt,
+		binding: data.binding,
+		audit: data.audit,
+	});
+	if (verdict.verdict === "refuse")
+		return result(phase, authority, data, verdict, finalizerFailure);
+	if (finalizerFailure !== null)
+		return result(phase, authority, data, finalizerFailure, finalizerFailure);
+	return result(phase, authority, data, verdict);
 }

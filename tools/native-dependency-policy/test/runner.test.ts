@@ -1,6 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import * as fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { AuthorityTransport } from "../src/authority.ts";
+import type { AuthoritySnapshot, AuthorityTransport } from "../src/authority.ts";
 import type { Binding } from "../src/decision.ts";
 import { BOUNDED_TUPLES } from "../src/decision.ts";
 import type {
@@ -18,9 +21,8 @@ const network = vi.hoisted(() => ({
 	}),
 }));
 vi.mock("node:https", () => ({ request: network.request }));
-const { createNativePolicyProducer, runNativePolicy, ProducerError } = await import(
-	"../src/runner.ts"
-);
+const { createNativePolicyProducer, runNativePolicy, nativeRunAuthority, ProducerError } =
+	await import("../src/runner.ts");
 const { AuthorityError } = await import("../src/authority.ts");
 const NOW = Date.parse("2026-10-20T16:00:00Z"),
 	REVISION = "a".repeat(40),
@@ -183,16 +185,451 @@ const current = (data: ProducedPolicyEvidence): CurrentEvidenceBinding => ({
 	binding: data.binding,
 	sourceRevisions: data.sourceRevisions,
 });
+const retainedTestHandles = new Set<fs.FileHandle>();
+
+describe("trusted collector resource lifecycle", () => {
+	it("rejects serialized finalizer flags and accessors without invoking them", () => {
+		const f = setup();
+		let accessed = 0;
+		expect(() =>
+			createNativePolicyProducer({
+				collect: f.collector.collect,
+				revalidate: f.collector.revalidate,
+				finalize: false as unknown as () => Promise<void>,
+			}),
+		).toThrow(ProducerError);
+		const collector = {
+			collect: f.collector.collect,
+			revalidate: f.collector.revalidate,
+			get finalize() {
+				accessed++;
+				return async () => undefined;
+			},
+		};
+		expect(() => createNativePolicyProducer(collector)).toThrow(ProducerError);
+		expect(accessed).toBe(0);
+	});
+	it("never invokes collection or finalization for an authority preflight refusal", async () => {
+		const f = setup({
+			version: 1,
+			state: "refusal-only",
+			reason: "ACTUAL_SOURCE_CONFIRMATION_REQUIRED",
+		});
+		const collect = vi.fn(f.collector.collect),
+			revalidate = vi.fn(f.collector.revalidate),
+			finalize = vi.fn(async () => undefined);
+		const p = createNativePolicyProducer({ collect, revalidate, finalize });
+		const outcome = await runNativePolicy({
+			phase: "item",
+			authority: f.authority,
+			producer: p,
+			completionClock: f.clock,
+		});
+		expect(outcome.output.reason).toBe("ACTUAL_SOURCE_CONFIRMATION_REQUIRED");
+		expect(collect).not.toHaveBeenCalled();
+		expect(revalidate).not.toHaveBeenCalled();
+		expect(finalize).not.toHaveBeenCalled();
+	});
+	it.each([
+		["collect-throw", "BASIS_UNAVAILABLE"],
+		["invalid-evidence", "EVIDENCE_INVALID"],
+		["revalidate-throw", "INPUTS_CHANGED"],
+		["invalid-revalidation", "EVIDENCE_INVALID"],
+		["authority-change", "AUTHORITY_CHANGED"],
+		["clock-error", "CLOCK_INVALID"],
+	] as const)("finalizes exactly once after collection enters on %s", async (mode, reason) => {
+		const f = setup(),
+			finalize = vi.fn(async () => {
+				f.events.push("finalize");
+			});
+		const p = createNativePolicyProducer({
+			collect: async (context) => {
+				if (mode === "collect-throw") throw new ProducerError("BASIS_UNAVAILABLE");
+				const data = await f.collector.collect(context);
+				return mode === "invalid-evidence" ? modified(data, ["runId"], "invalid") : data;
+			},
+			revalidate: async (context, data) => {
+				if (mode === "revalidate-throw") throw new ProducerError("INPUTS_CHANGED");
+				const checked = await f.collector.revalidate(context, data);
+				if (mode === "authority-change") f.setCurrent(OTHER);
+				return mode === "invalid-revalidation" ? { ...checked, reportDigest: "invalid" } : checked;
+			},
+			finalize,
+		});
+		let clockReads = 0;
+		const outcome = await runNativePolicy({
+			phase: "item",
+			authority: f.authority,
+			producer: p,
+			completionClock:
+				mode === "clock-error"
+					? () => {
+							if (++clockReads === 1) return NOW;
+							throw Error("invented clock fault");
+						}
+					: f.clock,
+		});
+		expect(outcome.output.reason).toBe(reason);
+		expect(outcome.exitCode).not.toBe(0);
+		expect(finalize).toHaveBeenCalledTimes(1);
+		expect(outcome.output).not.toHaveProperty("finalizerFailure");
+	});
+	it("finalizes before the last authority and completion clock checks on a normal synthetic pass", async () => {
+		const f = setup(),
+			finalize = vi.fn(async () => {
+				f.events.push("finalize");
+				f.setClock(NOW + 30);
+			});
+		const p = createNativePolicyProducer({
+			collect: f.collector.collect,
+			revalidate: f.collector.revalidate,
+			finalize,
+		});
+		const outcome = await runNativePolicy({
+			phase: "item",
+			authority: f.authority,
+			producer: p,
+			completionClock: f.clock,
+		});
+		expect(outcome.exitCode).toBe(0);
+		expect(finalize).toHaveBeenCalledTimes(1);
+		expect(f.events).toEqual([
+			"clock",
+			"authority-current",
+			"authority-record",
+			"authority-current",
+			"collect",
+			"revalidate",
+			"finalize",
+			"authority-current",
+			"clock",
+		]);
+	});
+	it("never returns an otherwise passing verdict when real finalization reports pending resources", async () => {
+		const f = setup(),
+			finalize = vi.fn(async () => {
+				throw new ProducerError("CAPTURE_FAILED");
+			});
+		const p = createNativePolicyProducer({
+			collect: f.collector.collect,
+			revalidate: f.collector.revalidate,
+			finalize,
+		});
+		const outcome = await runNativePolicy({
+			phase: "item",
+			authority: f.authority,
+			producer: p,
+			completionClock: f.clock,
+		});
+		expect(outcome.exitCode).toBe(2);
+		expect(outcome.output.verdict).toBe("refuse");
+		expect(outcome.output.reason).toBe("CAPTURE_FAILED");
+		expect(outcome.output.finalizerFailure).toBe("CAPTURE_FAILED");
+		expect(outcome.output.accepted).toEqual([]);
+		expect(outcome.output.audit).toEqual(f.data.audit);
+		expect(finalize).toHaveBeenCalledTimes(1);
+	});
+	it.each(["collect", "policy"] as const)(
+		"preserves the primary %s refusal alongside technical finalizer failure",
+		async (mode) => {
+			const record = active();
+			if (mode === "policy")
+				record.review.due = new Date(NOW + 1000).toISOString().replace(".000Z", "Z");
+			const f = setup(record),
+				finalize = vi.fn(async () => {
+					if (mode === "policy") f.setClock(NOW + 1000);
+					throw new ProducerError("CAPTURE_FAILED");
+				});
+			const p = createNativePolicyProducer({
+				collect:
+					mode === "collect"
+						? async () => {
+								throw new ProducerError("BASIS_UNAVAILABLE");
+							}
+						: f.collector.collect,
+				revalidate: f.collector.revalidate,
+				finalize,
+			});
+			const outcome = await runNativePolicy({
+				phase: "item",
+				authority: f.authority,
+				producer: p,
+				completionClock: f.clock,
+			});
+			expect(outcome.output.reason).toBe(
+				mode === "collect" ? "BASIS_UNAVAILABLE" : "REVIEW_REQUIRED",
+			);
+			expect(outcome.output.finalizerFailure).toBe("CAPTURE_FAILED");
+			expect(finalize).toHaveBeenCalledTimes(1);
+		},
+	);
+	it("maps a hostile finalizer error to a fixed code without losing finalization control", async () => {
+		const f = setup(),
+			error = new ProducerError("CAPTURE_FAILED");
+		Object.defineProperty(error, "code", {
+			get: () => {
+				throw Error("untrusted-prose");
+			},
+		});
+		const finalize = vi.fn(async () => {
+			throw error;
+		});
+		const p = createNativePolicyProducer({
+			collect: f.collector.collect,
+			revalidate: f.collector.revalidate,
+			finalize,
+		});
+		const outcome = await runNativePolicy({
+			phase: "item",
+			authority: f.authority,
+			producer: p,
+			completionClock: f.clock,
+		});
+		expect(outcome.output.reason).toBe("PRODUCER_UNAVAILABLE");
+		expect(outcome.output.finalizerFailure).toBe("PRODUCER_UNAVAILABLE");
+		expect(JSON.stringify(outcome)).not.toContain("untrusted-prose");
+		expect(finalize).toHaveBeenCalledTimes(1);
+	});
+	it.each(["authority", "age"] as const)(
+		"awaits finalization and observes %s changes before any success is returned",
+		async (mode) => {
+			const f = setup(),
+				entered = Promise.withResolvers<void>(),
+				release = Promise.withResolvers<void>();
+			const finalize = vi.fn(async () => {
+				entered.resolve();
+				await release.promise;
+				if (mode === "authority") f.setCurrent(OTHER);
+				else f.setClock(NOW + 3_600_100);
+			});
+			const p = createNativePolicyProducer({
+				collect: f.collector.collect,
+				revalidate: f.collector.revalidate,
+				finalize,
+			});
+			let returned = false;
+			const running = runNativePolicy({
+				phase: "item",
+				authority: f.authority,
+				producer: p,
+				completionClock: f.clock,
+			}).then((outcome) => {
+				returned = true;
+				return outcome;
+			});
+			try {
+				await Promise.race([entered.promise, running]);
+				// Let a prematurely returned run settle while the finalizer is still held.
+				await new Promise<void>((resolve) => setImmediate(resolve));
+				expect(finalize).toHaveBeenCalledTimes(1);
+				expect(returned).toBe(false);
+				release.resolve();
+				const outcome = await running;
+				expect(outcome.output.reason).toBe(
+					mode === "authority" ? "AUTHORITY_CHANGED" : "EVIDENCE_STALE",
+				);
+				expect(outcome.exitCode).not.toBe(0);
+			} finally {
+				release.resolve();
+				await running;
+			}
+		},
+	);
+	it("does not finalize a registered producer whose replacement method never enters collection", async () => {
+		const f = setup(),
+			collect = vi.fn(f.collector.collect),
+			finalize = vi.fn(async () => undefined);
+		const p = createNativePolicyProducer({ collect, revalidate: f.collector.revalidate, finalize });
+		p.produce = async () => {
+			throw Error("invented before-entry fault");
+		};
+		const outcome = await runNativePolicy({
+			phase: "item",
+			authority: f.authority,
+			producer: p,
+			completionClock: f.clock,
+		});
+		expect(outcome.output.reason).toBe("PRODUCER_UNAVAILABLE");
+		expect(collect).not.toHaveBeenCalled();
+		expect(finalize).not.toHaveBeenCalled();
+	});
+	it("finalizes the actual entered collector even when its receipt is foreign to the selected producer", async () => {
+		const a = setup(),
+			b = setup(),
+			finalizeA = vi.fn(async () => undefined),
+			finalizeB = vi.fn(async () => undefined);
+		const selected = createNativePolicyProducer({
+			collect: a.collector.collect,
+			revalidate: a.collector.revalidate,
+			finalize: finalizeA,
+		});
+		const entered = createNativePolicyProducer({
+			collect: b.collector.collect,
+			revalidate: b.collector.revalidate,
+			finalize: finalizeB,
+		});
+		selected.produce = (context) => entered.produce(context);
+		const outcome = await runNativePolicy({
+			phase: "item",
+			authority: a.authority,
+			producer: selected,
+			completionClock: () => NOW + 100,
+		});
+		expect(outcome.output.reason).toBe("EVIDENCE_INVALID");
+		expect(finalizeA).not.toHaveBeenCalled();
+		expect(finalizeB).toHaveBeenCalledTimes(1);
+	});
+	it("snapshots the finalizer function at construction rather than accepting later mutation", async () => {
+		const f = setup(),
+			original = vi.fn(async () => undefined),
+			replacement = vi.fn(async () => undefined);
+		const collector: NativePolicyCollector = {
+			collect: f.collector.collect,
+			revalidate: f.collector.revalidate,
+			finalize: original,
+		};
+		const p = createNativePolicyProducer(collector);
+		collector.finalize = replacement;
+		expect(original).not.toHaveBeenCalled();
+		const outcome = await runNativePolicy({
+			phase: "item",
+			authority: f.authority,
+			producer: p,
+			completionClock: f.clock,
+		});
+		expect(outcome.exitCode).toBe(0);
+		expect(original).toHaveBeenCalledTimes(1);
+		expect(replacement).not.toHaveBeenCalled();
+	});
+	it("closes an actual invented file resource before the final verdict and never deletes foreign data", async () => {
+		const parent = await fs.realpath(os.tmpdir()),
+			directory = await fs.mkdtemp(path.join(parent, "native-policy-finalizer-"));
+		const file = path.join(directory, "invented-resource");
+		const directoryIdentity = await fs.lstat(directory, { bigint: true });
+		let fileIdentity: { dev: bigint; ino: bigint } | undefined;
+		let handle: fs.FileHandle | undefined;
+		const f = setup(),
+			finalize = vi.fn(async () => {
+				if (handle) {
+					await handle.close();
+					retainedTestHandles.delete(handle);
+				}
+			});
+		const p = createNativePolicyProducer({
+			collect: async (context) => {
+				handle = await fs.open(file, "wx");
+				retainedTestHandles.add(handle);
+				const stat = await handle.stat({ bigint: true });
+				fileIdentity = { dev: stat.dev, ino: stat.ino };
+				await handle.writeFile("invented unit resource");
+				return f.collector.collect(context);
+			},
+			revalidate: f.collector.revalidate,
+			finalize,
+		});
+		try {
+			const outcome = await runNativePolicy({
+				phase: "item",
+				authority: f.authority,
+				producer: p,
+				completionClock: f.clock,
+			});
+			expect(outcome.exitCode).toBe(0);
+			expect(finalize).toHaveBeenCalledTimes(1);
+			expect(handle?.fd).toBe(-1);
+		} finally {
+			// Unexpected pending handles stay strongly retained; no hidden close retry or cleanup occurs.
+			if (handle?.fd === -1 && fileIdentity) {
+				expect(path.dirname(directory)).toBe(parent);
+				expect(await fs.realpath(directory)).toBe(directory);
+				expect(path.basename(directory)).toMatch(/^native-policy-finalizer-[A-Za-z0-9_-]+$/);
+				const currentDirectory = await fs.lstat(directory, { bigint: true }),
+					currentFile = await fs.lstat(file, { bigint: true });
+				expect([currentDirectory.dev, currentDirectory.ino]).toEqual([
+					directoryIdentity.dev,
+					directoryIdentity.ino,
+				]);
+				expect(currentDirectory.isSymbolicLink()).toBe(false);
+				expect(currentDirectory.isDirectory()).toBe(true);
+				expect([currentFile.dev, currentFile.ino]).toEqual([fileIdentity.dev, fileIdentity.ino]);
+				expect(currentFile.isFile()).toBe(true);
+				expect(currentFile.nlink).toBe(1n);
+				expect(await fs.readdir(directory)).toEqual(["invented-resource"]);
+				await fs.unlink(file);
+				await fs.rmdir(directory);
+			}
+		}
+	});
+});
+
+describe("runner-owned authority context", () => {
+	it("returns the actual immutable loaded snapshot only during its genuine run context", async () => {
+		const record = active(),
+			f = setup(record);
+		let savedContext: NativeRunContext | undefined, savedAuthority: AuthoritySnapshot | undefined;
+		const p = createNativePolicyProducer({
+			collect: async (context) => {
+				savedContext = context;
+				savedAuthority = nativeRunAuthority(context);
+				expect(savedAuthority.revision).toBe(REVISION);
+				expect(savedAuthority.recordDigest).toBe(
+					createHash("sha256").update(JSON.stringify(record)).digest("hex"),
+				);
+				expect(Object.isFrozen(savedAuthority)).toBe(true);
+				expect(Object.isFrozen(savedAuthority.record)).toBe(true);
+				for (const copied of [
+					{ ...context },
+					JSON.parse(JSON.stringify(context)),
+					Object.create(context),
+				])
+					expect(() => nativeRunAuthority(copied as NativeRunContext)).toThrow(ProducerError);
+				let accessed = 0;
+				const foreign = new Proxy(context, {
+					get: () => {
+						accessed++;
+						throw Error("not observed");
+					},
+				});
+				expect(() => nativeRunAuthority(foreign)).toThrow(ProducerError);
+				expect(accessed).toBe(0);
+				return f.collector.collect(context);
+			},
+			revalidate: async (context, data) => {
+				expect(nativeRunAuthority(context)).toBe(savedAuthority);
+				return current(data);
+			},
+			finalize: async () => {
+				if (!savedContext) throw Error("missing invented context");
+				expect(nativeRunAuthority(savedContext)).toBe(savedAuthority);
+			},
+		});
+		const outcome = await runNativePolicy({
+			phase: "item",
+			authority: f.authority,
+			producer: p,
+			completionClock: () => NOW + 100,
+		});
+		expect(outcome.exitCode).toBe(0);
+		const endedContext = savedContext;
+		if (!endedContext) throw Error("missing invented context");
+		expect(() => nativeRunAuthority(endedContext)).toThrow(ProducerError);
+		expect(() => nativeRunAuthority({ phase: "item", startedAt: NOW } as NativeRunContext)).toThrow(
+			ProducerError,
+		);
+	});
+});
 
 describe("authority-first orchestration", () => {
 	it("creates a producer without invoking either callback", () => {
 		const collect = vi.fn(async () => dto()),
 			revalidate = vi.fn(async (_context: NativeRunContext, data: ProducedPolicyEvidence) =>
 				current(data),
-			);
-		createNativePolicyProducer({ collect, revalidate });
+			),
+			finalize = vi.fn(async () => undefined);
+		createNativePolicyProducer({ collect, revalidate, finalize });
 		expect(collect).not.toHaveBeenCalled();
 		expect(revalidate).not.toHaveBeenCalled();
+		expect(finalize).not.toHaveBeenCalled();
 	});
 	for (const [name, record, reason, exit] of [
 		[
