@@ -483,9 +483,23 @@ describe("synthetic stateful read-only channel upstream", () => {
 		expect((await json(b, info())).ok).toBe(true);
 	});
 	it("projects all four conversation types from fixture facts, not identifier prefixes", async () => {
-		const kinds = ["public_channel", "private_channel", "im", "mpim"] as const;
+		const cases = [
+			[
+				"public_channel",
+				{ is_channel: true, is_group: false, is_im: false, is_mpim: false, is_private: false },
+			],
+			[
+				"private_channel",
+				{ is_channel: true, is_group: false, is_im: false, is_mpim: false, is_private: true },
+			],
+			["im", { is_channel: false, is_group: false, is_im: true, is_mpim: false, is_private: true }],
+			[
+				"mpim",
+				{ is_channel: false, is_group: true, is_im: false, is_mpim: true, is_private: true },
+			],
+		] as const;
 		const fake = createSlackReadFake({
-			conversations: kinds.map((kind, n) => channel(n, { kind })),
+			conversations: cases.map(([kind], n) => channel(n, { kind })),
 		});
 		const result = await json(
 			fake,
@@ -493,11 +507,9 @@ describe("synthetic stateful read-only channel upstream", () => {
 		);
 		expect(result.channels).toHaveLength(4);
 		expect(result.response_metadata.next_cursor).toBe("");
-		for (const [n, kind] of kinds.entries()) {
+		for (const [n, [, expected]] of cases.entries()) {
 			const current = (await json(fake, info(channel(n).id))).channel;
-			expect(current.is_im).toBe(kind === "im");
-			expect(current.is_mpim).toBe(kind === "mpim");
-			expect(current.is_private).toBe(kind === "private_channel" || kind === "mpim");
+			expect(current).toMatchObject(expected);
 		}
 	});
 	it("paginates 300 conversations over real loopback with opaque stable cursors", async () => {
