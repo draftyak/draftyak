@@ -219,6 +219,16 @@ export {
 } from "./outbox/propose.ts";
 export { ProposalError, type ProposalErrorCode } from "./outbox/propose-errors.ts";
 export {
+	assertNativeSendRenderMatches,
+	captureNativeSendRender,
+	MAX_NATIVE_SEND_BODY_BYTES,
+	type NativeBuiltinSendInput,
+	type NativeRenderedSend,
+	NativeSendRenderError,
+	nativeSendRenderProjection,
+	renderNativeBuiltinSend,
+} from "./outbox/renderers/index.ts";
+export {
 	SchedulerLoop,
 	type SchedulerLoopError,
 	type SchedulerLoopOptions,
