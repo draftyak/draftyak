@@ -7,6 +7,8 @@ const config: UserConfig = {
 		"src/conversations.ts",
 		"src/socket-mode.ts",
 		"src/socket-lease.ts",
+		"src/catalog.ts",
+		"src/probe.ts",
 	],
 	format: "esm",
 	platform: "node",

@@ -9,7 +9,9 @@
     "./poll": "./src/poll.ts",
     "./conversations": "./src/conversations.ts",
     "./socket-mode": "./src/socket-mode.ts",
-    "./socket-lease": "./src/socket-lease.ts"
+    "./socket-lease": "./src/socket-lease.ts",
+    "./catalog": "./src/catalog.ts",
+    "./probe": "./src/probe.ts"
   },
   "publishConfig": {
     "exports": {
@@ -36,6 +38,14 @@
       "./socket-lease": {
         "types": "./dist/socket-lease.d.mts",
         "default": "./dist/socket-lease.mjs"
+      },
+      "./catalog": {
+        "types": "./dist/catalog.d.mts",
+        "default": "./dist/catalog.mjs"
+      },
+      "./probe": {
+        "types": "./dist/probe.d.mts",
+        "default": "./dist/probe.mjs"
       }
     }
   },
