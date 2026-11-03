@@ -190,6 +190,8 @@ async function metadata(response: Response): Promise<unknown> {
 	}
 }
 
+export { metadata as readNativePullMetadata };
+
 export async function admitNativeStore(
 	context: NativeStoreContext,
 	readGit: NativeStoreGit = git,
