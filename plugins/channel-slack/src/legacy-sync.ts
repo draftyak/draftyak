@@ -16,6 +16,7 @@ import {
 } from "./legacy-sync-state.ts";
 import { pollMessages } from "./poll.ts";
 import { digestSlackCursor } from "./sync-state.ts";
+import { createSlackThreadIndex, type SlackThreadIndex } from "./thread-index.ts";
 
 type Context = Pick<PluginContext, "fetch" | "kv" | "signal">;
 type PagedWork = Exclude<SlackLegacyWork, { readonly kind: "info" }>;
@@ -139,6 +140,7 @@ function sameSnapshot(a: SlackLegacyCheckpoint["snapshot"], b: SlackLegacyCheckp
 async function advance(
 	ctx: Context,
 	state: SlackLegacyCheckpoint,
+	index: SlackThreadIndex,
 ): Promise<{ work: readonly SlackLegacyWork[]; observed: readonly PluginChange[] }> {
 	const [current, ...tail] = state.work;
 	if (current === undefined) transient();
@@ -182,6 +184,13 @@ async function advance(
 			if (row.channelId !== current.channelId) transient();
 			roots.add(row.threadTs ?? row.ts);
 		}
+		// Older routing context and unchanged rows still repair an advisory cache miss.
+		for (const row of page.changes)
+			await index.remember({
+				channelId: row.channelId,
+				ts: row.ts,
+				threadTs: row.threadTs ?? row.ts,
+			});
 		return {
 			work: [
 				...[...roots].map((threadTs) => ({
@@ -205,6 +214,12 @@ async function advance(
 		)
 			transient();
 	}
+	for (const row of page.changes)
+		await index.remember({
+			channelId: row.channelId,
+			ts: row.ts,
+			threadTs: row.threadTs ?? row.ts,
+		});
 	// Genuine root context is preserved; query bounds are not an invented all-row interval rule.
 	return { work: [...next, ...tail], observed: page.changes };
 }
@@ -212,6 +227,7 @@ async function advance(
 async function run(
 	ctx: Context,
 	store: SlackLegacySyncStore,
+	index: SlackThreadIndex,
 	args: SyncRequest,
 ): Promise<SyncPage> {
 	try {
@@ -240,7 +256,7 @@ async function run(
 				};
 			}
 		}
-		const completed = await advance(ctx, state);
+		const completed = await advance(ctx, state, index);
 		active(ctx.signal);
 		const { snapshot, changes } = remember(state.snapshot, completed.observed);
 		const checkpoint: SlackLegacyCheckpoint = {
@@ -282,5 +298,6 @@ export function syncSlackAccount(
 	const input = request(args);
 	// Capture the store now too, so constructor refusals do not become deferred provider work.
 	const store = createSlackLegacySyncStore(captured, scope);
-	return run(captured, store, input);
+	const index = createSlackThreadIndex(captured, scope);
+	return run(captured, store, index, input);
 }

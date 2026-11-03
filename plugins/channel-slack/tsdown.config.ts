@@ -17,6 +17,9 @@ const config: UserConfig = {
 		"src/threads.ts",
 		"src/legacy-sync-state.ts",
 		"src/legacy-sync.ts",
+		"src/plugin.ts",
+		"src/manifest.ts",
+		"src/bootstrap.ts",
 	],
 	format: "esm",
 	platform: "node",
@@ -24,4 +27,15 @@ const config: UserConfig = {
 	dts: { generator: "oxc" },
 };
 
-export default config;
+const runtime: UserConfig = {
+	entry: ["src/main.ts"],
+	outDir: "dist/runtime",
+	format: "esm",
+	platform: "node",
+	fixedExtension: true,
+	noExternal: [/./],
+	dts: false,
+};
+
+const configs: UserConfig[] = [config, runtime];
+export default configs;

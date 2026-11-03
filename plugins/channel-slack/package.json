@@ -19,7 +19,10 @@
     "./body": "./src/body.ts",
     "./threads": "./src/threads.ts",
     "./legacy-sync-state": "./src/legacy-sync-state.ts",
-    "./legacy-sync": "./src/legacy-sync.ts"
+    "./legacy-sync": "./src/legacy-sync.ts",
+    "./plugin": "./src/plugin.ts",
+    "./manifest": "./src/manifest.ts",
+    "./bootstrap": "./src/bootstrap.ts"
   },
   "publishConfig": {
     "exports": {
@@ -86,11 +89,24 @@
       "./legacy-sync": {
         "types": "./dist/legacy-sync.d.mts",
         "default": "./dist/legacy-sync.mjs"
+      },
+      "./plugin": {
+        "types": "./dist/plugin.d.mts",
+        "default": "./dist/plugin.mjs"
+      },
+      "./manifest": {
+        "types": "./dist/manifest.d.mts",
+        "default": "./dist/manifest.mjs"
+      },
+      "./bootstrap": {
+        "types": "./dist/bootstrap.d.mts",
+        "default": "./dist/bootstrap.mjs"
       }
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "draftyak.plugin.json"
   ],
   "scripts": {
     "typecheck": "tsc -b",
