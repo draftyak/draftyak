@@ -573,7 +573,8 @@ describe("current original credential binding projection", () => {
 	});
 
 	it("refuses no current match or multiple current matches instead of choosing a reference", async () => {
-		const f = await fixture(), owner = gmail();
+		const f = await fixture(),
+			owner = gmail();
 		const read = () => f.store.write((tx) => f.vault.describeBindingInTransaction(tx, owner));
 		expect(read).toThrow(CredentialError);
 		const first = f.create(owner, token(later()));
@@ -587,23 +588,54 @@ describe("current original credential binding projection", () => {
 	});
 
 	it("requires its original live write and unlocked vault before hostile transaction or binding hooks", async () => {
-		const f = await fixture(), other = await fixture(), owner = gmail();
+		const f = await fixture(),
+			other = await fixture(),
+			owner = gmail();
 		f.create(owner, token(later()));
-		let retired: SqlTransaction | undefined, hooks = 0;
-		f.store.write((tx) => { retired = tx; });
-		expect(() => f.vault.describeBindingInTransaction(retired as SqlTransaction, owner)).toThrow(CredentialError);
+		let retired: SqlTransaction | undefined,
+			hooks = 0;
+		f.store.write((tx) => {
+			retired = tx;
+		});
+		expect(() => f.vault.describeBindingInTransaction(retired as SqlTransaction, owner)).toThrow(
+			CredentialError,
+		);
 		f.store.read((db) => {
-			expect(() => f.vault.describeBindingInTransaction(db as SqlTransaction, owner)).toThrow(CredentialError);
+			expect(() => f.vault.describeBindingInTransaction(db as SqlTransaction, owner)).toThrow(
+				CredentialError,
+			);
 		});
 		other.store.write((tx) => {
 			expect(() => f.vault.describeBindingInTransaction(tx, owner)).toThrow(CredentialError);
 		});
 		f.store.write((tx) => {
-			const proxy = new Proxy(tx, { get() { hooks++; throw new Error("OWNED_CREDENTIAL_SQL_HOOK"); } });
+			const proxy = new Proxy(tx, {
+				get() {
+					hooks++;
+					throw new Error("OWNED_CREDENTIAL_SQL_HOOK");
+				},
+			});
 			expect(() => f.vault.describeBindingInTransaction(proxy, owner)).toThrow(CredentialError);
-			const fake = { all() { hooks++; }, get() { hooks++; }, run() { hooks++; } };
-			expect(() => f.vault.describeBindingInTransaction(fake as unknown as SqlTransaction, owner)).toThrow(CredentialError);
-			const hostile = new Proxy(owner, { get() { hooks++; throw new Error("OWNED_CREDENTIAL_BINDING_HOOK"); } });
+			const fake = {
+				all() {
+					hooks++;
+				},
+				get() {
+					hooks++;
+				},
+				run() {
+					hooks++;
+				},
+			};
+			expect(() =>
+				f.vault.describeBindingInTransaction(fake as unknown as SqlTransaction, owner),
+			).toThrow(CredentialError);
+			const hostile = new Proxy(owner, {
+				get() {
+					hooks++;
+					throw new Error("OWNED_CREDENTIAL_BINDING_HOOK");
+				},
+			});
 			expect(() => f.vault.describeBindingInTransaction(tx, hostile)).toThrow(CredentialError);
 		});
 		expect(hooks).toBe(0);

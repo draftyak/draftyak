@@ -166,7 +166,11 @@ export class NativeAccounts {
 		}
 	}
 	/** Current native metadata only; neither adopts a scope nor grants account/send rights. */
-	getInTransaction(sql: SqlTransaction, userId: string, accountId: string): AccountRecord | undefined {
+	getInTransaction(
+		sql: SqlTransaction,
+		userId: string,
+		accountId: string,
+	): AccountRecord | undefined {
 		try {
 			assertTransaction.call(this.#database, sql);
 			const row = read(sql, userId, accountId);
