@@ -23,6 +23,7 @@ function imports(source: string): string[] {
 }
 
 const schedulerFiles = [
+	"outbox/scheduler-expiry-candidates.ts",
 	"outbox/scheduler-loop.ts",
 	"outbox/scheduler-ports.ts",
 	"outbox/scheduler-rules.ts",
@@ -55,6 +56,11 @@ export function schedulerStaticCases(): void {
 		it("keeps the rules pure and the loop independent of the store", () => {
 			expect(Object.fromEntries(schedulerFiles.map((name) => [name, imports(read(name))]))).toEqual(
 				{
+					"outbox/scheduler-expiry-candidates.ts": [
+						"../jobs/values.ts",
+						"./propose.ts",
+						"./scheduler-ports.ts",
+					],
 					"outbox/scheduler-loop.ts": [
 						"../kernel/clock.ts",
 						"./scheduler-ports.ts",
