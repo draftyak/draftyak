@@ -493,6 +493,39 @@ describe("basename inventory", () => {
 		}
 	});
 
+	it.each([
+		"ordinary",
+		"",
+		".",
+		"..",
+		"a/..",
+		"a/",
+		"/",
+		"a\\b",
+		"C:relative",
+		"snow\u2603",
+		"a\nb",
+	])("preserves deep relative matches and native callback paths through %j", async (unusual) => {
+		const root = path.resolve("synthetic-deferred-relative");
+		const components = ["plain0", "plain1", "plain2", unusual, "after"];
+		const expectedRelative = [""];
+		for (const component of components)
+			expectedRelative.push(path.posix.join(expectedRelative.at(-1) ?? "", component));
+		const reads: string[] = [];
+		const found = await namedFiles(".gate-sentinel", root, false, async (target) => {
+			const index = reads.length;
+			reads.push(target);
+			return [
+				entry(".gate-sentinel"),
+				...(index < components.length ? [entry(components[index] ?? "", true)] : []),
+			];
+		});
+		expect(reads).toEqual(expectedRelative.map((relative) => path.join(root, relative)));
+		expect(found).toEqual(
+			expectedRelative.map((relative) => path.posix.join(relative, ".gate-sentinel")).toSorted(),
+		);
+	});
+
 	it.each(["trailing", "forward"] as const)(
 		"stops disappearance proof at a %s-spelled root",
 		async (spelling) => {
