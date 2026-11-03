@@ -48,6 +48,10 @@ const assets = [
 	],
 	["outbox/migrations/0001_send_attempts.sql", "outbox/migrations/0001_send_attempts.sql"],
 	["accounts/migrations/0001_accounts.sql", "accounts/migrations/0001_accounts.sql"],
+	[
+		"channels/gmail/connection/credential-migrations/0001_credentials.sql",
+		"credential-migrations/0001_credentials.sql",
+	],
 ] as const;
 
 function checkRuntimeNames(directory: string): void {
@@ -230,7 +234,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql"): void {
 				receipt.mode === mode &&
 				receipt.networkAllowed === false &&
 				receipt.nativeAddonPermission === true &&
-				receipt.schemas === 9,
+				receipt.schemas === 10,
 			"Native fixture success receipt",
 		).toBe(true);
 		// Stderr stays opaque. Allowing native addons does not establish OS isolation.
