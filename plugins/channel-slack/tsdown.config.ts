@@ -9,6 +9,8 @@ const config: UserConfig = {
 		"src/socket-lease.ts",
 		"src/catalog.ts",
 		"src/probe.ts",
+		"src/send.ts",
+		"src/reconcile.ts",
 	],
 	format: "esm",
 	platform: "node",

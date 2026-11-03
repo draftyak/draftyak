@@ -11,7 +11,9 @@
     "./socket-mode": "./src/socket-mode.ts",
     "./socket-lease": "./src/socket-lease.ts",
     "./catalog": "./src/catalog.ts",
-    "./probe": "./src/probe.ts"
+    "./probe": "./src/probe.ts",
+    "./send": "./src/send.ts",
+    "./reconcile": "./src/reconcile.ts"
   },
   "publishConfig": {
     "exports": {
@@ -46,6 +48,14 @@
       "./probe": {
         "types": "./dist/probe.d.mts",
         "default": "./dist/probe.mjs"
+      },
+      "./send": {
+        "types": "./dist/send.d.mts",
+        "default": "./dist/send.mjs"
+      },
+      "./reconcile": {
+        "types": "./dist/reconcile.d.mts",
+        "default": "./dist/reconcile.mjs"
       }
     }
   },
