@@ -481,6 +481,19 @@ importers:
 
   tools/fetch-node: {}
 
+  tools/native-app-release:
+    dependencies:
+      '@draftyak/bounded-files':
+        specifier: workspace:*
+        version: link:../../packages/bounded-files
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+    devDependencies:
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
   tools/packaging:
     dependencies:
       '@draftyak/bundle-hub':
