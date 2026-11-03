@@ -8,7 +8,8 @@
     "./reduce": "./src/reduce.ts",
     "./poll": "./src/poll.ts",
     "./conversations": "./src/conversations.ts",
-    "./socket-mode": "./src/socket-mode.ts"
+    "./socket-mode": "./src/socket-mode.ts",
+    "./socket-lease": "./src/socket-lease.ts"
   },
   "publishConfig": {
     "exports": {
@@ -31,6 +32,10 @@
       "./socket-mode": {
         "types": "./dist/socket-mode.d.mts",
         "default": "./dist/socket-mode.mjs"
+      },
+      "./socket-lease": {
+        "types": "./dist/socket-lease.d.mts",
+        "default": "./dist/socket-lease.mjs"
       }
     }
   },
