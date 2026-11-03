@@ -181,12 +181,12 @@ function stageRuntimePackage(
 		const dependency = JSON.parse(readFileSync(dependencyFile, "utf8"));
 		expect(dependency.name).toBe("nodemailer");
 		expect(dependency.version).toBe("10.1.4");
-		expect(dependency.main).toBe("lib/nodemailer.js");
+		expect(dependency.main).toBe("./dist/cjs/nodemailer.js");
 		expect(dependency.dependencies ?? {}).toEqual({});
 		const destination = path.join(stage, "node_modules/nodemailer");
 		mkdirSync(destination);
 		copyPinnedRuntimeFile(dependencyFile, path.join(destination, "package.json"));
-		copy(path.join(path.dirname(dependencyFile), "lib"), path.join(destination, "lib"));
+		copy(path.join(path.dirname(dependencyFile), "dist"), path.join(destination, "dist"));
 	}
 }
 
