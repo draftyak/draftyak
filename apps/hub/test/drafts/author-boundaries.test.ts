@@ -317,7 +317,7 @@ describe("full-content and model-body revision entry points", () => {
 		const one = f.create(input);
 		const two = append(f, input, one, author("ai"));
 		refusedWithoutChange(f, () => append(f, input, one, author("ai")));
-		f.store.write((tx) => f.revisions.setLockInTransaction(tx, f.bind(input), 2, null, newId()));
+		f.store.write((tx) => f.freeze.freezeInTransaction(tx, f.bind(input), 2, f.snapshot(two)));
 		refusedWithoutChange(f, () => append(f, input, two, author("ai")));
 		expect(f.revisions.current(f.bind(input)).draft.rev).toBe(2);
 	});

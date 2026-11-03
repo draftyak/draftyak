@@ -1,0 +1,685 @@
+import { spawnSync } from "node:child_process";
+import { createHash, generateKeyPairSync, type KeyObject, sign } from "node:crypto";
+import {
+	chmodSync,
+	copyFileSync,
+	cpSync,
+	existsSync,
+	linkSync,
+	lstatSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { isBuiltin } from "node:module";
+import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { canonicalize } from "@draftyak/protocol/jcs";
+import { build } from "tsdown";
+import {
+	isArrowFunction,
+	isCallExpression,
+	isExportDeclaration,
+	isExpressionStatement,
+	isFunctionDeclaration,
+	isIdentifier,
+	isImportDeclaration,
+	isPropertyAccessExpression,
+	isStringLiteralLikeNode,
+	isTemplateExpression,
+	isVariableDeclaration,
+	isVariableDeclarationList,
+	type Node,
+	SyntaxKind,
+	type VariableDeclaration,
+} from "typescript/unstable/ast";
+import { API } from "typescript/unstable/sync";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import type { NativeAppRelease } from "../../src/installer/native-app-release.ts";
+import { BUNDLED_PLUGIN_IDS } from "../../src/plugins/installer/policy.ts";
+import { bundle } from "../plugins/installer-fixtures.ts";
+import { nativeBinding } from "../store/helpers.ts";
+
+const hub = path.resolve(import.meta.dirname, "../..");
+const temporary = realpathSync.native(os.tmpdir());
+const entrySource = path.join(import.meta.dirname, "fixtures/native-app-admission.mjs");
+const trustSource = path.join(hub, "src/installer/native-app-trust.ts");
+const domain = Buffer.from("DraftYak native application release v1\0");
+const prelude =
+	'import { constants } from "node:fs";\nimport promises from "node:fs/promises";\nimport { syncBuiltinESMExports } from "node:module";\nimport path from "node:path";\nimport { fileURLToPath } from "node:url";\nconst appRoot=path.dirname(fileURLToPath(import.meta.url));\nconst tcp=process.binding("tcp_wrap"),cares=process.binding("cares_wrap");\nconst denied=process.binding("uv").UV_EACCES;\nconst loopback=(address)=>typeof address==="string"&&(address==="127.0.0.1"||address==="::1");\nfor(const name of ["connect","connect6"]){const original=tcp.TCP.prototype[name];Object.defineProperty(tcp.TCP.prototype,name,{value:function(...args){return loopback(args[1])?Reflect.apply(original,this,args):denied;},writable:false,configurable:false});}\nfor(const name of ["getaddrinfo","getnameinfo"])Object.defineProperty(cares,name,{value:()=>denied,writable:false,configurable:false});\nfor(const name of Object.getOwnPropertyNames(cares.ChannelWrap.prototype))if(name.startsWith("query")||name==="getHostByAddr")Object.defineProperty(cares.ChannelWrap.prototype,name,{value:()=>denied,writable:false,configurable:false});\nlet openRelease,openEnter,closeRelease,closeEnter,otherCloseResolve;\nconst otherCloseSettled=new Promise(r=>otherCloseResolve=r);\nconst openReached=new Promise(r=>openEnter=r),openGate=new Promise(r=>openRelease=r);\nconst closeReached=new Promise(r=>closeEnter=r),closeGate=new Promise(r=>closeRelease=r);\nconst records=[];\nconst state={openReached,closeReached,otherCloseSettled,releaseOpen:()=>openRelease(),releaseClose:()=>closeRelease(),failClose:false,opened:0,attempts:0,closed:0,remaining:()=>records.filter(r=>!r.closed).length,appOnly:()=>records.every(r=>r.inApp===true),firstIsManifest:()=>records.length>0&&records[0].manifest===true,firstAttempts:()=>records[0]?.attempts??0,async cleanup(){const results=await Promise.allSettled(records.map(async r=>{let failed=false;try{await r.original();r.closed=true;}catch{failed=true;}try{if(r.descriptor)Object.defineProperty(r.handle,"close",r.descriptor);else Reflect.deleteProperty(r.handle,"close");}catch{failed=true;}if(failed)throw new Error("DYTEST owned IO cleanup incomplete");}));if(results.some(r=>r.status==="rejected"))throw new Error("DYTEST owned IO cleanup incomplete");}};\nObject.defineProperty(globalThis,Symbol.for("draftyak.test.native-app-io"),{value:state});\nconst mode=process.argv[2];\nif(mode==="during-capture"||mode==="drain-retry"){\n const original=promises.open;\n promises.open=async function(...args){\n  const handle=await Reflect.apply(original,this,args);const name=typeof args[0]==="string"?path.resolve(args[0]):undefined;const relative=name===undefined?undefined:path.relative(appRoot,name);const inApp=relative!==undefined&&relative!==""&&!path.isAbsolute(relative)&&relative!==".."&&!relative.startsWith(".."+path.sep);if(!inApp)return handle;const manifest=path.join(appRoot,"release.manifest.json");if(records.length===0&&name!==manifest)return handle;\n  const descriptor=Object.getOwnPropertyDescriptor(handle,"close"),close=handle.close.bind(handle);\n  const record={handle,descriptor,original:close,closed:false,otherSettled:false,attempts:0,inApp:true,manifest:name===manifest};records.push(record);state.opened++;\n  const first=records.length===1;\n  Object.defineProperty(handle,"close",{configurable:true,enumerable:descriptor?.enumerable??false,writable:true,value:async()=>{\n   record.attempts++;state.attempts++;\n   if(first&&state.failClose){state.failClose=false;closeEnter();await closeGate;throw new Error("DYTEST controlled owned close");}\n   try{await close();}catch(error){if(!first)otherCloseResolve(false);throw error;}if(!record.closed){record.closed=true;state.closed++;}if(!first){record.otherSettled=true;if(records.slice(1).every(r=>r.otherSettled))otherCloseResolve(true);}\n  }});\n  if(first&&mode==="during-capture"){openEnter();await openGate;}\n  return handle;\n };\n syncBuiltinESMExports();\n}\n';
+const folders = [
+	["store/migrations/audit", "store/migrations/audit"],
+	["store/migrations/core", "store/migrations/core"],
+	["identity/devices-migrations", "devices-migrations"],
+	["jobs/jobs-migrations", "jobs-migrations"],
+	["events/events-migrations", "events-migrations"],
+	["drafts/migrations", "drafts/migrations"],
+	["credentials/migrations", "credentials/migrations"],
+	["outbox/migrations", "outbox/migrations"],
+	["accounts/migrations", "accounts/migrations"],
+	["plugins/registry/migrations", "plugins/registry/migrations"],
+	["outbox/propose-migrations", "outbox/propose-migrations"],
+	["identity/challenges-migrations", "identity/challenges-migrations"],
+	["outbox/verifier-migrations", "outbox/verifier-migrations"],
+	["identity/admin-migrations", "identity/admin-migrations"],
+	["identity/admin-challenge-migrations", "identity/admin-challenge-migrations"],
+	["recovery/backup-migrations", "recovery/backup-migrations"],
+	["identity/backup-migrations", "identity/backup-migrations"],
+	["identity/backup-challenge-migrations", "identity/backup-challenge-migrations"],
+] as const;
+interface Owned {
+	root: string;
+	dev: number;
+	ino: number;
+}
+const owned: Owned[] = [];
+function root(): string {
+	const root = realpathSync.native(mkdtempSync(path.join(temporary, "draftyak-native-app-")));
+	const stat = lstatSync(root);
+	owned.push({ root, dev: stat.dev, ino: stat.ino });
+	return root;
+}
+function remove(entry: Owned): void {
+	const stat = lstatSync(entry.root);
+	if (
+		path.dirname(entry.root) !== temporary ||
+		!path.basename(entry.root).startsWith("draftyak-native-app-") ||
+		!stat.isDirectory() ||
+		stat.isSymbolicLink() ||
+		stat.dev !== entry.dev ||
+		stat.ino !== entry.ino ||
+		realpathSync.native(entry.root) !== entry.root
+	)
+		throw new Error("DYTEST unowned application cleanup");
+	rmSync(entry.root, { recursive: true, force: true });
+	expect(existsSync(entry.root)).toBe(false);
+}
+function files(root: string): string[] {
+	const result: string[] = [];
+	function visit(relative: string): void {
+		for (const name of readdirSync(path.join(root, relative)).sort()) {
+			const child = relative ? relative + "/" + name : name;
+			const stat = lstatSync(path.join(root, child));
+			if (stat.isSymbolicLink() || result.length >= 4096)
+				throw new Error("DYTEST linked application");
+			if (stat.isDirectory()) visit(child);
+			else if (stat.isFile()) result.push(child);
+			else throw new Error("DYTEST non-file application member");
+		}
+	}
+	visit("");
+	return result;
+}
+function closedJavaScript(app: string): void {
+	const scripts = files(app).filter((name) => /\.(?:mjs|js|cjs)$/.test(name));
+	expect(scripts).toEqual(["entry.mjs"]);
+	const scan = path.join(path.dirname(app), "scan.json");
+	writeFileSync(
+		scan,
+		JSON.stringify({
+			compilerOptions: { allowJs: true, noEmit: true, noResolve: true, noLib: true, types: [] },
+			files: scripts.map((name) => path.join(app, name)),
+		}),
+	);
+	const api = new API();
+	try {
+		using snapshot = api.updateSnapshot({ openProjects: [scan] });
+		const project = snapshot.getProject(scan);
+		if (!project) throw new Error("DYTEST closed application scan unavailable");
+		for (const script of scripts) {
+			const ast = project.program.getSourceFile(path.join(app, script));
+			if (!ast) throw new Error("DYTEST application module unavailable");
+			expect(project.program.getSyntacticDiagnostics(path.join(app, script)).length).toBe(0);
+			const dataImports: Node[] = [];
+			const dataHelpers: VariableDeclaration[] = [];
+			let helperIdentifiers = 0;
+			const named = (node: Node | undefined, name: string): boolean =>
+				node !== undefined && isIdentifier(node) && node.text === name;
+			function verifiedDataImport(node: Node, helper: VariableDeclaration): string {
+				const declaration = helper.parent;
+				const arrow = helper.initializer;
+				if (
+					!isVariableDeclarationList(declaration) ||
+					declaration.parent.parent !== ast ||
+					!arrow ||
+					!isArrowFunction(arrow) ||
+					(arrow.modifiers?.length ?? 0) !== 0 ||
+					arrow.parameters.length !== 1
+				)
+					return "binding";
+				const parameter = arrow.parameters[0];
+				const body = arrow.body;
+				if (
+					!parameter ||
+					!named(parameter.name, "verified") ||
+					parameter.initializer ||
+					parameter.dotDotDotToken ||
+					parameter.questionToken ||
+					!isTemplateExpression(body) ||
+					body.head.text !== "data:text/javascript;base64," ||
+					body.templateSpans.length !== 1
+				)
+					return "data-template";
+				const span = body.templateSpans[0];
+				if (!span || span.literal.text !== "" || !isCallExpression(span.expression))
+					return "data-span";
+				const encode = span.expression;
+				const method = encode.expression;
+				const encoding = encode.arguments[0];
+				if (
+					encode.questionDotToken ||
+					encode.arguments.length !== 1 ||
+					!encoding ||
+					!isStringLiteralLikeNode(encoding) ||
+					encoding.text !== "base64" ||
+					!isPropertyAccessExpression(method) ||
+					method.questionDotToken ||
+					!named(method.name, "toString") ||
+					!isPropertyAccessExpression(method.expression) ||
+					method.expression.questionDotToken ||
+					!named(method.expression.name, "entry") ||
+					!named(method.expression.expression, "verified") ||
+					!isCallExpression(node) ||
+					node.arguments.length !== 1
+				)
+					return "base64-encoding";
+				const call = node.arguments[0];
+				if (
+					!call ||
+					!isCallExpression(call) ||
+					call.questionDotToken ||
+					!named(call.expression, "moduleUrl") ||
+					call.arguments.length !== 1 ||
+					!named(call.arguments[0], "verified")
+				)
+					return "import-call";
+				const callback = node.parent;
+				const settle = callback.parent;
+				if (
+					!isArrowFunction(callback) ||
+					callback.body !== node ||
+					callback.parameters.length !== 0 ||
+					(callback.modifiers?.length ?? 0) !== 0 ||
+					!isCallExpression(settle) ||
+					!named(settle.expression, "settleWithin") ||
+					settle.arguments.length !== 3 ||
+					settle.arguments[0] !== callback ||
+					!named(settle.arguments[1], "MODULE_TIMEOUT_MS") ||
+					!named(settle.arguments[2], "clock")
+				)
+					return "settle-callback";
+				let owner = node.parent;
+				while (owner !== ast && !isFunctionDeclaration(owner)) owner = owner.parent;
+				if (
+					!isFunctionDeclaration(owner) ||
+					owner.parent !== ast ||
+					!named(owner.name, "loadModule") ||
+					owner.parameters.length !== 2 ||
+					!named(owner.parameters[0]?.name, "verified") ||
+					!named(owner.parameters[1]?.name, "clock") ||
+					!owner.body
+				)
+					return "load-module";
+				let statement: Node = node;
+				while (statement.parent !== owner.body) statement = statement.parent;
+				const index = owner.body.statements.findIndex((candidate) => candidate === statement);
+				const reverified = owner.body.statements.slice(0, index).some((candidate) => {
+					if (!isExpressionStatement(candidate) || !isCallExpression(candidate.expression))
+						return false;
+					const reverify = candidate.expression;
+					return (
+						!reverify.questionDotToken &&
+						named(reverify.expression, "reverifyModule") &&
+						reverify.arguments.length === 1 &&
+						named(reverify.arguments[0], "verified")
+					);
+				});
+				return reverified ? "verified-data-loader" : "reverify";
+			}
+			function specifier(value: string): void {
+				if (isBuiltin(value)) return;
+				expect(value.startsWith("./") || value.startsWith("../")).toBe(true);
+				const relative = path.relative(
+					app,
+					path.resolve(path.dirname(path.join(app, script)), value),
+				);
+				expect(
+					!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(".." + path.sep),
+				).toBe(true);
+				expect(scripts.includes(relative.replaceAll(path.sep, "/"))).toBe(true);
+			}
+			function visit(node: Node): void {
+				if (named(node, "moduleUrl")) helperIdentifiers++;
+				if (isVariableDeclaration(node) && named(node.name, "moduleUrl")) dataHelpers.push(node);
+				if (
+					(isImportDeclaration(node) || isExportDeclaration(node)) &&
+					node.moduleSpecifier &&
+					isStringLiteralLikeNode(node.moduleSpecifier)
+				)
+					specifier(node.moduleSpecifier.text);
+				if (isCallExpression(node) && node.expression.kind === SyntaxKind.ImportKeyword) {
+					const arg = node.arguments[0];
+					if (!arg || !isStringLiteralLikeNode(arg)) dataImports.push(node);
+					else specifier(arg.text);
+				}
+				node.forEachChild(visit);
+			}
+			visit(ast);
+			const helper = dataHelpers[0];
+			const dataImport = dataImports[0];
+			if (
+				dataImports.length !== 1 ||
+				dataHelpers.length !== 1 ||
+				helperIdentifiers !== 2 ||
+				!helper ||
+				!dataImport
+			)
+				throw new Error(
+					`DYTEST import shape counts imports=${dataImports.length} helpers=${dataHelpers.length} uses=${helperIdentifiers}`,
+				);
+			const category = verifiedDataImport(dataImport, helper);
+			if (category !== "verified-data-loader")
+				throw new Error(`DYTEST import shape category=${category}`);
+		}
+	} finally {
+		api.close();
+	}
+	expect(existsSync(path.join(app, "node_modules"))).toBe(false);
+	expect(existsSync(path.join(path.dirname(app), "node_modules"))).toBe(false);
+}
+interface Built {
+	app: string;
+	privateKey: KeyObject;
+	manifest: NativeAppRelease;
+}
+async function prepare(configured: boolean): Promise<Built> {
+	const parent = root(),
+		app = path.join(parent, "installed");
+	mkdirSync(app);
+	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+	const executable = "runtime/" + path.basename(process.execPath);
+	const trust = {
+		version: "9.8.7",
+		publicKeyDer: publicKey.export({ format: "der", type: "spki" }).toString("base64"),
+		executable,
+		entry: "entry.mjs",
+		module: "entry.mjs",
+	};
+	let policyLoads = 0;
+	await build({
+		cwd: hub,
+		config: false,
+		tsconfig: path.resolve(hub, "../../tsconfig.base.json"),
+
+		entry: { entry: entrySource },
+		outDir: app,
+		platform: "node",
+		format: "esm",
+		dts: false,
+		clean: false,
+
+		exports: false,
+		report: false,
+		noExternal: [/.*/],
+		sourcemap: false,
+		outputOptions: { entryFileNames: "entry.mjs", codeSplitting: false },
+		plugins: [
+			{
+				name: "fixed-application-fixture-policy",
+				resolveId(id, importer) {
+					if (id === "draftyak-test-native-app-prelude") return "\0fixture-prelude";
+					if (
+						configured &&
+						importer &&
+						id.startsWith(".") &&
+						path.resolve(path.dirname(importer), id) === trustSource
+					)
+						return "\0fixture-fixed-trust";
+				},
+				load(id) {
+					if (id === "\0fixture-prelude") return prelude;
+					if (
+						id === "\0fixture-fixed-trust" ||
+						(configured && path.normalize(id) === trustSource)
+					) {
+						policyLoads++;
+						return (
+							"export const nativeAppReleaseTrust = Object.freeze(" + JSON.stringify(trust) + ");"
+						);
+					}
+				},
+			},
+		],
+	});
+	expect(policyLoads).toBe(configured ? 1 : 0);
+	closedJavaScript(app);
+	mkdirSync(path.join(app, "runtime"));
+	copyFileSync(process.execPath, path.join(app, executable));
+	chmodSync(path.join(app, executable), 0o700);
+	mkdirSync(path.join(app, "native"));
+	copyFileSync(nativeBinding, path.join(app, "native/sqlite.node"));
+	let migrations = 0;
+	for (const [from, to] of folders)
+		for (const name of readdirSync(path.join(hub, "src", from)).sort()) {
+			if (!name.endsWith(".sql")) continue;
+			const target = path.join(app, to, name);
+			mkdirSync(path.dirname(target), { recursive: true });
+			copyFileSync(path.join(hub, "src", from, name), target);
+			migrations++;
+		}
+	expect(migrations).toBe(20);
+	const packages = BUNDLED_PLUGIN_IDS.map((id, index) =>
+		bundle(id, { version: index + 1 + ".2.3" }),
+	);
+	mkdirSync(path.join(app, "bundles"));
+	for (const item of packages)
+		writeFileSync(path.join(app, "bundles", item.id + ".tgz"), item.archive);
+	const manifest: NativeAppRelease = {
+		v: 1,
+		application: "draftyak",
+		version: trust.version,
+		platform: process.platform as NativeAppRelease["platform"],
+		arch: process.arch as NativeAppRelease["arch"],
+		executable,
+		entry: trust.entry,
+		bundles: packages.map((item) => ({
+			id: item.id,
+			package: item.lock,
+			archive: "bundles/" + item.id + ".tgz",
+		})),
+		files: files(app).map((name) => {
+			const bytes = readFileSync(path.join(app, name));
+			return {
+				path: name,
+				bytes: bytes.length,
+				sha256: createHash("sha256").update(bytes).digest("hex"),
+			};
+		}),
+	};
+	writeRelease(app, manifest, privateKey);
+	return { app, privateKey, manifest };
+}
+function writeRelease(app: string, manifest: NativeAppRelease, key: KeyObject): void {
+	const bytes = Buffer.from(canonicalize(manifest));
+	writeFileSync(path.join(app, "release.manifest.json"), bytes);
+	writeFileSync(
+		path.join(app, "release.signature"),
+		sign(null, Buffer.concat([domain, bytes]), key),
+	);
+}
+function execute(base: Built, mode: string): void {
+	const parent = root(),
+		app = path.join(parent, "installed"),
+		profile = path.join(parent, "profile");
+	let failed = false;
+	let failure: unknown;
+	let cleanupFailure: unknown;
+	try {
+		cpSync(base.app, app, { recursive: true });
+		mkdirSync(profile, { mode: 0o700 });
+		if (mode === "signature") {
+			const signature = readFileSync(path.join(app, "release.signature"));
+			const first = signature[0];
+			if (first === undefined) throw new Error("DYTEST signature missing");
+			signature[0] = first ^ 1;
+			writeFileSync(path.join(app, "release.signature"), signature);
+		} else if (mode === "pin") {
+			const changed = structuredClone(base.manifest);
+			const first = changed.bundles[0];
+			if (!first) throw new Error("DYTEST bundle missing");
+			Reflect.set(first.package, "integrity", "sha512-" + Buffer.alloc(64).toString("base64"));
+			writeRelease(app, changed, base.privateKey);
+		} else if (mode === "identity") {
+			const first = base.manifest.bundles[0];
+			if (!first) throw new Error("DYTEST bundle missing");
+			linkSync(path.join(app, first.archive), path.join(parent, "outside-archive.tgz"));
+		}
+		const env: NodeJS.ProcessEnv = { NODE_ENV: "test" };
+		for (const name of ["SystemRoot", "WINDIR", "TEMP", "TMP"])
+			if (process.env[name] !== undefined) env[name] = process.env[name];
+		if (mode === "node-options") env.NODE_OPTIONS = "--no-warnings";
+		if (mode === "node-path") env.NODE_PATH = "DYTEST-unused-node-path";
+		const flags = mode === "missing-flag" ? [] : ["--disable-sigusr1"];
+		if (mode === "preloaded") flags.push("--no-warnings");
+		if (mode === "duplicate-flag") flags.push("--disable-sigusr1");
+		const args = [...flags, path.join(app, "entry.mjs"), mode, profile];
+		const run = spawnSync(path.join(app, base.manifest.executable), args, {
+			cwd: app,
+			env,
+			encoding: "utf8",
+			timeout: 60000,
+			maxBuffer: 4096,
+			windowsHide: true,
+			shell: false,
+		});
+		if (run.status !== 0) {
+			const diagnostic = typeof run.stderr === "string" ? run.stderr : "";
+			let checkpointStep = 0;
+			let checkpointVariant = 0;
+			const checkpoints = diagnostic
+				.split(/\r?\n/)
+				.filter((line) => line.startsWith("DYTEST native application fixture checkpoint"));
+			const checkpoint =
+				checkpoints.length === 1
+					? /^DYTEST native application fixture checkpoint step=(0|[1-9][0-9]?) variant=([0-3])$/.exec(
+							checkpoints[0] ?? "",
+						)
+					: null;
+			if (checkpoint && Number(checkpoint[1]) <= 63) {
+				checkpointStep = Number(checkpoint[1]);
+				checkpointVariant = Number(checkpoint[2]);
+			}
+			const phases = [
+				"entry",
+				"bootstrap",
+				"cleanup",
+				"positive",
+				"ownership",
+				"currentness",
+				"signature",
+				"pin",
+				"identity",
+				"close",
+				"preloaded",
+				"missing-flag",
+				"duplicate-flag",
+				"node-options",
+				"node-path",
+				"during-capture",
+				"drain-retry",
+				"unconfigured",
+			];
+			const markers = [
+				...diagnostic.matchAll(/^DYTEST native application fixture failed \(([a-z-]+)\)\r?$/gm),
+			].filter((match) => phases.includes(match[1] ?? ""));
+			const phase = markers.length === 1 ? (markers[0]?.[1] ?? "pre-entry") : "pre-entry";
+			const errorClasses = ["ReferenceError", "TypeError", "SyntaxError", "RangeError"];
+			const errorClass =
+				errorClasses.find((value) =>
+					new RegExp(`\\b${value}(?: \\[[A-Z_]+\\])?:`).test(diagnostic),
+				) ?? "NONE";
+			const referenceHeader =
+				diagnostic.match(/^ReferenceError(?: \[[A-Z_]+\])?:[^\r\n]*$/m)?.[0] ?? "";
+			const referenceReason = /\bCannot access\b[^\r\n]{0,512}\bbefore initialization\b/.test(
+				referenceHeader,
+			)
+				? "TDZ"
+				: /\bis not defined\b/.test(referenceHeader)
+					? "UNDEFINED"
+					: "OTHER";
+			let sourceHash = "UNAVAILABLE";
+			let sourceLine = 0;
+			let sourceColumn = 0;
+			try {
+				const entry = path.join(app, "entry.mjs");
+				const bytes = readFileSync(entry);
+				sourceHash = createHash("sha256").update(bytes).digest("hex");
+				const lines = bytes.toString("utf8").split(/\r\n|[\n\r\u2028\u2029]/u);
+				const escaped = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+				const expected = `(?:${escaped(pathToFileURL(entry).href)}|${escaped(entry)})`;
+				const frames = new RegExp(
+					`^\\s*at (?:async )?(?:[^\\r\\n()]*\\()?${expected}:(\\d{1,8}):(\\d{1,8})\\)?\\s*$`,
+					"gm",
+				);
+				for (const frame of diagnostic.matchAll(frames)) {
+					const line = Number(frame[1]);
+					const column = Number(frame[2]);
+					const text = lines[line - 1];
+					if (
+						Number.isSafeInteger(line) &&
+						Number.isSafeInteger(column) &&
+						line > 0 &&
+						line < lines.length &&
+						line <= 1_000_000 &&
+						column > 0 &&
+						column <= 1_000_000 &&
+						text !== undefined &&
+						column <= text.length + 1
+					) {
+						sourceLine = line;
+						sourceColumn = column;
+						break;
+					}
+				}
+			} catch {
+				/* Unavailable source or an unknown frame keeps fixed zero coordinates. */
+			}
+			const missingBindings = [
+				["__dirname", "UNDEFINED_DIRNAME"],
+				["__filename", "UNDEFINED_FILENAME"],
+				["require", "UNDEFINED_REQUIRE"],
+				["module", "UNDEFINED_MODULE"],
+				["exports", "UNDEFINED_EXPORTS"],
+			] as const;
+			const tdzBindings = [
+				["host", "TDZ_HOST"],
+				["fixedTrust", "TDZ_FIXED_TRUST"],
+				["nativeAppReleaseTrust", "TDZ_RELEASE_TRUST"],
+				["sessions", "TDZ_SESSIONS"],
+				["captures", "TDZ_CAPTURES"],
+				["nativeOpen", "TDZ_NATIVE_OPEN"],
+				["nativeLstat", "TDZ_NATIVE_LSTAT"],
+				["nativeOpendir", "TDZ_NATIVE_OPENDIR"],
+				["nativeRealpath", "TDZ_NATIVE_REALPATH"],
+			] as const;
+			const redefinedProperties = [
+				["getaddrinfo", "REDEFINE_GETADDRINFO"],
+				["getnameinfo", "REDEFINE_GETNAMEINFO"],
+				["getHostByAddr", "REDEFINE_GETHOSTBYADDR"],
+				["connect", "REDEFINE_CONNECT"],
+				["connect6", "REDEFINE_CONNECT6"],
+			] as const;
+			const knownBinding =
+				missingBindings.find(([name]) => diagnostic.includes(`${name} is not defined`))?.[1] ??
+				tdzBindings.find(([name]) =>
+					diagnostic.includes(`Cannot access '${name}' before initialization`),
+				)?.[1] ??
+				redefinedProperties.find(([name]) =>
+					diagnostic.includes(`Cannot redefine property: ${name}`),
+				)?.[1];
+			const codes = [
+				"ERR_MODULE_NOT_FOUND",
+				"MODULE_NOT_FOUND",
+				"ERR_DLOPEN_FAILED",
+				"ERR_UNSUPPORTED_DIR_IMPORT",
+				"ERR_UNKNOWN_FILE_EXTENSION",
+				"ERR_REQUIRE_ASYNC_MODULE",
+				"ERR_REQUIRE_ESM",
+				"ERR_INVALID_ARG_TYPE",
+				"ENOENT",
+				"EACCES",
+				"ENOBUFS",
+				"ETIMEDOUT",
+			];
+			const code =
+				codes.find((value) => diagnostic.includes(value)) ??
+				knownBinding ??
+				(diagnostic.includes("Dynamic require of") && diagnostic.includes("is not supported")
+					? "DYNAMIC_REQUIRE"
+					: diagnostic.includes("require is not defined in ES module scope")
+						? "ESM_REQUIRE"
+						: "UNCLASSIFIED");
+			throw new Error(
+				`DYTEST signed-node child phase=${phase} code=${code} class=${errorClass} reason=${referenceReason} step=${checkpointStep} variant=${checkpointVariant} markers=${markers.length} line=${sourceLine} column=${sourceColumn} source=${sourceHash} status=${run.status}`,
+			);
+		}
+		expect(run.status).toBe(0);
+		if (typeof run.stderr === "string" && run.stderr.length !== 0) {
+			const bytes = Buffer.byteLength(run.stderr, "utf8");
+			const code = run.stderr.match(/\b(DEP[0-9]{4})\b/)?.[1] ?? "NONE";
+			throw new Error(`DYTEST signed-node success-stderr bytes=${bytes} code=${code}`);
+		}
+		expect(typeof run.stderr === "string" && run.stderr.length === 0).toBe(true);
+		expect(run.error === undefined).toBe(true);
+		let summaryMatches = false;
+		try {
+			summaryMatches =
+				canonicalize(JSON.parse(run.stdout)) ===
+				canonicalize({
+					ok: true,
+					capture: "configured-signed-node-fixture",
+					mode,
+					schemas: 18,
+					bundles: 5,
+				});
+		} catch {
+			/* Invalid child data remains a fixed Boolean failure. */
+		}
+		expect(summaryMatches).toBe(true);
+	} catch (error) {
+		failed = true;
+		failure = error;
+	} finally {
+		const index = owned.findIndex((entry) => entry.root === parent);
+		const entry = owned[index];
+		if (!entry) cleanupFailure = new Error("DYTEST cleanup owner missing");
+		else {
+			try {
+				remove(entry);
+				owned.splice(index, 1);
+			} catch (error) {
+				cleanupFailure = error;
+			}
+		}
+	}
+	if (failed) throw failure;
+	if (cleanupFailure) throw cleanupFailure;
+}
+let configured: Built;
+beforeAll(async () => {
+	configured = await prepare(true);
+	execute(configured, "positive");
+});
+afterAll(() => {
+	for (const entry of owned.splice(0).reverse()) remove(entry);
+});
+it("captures a configured signed Node release with a real original session", () => {
+	expect(configured.manifest.bundles.length).toBe(5);
+});
+it.each([
+	"ownership",
+	"currentness",
+	"signature",
+	"pin",
+	"identity",
+	"close",
+	"preloaded",
+	"missing-flag",
+	"duplicate-flag",
+	"node-options",
+	"node-path",
+] as const)("refuses changed signed Node release capture (%s)", (mode) =>
+	execute(configured, mode),
+);
+it.each(["during-capture", "drain-retry"] as const)(
+	"joins configured Node capture resources during session close (%s)",
+	(mode) => execute(configured, mode),
+);
+it("keeps the actual unconfigured production trust build without application authority", async () => {
+	execute(await prepare(false), "unconfigured");
+});

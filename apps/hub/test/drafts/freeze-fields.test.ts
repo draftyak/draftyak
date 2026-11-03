@@ -3,6 +3,7 @@ import { canonicalize } from "@draftyak/protocol/jcs";
 import { CurrentSendSnapshotV1 } from "@draftyak/protocol/snapshot";
 import { afterEach, expect, it } from "vitest";
 import { newId } from "../../src/kernel/ids.ts";
+import { signFixtureDraftRow } from "./revision-corruption.ts";
 import { type RevisionFixture, revisionFixture } from "./revision-fixture.ts";
 
 const fixtures: RevisionFixture[] = [];
@@ -131,7 +132,7 @@ it.each(["email-render", "chat-render", "new-email-thread"] as const)(
 		const { mac: _oldMac, ...signed } = row;
 		const changed = { ...signed, payload: canonicalize(payload) };
 		// Model a correctly authenticated legacy lock, so refusal must come from applicability.
-		const mac = f.revisions.sign("freeze", changed);
+		const mac = signFixtureDraftRow(f, "freeze", changed);
 		f.store.write((tx) =>
 			tx.run("UPDATE native_draft_locks SET payload=?,mac=? WHERE id=?", [
 				changed.payload,

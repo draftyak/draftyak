@@ -17,6 +17,7 @@ import {
 	type RenderedMime,
 } from "./model.ts";
 
+export * from "./mbox.ts";
 export * from "./model.ts";
 
 const LOCAL = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/;

@@ -11,6 +11,11 @@ import {
 	verifyBundle,
 } from "../../artifacts/index.ts";
 import { snapshotPackageLock } from "../../artifacts/pin.ts";
+import {
+	assertNativePluginOwner,
+	type NativePluginSessionParts,
+	nativePluginInputs,
+} from "../../lifecycle/native-session-context.ts";
 import { createInstallerMutex } from "./mutex.ts";
 import {
 	BUNDLED_PLUGIN_IDS,
@@ -83,6 +88,76 @@ export interface PluginInstaller {
 	close(): Promise<void>;
 }
 
+interface NativeInstaller {
+	readonly parts: NativePluginSessionParts;
+	readonly opening: Promise<PluginInstaller>;
+	value?: PluginInstaller;
+	closing: boolean;
+	closePromise?: Promise<void>;
+}
+const nativeInstallers = new WeakMap<object, NativeInstaller>();
+
+/** Internal native construction: no store, path, catalog or proof is supplied by the caller. */
+export function openNativePluginInstaller(session: unknown): Promise<PluginInstaller> {
+	try {
+		const parts = nativePluginInputs(session),
+			key = session as object;
+		const previous = nativeInstallers.get(key);
+		if (previous) {
+			if (previous.closing || previous.parts !== parts) refuse();
+			return previous.opening;
+		}
+		let owner: NativeInstaller;
+		const opening = Promise.resolve()
+			.then(async () => {
+				assertNativePluginOwner(session, parts);
+				const value = await createPluginInstaller(
+					{
+						directory: parts.directory,
+						bundles: parts.bundles,
+						nativeBinding: parts.nativeBinding,
+					},
+					{ session, parts },
+				);
+				owner.value = value;
+				if (owner.closing) refuse();
+				return value;
+			})
+			.catch(() => {
+				throw new PluginInstallError();
+			});
+		owner = { parts, opening, closing: false };
+		nativeInstallers.set(key, owner);
+		void opening.catch(() => undefined);
+		return opening;
+	} catch {
+		return Promise.reject(new PluginInstallError());
+	}
+}
+
+/** Drains only an existing canonical resource; this never opens a replacement. */
+export function closeNativePluginInstaller(session: unknown): Promise<void> {
+	const owner =
+		session !== null && typeof session === "object" ? nativeInstallers.get(session) : undefined;
+	if (!owner) return Promise.resolve();
+	owner.closing = true;
+	if (owner.closePromise) return owner.closePromise;
+	const immediate = owner.value?.close();
+	if (immediate) void immediate.catch(() => undefined);
+	const closing = Promise.allSettled([owner.opening])
+		.then(async () => {
+			if (immediate) await immediate;
+			else if (owner.value) await owner.value.close();
+		})
+		.catch(() => {
+			owner.closePromise = undefined;
+			throw new PluginInstallError();
+		});
+	owner.closePromise = closing;
+	void closing.catch(() => undefined);
+	return closing;
+}
+
 function installedFacts(
 	prepared: PreparedPackage,
 	manifest: PluginManifestV1,
@@ -129,16 +204,29 @@ function catalog(raw: unknown): ReadonlyMap<string, BundledPluginPin> {
 export async function openPluginInstaller(
 	options: PluginInstallerOptions,
 ): Promise<PluginInstaller> {
+	return createPluginInstaller(options);
+}
+
+async function createPluginInstaller(
+	options: PluginInstallerOptions,
+	native?: { readonly session: unknown; readonly parts: NativePluginSessionParts },
+): Promise<PluginInstaller> {
 	try {
+		const assertOwner = (phase: "open" | "held" = "open"): void => {
+			if (native) assertNativePluginOwner(native.session, native.parts, phase);
+		};
+		assertOwner();
 		const input = record(options, ["directory", "bundles", "nativeBinding"]);
 		const pins = catalog(input.bundles);
 		const root = await canonicalDirectory(input.directory);
+		assertOwner();
 		const rootStat = rootDirectory(root);
 		const mutex = createInstallerMutex(root, rootStat, input.nativeBinding);
 		let closed = false;
 		const settling = new Set<Promise<void>>();
 		const active = (): void => {
 			if (closed) refuse();
+			assertOwner();
 			mutex.check();
 		};
 		const run = async (
@@ -159,12 +247,17 @@ export async function openPluginInstaller(
 				mutex.acquire();
 				tree = stage(root, rootStat, destination);
 				await materialize(tree, prepared.files, active);
+				active();
 				await seal(tree);
+				active();
 				await verifyBundle(Object.freeze({ directory: tree.top, inventory: prepared.inventory }));
+				active();
 				await place(tree, destination, active);
+				active();
 				return installedFacts(prepared, manifest, destination);
 			} catch {
 				try {
+					assertOwner("held");
 					if (tree) await discard(tree);
 				} catch {
 					// Substituted or unlisted names stay untouched; no failed install returns an artifact.
