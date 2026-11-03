@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { nativeTransportSelection } from "./native-transport.ts";
 import { checkWorkflow } from "./workflow-policy.ts";
 import { parseYaml } from "./yaml.ts";
 
@@ -21,6 +22,24 @@ const job = (name: string, change: (text: string) => string): string => {
 	expect(changed).toBe(true);
 	return result;
 };
+type Step = {
+	readonly run?: string;
+	readonly uses?: string;
+	readonly if?: string;
+	readonly env?: Readonly<Record<string, string>>;
+};
+const steps = (name: string): readonly Step[] =>
+	(parseYaml(source).value as unknown as { jobs: Record<string, { steps: readonly Step[] }> }).jobs[
+		name
+	]?.steps ?? [];
+const selected = (expression: string, terms: Readonly<Record<string, boolean>>): boolean =>
+	expression
+		.split(" || ")
+		.map((term) => {
+			expect(Object.hasOwn(terms, term)).toBe(true);
+			return terms[term];
+		})
+		.some(Boolean);
 
 describe("required native transport workflow controls", () => {
 	it("admits the current three-platform wiring without granting additional workflow privileges", () => {
@@ -100,6 +119,10 @@ describe("required native transport workflow controls", () => {
 	it("requires the exact native selector output and preserves ordinary heavy selection", () => {
 		for (const [before, after] of [
 			[
+				"heavy: ${{ steps.areas.outputs.heavy }}",
+				"heavy: ${{ steps.native.outputs.ordinary-heavy }}",
+			],
+			[
 				"native-transport: ${{ steps.native.outputs.native-transport }}",
 				"native-transport: 'false'",
 			],
@@ -147,5 +170,95 @@ describe("required native transport workflow controls", () => {
 		expect(check(addProduct(ordinary, "ordinary-heavy", true)).join("\n")).toContain(
 			"ordinary heavy suites must exclude",
 		);
+	});
+	it("requires ordinary filters and the nonempty spike-or-ordinary guard on the real combined step", () => {
+		expect(check(source)).toEqual([]);
+		const combined = steps("full").filter((step) => Object.hasOwn(step.env ?? {}, "HEAVY"));
+		expect(combined).toHaveLength(1);
+		expect(combined[0]?.env).toMatchObject({
+			HEAVY: "${{ needs.changes.outputs.ordinary-heavy }}",
+			SPIKES: "${{ needs.changes.outputs.spikes }}",
+			DRAFTYAK_STRICT_SKIPS: "1",
+		});
+		expect(combined[0]?.if).toBe(
+			"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+		);
+		for (const [before, after] of [
+			[
+				"HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+				"HEAVY: ${{ needs.changes.outputs.heavy }}",
+			],
+			["needs.changes.outputs.ordinary-heavy != ''", "needs.changes.outputs.heavy != ''"],
+			["needs.changes.outputs.spikes != '' || ", ""],
+			[" || needs.changes.outputs.ordinary-heavy != ''", ""],
+		] as const) {
+			expect(check(job("full", (body) => body.replace(before, after))).join("\n")).toContain(
+				"must preserve",
+			);
+		}
+		const duplicate = job(
+			"full",
+			(body) => `${body}      - run: pnpm exec node tools/ci-checks/src/native-transport.ts run\n`,
+		);
+		expect(check(duplicate).join("\n")).toContain("must preserve full command");
+	});
+	it.each([
+		["no work", "", "", false],
+		["native only", "", "./tools/transport-tests", false],
+		["ordinary only", "", "./apps/cli", true],
+		["spikes only", "spikes/kit", "", true],
+		["mixed", "spikes/kit", "./tools/transport-tests\n./apps/cli", true],
+	] as const)(
+		"keeps the real combined step correctly selected for %s",
+		(_, spikes, heavy, expected) => {
+			const binding = nativeTransportSelection(
+				heavy,
+				heavy.includes("./tools/transport-tests") ? "crates" : "",
+			);
+			const [combined] = steps("full").filter((step) => Object.hasOwn(step.env ?? {}, "HEAVY"));
+			expect(combined?.env?.HEAVY).toBe("${{ needs.changes.outputs.ordinary-heavy }}");
+			expect(binding.ordinaryHeavy.split("\n")).not.toContain("./tools/transport-tests");
+			expect(
+				selected(combined?.if ?? "", {
+					"needs.changes.outputs.spikes != ''": spikes !== "",
+					"needs.changes.outputs.ordinary-heavy != ''": binding.ordinaryHeavy !== "",
+				}),
+			).toBe(expected);
+		},
+	);
+	it("keeps one pinned Windows Rust setup for either parent condition before its native cache", () => {
+		const windows = steps("windows");
+		const rust = windows.filter((step) => step.uses?.startsWith("dtolnay/rust-toolchain@"));
+		expect(rust).toHaveLength(1);
+		const condition =
+			"hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'";
+		expect(rust[0]?.if).toBe(condition);
+		const rustIndex = windows.indexOf(rust[0] as Step);
+		expect(rustIndex).toBeLessThan(
+			windows.findIndex((step) => step.uses?.startsWith("Swatinem/rust-cache@")),
+		);
+		for (const [manifest, native, expected] of [
+			[true, false, true],
+			[false, true, true],
+			[true, true, true],
+			[false, false, false],
+		] as const) {
+			expect(
+				selected(rust[0]?.if ?? "", {
+					"hashFiles('crates/Cargo.toml') != ''": manifest,
+					"needs.changes.outputs.native-transport == 'true'": native,
+				}),
+			).toBe(expected);
+		}
+		for (const replacement of [
+			"false",
+			"hashFiles('crates/Cargo.toml') != ''",
+			"needs.changes.outputs.native-transport == 'true'",
+			condition.replace(" || ", " && "),
+		]) {
+			expect(
+				check(job("windows", (body) => body.replace(condition, replacement))).join("\n"),
+			).toContain("pinned native Rust setup");
+		}
 	});
 });

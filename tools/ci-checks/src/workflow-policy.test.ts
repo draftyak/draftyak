@@ -1637,6 +1637,7 @@ describe("selected browser provisioning contract", () => {
 			"      - name: test:heavy for the touched spikes and the selected packages\n",
 			cache + "      - name: test:heavy for the touched spikes and the selected packages\n",
 		);
+		expect(mutated).not.toBe(without);
 		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
 			"must preserve the selected browser cache",
 		);

@@ -177,9 +177,9 @@ jobs:
         env:
           SPIKES: ${{ needs.changes.outputs.spikes }}
           HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ steps.browser-setup.outputs.path }}
           SMOKE: ${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}
           DRAFTYAK_STRICT_SKIPS: '1'
-          PLAYWRIGHT_BROWSERS_PATH: ${{ steps.browser-setup.outputs.path }}
         run: |
           filters=()
           for dir in $SPIKES; do filters+=("--filter=./$dir"); done
@@ -225,7 +225,7 @@ jobs:
           NATIVE_ARCHITECTURE: x64
         run: node tools/ci-checks/src/native-transport.ts platform
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master on 2026-10-16
-        if: (hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true')
+        if: hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'
         with:
           toolchain: 1.95.0
           components: clippy, rustfmt

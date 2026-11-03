@@ -138,9 +138,9 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 			env: {
 				SPIKES: `\${{ needs.changes.outputs.spikes }}`,
 				HEAVY: `\${{ needs.changes.outputs.ordinary-heavy }}`,
+				PLAYWRIGHT_BROWSERS_PATH: browserPath,
 				SMOKE: `\${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}`,
 				DRAFTYAK_STRICT_SKIPS: "1",
-				PLAYWRIGHT_BROWSERS_PATH: browserPath,
 			},
 			run: [
 				"filters=()",
@@ -535,7 +535,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 						? { if: "needs.changes.outputs.rust != ''" }
 						: job === "windows"
 							? {
-									if: `(hashFiles('crates/Cargo.toml') != '' || ${nativeSelected})`,
+									if: "hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'",
 								}
 							: {}),
 					with: { toolchain: rustToolchain, components: "clippy, rustfmt" },
