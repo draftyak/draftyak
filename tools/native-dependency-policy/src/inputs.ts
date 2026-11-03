@@ -37,6 +37,128 @@ export interface NativeInputsSnapshot {
 	readonly lockDigest: string;
 	readonly [snapshotBrand]: true;
 }
+export interface NativeInputsResources {
+	readonly activeOperations: number;
+	readonly pendingFiles: number;
+	readonly complete: boolean;
+}
+export interface NativeInputsSource {
+	capture(repositoryRoot: string, cargoHome: string): Promise<NativeInputsSnapshot>;
+	bindCargoPaths(snapshot: NativeInputsSnapshot, metadata: unknown): Promise<ValidatedCargoPaths>;
+	assertUnchanged(snapshot: NativeInputsSnapshot): Promise<void>;
+	resourceStatus(): NativeInputsResources;
+	closeResources(): Promise<NativeInputsResources>;
+}
+interface ResourceOwner {
+	readonly handles: Set<fs.FileHandle>;
+	readonly pending: Set<fs.FileHandle>;
+	readonly operations: Set<Promise<unknown>>;
+	readonly fileCloses: Map<fs.FileHandle, Promise<void>>;
+	stopping: boolean;
+	closing: Promise<NativeInputsResources> | undefined;
+}
+const retainedOwners = new Set<ResourceOwner>();
+function resourceOwner(): ResourceOwner {
+	return {
+		handles: new Set(),
+		pending: new Set(),
+		operations: new Set(),
+		fileCloses: new Map(),
+		stopping: false,
+		closing: undefined,
+	};
+}
+const legacyOwner = resourceOwner();
+function updateOwner(owner: ResourceOwner): void {
+	if (owner.handles.size || owner.operations.size) retainedOwners.add(owner);
+	else retainedOwners.delete(owner);
+}
+function resources(owner: ResourceOwner): NativeInputsResources {
+	return Object.freeze({
+		activeOperations: owner.operations.size,
+		pendingFiles: owner.handles.size,
+		complete: owner.operations.size === 0 && owner.handles.size === 0,
+	});
+}
+function ownerOpen(owner: ResourceOwner): void {
+	if (owner.stopping || owner.pending.size !== 0) throw new NativeInputsError();
+}
+function owned<T>(owner: ResourceOwner, action: () => Promise<T>): Promise<T> {
+	if (owner.stopping || owner.pending.size !== 0) return Promise.reject(new NativeInputsError());
+	let operation: Promise<T>;
+	try {
+		operation = action();
+	} catch (error) {
+		operation = Promise.reject(error);
+	}
+	owner.operations.add(operation);
+	updateOwner(owner);
+	void operation
+		.finally(() => {
+			owner.operations.delete(operation);
+			updateOwner(owner);
+		})
+		.catch(() => undefined);
+	return operation;
+}
+function closeOwnedFile(owner: ResourceOwner, file: fs.FileHandle): Promise<void> {
+	const current = owner.fileCloses.get(file);
+	if (current) return current;
+	if (!owner.handles.has(file)) return Promise.resolve();
+	const closing = Promise.resolve()
+		.then(() => file.close())
+		.then(
+			() => {
+				owner.handles.delete(file);
+				owner.pending.delete(file);
+				updateOwner(owner);
+			},
+			(error) => {
+				owner.pending.add(file);
+				updateOwner(owner);
+				throw error;
+			},
+		)
+		.finally(() => {
+			if (owner.fileCloses.get(file) === closing) owner.fileCloses.delete(file);
+		});
+	owner.fileCloses.set(file, closing);
+	return closing;
+}
+function closeOwner(owner: ResourceOwner): Promise<NativeInputsResources> {
+	owner.stopping = true;
+	if (!owner.closing) {
+		const closing = Promise.resolve()
+			.then(async () => {
+				await Promise.allSettled([...owner.operations]);
+				await Promise.allSettled([...owner.handles].map((file) => closeOwnedFile(owner, file)));
+				return resources(owner);
+			})
+			.finally(() => {
+				if (owner.closing === closing) owner.closing = undefined;
+			});
+		owner.closing = closing;
+	}
+	return owner.closing;
+}
+/** Read-only accounting; individual sources close only their own retained FileHandles. */
+export function retainedNativeInputsResourceStatus(): NativeInputsResources {
+	let activeOperations = 0,
+		pendingFiles = 0;
+	for (const owner of retainedOwners) {
+		activeOperations += owner.operations.size;
+		pendingFiles += owner.handles.size;
+	}
+	return Object.freeze({
+		activeOperations,
+		pendingFiles,
+		complete: activeOperations === 0 && pendingFiles === 0,
+	});
+}
+/** Resource-only fallback for the compatible legacy functions; scoped owners are unaffected. */
+export function closeLegacyNativeInputsResources(): Promise<NativeInputsResources> {
+	return closeOwner(legacyOwner);
+}
 interface Capture {
 	readonly inputDigest: string;
 	readonly lockDigest: string;
@@ -47,6 +169,7 @@ interface State {
 	readonly repository: string;
 	readonly cargoHome: string;
 	readonly capture: Capture;
+	readonly owner: ResourceOwner;
 	phase: "captured" | "binding" | "bound";
 }
 const snapshots = new WeakMap<NativeInputsSnapshot, State>();
@@ -127,10 +250,19 @@ async function checked(filename: string, kind: "file" | "directory"): Promise<Bi
 	identity(result);
 	return result;
 }
-async function fileHash(filename: string, initial: BigIntStats): Promise<string> {
+async function fileHash(
+	filename: string,
+	initial: BigIntStats,
+	owner: ResourceOwner,
+): Promise<string> {
+	ownerOpen(owner);
 	if (initial.size > BigInt(MAX_FILE_BYTES)) return refuse();
 	const file = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+	owner.handles.add(file);
+	updateOwner(owner);
+	let failed = false;
 	try {
+		ownerOpen(owner);
 		if (identity(await file.stat({ bigint: true })) !== identity(initial))
 			return refuse("INPUTS_CHANGED");
 		const digest = createHash("sha256");
@@ -153,8 +285,16 @@ async function fileHash(filename: string, initial: BigIntStats): Promise<string>
 		)
 			return refuse("INPUTS_CHANGED");
 		return digest.digest("hex");
+	} catch (error) {
+		failed = true;
+		throw error;
 	} finally {
-		await file.close();
+		try {
+			await closeOwnedFile(owner, file);
+		} catch (error) {
+			// biome-ignore lint/correctness/noUnsafeFinally: Reject a successful read if closing fails without replacing an earlier failure.
+			if (!failed) throw error;
+		}
 	}
 }
 function configDirectories(): string[] {
@@ -188,10 +328,16 @@ async function outsideConfiguration(repository: string, cargoHome: string): Prom
 		if (await optionalStat(filename)) return refuse("CONFIGURATION_UNSUPPORTED");
 	}
 }
-async function capture(repository: string, cargoHome: string): Promise<Capture> {
+async function capture(
+	repository: string,
+	cargoHome: string,
+	owner: ResourceOwner,
+): Promise<Capture> {
 	const identities = new Map<string, string>();
 	const track = async (filename: string, kind: "file" | "directory"): Promise<BigIntStats> => {
+		ownerOpen(owner);
 		const stat = await checked(filename, kind);
+		ownerOpen(owner);
 		identities.set(filename, identity(stat));
 		return stat;
 	};
@@ -206,7 +352,7 @@ async function capture(repository: string, cargoHome: string): Promise<Capture> 
 		const stat = await track(filename, "file");
 		bytes += stat.size;
 		if (bytes > BigInt(MAX_TOTAL_BYTES)) return refuse();
-		files.push([name, await fileHash(filename, stat)]);
+		files.push([name, await fileHash(filename, stat, owner)]);
 	}
 	for (const directory of configDirectories()) {
 		const folder = path.join(repository, directory, ".cargo");
@@ -232,7 +378,7 @@ async function capture(repository: string, cargoHome: string): Promise<Capture> 
 				found++;
 				await track(filename, "file");
 				if (stat.size !== 0n) return refuse("CONFIGURATION_UNSUPPORTED");
-				files.push([rel, await fileHash(filename, stat)]);
+				files.push([rel, await fileHash(filename, stat, owner)]);
 			} else {
 				identities.set(filename, "absent");
 				files.push([rel, null]);
@@ -243,11 +389,13 @@ async function capture(repository: string, cargoHome: string): Promise<Capture> 
 	const rustPaths = new Set<string>();
 	let visited = 0;
 	const walk = async (directory: string, depth: number): Promise<void> => {
+		ownerOpen(owner);
 		if (depth > 24) return refuse();
 		await track(directory, "directory");
 		const names = await fs.readdir(directory);
 		const folded = new Set<string>();
 		for (const name of names.sort(compare)) {
+			ownerOpen(owner);
 			if (++visited > MAX_ENTRIES || folded.has(name.toLowerCase())) return refuse();
 			folded.add(name.toLowerCase());
 			const filename = path.join(directory, name);
@@ -291,7 +439,7 @@ function state(snapshot: NativeInputsSnapshot): State {
 	return value;
 }
 async function unchanged(value: State): Promise<void> {
-	if (!same(value.capture, await capture(value.repository, value.cargoHome)))
+	if (!same(value.capture, await capture(value.repository, value.cargoHome, value.owner)))
 		return refuse("INPUTS_CHANGED");
 }
 function object(value: unknown): Record<string, unknown> {
@@ -335,21 +483,37 @@ async function guarded<T>(action: () => Promise<T>): Promise<T> {
 }
 
 /** A live, module-owned capture. Serialized data cannot substitute for this object. */
-export async function captureNativeInputs(
+function captureOwned(
+	owner: ResourceOwner,
 	repositoryRoot: string,
 	cargoHome: string,
 ): Promise<NativeInputsSnapshot> {
-	return guarded(async () => {
-		const repository = absolute(repositoryRoot);
-		const home = absolute(cargoHome);
-		const captured = await capture(repository, home);
-		const result = Object.freeze({
-			inputDigest: captured.inputDigest,
-			lockDigest: captured.lockDigest,
-		}) as NativeInputsSnapshot;
-		snapshots.set(result, { repository, cargoHome: home, capture: captured, phase: "captured" });
-		return result;
-	});
+	return owned(owner, () =>
+		guarded(async () => {
+			const repository = absolute(repositoryRoot);
+			const home = absolute(cargoHome);
+			const captured = await capture(repository, home, owner);
+			ownerOpen(owner);
+			const result = Object.freeze({
+				inputDigest: captured.inputDigest,
+				lockDigest: captured.lockDigest,
+			}) as NativeInputsSnapshot;
+			snapshots.set(result, {
+				repository,
+				cargoHome: home,
+				capture: captured,
+				owner,
+				phase: "captured",
+			});
+			return result;
+		}),
+	);
+}
+export function captureNativeInputs(
+	repositoryRoot: string,
+	cargoHome: string,
+): Promise<NativeInputsSnapshot> {
+	return captureOwned(legacyOwner, repositoryRoot, cargoHome);
 }
 
 /** Called only with fresh strict-parsed metadata from the fixed locked native command. */
@@ -359,90 +523,93 @@ export async function bindNativeCargoPaths(
 ): Promise<ValidatedCargoPaths> {
 	return guarded(async () => {
 		const value = state(snapshot);
-		if (value.phase !== "captured") return refuse();
-		value.phase = "binding";
-		await unchanged(value);
-		const input = object(metadata);
-		if (absolute(input.workspace_root) !== path.join(value.repository, "crates")) return refuse();
-		const paths: CargoPackagePaths[] = [];
-		const local = new Map(
-			MEMBERS.map(([manifest, name]) => [
-				path.join(value.repository, manifest),
-				{ manifest, name },
-			]),
-		);
-		const packages = list(input.packages).map(object);
-		for (const pkg of packages) {
-			if (pkg.source !== null && pkg.source !== REGISTRY) return refuse();
-			for (const dependency of list(pkg.dependencies).map(object)) {
-				if (dependency.source !== null && dependency.source !== REGISTRY) return refuse();
-				if (dependency.registry !== null) return refuse();
-				if (Object.hasOwn(dependency, "path")) {
-					const directory = absolute(dependency.path);
-					if (!local.has(path.join(directory, "Cargo.toml"))) return refuse();
-					await checked(directory, "directory");
-				} else if (dependency.source === null) return refuse();
-			}
-			if (pkg.source !== null) continue;
-			const manifest = absolute(pkg.manifest_path);
-			const member = local.get(manifest);
-			if (
-				!member ||
-				pkg.name !== member.name ||
-				paths.some((p) => p.manifestPath === member.manifest)
-			)
-				return refuse();
-			await checked(manifest, "file");
-			const targets = [];
-			const seen = new Set<string>();
-			for (const target of list(pkg.targets).map(object)) {
-				const filename = absolute(target.src_path);
-				within(path.dirname(manifest), filename);
-				const rel = within(value.repository, filename);
-				if (!value.capture.rustPaths.has(rel)) return refuse();
-				const stat = await checked(filename, "file");
-				if (identity(stat) !== value.capture.identities.get(filename))
-					return refuse("INPUTS_CHANGED");
-				const kinds = list(target.kind).map(text).sort(compare);
-				if (!kinds.length || new Set(kinds).size !== kinds.length) return refuse();
-				const name = text(target.name);
-				const key = JSON.stringify([name, kinds, rel]);
-				if (seen.has(key)) return refuse();
-				seen.add(key);
-				targets.push(
+		return owned(value.owner, async () => {
+			if (value.phase !== "captured") return refuse();
+			value.phase = "binding";
+			await unchanged(value);
+			const input = object(metadata);
+			if (absolute(input.workspace_root) !== path.join(value.repository, "crates")) return refuse();
+			const paths: CargoPackagePaths[] = [];
+			const local = new Map(
+				MEMBERS.map(([manifest, name]) => [
+					path.join(value.repository, manifest),
+					{ manifest, name },
+				]),
+			);
+			const packages = list(input.packages).map(object);
+			for (const pkg of packages) {
+				if (pkg.source !== null && pkg.source !== REGISTRY) return refuse();
+				for (const dependency of list(pkg.dependencies).map(object)) {
+					if (dependency.source !== null && dependency.source !== REGISTRY) return refuse();
+					if (dependency.registry !== null) return refuse();
+					if (Object.hasOwn(dependency, "path")) {
+						const directory = absolute(dependency.path);
+						if (!local.has(path.join(directory, "Cargo.toml"))) return refuse();
+						await checked(directory, "directory");
+					} else if (dependency.source === null) return refuse();
+				}
+				if (pkg.source !== null) continue;
+				const manifest = absolute(pkg.manifest_path);
+				const member = local.get(manifest);
+				if (
+					!member ||
+					pkg.name !== member.name ||
+					paths.some((p) => p.manifestPath === member.manifest)
+				)
+					return refuse();
+				await checked(manifest, "file");
+				const targets = [];
+				const seen = new Set<string>();
+				for (const target of list(pkg.targets).map(object)) {
+					const filename = absolute(target.src_path);
+					within(path.dirname(manifest), filename);
+					const rel = within(value.repository, filename);
+					if (!value.capture.rustPaths.has(rel)) return refuse();
+					const stat = await checked(filename, "file");
+					if (identity(stat) !== value.capture.identities.get(filename))
+						return refuse("INPUTS_CHANGED");
+					const kinds = list(target.kind).map(text).sort(compare);
+					if (!kinds.length || new Set(kinds).size !== kinds.length) return refuse();
+					const name = text(target.name);
+					const key = JSON.stringify([name, kinds, rel]);
+					if (seen.has(key)) return refuse();
+					seen.add(key);
+					targets.push(
+						Object.freeze({
+							name,
+							kinds: Object.freeze(kinds),
+							sourcePath: text(target.src_path),
+							relativePath: rel,
+						}),
+					);
+				}
+				if (!targets.length) return refuse();
+				paths.push(
 					Object.freeze({
-						name,
-						kinds: Object.freeze(kinds),
-						sourcePath: text(target.src_path),
-						relativePath: rel,
+						id: text(pkg.id),
+						manifestPath: member.manifest,
+						targets: Object.freeze(targets),
 					}),
 				);
 			}
-			if (!targets.length) return refuse();
-			paths.push(
-				Object.freeze({
-					id: text(pkg.id),
-					manifestPath: member.manifest,
-					targets: Object.freeze(targets),
-				}),
-			);
-		}
-		if (paths.length !== MEMBERS.length) return refuse();
-		const members = list(input.workspace_members).map(text);
-		const roots = paths.map((p) => p.id).sort(compare);
-		if (
-			new Set(roots).size !== roots.length ||
-			members.length !== roots.length ||
-			new Set(members).size !== members.length ||
-			members.some((id) => !roots.includes(id))
-		)
-			return refuse();
-		value.phase = "bound";
-		return Object.freeze({
-			workspacePackages: Object.freeze(
-				paths.sort((a, b) => compare(a.manifestPath, b.manifestPath)),
-			),
-			rootIds: Object.freeze(roots),
+			if (paths.length !== MEMBERS.length) return refuse();
+			const members = list(input.workspace_members).map(text);
+			const roots = paths.map((p) => p.id).sort(compare);
+			if (
+				new Set(roots).size !== roots.length ||
+				members.length !== roots.length ||
+				new Set(members).size !== members.length ||
+				members.some((id) => !roots.includes(id))
+			)
+				return refuse();
+			ownerOpen(value.owner);
+			value.phase = "bound";
+			return Object.freeze({
+				workspacePackages: Object.freeze(
+					paths.sort((a, b) => compare(a.manifestPath, b.manifestPath)),
+				),
+				rootIds: Object.freeze(roots),
+			});
 		});
 	});
 }
@@ -451,7 +618,31 @@ export async function bindNativeCargoPaths(
 export async function assertNativeInputsUnchanged(snapshot: NativeInputsSnapshot): Promise<void> {
 	return guarded(async () => {
 		const value = state(snapshot);
-		if (value.phase !== "bound") return refuse();
-		await unchanged(value);
+		return owned(value.owner, async () => {
+			if (value.phase !== "bound") return refuse();
+			await unchanged(value);
+			ownerOpen(value.owner);
+		});
+	});
+}
+
+/** Owns input reads and their resource lifecycle before capture can fail. */
+export function createNativeInputsSource(): NativeInputsSource {
+	const owner = resourceOwner();
+	return Object.freeze({
+		capture: (repositoryRoot: string, cargoHome: string) =>
+			captureOwned(owner, repositoryRoot, cargoHome),
+		bindCargoPaths: (snapshot: NativeInputsSnapshot, metadata: unknown) =>
+			guarded(async () => {
+				if (state(snapshot).owner !== owner) return refuse();
+				return bindNativeCargoPaths(snapshot, metadata);
+			}),
+		assertUnchanged: (snapshot: NativeInputsSnapshot) =>
+			guarded(async () => {
+				if (state(snapshot).owner !== owner) return refuse();
+				return assertNativeInputsUnchanged(snapshot);
+			}),
+		resourceStatus: () => resources(owner),
+		closeResources: () => closeOwner(owner),
 	});
 }

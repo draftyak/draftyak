@@ -106,6 +106,38 @@ function fixture() {
 	return { fullRows, advisoryRows, audit };
 }
 type Fixture = ReturnType<typeof fixture>;
+function categoryFixture(): Fixture {
+	const f = fixture();
+	for (const code of ["banned", "rejected"])
+		f.fullRows.splice(1, 0, {
+			type: "diagnostic",
+			fields: {
+				code,
+				severity: "error",
+				message: "invented category refusal",
+				notes: ["invented diagnostic note"],
+				labels: [{ line: 1, column: 2, message: "invented label", span: "invented span" }],
+				graphs: [
+					{
+						Krate: { name: "invented-category-crate", version: "1.0.0" },
+						parents: [{ Krate: { name: "invented-root", version: "0.0.0" }, repeat: true }],
+					},
+				],
+			},
+		} as never);
+	const summary = f.fullRows.at(-1)?.fields as {
+		bans: ReturnType<typeof stats>;
+		licenses: ReturnType<typeof stats>;
+	};
+	summary.bans.errors = 1;
+	summary.licenses.errors = 1;
+	return f;
+}
+function categoryFields(f: Fixture, code: "banned" | "rejected"): Record<string, unknown> {
+	const row = f.fullRows.find((row) => Reflect.get(row.fields, "code") === code);
+	if (!row) throw new Error("invented diagnostic missing");
+	return row.fields as Record<string, unknown>;
+}
 function input(f: Fixture = fixture(), exitCode = 1): CargoDenyInputs {
 	const jsonl = (v: unknown[]) => bytes(v.map((x) => JSON.stringify(x)).join("\n") + "\n");
 	return {
@@ -301,6 +333,116 @@ describe("complete Cargo-deny captures", () => {
 		});
 		expect(result.findings[0]?.classification).toBe("vulnerability");
 		expect(result.findings[0]?.advisory.informational).toBeNull();
+	});
+});
+
+describe("pinned Cargo-deny category codes", () => {
+	it("retains banned/rejected errors in their own categories and preserves both failure exits", () => {
+		const result = parseCargoDenyReports(input(categoryFixture(), 7));
+		expect(result.fullExitCode).toBe(7);
+		expect(result.advisoryExitCode).toBe(1);
+		expect(result.counts.bans).toEqual(stats(1, 1, 2));
+		expect(result.counts.licenses).toEqual(stats(1, 0, 0, 3));
+		expect(result.diagnostics.filter((d) => d.code === "banned" || d.code === "rejected")).toEqual([
+			expect.objectContaining({ code: "rejected", category: "licenses", severity: "error" }),
+			expect.objectContaining({ code: "banned", category: "bans", severity: "error" }),
+		]);
+		expect(result.findings).toHaveLength(1);
+		expect(result.findings[0]?.classification).toBe("unsound");
+		expect(result.advisoryDiagnostics.every((d) => d.category === "advisories")).toBe(true);
+		expect(JSON.stringify(result)).not.toMatch(
+			/invented category refusal|invented diagnostic note|invented label|invented span/,
+		);
+	});
+
+	it.each(["banned", "rejected"] as const)("still refuses an unknown variant of %s", (code) => {
+		const f = categoryFixture();
+		categoryFields(f, code).code = `future-${code}`;
+		refuses(input(f, 7));
+	});
+
+	it("refuses category redistribution even when the total error count remains equal", () => {
+		const f = categoryFixture();
+		const summary = f.fullRows.at(-1)?.fields as {
+			bans: ReturnType<typeof stats>;
+			licenses: ReturnType<typeof stats>;
+		};
+		summary.bans.errors = 0;
+		summary.licenses.errors = 2;
+		refuses(input(f, 7));
+	});
+
+	it.each(["banned", "rejected"] as const)(
+		"retains severity/schema/graph refusals for %s",
+		(code) => {
+			const severity = categoryFixture();
+			categoryFields(severity, code).severity = "warning";
+			refuses(input(severity, 7));
+			const schema = categoryFixture();
+			categoryFields(schema, code).suppressed = true;
+			refuses(input(schema, 7));
+			const graph = categoryFixture();
+			categoryFields(graph, code).graphs = [
+				{ Krate: { name: "invented-category-crate", version: "1.0.0", kind: "runtime" } },
+			];
+			refuses(input(graph, 7));
+		},
+	);
+
+	it("does not turn retained category errors into a zero-exit result", () => {
+		refuses(input(categoryFixture(), 0));
+		const v = input(categoryFixture(), 7);
+		refuses({ ...v, advisory: { ...v.advisory, exitCode: 0 } });
+	});
+
+	it.each(["banned", "rejected"] as const)("refuses %s in the advisory-only report", (code) => {
+		const f = categoryFixture();
+		f.advisoryRows.unshift({ type: "diagnostic", fields: categoryFields(f, code) } as never);
+		refuses(input(f, 7));
+	});
+
+	it("keeps yanked errors in both diagnostic streams without inventing RustSec findings", () => {
+		const f = categoryFixture();
+		const yanked = {
+			type: "diagnostic",
+			fields: {
+				code: "yanked",
+				severity: "error",
+				message: "invented yanked release",
+				graphs: [{ Krate: { name: "invented-yanked-crate", version: "1.0.0" } }],
+			},
+		};
+		f.fullRows.unshift(yanked as never);
+		f.advisoryRows.unshift(yanked as never);
+		Object.assign(f.fullRows.at(-1)?.fields ?? {}, { advisories: stats(2) });
+		Object.assign(f.advisoryRows.at(-1)?.fields ?? {}, { advisories: stats(2) });
+		const result = parseCargoDenyReports(input(f, 7));
+		expect(result.counts.advisories.errors).toBe(2);
+		expect(result.findings).toHaveLength(1);
+		expect(result.diagnostics.find((d) => d.code === "yanked")).toMatchObject({
+			category: "advisories",
+			severity: "error",
+			advisory: null,
+		});
+		expect(result.advisoryDiagnostics.find((d) => d.code === "yanked")).toEqual(
+			result.diagnostics.find((d) => d.code === "yanked"),
+		);
+		const missing = input(f, 7);
+		refuses({
+			...missing,
+			advisory: {
+				...missing.advisory,
+				stderr: bytes(
+					new TextDecoder().decode(missing.advisory.stderr).split("\n").slice(1).join("\n"),
+				),
+			},
+		});
+	});
+
+	it("retains the closed audit-compatible warning schema", () => {
+		const f = categoryFixture();
+		Object.assign(f.audit.warnings, { yanked: [] });
+		refuses(input(f, 7));
 	});
 });
 

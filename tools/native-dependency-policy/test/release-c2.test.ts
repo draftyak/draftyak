@@ -36,21 +36,27 @@ function mutable(b: C2Basis): Draft {
 	return clone(b) as Draft;
 }
 function rebind(b: Draft): void {
+	const normalizedCrates = new Map<C2Crate, C2Crate>();
 	for (const o of b.observations) {
-		let c: C2Crate | undefined = b.crates.find((c) => c.name === o.crate);
-		if (!c) throw new Error("fixture crate missing");
-		try {
-			c = {
-				...c,
-				versions: c.versions
-					.map((v) => ({
-						api: apiVersion(v.api),
-						index: indexVersion(v.index),
-					}))
-					.sort((a, b) => Buffer.compare(Buffer.from(a.api.version), Buffer.from(b.api.version))),
-			};
-		} catch {
-			/* Invalid test data is refused by the subject, before receipt comparison. */
+		const original = b.crates.find((c) => c.name === o.crate);
+		if (!original) throw new Error("fixture crate missing");
+		let c = normalizedCrates.get(original);
+		if (!c) {
+			c = original;
+			try {
+				c = {
+					...c,
+					versions: c.versions
+						.map((v) => ({
+							api: apiVersion(v.api),
+							index: indexVersion(v.index),
+						}))
+						.sort((a, b) => Buffer.compare(Buffer.from(a.api.version), Buffer.from(b.api.version))),
+				};
+			} catch {
+				/* Invalid test data is refused by the subject, before receipt comparison. */
+			}
+			normalizedCrates.set(original, c);
 		}
 		const matched = c.versions.find((v) => v.api.version === o.version);
 		const data =
@@ -352,7 +358,7 @@ describe("source-aware C2 semantic and delivery identity", () => {
 		b.completedAtMs++;
 		expect(projectC2Delivery(b, facts).deliveryDigest).not.toBe(next.deliveryDigest);
 	});
-	it("does not bridge C2 into v1 or mistake the old authority version2 for a C2 selector", async () => {
+	it("keeps C2 data separate from v1 and selects schema2 authority explicitly", async () => {
 		const b = await basis();
 		expect(() => normalizeCurrentBasis(b as never)).toThrow();
 		expect(() => normalizeC2ReleaseBasis({ ...b, schemaVersion: 1 })).toThrow(C2Error);
@@ -375,10 +381,7 @@ describe("source-aware C2 semantic and delivery identity", () => {
 			exceptions: [],
 		};
 		expect(preflightDecision(legacy)).toBeNull();
-		expect(preflightDecision({ ...legacy, releaseBasisSchemaVersion: 2 })).toEqual({
-			verdict: "refuse",
-			reason: "AUTHORITY_INVALID",
-		});
-		// A future separately reviewed authority selector/mount is required; neither data hash grants one.
+		expect(preflightDecision({ ...legacy, releaseBasisSchemaVersion: 2 })).toBeNull();
+		// The selector does not create native source receipts or authorize collection.
 	});
 });

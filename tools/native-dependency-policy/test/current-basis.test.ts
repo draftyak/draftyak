@@ -1,8 +1,21 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { AuditFinding } from "../src/cargo-deny.ts";
-import type { CurrentBasisInput, CurrentBasisProducer } from "../src/current-basis.ts";
+import type {
+	CurrentBasisInput,
+	CurrentBasisProducer,
+	CurrentBasisV2Input,
+} from "../src/current-basis.ts";
 import { BOUNDED_TUPLES } from "../src/decision.ts";
+import { createTestManualReleaseObserver } from "../src/manual-release-source.ts";
+import type { NativeAuditData } from "../src/native-audit-source.ts";
+import { createTestProtectedManualAssessmentSource } from "../src/protected-manual-assessment-source.ts";
+import { canonicalC2 } from "../src/release-c2.ts";
+import { fixture as manualFixture } from "./fixtures/manual-release-source.ts";
+import {
+	basis as c2FixtureBasis,
+	syntheticBasis as syntheticC2Basis,
+} from "./fixtures/release-c2.ts";
 
 const network = vi.hoisted(() => ({
 	request: vi.fn(() => {
@@ -10,8 +23,15 @@ const network = vi.hoisted(() => ({
 	}),
 }));
 vi.mock("node:https", () => ({ request: network.request }));
-const { BasisError, normalizeCurrentBasis, loadCurrentBasis, UnavailableCurrentBasisProducer } =
-	await import("../src/current-basis.ts");
+const {
+	BasisError,
+	normalizeCurrentBasis,
+	loadCurrentBasis,
+	UnavailableCurrentBasisProducer,
+	normalizeCurrentBasisV2,
+	currentBasisV2Scope,
+	CURRENT_BASIS_V2_COVERAGE_DIGEST,
+} = await import("../src/current-basis.ts");
 const SOURCE = "registry+https://github.com/rust-lang/crates.io-index";
 const NOW = 1_800_000_000_000;
 function fixture(): CurrentBasisInput {
@@ -668,5 +688,492 @@ describe("verified producer boundary", () => {
 				completedAt: NOW + 1000,
 			} as never),
 		).rejects.toMatchObject({ code: "BASIS_INVALID" });
+	});
+});
+
+const v2JsonHash = (value: unknown): string =>
+	createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const v2Hash = (domain: string, value: unknown): string =>
+	createHash("sha256")
+		.update(`draftyak/native-dependency-policy/${domain}/v1\0`)
+		.update(canonicalC2(value))
+		.digest("hex");
+
+/** Wholly invented DATA. None of these structural fixtures is a native source receipt. */
+async function v2Fixture(offset = 0, deliveredAt = "a".repeat(40)): Promise<CurrentBasisV2Input> {
+	const legacy = fixture(),
+		graphPayload = ["TEST_ONLY_GRAPH", 1, SOURCE] as const;
+	const ancestors = BOUNDED_TUPLES.map(([name, version]) => {
+		const tuplePayload = ["TEST_ONLY_ANCESTOR", 1, SOURCE, name, version] as const;
+		return {
+			target: { source: SOURCE, name, version },
+			packageCount: 1,
+			tuplePayload,
+			digest: createHash("sha256")
+				.update("draftyak/native-dependency-policy/ancestor/v1\0")
+				.update(JSON.stringify(tuplePayload))
+				.digest("hex"),
+		};
+	});
+	const diagnostics = legacy.findings.map((finding) => ({
+		category: "advisories" as const,
+		severity: "error" as const,
+		code: finding.classification,
+		graphs: [
+			{ name: finding.name, version: finding.version, kind: null, parents: [], repeat: false },
+		],
+		advisory: finding.advisory,
+	}));
+	const report = {
+		version: 1 as const,
+		complete: true as const,
+		fullExitCode: 1,
+		advisoryExitCode: 1,
+		denyWarnings: false,
+		counts: {
+			advisories: { errors: 5, warnings: 0, notes: 0, helps: 0 },
+			bans: { errors: 0, warnings: 0, notes: 0, helps: 0 },
+			licenses: { errors: 0, warnings: 0, notes: 0, helps: 0 },
+			sources: { errors: 0, warnings: 0, notes: 0, helps: 0 },
+		},
+		diagnostics,
+		advisoryDiagnostics: diagnostics,
+		findings: legacy.findings,
+		dependencyCount: 5,
+	};
+	const audit: NativeAuditData = {
+		kind: "SAME_ROOT_STRICT_AUDIT_DATA",
+		authority: false,
+		reusableNativeSourceBasis: false,
+		runId: "7".repeat(32),
+		startedAt: NOW - 3000 + offset,
+		completedAt: NOW - 2500 + offset,
+		observedAt: NOW - 3000 + offset,
+		database: { ...legacy.database, observedAt: NOW - 2900 + offset },
+		graphDigest: createHash("sha256")
+			.update("draftyak/native-dependency-policy/graph/v1\0")
+			.update(JSON.stringify(graphPayload))
+			.digest("hex"),
+		graph: {
+			version: 1,
+			digest: "",
+			packageCount: 5,
+			tuplePayload: graphPayload,
+			ancestorDigests: ancestors,
+		},
+		environmentDigest: "1".repeat(64),
+		inputDigest: "2".repeat(64),
+		lockDigest: "3".repeat(64),
+		toolsDigest: "4".repeat(64),
+		policySha256: "5".repeat(64),
+		effectivePolicySha256: "6".repeat(64),
+		reportDigest: v2JsonHash(report),
+		report,
+		strictPass: false,
+		captures: ["metadata", "full", "advisory"].map((id) => ({
+			id,
+			exitCode: id === "metadata" ? 0 : 1,
+			stdoutBytes: 2,
+			stdoutSha256: "8".repeat(64),
+			stderrBytes: 0,
+			stderrSha256: "9".repeat(64),
+		})),
+	};
+	Reflect.set(audit.graph, "digest", audit.graphDigest);
+	const scope = currentBasisV2Scope(audit),
+		originalC2 = await c2FixtureBasis(),
+		shift = NOW - 2100 + offset - originalC2.startedAtMs;
+	const releases = {
+		...originalC2,
+		scopeBinding: scope,
+		startedAtMs: originalC2.startedAtMs + shift,
+		completedAtMs: originalC2.completedAtMs + shift,
+		observations: originalC2.observations.map((o) => ({
+			...o,
+			initial: { ...o.initial, observedAtMs: o.initial.observedAtMs + shift },
+			recheck: { ...o.recheck, observedAtMs: o.recheck.observedAtMs + shift },
+		})),
+	};
+	const channels = (
+		[
+			["G1", 366664320, "gtk-rs/gtk-rs-core"],
+			["G2", 639304056, "z-galaxy/zbus"],
+		] as const
+	).map(([channel, id, fullName], index) => {
+		const receipt = (time: number, n: number) => ({
+			observedAt: time + offset,
+			bodySha256: String(n).repeat(64),
+			projectionSha256: String(n + 2).repeat(64),
+		});
+		return {
+			channel,
+			repository: { id, fullName, defaultBranch: "main" },
+			inventory: [] as never[],
+			initial: {
+				repository: receipt(NOW - 1700 + index, 1),
+				advisories: receipt(NOW - 1690 + index, 2),
+			},
+			recheck: {
+				repository: receipt(NOW - 1600 + index, 1),
+				advisories: receipt(NOW - 1590 + index, 2),
+			},
+		};
+	});
+	const github = {
+		delivery: "fixed-public-github-advisory-channels" as const,
+		revision: createHash("sha256")
+			.update("draftyak/native-dependency-policy/github-security-channels/v1\0")
+			.update(
+				JSON.stringify(
+					channels.map((c) => [
+						c.channel,
+						c.repository.id,
+						c.repository.fullName,
+						c.repository.defaultBranch,
+						c.initial.repository.projectionSha256,
+						c.initial.advisories.projectionSha256,
+					]),
+				),
+			)
+			.digest("hex"),
+		deliveryRevision: "d".repeat(64),
+		observedAt: NOW - 1700 + offset,
+		completedAt: NOW - 1300 + offset,
+		channels,
+	};
+	Reflect.set(
+		github,
+		"deliveryRevision",
+		createHash("sha256")
+			.update("draftyak/native-dependency-policy/github-security-channel-delivery/v1\0")
+			.update(JSON.stringify([NOW - 1800 + offset, github.completedAt, channels]))
+			.digest("hex"),
+	);
+	const tuples = BOUNDED_TUPLES.map(([name, version, advisory], index) => ({
+		name,
+		version,
+		advisory,
+		source: SOURCE,
+		ancestor: ancestors[index]!.digest,
+	}));
+	const record = {
+		version: 2,
+		releaseBasisSchemaVersion: 2,
+		state: "active",
+		termination: "release-or-validated-fix",
+		evidenceKind: "actual-source",
+		confirmation: "unchanged-scope",
+		binding: {
+			graph: scope.graph,
+			lock: scope.lock,
+			inputs: scope.inputs,
+			policy: audit.policySha256,
+			basis: "a".repeat(64),
+			releases: "b".repeat(64),
+			security: "c".repeat(64),
+		},
+		review: { at: "2026-10-20T13:15:04Z", due: "2026-10-27T13:15:04Z" },
+		exceptions: tuples,
+	};
+	const currentAuthority = { revision: deliveredAt, recordDigest: v2JsonHash(record), record };
+	const resources = manualFixture(),
+		wall = () => NOW - 1000 + offset;
+	const manual = createTestManualReleaseObserver({
+		fetch: async (url) => {
+			const found = resources.get(url);
+			if (!found) throw new Error("missing invented M resource");
+			return found;
+		},
+		wall,
+		monotonic: () => 0,
+	});
+	const content = await manual.observe(),
+		dispositions = () =>
+			BOUNDED_TUPLES.map(([tuple]) => ({
+				tuple,
+				relevance: "not-relevant",
+				outcome: "unchanged-scope",
+			}));
+	const assessment = {
+		version: 1,
+		kind: "OWNER_MANUAL_RELEASE_ASSESSMENT",
+		assessedAt: 1000,
+		originalObservation: {
+			revision: "e".repeat(64),
+			startedAt: 100,
+			completedAt: 200,
+			oldestObservedAt: 150,
+		},
+		manualSemanticRevision: content.semanticRevision,
+		scope: { ...scope, policy: audit.policySha256 },
+		coverage: {
+			model: "D189-fixed-manual-release-content",
+			exclusions: [
+				"unpublished-private-draft-embargoed-unreported",
+				"unlisted-linked-websites-issues-chat-discussions-mailing-lists-policies",
+				"native-system-ancestor-notices-outside-fixed-methods",
+				"transitive-release-notices-outside-five-tuples",
+			],
+		},
+		tuples,
+		inventories: content.inventories,
+		channels: content.inventories.map((i) => ({
+			channel: i.channel,
+			dispositions: dispositions(),
+		})),
+		items: content.inventories.flatMap((i) =>
+			i.releases.map((r) => ({
+				channel: i.channel,
+				releaseId: r.id,
+				dispositions: dispositions(),
+			})),
+		),
+	};
+	const source = createTestProtectedManualAssessmentSource({
+		authority: {
+			currentRevision: async () => deliveredAt,
+			recordAt: async () => Buffer.from(JSON.stringify(record)),
+			manualAssessmentAt: async () => Buffer.from(JSON.stringify(assessment)),
+		},
+		manual,
+		wall,
+	});
+	const manualFacts = source.facts(await source.observe());
+	return {
+		audit,
+		releases,
+		github,
+		manual: manualFacts,
+		currentAuthority,
+		startedAt: NOW - 3100 + offset,
+		completedAt: NOW + 100 + offset,
+		maxAgeMs: 3_600_000,
+	};
+}
+function v2Change(
+	input: CurrentBasisV2Input,
+	path: readonly (string | number)[],
+	value: unknown,
+): CurrentBasisV2Input {
+	const output = structuredClone(input);
+	let target: unknown = output;
+	for (const key of path.slice(0, -1)) target = (target as Record<string, unknown>)[String(key)];
+	Reflect.set(target as object, String(path.at(-1)), value);
+	return output;
+}
+function resealManual(input: CurrentBasisV2Input): CurrentBasisV2Input {
+	const output = structuredClone(input),
+		row = output.manual as unknown as Record<string, unknown>,
+		record = row.assessment as Record<string, unknown>;
+	const m = row.manual as Record<string, unknown>;
+	m.observationRevision = v2Hash("manual-release-observations", {
+		kind: m.kind,
+		origin: m.origin,
+		semanticRevision: m.semanticRevision,
+		startedAt: m.startedAt,
+		completedAt: m.completedAt,
+		receipts: m.receipts,
+	});
+	const { originalObservation: _old, ...semantic } = record;
+	row.semanticDigest = v2Hash("protected-manual-assessment/semantic", {
+		manualSemanticRevision: record.manualSemanticRevision,
+		assessment: semantic,
+	});
+	const delivery = row.delivery as Record<string, unknown>;
+	delivery.assessmentContentDigest = v2Hash("protected-manual-assessment/content", record);
+	delivery.assessmentRecordSha256 = v2JsonHash(record);
+	const { observationDigest: _digest, ...payload } = row;
+	row.observationDigest = v2Hash("protected-manual-assessment/delivery", payload);
+	return output;
+}
+
+describe("lossless finite schema2 current basis DATA", () => {
+	it("keeps complete source-aware fields and receipts without a v1 conversion or authority", async () => {
+		const input = await v2Fixture(),
+			result = normalizeCurrentBasisV2(input);
+		expect(result).toMatchObject({
+			version: 2,
+			releaseBasisSchemaVersion: 2,
+			authority: false,
+			reusableNativeSourceBasis: false,
+		});
+		expect(result.scope.coverage).toBe(CURRENT_BASIS_V2_COVERAGE_DIGEST);
+		expect(result.observedAt).toBe(input.audit.observedAt);
+		expect(result.components.releases).toEqual(input.releases);
+		expect(result.components.releases.crates[0]?.versions[0]?.api.publication.fractionDigits).toBe(
+			9,
+		);
+		expect(
+			result.components.releases.crates[0]?.versions[0]?.index.publication.fractionDigits,
+		).toBe(0);
+		expect(result.components.manual.assessment.assessedAt).toBe(1000);
+		expect(Object.isFrozen(result.components.manual.assessment.items)).toBe(true);
+		expect(result.components.audit.report.fullExitCode).toBe(1);
+		expect(result).not.toHaveProperty("verdict");
+	});
+	it.each(["precision", "licence"])(
+		"retains independent API %s instead of a lossy v1 release row",
+		async (field) => {
+			const input = await v2Fixture(),
+				before = normalizeCurrentBasisV2(input);
+			const changed = await syntheticC2Basis((resources) => {
+				const url = "https://crates.io/api/v1/crates/glib",
+					bytes = resources.get(url);
+				if (!bytes) throw new Error("missing invented crate API response");
+				const data = JSON.parse(new TextDecoder().decode(bytes)) as {
+					versions: Record<string, unknown>[];
+				};
+				const version = data.versions[0];
+				if (!version) throw new Error("missing invented version");
+				if (field === "precision") version.created_at = "2025-01-01T00:00:00.123456788Z";
+				else version.license = "Apache-2.0";
+				resources.set(url, Buffer.from(JSON.stringify(data)));
+			});
+			const shift = input.releases.startedAtMs - changed.startedAtMs;
+			const releases = {
+				...changed,
+				scopeBinding: input.releases.scopeBinding,
+				startedAtMs: changed.startedAtMs + shift,
+				completedAtMs: changed.completedAtMs + shift,
+				observations: changed.observations.map((o) => ({
+					...o,
+					initial: { ...o.initial, observedAtMs: o.initial.observedAtMs + shift },
+					recheck: { ...o.recheck, observedAtMs: o.recheck.observedAtMs + shift },
+				})),
+			};
+			const after = normalizeCurrentBasisV2({ ...input, releases });
+			expect(after.releasesDigest).not.toBe(before.releasesDigest);
+			expect(after.components.releases).toEqual(releases);
+			expect(after.components.releases.crates[0]?.versions[0]?.index.publication).toEqual(
+				before.components.releases.crates[0]?.versions[0]?.index.publication,
+			);
+		},
+	);
+	it("reuses the exact old assessment with fresh current observations/B without an hourly human refresh", async () => {
+		const a = normalizeCurrentBasisV2(await v2Fixture()),
+			b = normalizeCurrentBasisV2(await v2Fixture(100, "b".repeat(40)));
+		expect([b.basisDigest, b.releasesDigest, b.securityDigest]).toEqual([
+			a.basisDigest,
+			a.releasesDigest,
+			a.securityDigest,
+		]);
+		expect(b.observationDigest).not.toBe(a.observationDigest);
+		expect(b.sourceRevisions).not.toEqual(a.sourceRevisions);
+		expect(b.components.manual.delivery.assessmentContentDigest).toBe(
+			a.components.manual.delivery.assessmentContentDigest,
+		);
+		expect(b.components.manual.assessment.assessedAt).toBe(
+			a.components.manual.assessment.assessedAt,
+		);
+	});
+	it("binds FULL static assessment provenance H_A even when reduced M semantics stay equal", async () => {
+		const input = await v2Fixture(),
+			before = normalizeCurrentBasisV2(input);
+		const changed = resealManual(
+			v2Change(input, ["manual", "assessment", "originalObservation", "revision"], "f".repeat(64)),
+		);
+		expect(changed.manual.semanticDigest).toBe(input.manual.semanticDigest);
+		expect(changed.manual.delivery.assessmentContentDigest).not.toBe(
+			input.manual.delivery.assessmentContentDigest,
+		);
+		expect(normalizeCurrentBasisV2(changed).securityDigest).not.toBe(before.securityDigest);
+	});
+	it("never puts dynamic B or full delivery hashes into semantic binding", async () => {
+		const input = await v2Fixture(),
+			before = normalizeCurrentBasisV2(input);
+		const changed = v2Change(input, ["github", "deliveryRevision"], "f".repeat(64));
+		const after = normalizeCurrentBasisV2(changed);
+		expect(after.securityDigest).toBe(before.securityDigest);
+		expect(after.observationDigest).not.toBe(before.observationDigest);
+	});
+	it.each([
+		["old authority", ["currentAuthority", "record", "releaseBasisSchemaVersion"], undefined],
+		["foreign B", ["currentAuthority", "revision"], "c".repeat(40)],
+		["foreign B hash", ["manual", "delivery", "authorityRecordSha256"], "f".repeat(64)],
+		["foreign C2 graph", ["releases", "scopeBinding", "graph"], "f".repeat(64)],
+		["declared coverage", ["manual", "assessment", "scope", "coverage"], "f".repeat(64)],
+		["lost API licence", ["releases", "crates", 0, "versions", 0, "api", "license"], undefined],
+		["missing M channel", ["manual", "assessment", "channels"], []],
+		[
+			"invented unknown relevance",
+			["manual", "assessment", "items", 0, "dispositions", 0, "relevance"],
+			"unknown",
+		],
+		["missing G channel", ["github", "channels"], []],
+		["foreign G repository", ["github", "channels", 0, "repository", "id"], 1],
+		["mismatched report", ["audit", "reportDigest"], "f".repeat(64)],
+	] as const)(
+		"refuses %s instead of accepting opaque declared evidence",
+		async (_name, path, value) => {
+			const input = v2Change(await v2Fixture(), path, value);
+			expect(() => normalizeCurrentBasisV2(input)).toThrow(BasisError);
+		},
+	);
+	it("refuses missing/duplicate actual ancestors rather than trusting protected tuple hashes", async () => {
+		const input = await v2Fixture();
+		for (const rows of [
+			input.audit.graph.ancestorDigests.slice(1),
+			[...input.audit.graph.ancestorDigests, input.audit.graph.ancestorDigests[0]],
+		])
+			expect(() =>
+				normalizeCurrentBasisV2(v2Change(input, ["audit", "graph", "ancestorDigests"], rows)),
+			).toThrow(BasisError);
+	});
+	it("refuses a resealed foreign protected ancestor and per-tuple omission", async () => {
+		const input = await v2Fixture();
+		for (const changed of [
+			resealManual(
+				v2Change(input, ["manual", "assessment", "tuples", 2, "ancestor"], "f".repeat(64)),
+			),
+			resealManual(v2Change(input, ["manual", "assessment", "channels", 1, "dispositions"], [])),
+		])
+			expect(() => normalizeCurrentBasisV2(changed)).toThrow(BasisError);
+	});
+	it("refuses duplicate source receipts even when their observation hashes are recomputed", async () => {
+		const input = await v2Fixture();
+		const manual = resealManual(
+			v2Change(
+				input,
+				["manual", "manual", "receipts"],
+				[...input.manual.manual.receipts, input.manual.manual.receipts[0]],
+			),
+		);
+		expect(() => normalizeCurrentBasisV2(manual)).toThrow(BasisError);
+		const releases = v2Change(
+			input,
+			["releases", "observations"],
+			[...input.releases.observations, input.releases.observations[0]],
+		);
+		expect(() => normalizeCurrentBasisV2(releases)).toThrow(BasisError);
+	});
+	it("retains exact original source cutoff through a later completion check", async () => {
+		const input = await v2Fixture(),
+			oldest = input.audit.observedAt;
+		expect(() =>
+			normalizeCurrentBasisV2({ ...input, completedAt: oldest + 3_600_000 - 1 }),
+		).not.toThrow();
+		expect(() => normalizeCurrentBasisV2({ ...input, completedAt: oldest + 3_600_000 })).toThrow(
+			BasisError,
+		);
+	});
+	it("does not change original source revisions merely because validation completes later", async () => {
+		const input = await v2Fixture(),
+			before = normalizeCurrentBasisV2(input),
+			after = normalizeCurrentBasisV2({ ...input, completedAt: input.completedAt + 100 });
+		expect(after.sourceRevisions).toEqual(before.sourceRevisions);
+		expect(after.observationDigest).not.toBe(before.observationDigest);
+	});
+	it("refuses nested effectful DATA without invoking getters or coercion", async () => {
+		const input = await v2Fixture();
+		let calls = 0;
+		const hostile = Object.defineProperty({}, "assessment", {
+			enumerable: true,
+			get() {
+				calls++;
+				return input.manual.assessment;
+			},
+		});
+		expect(() => normalizeCurrentBasisV2(v2Change(input, ["manual"], hostile))).toThrow(BasisError);
+		expect(calls).toBe(0);
 	});
 });

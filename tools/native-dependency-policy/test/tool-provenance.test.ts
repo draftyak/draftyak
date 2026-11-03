@@ -7,10 +7,12 @@ import {
 	assertNativeToolsUnchanged,
 	captureNativeToolProvenance,
 	toolProvenanceTestInterface as checks,
+	createNativeToolProvenanceSource,
 	type NativeToolName,
 	type NativeToolProvenance,
 	type NativeVersionResult,
 	nativeToolPath,
+	retainedNativeToolResourceStatus,
 	ToolProvenanceError,
 } from "../src/tool-provenance.ts";
 
@@ -18,6 +20,11 @@ const io = vi.hoisted(() => ({
 	beforeOpen: undefined as ((filename: string) => Promise<void>) | undefined,
 	opened: 0,
 	closed: 0,
+	closeAttempts: 0,
+	closeFault: false,
+	closeGate: undefined as Promise<void> | undefined,
+	closeEntered: undefined as (() => void) | undefined,
+	originals: [] as { handle: fs.FileHandle; close: () => Promise<void> }[],
 }));
 vi.mock("node:fs/promises", async (original) => {
 	const actual = await original<typeof import("node:fs/promises")>();
@@ -28,9 +35,14 @@ vi.mock("node:fs/promises", async (original) => {
 			const handle = await actual.open(...args);
 			io.opened++;
 			const close = handle.close.bind(handle);
+			io.originals.push({ handle, close });
 			handle.close = async () => {
-				io.closed++;
+				io.closeAttempts++;
+				io.closeEntered?.();
+				if (io.closeFault) throw new Error("invented tool close fault before physical close");
+				if (io.closeGate) await io.closeGate;
 				await close();
+				io.closed++;
 			};
 			return handle;
 		},
@@ -91,9 +103,15 @@ async function refused(action: Promise<unknown>): Promise<void> {
 }
 afterEach(async () => {
 	io.beforeOpen = undefined;
+	io.closeFault = false;
+	io.closeGate = undefined;
+	io.closeEntered = undefined;
 	expect(io.opened).toBe(io.closed);
+	expect(retainedNativeToolResourceStatus().complete).toBe(true);
 	io.opened = 0;
 	io.closed = 0;
+	io.closeAttempts = 0;
+	io.originals = [];
 	vi.unstubAllEnvs();
 	for (const root of roots.splice(0)) {
 		if (
@@ -108,6 +126,131 @@ afterEach(async () => {
 });
 
 describe("fixed native tool provenance", () => {
+	it("retains an actual tool FileHandle after a close rejection until explicit confirmed retry", async () => {
+		const root = await temporary(),
+			source = createNativeToolProvenanceSource();
+		const other = createNativeToolProvenanceSource();
+		const current = process.platform === "linux" ? "linux" : "win32";
+		const suffix = current === "win32" ? ".exe" : "";
+		for (const name of ["cargo", "rustc", "cargo-deny"])
+			await executable(path.join(root, name + suffix), current === "win32" ? pe() : elf());
+		const probe = vi.fn(async () => result("cargo-deny", current));
+		io.closeFault = true;
+		try {
+			await refused(source.capture(root, probe, { PATH: root }));
+			if (process.platform !== "win32" && process.platform !== "linux") {
+				expect(io.opened).toBe(0);
+				return;
+			}
+			const opened = io.originals[0];
+			if (!opened) throw new Error("expected actual synthetic tool FileHandle");
+			expect(opened.handle.fd).toBeGreaterThanOrEqual(0);
+			expect(io.closed).toBe(0);
+			expect(source.resourceStatus()).toEqual({
+				activeOperations: 0,
+				pendingFiles: 1,
+				complete: false,
+			});
+			expect(other.resourceStatus()).toEqual({
+				activeOperations: 0,
+				pendingFiles: 0,
+				complete: true,
+			});
+			const pending = await source.closeResources();
+			expect(pending).toEqual({ activeOperations: 0, pendingFiles: 1, complete: false });
+			expect(opened.handle.fd).toBeGreaterThanOrEqual(0);
+			expect(io.closeAttempts).toBe(2);
+			io.closeFault = false;
+			expect(await source.closeResources()).toEqual({
+				activeOperations: 0,
+				pendingFiles: 0,
+				complete: true,
+			});
+			expect(opened.handle.fd).toBe(-1);
+			expect(io.closed).toBe(1);
+			expect(io.closeAttempts).toBe(3);
+			expect(pending.complete).toBe(false);
+			await refused(source.capture(root, probe, { PATH: root }));
+			expect(io.opened).toBe(1);
+			expect(probe).not.toHaveBeenCalled();
+		} finally {
+			io.closeFault = false;
+			const status = await source.closeResources();
+			await other.closeResources();
+			try {
+				expect(status.complete).toBe(true);
+			} finally {
+				for (const original of io.originals)
+					if (original.handle.fd >= 0) {
+						await original.close();
+						io.closed++;
+					}
+			}
+		}
+	});
+	it("joins an in-flight actual close and fences later tool reads before resource completion", async () => {
+		const root = await temporary(),
+			source = createNativeToolProvenanceSource();
+		const current = process.platform === "linux" ? "linux" : "win32";
+		await executable(
+			path.join(root, current === "win32" ? "cargo.exe" : "cargo"),
+			current === "win32" ? pe() : elf(),
+		);
+		let release!: () => void, entered!: () => void;
+		io.closeGate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const ready = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		io.closeEntered = entered;
+		const probe = vi.fn(async () => result("cargo-deny", current));
+		const capture = source.capture(root, probe, { PATH: root }).then(
+			() => ({ refused: false }),
+			() => ({ refused: true }),
+		);
+		try {
+			if (process.platform !== "win32" && process.platform !== "linux") {
+				expect(await capture).toEqual({ refused: true });
+				expect(io.opened).toBe(0);
+				return;
+			}
+			await ready;
+			expect(source.resourceStatus()).toEqual({
+				activeOperations: 1,
+				pendingFiles: 1,
+				complete: false,
+			});
+			const first = source.closeResources(),
+				second = source.closeResources();
+			expect(first).toBe(second);
+			await Promise.resolve();
+			expect(io.closed).toBe(0);
+			expect(io.closeAttempts).toBe(1);
+			release();
+			expect(await capture).toEqual({ refused: true });
+			expect(await first).toEqual({ activeOperations: 0, pendingFiles: 0, complete: true });
+			expect(io.opened).toBe(1);
+			expect(io.closed).toBe(1);
+			expect(io.originals[0]?.handle.fd).toBe(-1);
+			expect(probe).not.toHaveBeenCalled();
+		} finally {
+			release();
+			io.closeGate = undefined;
+			io.closeEntered = undefined;
+			await capture;
+			const status = await source.closeResources();
+			try {
+				expect(status.complete).toBe(true);
+			} finally {
+				for (const original of io.originals)
+					if (original.handle.fd >= 0) {
+						await original.close();
+						io.closed++;
+					}
+			}
+		}
+	});
 	it("accepts reviewed Windows and Linux executable digests, never archive digests", () => {
 		expect(() => checks.denyHash("win32", "x64", WIN)).not.toThrow();
 		expect(() => checks.denyHash("linux", "x64", LINUX)).not.toThrow();
@@ -383,27 +526,123 @@ describe("fixed native tool provenance", () => {
 		await refused(nativeToolPath(fake, "cargo"));
 		await refused(assertNativeToolsUnchanged(fake));
 	});
-	it("production rejects a synthetic cargo-deny hash before any version subprocess", async () => {
-		const root = await temporary();
+	it("snapshots explicit resolution values before asynchronous file reads without ambient fallback", async () => {
+		const root = await temporary(),
+			foreign = await temporary();
 		const current = process.platform === "linux" ? "linux" : "win32";
-		for (const name of ["cargo", "rustc", "cargo-deny"])
-			await executable(
-				path.join(root, `${name}${current === "win32" ? ".exe" : ""}`),
-				current === "win32" ? pe() : elf(),
-			);
-		vi.stubEnv("PATH", root);
-		vi.stubEnv("Path", root);
-		vi.stubEnv(
-			"DRAFTYAK_CARGO_DENY",
-			path.join(root, `cargo-deny${current === "win32" ? ".exe" : ""}`),
-		);
-		const probe = vi.fn(async (filename: string, args: readonly string[]) => {
-			const name = path.basename(filename).replace(/\.exe$/, "") as NativeToolName;
-			expect(args).toEqual(name === "cargo-deny" ? ["--version"] : ["--version", "--verbose"]);
-			expect(Object.isFrozen(args)).toBe(true);
-			return result(name, current);
-		});
-		await refused(captureNativeToolProvenance(root, probe));
+		const suffix = current === "win32" ? ".exe" : "";
+		for (const directory of [root, foreign])
+			for (const name of ["cargo", "rustc", "cargo-deny"])
+				await executable(path.join(directory, name + suffix), current === "win32" ? pe() : elf());
+		vi.stubEnv("PATH", foreign);
+		vi.stubEnv("Path", foreign);
+		vi.stubEnv("DRAFTYAK_CARGO_DENY", path.join(foreign, `cargo-deny${suffix}`));
+		const environment = { PATH: root, DRAFTYAK_CARGO_DENY: path.join(root, `cargo-deny${suffix}`) };
+		const opened: string[] = [];
+		io.beforeOpen = async (file) => {
+			opened.push(file);
+		};
+		const probe = vi.fn(async () => result("cargo-deny", current));
+		const capture = captureNativeToolProvenance(root, probe, environment);
+		environment.PATH = foreign;
+		environment.DRAFTYAK_CARGO_DENY = path.join(foreign, `cargo-deny${suffix}`);
+		await refused(capture);
+		if (process.platform !== "win32" && process.platform !== "linux") {
+			expect(opened).toHaveLength(0);
+			expect(probe).not.toHaveBeenCalled();
+			return;
+		}
+		expect(opened).toHaveLength(3);
+		for (const file of opened) expect(path.dirname(file)).toBe(root);
 		expect(probe).not.toHaveBeenCalled();
 	});
+	it("refuses hostile explicit environments before reading files or invoking probes", async () => {
+		const root = await temporary();
+		let accessed = 0;
+		const accessor = Object.defineProperty({}, "PATH", {
+			enumerable: true,
+			get: () => {
+				accessed++;
+				return root;
+			},
+		});
+		const proxy = new Proxy(
+			{},
+			{
+				getPrototypeOf: () => {
+					accessed++;
+					throw new Error("not observed");
+				},
+			},
+		);
+		const symbol = { [Symbol("invented")]: root };
+		const large = Object.fromEntries(
+			Array.from({ length: 257 }, (_, index) => [`KEY_${index}`, "x"]),
+		);
+		const total = Object.fromEntries(
+			Array.from({ length: 40 }, (_, index) => [`KEY_${index}`, "x".repeat(32768)]),
+		);
+		const probe = vi.fn(async () => result("cargo-deny"));
+		for (const environment of [
+			accessor,
+			proxy,
+			Object.create({ PATH: root }),
+			symbol,
+			large,
+			total,
+			{ PATH: "x".repeat(32769) },
+			{ PATH: "bad\u0000path" },
+		]) {
+			await refused(
+				captureNativeToolProvenance(
+					root,
+					probe,
+					environment as Readonly<Record<string, string | undefined>>,
+				),
+			);
+		}
+		expect(accessed).toBe(0);
+		expect(io.opened).toBe(0);
+		expect(probe).not.toHaveBeenCalled();
+	});
+	it("does not replace an explicit missing or undefined PATH with ambient tools", async () => {
+		const root = await temporary();
+		vi.stubEnv("PATH", root);
+		vi.stubEnv("Path", root);
+		const probe = vi.fn(async () => result("cargo-deny"));
+		for (const environment of [{}, { PATH: undefined }])
+			await refused(captureNativeToolProvenance(root, probe, environment));
+		expect(io.opened).toBe(0);
+		expect(probe).not.toHaveBeenCalled();
+	});
+	it.each([false, true])(
+		"production rejects a synthetic cargo-deny hash before any version subprocess (explicit undefined %s)",
+		async (explicitUndefined) => {
+			const root = await temporary();
+			const current = process.platform === "linux" ? "linux" : "win32";
+			for (const name of ["cargo", "rustc", "cargo-deny"])
+				await executable(
+					path.join(root, `${name}${current === "win32" ? ".exe" : ""}`),
+					current === "win32" ? pe() : elf(),
+				);
+			vi.stubEnv("PATH", root);
+			vi.stubEnv("Path", root);
+			vi.stubEnv(
+				"DRAFTYAK_CARGO_DENY",
+				path.join(root, `cargo-deny${current === "win32" ? ".exe" : ""}`),
+			);
+			const probe = vi.fn(async (filename: string, args: readonly string[]) => {
+				const name = path.basename(filename).replace(/\.exe$/, "") as NativeToolName;
+				expect(args).toEqual(name === "cargo-deny" ? ["--version"] : ["--version", "--verbose"]);
+				expect(Object.isFrozen(args)).toBe(true);
+				return result(name, current);
+			});
+			await refused(
+				explicitUndefined
+					? captureNativeToolProvenance(root, probe, undefined)
+					: captureNativeToolProvenance(root, probe),
+			);
+			expect(probe).not.toHaveBeenCalled();
+		},
+	);
 });

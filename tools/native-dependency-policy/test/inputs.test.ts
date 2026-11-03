@@ -8,18 +8,45 @@ import {
 	assertNativeInputsUnchanged,
 	bindNativeCargoPaths,
 	captureNativeInputs,
+	createNativeInputsSource,
 	NativeInputsError,
 	type NativeInputsSnapshot,
+	retainedNativeInputsResourceStatus,
 } from "../src/inputs.ts";
 
 const opened = vi.hoisted(() => [] as string[]);
+const closeControl = vi.hoisted(() => ({
+	file: "",
+	fault: false,
+	attempts: 0,
+	physical: 0,
+	gate: undefined as Promise<void> | undefined,
+	entered: undefined as (() => void) | undefined,
+	handle: undefined as fs.FileHandle | undefined,
+	originalClose: undefined as (() => Promise<void>) | undefined,
+}));
 vi.mock("node:fs/promises", async (original) => {
 	const actual = await original<typeof import("node:fs/promises")>();
 	return {
 		...actual,
-		open: (...args: Parameters<typeof actual.open>) => {
+		open: async (...args: Parameters<typeof actual.open>) => {
 			opened.push(String(args[0]));
-			return actual.open(...args);
+			const handle = await actual.open(...args);
+			if (String(args[0]) === closeControl.file) {
+				const close = handle.close.bind(handle);
+				closeControl.handle = handle;
+				closeControl.originalClose = close;
+				handle.close = async () => {
+					closeControl.attempts++;
+					closeControl.entered?.();
+					if (closeControl.fault)
+						throw new Error("invented input close fault before physical close");
+					if (closeControl.gate) await closeControl.gate;
+					await close();
+					closeControl.physical++;
+				};
+			}
+			return handle;
 		},
 	};
 });
@@ -132,6 +159,17 @@ async function refused(action: Promise<unknown>, code?: string): Promise<void> {
 	});
 }
 afterEach(async () => {
+	expect(retainedNativeInputsResourceStatus().complete).toBe(true);
+	Object.assign(closeControl, {
+		file: "",
+		fault: false,
+		attempts: 0,
+		physical: 0,
+		gate: undefined,
+		entered: undefined,
+		handle: undefined,
+		originalClose: undefined,
+	});
 	opened.length = 0;
 	for (const directory of temporary.splice(0)) {
 		// Delete only the exact canonical directory created by this test, never a computed repository path.
@@ -151,6 +189,119 @@ afterEach(async () => {
 });
 
 describe("live native input binding", () => {
+	it("retains an actual input FileHandle until explicit retry confirms its close", async () => {
+		const f = await fixture(),
+			source = createNativeInputsSource(),
+			other = createNativeInputsSource();
+		closeControl.file = path.join(f.repo, "crates/Cargo.toml");
+		closeControl.fault = true;
+		try {
+			await refused(source.capture(f.repo, f.home));
+			const handle = closeControl.handle;
+			if (!handle) throw new Error("expected actual synthetic input FileHandle");
+			expect(handle.fd).toBeGreaterThanOrEqual(0);
+			expect(closeControl.physical).toBe(0);
+			expect(source.resourceStatus()).toEqual({
+				activeOperations: 0,
+				pendingFiles: 1,
+				complete: false,
+			});
+			expect(other.resourceStatus()).toEqual({
+				activeOperations: 0,
+				pendingFiles: 0,
+				complete: true,
+			});
+			const pending = await source.closeResources();
+			expect(pending).toEqual({ activeOperations: 0, pendingFiles: 1, complete: false });
+			expect(closeControl.attempts).toBe(2);
+			expect(handle.fd).toBeGreaterThanOrEqual(0);
+			closeControl.fault = false;
+			expect(await source.closeResources()).toEqual({
+				activeOperations: 0,
+				pendingFiles: 0,
+				complete: true,
+			});
+			expect(handle.fd).toBe(-1);
+			expect(closeControl.attempts).toBe(3);
+			expect(closeControl.physical).toBe(1);
+			expect(pending.complete).toBe(false);
+			await refused(source.capture(f.repo, f.home));
+		} finally {
+			closeControl.fault = false;
+			const status = await source.closeResources();
+			await other.closeResources();
+			try {
+				expect(status.complete).toBe(true);
+			} finally {
+				if (closeControl.handle && closeControl.handle.fd >= 0)
+					await closeControl.originalClose?.();
+			}
+		}
+	});
+	it("joins an in-flight input close and fences later reads", async () => {
+		const f = await fixture(),
+			source = createNativeInputsSource();
+		closeControl.file = path.join(f.repo, "crates/Cargo.toml");
+		const entered = Promise.withResolvers<void>(),
+			release = Promise.withResolvers<void>();
+		closeControl.gate = release.promise;
+		closeControl.entered = entered.resolve;
+		const operation = source.capture(f.repo, f.home).then(
+			() => false,
+			() => true,
+		);
+		try {
+			await entered.promise;
+			expect(source.resourceStatus()).toEqual({
+				activeOperations: 1,
+				pendingFiles: 1,
+				complete: false,
+			});
+			const first = source.closeResources(),
+				second = source.closeResources();
+			expect(first).toBe(second);
+			await refused(source.capture(f.repo, f.home));
+			expect(closeControl.attempts).toBe(1);
+			expect(closeControl.physical).toBe(0);
+			release.resolve();
+			expect(await operation).toBe(true);
+			expect(await first).toEqual({ activeOperations: 0, pendingFiles: 0, complete: true });
+			expect(closeControl.attempts).toBe(1);
+			expect(closeControl.physical).toBe(1);
+			expect(closeControl.handle?.fd).toBe(-1);
+		} finally {
+			release.resolve();
+			closeControl.gate = undefined;
+			closeControl.entered = undefined;
+			await operation;
+			const status = await source.closeResources();
+			try {
+				expect(status.complete).toBe(true);
+			} finally {
+				if (closeControl.handle && closeControl.handle.fd >= 0)
+					await closeControl.originalClose?.();
+			}
+		}
+	});
+	it("keeps the captured-to-bound guard and refuses foreign or closed scoped snapshots", async () => {
+		const f = await fixture(),
+			source = createNativeInputsSource(),
+			other = createNativeInputsSource();
+		try {
+			const snapshot = await source.capture(f.repo, f.home);
+			await refused(source.assertUnchanged(snapshot));
+			await refused(other.bindCargoPaths(snapshot, f.metadata));
+			await refused(other.assertUnchanged(snapshot));
+			await source.bindCargoPaths(snapshot, f.metadata);
+			await source.assertUnchanged(snapshot);
+			await source.closeResources();
+			await refused(source.assertUnchanged(snapshot));
+			await refused(source.bindCargoPaths({ ...snapshot }, f.metadata));
+		} finally {
+			await source.closeResources();
+			await other.closeResources();
+		}
+	});
 	it("binds all four roots, including the app outside workspace_root, to the graph projector", async () => {
 		const f = await fixture();
 		const snapshot = await capture(f);
