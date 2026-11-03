@@ -25,11 +25,15 @@ import {
 	openNativeAppAdmission,
 } from "../../../src/installer/native-app-admission.ts";
 
+import { openNativeBackupRecovery } from "../../../src/recovery/backup-recovery.ts";
+import { generateRecoveryCode } from "../../../src/recovery/recovery-code.ts";
+
 const mode = process.argv[2];
 const modes = new Set([
 	"positive", "ownership", "currentness", "signature", "pin", "identity", "close",
 	"preloaded", "missing-flag", "duplicate-flag", "node-options", "node-path",
 	"during-capture", "drain-retry", "unconfigured",
+	"recovery-starts", "recovery-held", "recovery-retry",
 ]);
 const profile = process.argv[3];
 const install = path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +42,7 @@ let phase = "entry";
 let step = 0;
 let variant = 0;
 const sessions = [];
+const recoveries = [];
 const keys = [];
 const authorities = [];
 const listeners = [];
@@ -146,6 +151,90 @@ async function open(folder, bundles) {
 	assert.equal(loadExtensionConfig(folder).modules.length, 0);
 	return { session, key };
 }
+async function combinedLifetime(session, key, admission) {
+ const io = control.recovery;
+ assert.equal(io.derives > 0, true);
+ const folder = path.join(profile, "data");
+ const recovery = openNativeBackupRecovery(session);
+ recoveries.push(recovery);
+ const code = generateRecoveryCode();
+ ownedBytes.push(code);
+ io.sealApp();
+ assert.equal(io.appCount() > 0, true);
+ const before = io.writerCloseCalls;
+ const enrollment = recovery.enroll(code);
+ const enrolled = enrollment.then(() => false, error => error?.code === "RECOVERY_UNAVAILABLE");
+ step = 10;
+ assert.equal(await Promise.race([io.openReached.then(() => true), enrollment.then(() => false, () => false)]), true);
+ assert.equal(io.openReleased, false);
+ assert.equal(io.remainingRecovery(), 1);
+ io.holdApp = mode === "recovery-starts";
+ io.failRecoveryClose = mode === "recovery-retry";
+ const closing = session.close();
+ let settled = false;
+ const outcome = closing.then(() => { settled = true; return "closed"; }, error => { settled = true; return error?.code; });
+ const pending = () => {
+  assert.equal(settled, false);
+  assert.equal(session.store.read(db => db.get("SELECT 1 AS alive")).alive, 1);
+  assert.equal(keyLive(key), true);
+  assert.equal(held(folder), true);
+ };
+ try {
+  step = 11;
+  assert.equal(await Promise.race([io.writerStarted.then(() => true), outcome.then(() => false)]), true);
+  assert.equal(io.writerCloseCalls > before, true);
+  assert.equal(io.openReleased, false);
+  if (mode === "recovery-starts") {
+   step = 12;
+   assert.equal(await Promise.race([io.appStarted.then(() => true), outcome.then(() => false)]), true);
+   assert.equal(io.remainingApp() > 0, true);
+   await turn();
+   pending();
+   io.releaseApp(); io.releaseOpen();
+   step = 13;
+   assert.equal(await outcome, "closed");
+  } else {
+   step = 14;
+   assert.equal(await Promise.race([io.appDone, outcome.then(() => false)]), true);
+   assert.equal(io.remainingApp(), 0);
+   assert.equal(io.openReleased, false);
+   await turn();
+   pending();
+   if (mode === "recovery-held") {
+    step = 15;
+    io.releaseOpen();
+    assert.equal(await outcome, "closed");
+   } else {
+    step = 16;
+    io.releaseOpen();
+    assert.equal(await outcome, "CLOSE_INCOMPLETE");
+    assert.equal(await enrolled, true);
+    assert.equal(keyLive(key), false);
+    assert.equal(session.store.read(db => db.get("SELECT 1 AS alive")).alive, 1);
+    assert.equal(held(folder), true);
+    assert.equal(io.remainingRecovery(), 1);
+    assert.equal(await io.recoveryHandleLive(), true);
+    await refuses(() => recovery.readCapsule(), "Recovery unavailable");
+    const derives = io.derives;
+    io.failRecoveryClose = false;
+    step = 17;
+    await session.close();
+    assert.equal(io.derives, derives);
+   }
+  }
+  step = 18;
+  assert.equal(await enrolled, true);
+  assert.equal(keyLive(key), false);
+  assert.equal(io.remainingApp(), 0);
+  assert.equal(io.remainingRecovery(), 0);
+  assert.equal(held(folder), false);
+  await refuses(() => recovery.readCapsule(), "Recovery unavailable");
+  await refuses(() => nativeAppAdmissionInputs(admission, session));
+ } finally {
+  io.failRecoveryClose = false; io.releaseOpen(); io.releaseApp();
+  await Promise.allSettled([enrolled, recovery.close(), closing, session.close()]);
+ }
+}
 async function main() {
 	assert.equal(modes.has(mode), true);
 	assert.equal(typeof profile === "string" && path.isAbsolute(profile), true);
@@ -226,6 +315,10 @@ async function main() {
 	assert.equal(globalThis[Symbol.for("draftyak.test.installer.executed")] === true, false);
 	assert.equal(inputs.bundles.every((row, index) => row.package.version === (index + 1) + ".2.3"), true);
 	const first = inputs.bundles[0];
+	if (["recovery-starts", "recovery-held", "recovery-retry"].includes(mode)) {
+		await combinedLifetime(session, key, admission);
+		return;
+	}
 	if (mode === "positive") {
 		for (const bundle of inputs.bundles) {
 			const archive = await nativeAppAdmissionArchive(admission, session, bundle.id);
@@ -363,12 +456,14 @@ async function cleanupOwned() {
 		() => { control.failClose = false; },
 		() => control.releaseOpen(),
 		() => control.releaseClose(),
+		() => { if (control.recovery) { control.recovery.failRecoveryClose = false; control.recovery.releaseOpen(); control.recovery.releaseApp(); } },
 	]);
 	if (gateFailures.length !== 0) {
 		failed = true;
 		await attemptAll(gateFailures);
 	}
 	const closing = [
+		...recoveries.map((recovery) => () => recovery.close()),
 		...authorities.map((authority) => () => authority.close()),
 		...sockets.map((client) => () => closeSocket(client)),
 		...listeners.map((listener) => () => listener.close()),
@@ -382,12 +477,13 @@ async function cleanupOwned() {
 		failed = true;
 		await attemptAll(failures);
 	}
-	const controlFailures = await attemptAll([() => control.cleanup()]);
+	const controlFailures = await attemptAll([() => control.cleanup(), () => control.recovery?.cleanup()]);
 	if (controlFailures.length !== 0) {
 		failed = true;
 		await attemptAll(controlFailures);
 	}
 	if (control.remaining() !== 0) failed = true;
+	if (control.recovery && (control.recovery.remainingApp() !== 0 || control.recovery.remainingRecovery() !== 0)) failed = true;
 	return failed;
 }
 
