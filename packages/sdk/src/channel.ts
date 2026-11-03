@@ -2,10 +2,14 @@ import {
 	type ChannelSyncRequest,
 	type ChannelV1Tools,
 	channelV1,
+	SelectedCatalogSyncPage,
+	SelectedCatalogSyncRequest,
 	SelectedSyncPage,
 	SelectedSyncRequest,
 	SyncPage,
 	type SyncRequest,
+	selectedSlackCatalogPageMatches,
+	selectedSlackCatalogWorkEqual,
 	selectedSlackReplyCountsMatch,
 	selectedSlackWorkEqual,
 } from "@draftyak/protocol/channel-v1";
@@ -27,6 +31,10 @@ export interface ChannelPluginDefinition {
 		args: SelectedSyncRequest,
 		context: PluginContext,
 	) => SelectedSyncPage | Promise<SelectedSyncPage>;
+	readonly syncSelectedCatalog?: (
+		args: SelectedCatalogSyncRequest,
+		context: PluginContext,
+	) => SelectedCatalogSyncPage | Promise<SelectedCatalogSyncPage>;
 	readonly fetchBody: Handler<ChannelV1Tools["channel_body_fetch"]>;
 	readonly fetchAttachment?: Handler<ChannelV1Tools["channel_attachment_fetch"]>;
 	readonly mutate?: Handler<ChannelV1Tools["channel_mutate"]>;
@@ -49,7 +57,7 @@ export function defineChannelPlugin(options: ChannelPluginDefinition): PluginEnt
 	const captured = capture(
 		options,
 		["manifest", "describe", "probe", "sync", "fetchBody", "send", "reconcileSend"],
-		["fetchAttachment", "mutate", "listen", "syncSelected"],
+		["fetchAttachment", "mutate", "listen", "syncSelected", "syncSelectedCatalog"],
 	);
 	const declared = manifest(captured.manifest, "channel");
 	const tools = Object.entries(names).flatMap(([key, name]) => {
@@ -59,6 +67,25 @@ export function defineChannelPlugin(options: ChannelPluginDefinition): PluginEnt
 			if (name === "channel_sync") {
 				const request = args as ChannelSyncRequest;
 				if (request.mode === "selected") {
+					if (request.work.kind === "slack.catalog" || request.work.kind === "slack.info") {
+						const catalog = captured.syncSelectedCatalog;
+						if (catalog === undefined) throw new PluginError("UNSUPPORTED");
+						const expected = SelectedCatalogSyncRequest.parse(dataCopy(request)).work;
+						const value = dataCopy(
+							await Reflect.apply(catalog as (...args: never[]) => unknown, undefined, [
+								request,
+								context,
+							]),
+						);
+						const result = SelectedCatalogSyncPage.safeParse(value);
+						if (
+							!result.success ||
+							!selectedSlackCatalogWorkEqual(expected, result.data.work) ||
+							!selectedSlackCatalogPageMatches(result.data)
+						)
+							throw new PluginError("TRANSIENT");
+						return result.data;
+					}
 					const selected = captured.syncSelected;
 					if (selected === undefined) throw new PluginError("UNSUPPORTED");
 					// Keep the checked request separate from handler-owned mutable arguments.

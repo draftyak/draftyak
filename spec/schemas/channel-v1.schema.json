@@ -175,57 +175,62 @@
       "type": "object",
       "properties": {
         "input": {
-          "oneOf": [
+          "anyOf": [
             {
-              "type": "object",
-              "properties": {
-                "mode": {
-                  "type": "string",
-                  "enum": [
-                    "initial",
-                    "resync"
-                  ]
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "initial",
+                        "resync"
+                      ]
+                    },
+                    "since": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                    },
+                    "cursor": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096,
+                      "pattern": "^[!-~]+$(?![\\s\\S])",
+                      "description": "A plugin's sync position, opaque to the hub."
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "since"
+                  ],
+                  "additionalProperties": false
                 },
-                "since": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991,
-                  "description": "An instant as UTC milliseconds since the epoch, a safe integer."
-                },
-                "cursor": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4096,
-                  "pattern": "^[!-~]+$(?![\\s\\S])",
-                  "description": "A plugin's sync position, opaque to the hub."
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "delta"
+                    },
+                    "cursor": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096,
+                      "pattern": "^[!-~]+$(?![\\s\\S])",
+                      "description": "A plugin's sync position, opaque to the hub."
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "cursor"
+                  ],
+                  "additionalProperties": false
                 }
-              },
-              "required": [
-                "mode",
-                "since"
               ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "mode": {
-                  "type": "string",
-                  "const": "delta"
-                },
-                "cursor": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4096,
-                  "pattern": "^[!-~]+$(?![\\s\\S])",
-                  "description": "A plugin's sync position, opaque to the hub."
-                }
-              },
-              "required": [
-                "mode",
-                "cursor"
-              ],
-              "additionalProperties": false
+              "type": "object"
             },
             {
               "type": "object",
@@ -331,6 +336,76 @@
                 "work"
               ],
               "additionalProperties": false
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "selected"
+                    },
+                    "work": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "slack.catalog"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "cursor": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096,
+                      "pattern": "^[!-~]+$(?![\\s\\S])",
+                      "description": "A plugin's sync position, opaque to the hub."
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "work"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "selected"
+                    },
+                    "work": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "slack.info"
+                        },
+                        "channelId": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "channelId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "work"
+                  ],
+                  "additionalProperties": false
+                }
+              ],
+              "type": "object"
             }
           ],
           "type": "object"
@@ -935,6 +1010,205 @@
                 "continuation"
               ],
               "additionalProperties": false
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "work": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "slack.catalog"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "conversations": {
+                      "maxItems": 999,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "channelId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "type": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ChatChannelType"
+                          },
+                          "name": {
+                            "type": "string",
+                            "maxLength": 256
+                          }
+                        },
+                        "required": [
+                          "channelId",
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "continuation": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "const": "more"
+                            },
+                            "cursor": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 4096,
+                              "pattern": "^[!-~]+$(?![\\s\\S])",
+                              "description": "A plugin's sync position, opaque to the hub."
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "cursor"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "const": "complete"
+                            }
+                          },
+                          "required": [
+                            "state"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "const": "truncated"
+                            },
+                            "cursor": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 4096,
+                              "pattern": "^[!-~]+$(?![\\s\\S])",
+                              "description": "A plugin's sync position, opaque to the hub."
+                            }
+                          },
+                          "required": [
+                            "state"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "work",
+                    "conversations",
+                    "continuation"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "work": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "slack.info"
+                        },
+                        "channelId": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "channelId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "conversation": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "chat.conversation"
+                        },
+                        "channelId": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        },
+                        "name": {
+                          "type": "string",
+                          "maxLength": 256
+                        },
+                        "type": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ChatChannelType"
+                        },
+                        "external": {
+                          "type": "boolean"
+                        },
+                        "shared": {
+                          "type": "boolean"
+                        },
+                        "memberCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "archived": {
+                          "type": "boolean"
+                        },
+                        "member": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "channelId",
+                        "type",
+                        "external",
+                        "shared",
+                        "memberCount",
+                        "archived",
+                        "member"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "continuation": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "complete"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "work",
+                    "conversation",
+                    "continuation"
+                  ],
+                  "additionalProperties": false
+                }
+              ],
+              "type": "object"
             }
           ],
           "type": "object"

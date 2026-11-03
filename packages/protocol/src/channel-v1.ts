@@ -4,10 +4,13 @@ import {
 	PluginError,
 	ProbeResult,
 	type ToolContract,
+	wellFormedText,
 } from "./extension.ts";
 import {
 	BlobRef,
 	Bytes,
+	ChatChannelType,
+	ChatConversationChange,
 	ChatMessageChange,
 	MAX_CHANGES,
 	MediaType,
@@ -90,8 +93,57 @@ export interface SelectedSyncPage {
 	readonly replyCounts: readonly { readonly ts: string; readonly count: number }[];
 	readonly continuation: SelectedContinuation;
 }
-export type ChannelSyncRequest = SyncRequest | SelectedSyncRequest;
-export type ChannelSyncPage = SyncPage | SelectedSyncPage;
+/** Conversation discovery DATA, without membership or other hydrated facts. */
+export interface SlackConversationSummary {
+	readonly channelId: string;
+	readonly type: ChatChannelType;
+	readonly name?: string;
+}
+export const MAX_SLACK_CATALOG_CONVERSATIONS = 999;
+export type SelectedSlackCatalogWork =
+	| { readonly kind: "slack.catalog" }
+	| { readonly kind: "slack.info"; readonly channelId: string };
+export type SelectedCatalogSyncRequest =
+	| {
+			readonly mode: "selected";
+			readonly work: Extract<SelectedSlackCatalogWork, { readonly kind: "slack.catalog" }>;
+			readonly cursor?: string;
+	  }
+	| {
+			readonly mode: "selected";
+			readonly work: Extract<SelectedSlackCatalogWork, { readonly kind: "slack.info" }>;
+	  };
+export type SelectedCatalogSyncPage =
+	| {
+			readonly work: Extract<SelectedSlackCatalogWork, { readonly kind: "slack.catalog" }>;
+			readonly conversations: readonly SlackConversationSummary[];
+			readonly continuation: SelectedContinuation;
+	  }
+	| {
+			readonly work: Extract<SelectedSlackCatalogWork, { readonly kind: "slack.info" }>;
+			readonly conversation: ChatConversationChange;
+			readonly continuation: { readonly state: "complete" };
+	  };
+export type ChannelSyncRequest = SyncRequest | SelectedSyncRequest | SelectedCatalogSyncRequest;
+export type ChannelSyncPage = SyncPage | SelectedSyncPage | SelectedCatalogSyncPage;
+
+/** Compare validated selectors only; discovery DATA never grants permission to hydrate or read. */
+export function selectedSlackCatalogWorkEqual(
+	expected: SelectedSlackCatalogWork,
+	received: SelectedSlackCatalogWork,
+): boolean {
+	return (
+		expected.kind === received.kind &&
+		(expected.kind === "slack.catalog" ||
+			(received.kind === "slack.info" && expected.channelId === received.channelId))
+	);
+}
+
+/** Relate validated result DATA to its work; this establishes no native authority. */
+export function selectedSlackCatalogPageMatches(page: SelectedCatalogSyncPage): boolean {
+	if ("conversation" in page) return page.conversation.channelId === page.work.channelId;
+	return new Set(page.conversations.map((row) => row.channelId)).size === page.conversations.length;
+}
 
 /** Compare validated routing DATA only; this establishes neither cursor binding nor authority. */
 export function selectedSlackWorkEqual(
@@ -240,11 +292,46 @@ export const SelectedSyncPage: z.ZodType<SelectedSyncPage> = z.strictObject({
 		.max(MAX_CHANGES),
 	continuation: SelectedContinuation,
 });
+export const SlackConversationSummary: z.ZodType<SlackConversationSummary> = z.strictObject({
+	channelId: ProviderId,
+	type: ChatChannelType,
+	name: wellFormedText(256).optional(),
+});
+const selectedCatalogWork = z.strictObject({ kind: z.literal("slack.catalog") });
+const selectedInfoWork = z.strictObject({ kind: z.literal("slack.info"), channelId: ProviderId });
+export const SelectedSlackCatalogWork: z.ZodType<SelectedSlackCatalogWork> = z.discriminatedUnion(
+	"kind",
+	[selectedCatalogWork, selectedInfoWork],
+);
+export const SelectedCatalogSyncRequest: z.ZodType<SelectedCatalogSyncRequest> = z
+	.union([
+		z.strictObject({
+			mode: z.literal("selected"),
+			work: selectedCatalogWork,
+			cursor: Cursor.optional(),
+		}),
+		z.strictObject({ mode: z.literal("selected"), work: selectedInfoWork }),
+	])
+	.meta(objectRoot);
+export const SelectedCatalogSyncPage: z.ZodType<SelectedCatalogSyncPage> = z
+	.union([
+		z.strictObject({
+			work: selectedCatalogWork,
+			conversations: z.array(SlackConversationSummary).max(MAX_SLACK_CATALOG_CONVERSATIONS),
+			continuation: SelectedContinuation,
+		}),
+		z.strictObject({
+			work: selectedInfoWork,
+			conversation: ChatConversationChange,
+			continuation: z.strictObject({ state: z.literal("complete") }),
+		}),
+	])
+	.meta(objectRoot);
 export const ChannelSyncRequest: z.ZodType<ChannelSyncRequest> = z
-	.discriminatedUnion("mode", [initialSyncRequest, deltaSyncRequest, selectedSyncRequest])
+	.union([SyncRequest, SelectedSyncRequest, SelectedCatalogSyncRequest])
 	.meta(objectRoot);
 export const ChannelSyncPage: z.ZodType<ChannelSyncPage> = z
-	.union([SyncPage, SelectedSyncPage])
+	.union([SyncPage, SelectedSyncPage, SelectedCatalogSyncPage])
 	.meta(objectRoot);
 
 export const channelV1: ExtensionContract<ChannelV1Tools> = {

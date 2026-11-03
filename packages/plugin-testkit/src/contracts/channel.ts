@@ -5,10 +5,14 @@ import {
 	channelV1,
 	MAX_LEASE_MS,
 	MUTATIONS,
+	SelectedCatalogSyncPage,
+	SelectedCatalogSyncRequest,
 	SelectedSyncPage,
 	SelectedSyncRequest,
 	SyncPage,
 	type SyncRequest,
+	selectedSlackCatalogPageMatches,
+	selectedSlackCatalogWorkEqual,
 	selectedSlackReplyCountsMatch,
 	selectedSlackWorkEqual,
 } from "@draftyak/protocol/channel-v1";
@@ -49,6 +53,11 @@ export interface ChannelSelectedSyncScenario {
 	readonly pages: readonly SelectedSyncPage[];
 }
 
+export interface ChannelSelectedCatalogSyncScenario {
+	readonly request: SelectedCatalogSyncRequest;
+	readonly pages: readonly SelectedCatalogSyncPage[];
+}
+
 /** Fresh fake state and concrete expected values, never assertion callbacks. */
 export interface ChannelContractFixture {
 	readonly upstreams: readonly Fake[];
@@ -67,6 +76,8 @@ export interface ChannelContractFixture {
 	};
 	/** Opt in with provider DATA covering pagination, completion and truncation. */
 	readonly selectedSync?: readonly ChannelSelectedSyncScenario[];
+	/** Explicit discovery and info requests, never selected from returned discovery DATA. */
+	readonly selectedCatalogSync?: readonly ChannelSelectedCatalogSyncScenario[];
 	readonly body: {
 		readonly message: Input<"channel_body_fetch">["message"];
 		readonly expected: MessageBody;
@@ -429,6 +440,93 @@ export async function checkChannelSelectedSync(
 				requireCheck(!cursors.has(continuation.cursor), "CHANNEL_SELECTED_STALLED");
 				cursors.add(continuation.cursor);
 				input = { ...scenario.request, cursor: continuation.cursor };
+			}
+		}
+	});
+}
+
+/** Check independently selected discovery/info DATA without changing message-sync conformance. */
+export async function checkChannelSelectedCatalogSync(
+	options: ChannelContractOptions,
+): Promise<ChannelContractResult> {
+	return run(options, async ({ hub, fixture }) => {
+		const supplied = fixture.selectedCatalogSync;
+		requireCheck(
+			Array.isArray(supplied) && supplied.length > 0 && supplied.length <= 64,
+			"CHANNEL_CATALOG_FIXTURE",
+		);
+		let totalPages = 0;
+		const scenarios = supplied.map((scenario: ChannelSelectedCatalogSyncScenario) => {
+			const request = SelectedCatalogSyncRequest.safeParse(scenario.request);
+			requireCheck(request.success, "CHANNEL_CATALOG_FIXTURE");
+			requireCheck(
+				Array.isArray(scenario.pages) && scenario.pages.length > 0,
+				"CHANNEL_CATALOG_FIXTURE",
+			);
+			totalPages += scenario.pages.length;
+			requireCheck(totalPages <= 64, "CHANNEL_CATALOG_FIXTURE");
+			requireCheck(
+				request.data.work.kind !== "slack.info" || scenario.pages.length === 1,
+				"CHANNEL_CATALOG_INFO_PAGES",
+			);
+			const expected = scenario.pages.map((page: SelectedCatalogSyncPage, index: number) => {
+				const checked = SelectedCatalogSyncPage.safeParse(page);
+				requireCheck(checked.success, "CHANNEL_CATALOG_FIXTURE");
+				requireCheck(
+					selectedSlackCatalogWorkEqual(request.data.work, checked.data.work),
+					"CHANNEL_CATALOG_FIXTURE_WORK",
+				);
+				requireCheck(selectedSlackCatalogPageMatches(checked.data), "CHANNEL_CATALOG_FIXTURE_DATA");
+				const continuation = checked.data.continuation;
+				requireCheck(
+					index === scenario.pages.length - 1 ||
+						(continuation.state !== "complete" && continuation.cursor !== undefined),
+					"CHANNEL_CATALOG_FIXTURE_CONTINUATION",
+				);
+				return checked.data;
+			});
+			return { request: request.data, expected };
+		});
+		for (const scenario of scenarios) {
+			let input = scenario.request;
+			const firstCursor = "cursor" in input ? input.cursor : undefined;
+			const cursors = new Set<string>(firstCursor === undefined ? [] : [firstCursor]);
+			for (let index = 0; index < scenario.expected.length; index++) {
+				const call = SelectedCatalogSyncRequest.safeParse(input);
+				requireCheck(call.success, "CHANNEL_CATALOG_FIXTURE");
+				const checked = SelectedCatalogSyncPage.safeParse(
+					result("channel_sync", await hub.call("channel_sync", { ...call.data })),
+				);
+				requireCheck(checked.success, "CHANNEL_CATALOG_RESULT");
+				const output = checked.data;
+				requireCheck(
+					selectedSlackCatalogWorkEqual(scenario.request.work, output.work),
+					"CHANNEL_CATALOG_WORK",
+				);
+				requireCheck(selectedSlackCatalogPageMatches(output), "CHANNEL_CATALOG_DATA_BINDING");
+				const expected = scenario.expected[index];
+				requireCheck(expected, "CHANNEL_CATALOG_FIXTURE");
+				requireCheck(
+					"conversations" in output
+						? "conversations" in expected && equal(output.conversations, expected.conversations)
+						: "conversation" in expected && equal(output.conversation, expected.conversation),
+					"CHANNEL_CATALOG_DATA",
+				);
+				requireCheck(
+					equal(output.continuation, expected.continuation),
+					"CHANNEL_CATALOG_CONTINUATION",
+				);
+				if (index === scenario.expected.length - 1) break;
+				const continuation = output.continuation;
+				requireCheck(
+					scenario.request.work.kind === "slack.catalog" &&
+						continuation.state !== "complete" &&
+						continuation.cursor !== undefined,
+					"CHANNEL_CATALOG_CONTINUATION",
+				);
+				requireCheck(!cursors.has(continuation.cursor), "CHANNEL_CATALOG_STALLED");
+				cursors.add(continuation.cursor);
+				input = { mode: "selected", work: scenario.request.work, cursor: continuation.cursor };
 			}
 		}
 	});
