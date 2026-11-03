@@ -1,4 +1,10 @@
-import { channelV1 } from "@draftyak/protocol/channel-v1";
+import {
+	channelV1,
+	SelectedSyncPage,
+	type SelectedSyncRequest,
+	type SyncPage,
+	type SyncRequest,
+} from "@draftyak/protocol/channel-v1";
 import { extensionDeclaration } from "@draftyak/protocol/extension";
 import { SEND_TICKET_META } from "@draftyak/protocol/send-ticket";
 import { describe, expect, it } from "vitest";
@@ -17,6 +23,40 @@ function definition(): ChannelPluginDefinition {
 		},
 		send: () => ({}),
 		reconcileSend: () => ({ candidates: [], complete: true }),
+	};
+}
+function selectedRequest(
+	kind: "slack.history" | "slack.replies" = "slack.replies",
+): SelectedSyncRequest {
+	const window = {
+		oldest: "1800000000.000000001",
+		latest: "1800000010.999999999",
+		inclusive: true,
+	};
+	return {
+		mode: "selected",
+		work:
+			kind === "slack.history"
+				? { kind, channelId: "CDYTEST1", window }
+				: { kind, channelId: "CDYTEST1", threadTs: "1800000000.000000001", window },
+	};
+}
+function selectedPage(request: SelectedSyncRequest): SelectedSyncPage {
+	return {
+		work: structuredClone(request.work),
+		changes: [],
+		replyCounts: [],
+		continuation: { state: "complete" },
+	};
+}
+function selectedRoot(request: SelectedSyncRequest): SelectedSyncPage["changes"][number] {
+	return {
+		kind: "chat.message",
+		channelId: request.work.channelId,
+		ts: request.work.kind === "slack.replies" ? request.work.threadTs : "1800000000.000000001",
+		sentAt: 1800000000000,
+		author: { kind: "user", id: "UDYTEST1" },
+		text: "DYTEST root",
 	};
 }
 const ticket = {
@@ -43,6 +83,7 @@ describe("channel definitions", () => {
 			fetchAttachment: undefined,
 			mutate: undefined,
 			listen: undefined,
+			syncSelected: undefined,
 		};
 		expect(() => defineChannelPlugin(input)).not.toThrow();
 		let omitted: unknown;
@@ -206,5 +247,374 @@ describe("channel definitions", () => {
 				expect(probe.result?.structuredContent).toEqual({ status: "ok" });
 			},
 		);
+	});
+});
+
+describe("selected channel sync definitions", () => {
+	it("keeps every legacy sync request and result on the unchanged handler", async () => {
+		const received: SyncRequest[] = [];
+		let selectedCalls = 0;
+		const requests: SyncRequest[] = [
+			{ mode: "initial", since: 0 },
+			{ mode: "resync", since: 1, cursor: "resume" },
+			{ mode: "delta", cursor: "delta" },
+		];
+		await served(
+			defineChannelPlugin({
+				...definition(),
+				sync: (request) => {
+					received.push(request);
+					return { changes: [], cursor: "next", more: false };
+				},
+				syncSelected: (request) => {
+					selectedCalls++;
+					return selectedPage(request);
+				},
+			}),
+			async (ask) => {
+				for (const request of requests) {
+					const reply = await ask("tools/call", { name: "channel_sync", arguments: request });
+					expect(reply.error).toBeUndefined();
+					expect(reply.result?.isError).not.toBe(true);
+					expect(reply.result?.structuredContent).toEqual({
+						changes: [],
+						cursor: "next",
+						more: false,
+					});
+				}
+			},
+		);
+		expect(received).toEqual(requests);
+		expect(selectedCalls).toBe(0);
+	});
+
+	it("refuses selected work before legacy dispatch when its optional handler is absent", async () => {
+		let legacyCalls = 0;
+		await served(
+			defineChannelPlugin({
+				...definition(),
+				sync: () => {
+					legacyCalls++;
+					return { changes: [], cursor: "next", more: false };
+				},
+			}),
+			async (ask) => {
+				const reply = await ask("tools/call", {
+					name: "channel_sync",
+					arguments: selectedRequest(),
+				});
+				expect(reply.error).toBeUndefined();
+				expect(reply.result).toMatchObject({
+					isError: true,
+					structuredContent: { code: "UNSUPPORTED" },
+				});
+			},
+		);
+		expect(legacyCalls).toBe(0);
+	});
+
+	it.each(["slack.history", "slack.replies"] as const)(
+		"serves exact %s work and continuation through only the selected handler",
+		async (kind) => {
+			const request = { ...selectedRequest(kind), cursor: "provider-resume" };
+			let legacyCalls = 0;
+			const received: SelectedSyncRequest[] = [];
+			const expected: SelectedSyncPage = {
+				...selectedPage(request),
+				continuation: { state: "more", cursor: "provider-next" },
+			};
+			await served(
+				defineChannelPlugin({
+					...definition(),
+					sync: () => {
+						legacyCalls++;
+						return { changes: [], cursor: "next", more: false };
+					},
+					syncSelected: (input, context) => {
+						received.push(input);
+						expect(context).not.toHaveProperty("sendTicket");
+						return expected;
+					},
+				}),
+				async (ask) => {
+					const reply = await ask("tools/call", { name: "channel_sync", arguments: request });
+					expect(reply.error).toBeUndefined();
+					expect(reply.result?.isError).not.toBe(true);
+					expect(reply.result?.structuredContent).toEqual(expected);
+				},
+			);
+			expect(received).toEqual([request]);
+			expect(legacyCalls).toBe(0);
+		},
+	);
+
+	it.each([0, 3])("serves an explicit observed root reply count of %i", async (count) => {
+		const request = selectedRequest();
+		const root = selectedRoot(request);
+		const expected: SelectedSyncPage = {
+			...selectedPage(request),
+			changes: [count === 0 ? root : { ...root, threadTs: root.ts }],
+			replyCounts: [{ ts: root.ts, count }],
+		};
+		await served(
+			defineChannelPlugin({ ...definition(), syncSelected: () => expected }),
+			async (ask) => {
+				const reply = await ask("tools/call", { name: "channel_sync", arguments: request });
+				expect(reply.error).toBeUndefined();
+				expect(reply.result?.isError).not.toBe(true);
+				expect(reply.result?.structuredContent).toEqual(expected);
+			},
+		);
+	});
+
+	it.each([
+		"duplicate observation",
+		"duplicate root row",
+		"dangling observation",
+		"cross-channel root",
+		"non-root row",
+		"another replies root",
+	] as const)("refuses a selected reply count with %s", async (fault) => {
+		const request = selectedRequest();
+		const root = selectedRoot(request);
+		const observation = { ts: root.ts, count: 3 };
+		let result: SelectedSyncPage = {
+			...selectedPage(request),
+			changes: [root],
+			replyCounts: [observation],
+		};
+		switch (fault) {
+			case "duplicate observation":
+				result = { ...result, replyCounts: [observation, { ...observation }] };
+				break;
+			case "duplicate root row":
+				result = { ...result, changes: [root, { ...root, channelId: "CDYTEST2" }] };
+				break;
+			case "dangling observation":
+				result = { ...result, changes: [] };
+				break;
+			case "cross-channel root":
+				result = { ...result, changes: [{ ...root, channelId: "CDYTEST2" }] };
+				break;
+			case "non-root row":
+				result = { ...result, changes: [{ ...root, threadTs: "1800000002.000000001" }] };
+				break;
+			case "another replies root":
+				result = {
+					...result,
+					changes: [{ ...root, ts: "1800000002.000000001" }],
+					replyCounts: [{ ...observation, ts: "1800000002.000000001" }],
+				};
+		}
+		expect(SelectedSyncPage.safeParse(result).success).toBe(true);
+		await served(
+			defineChannelPlugin({ ...definition(), syncSelected: () => result }),
+			async (ask) => {
+				const reply = await ask("tools/call", { name: "channel_sync", arguments: request });
+				expect(reply.error).toBeUndefined();
+				expect(reply.result).toMatchObject({
+					isError: true,
+					structuredContent: { code: "TRANSIENT" },
+				});
+			},
+		);
+	});
+
+	it("refuses a selected handler that omits the required observation array", async () => {
+		await served(
+			defineChannelPlugin({
+				...definition(),
+				syncSelected: (request) =>
+					({
+						work: structuredClone(request.work),
+						changes: [],
+						continuation: { state: "complete" },
+					}) as unknown as SelectedSyncPage,
+			}),
+			async (ask) => {
+				const reply = await ask("tools/call", {
+					name: "channel_sync",
+					arguments: selectedRequest(),
+				});
+				expect(reply.error).toBeUndefined();
+				expect(reply.result).toMatchObject({
+					isError: true,
+					structuredContent: { code: "TRANSIENT" },
+				});
+			},
+		);
+	});
+
+	it("refuses malformed selected and extended legacy requests before either handler", async () => {
+		let calls = 0;
+		await served(
+			defineChannelPlugin({
+				...definition(),
+				sync: () => {
+					calls++;
+					return { changes: [], cursor: "next", more: false };
+				},
+				syncSelected: (request) => {
+					calls++;
+					return selectedPage(request);
+				},
+			}),
+			async (ask) => {
+				for (const request of [
+					{ mode: "selected", work: { kind: "slack.replies", channelId: "CDYTEST1" } },
+					{ mode: "initial", since: 0, work: selectedRequest().work },
+				]) {
+					const reply = await ask("tools/call", { name: "channel_sync", arguments: request });
+					expect(reply.error !== undefined || reply.result?.isError === true).toBe(true);
+				}
+			},
+		);
+		expect(calls).toBe(0);
+	});
+
+	it.each(["legacy", "selected"] as const)(
+		"refuses a %s handler returning the other result branch",
+		async (branch) => {
+			let legacyCalls = 0;
+			let selectedCalls = 0;
+			await served(
+				defineChannelPlugin({
+					...definition(),
+					sync: () => {
+						legacyCalls++;
+						return selectedPage(selectedRequest()) as unknown as SyncPage;
+					},
+					syncSelected: () => {
+						selectedCalls++;
+						return { changes: [], cursor: "next", more: false } as unknown as SelectedSyncPage;
+					},
+				}),
+				async (ask) => {
+					const reply = await ask("tools/call", {
+						name: "channel_sync",
+						arguments: branch === "legacy" ? { mode: "initial", since: 0 } : selectedRequest(),
+					});
+					expect(reply.result).toMatchObject({
+						isError: true,
+						structuredContent: { code: "TRANSIENT" },
+					});
+				},
+			);
+			expect(legacyCalls).toBe(branch === "legacy" ? 1 : 0);
+			expect(selectedCalls).toBe(branch === "selected" ? 1 : 0);
+		},
+	);
+
+	it("refuses a valid selected result whose work names another thread", async () => {
+		await served(
+			defineChannelPlugin({
+				...definition(),
+				syncSelected: (request) => {
+					const result = selectedPage(request);
+					return {
+						...result,
+						work: { ...result.work, kind: "slack.replies", threadTs: "1800000002.000000001" },
+					};
+				},
+			}),
+			async (ask) => {
+				const reply = await ask("tools/call", {
+					name: "channel_sync",
+					arguments: selectedRequest(),
+				});
+				expect(reply.result).toMatchObject({
+					isError: true,
+					structuredContent: { code: "TRANSIENT" },
+				});
+			},
+		);
+	});
+
+	it("captures expected work before a handler mutates its checked arguments", async () => {
+		const original = selectedRequest();
+		await served(
+			defineChannelPlugin({
+				...definition(),
+				syncSelected: (request) => {
+					const work = request.work as { channelId: string };
+					work.channelId = "CDYTEST2";
+					return selectedPage(request);
+				},
+			}),
+			async (ask) => {
+				const reply = await ask("tools/call", { name: "channel_sync", arguments: original });
+				expect(reply.result).toMatchObject({
+					isError: true,
+					structuredContent: { code: "TRANSIENT" },
+				});
+			},
+		);
+		expect(original.work.channelId).toBe("CDYTEST1");
+	});
+
+	it.each(["accessor", "proxy"] as const)(
+		"refuses selected %s output before inspecting its work",
+		async (kind) => {
+			let hooks = 0;
+			await served(
+				defineChannelPlugin({
+					...definition(),
+					syncSelected: (request) => {
+						const value = selectedPage(request);
+						if (kind === "accessor")
+							return Object.defineProperty(value, "work", {
+								enumerable: true,
+								get() {
+									hooks++;
+									throw new Error("selected-private-detail");
+								},
+							});
+						return new Proxy(value, {
+							getPrototypeOf() {
+								hooks++;
+								throw new Error("selected-private-detail");
+							},
+						});
+					},
+				}),
+				async (ask) => {
+					const reply = await ask("tools/call", {
+						name: "channel_sync",
+						arguments: selectedRequest(),
+					});
+					expect(reply.result).toMatchObject({
+						isError: true,
+						structuredContent: { code: "TRANSIENT" },
+					});
+					expect(JSON.stringify(reply)).not.toContain("selected-private-detail");
+				},
+			);
+			expect(hooks).toBe(0);
+		},
+	);
+
+	it("captures only an ordinary optional selected handler and refuses unknown members", () => {
+		let hooks = 0;
+		const accessor = Object.defineProperty(definition(), "syncSelected", {
+			enumerable: true,
+			get() {
+				hooks++;
+				return (request: SelectedSyncRequest) => selectedPage(request);
+			},
+		});
+		const proxy = new Proxy((request: SelectedSyncRequest) => selectedPage(request), {
+			apply() {
+				hooks++;
+				throw new Error("selected-private-detail");
+			},
+		});
+		for (const value of [
+			accessor,
+			{ ...definition(), syncSelected: proxy },
+			{ ...definition(), syncSelected: null },
+			{ ...definition(), syncSelection: () => ({}) },
+		])
+			expect(() => defineChannelPlugin(value as ChannelPluginDefinition)).toThrow();
+		expect(hooks).toBe(0);
 	});
 });

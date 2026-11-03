@@ -226,142 +226,528 @@
                 "cursor"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "const": "selected"
+                },
+                "work": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "slack.history"
+                        },
+                        "channelId": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        },
+                        "window": {
+                          "type": "object",
+                          "properties": {
+                            "oldest": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            },
+                            "latest": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            },
+                            "inclusive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "oldest",
+                            "latest",
+                            "inclusive"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "channelId",
+                        "window"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "slack.replies"
+                        },
+                        "channelId": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        },
+                        "threadTs": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        },
+                        "window": {
+                          "type": "object",
+                          "properties": {
+                            "oldest": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            },
+                            "latest": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            },
+                            "inclusive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "oldest",
+                            "latest",
+                            "inclusive"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "channelId",
+                        "threadTs",
+                        "window"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "cursor": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
+                  "description": "A plugin's sync position, opaque to the hub."
+                }
+              },
+              "required": [
+                "mode",
+                "work"
+              ],
+              "additionalProperties": false
             }
           ],
           "type": "object"
         },
         "output": {
-          "type": "object",
-          "properties": {
-            "changes": {
-              "maxItems": 500,
-              "type": "array",
-              "items": {
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "const": "email.message"
-                      },
-                      "providerId": {
-                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
-                      },
-                      "threadId": {
-                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
-                      },
-                      "internalDate": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9007199254740991,
-                        "description": "An instant as UTC milliseconds since the epoch, a safe integer."
-                      },
-                      "labelIds": {
-                        "maxItems": 256,
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
-                        }
-                      },
-                      "sizeBytes": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 9007199254740991
-                      },
-                      "raw": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "ref": {
-                                "type": "string",
-                                "minLength": 26,
-                                "maxLength": 26,
-                                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
-                                "description": "A ULID: 26 upper-case Crockford base32 characters."
-                              }
-                            },
-                            "required": [
-                              "ref"
-                            ],
-                            "additionalProperties": false,
-                            "description": "Bytes the hub holds, such as a host/fetch response saved as a blob."
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "changes": {
+                  "maxItems": 500,
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "email.message"
                           },
-                          {
+                          "providerId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "threadId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "internalDate": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991,
+                            "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                          },
+                          "labelIds": {
+                            "maxItems": 256,
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            }
+                          },
+                          "sizeBytes": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "raw": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "ref": {
+                                    "type": "string",
+                                    "minLength": 26,
+                                    "maxLength": 26,
+                                    "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                                    "description": "A ULID: 26 upper-case Crockford base32 characters."
+                                  }
+                                },
+                                "required": [
+                                  "ref"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Bytes the hub holds, such as a host/fetch response saved as a blob."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "base64": {
+                                    "type": "string",
+                                    "maxLength": 87382,
+                                    "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$(?![\\s\\S])",
+                                    "description": "Bytes as unpadded, canonical base64url."
+                                  }
+                                },
+                                "required": [
+                                  "base64"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "providerId",
+                          "threadId",
+                          "internalDate",
+                          "labelIds"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "email.deleted"
+                          },
+                          "providerId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "providerId"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "email.labels"
+                          },
+                          "providerId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "threadId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "labelIds": {
+                            "maxItems": 256,
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            }
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "providerId",
+                          "threadId",
+                          "labelIds"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "chat.message"
+                          },
+                          "channelId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "ts": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "threadTs": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "sentAt": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991,
+                            "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                          },
+                          "author": {
                             "type": "object",
                             "properties": {
-                              "base64": {
+                              "kind": {
                                 "type": "string",
-                                "maxLength": 87382,
-                                "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$(?![\\s\\S])",
-                                "description": "Bytes as unpadded, canonical base64url."
+                                "enum": [
+                                  "user",
+                                  "bot"
+                                ]
+                              },
+                              "id": {
+                                "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
                               }
                             },
                             "required": [
-                              "base64"
+                              "kind",
+                              "id"
                             ],
                             "additionalProperties": false
+                          },
+                          "subtype": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[a-z][a-z0-9_]*$(?![\\s\\S])"
+                          },
+                          "text": {
+                            "type": "string",
+                            "maxLength": 40000
+                          },
+                          "editedAt": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991,
+                            "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+                          },
+                          "files": {
+                            "maxItems": 20,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "maxLength": 255
+                                },
+                                "contentType": {
+                                  "$ref": "#/$defs/draftyak.normalized-change.MediaType"
+                                },
+                                "size": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "contentType",
+                                "size"
+                              ],
+                              "additionalProperties": false
+                            }
                           }
-                        ]
+                        },
+                        "required": [
+                          "kind",
+                          "channelId",
+                          "ts",
+                          "sentAt",
+                          "author",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "chat.deleted"
+                          },
+                          "channelId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "ts": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "channelId",
+                          "ts"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "chat.conversation"
+                          },
+                          "channelId": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                          },
+                          "name": {
+                            "type": "string",
+                            "maxLength": 256
+                          },
+                          "type": {
+                            "$ref": "#/$defs/draftyak.normalized-change.ChatChannelType"
+                          },
+                          "external": {
+                            "type": "boolean"
+                          },
+                          "shared": {
+                            "type": "boolean"
+                          },
+                          "memberCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "archived": {
+                            "type": "boolean"
+                          },
+                          "member": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "channelId",
+                          "type",
+                          "external",
+                          "shared",
+                          "memberCount",
+                          "archived",
+                          "member"
+                        ],
+                        "additionalProperties": false
                       }
-                    },
-                    "required": [
-                      "kind",
-                      "providerId",
-                      "threadId",
-                      "internalDate",
-                      "labelIds"
                     ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "const": "email.deleted"
-                      },
-                      "providerId": {
-                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "providerId"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "const": "email.labels"
-                      },
-                      "providerId": {
-                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
-                      },
-                      "threadId": {
-                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
-                      },
-                      "labelIds": {
-                        "maxItems": 256,
-                        "type": "array",
-                        "items": {
+                    "title": "PluginChange"
+                  }
+                },
+                "cursor": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^[!-~]+$(?![\\s\\S])",
+                  "description": "A plugin's sync position, opaque to the hub."
+                },
+                "more": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "changes",
+                "cursor",
+                "more"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "work": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "slack.history"
+                        },
+                        "channelId": {
                           "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        },
+                        "window": {
+                          "type": "object",
+                          "properties": {
+                            "oldest": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            },
+                            "latest": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            },
+                            "inclusive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "oldest",
+                            "latest",
+                            "inclusive"
+                          ],
+                          "additionalProperties": false
                         }
-                      }
+                      },
+                      "required": [
+                        "kind",
+                        "channelId",
+                        "window"
+                      ],
+                      "additionalProperties": false
                     },
-                    "required": [
-                      "kind",
-                      "providerId",
-                      "threadId",
-                      "labelIds"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "slack.replies"
+                        },
+                        "channelId": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        },
+                        "threadTs": {
+                          "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                        },
+                        "window": {
+                          "type": "object",
+                          "properties": {
+                            "oldest": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            },
+                            "latest": {
+                              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                            },
+                            "inclusive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "oldest",
+                            "latest",
+                            "inclusive"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "channelId",
+                        "threadTs",
+                        "window"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "changes": {
+                  "maxItems": 500,
+                  "type": "array",
+                  "items": {
                     "type": "object",
                     "properties": {
                       "kind": {
@@ -459,96 +845,99 @@
                       "text"
                     ],
                     "additionalProperties": false
-                  },
-                  {
+                  }
+                },
+                "replyCounts": {
+                  "maxItems": 500,
+                  "type": "array",
+                  "items": {
                     "type": "object",
                     "properties": {
-                      "kind": {
-                        "type": "string",
-                        "const": "chat.deleted"
-                      },
-                      "channelId": {
-                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
-                      },
                       "ts": {
                         "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "channelId",
-                      "ts"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "const": "chat.conversation"
                       },
-                      "channelId": {
-                        "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
-                      },
-                      "name": {
-                        "type": "string",
-                        "maxLength": 256
-                      },
-                      "type": {
-                        "$ref": "#/$defs/draftyak.normalized-change.ChatChannelType"
-                      },
-                      "external": {
-                        "type": "boolean"
-                      },
-                      "shared": {
-                        "type": "boolean"
-                      },
-                      "memberCount": {
+                      "count": {
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 9007199254740991
-                      },
-                      "archived": {
-                        "type": "boolean"
-                      },
-                      "member": {
-                        "type": "boolean"
                       }
                     },
                     "required": [
-                      "kind",
-                      "channelId",
-                      "type",
-                      "external",
-                      "shared",
-                      "memberCount",
-                      "archived",
-                      "member"
+                      "ts",
+                      "count"
                     ],
                     "additionalProperties": false
                   }
-                ],
-                "title": "PluginChange"
-              }
-            },
-            "cursor": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4096,
-              "pattern": "^[!-~]+$(?![\\s\\S])",
-              "description": "A plugin's sync position, opaque to the hub."
-            },
-            "more": {
-              "type": "boolean"
+                },
+                "continuation": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "more"
+                        },
+                        "cursor": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096,
+                          "pattern": "^[!-~]+$(?![\\s\\S])",
+                          "description": "A plugin's sync position, opaque to the hub."
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "cursor"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "complete"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "truncated"
+                        },
+                        "cursor": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096,
+                          "pattern": "^[!-~]+$(?![\\s\\S])",
+                          "description": "A plugin's sync position, opaque to the hub."
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "work",
+                "changes",
+                "replyCounts",
+                "continuation"
+              ],
+              "additionalProperties": false
             }
-          },
-          "required": [
-            "changes",
-            "cursor",
-            "more"
           ],
-          "additionalProperties": false
+          "type": "object"
         },
         "error": {
           "type": "object",
@@ -594,7 +983,7 @@
       ],
       "additionalProperties": false,
       "title": "channel_sync",
-      "description": "One page of changes. initial and resync start at `since`; delta continues from a cursor. While `more` is true, call again with the returned cursor and the same mode."
+      "description": "One page of changes. initial and resync start at `since`; delta continues from a cursor. While `more` is true, call again with the returned cursor and the same mode. selected reads one explicit work unit and reports its continuation state."
     },
     "channel_body_fetch": {
       "type": "object",

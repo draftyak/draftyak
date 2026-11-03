@@ -5,6 +5,12 @@ import {
 	channelV1,
 	MAX_LEASE_MS,
 	MUTATIONS,
+	SelectedSyncPage,
+	SelectedSyncRequest,
+	SyncPage,
+	type SyncRequest,
+	selectedSlackReplyCountsMatch,
+	selectedSlackWorkEqual,
 } from "@draftyak/protocol/channel-v1";
 import type { PluginErrorCode } from "@draftyak/protocol/errors";
 import { checkPluginSurface, checkToolResult } from "@draftyak/protocol/extension";
@@ -37,6 +43,12 @@ type ErrorCase = {
 	};
 }[keyof ChannelV1Tools];
 
+export interface ChannelSelectedSyncScenario {
+	readonly request: SelectedSyncRequest;
+	/** Expected pages for one work item, including any deliberate cursor resume. */
+	readonly pages: readonly SelectedSyncPage[];
+}
+
 /** Fresh fake state and concrete expected values, never assertion callbacks. */
 export interface ChannelContractFixture {
 	readonly upstreams: readonly Fake[];
@@ -53,6 +65,8 @@ export interface ChannelContractFixture {
 		/** Expire the provider's current cursor, without altering the plugin. */
 		readonly expireCursor: () => MaybePromise<void>;
 	};
+	/** Opt in with provider DATA covering pagination, completion and truncation. */
+	readonly selectedSync?: readonly ChannelSelectedSyncScenario[];
 	readonly body: {
 		readonly message: Input<"channel_body_fetch">["message"];
 		readonly expected: MessageBody;
@@ -212,12 +226,16 @@ function errorResult(
 async function description(hub: MockHub): Promise<Output<"channel_describe">> {
 	return result("channel_describe", await hub.call("channel_describe", {}));
 }
-async function pages(hub: MockHub, first: Input<"channel_sync">): Promise<Output<"channel_sync">> {
+async function pages(hub: MockHub, first: SyncRequest): Promise<SyncPage> {
 	let input = first;
 	const changes: PluginChange[] = [];
 	const cursors = new Set<string>();
 	for (let page = 0; page < 64; page++) {
-		const output = result("channel_sync", await hub.call("channel_sync", { ...input }));
+		const checked = SyncPage.safeParse(
+			result("channel_sync", await hub.call("channel_sync", { ...input })),
+		);
+		requireCheck(checked.success, "CHANNEL_SYNC_RESULT");
+		const output = checked.data;
 		changes.push(...output.changes);
 		if (!output.more) return { ...output, changes };
 		requireCheck(!cursors.has(output.cursor), "CHANNEL_SYNC_STALLED");
@@ -317,6 +335,102 @@ export async function checkChannelSync(
 			),
 			"CHANNEL_SYNC_RESYNC",
 		);
+	});
+}
+
+/** Selected sync is optional and is deliberately separate from the legacy check set. */
+export async function checkChannelSelectedSync(
+	options: ChannelContractOptions,
+): Promise<ChannelContractResult> {
+	return run(options, async ({ hub, fixture }) => {
+		const supplied = fixture.selectedSync;
+		requireCheck(
+			Array.isArray(supplied) && supplied.length > 0 && supplied.length <= 64,
+			"CHANNEL_SELECTED_FIXTURE",
+		);
+		let totalPages = 0;
+		let changes = 0;
+		const states = new Set<string>();
+		const scenarios = supplied.map((scenario: ChannelSelectedSyncScenario) => {
+			const request = SelectedSyncRequest.safeParse(scenario.request);
+			requireCheck(request.success, "CHANNEL_SELECTED_FIXTURE");
+			requireCheck(
+				Array.isArray(scenario.pages) && scenario.pages.length > 0,
+				"CHANNEL_SELECTED_FIXTURE",
+			);
+			totalPages += scenario.pages.length;
+			requireCheck(totalPages <= 64, "CHANNEL_SELECTED_FIXTURE");
+			const expected = scenario.pages.map((page, index) => {
+				const checked = SelectedSyncPage.safeParse(page);
+				requireCheck(checked.success, "CHANNEL_SELECTED_FIXTURE");
+				requireCheck(
+					selectedSlackWorkEqual(request.data.work, checked.data.work),
+					"CHANNEL_SELECTED_FIXTURE_WORK",
+				);
+				requireCheck(
+					selectedSlackReplyCountsMatch(checked.data),
+					"CHANNEL_SELECTED_FIXTURE_REPLY_COUNTS",
+				);
+				const continuation = checked.data.continuation;
+				const last = index === scenario.pages.length - 1;
+				requireCheck(
+					last
+						? continuation.state !== "more"
+						: continuation.state !== "complete" && continuation.cursor !== undefined,
+					"CHANNEL_SELECTED_FIXTURE_CONTINUATION",
+				);
+				states.add(continuation.state);
+				changes += checked.data.changes.length;
+				return checked.data;
+			});
+			return { request: request.data, expected };
+		});
+		requireCheck(
+			changes > 0 && ["more", "complete", "truncated"].every((state) => states.has(state)),
+			"CHANNEL_SELECTED_FIXTURE_COVERAGE",
+		);
+		for (const scenario of scenarios) {
+			let input = scenario.request;
+			const cursors = new Set<string>(input.cursor === undefined ? [] : [input.cursor]);
+			for (let index = 0; index < scenario.expected.length; index++) {
+				// Parse a fresh call copy so the fixture's expected work stays detached.
+				const call = SelectedSyncRequest.safeParse(input);
+				requireCheck(call.success, "CHANNEL_SELECTED_FIXTURE");
+				const checked = SelectedSyncPage.safeParse(
+					result("channel_sync", await hub.call("channel_sync", { ...call.data })),
+				);
+				requireCheck(checked.success, "CHANNEL_SELECTED_RESULT");
+				const output = checked.data;
+				requireCheck(
+					selectedSlackWorkEqual(scenario.request.work, output.work),
+					"CHANNEL_SELECTED_WORK",
+				);
+				requireCheck(
+					selectedSlackReplyCountsMatch(output),
+					"CHANNEL_SELECTED_REPLY_COUNTS_BINDING",
+				);
+				const expected = scenario.expected[index];
+				requireCheck(expected, "CHANNEL_SELECTED_FIXTURE");
+				requireCheck(equal(output.changes, expected.changes), "CHANNEL_SELECTED_CHANGES");
+				requireCheck(
+					equal(output.replyCounts, expected.replyCounts),
+					"CHANNEL_SELECTED_REPLY_COUNTS",
+				);
+				requireCheck(
+					equal(output.continuation, expected.continuation),
+					"CHANNEL_SELECTED_CONTINUATION",
+				);
+				if (index === scenario.expected.length - 1) break;
+				const continuation = output.continuation;
+				requireCheck(
+					continuation.state !== "complete" && continuation.cursor !== undefined,
+					"CHANNEL_SELECTED_CONTINUATION",
+				);
+				requireCheck(!cursors.has(continuation.cursor), "CHANNEL_SELECTED_STALLED");
+				cursors.add(continuation.cursor);
+				input = { ...scenario.request, cursor: continuation.cursor };
+			}
+		}
 	});
 }
 
