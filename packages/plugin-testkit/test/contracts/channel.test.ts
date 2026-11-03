@@ -1,17 +1,21 @@
 import { createFake } from "@draftyak/fakes";
 import {
 	channelV1,
+	type SelectedCatalogSyncPage,
+	type SelectedCatalogSyncRequest,
 	type SelectedSlackWork,
 	type SelectedSyncPage,
 	type SelectedSyncRequest,
 } from "@draftyak/protocol/channel-v1";
 import { extensionDeclaration } from "@draftyak/protocol/extension";
+import type { PluginManifestV1 } from "@draftyak/protocol/manifest";
 import { SEND_TICKET_META } from "@draftyak/protocol/send-ticket";
 import { defineChannelPlugin, HostError, PluginError, type PluginTool } from "@draftyak/sdk";
 import { afterEach, expect, it, vi } from "vitest";
 import {
 	type ChannelContractFixture,
 	type ChannelContractOptions,
+	type ChannelSelectedCatalogSyncScenario,
 	channelChecks,
 	channelContract,
 	checkChannelBody,
@@ -20,6 +24,7 @@ import {
 	checkChannelListen,
 	checkChannelMutations,
 	checkChannelReconcile,
+	checkChannelSelectedCatalogSync,
 	checkChannelSelectedSync,
 	checkChannelSend,
 	checkChannelSurface,
@@ -714,4 +719,336 @@ it("rejects an unbound expected reply observation before calling the selected ha
 	expect(selected.observed.selected).toBe(0);
 	expect(selected.observed.cursors).toEqual([]);
 	expect(selected.observed.closed).toBe(1);
+});
+
+type CatalogFault =
+	| "drop-summary"
+	| "premature-complete"
+	| "wrong-info-echo"
+	| "wrong-info-fact"
+	| "wrong-kind"
+	| "duplicate-summary"
+	| "cursor-cycle";
+
+function catalogCase(fault?: CatalogFault, suppliedPages?: readonly SelectedCatalogSyncPage[]) {
+	const catalogWork = { kind: "slack.catalog" } as const;
+	const infoWork = { kind: "slack.info", channelId: "DYTEST-independent-info" } as const;
+	const catalogRequest: SelectedCatalogSyncRequest = { mode: "selected", work: catalogWork };
+	const catalogPages: SelectedCatalogSyncPage[] = suppliedPages
+		? [...suppliedPages]
+		: [
+				{
+					work: catalogWork,
+					conversations: [
+						{ channelId: "DYTEST-catalog-1", type: "public", name: "DYTEST discovery" },
+						{ channelId: "DYTEST-catalog-2", type: "private" },
+					],
+					continuation: { state: "more", cursor: "DYTEST-catalog-next" },
+				},
+				{
+					work: catalogWork,
+					conversations: [{ channelId: "DYTEST-catalog-3", type: "dm", name: "DYTEST other" }],
+					continuation:
+						fault === "cursor-cycle"
+							? { state: "more", cursor: "DYTEST-catalog-next" }
+							: { state: "complete" },
+				},
+			];
+	if (fault === "cursor-cycle")
+		catalogPages.push({
+			work: catalogWork,
+			conversations: [],
+			continuation: { state: "complete" },
+		});
+	const info: SelectedCatalogSyncPage = {
+		work: infoWork,
+		conversation: {
+			kind: "chat.conversation",
+			channelId: infoWork.channelId,
+			name: "DYTEST independently selected info",
+			type: "group_dm",
+			external: false,
+			shared: false,
+			memberCount: 2,
+			archived: false,
+			member: true,
+		},
+		continuation: { state: "complete" },
+	};
+	const providerPages = new Map<string, unknown>([
+		["", catalogPages[0]],
+		["DYTEST-catalog-next", catalogPages[1]],
+	]);
+	let providerInfo: unknown = info;
+	if (fault === "drop-summary") providerPages.set("", { ...catalogPages[0], conversations: [] });
+	if (fault === "premature-complete")
+		providerPages.set("", { ...catalogPages[0], continuation: { state: "complete" } });
+	if (fault === "wrong-info-echo")
+		providerInfo = {
+			...info,
+			work: { ...infoWork, channelId: "DYTEST-other-info" },
+			conversation: { ...info.conversation, channelId: "DYTEST-other-info" },
+		};
+	if (fault === "wrong-info-fact")
+		providerInfo = {
+			...info,
+			conversation: { ...info.conversation, channelId: "DYTEST-other-info" },
+		};
+	if (fault === "wrong-kind") providerPages.set("", info);
+	if (fault === "duplicate-summary")
+		providerPages.set("", {
+			...catalogPages[0],
+			conversations: [
+				{ channelId: "DYTEST-duplicate", type: "public" },
+				{ channelId: "DYTEST-duplicate", type: "private" },
+			],
+		});
+	const observed = {
+		catalog: 0,
+		info: 0,
+		legacy: 0,
+		messages: 0,
+		closed: 0,
+		requests: [] as { path: string; cursor: string | null }[],
+	};
+	const provider = createFake(
+		{
+			fetch: (incoming) => {
+				const url = new URL(incoming.url);
+				const cursor = url.searchParams.get("cursor");
+				observed.requests.push({ path: url.pathname, cursor });
+				if (url.pathname === "/v1/conversations") {
+					const page = providerPages.get(cursor ?? "");
+					if (page !== undefined) return Response.json(page);
+				}
+				if (url.pathname === `/v1/conversations/${infoWork.channelId}`)
+					return Response.json(providerInfo);
+				return Response.json({ code: "DYTEST_UNKNOWN_REQUEST" }, { status: 400 });
+			},
+		},
+		{ host: "hello.draftyak.example" },
+	);
+	const base = contractChannel().manifest as PluginManifestV1;
+	if (base.kind !== "channel" || !("rules" in base.egress))
+		throw new Error("DYTEST catalog manifest fixture missing");
+	const manifest = {
+		...base,
+		egress: {
+			rules: [
+				...base.egress.rules,
+				{
+					class: "read",
+					method: "GET",
+					host: "hello.draftyak.example",
+					pathTemplate: "/v1/conversations",
+					query: ["cursor"],
+					maxBytes: 32768,
+					timeoutMs: 1000,
+				},
+			],
+		},
+	};
+	const plugin: MockPlugin = {
+		manifest,
+		entry: defineChannelPlugin({
+			manifest,
+			describe: async () => ({ channel: "chat", mutations: [], attachments: false, listen: false }),
+			probe: async () => ({ status: "ok" }),
+			sync: async () => {
+				observed.legacy++;
+				return { changes: [], cursor: "DYTEST-legacy", more: false };
+			},
+			syncSelected: async (args) => {
+				observed.messages++;
+				return {
+					work: args.work,
+					changes: [],
+					replyCounts: [],
+					continuation: { state: "complete" },
+				};
+			},
+			syncSelectedCatalog: async (args, context) => {
+				const url = new URL("https://hello.draftyak.example/v1/conversations");
+				if (args.work.kind === "slack.catalog") {
+					observed.catalog++;
+					if ("cursor" in args && args.cursor !== undefined)
+						url.searchParams.set("cursor", args.cursor);
+				} else {
+					observed.info++;
+					url.pathname += `/${args.work.channelId}`;
+				}
+				const response = await context.fetch(url.href);
+				if (!response.ok) throw new PluginError("TRANSIENT");
+				return (await response.json()) as SelectedCatalogSyncPage;
+			},
+			fetchBody: async () => {
+				throw new PluginError("UNSUPPORTED");
+			},
+			send: async () => {
+				throw new PluginError("UNSUPPORTED");
+			},
+			reconcileSend: async () => ({ candidates: [], complete: true }),
+		}),
+	};
+	const catalogScenario: ChannelSelectedCatalogSyncScenario = {
+		request: catalogRequest,
+		pages: catalogPages,
+	};
+	const infoScenario: ChannelSelectedCatalogSyncScenario = {
+		request: { mode: "selected", work: infoWork },
+		pages: [info],
+	};
+	const fixture = (): ChannelContractFixture => ({
+		...contractFixtures(() => {
+			observed.closed++;
+		}),
+		upstreams: [provider],
+		selectedCatalogSync: [catalogScenario, infoScenario],
+	});
+	return {
+		options: { plugin, mode: "in-memory", fixtures: fixture } satisfies ChannelContractOptions,
+		fixture,
+		catalogScenario,
+		infoScenario,
+		observed,
+	};
+}
+
+it("checks selected catalog pagination and an independently requested info fact through served SDK", async () => {
+	const catalog = catalogCase();
+	expect(await checkChannelSelectedCatalogSync(catalog.options)).toEqual({ status: "pass" });
+	expect(catalog.observed).toEqual({
+		catalog: 2,
+		info: 1,
+		legacy: 0,
+		messages: 0,
+		closed: 1,
+		requests: [
+			{ path: "/v1/conversations", cursor: null },
+			{ path: "/v1/conversations", cursor: "DYTEST-catalog-next" },
+			{ path: "/v1/conversations/DYTEST-independent-info", cursor: null },
+		],
+	});
+});
+
+it("checks selected info alone without discovery or history pagination requirements", async () => {
+	const catalog = catalogCase();
+	expect(
+		await checkChannelSelectedCatalogSync({
+			...catalog.options,
+			fixtures: () => ({ ...catalog.fixture(), selectedCatalogSync: [catalog.infoScenario] }),
+		}),
+	).toEqual({ status: "pass" });
+	expect(catalog.observed.catalog).toBe(0);
+	expect(catalog.observed.info).toBe(1);
+	expect(catalog.observed.requests).toEqual([
+		{ path: "/v1/conversations/DYTEST-independent-info", cursor: null },
+	]);
+	expect(catalog.observed.closed).toBe(1);
+});
+
+it("requires an explicit selected catalog fixture", async () => {
+	const catalog = catalogCase();
+	expect(
+		await checkChannelSelectedCatalogSync({ ...catalog.options, fixtures: contractFixtures }),
+	).toEqual({ status: "fail", code: "CHANNEL_CATALOG_FIXTURE" });
+	expect(catalog.observed.requests).toEqual([]);
+});
+
+it.each([
+	["drop-summary", "CHANNEL_CATALOG_DATA"],
+	["premature-complete", "CHANNEL_CATALOG_CONTINUATION"],
+	["wrong-info-echo", "CHANNEL_RESULT"],
+	["wrong-info-fact", "CHANNEL_RESULT"],
+	["wrong-kind", "CHANNEL_RESULT"],
+	["duplicate-summary", "CHANNEL_RESULT"],
+	["cursor-cycle", "CHANNEL_CATALOG_STALLED"],
+] as const)("rejects selected catalog provider %s through the real SDK", async (fault, code) => {
+	const catalog = catalogCase(fault);
+	expect(await checkChannelSelectedCatalogSync(catalog.options)).toEqual({ status: "fail", code });
+	expect(catalog.observed.requests.length).toBeGreaterThan(0);
+	expect(catalog.observed.legacy).toBe(0);
+	expect(catalog.observed.messages).toBe(0);
+	expect(catalog.observed.closed).toBe(1);
+});
+
+it("refuses mismatched expected selected info DATA before any provider call", async () => {
+	const catalog = catalogCase();
+	const page = catalog.infoScenario.pages[0];
+	if (!page || !("conversation" in page)) throw new Error("DYTEST info fixture missing");
+	expect(
+		await checkChannelSelectedCatalogSync({
+			...catalog.options,
+			fixtures: () => ({
+				...catalog.fixture(),
+				selectedCatalogSync: [
+					{
+						...catalog.infoScenario,
+						pages: [
+							{ ...page, conversation: { ...page.conversation, channelId: "DYTEST-wrong-info" } },
+						],
+					},
+				],
+			}),
+		}),
+	).toEqual({ status: "fail", code: "CHANNEL_CATALOG_FIXTURE_DATA" });
+	expect(catalog.observed.requests).toEqual([]);
+	expect(catalog.observed.closed).toBe(1);
+});
+
+it.each(["more", "complete", "truncated"] as const)(
+	"checks only one declared selected catalog %s page without inventing more work",
+	async (state) => {
+		const page: SelectedCatalogSyncPage = {
+			work: { kind: "slack.catalog" },
+			conversations: [],
+			continuation: state === "more" ? { state, cursor: "DYTEST-catalog-next" } : { state },
+		};
+		const catalog = catalogCase(undefined, [page]);
+		expect(
+			await checkChannelSelectedCatalogSync({
+				...catalog.options,
+				fixtures: () => ({ ...catalog.fixture(), selectedCatalogSync: [catalog.catalogScenario] }),
+			}),
+		).toEqual({ status: "pass" });
+		expect(catalog.observed.catalog).toBe(1);
+		expect(catalog.observed.info).toBe(0);
+		expect(catalog.observed.requests).toEqual([{ path: "/v1/conversations", cursor: null }]);
+		expect(catalog.observed.closed).toBe(1);
+	},
+);
+
+it("refuses selected catalog work on a legacy-only served SDK without provider access", async () => {
+	const catalog = catalogCase();
+	expect(
+		await checkChannelSelectedCatalogSync({ ...catalog.options, plugin: contractChannel() }),
+	).toEqual({ status: "fail", code: "CHANNEL_RESULT" });
+	expect(catalog.observed.requests).toEqual([]);
+	expect(catalog.observed.closed).toBe(1);
+});
+
+it("rejects wrong expected selected info facts after a valid actual SDK result", async () => {
+	const catalog = catalogCase();
+	const page = catalog.infoScenario.pages[0];
+	if (!page || !("conversation" in page)) throw new Error("DYTEST info fixture missing");
+	expect(
+		await checkChannelSelectedCatalogSync({
+			...catalog.options,
+			fixtures: () => ({
+				...catalog.fixture(),
+				selectedCatalogSync: [
+					{
+						request: catalog.infoScenario.request,
+						pages: [{ ...page, conversation: { ...page.conversation, memberCount: 99 } }],
+					},
+				],
+			}),
+		}),
+	).toEqual({ status: "fail", code: "CHANNEL_CATALOG_DATA" });
+	expect(catalog.observed.catalog).toBe(0);
+	expect(catalog.observed.info).toBe(1);
+	expect(catalog.observed.requests).toEqual([
+		{ path: "/v1/conversations/DYTEST-independent-info", cursor: null },
+	]);
+	expect(catalog.observed.closed).toBe(1);
 });

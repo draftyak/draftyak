@@ -1,15 +1,20 @@
 import {
 	channelV1,
+	SelectedCatalogSyncPage,
+	type SelectedCatalogSyncRequest,
 	SelectedSyncPage,
 	type SelectedSyncRequest,
 	type SyncPage,
 	type SyncRequest,
+	selectedSlackCatalogPageMatches,
 } from "@draftyak/protocol/channel-v1";
 import { extensionDeclaration } from "@draftyak/protocol/extension";
+import type { ChatConversationChange } from "@draftyak/protocol/normalized-change";
 import { SEND_TICKET_META } from "@draftyak/protocol/send-ticket";
 import { describe, expect, it } from "vitest";
 import { type ChannelPluginDefinition, defineChannelPlugin } from "../src/channel.ts";
 import { PluginError } from "../src/errors.ts";
+import { memoryHost } from "../src/host.ts";
 import { channelManifest, served } from "./definitions-fixtures.ts";
 
 function definition(): ChannelPluginDefinition {
@@ -59,6 +64,35 @@ function selectedRoot(request: SelectedSyncRequest): SelectedSyncPage["changes"]
 		text: "DYTEST root",
 	};
 }
+function catalogRequest(
+	kind: "slack.catalog" | "slack.info" = "slack.catalog",
+): SelectedCatalogSyncRequest {
+	return kind === "slack.catalog"
+		? { mode: "selected", work: { kind } }
+		: { mode: "selected", work: { kind, channelId: "CDYTEST1" } };
+}
+function conversation(channelId = "CDYTEST1"): ChatConversationChange {
+	return {
+		kind: "chat.conversation",
+		channelId,
+		type: "public",
+		external: false,
+		shared: false,
+		memberCount: 3,
+		archived: false,
+		member: true,
+	};
+}
+function catalogPage(request: SelectedCatalogSyncRequest): SelectedCatalogSyncPage {
+	const work = structuredClone(request.work);
+	return work.kind === "slack.catalog"
+		? {
+				work,
+				conversations: [{ channelId: "CDYTEST1", type: "public", name: "DYTEST catalog" }],
+				continuation: { state: "complete" },
+			}
+		: { work, conversation: conversation(work.channelId), continuation: { state: "complete" } };
+}
 const ticket = {
 	id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
 	outboxId: "01ARZ3NDEKTSV4RRFFQ69G5FAW",
@@ -84,6 +118,7 @@ describe("channel definitions", () => {
 			mutate: undefined,
 			listen: undefined,
 			syncSelected: undefined,
+			syncSelectedCatalog: undefined,
 		};
 		expect(() => defineChannelPlugin(input)).not.toThrow();
 		let omitted: unknown;
@@ -613,6 +648,408 @@ describe("selected channel sync definitions", () => {
 			{ ...definition(), syncSelected: proxy },
 			{ ...definition(), syncSelected: null },
 			{ ...definition(), syncSelection: () => ({}) },
+		])
+			expect(() => defineChannelPlugin(value as ChannelPluginDefinition)).toThrow();
+		expect(hooks).toBe(0);
+	});
+});
+
+describe("selected Slack catalog definitions", () => {
+	it.each(["slack.catalog", "slack.info"] as const)(
+		"refuses %s before legacy or message dispatch when its handler is absent",
+		async (kind) => {
+			let legacyCalls = 0;
+			let messageCalls = 0;
+			let hostCalls = 0;
+			const host = memoryHost(() => {
+				hostCalls++;
+				throw new Error("Unexpected catalog host call");
+			});
+			await served(
+				defineChannelPlugin({
+					...definition(),
+					sync: () => {
+						legacyCalls++;
+						return { changes: [], cursor: "legacy", more: false };
+					},
+					syncSelected: (request) => {
+						messageCalls++;
+						return selectedPage(request);
+					},
+				}),
+				async (ask) => {
+					const reply = await ask("tools/call", {
+						name: "channel_sync",
+						arguments: catalogRequest(kind),
+					});
+					expect(reply.error).toBeUndefined();
+					expect(reply.result).toMatchObject({
+						isError: true,
+						structuredContent: { code: "UNSUPPORTED" },
+					});
+				},
+				{},
+				host,
+			);
+			expect({ legacyCalls, messageCalls, hostCalls }).toEqual({
+				legacyCalls: 0,
+				messageCalls: 0,
+				hostCalls: 0,
+			});
+		},
+	);
+
+	it("keeps legacy, message work and both catalog kinds on their own handlers", async () => {
+		const legacy: SyncRequest = { mode: "initial", since: 0 };
+		const history = selectedRequest("slack.history");
+		const replies = selectedRequest("slack.replies");
+		const catalog: SelectedCatalogSyncRequest = {
+			mode: "selected",
+			work: { kind: "slack.catalog" },
+			cursor: "catalog-resume",
+		};
+		const info = catalogRequest("slack.info");
+		const receivedLegacy: SyncRequest[] = [];
+		const receivedMessages: SelectedSyncRequest[] = [];
+		const receivedCatalog: SelectedCatalogSyncRequest[] = [];
+		await served(
+			defineChannelPlugin({
+				...definition(),
+				sync: (request) => {
+					receivedLegacy.push(request);
+					return { changes: [], cursor: "legacy", more: false };
+				},
+				syncSelected: (request) => {
+					receivedMessages.push(request);
+					return selectedPage(request);
+				},
+				syncSelectedCatalog: (request, context) => {
+					receivedCatalog.push(request);
+					expect(context).not.toHaveProperty("sendTicket");
+					return catalogPage(request);
+				},
+			}),
+			async (ask) => {
+				for (const [request, expected] of [
+					[legacy, { changes: [], cursor: "legacy", more: false }],
+					[history, selectedPage(history)],
+					[replies, selectedPage(replies)],
+					[catalog, catalogPage(catalog)],
+					[info, catalogPage(info)],
+				] as const) {
+					const reply = await ask("tools/call", { name: "channel_sync", arguments: request });
+					expect(reply.error).toBeUndefined();
+					expect(reply.result?.isError).not.toBe(true);
+					expect(reply.result?.structuredContent).toEqual(expected);
+				}
+			},
+		);
+		expect(receivedLegacy).toEqual([legacy]);
+		expect(receivedMessages).toEqual([history, replies]);
+		expect(receivedCatalog).toEqual([catalog, info]);
+	});
+
+	it.each([{ state: "more", cursor: "catalog-next" }, { state: "truncated" }] as const)(
+		"preserves catalog $state without turning it into completion",
+		async (continuation) => {
+			const expected: SelectedCatalogSyncPage = {
+				work: { kind: "slack.catalog" },
+				conversations: [],
+				continuation,
+			};
+			await served(
+				defineChannelPlugin({ ...definition(), syncSelectedCatalog: () => expected }),
+				async (ask) => {
+					const reply = await ask("tools/call", {
+						name: "channel_sync",
+						arguments: catalogRequest(),
+					});
+					expect(reply.result?.isError).not.toBe(true);
+					expect(reply.result?.structuredContent).toEqual(expected);
+				},
+			);
+		},
+	);
+
+	it("refuses structurally valid info facts for a different channel", async () => {
+		const value: SelectedCatalogSyncPage = {
+			work: { kind: "slack.info", channelId: "CDYTEST1" },
+			conversation: conversation("CDYTEST2"),
+			continuation: { state: "complete" },
+		};
+		expect(SelectedCatalogSyncPage.safeParse(value).success).toBe(true);
+		expect(selectedSlackCatalogPageMatches(value)).toBe(false);
+		await served(
+			defineChannelPlugin({ ...definition(), syncSelectedCatalog: () => value }),
+			async (ask) => {
+				const reply = await ask("tools/call", {
+					name: "channel_sync",
+					arguments: catalogRequest("slack.info"),
+				});
+				expect(reply.result).toMatchObject({
+					isError: true,
+					structuredContent: { code: "TRANSIENT" },
+				});
+			},
+		);
+	});
+
+	it("refuses duplicate discovered IDs even when their summaries differ", async () => {
+		const value: SelectedCatalogSyncPage = {
+			work: { kind: "slack.catalog" },
+			conversations: [
+				{ channelId: "CDYTEST1", type: "public", name: "DYTEST first" },
+				{ channelId: "CDYTEST1", type: "private", name: "DYTEST conflicting" },
+			],
+			continuation: { state: "complete" },
+		};
+		expect(SelectedCatalogSyncPage.safeParse(value).success).toBe(true);
+		expect(selectedSlackCatalogPageMatches(value)).toBe(false);
+		await served(
+			defineChannelPlugin({ ...definition(), syncSelectedCatalog: () => value }),
+			async (ask) => {
+				const reply = await ask("tools/call", {
+					name: "channel_sync",
+					arguments: catalogRequest(),
+				});
+				expect(reply.result).toMatchObject({
+					isError: true,
+					structuredContent: { code: "TRANSIENT" },
+				});
+			},
+		);
+	});
+
+	it("refuses another valid info selection even when its facts match its echoed work", async () => {
+		const value: SelectedCatalogSyncPage = {
+			work: { kind: "slack.info", channelId: "CDYTEST2" },
+			conversation: conversation("CDYTEST2"),
+			continuation: { state: "complete" },
+		};
+		expect(selectedSlackCatalogPageMatches(value)).toBe(true);
+		await served(
+			defineChannelPlugin({ ...definition(), syncSelectedCatalog: () => value }),
+			async (ask) => {
+				const reply = await ask("tools/call", {
+					name: "channel_sync",
+					arguments: catalogRequest("slack.info"),
+				});
+				expect(reply.result).toMatchObject({
+					isError: true,
+					structuredContent: { code: "TRANSIENT" },
+				});
+			},
+		);
+	});
+
+	it("captures expected catalog work before a handler mutates its argument and matching facts", async () => {
+		const original = catalogRequest("slack.info");
+		let returned: SelectedCatalogSyncPage | undefined;
+		await served(
+			defineChannelPlugin({
+				...definition(),
+				syncSelectedCatalog: (request) => {
+					if (request.work.kind !== "slack.info") throw new Error("Expected info work");
+					(request.work as { channelId: string }).channelId = "CDYTEST2";
+					const value = catalogPage(request);
+					returned = value;
+					return value;
+				},
+			}),
+			async (ask) => {
+				const reply = await ask("tools/call", { name: "channel_sync", arguments: original });
+				expect(reply.result).toMatchObject({
+					isError: true,
+					structuredContent: { code: "TRANSIENT" },
+				});
+			},
+		);
+		if (returned === undefined) throw new Error("Expected a catalog handler result");
+		expect(SelectedCatalogSyncPage.safeParse(returned).success).toBe(true);
+		expect(selectedSlackCatalogPageMatches(returned)).toBe(true);
+		expect(original.work).toEqual({ kind: "slack.info", channelId: "CDYTEST1" });
+	});
+
+	it.each([
+		"catalog with info",
+		"info with catalog",
+		"info continuation",
+		"legacy result",
+		"message result",
+	] as const)("refuses a catalog handler's mixed or foreign %s payload", async (fault) => {
+		const request = catalogRequest(
+			fault === "info with catalog" || fault === "info continuation"
+				? "slack.info"
+				: "slack.catalog",
+		);
+		let value: unknown;
+		switch (fault) {
+			case "catalog with info":
+				value = { ...catalogPage(request), conversation: conversation() };
+				break;
+			case "info with catalog":
+				value = { ...catalogPage(request), conversations: [] };
+				break;
+			case "info continuation":
+				value = {
+					...catalogPage(request),
+					continuation: { state: "more", cursor: "invented-info-continuation" },
+				};
+				break;
+			case "legacy result":
+				value = { changes: [], cursor: "legacy", more: false };
+				break;
+			case "message result":
+				value = selectedPage(selectedRequest());
+		}
+		await served(
+			defineChannelPlugin({
+				...definition(),
+				syncSelectedCatalog: () => value as SelectedCatalogSyncPage,
+			}),
+			async (ask) => {
+				const reply = await ask("tools/call", { name: "channel_sync", arguments: request });
+				expect(reply.result).toMatchObject({
+					isError: true,
+					structuredContent: { code: "TRANSIENT" },
+				});
+			},
+		);
+	});
+
+	it.each(["legacy", "message"] as const)(
+		"keeps the %s result guard when a handler returns catalog data",
+		async (branch) => {
+			const value = catalogPage(catalogRequest());
+			await served(
+				defineChannelPlugin({
+					...definition(),
+					sync: () => value as unknown as SyncPage,
+					syncSelected: () => value as unknown as SelectedSyncPage,
+					syncSelectedCatalog: () => value,
+				}),
+				async (ask) => {
+					const reply = await ask("tools/call", {
+						name: "channel_sync",
+						arguments: branch === "legacy" ? { mode: "initial", since: 0 } : selectedRequest(),
+					});
+					expect(reply.result).toMatchObject({
+						isError: true,
+						structuredContent: { code: "TRANSIENT" },
+					});
+				},
+			);
+		},
+	);
+
+	it.each(["accessor", "proxy"] as const)(
+		"copies catalog %s output safely before its branch parser",
+		async (kind) => {
+			let hooks = 0;
+			let thenProbes = 0;
+			let produced = false;
+			const valid = catalogPage(catalogRequest("slack.info"));
+			expect(SelectedCatalogSyncPage.safeParse(valid).success).toBe(true);
+			await served(
+				defineChannelPlugin({
+					...definition(),
+					syncSelectedCatalog: () => {
+						const value = structuredClone(valid);
+						if (kind === "accessor") {
+							const result = Object.defineProperty(value, "conversation", {
+								enumerable: true,
+								get() {
+									hooks++;
+									throw new Error("catalog-private-detail");
+								},
+							});
+							produced = true;
+							return result;
+						}
+						const result = new Proxy(value, {
+							get(_target, key) {
+								if (key === "then") {
+									thenProbes++;
+									return undefined;
+								}
+								hooks++;
+								throw new Error("catalog-private-detail");
+							},
+						});
+						produced = true;
+						return result;
+					},
+				}),
+				async (ask) => {
+					const reply = await ask("tools/call", {
+						name: "channel_sync",
+						arguments: catalogRequest("slack.info"),
+					});
+					expect(reply.result).toMatchObject({
+						isError: true,
+						structuredContent: { code: "TRANSIENT" },
+					});
+					expect(JSON.stringify(reply)).not.toContain("catalog-private-detail");
+				},
+			);
+			expect(produced).toBe(true);
+			expect(hooks).toBe(0);
+			expect(thenProbes).toBe(kind === "proxy" ? 1 : 0);
+		},
+	);
+
+	it("refuses malformed catalog and info selections before all handlers", async () => {
+		let calls = 0;
+		await served(
+			defineChannelPlugin({
+				...definition(),
+				sync: () => {
+					calls++;
+					return { changes: [], cursor: "legacy", more: false };
+				},
+				syncSelected: (request) => {
+					calls++;
+					return selectedPage(request);
+				},
+				syncSelectedCatalog: (request) => {
+					calls++;
+					return catalogPage(request);
+				},
+			}),
+			async (ask) => {
+				for (const request of [
+					{ mode: "selected", work: { kind: "slack.info" } },
+					{ ...catalogRequest("slack.info"), cursor: "not-an-info-continuation" },
+					{ mode: "selected", work: { kind: "slack.catalog", channelId: "CDYTEST1" } },
+					{ mode: "selected", work: { kind: "slack.conversations" } },
+				]) {
+					const reply = await ask("tools/call", { name: "channel_sync", arguments: request });
+					expect(reply.error !== undefined || reply.result?.isError === true).toBe(true);
+				}
+			},
+		);
+		expect(calls).toBe(0);
+	});
+
+	it("captures only an ordinary optional catalog handler without executing accessors or proxies", () => {
+		let hooks = 0;
+		const accessor = Object.defineProperty(definition(), "syncSelectedCatalog", {
+			enumerable: true,
+			get() {
+				hooks++;
+				return (request: SelectedCatalogSyncRequest) => catalogPage(request);
+			},
+		});
+		const proxy = new Proxy((request: SelectedCatalogSyncRequest) => catalogPage(request), {
+			apply() {
+				hooks++;
+				throw new Error("catalog-private-detail");
+			},
+		});
+		for (const value of [
+			accessor,
+			{ ...definition(), syncSelectedCatalog: proxy },
+			{ ...definition(), syncSelectedCatalog: null },
 		])
 			expect(() => defineChannelPlugin(value as ChannelPluginDefinition)).toThrow();
 		expect(hooks).toBe(0);
