@@ -38,6 +38,26 @@ export class MboxError extends Error {
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const typedArray = Object.getPrototypeOf(Uint8Array.prototype);
+const byteLength = Object.getOwnPropertyDescriptor(typedArray, "byteLength")?.get;
+const byteOffset = Object.getOwnPropertyDescriptor(typedArray, "byteOffset")?.get;
+const backingBuffer = Object.getOwnPropertyDescriptor(typedArray, "buffer")?.get;
+
+function copyRaw(input: Uint8Array, maximum: number): Uint8Array {
+	try {
+		const length: unknown = byteLength?.call(input),
+			offset: unknown = byteOffset?.call(input),
+			buffer = backingBuffer?.call(input);
+		if (typeof length !== "number" || typeof offset !== "number" || buffer === undefined)
+			throw new MboxError("BAD_INPUT");
+		if (length > maximum) throw new MboxError("MESSAGE_TOO_LARGE");
+		// A fixed native view keeps the checked bound even if the backing buffer can grow.
+		return new Uint8Array(new Uint8Array(buffer, offset, length));
+	} catch (error) {
+		if (error instanceof MboxError) throw error;
+		throw new MboxError("BAD_INPUT");
+	}
+}
 
 function limit(value: number | undefined, maximum: number): number {
 	if (value === undefined) return maximum;
@@ -171,10 +191,9 @@ export async function* writeMbox(
 			const message = result.value;
 			const input = message?.raw;
 			if (!(input instanceof Uint8Array)) throw new MboxError("BAD_INPUT");
-			if (input.byteLength > maxMessageBytes) throw new MboxError("MESSAGE_TOO_LARGE");
-			const prefix = envelope(message);
 			// Copy once before yielding, so caller mutation cannot change this record.
-			const raw = new Uint8Array(input);
+			const raw = copyRaw(input, maxMessageBytes);
+			const prefix = envelope(message);
 			let size = prefix.byteLength + raw.byteLength + 1;
 			for (let start = 0; start < raw.length; ) {
 				checkAbort(signal);
