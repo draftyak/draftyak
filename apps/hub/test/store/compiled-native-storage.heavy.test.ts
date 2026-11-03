@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	copyFileSync,
 	existsSync,
@@ -100,9 +101,20 @@ function checkRuntimeNames(directory: string): void {
 	visit(directory);
 }
 
+function copyPinnedRuntimeFile(source: string, target: string): void {
+	const entry = lstatSync(source);
+	expect(entry.isFile()).toBe(true);
+	expect(entry.isSymbolicLink()).toBe(false);
+	const digest = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+	const pin = digest(readFileSync(source));
+	copyFileSync(source, target);
+	expect(digest(readFileSync(target))).toBe(pin);
+	expect(digest(readFileSync(source))).toBe(pin);
+}
+
 function stageRuntimePackage(
 	stage: string,
-	name: "protocol" | "bounded-files" | "extensions",
+	name: "protocol" | "bounded-files" | "extensions" | "mime",
 ): void {
 	const runtimePackage = path.resolve(hub, "../../packages", name);
 	const manifest = JSON.parse(readFileSync(path.join(runtimePackage, "package.json"), "utf8"));
@@ -113,7 +125,9 @@ function stageRuntimePackage(
 			? { zod: "4.6.7" }
 			: name === "extensions"
 				? { "@draftyak/protocol": "workspace:*", hono: "4.13.13" }
-				: undefined,
+				: name === "mime"
+					? { "@draftyak/protocol": "workspace:*", nodemailer: "10.1.4" }
+					: undefined,
 	);
 	const target = path.join(stage, "node_modules/@draftyak", name);
 	mkdirSync(target, { recursive: true });
@@ -130,7 +144,7 @@ function stageRuntimePackage(
 			else {
 				expect(entry.isFile()).toBe(true);
 				expect(++files).toBeLessThanOrEqual(1000);
-				copyFileSync(from, to);
+				copyPinnedRuntimeFile(from, to);
 			}
 		}
 	};
@@ -160,6 +174,20 @@ function stageRuntimePackage(
 			path.join(stage, "node_modules/hono"),
 			"junction",
 		);
+	if (name === "mime") {
+		const dependencyFile = realpathSync(
+			createRequire(path.join(runtimePackage, "package.json")).resolve("nodemailer/package.json"),
+		);
+		const dependency = JSON.parse(readFileSync(dependencyFile, "utf8"));
+		expect(dependency.name).toBe("nodemailer");
+		expect(dependency.version).toBe("10.1.4");
+		expect(dependency.main).toBe("lib/nodemailer.js");
+		expect(dependency.dependencies ?? {}).toEqual({});
+		const destination = path.join(stage, "node_modules/nodemailer");
+		mkdirSync(destination);
+		copyPinnedRuntimeFile(dependencyFile, path.join(destination, "package.json"));
+		copy(path.join(path.dirname(dependencyFile), "lib"), path.join(destination, "lib"));
+	}
 }
 
 function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-schema"): void {
@@ -179,7 +207,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 	try {
 		// Admit every staged runtime filename before copying any runtime bytes.
 		checkRuntimeNames(path.join(hub, "dist"));
-		for (const name of ["protocol", "bounded-files", "extensions"])
+		for (const name of ["protocol", "bounded-files", "extensions", "mime"])
 			checkRuntimeNames(path.resolve(hub, "../../packages", name, "dist"));
 		for (const entry of readdirSync(path.join(hub, "dist"), { withFileTypes: true })) {
 			if (!entry.name.endsWith(".mjs")) continue;
@@ -208,6 +236,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 		stageRuntimePackage(stage, "protocol");
 		stageRuntimePackage(stage, "bounded-files");
 		stageRuntimePackage(stage, "extensions");
+		stageRuntimePackage(stage, "mime");
 		const child = spawnSync(
 			process.execPath,
 			[
@@ -224,6 +253,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 				path.resolve(hub, "../../packages/protocol/src"),
 				path.resolve(hub, "../../packages/bounded-files/src"),
 				path.resolve(hub, "../../packages/extensions/src"),
+				path.resolve(hub, "../../packages/mime/src"),
 			],
 			{
 				cwd: stage,

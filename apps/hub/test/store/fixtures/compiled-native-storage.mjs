@@ -12,6 +12,7 @@ async function run() {
 	assert.equal(process.permission.has("fs.read", process.argv[5]), false);
 	assert.equal(process.permission.has("fs.read", process.argv[6]), false);
 	assert.equal(process.permission.has("fs.read", process.argv[7]), false);
+	assert.equal(process.permission.has("fs.read", process.argv[8]), false);
 	assert.ok(process.execArgv.includes("--allow-addons"));
 	checkpoint = 2;
 	const { openNativeStorage, HubStore, MasterKey, AuditChain } = await import("./index.mjs");
