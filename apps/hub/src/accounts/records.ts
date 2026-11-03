@@ -24,6 +24,7 @@ export class AccountError extends Error {
 }
 const unavailable = (): AccountError => new AccountError();
 const sqlFor = WorkDatabase.prototype.sql;
+const assertTransaction = WorkDatabase.prototype.assertTransaction;
 const abort = WorkDatabase.prototype.abort;
 const appendEvent = EventLog.prototype.append;
 const appendAudit = AuditChain.prototype.append;
@@ -159,6 +160,16 @@ export class NativeAccounts {
 	get(scope: WorkScope, userId: string, accountId: string): AccountRecord | undefined {
 		try {
 			const row = read(sqlFor.call(this.#database, scope), userId, accountId);
+			return !row || row.json === null ? undefined : snapshot(row);
+		} catch {
+			throw unavailable();
+		}
+	}
+	/** Current native metadata only; neither adopts a scope nor grants account/send rights. */
+	getInTransaction(sql: SqlTransaction, userId: string, accountId: string): AccountRecord | undefined {
+		try {
+			assertTransaction.call(this.#database, sql);
+			const row = read(sql, userId, accountId);
 			return !row || row.json === null ? undefined : snapshot(row);
 		} catch {
 			throw unavailable();
