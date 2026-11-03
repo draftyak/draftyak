@@ -10,6 +10,13 @@ const source = readFileSync(
 	"utf8",
 ).replaceAll("\r\n", "\n");
 const check = (text: string) => checkWorkflow(file, text, "1.95.0");
+const stepSource = (workflow: string, name: string): string => {
+	const marker = `      - name: ${name}\n`;
+	expect(workflow.split(marker).length).toBe(2);
+	const start = workflow.indexOf(marker);
+	const next = workflow.indexOf("\n      - ", start + marker.length);
+	return workflow.slice(start, next < 0 ? workflow.length : next + 1);
+};
 const job = (name: string, change: (text: string) => string): string => {
 	const expression = new RegExp(`(  ${name}:\\n)([\\s\\S]*?)(?=\\n  [a-z][a-z-]*:\\n|$)`);
 	let changed = false;
@@ -146,6 +153,11 @@ describe("required native transport workflow controls", () => {
 		expect(combined[0]?.if).toBe(
 			"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
 		);
+		const consumer = "test:heavy for the touched spikes and the selected packages";
+		const producer = "Prepare authenticated offline Node fixture";
+		const originalStep = stepSource(source, consumer);
+		const originalCondition = /^        if: (.*)$/m.exec(originalStep)?.[1] ?? "";
+		expect(originalCondition).toBe(combined[0]?.if);
 		for (const [before, after] of [
 			[
 				"HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
@@ -155,8 +167,20 @@ describe("required native transport workflow controls", () => {
 			["needs.changes.outputs.spikes != '' || ", ""],
 			[" || needs.changes.outputs.ordinary-heavy != ''", ""],
 		] as const) {
-			expect(check(job("full", (body) => body.replace(before, after))).join("\n")).toContain(
-				"must preserve",
+			const changedStep = originalStep.replace(before, after);
+			expect(changedStep).not.toBe(originalStep);
+			const mutated = source.replace(originalStep, changedStep);
+			expect(stepSource(mutated, producer)).toBe(stepSource(source, producer));
+			expect(stepSource(mutated, consumer)).toBe(changedStep);
+			if (!before.startsWith("HEAVY: ")) {
+				const condition = /^        if: (.*)$/m.exec(changedStep)?.[1];
+				expect(condition).not.toBe(originalCondition);
+				expect(condition).toBe(originalCondition.replace(before, after));
+			}
+			const diagnostics = check(mutated).join("\n");
+			expect(diagnostics).toContain("must preserve");
+			expect(diagnostics).toContain(
+				"ordinary heavy suites must exclude the dedicated native selector",
 			);
 		}
 		const duplicate = job(

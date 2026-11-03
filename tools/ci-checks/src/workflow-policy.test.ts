@@ -6,6 +6,13 @@ import { parseYaml } from "./yaml.ts";
 
 const root = path.resolve(import.meta.dirname, "..", "..", "..");
 const read = (file: string): string => readFileSync(path.join(root, file), "utf8");
+const stepSource = (workflow: string, name: string): string => {
+	const marker = `      - name: ${name}\n`;
+	expect(workflow.split(marker).length).toBe(2);
+	const start = workflow.indexOf(marker);
+	const next = workflow.indexOf("\n      - ", start + marker.length);
+	return workflow.slice(start, next < 0 ? workflow.length : next + 1);
+};
 const files = readdirSync(path.join(root, ".github", "workflows")).map(
 	(f) => `.github/workflows/${f}`,
 );
@@ -595,8 +602,8 @@ describe("workflow policy", () => {
 		],
 		[
 			"heavy package condition removal",
-			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
-			"if: needs.changes.outputs.spikes != ''",
+			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != ''",
 		],
 		[
 			"heavy package selection environment",
@@ -655,12 +662,28 @@ describe("workflow policy", () => {
 			"      - run: pnpm verify\n",
 			"      - if: false\n        run: pnpm verify\n",
 		],
-	])("refuses changed CI execution contract: %s", (_, before, after) => {
+	])("refuses changed CI execution contract: %s", (name, before, after) => {
 		const file = ".github/workflows/ci.yml";
 		const source = read(file).replaceAll("\r\n", "\n");
 		const mutated = source.replace(before, after);
 		expect(mutated).not.toBe(source);
-		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain("must preserve");
+		const diagnostics = checkWorkflow(file, mutated, toolchain).join("\n");
+		expect(diagnostics).toContain("must preserve");
+		if (name === "heavy package condition removal") {
+			const consumer = "test:heavy for the touched spikes and the selected packages";
+			const producer = "Prepare authenticated offline Node fixture";
+			expect(stepSource(mutated, producer)).toBe(stepSource(source, producer));
+			const originalCondition = /^        if: (.*)$/m.exec(stepSource(source, consumer))?.[1];
+			const changedCondition = /^        if: (.*)$/m.exec(stepSource(mutated, consumer))?.[1];
+			expect(originalCondition).toBe(
+				"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+			);
+			expect(changedCondition).not.toBe(originalCondition);
+			expect(changedCondition).toBe("needs.changes.outputs.spikes != ''");
+			expect(diagnostics).toContain(
+				"ordinary heavy suites must exclude the dedicated native selector",
+			);
+		}
 	});
 
 	it.each([
