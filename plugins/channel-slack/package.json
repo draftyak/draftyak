@@ -15,7 +15,9 @@
     "./probe": "./src/probe.ts",
     "./send": "./src/send.ts",
     "./reconcile": "./src/reconcile.ts",
-    "./sync-state": "./src/sync-state.ts"
+    "./sync-state": "./src/sync-state.ts",
+    "./body": "./src/body.ts",
+    "./threads": "./src/threads.ts"
   },
   "publishConfig": {
     "exports": {
@@ -66,6 +68,14 @@
       "./sync-state": {
         "types": "./dist/sync-state.d.mts",
         "default": "./dist/sync-state.mjs"
+      },
+      "./body": {
+        "types": "./dist/body.d.mts",
+        "default": "./dist/body.mjs"
+      },
+      "./threads": {
+        "types": "./dist/threads.d.mts",
+        "default": "./dist/threads.mjs"
       }
     }
   },

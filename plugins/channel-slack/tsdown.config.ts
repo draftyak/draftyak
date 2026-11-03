@@ -13,6 +13,8 @@ const config: UserConfig = {
 		"src/send.ts",
 		"src/reconcile.ts",
 		"src/sync-state.ts",
+		"src/body.ts",
+		"src/threads.ts",
 	],
 	format: "esm",
 	platform: "node",
