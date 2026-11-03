@@ -138,6 +138,40 @@ describe("bounded mbox streaming", () => {
 		);
 	});
 
+	it.each([
+		{ name: "Uint8Array", bytes: Uint8Array.of(65, 66) },
+		{ name: "Buffer offset subarray", bytes: Buffer.from([0, 65, 66, 0]).subarray(1, 3) },
+	])("accepts exactly two native bytes from a $name", async ({ bytes }) => {
+		expect(await collect(writeMbox([message(bytes)], { maxMessageBytes: 2 }))).toEqual(
+			frame(Buffer.from("AB")),
+		);
+	});
+
+	it.each(["ordinary", "data shadow", "accessor shadow"] as const)(
+		"refuses three native bytes with %s byteLength before output and closes the source",
+		async (kind) => {
+			const bytes = Uint8Array.of(65, 66, 67);
+			let reads = 0;
+			if (kind === "data shadow") Object.defineProperty(bytes, "byteLength", { value: 0 });
+			if (kind === "accessor shadow")
+				Object.defineProperty(bytes, "byteLength", {
+					get() {
+						reads++;
+						throw new Error("Synthetic shadow byte length getter");
+					},
+				});
+			const input = tracked([message(bytes), message(Uint8Array.of(68, 69))]);
+			const seen: Buffer[] = [];
+			await code(
+				collect(writeMbox(input.source, { maxMessageBytes: 2 }), seen),
+				"MESSAGE_TOO_LARGE",
+			);
+			expect(seen).toHaveLength(0);
+			expect(input.counts).toEqual({ acquired: 1, next: 1, returned: 1 });
+			expect(reads).toBe(0);
+		},
+	);
+
 	it.each([0, raw.byteLength - 1])(
 		"refuses raw bytes beyond cap %i before yielding the record",
 		async (limit) => {
