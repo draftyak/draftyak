@@ -30,7 +30,8 @@
     "prepack": "tsdown"
   },
   "dependencies": {
-    "@draftyak/protocol": "workspace:*"
+    "@draftyak/protocol": "workspace:*",
+    "@draftyak/sdk": "workspace:*"
   },
   "devDependencies": {
     "@draftyak/hub": "workspace:*",
