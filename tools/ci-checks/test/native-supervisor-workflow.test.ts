@@ -27,6 +27,14 @@ type Mutation = readonly [name: string, from: string, to: string];
 const uploadGate = "if: ${{ success() && steps.native.outputs.receipt == 'ready' }}";
 const receiptPath = "path: ${{ runner.temp }}/native-supervisor-receipt.json";
 const nodeVersionField = "node-version-file: .node-version";
+const controlInput =
+	"      controlSha:\n        description: Exact immutable approved control commit (40 lowercase hex characters)\n        required: true\n        type: string\n";
+const controlRestriction =
+	" && inputs.controlSha == github.sha && inputs.controlSha == github.workflow_sha";
+const admissionBindings =
+	"NATIVE_SUPERVISOR_HEAD: ${{ inputs.head }}\n          NATIVE_SUPERVISOR_CONTROL_SHA: ${{ inputs.controlSha }}";
+const executionBindings =
+	"NATIVE_SUPERVISOR_HEAD: ${{ steps.source.outputs.head }}\n          NATIVE_SUPERVISOR_CONTROL_SHA: ${{ inputs.controlSha }}";
 const mutations: readonly Mutation[] = [
 	["pull request execution", "workflow_dispatch:", "pull_request:"],
 	["reusable execution", "workflow_dispatch:", "workflow_call:"],
@@ -39,6 +47,17 @@ const mutations: readonly Mutation[] = [
 		"optional PR input",
 		"description: Open owner PR into m2\n        required: true",
 		"description: Open owner PR into m2\n        required: false",
+	],
+	["missing control input", controlInput, ""],
+	[
+		"optional control input",
+		controlInput,
+		controlInput.replace("required: true", "required: false"),
+	],
+	[
+		"self-defaulted control input",
+		controlInput,
+		controlInput.replace("type: string\n", "type: string\n        default: ${{ github.sha }}\n"),
 	],
 	["writable repository token", "contents: read", "contents: write"],
 	["extra token scope", "contents: read", "contents: read\n  actions: write"],
@@ -53,6 +72,23 @@ const mutations: readonly Mutation[] = [
 	["wrong actor", "github.actor == 'nicksavov'", "github.actor == 'synthetic-user'"],
 	["missing triggering actor", "github.triggering_actor == 'nicksavov' && ", ""],
 	["wrong control branch", "github.ref == 'refs/heads/m0'", "github.ref == 'refs/heads/m2'"],
+	["missing resolved control comparison", " && inputs.controlSha == github.sha", ""],
+	["missing workflow control comparison", " && inputs.controlSha == github.workflow_sha", ""],
+	[
+		"self-derived admission pin",
+		admissionBindings,
+		admissionBindings.replace("inputs.controlSha", "github.sha"),
+	],
+	[
+		"output-derived execution pin",
+		executionBindings,
+		executionBindings.replace("inputs.controlSha", "steps.source.outputs.controlSha"),
+	],
+	[
+		"command before source admission",
+		"steps:\n",
+		"steps:\n      - name: Build before admission\n        run: pnpm --filter @draftyak/hub... build\n",
+	],
 	["non-native runner", "runs-on: macos-15", "runs-on: ubuntu-24.04"],
 	["different macOS image", "runs-on: macos-15", "runs-on: macos-14"],
 	["larger runner", "runs-on: macos-15", "runs-on: macos-15-large"],
@@ -132,8 +168,15 @@ describe("dedicated native supervisor workflow", () => {
 	it("keeps source execution inside the trusted controller after admission", () => {
 		const document = map(parseYaml(workflow).value);
 		expect(Object.keys(map(document.on))).toEqual(["workflow_dispatch"]);
+		const dispatch = map(map(document.on).workflow_dispatch);
+		expect(map(map(dispatch.inputs).controlSha)).toEqual({
+			description: "Exact immutable approved control commit (40 lowercase hex characters)",
+			required: true,
+			type: "string",
+		});
 		expect(Object.keys(map(document.jobs))).toEqual(["native-supervisor"]);
 		const job = map(map(document.jobs)["native-supervisor"]);
+		expect(job.if).toContain(controlRestriction);
 		if (!Array.isArray(job.steps)) throw new Error("Missing workflow steps");
 		const steps = job.steps.map(map);
 		expect(steps.flatMap((step) => (typeof step.run === "string" ? [step.run] : []))).toEqual([
@@ -146,11 +189,27 @@ describe("dedicated native supervisor workflow", () => {
 		expect(admission).toBeGreaterThan(0);
 		expect(source).toBeGreaterThan(admission);
 		expect(native).toBeGreaterThan(source);
+		expect(steps[admission]?.env).toEqual({
+			NATIVE_SUPERVISOR_PR: "${{ inputs.pr }}",
+			NATIVE_SUPERVISOR_HEAD: "${{ inputs.head }}",
+			NATIVE_SUPERVISOR_CONTROL_SHA: "${{ inputs.controlSha }}",
+		});
 		expect(steps[native]?.["working-directory"]).toBeUndefined();
 		expect(steps[native]?.env).toEqual({
 			NATIVE_SUPERVISOR_PR: "${{ steps.source.outputs.pr }}",
 			NATIVE_SUPERVISOR_HEAD: "${{ steps.source.outputs.head }}",
+			NATIVE_SUPERVISOR_CONTROL_SHA: "${{ inputs.controlSha }}",
 		});
+	});
+
+	it("refuses checking the control pin only at the workload step", () => {
+		const changed = replaceOnce(controlRestriction, "");
+		expect(changed.split("id: native\n")).toHaveLength(2);
+		const lateOnly = changed.replace(
+			"id: native\n",
+			"id: native\n        if: ${{ inputs.controlSha == github.sha && inputs.controlSha == github.workflow_sha }}\n",
+		);
+		expect(checkWorkflow(file, lateOnly, rust).length).toBeGreaterThan(0);
 	});
 
 	it.each(mutations)("refuses %s through the production policy", (_name, from, to) => {
