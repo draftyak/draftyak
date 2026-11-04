@@ -6,7 +6,7 @@ import {
 	manualClock,
 } from "@draftyak/fakes";
 import { createMockHub, type MockHub } from "@draftyak/plugin-testkit";
-import { CHANNEL_V1, channelV1, type SyncPage } from "@draftyak/protocol/channel-v1";
+import { CHANNEL_V1, channelV1, SyncPage } from "@draftyak/protocol/channel-v1";
 import {
 	checkPluginSurface,
 	checkToolResult,
@@ -51,7 +51,7 @@ async function drain(
 	for (let count = 0; count < 64; count++) {
 		const args =
 			mode === "delta" ? { mode, cursor } : { mode, since, ...(cursor ? { cursor } : {}) };
-		const page = channelV1.tools.channel_sync.output.parse(await call(hub, "channel_sync", args));
+		const page = SyncPage.parse(await call(hub, "channel_sync", args));
 		changes.push(...page.changes);
 		if (!page.more) return { ...page, changes };
 		cursor = page.cursor;

@@ -1,9 +1,26 @@
 import { Validator } from "@cfworker/json-schema";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import type * as z from "zod";
-import { CHANNEL_V1, channelV1, MAX_LEASE_MS } from "../src/channel-v1.ts";
+import {
+	CHANNEL_V1,
+	channelV1,
+	MAX_LEASE_MS,
+	MAX_SLACK_CATALOG_CONVERSATIONS,
+	SelectedCatalogSyncPage,
+	SelectedCatalogSyncRequest,
+	SelectedSlackCatalogWork,
+	SelectedSlackWork,
+	SelectedSyncPage,
+	SelectedSyncRequest,
+	SyncPage,
+	SyncRequest,
+	selectedSlackCatalogPageMatches,
+	selectedSlackCatalogWorkEqual,
+	selectedSlackReplyCountsMatch,
+	selectedSlackWorkEqual,
+} from "../src/channel-v1.ts";
 import { checkToolCall, checkToolResult, type ToolContract } from "../src/extension.ts";
-import { MAX_CHANGES } from "../src/normalized-change.ts";
+import { MAX_CHANGES, type PluginChange } from "../src/normalized-change.ts";
 import { SEND_TICKET_META } from "../src/send-ticket.ts";
 import { changes, committed, withMember } from "./plugin-contracts.ts";
 
@@ -260,6 +277,278 @@ describe("channel-v1", () => {
 	});
 });
 
+describe("selected Slack sync work", () => {
+	const window = {
+		oldest: "1800000000.000000001",
+		latest: "1800003600.000000001",
+		inclusive: true,
+	};
+	const history: SelectedSlackWork = {
+		kind: "slack.history",
+		channelId: "CDYTEST1",
+		window,
+	};
+	const replies: SelectedSlackWork = {
+		kind: "slack.replies",
+		channelId: "CDYTEST1",
+		threadTs: "1799999999.000000001",
+		window,
+	};
+	const selected = (work: unknown = history, cursor?: string) => ({
+		mode: "selected",
+		work,
+		...(cursor === undefined ? {} : { cursor }),
+	});
+	const selectedPage = (continuation: object, work: unknown = history) => ({
+		work,
+		changes: [{ ...changes.chatHello, channelId: "CDYTEST1", ts: window.oldest }],
+		replyCounts: [],
+		continuation,
+	});
+
+	it("keeps the exact legacy public aliases and their three-field result", () => {
+		expectTypeOf<SyncRequest>().toEqualTypeOf<
+			| { readonly mode: "initial" | "resync"; readonly since: number; readonly cursor?: string }
+			| { readonly mode: "delta"; readonly cursor: string }
+		>();
+		expectTypeOf<SyncPage>().toEqualTypeOf<{
+			readonly changes: readonly PluginChange[];
+			readonly cursor: string;
+			readonly more: boolean;
+		}>();
+		for (const input of [
+			{ mode: "initial", since: 1 },
+			{ mode: "resync", since: 1, cursor: "legacy" },
+			{ mode: "delta", cursor: "legacy" },
+		]) {
+			expect(SyncRequest.safeParse(input).success).toBe(true);
+			expect(judged("channel_sync", "input", input)).toBe(true);
+			expect(SelectedSyncRequest.safeParse(input).success).toBe(false);
+		}
+		const page = { changes: [changes.chat], cursor: "legacy", more: false };
+		expect(SyncPage.safeParse(page).success).toBe(true);
+		expect(judged("channel_sync", "output", page)).toBe(true);
+		expect(SelectedSyncPage.safeParse(page).success).toBe(false);
+		expect(SyncRequest.safeParse(selected()).success).toBe(false);
+		expect(SyncPage.safeParse(selectedPage({ state: "complete" })).success).toBe(false);
+		expect(SyncPage.safeParse({ ...page, replyCounts: [] }).success).toBe(false);
+		expect(judged("channel_sync", "output", { ...page, replyCounts: [] })).toBe(false);
+	});
+
+	it.each([history, replies])("accepts one exact $kind work unit and its resume cursor", (work) => {
+		for (const input of [selected(work), selected(work, "opaque+/&=")]) {
+			expect(SelectedSyncRequest.safeParse(input).success).toBe(true);
+			expect(judged("channel_sync", "input", input)).toBe(true);
+		}
+	});
+
+	it.each([
+		{ ...history, kind: "slack.conversations" },
+		{ ...history, threadTs: replies.threadTs },
+		{ kind: "slack.history", window },
+		{ kind: "slack.replies", channelId: "CDYTEST1", window },
+		{ ...history, window: { oldest: window.oldest, latest: window.latest } },
+		{ ...history, window: { oldest: window.oldest, inclusive: true } },
+		{ ...history, window: { latest: window.latest, inclusive: true } },
+		{ ...history, window: { ...window, inclusive: 1 } },
+		{ ...history, window: { ...window, extra: 1 } },
+		{ ...history, grant: true },
+	])("refuses incomplete, mixed, unknown or authority-shaped work", (work) => {
+		expect(judged("channel_sync", "input", selected(work))).toBe(false);
+	});
+
+	it.each(["", "a b", "value\n", "x".repeat(257), 1, null])(
+		"retains the existing opaque ID bounds for channel, root and provider boundaries (%j)",
+		(value) => {
+			for (const work of [
+				{ ...history, channelId: value },
+				{ ...replies, threadTs: value },
+				{ ...history, window: { ...window, oldest: value } },
+				{ ...history, window: { ...window, latest: value } },
+			])
+				expect(judged("channel_sync", "input", selected(work))).toBe(false);
+		},
+	);
+
+	it("keeps cursor bounds without hiding selection in a legacy arm", () => {
+		for (const cursor of ["", "space here", "end\n", "x".repeat(4097)])
+			expect(judged("channel_sync", "input", selected(history, cursor))).toBe(false);
+		expect(judged("channel_sync", "input", selected(history, "x".repeat(4096)))).toBe(true);
+		for (const input of [
+			{ ...selected(), since: 1 },
+			{ mode: "initial", since: 1, work: history },
+			{ mode: "delta", cursor: "legacy", work: history },
+			{ mode: "selected", work: [history, replies] },
+		])
+			expect(judged("channel_sync", "input", input)).toBe(false);
+	});
+
+	it.each([
+		{ state: "more", cursor: "next" },
+		{ state: "complete" },
+		{ state: "truncated" },
+		{ state: "truncated", cursor: "resume-later" },
+	])("preserves the explicit $state continuation state", (continuation) => {
+		const page = selectedPage(continuation);
+		expect(SelectedSyncPage.safeParse(page).success).toBe(true);
+		expect(judged("channel_sync", "output", page)).toBe(true);
+	});
+
+	it.each([
+		{ state: "more" },
+		{ state: "more", cursor: "" },
+		{ state: "complete", cursor: "invented" },
+		{ state: "complete", more: false },
+		{ state: "truncated", cursor: "bad cursor" },
+		{ state: "unknown" },
+	])("refuses ambiguous, incomplete or unknown continuation data", (continuation) => {
+		expect(judged("channel_sync", "output", selectedPage(continuation))).toBe(false);
+	});
+
+	it("keeps selected message bounds and rejects other change families or legacy page fields", () => {
+		const page = selectedPage({ state: "complete" });
+		expect(
+			judged("channel_sync", "output", { ...page, changes: Array(500).fill(page.changes[0]) }),
+		).toBe(true);
+		for (const list of [
+			Array(501).fill(page.changes[0]),
+			[changes.email],
+			[changes.conversation],
+			[changes.chatDeleted],
+		])
+			expect(judged("channel_sync", "output", { ...page, changes: list })).toBe(false);
+		for (const extra of [{ cursor: "legacy" }, { more: false }, { extra: 1 }])
+			expect(judged("channel_sync", "output", { ...page, ...extra })).toBe(false);
+	});
+
+	it("compares validated work scalars exactly without claiming cursor or request correlation", () => {
+		expect(selectedSlackWorkEqual(replies, structuredClone(replies))).toBe(true);
+		expect(
+			selectedSlackWorkEqual(
+				{ ...history, window: { ...window, oldest: "1800000000.0" } },
+				{ ...history, window: { ...window, oldest: "1800000000.000000000" } },
+			),
+		).toBe(false);
+		for (const work of [
+			history,
+			{ ...replies, channelId: "CDYTEST2" },
+			{ ...replies, threadTs: "1799999999.000000002" },
+			{ ...replies, window: { ...window, oldest: "1800000000.1" } },
+			{ ...replies, window: { ...window, latest: "1800003600.1" } },
+			{ ...replies, window: { ...window, inclusive: false } },
+		]) {
+			const parsed = SelectedSlackWork.parse(work);
+			expect(selectedSlackWorkEqual(replies, parsed)).toBe(false);
+			// Schema-valid data alone cannot bind one RPC's result to another request.
+			expect(judged("channel_sync", "output", selectedPage({ state: "complete" }, parsed))).toBe(
+				true,
+			);
+		}
+	});
+
+	it("requires an observation array while preserving no observation separately from explicit zero", () => {
+		expectTypeOf<SelectedSyncPage["replyCounts"]>().toEqualTypeOf<
+			readonly { readonly ts: string; readonly count: number }[]
+		>();
+		const page = selectedPage({ state: "complete" });
+		expect(judged("channel_sync", "output", page)).toBe(true);
+		expect(selectedSlackReplyCountsMatch(SelectedSyncPage.parse(page))).toBe(true);
+		expect(
+			judged("channel_sync", "output", {
+				work: history,
+				changes: page.changes,
+				continuation: page.continuation,
+			}),
+		).toBe(false);
+	});
+
+	it.each([0, 3, Number.MAX_SAFE_INTEGER])("preserves explicit observed root count %i", (count) => {
+		for (const threadTs of [undefined, window.oldest]) {
+			const page = {
+				...selectedPage({ state: "complete" }),
+				changes: [
+					{
+						...changes.chatHello,
+						channelId: history.channelId,
+						ts: window.oldest,
+						...(threadTs === undefined ? {} : { threadTs }),
+					},
+				],
+				replyCounts: [{ ts: window.oldest, count }],
+			};
+			expect(judged("channel_sync", "output", page)).toBe(true);
+			expect(selectedSlackReplyCountsMatch(SelectedSyncPage.parse(page))).toBe(true);
+		}
+	});
+
+	it.each([
+		{ ts: window.oldest, count: -1 },
+		{ ts: window.oldest, count: 0.5 },
+		{ ts: window.oldest, count: Number.MAX_SAFE_INTEGER + 1 },
+		{ ts: window.oldest, count: "0" },
+		{ ts: "", count: 0 },
+		{ ts: "bad timestamp", count: 0 },
+		{ ts: "end\n", count: 0 },
+		{ ts: "x".repeat(257), count: 0 },
+		{ ts: window.oldest, count: 0, extra: true },
+	])("refuses malformed count observation in both structural validators", (observation) => {
+		expect(
+			judged("channel_sync", "output", {
+				...selectedPage({ state: "complete" }),
+				replyCounts: [observation],
+			}),
+		).toBe(false);
+	});
+
+	it("bounds root observations at 500 without truncating or inventing entries", () => {
+		const roots = Array.from({ length: 500 }, (_, at) => ({
+			...changes.chatHello,
+			channelId: history.channelId,
+			ts: `1800000000.${String(at + 1).padStart(9, "0")}`,
+		}));
+		const replyCounts = roots.map(({ ts }) => ({ ts, count: 0 }));
+		const page = { ...selectedPage({ state: "complete" }), changes: roots, replyCounts };
+		expect(judged("channel_sync", "output", page)).toBe(true);
+		expect(selectedSlackReplyCountsMatch(SelectedSyncPage.parse(page))).toBe(true);
+		expect(
+			judged("channel_sync", "output", { ...page, replyCounts: [...replyCounts, replyCounts[0]] }),
+		).toBe(false);
+	});
+
+	it("keeps relational root checks explicit instead of losing a refinement from JSON Schema", () => {
+		const root = { ...changes.chatHello, channelId: history.channelId, ts: window.oldest };
+		const observation = { ts: window.oldest, count: 0 };
+		const page = {
+			...selectedPage({ state: "complete" }),
+			changes: [root],
+			replyCounts: [observation],
+		};
+		const invalidRelations = [
+			{ ...page, replyCounts: [observation, observation] },
+			{ ...page, replyCounts: [observation, { ...observation, count: 3 }] },
+			{ ...page, replyCounts: [{ ts: "1800000001.000000001", count: 0 }] },
+			{ ...page, changes: [{ ...root, channelId: "CDYTEST2" }] },
+			{ ...page, changes: [{ ...root, threadTs: "1799999999.000000001" }] },
+			{ ...page, changes: [root, { ...root, text: "DYTEST duplicate root" }] },
+			{ ...page, work: replies },
+		];
+		for (const value of invalidRelations) {
+			// Both structural validators agree; the separate semantic helper rejects the relation.
+			expect(judged("channel_sync", "output", value)).toBe(true);
+			expect(selectedSlackReplyCountsMatch(SelectedSyncPage.parse(value))).toBe(false);
+		}
+		const replyRoot = { ...root, ts: replies.threadTs, threadTs: replies.threadTs };
+		const replyPage = {
+			...page,
+			work: replies,
+			changes: [replyRoot],
+			replyCounts: [{ ts: replies.threadTs, count: 3 }],
+		};
+		expect(judged("channel_sync", "output", replyPage)).toBe(true);
+		expect(selectedSlackReplyCountsMatch(SelectedSyncPage.parse(replyPage))).toBe(true);
+	});
+});
+
 describe("checkToolCall and checkToolResult", () => {
 	it("take only the extension's own tools", () => {
 		for (const name of ["channel_unknown", "__proto__", "toString", 7]) {
@@ -285,7 +574,7 @@ describe("checkToolCall and checkToolResult", () => {
 			checkToolCall(channelV1, { name: "channel_sync", arguments: { mode: "delta", cursor: 1 } }),
 		).toEqual({
 			ok: false,
-			problems: ["arguments.cursor: invalid_type"],
+			problems: ["arguments: invalid_union"],
 		});
 	});
 
@@ -316,5 +605,278 @@ describe("checkToolCall and checkToolResult", () => {
 			expect(checkToolResult(channelV1, "channel_sync", result).ok).toBe(false);
 		const complete = { resultType: "complete", structuredContent: output };
 		expect(checkToolResult(channelV1, "channel_sync", complete).ok).toBe(true);
+	});
+});
+
+describe("selected Slack catalog work", () => {
+	const catalog = { kind: "slack.catalog" } as const;
+	const info = { kind: "slack.info", channelId: "CDYTEST1" } as const;
+	const summary = { channelId: info.channelId, type: "private", name: "DYTEST catalog" } as const;
+	const fact = { ...changes.conversation, channelId: info.channelId };
+	const request = (work: unknown = catalog, cursor?: string) => ({
+		mode: "selected",
+		work,
+		...(cursor === undefined ? {} : { cursor }),
+	});
+	const catalogPage = (
+		continuation: object = { state: "complete" },
+		conversations: readonly unknown[] = [summary],
+	) => ({ work: catalog, conversations, continuation });
+	const infoPage = (
+		conversation: unknown = fact,
+		continuation: object = { state: "complete" },
+	) => ({ work: info, conversation, continuation });
+
+	it("keeps catalog work outside the unchanged legacy and selected message aliases", () => {
+		const history = {
+			kind: "slack.history",
+			channelId: info.channelId,
+			window: { oldest: "1800000000.000000001", latest: "1800003600.000000001", inclusive: true },
+		};
+		const messagePage = {
+			work: history,
+			changes: [],
+			replyCounts: [],
+			continuation: { state: "complete" },
+		};
+		expect(SelectedSyncRequest.safeParse(request(history)).success).toBe(true);
+		expect(SelectedSyncPage.safeParse(messagePage).success).toBe(true);
+		expect(SelectedCatalogSyncRequest.safeParse(request(history)).success).toBe(false);
+		expect(SelectedCatalogSyncPage.safeParse(messagePage).success).toBe(false);
+		for (const work of [catalog, info]) {
+			expect(SelectedSyncRequest.safeParse(request(work)).success).toBe(false);
+			expect(SyncRequest.safeParse(request(work)).success).toBe(false);
+		}
+		for (const page of [catalogPage(), infoPage()]) {
+			expect(SelectedSyncPage.safeParse(page).success).toBe(false);
+			expect(SyncPage.safeParse(page).success).toBe(false);
+		}
+		for (const legacy of [
+			{ mode: "initial", since: 1 },
+			{ mode: "resync", since: 1, cursor: "legacy" },
+			{ mode: "delta", cursor: "legacy" },
+		])
+			expect(SelectedCatalogSyncRequest.safeParse(legacy).success).toBe(false);
+	});
+
+	it("accepts catalog discovery with only its optional opaque continuation", () => {
+		expectTypeOf<SelectedSlackCatalogWork>().toEqualTypeOf<
+			| { readonly kind: "slack.catalog" }
+			| { readonly kind: "slack.info"; readonly channelId: string }
+		>();
+		for (const input of [
+			request(),
+			request(catalog, "opaque+/&="),
+			request(catalog, "x".repeat(4096)),
+		]) {
+			expect(SelectedCatalogSyncRequest.safeParse(input).success).toBe(true);
+			expect(judged("channel_sync", "input", input)).toBe(true);
+		}
+	});
+
+	it("accepts one complete info fact for the exact requested conversation", () => {
+		expect(SelectedCatalogSyncRequest.safeParse(request(info)).success).toBe(true);
+		expect(judged("channel_sync", "input", request(info))).toBe(true);
+		const page = infoPage();
+		expect(SelectedCatalogSyncPage.safeParse(page).success).toBe(true);
+		expect(judged("channel_sync", "output", page)).toBe(true);
+		expect(selectedSlackCatalogPageMatches(SelectedCatalogSyncPage.parse(page))).toBe(true);
+	});
+
+	it("refuses mixed selectors, extra request fields and caller authority", () => {
+		for (const input of [
+			request({ ...catalog, types: ["dm"] }),
+			request({ ...catalog, limit: 100 }),
+			request({ ...catalog, channelId: info.channelId }),
+			request({ ...catalog, window: { oldest: "1", latest: "2", inclusive: true } }),
+			request({ ...info, threadTs: "1800000000.000000001" }),
+			request({ kind: "slack.conversations" }),
+			request([catalog, info]),
+			{ ...request(), since: 1 },
+			{ ...request(), grant: true },
+			{ mode: "initial", since: 1, work: catalog },
+			{ mode: "delta", cursor: "legacy", work: info },
+		]) {
+			expect(SelectedCatalogSyncRequest.safeParse(input).success).toBe(false);
+			expect(judged("channel_sync", "input", input)).toBe(false);
+		}
+	});
+
+	it("refuses info resume cursors and malformed opaque channel identifiers", () => {
+		for (const input of [
+			request(info, "not-an-info-resume"),
+			request({ kind: "slack.info" }),
+			...(["", "a b", "end\n", "x".repeat(257), 1, null] as const).map((channelId) =>
+				request({ ...info, channelId }),
+			),
+		])
+			expect(judged("channel_sync", "input", input)).toBe(false);
+		for (const cursor of ["", "a b", "end\n", "x".repeat(4097)])
+			expect(judged("channel_sync", "input", request(catalog, cursor))).toBe(false);
+	});
+
+	it.each([
+		{ state: "more", cursor: "next" },
+		{ state: "complete" },
+		{ state: "truncated" },
+		{ state: "truncated", cursor: "resume-later" },
+	])("preserves catalog's explicit $state continuation", (continuation) => {
+		const page = catalogPage(continuation);
+		expect(SelectedCatalogSyncPage.safeParse(page).success).toBe(true);
+		expect(judged("channel_sync", "output", page)).toBe(true);
+		expect(selectedSlackCatalogPageMatches(SelectedCatalogSyncPage.parse(page))).toBe(true);
+	});
+
+	it("refuses incomplete or unknown states and any nonterminal info continuation", () => {
+		for (const continuation of [
+			{ state: "more" },
+			{ state: "more", cursor: "" },
+			{ state: "more", cursor: "x".repeat(4097) },
+			{ state: "complete", cursor: "next" },
+			{ state: "complete", more: false },
+			{ state: "truncated", cursor: "bad cursor" },
+			{ state: "unknown" },
+		])
+			expect(judged("channel_sync", "output", catalogPage(continuation))).toBe(false);
+		for (const continuation of [
+			{ state: "more", cursor: "next" },
+			{ state: "truncated" },
+			{ state: "truncated", cursor: "next" },
+			{ state: "complete", cursor: "next" },
+		])
+			expect(judged("channel_sync", "output", infoPage(fact, continuation))).toBe(false);
+	});
+
+	it("refuses output fields from a message, legacy or other catalog branch", () => {
+		for (const page of [
+			{ ...catalogPage(), conversation: fact },
+			{ ...catalogPage(), changes: [] },
+			{ ...catalogPage(), replyCounts: [] },
+			{ ...catalogPage(), cursor: "legacy", more: false },
+			{ ...infoPage(), conversations: [summary] },
+			{ ...infoPage(), changes: [fact] },
+			{ ...infoPage(), replyCounts: [] },
+			{ ...catalogPage(), work: info },
+			{ ...infoPage(), work: catalog },
+		]) {
+			expect(SelectedCatalogSyncPage.safeParse(page).success).toBe(false);
+			expect(judged("channel_sync", "output", page)).toBe(false);
+		}
+	});
+
+	it("preserves all four summary types and absent names without inventing hydrated facts", () => {
+		const rows = ["dm", "group_dm", "public", "private"].map((type, at) => ({
+			channelId: `CDYTEST${at}`,
+			type,
+			...(at % 2 === 0 ? { name: "DYTEST named" } : {}),
+		}));
+		for (const conversations of [rows, []]) {
+			const page = catalogPage({ state: "complete" }, conversations);
+			expect(judged("channel_sync", "output", page)).toBe(true);
+			expect(selectedSlackCatalogPageMatches(SelectedCatalogSyncPage.parse(page))).toBe(true);
+		}
+		for (const row of [
+			{ ...summary, type: "im" },
+			{ ...summary, type: "private_channel" },
+			{ ...summary, member: true },
+			{ ...summary, memberCount: 42 },
+			{ ...summary, external: false },
+		])
+			expect(judged("channel_sync", "output", catalogPage({ state: "complete" }, [row]))).toBe(
+				false,
+			);
+	});
+
+	it("retains the summary name and opaque identifier scalar bounds", () => {
+		const page = (row: object) => catalogPage({ state: "complete" }, [row]);
+		expect(judged("channel_sync", "output", page({ ...summary, name: "x".repeat(256) }))).toBe(
+			true,
+		);
+		expect(judged("channel_sync", "output", page({ ...summary, channelId: "x".repeat(256) }))).toBe(
+			true,
+		);
+		for (const row of [
+			{ ...summary, name: "x".repeat(257) },
+			{ ...summary, name: 1 },
+			{ ...summary, channelId: "" },
+			{ ...summary, channelId: "bad id" },
+			{ ...summary, channelId: "end\n" },
+			{ ...summary, channelId: "x".repeat(257) },
+		])
+			expect(judged("channel_sync", "output", page(row))).toBe(false);
+		// JSON Schema cannot express the existing well-formed Unicode rule.
+		expect(SelectedCatalogSyncPage.safeParse(page({ ...summary, name: "\ud800" })).success).toBe(
+			false,
+		);
+	});
+
+	it("accepts exactly 999 unique summaries without truncating a thousand-row page", () => {
+		expect(MAX_SLACK_CATALOG_CONVERSATIONS).toBe(999);
+		const rows = Array.from({ length: 999 }, (_, at) => ({
+			channelId: `CDYTEST${at}`,
+			type: "public",
+		}));
+		const page = catalogPage({ state: "complete" }, rows);
+		expect(judged("channel_sync", "output", page)).toBe(true);
+		expect(SelectedCatalogSyncPage.parse(page)).toEqual(page);
+		expect(selectedSlackCatalogPageMatches(SelectedCatalogSyncPage.parse(page))).toBe(true);
+		expect(
+			judged(
+				"channel_sync",
+				"output",
+				catalogPage({ state: "complete" }, [...rows, { channelId: "CDYTEST999", type: "public" }]),
+			),
+		).toBe(false);
+	});
+
+	it("keeps duplicate catalog IDs in the explicit relational helper, with structural parity", () => {
+		for (const duplicate of [summary, { ...summary, type: "public", name: "DYTEST different" }]) {
+			const page = catalogPage({ state: "complete" }, [summary, duplicate]);
+			expect(judged("channel_sync", "output", page)).toBe(true);
+			expect(selectedSlackCatalogPageMatches(SelectedCatalogSyncPage.parse(page))).toBe(false);
+		}
+	});
+
+	it("requires a hydrated info fact to name the selected channel", () => {
+		const page = infoPage({ ...fact, channelId: "CDYTEST2" });
+		expect(judged("channel_sync", "output", page)).toBe(true);
+		expect(selectedSlackCatalogPageMatches(SelectedCatalogSyncPage.parse(page))).toBe(false);
+	});
+
+	it("compares only validated catalog kinds and exact info channel bytes", () => {
+		const expectedCatalog = SelectedSlackCatalogWork.parse(catalog);
+		const expectedInfo = SelectedSlackCatalogWork.parse(info);
+		expect(selectedSlackCatalogWorkEqual(expectedCatalog, structuredClone(expectedCatalog))).toBe(
+			true,
+		);
+		expect(selectedSlackCatalogWorkEqual(expectedInfo, structuredClone(expectedInfo))).toBe(true);
+		expect(selectedSlackCatalogWorkEqual(expectedCatalog, expectedInfo)).toBe(false);
+		expect(selectedSlackCatalogWorkEqual(expectedInfo, expectedCatalog)).toBe(false);
+		expect(
+			selectedSlackCatalogWorkEqual(
+				expectedInfo,
+				SelectedSlackCatalogWork.parse({ ...info, channelId: "CDYTEST2" }),
+			),
+		).toBe(false);
+	});
+
+	it("refuses discovery summaries and incomplete normalized facts as successful info hydration", () => {
+		for (const conversation of [summary, [], changes.chat, changes.email])
+			expect(judged("channel_sync", "output", infoPage(conversation))).toBe(false);
+		for (const field of ["member", "archived", "shared", "external", "memberCount"]) {
+			const partial = { ...fact } as Record<string, unknown>;
+			delete partial[field];
+			expect(judged("channel_sync", "output", infoPage(partial))).toBe(false);
+		}
+	});
+
+	it("keeps authority and provider-private fields outside successful DATA pages", () => {
+		for (const page of [
+			{ ...catalogPage(), grant: true },
+			{ ...infoPage(), authorized: true },
+			infoPage({ ...fact, nativeGrant: true }),
+			catalogPage({ state: "complete" }, [{ ...summary, accessToken: "DYTEST not a credential" }]),
+		])
+			expect(judged("channel_sync", "output", page)).toBe(false);
 	});
 });

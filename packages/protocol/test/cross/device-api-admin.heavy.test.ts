@@ -58,20 +58,34 @@ describe("cross-language admin reviews and challenges", () => {
 				fc.constantFrom(...widenings),
 				fc.integer({ min: 0, max: 1_000_000 }),
 				async (kind, channel, alias, address, teamId, label, pin, time, sets, epoch) => {
-					const subject: ObjectValue = kind.startsWith("account.")
-						? channel === "email"
-							? { ...adminSubject("email"), alias, address, createdAt: time }
-							: { ...adminSubject("chat"), alias, teamId, createdAt: time }
-						: kind === "security.device-capabilities"
+					const plugin =
+						kind === "plugin.install" || kind === "plugin.upgrade"
+							? adminSubject(kind === "plugin.install" ? "plugin-install" : "plugin-upgrade")
+							: null;
+					const subject: ObjectValue =
+						plugin !== null
 							? {
-									...adminSubject("device"),
-									name: label,
-									transportSpkiSha256: Buffer.from(pin).toString("hex"),
-									pairedAt: time,
-									current: sets[0],
-									capabilities: sets[1],
+									...plugin,
+									epoch,
+									to: {
+										...(plugin.to as ObjectValue),
+										surfaceDigest: Buffer.from(pin).toString("hex"),
+									},
 								}
-							: adminSubject("backup");
+							: kind.startsWith("account.")
+								? channel === "email"
+									? { ...adminSubject("email"), alias, address, createdAt: time }
+									: { ...adminSubject("chat"), alias, teamId, createdAt: time }
+								: kind === "security.device-capabilities"
+									? {
+											...adminSubject("device"),
+											name: label,
+											transportSpkiSha256: Buffer.from(pin).toString("hex"),
+											pairedAt: time,
+											current: sets[0],
+											capabilities: sets[1],
+										}
+									: adminSubject("backup");
 					const fixture = adminFixture(kind, subject);
 					const review = member(fixture, "review"),
 						challenge = member(fixture, "challenge");
