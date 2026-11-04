@@ -921,6 +921,11 @@ function configRefs(
 			candidates.refuse(file, "outside");
 			continue;
 		}
+		// TypeScript no longer reads baseUrl, and a tool that still does would read paths from there.
+		if (field === "tsconfig:baseUrl") {
+			candidates.refuse(file, "unsupported");
+			continue;
+		}
 		if (rel === null) continue;
 		const kind = (): Kind => candidates.kindOf(rel);
 		// A dependency spec here is a path: one anchored at its package starts with a dot.
@@ -940,11 +945,7 @@ function configRefs(
 			// config, which this check doesn't follow; an absolute one is a module path.
 			if (relativeLiteral(value.replaceAll("\\", "/"))) candidates.refuse(file, "unsupported");
 			else moduleTarget(input, candidates, rel);
-		} else if (
-			field === "tsconfig:typeRoots" ||
-			field === "tsconfig:baseUrl" ||
-			field === "tsconfig:rootDirs"
-		) {
+		} else if (field === "tsconfig:typeRoots" || field === "tsconfig:rootDirs") {
 			candidates.folder(rel, []);
 		} else if (field === "html" && kind() !== "dir") candidates.file(rel);
 	}

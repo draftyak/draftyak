@@ -256,6 +256,14 @@ describe("refusals before any read or child start", () => {
 				"refs-modules",
 			],
 			[
+				"a tsconfig baseUrl",
+				{
+					"packages/a/tsconfig.json":
+						'{ "include": ["**/*.ts"], "compilerOptions": { "baseUrl": "." } }\n',
+				},
+				"refs-config",
+			],
+			[
 				"a Biome config extending a package's",
 				{ "biome.json": '{ "extends": ["@scope/config/biome"] }\n' },
 				"refs-config",
@@ -349,6 +357,13 @@ describe("refusals before any read or child start", () => {
 					"packages/a/src/glob.ts": `export const m = import.meta.glob("${climb}/*.ts", { eager: true });\n`,
 				},
 				"refs-modules",
+			],
+			[
+				"tsconfig paths, read from the config's folder and not from baseUrl",
+				{
+					"packages/a/tsconfig.json": `{ "include": ["**/*.ts"], "compilerOptions": { "paths": { "#x/*": ["${climb.slice(3)}/*"] }, "baseUrl": "sub" } }\n`,
+				},
+				"refs-config",
 			],
 			[
 				"a tsconfig types entry",

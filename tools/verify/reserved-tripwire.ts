@@ -635,7 +635,9 @@ const CONFIG_DIR = "${configDir}";
 // from a drive.
 const TYPES_PATH = /^(?:\.\.?(?:[\\/]|$)|[\\/]|[A-Za-z]:)/;
 
-// tsconfig: the keys through which tsc reaches files, at its folder (paths at baseUrl).
+// tsconfig: the keys through which tsc reaches files, at its folder. tsc reads paths from there
+// too, as it no longer reads baseUrl; a tool that still does would take them from baseUrl, so they
+// are read from both.
 function tsconfigReaches(json: JsonObject, dir: string, reach: Reach): boolean {
 	const at =
 		(anchor: string | null, key: string) =>
@@ -652,10 +654,10 @@ function tsconfigReaches(json: JsonObject, dir: string, reach: Reach): boolean {
 				.filter(([option]) => option === "baseUrl")
 				.flatMap(([, setting]) => stringsIn(setting))
 				.map((base) => base.replaceAll(CONFIG_DIR, "."));
-			const anchors =
-				bases.length === 0
-					? [dir]
-					: bases.map((base) => (ABSOLUTE.test(base) ? null : posix.join(dir || ".", base)));
+			const anchors = [
+				dir,
+				...bases.map((base) => (ABSOLUTE.test(base) ? null : posix.join(dir || ".", base))),
+			];
 			for (const [option, setting] of value.object) {
 				if (option === "baseUrl" || option === "rootDirs" || option === "typeRoots") {
 					if (stringsIn(setting).some(at(dir, option))) return true;

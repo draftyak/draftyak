@@ -501,6 +501,10 @@ describe("G6: ordinary files pointing at reserved paths", () => {
 			["typeRoots", { compilerOptions: { typeRoots: [`../zz-${word}/types`] } }],
 			["types", { compilerOptions: { types: [`pkg-${word}`] } }],
 			["a types path by glob", { compilerOptions: { types: ["../zz-*/types"] } }],
+			[
+				"paths from its own folder whatever baseUrl says",
+				{ compilerOptions: { baseUrl: "sub", paths: { "x/*": ["../zz-*/src/*"] } } },
+			],
 		])("counts %s", (_label, value) => {
 			expect(tsconfig(JSON.stringify(value))).toEqual({ G6: 1 });
 		});

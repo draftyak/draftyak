@@ -583,6 +583,26 @@ describe("refs-config", () => {
 		]);
 	});
 
+	it("reads tsconfig paths from the config's own folder whatever baseUrl says, and refuses a baseUrl", async () => {
+		const options = (compilerOptions: Readonly<Record<string, unknown>>): string =>
+			JSON.stringify({ compilerOptions });
+		const files = {
+			"a/tsconfig.json": options({ baseUrl: "sub", paths: { "#x": ["./gen/x"] } }),
+			"b/tsconfig.json": options({
+				paths: { "#y/*": ["../../outside/x/*"] },
+				baseUrl: "<IN>/b/sub",
+			}),
+			"c/tsconfig.json": options({ paths: { "#z": ["./gen/z"] } }),
+		};
+		const ignored = { "a/gen/x.ts": "", "c/gen/z.ts": "" };
+		expect(await refused({ files, ignored, outside: BESIDE }, "refs-config")).toEqual([
+			"a/tsconfig.json: unsupported",
+			"a/gen/x.ts: unlisted",
+			"b/tsconfig.json: outside",
+			"c/gen/z.ts: unlisted",
+		]);
+	});
+
 	it("follows an absolute tsconfig types entry as a module path, refuses a relative one and one that leaves the checkout, and leaves package names alone", async () => {
 		const types = (entries: readonly string[]): string =>
 			JSON.stringify({ compilerOptions: { types: entries } });
