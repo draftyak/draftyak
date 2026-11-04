@@ -732,3 +732,204 @@ describe("live native input binding", () => {
 		}
 	});
 });
+
+const fifthDirectory = "crates/draftyak-sidecar-platform";
+const fifthManifest = fifthDirectory + "/Cargo.toml";
+const fiveWorkspace =
+	'[workspace]\nmembers = ["draftyak-protocol", "draftyak-transport", "draftyak-desktop-pairing", "draftyak-sidecar-platform", "../apps/app/src-tauri"]\nresolver = "3"\n';
+
+async function addFifth(f: Fixture): Promise<void> {
+	await write(
+		path.join(f.repo, fifthManifest),
+		'[package]\nname = "draftyak-sidecar-platform"\nversion = "0.0.0"\n',
+	);
+	await write(path.join(f.repo, fifthDirectory, "src/lib.rs"), "// synthetic fifth target\n");
+	const source = first(f.packages);
+	const target = first(targets(source));
+	const id = "path+" + f.repo + "/" + fifthDirectory + "#draftyak-sidecar-platform@0.0.0";
+	f.packages.push({
+		...source,
+		id,
+		name: "draftyak-sidecar-platform",
+		manifest_path: path.join(f.repo, fifthManifest),
+		targets: [
+			{
+				...target,
+				name: "draftyak_sidecar_platform",
+				src_path: path.join(f.repo, fifthDirectory, "src/lib.rs"),
+			},
+		],
+	});
+	const ids = f.packages.map((pkg) => pkg.id);
+	f.metadata.workspace_members = [...ids];
+	f.metadata.workspace_default_members = [...ids];
+	const resolve = f.metadata.resolve as Row;
+	(resolve.nodes as Row[]).push({ id, features: [], dependencies: [], deps: [] });
+}
+
+async function fiveFixture(): Promise<Fixture> {
+	const f = await fixture();
+	await write(path.join(f.repo, "crates/Cargo.toml"), fiveWorkspace);
+	await addFifth(f);
+	return f;
+}
+
+function fifthPackage(f: Fixture): Row {
+	return first(f.packages.filter((pkg) => pkg.name === "draftyak-sidecar-platform"));
+}
+
+describe("the exact captured five-member workspace", () => {
+	it("binds the retained five-member declaration and all fifth target paths as DATA", async () => {
+		const f = await fiveFixture();
+		expect(Buffer.byteLength(fiveWorkspace)).toBe(163);
+		expect(createHash("sha256").update(fiveWorkspace).digest("hex")).toBe(
+			"712f78c418fe86521d5177f265a4ab5975df8056a1e0849896b8630769de7f48",
+		);
+		const snapshot = await capture(f);
+		const mapping = await bind(f, snapshot);
+		expect(mapping.workspacePackages.map((pkg) => pkg.manifestPath).sort()).toEqual(
+			[...members.map(([dir]) => dir + "/Cargo.toml"), fifthManifest].sort(),
+		);
+		expect(mapping.rootIds).toHaveLength(5);
+		expect(Object.keys(snapshot).sort()).toEqual(["inputDigest", "lockDigest"]);
+		expect(projectCargoGraph(f.metadata, mapping, []).digest).toMatch(/^[a-f0-9]{64}$/);
+		await expect(assertNativeInputsUnchanged(snapshot)).resolves.toBeUndefined();
+		expect(opened.every((filename) => !filename.endsWith(".rs"))).toBe(true);
+	});
+
+	it.each(["directory", "comment"])(
+		"does not select a fifth member from %s presence",
+		async (kind) => {
+			const f = await fixture();
+			await addFifth(f);
+			if (kind === "comment") {
+				await write(
+					path.join(f.repo, "crates/Cargo.toml"),
+					fiveWorkspace
+						.split("\n")
+						.map((line) => "# " + line)
+						.join("\n"),
+				);
+			}
+			const snapshot = await capture(f);
+			expect(opened).not.toContain(path.join(f.repo, fifthManifest));
+			await refused(bind(f, snapshot));
+		},
+	);
+
+	it.each(["wrong-name", "omitted", "sixth", "duplicate"])(
+		"refuses a five-profile %s metadata set",
+		async (kind) => {
+			const f = await fiveFixture();
+			const snapshot = await capture(f);
+			const pkg = fifthPackage(f);
+			if (kind === "wrong-name") pkg.name = "unselected-sidecar";
+			if (kind === "omitted") {
+				f.packages.pop();
+				(f.metadata.workspace_members as unknown[]).pop();
+			}
+			if (kind === "sixth") {
+				f.packages.push({
+					...pkg,
+					id: "unselected-local",
+					name: "unselected-local",
+					manifest_path: path.join(f.repo, "crates/unselected/Cargo.toml"),
+				});
+				(f.metadata.workspace_members as unknown[]).push("unselected-local");
+			}
+			if (kind === "duplicate") {
+				const ids = f.metadata.workspace_members as unknown[];
+				ids[4] = ids[0];
+			}
+			await refused(bind(f, snapshot));
+		},
+	);
+
+	it("refuses a changed five-member selector before reading any member manifest", async () => {
+		const f = await fiveFixture();
+		const snapshot = await capture(f);
+		await write(path.join(f.repo, "crates/Cargo.toml"), "# changed declaration\n");
+		opened.length = 0;
+		await refused(bind(f, snapshot), "INPUTS_CHANGED");
+		const manifests = [...members.map(([dir]) => dir + "/Cargo.toml"), fifthManifest];
+		expect(
+			opened.some((filename) =>
+				manifests.some((manifest) => filename === path.join(f.repo, manifest)),
+			),
+		).toBe(false);
+	});
+
+	it("binds the fifth manifest bytes and identity during revalidation", async () => {
+		const f = await fiveFixture();
+		const snapshot = await capture(f);
+		await fs.appendFile(path.join(f.repo, fifthManifest), "# changed\n");
+		await refused(bind(f, snapshot), "INPUTS_CHANGED");
+	});
+
+	it("refuses a fifth target omitted from the captured Rust inventory", async () => {
+		const f = await fiveFixture();
+		const unbound = path.join(f.repo, fifthDirectory, ".cargo/unbound.rs");
+		await write(unbound, "// omitted from inventory\n");
+		const snapshot = await capture(f);
+		first(targets(fifthPackage(f))).src_path = unbound;
+		await refused(bind(f, snapshot));
+	});
+
+	it("refuses nonempty fifth-member configuration", async () => {
+		const f = await fiveFixture();
+		await write(path.join(f.repo, fifthDirectory, ".cargo/config.toml"), "# unsupported\n");
+		await refused(capture(f), "CONFIGURATION_UNSUPPORTED");
+	});
+
+	it("detects fifth-member configuration introduced after capture", async () => {
+		const f = await fiveFixture();
+		const snapshot = await capture(f);
+		await write(path.join(f.repo, fifthDirectory, ".cargo/config.toml"), "");
+		await refused(bind(f, snapshot), "INPUTS_CHANGED");
+	});
+
+	it("retains a failed fifth-manifest close and fences capture until scoped resource closure", async () => {
+		const f = await fiveFixture();
+		const source = createNativeInputsSource();
+		closeControl.file = path.join(f.repo, fifthManifest);
+		closeControl.fault = true;
+		try {
+			await refused(source.capture(f.repo, f.home));
+			const handle = closeControl.handle;
+			if (!handle) throw new Error("expected actual fifth-member input FileHandle");
+			expect(handle.fd).toBeGreaterThanOrEqual(0);
+			expect(closeControl.physical).toBe(0);
+			expect(closeControl.attempts).toBe(1);
+			expect(source.resourceStatus()).toEqual({
+				activeOperations: 0,
+				pendingFiles: 1,
+				complete: false,
+			});
+			await refused(source.capture(f.repo, f.home));
+			expect(closeControl.attempts).toBe(1);
+			const pending = await source.closeResources();
+			expect(pending).toEqual({ activeOperations: 0, pendingFiles: 1, complete: false });
+			expect(closeControl.attempts).toBe(2);
+			expect(handle.fd).toBeGreaterThanOrEqual(0);
+			closeControl.fault = false;
+			expect(await source.closeResources()).toEqual({
+				activeOperations: 0,
+				pendingFiles: 0,
+				complete: true,
+			});
+			expect(handle.fd).toBe(-1);
+			expect(closeControl.attempts).toBe(3);
+			expect(closeControl.physical).toBe(1);
+			expect(pending.complete).toBe(false);
+		} finally {
+			closeControl.fault = false;
+			const status = await source.closeResources();
+			try {
+				expect(status.complete).toBe(true);
+			} finally {
+				if (closeControl.handle && closeControl.handle.fd >= 0)
+					await closeControl.originalClose?.();
+			}
+		}
+	});
+});
