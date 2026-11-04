@@ -380,11 +380,13 @@ export class NativeDraftRevisions {
 	/** A fixed outbox transition cannot authenticate draft or freeze linkage. */
 	auditOutboxInTransaction(
 		tx: SqlTransaction,
-		action: "outbox.proposed" | "outbox.superseded" | "outbox.approved",
+		action: "outbox.proposed" | "outbox.superseded" | "outbox.approved" | "outbox.missed",
 		outboxId: string,
 	): DraftAuditReceipt {
 		if (
-			!["outbox.proposed", "outbox.superseded", "outbox.approved"].includes(action) ||
+			!["outbox.proposed", "outbox.superseded", "outbox.approved", "outbox.missed"].includes(
+				action,
+			) ||
 			!Ulid.safeParse(outboxId).success
 		)
 			throw revisionUnavailable();
