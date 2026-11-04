@@ -197,7 +197,7 @@ describe("workspace policy", () => {
 	});
 
 	it("ignores .env.live, which only the main checkout may hold, and lists names only in the example", async () => {
-		await runInventoryAfter(async () => {
+		await runInventoryAfter(async (git) => {
 			expect((await git("check-ignore", "-q", ".env.live")).code).toBe(0);
 			expect((await git("check-ignore", "-q", ".env.live.example")).code).toBe(1);
 			const values = read(".env.live.example")
