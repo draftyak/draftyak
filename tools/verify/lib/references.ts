@@ -12,10 +12,10 @@ import { type Checkout, fold, type Kind } from "./safe-fs.ts";
 
 // The inputs that listed files name: Rust modules and includes, Cargo's paths, relative and
 // absolute module specifiers, the package.json a # specifier resolves through, and the paths
-// package.json specs and imports maps, tsconfig fields, Biome configs and HTML attributes give. A
-// named file (a candidate) is only kind-checked, never read: one that exists must be a regular,
-// listed file of the checkout, in real folders. A missing one is fine, as no tool can read it,
-// except one whose path names a reserved word, which is refused either way. A path or glob that
+// package.json specs, scripts and imports maps, tsconfig fields, Biome configs and HTML attributes
+// give. A named file (a candidate) is only kind-checked, never read: one that exists must be a
+// regular, listed file of the checkout, in real folders. A missing one is fine, as no tool can read
+// it, except one whose path names a reserved word, which is refused either way. A path or glob that
 // leaves the checkout (absolute elsewhere, or climbing above the root on its way, even if it comes
 // back in) is refused as "outside", whether or not anything is there. Bare specifiers and names,
 // which resolve to installed dependencies, aren't followed, and nothing below node_modules or .git
@@ -861,9 +861,25 @@ function biomeRefs(
 // drive's own working folder.
 const HOME_OR_DRIVE_SPEC = /^(?:~[\\/]|[A-Za-z]:(?![\\/]))/;
 
-// Each pointer of a package.json, tsconfig or HTML file but its scripts, which are commands, and
-// tsconfig include, which scan-tsc follows; with the absolute paths dependency specs and tsconfig
-// extends give. One that leaves the checkout refuses the file that names it.
+// A script token that reads as a path (it starts with a dot or holds a separator), from its
+// package's folder: a command may run or read it, so it is checked as a module Node could load from
+// there. One that leaves the checkout refuses the manifest, /dev/null too, which on Windows names a
+// file on the current drive.
+function scriptToken(
+	input: ReferenceInput,
+	candidates: Candidates,
+	file: string,
+	anchor: string,
+	value: string,
+): void {
+	const rel = resolveFrom(input.checkout, anchor, value);
+	if (rel === OUTSIDE) candidates.refuse(file, "outside");
+	else if (rel !== null) moduleTarget(input, candidates, rel);
+}
+
+// Each pointer of a package.json, tsconfig or HTML file but tsconfig include, which scan-tsc
+// follows, with the absolute paths dependency specs and tsconfig extends give, and each script
+// token that reads as a path. One that leaves the checkout refuses the file that names it.
 function configRefs(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -876,7 +892,11 @@ function configRefs(
 		return;
 	}
 	for (const { value, anchor, field } of pointers ?? []) {
-		if (field === "manifest:scripts" || field === "tsconfig:include") continue;
+		if (field === "tsconfig:include") continue;
+		if (field === "manifest:scripts") {
+			if (anchor !== null) scriptToken(input, candidates, file, anchor, value);
+			continue;
+		}
 		const spec = field === "manifest:dependency";
 		let rel: string | typeof OUTSIDE | null;
 		if (anchor !== null) {

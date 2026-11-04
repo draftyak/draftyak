@@ -244,6 +244,21 @@ const PLANTED: Readonly<Record<string, (repo: TempRepo) => void>> = {
 		writeFileSync(path.join(repo.outside, "helper.ts"), marks);
 		repo.write("packages/a/src/beside.ts", 'import "../../../../outside/helper.ts";\n');
 	},
+	"a test script running a helper that exists beside the checkout": (repo) => {
+		writeFileSync(path.join(repo.outside, "helper.mjs"), marks);
+		repo.write(
+			"packages/a/package.json",
+			'{ "name": "a", "private": true, "scripts": { "test": "node ../../../outside/helper.mjs" } }\n',
+		);
+	},
+	"a test script running an ignored helper in the checkout": (repo) => {
+		repo.ignore("packages/a/gen/");
+		repo.write("packages/a/gen/x.mjs", marks);
+		repo.write(
+			"packages/a/package.json",
+			'{ "name": "a", "private": true, "scripts": { "test": "node ./gen/x.mjs" } }\n',
+		);
+	},
 	"an ignored Rust module target": (repo) => {
 		repo.git("rm", "-q", "--cached", "--", "crates/r/src/m.rs");
 		repo.ignore("crates/r/src/m.rs");

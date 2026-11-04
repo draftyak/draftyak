@@ -174,7 +174,7 @@ const LINE: Readonly<Record<string, string>> = {
 	"refs-modules":
 		"reserved tripwire: file(s) or folder(s) that relative or absolute module specifiers or runner configs name, or the package.json a # specifier resolves through, aren't regular, listed files in real folders of this checkout or lie outside it, or a module names one in a form this check doesn't follow; none of them was read",
 	"refs-config":
-		"reserved tripwire: file(s) or folder(s) that package.json specs and imports maps, tsconfig fields, Biome configs' extends and plugins or HTML src and href values name aren't regular, listed files in real folders of this checkout or lie outside it, or a config names one in a form this check doesn't follow; none of them was read",
+		"reserved tripwire: file(s) or folder(s) that package.json specs, scripts and imports maps, tsconfig fields, Biome configs' extends and plugins or HTML src and href values name aren't regular, listed files in real folders of this checkout or lie outside it, or a config names one in a form this check doesn't follow; none of them was read",
 	"scan-pnpm":
 		"reserved tripwire: workspace package folder(s) or manifest(s) that pnpm and turbo read aren't regular, listed files in real folders; none of them was read",
 	"scan-tsc":
@@ -332,6 +332,13 @@ describe("refusals before any read or child start", () => {
 				"refs-cargo",
 			],
 			[
+				"a test script running a helper beside the checkout",
+				{
+					"packages/a/package.json": `{ "name": "a", "scripts": { "test": "node ${climb.slice(3)}/helper.ts" } }\n`,
+				},
+				"refs-config",
+			],
+			[
 				"a #[path] module",
 				{ "crates/r/src/lib.rs": `mod m;\n#[path = "${climb}/m.rs"]\nmod n;\n` },
 				"refs-rust",
@@ -365,6 +372,20 @@ describe("refusals before any read or child start", () => {
 			const file = Object.keys(files)[0] ?? "";
 			expect([label, named.endsWith(`: ${file} (outside)`)]).toEqual([label, true]);
 		}
+	});
+
+	it("refuses a test script running an ignored helper in the checkout, without reading it", async () => {
+		const repo = fixture({
+			files: {
+				"packages/a/package.json": '{ "name": "a", "scripts": { "test": "node ./gen/x.mjs" } }\n',
+			},
+			ignored: { "packages/a/gen/x.mjs": "export {};\n" },
+		});
+		const run = await gate(repo, { forbidden: (rel) => rel === "packages/a/gen/x.mjs" });
+		refusedWith(run, [LINE["refs-config"] ?? ""]);
+		expect(run.opens.includes("packages/a/gen/x.mjs")).toBe(false);
+		const named = shown(await gate(repo, { names: true }))[0] ?? "";
+		expect(named.endsWith(": packages/a/gen/x.mjs (unlisted)")).toBe(true);
 	});
 
 	it("refuses an ignored Rust module a bare mod declaration reaches, without reading it", async () => {

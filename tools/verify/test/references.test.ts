@@ -553,19 +553,48 @@ describe("refs-config", () => {
 		]);
 	});
 
-	it("follows an absolute dependency spec or tsconfig extends below the root, and leaves scripts and tsconfig include to the scans", async () => {
+	it("follows an absolute dependency spec or tsconfig extends below the root, and leaves tsconfig include to scan-tsc", async () => {
 		const files = {
 			"a/package.json": JSON.stringify({ dependencies: { x: "<IN>/vendor/x" } }),
 			"b/tsconfig.json": JSON.stringify({ extends: "<IN>/base/strict.json" }),
-			"c/package.json": JSON.stringify({
-				scripts: { x: "node ../../outside/helper.js > /dev/null" },
-			}),
 			"d/tsconfig.json": JSON.stringify({ include: ["../../outside/x/**/*.ts"] }),
 		};
 		const ignored = { "vendor/x/package.json": "{}", "base/strict.json": "{}" };
 		expect(await refused({ files, ignored, outside: BESIDE }, "refs-config")).toEqual([
 			"vendor/x/package.json: unlisted",
 			"base/strict.json: unlisted",
+		]);
+	});
+
+	it("follows each script token that reads as a path as a module from its package, and refuses one that leaves the checkout", async () => {
+		const scripts = (map: Readonly<Record<string, string>>): string =>
+			JSON.stringify({ name: "p", scripts: map });
+		const files = {
+			"a/package.json": scripts({
+				test: "node ./gen/x.mjs",
+				lint: "tsx scripts/check",
+				start: "node ./lib",
+			}),
+			"b/package.json": scripts({ test: "node ../../outside/helper.js" }),
+			"c/package.json": scripts({ test: "node <OUT>/helper.js" }),
+			"d/package.json": scripts({ test: "vitest run > /dev/null" }),
+			"e/package.json": scripts({ test: "cd ../.. && node repo/e/x.js" }),
+			"f/package.json": scripts({
+				test: "vitest run --dir=./src",
+				build: "tsc -p ./tsconfig.json && node ./none.js",
+				other: "pnpm --filter @scope/x test && node ../f/listed.js",
+			}),
+			"f/listed.js": "",
+		};
+		const ignored = { "a/gen/x.mjs": "", "a/scripts/check.ts": "", "a/lib/index.js": "" };
+		expect(await refused({ files, ignored, outside: BESIDE }, "refs-config")).toEqual([
+			"a/gen/x.mjs: unlisted",
+			"a/scripts/check.ts: unlisted",
+			"a/lib/index.js: unlisted",
+			"b/package.json: outside",
+			"c/package.json: outside",
+			"d/package.json: outside",
+			"e/package.json: outside",
 		]);
 	});
 
