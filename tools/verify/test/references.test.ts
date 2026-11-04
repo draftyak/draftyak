@@ -624,6 +624,33 @@ describe("refs-config", () => {
 		]);
 	});
 
+	it("refuses a typeRoots or rootDirs folder that exists, and an extends or references target whose name isn't a tsconfig's", async () => {
+		const options = (compilerOptions: Readonly<Record<string, unknown>>): string =>
+			JSON.stringify({ compilerOptions });
+		const files = {
+			"a/tsconfig.json": options({ typeRoots: ["./types", "./node_modules/@types", "./none"] }),
+			"a/types/x/index.d.ts": "",
+			"b/tsconfig.json": options({ rootDirs: ["src", "generated"] }),
+			"b/src/a.ts": "",
+			"c/tsconfig.json": JSON.stringify({ extends: "./base.json" }),
+			"c/base.json": "{}",
+			"d/tsconfig.json": JSON.stringify({ extends: ["./tsconfig.base.json", "@scope/tsconfig"] }),
+			"d/tsconfig.base.json": "{}",
+			"e/tsconfig.json": JSON.stringify({ extends: "../c/base" }),
+			"f/tsconfig.json": JSON.stringify({
+				references: [{ path: "./build.json" }, { path: "../d" }],
+			}),
+			"f/build.json": "{}",
+		};
+		expect(await refused({ files }, "refs-config")).toEqual([
+			"a/tsconfig.json: unsupported",
+			"b/tsconfig.json: unsupported",
+			"c/tsconfig.json: unsupported",
+			"e/tsconfig.json: unsupported",
+			"f/tsconfig.json: unsupported",
+		]);
+	});
+
 	it("reads tsconfig paths from the config's own folder whatever baseUrl says, and refuses a baseUrl", async () => {
 		const options = (compilerOptions: Readonly<Record<string, unknown>>): string =>
 			JSON.stringify({ compilerOptions });

@@ -960,6 +960,15 @@ function configRefs(
 		candidates.refuse(file, "unparsable");
 		return;
 	}
+	// A config tsc reads through extends or references. These checks read a config's own fields only
+	// when its name is a tsconfig's, so a listed file of another name refuses the one that names it.
+	const config = (target: string): void => {
+		candidates.file(target);
+		const read = fileKind(target) === "tsconfig";
+		if (!read && candidates.kindOf(target) === "file" && input.listed(target)) {
+			candidates.refuse(file, "unsupported");
+		}
+	};
 	for (const { value, anchor, field } of pointers ?? []) {
 		if (field === "tsconfig:include") continue;
 		if (field === "manifest:scripts") {
@@ -1000,12 +1009,12 @@ function configRefs(
 		if (field === "manifest:local" || field === "manifest:dependency") {
 			candidates.folder(rel, MANIFESTS);
 		} else if (field === "tsconfig:extends") {
-			if (kind() === "dir") candidates.file(`${rel}/tsconfig.json`);
-			else candidates.file(rel);
-			if (!/\.json$/i.test(rel)) candidates.file(`${rel}.json`);
+			if (kind() === "dir") config(join(rel, "tsconfig.json"));
+			else config(rel);
+			if (!/\.json$/i.test(rel)) config(`${rel}.json`);
 		} else if (field === "tsconfig:references") {
-			if (kind() === "dir") candidates.file(rel === "" ? "tsconfig.json" : `${rel}/tsconfig.json`);
-			else candidates.file(rel);
+			if (kind() === "dir") config(join(rel, "tsconfig.json"));
+			else config(rel);
 		} else if (field === "tsconfig:files") candidates.file(rel);
 		else if (field === "tsconfig:paths") moduleTarget(input, candidates, rel);
 		else if (field === "tsconfig:types") {
@@ -1014,7 +1023,10 @@ function configRefs(
 			if (relativeLiteral(value.replaceAll("\\", "/"))) candidates.refuse(file, "unsupported");
 			else moduleTarget(input, candidates, rel);
 		} else if (field === "tsconfig:typeRoots" || field === "tsconfig:rootDirs") {
-			candidates.folder(rel, []);
+			// tsc reads type packages from a typeRoots folder, and resolves a module's relative imports
+			// through every rootDirs folder; these checks follow neither, so a folder there is refused.
+			if (kind() === "dir") candidates.refuse(file, "unsupported");
+			else candidates.folder(rel, []);
 		} else if (ENTRY_POINTERS.has(field)) moduleTarget(input, candidates, rel);
 		else if (field === "html" && kind() !== "dir") candidates.file(rel);
 	}

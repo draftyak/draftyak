@@ -264,6 +264,22 @@ describe("refusals before any read or child start", () => {
 				"refs-config",
 			],
 			[
+				"a tsconfig typeRoots folder",
+				{
+					"packages/a/tsconfig.json":
+						'{ "include": ["**/*.ts"], "compilerOptions": { "typeRoots": ["./src"] } }\n',
+				},
+				"refs-config",
+			],
+			[
+				"a tsconfig extending a config whose name isn't a tsconfig's",
+				{
+					"packages/a/tsconfig.json": '{ "extends": "./base.json", "include": ["**/*.ts"] }\n',
+					"packages/a/base.json": "{}\n",
+				},
+				"refs-config",
+			],
+			[
 				"a Biome config extending a package's",
 				{ "biome.json": '{ "extends": ["@scope/config/biome"] }\n' },
 				"refs-config",
