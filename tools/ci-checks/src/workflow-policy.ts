@@ -265,15 +265,16 @@ const treeChange = new RegExp(
 );
 // What a step that may start a package manager in the checkout is, for the rules that must come
 // first: pnpm/action-setup, setup-node with more than the pinned version (a cache input runs one),
-// or a command that names one; null for any other step.
+// or a command that names one, in its run or in the shell it runs with (shell: bun {0}); null for
+// any other step.
 const packageManagerStart = (step: YamlMap): string | null => {
 	if (actionOf(step) === "pnpm/action-setup") return "pnpm/action-setup";
 	if (actionOf(step) === "actions/setup-node" && !isDeepStrictEqual(step.with, pinnedNode)) {
 		return "setup-node with more than the pinned Node version";
 	}
-	if (typeof step.run === "string" && packageManager.test(step.run)) {
-		return "a command that names a package manager";
-	}
+	const names = (text: Yaml | undefined): boolean =>
+		typeof text === "string" && packageManager.test(text);
+	if (names(step.run) || names(step.shell)) return "a command that names a package manager";
 	return null;
 };
 // The status functions: a condition that calls one, success() included, no longer gets the success()

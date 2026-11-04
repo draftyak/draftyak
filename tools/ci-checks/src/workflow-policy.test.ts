@@ -3202,6 +3202,21 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 		expect(checkWorkflow("x.yml", job(...linux), toolchain).join("\n")).toContain(
 			pnpmAt("a", what),
 		);
+		// A step's shell starts its command, so one that names a package manager starts that.
+		for (const shell of ["bun {0}", "deno run -A {0}", "npx tsx {0}", "pnpm.cmd exec tsx {0}"]) {
+			const step = [`- shell: ${shell}`, "  run: x.ts"];
+			expect(checkWorkflow("x.yml", job(...step), toolchain).join("\n"), shell).toContain(
+				`a must run ${preinstall} before ${what}`,
+			);
+			expect(
+				checkWorkflow("x.yml", job(`- run: ${preinstall}`, ...step), toolchain),
+				shell,
+			).toEqual([]);
+		}
+		const shelled = `${gateStep}      - shell: bun {0}\n        run: x.ts\n`;
+		expect(problems(ciFile, inJob(ci, "full", gateStep, shelled))).toContain(
+			`full must run ${preinstall} before ${what}`,
+		);
 	});
 
 	it("needs the gate in a job of actions alone that sets up pnpm, or setup-node beyond the pinned version", () => {
