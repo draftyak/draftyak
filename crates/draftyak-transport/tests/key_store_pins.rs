@@ -58,6 +58,59 @@ const STORE_ROWS: [(&str, &str); 4] = [
 ];
 const MEMBERS: &str =
     "members = [\"draftyak-protocol\", \"draftyak-transport\", \"draftyak-desktop-pairing\"]";
+const APP_MEMBERS: &str = "members = [\"draftyak-protocol\", \"draftyak-transport\", \"draftyak-desktop-pairing\", \"../apps/app/src-tauri\"]";
+const CORE_PATHS: [&str; 3] = [
+    "draftyak-protocol",
+    "draftyak-transport",
+    "draftyak-desktop-pairing",
+];
+const APP_PATHS: [&str; 4] = [
+    "draftyak-protocol",
+    "draftyak-transport",
+    "draftyak-desktop-pairing",
+    "../apps/app/src-tauri",
+];
+const CORE_ROOTS: [&str; 3] = [
+    "draftyak-desktop-pairing",
+    "draftyak-protocol",
+    "draftyak-transport",
+];
+const APP_ROOTS: [&str; 4] = [
+    "draftyak-desktop",
+    "draftyak-desktop-pairing",
+    "draftyak-protocol",
+    "draftyak-transport",
+];
+const APP_SKIPS: [&str; 2] = ["1.0.109", "2.0.119"];
+const APP_SYN: [&str; 3] = ["1.0.109", "2.0.119", "3.0.9"];
+const APP_GRAPH: &str = "a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce";
+const APP_LOCK: &str = "f8a940be9d97416d8e07af0ce7acbe8d35f45177176de227cf0a64c5aa8cb6bf";
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WorkspaceProfile {
+    Three,
+    AppFour,
+}
+fn workspace_profile(version: u8, members: Option<&[String]>) -> Option<WorkspaceProfile> {
+    match (version, members) {
+        (1, None) => Some(WorkspaceProfile::Three),
+        (2, Some(values)) if values.iter().map(String::as_str).eq(APP_PATHS) => {
+            Some(WorkspaceProfile::AppFour)
+        }
+        _ => None,
+    }
+}
+fn member_paths(profile: WorkspaceProfile) -> &'static [&'static str] {
+    match profile {
+        WorkspaceProfile::Three => &CORE_PATHS,
+        WorkspaceProfile::AppFour => &APP_PATHS,
+    }
+}
+fn root_names(profile: WorkspaceProfile) -> &'static [&'static str] {
+    match profile {
+        WorkspaceProfile::Three => &CORE_ROOTS,
+        WorkspaceProfile::AppFour => &APP_ROOTS,
+    }
+}
 const SOURCE_FILES: [&str; 13] = [
     "key_store/linux_environment.rs",
     "key_store/mod.rs",
@@ -130,12 +183,14 @@ const NO_REVIEWER: &str = "reviewer is missing";
 const HEADER: &str = "unknown scope version or source";
 const UNAPPROVED: &str = "only the approved advisory rows and syn skip may be recorded";
 const MEMBERS_CHANGED: &str = "the workspace members changed";
+const BASELINE_DATA: &str = "the App baseline DATA provenance or metadata selection changed";
 const LEFT_LOCK: &str = "an advisory crate left the lock but its row remains";
 const VERSION_OR_SOURCE: &str = "an advisory crate's version or source changed";
 const ROUTE_ORDER: &str = "recorded routes and parents must be sorted, unique and non-empty";
 const ROUTES: &str = "a route to an advisory crate changed";
 const SYN_VERSIONS: &str = "the duplicate's locked versions changed";
 const SYN_PARENTS: &str = "a dependent of a duplicate version changed";
+const SYN_SOURCES: &str = "a duplicate version or locked parent source or checksum changed";
 const GRAPH: &str = "deny.toml must audit all features on every target";
 const ADVISORY_POLICY: &str =
     "deny.toml advisories must stay strict with exactly the recorded reasoned ignores";
@@ -202,14 +257,67 @@ fn enables_mock_store_outside_dev_dependencies(manifest: &str) -> bool {
     })
 }
 
-fn workspace_mock_store_scope(workspace: &str, manifests: [&str; 3]) -> bool {
+fn workspace_mock_store_scope(
+    workspace: &str,
+    manifests: &[(&str, &str)],
+    profile: WorkspaceProfile,
+) -> bool {
+    let declared = match profile {
+        WorkspaceProfile::Three => MEMBERS,
+        WorkspaceProfile::AppFour => APP_MEMBERS,
+    };
+    let expected = member_paths(profile);
     workspace
         .lines()
         .filter(|line| line.trim_start().starts_with("members"))
-        .eq([MEMBERS])
+        .eq([declared])
+        && manifests.len() == expected.len()
         && manifests
-            .into_iter()
-            .all(|manifest| !enables_mock_store_outside_dev_dependencies(manifest))
+            .iter()
+            .map(|(name, _)| *name)
+            .eq(expected.iter().copied())
+        && manifests.iter().all(|(member, manifest)| {
+            let package = match *member {
+                "draftyak-protocol" => "draftyak-protocol",
+                "draftyak-transport" => "draftyak-transport",
+                "draftyak-desktop-pairing" => "draftyak-desktop-pairing",
+                "../apps/app/src-tauri" => "draftyak-desktop",
+                _ => return false,
+            };
+            let name = format!("name = \"{package}\"");
+            manifest_lines(manifest)
+                .iter()
+                .filter(|(section, line)| *section == "[package]" && line.starts_with("name ="))
+                .map(|(_, line)| *line)
+                .eq([name.as_str()])
+                && !enables_mock_store_outside_dev_dependencies(manifest)
+        })
+}
+fn current_workspace_mock_store_scope() -> bool {
+    let Some(scope) = parse_scope(SCOPE) else {
+        return false;
+    };
+    let Some(profile) = workspace_profile(scope.version, scope.workspace_members.as_deref()) else {
+        return false;
+    };
+    let mut manifests = vec![
+        (CORE_PATHS[0], PROTOCOL_MANIFEST.to_owned()),
+        (CORE_PATHS[1], MANIFEST.to_owned()),
+        (CORE_PATHS[2], DESKTOP_MANIFEST.to_owned()),
+    ];
+    if profile == WorkspaceProfile::AppFour {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/app/src-tauri/Cargo.toml");
+        let Ok(app) = fs::read_to_string(path) else {
+            return false;
+        };
+        manifests.push((APP_PATHS[3], app));
+    }
+    let borrowed: Vec<_> = manifests
+        .iter()
+        .map(|(name, text)| (*name, text.as_str()))
+        .collect();
+    workspace_mock_store_scope(WORKSPACE, &borrowed, profile)
 }
 
 fn source_files() -> Vec<(String, String)> {
@@ -577,10 +685,7 @@ fn the_explicit_mock_module_is_gated_and_never_a_product_store_fallback() {
 }
 #[test]
 fn no_workspace_member_enables_the_mock_store_outside_dev_dependencies() {
-    assert!(workspace_mock_store_scope(
-        WORKSPACE,
-        [MANIFEST, PROTOCOL_MANIFEST, DESKTOP_MANIFEST]
-    ));
+    assert!(current_workspace_mock_store_scope());
     let consumer =
         "draftyak-transport = { path = \"../draftyak-transport\", features = [\"mock-store\"] }";
     for invalid in [
@@ -605,10 +710,24 @@ fn no_workspace_member_enables_the_mock_store_outside_dev_dependencies() {
     )));
 }
 
+fn mock_inventory<'a>(app: Option<&'a str>) -> Vec<(&'a str, &'a str)> {
+    let mut rows = vec![
+        (CORE_PATHS[0], PROTOCOL_MANIFEST),
+        (CORE_PATHS[1], MANIFEST),
+        (CORE_PATHS[2], DESKTOP_MANIFEST),
+    ];
+    if let Some(app) = app {
+        rows.push((APP_PATHS[3], app));
+    }
+    rows
+}
 #[test]
 fn desktop_member_mock_checks_cover_regular_target_and_feature_dependencies() {
+    let workspace = format!("[workspace]\n{MEMBERS}\n");
     let check = |desktop: &str| {
-        workspace_mock_store_scope(WORKSPACE, [MANIFEST, PROTOCOL_MANIFEST, desktop])
+        let mut rows = mock_inventory(None);
+        rows[2].1 = desktop;
+        workspace_mock_store_scope(&workspace, &rows, WorkspaceProfile::Three)
     };
     assert!(check(DESKTOP_MANIFEST));
     let consumer =
@@ -631,23 +750,107 @@ fn desktop_member_mock_checks_cover_regular_target_and_feature_dependencies() {
         assert!(!check(&invalid));
     }
 }
-
 #[test]
-fn workspace_mock_inventory_refuses_unknown_missing_and_repeated_members() {
-    let check = |workspace: &str| {
-        workspace_mock_store_scope(workspace, [MANIFEST, PROTOCOL_MANIFEST, DESKTOP_MANIFEST])
+fn app_member_mock_checks_cover_regular_target_and_feature_dependencies() {
+    // Invented source snippets exercise selection only, never an App4 graph review.
+    let app = "[package]\nname = \"draftyak-desktop\"\nversion = \"0.0.0\"\n";
+    let workspace = format!("[workspace]\n{APP_MEMBERS}\n");
+    let check = |app: &str| {
+        workspace_mock_store_scope(
+            &workspace,
+            &mock_inventory(Some(app)),
+            WorkspaceProfile::AppFour,
+        )
     };
-    assert!(check(WORKSPACE));
-    for invalid in [
-        WORKSPACE.replace(MEMBERS, &MEMBERS.replace(']', ", \"draftyak-future\"]")),
-        WORKSPACE.replace(
-            MEMBERS,
-            "members = [\"draftyak-protocol\", \"draftyak-transport\"]",
-        ),
-        format!("{WORKSPACE}\n{MEMBERS}\n"),
+    assert!(check(app));
+    let consumer = "draftyak-transport = { path = \"../../../crates/draftyak-transport\", features = [\"mock-store\"] }";
+    for section in [
+        "[dev-dependencies]",
+        "[target.'cfg(windows)'.dev-dependencies]",
     ] {
-        assert_ne!(invalid, WORKSPACE);
+        assert!(check(&format!("{app}\n{section}\n{consumer}\n")));
+    }
+    for invalid in [
+        format!("{app}\n[dependencies]\n{consumer}\n"),
+        format!("{app}\n[target.'cfg(windows)'.dependencies]\n{consumer}\n"),
+        format!("{app}\n[features]\ndefault = [\"draftyak-transport/mock-store\"]\n"),
+        format!("{app}\n[features]\nnative-hub = [\"draftyak-transport/mock-store\"]\n"),
+    ] {
         assert!(!check(&invalid));
+    }
+}
+#[test]
+fn workspace_mock_inventory_refuses_unknown_missing_repeated_and_misnamed_members() {
+    let app = "[package]\nname = \"draftyak-desktop\"\nversion = \"0.0.0\"\n";
+    for profile in [WorkspaceProfile::Three, WorkspaceProfile::AppFour] {
+        let declared = match profile {
+            WorkspaceProfile::Three => MEMBERS,
+            WorkspaceProfile::AppFour => APP_MEMBERS,
+        };
+        let workspace = format!("[workspace]\n{declared}\n");
+        let rows = mock_inventory((profile == WorkspaceProfile::AppFour).then_some(app));
+        assert!(workspace_mock_store_scope(&workspace, &rows, profile));
+        for invalid in [
+            workspace.replace(declared, &declared.replace(']', ", \"draftyak-future\"]")),
+            workspace.replace(
+                declared,
+                "members = [\"draftyak-protocol\", \"draftyak-transport\"]",
+            ),
+            format!("{workspace}\n{declared}\n"),
+            workspace.replace("draftyak-protocol", "draftyak-misnamed"),
+        ] {
+            assert!(!workspace_mock_store_scope(&invalid, &rows, profile));
+        }
+        let mut missing = rows.clone();
+        missing.pop();
+        assert!(!workspace_mock_store_scope(&workspace, &missing, profile));
+        let mut repeated = rows.clone();
+        repeated.push(rows[0]);
+        assert!(!workspace_mock_store_scope(&workspace, &repeated, profile));
+        let mut wrong_name = rows.clone();
+        wrong_name[0].0 = "draftyak-misnamed";
+        assert!(!workspace_mock_store_scope(
+            &workspace,
+            &wrong_name,
+            profile
+        ));
+        let wrong_package = PROTOCOL_MANIFEST.replacen(
+            "name = \"draftyak-protocol\"",
+            "name = \"draftyak-misnamed\"",
+            1,
+        );
+        let mut misnamed = rows.clone();
+        misnamed[0].1 = &wrong_package;
+        assert!(!workspace_mock_store_scope(&workspace, &misnamed, profile));
+    }
+    assert!(!workspace_mock_store_scope(
+        &format!("[workspace]\n{APP_MEMBERS}\n"),
+        &mock_inventory(None),
+        WorkspaceProfile::Three
+    ));
+}
+#[test]
+fn fixture_member_selection_does_not_infer_four_or_admit_a_fifth_member() {
+    assert_eq!(workspace_profile(1, None), Some(WorkspaceProfile::Three));
+    let four: Vec<_> = APP_PATHS.iter().map(|value| (*value).to_owned()).collect();
+    assert_eq!(
+        workspace_profile(2, Some(&four)),
+        Some(WorkspaceProfile::AppFour)
+    );
+    assert_eq!(workspace_profile(1, Some(&four)), None);
+    assert_eq!(workspace_profile(2, None), None);
+    for invalid in [
+        four[..3].to_vec(),
+        [four.clone(), vec!["draftyak-sidecar-platform".to_owned()]].concat(),
+        [four.clone(), vec![four[0].clone()]].concat(),
+        vec![
+            "draftyak-protocol".to_owned(),
+            "draftyak-transport".to_owned(),
+            "draftyak-desktop-pairing".to_owned(),
+            "../apps/app/misnamed".to_owned(),
+        ],
+    ] {
+        assert_eq!(workspace_profile(2, Some(&invalid)), None);
     }
 }
 
@@ -661,6 +864,10 @@ struct Scope {
     reviewer: String,
     advisories: Vec<Advisory>,
     duplicate: Duplicate,
+    #[serde(default)]
+    workspace_members: Option<Vec<String>>,
+    #[serde(default)]
+    provenance: Option<BaselineData>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -671,12 +878,26 @@ struct Advisory {
     routes: Vec<String>,
 }
 #[derive(Deserialize)]
+#[serde(untagged)]
+enum Duplicate {
+    Legacy(LegacyDuplicate),
+    App(AppDuplicate),
+}
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Duplicate {
+struct LegacyDuplicate {
     #[serde(rename = "crate")]
     package: String,
     skip: String,
     parents: BTreeMap<String, Parents>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AppDuplicate {
+    #[serde(rename = "crate")]
+    package: String,
+    skips: Vec<String>,
+    parents: BTreeMap<String, LockedParents>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -684,10 +905,197 @@ struct Parents {
     active: Vec<String>,
     lock_only: Vec<String>,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LockedParents {
+    source: String,
+    checksum: String,
+    locked_parents: Vec<LockedParent>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LockedParent {
+    package: String,
+    source: String,
+    checksum: String,
+}
+enum ParentView<'a> {
+    Legacy(&'a Parents),
+    Locked(&'a LockedParents),
+}
+impl ParentView<'_> {
+    fn union(&self) -> (BTreeSet<&str>, bool) {
+        match self {
+            Self::Legacy(parents) => {
+                let active: BTreeSet<_> = parents.active.iter().map(String::as_str).collect();
+                let lock_only: BTreeSet<_> = parents.lock_only.iter().map(String::as_str).collect();
+                let valid = sorted_unique(&parents.active)
+                    && (parents.lock_only.is_empty() || sorted_unique(&parents.lock_only))
+                    && active.is_disjoint(&lock_only);
+                (active.union(&lock_only).copied().collect(), valid)
+            }
+            Self::Locked(parents) => {
+                let names: Vec<_> = parents
+                    .locked_parents
+                    .iter()
+                    .map(|parent| parent.package.clone())
+                    .collect();
+                (
+                    parents
+                        .locked_parents
+                        .iter()
+                        .map(|parent| parent.package.as_str())
+                        .collect(),
+                    sorted_unique(&names),
+                )
+            }
+        }
+    }
+    fn sources_match(&self, packages: &[Package<'_>], target: Node<'_>) -> bool {
+        fn matches(package: &Package<'_>, source: &str, checksum: &str) -> bool {
+            source == REGISTRY
+                && checksum.len() == 64
+                && checksum
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+                && package.source == Some(source)
+                && package.checksum == Some(checksum)
+        }
+        match self {
+            Self::Legacy(_) => true,
+            Self::Locked(parents) => {
+                packages
+                    .iter()
+                    .find(|package| (package.name, package.version) == target)
+                    .is_some_and(|package| matches(package, &parents.source, &parents.checksum))
+                    && parents.locked_parents.iter().all(|parent| {
+                        packages
+                            .iter()
+                            .find(|package| {
+                                label((package.name, package.version)) == parent.package
+                            })
+                            .is_some_and(|package| {
+                                matches(package, &parent.source, &parent.checksum)
+                            })
+                    })
+            }
+        }
+    }
+}
+impl Duplicate {
+    fn package(&self) -> &str {
+        match self {
+            Self::Legacy(value) => &value.package,
+            Self::App(value) => &value.package,
+        }
+    }
+    fn skips(&self) -> Vec<&str> {
+        match self {
+            Self::Legacy(value) => vec![value.skip.as_str()],
+            Self::App(value) => value.skips.iter().map(String::as_str).collect(),
+        }
+    }
+    fn versions(&self) -> Vec<&str> {
+        match self {
+            Self::Legacy(value) => value.parents.keys().map(String::as_str).collect(),
+            Self::App(value) => value.parents.keys().map(String::as_str).collect(),
+        }
+    }
+    fn parents(&self) -> Vec<(&str, ParentView<'_>)> {
+        match self {
+            Self::Legacy(value) => value
+                .parents
+                .iter()
+                .map(|(version, parents)| (version.as_str(), ParentView::Legacy(parents)))
+                .collect(),
+            Self::App(value) => value
+                .parents
+                .iter()
+                .map(|(version, parents)| (version.as_str(), ParentView::Locked(parents)))
+                .collect(),
+        }
+    }
+    fn approved(&self, version: u8) -> bool {
+        match (version, self) {
+            (1, Self::Legacy(value)) => {
+                (value.package.as_str(), value.skip.as_str()) == APPROVED_SKIP
+            }
+            (2, Self::App(value)) => {
+                value.package == "syn" && value.skips.iter().map(String::as_str).eq(APP_SKIPS)
+            }
+            _ => false,
+        }
+    }
+}
+// Portable qualification DATA only. Physical tools/FDs/current Inputs are not represented here.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BaselineData {
+    graph_digest: String,
+    lock_digest: String,
+    metadata_selection: MetadataSelection,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MetadataSelection {
+    command: String,
+    format_version: u8,
+    all_features: bool,
+    locked: bool,
+    offline: bool,
+    no_deps: bool,
+    filter_platform: Value,
+}
+fn baseline_data_matches(data: &BaselineData) -> bool {
+    let selection = &data.metadata_selection;
+    data.graph_digest == APP_GRAPH
+        && data.lock_digest == APP_LOCK
+        && selection.command == "cargo metadata"
+        && selection.format_version == 1
+        && selection.all_features
+        && selection.locked
+        && selection.offline
+        && !selection.no_deps
+        && selection.filter_platform.is_null()
+}
+fn parse_baseline_data(value: &Value) -> Option<BaselineData> {
+    if !value
+        .get("metadataSelection")?
+        .as_object()?
+        .contains_key("filterPlatform")
+    {
+        return None;
+    }
+    serde_json::from_value(value.clone()).ok()
+}
+fn parse_scope(text: &str) -> Option<Scope> {
+    let value = jcs::parse_strict(text.as_bytes()).ok()?;
+    let fields = value.as_object()?;
+    let version = fields.get("version")?.as_u64()?;
+    match version {
+        1 if fields.contains_key("workspaceMembers") || fields.contains_key("provenance") => {
+            return None;
+        }
+        2 => {
+            fields.get("workspaceMembers")?.as_array()?;
+            parse_baseline_data(fields.get("provenance")?)?;
+        }
+        _ => (),
+    }
+    let scope: Scope = serde_json::from_value(value).ok()?;
+    if !matches!(
+        (scope.version, &scope.duplicate),
+        (1, Duplicate::Legacy(_)) | (2, Duplicate::App(_))
+    ) {
+        return None;
+    }
+    Some(scope)
+}
 struct Package<'a> {
     name: &'a str,
     version: &'a str,
     source: Option<&'a str>,
+    checksum: Option<&'a str>,
     dependencies: Vec<&'a str>,
 }
 type Node<'a> = (&'a str, &'a str);
@@ -717,6 +1125,7 @@ fn lock_packages(lock: &str) -> Option<Vec<Package<'_>>> {
                 name: field("name")?,
                 version: field("version")?,
                 source: field("source"),
+                checksum: field("checksum"),
                 dependencies,
             })
         })
@@ -876,10 +1285,7 @@ fn scope_problems(
     scope: &str,
     now: Timestamp,
 ) -> Vec<&'static str> {
-    let Some(scope) = jcs::parse_strict(scope.as_bytes())
-        .ok()
-        .and_then(|value| serde_json::from_value::<Scope>(value).ok())
-    else {
+    let Some(scope) = parse_scope(scope) else {
         return vec![UNREADABLE];
     };
     let Some(packages) = lock_packages(lock) else {
@@ -894,7 +1300,20 @@ fn scope_problems(
             problems.push(problem);
         }
     };
-    require(scope.version == 1 && scope.source == REGISTRY, HEADER);
+    require(
+        matches!(scope.version, 1 | 2) && scope.source == REGISTRY,
+        HEADER,
+    );
+    let profile = workspace_profile(scope.version, scope.workspace_members.as_deref());
+    require(profile.is_some(), MEMBERS_CHANGED);
+    require(
+        match scope.version {
+            1 => scope.provenance.is_none(),
+            2 => scope.provenance.as_ref().is_some_and(baseline_data_matches),
+            _ => false,
+        },
+        BASELINE_DATA,
+    );
     match (
         timestamp(&scope.expires_at),
         timestamp(&scope.reviewed_at),
@@ -928,10 +1347,7 @@ fn scope_problems(
         recorded
             .iter()
             .all(|row| approved.any(|allowed| allowed == row))
-            && (
-                scope.duplicate.package.as_str(),
-                scope.duplicate.skip.as_str(),
-            ) == APPROVED_SKIP,
+            && scope.duplicate.approved(scope.version),
         UNAPPROVED,
     );
     let roots: Vec<Node> = packages
@@ -940,11 +1356,12 @@ fn scope_problems(
         .map(|package| (package.name, package.version))
         .collect();
     require(
-        roots.iter().map(|(name, _)| *name).eq([
-            "draftyak-desktop-pairing",
-            "draftyak-protocol",
-            "draftyak-transport",
-        ]),
+        profile.is_some_and(|profile| {
+            roots
+                .iter()
+                .map(|(name, _)| *name)
+                .eq(root_names(profile).iter().copied())
+        }),
         MEMBERS_CHANGED,
     );
     for advisory in &scope.advisories {
@@ -977,28 +1394,24 @@ fn scope_problems(
     let duplicate = &scope.duplicate;
     let versions: Vec<_> = packages
         .iter()
-        .filter(|p| p.name == duplicate.package)
+        .filter(|p| p.name == duplicate.package())
         .map(|p| p.version)
         .collect();
+    let recorded_versions = duplicate.versions();
     require(
-        duplicate
-            .parents
-            .keys()
-            .map(String::as_str)
-            .eq(versions.iter().copied())
-            && duplicate.parents.contains_key(&duplicate.skip),
+        recorded_versions == versions
+            && duplicate
+                .skips()
+                .iter()
+                .all(|skip| recorded_versions.contains(skip))
+            && (scope.version != 2 || versions.iter().copied().eq(APP_SYN)),
         SYN_VERSIONS,
     );
-    for (version, parents) in &duplicate.parents {
-        let active: BTreeSet<_> = parents.active.iter().map(String::as_str).collect();
-        let lock_only: BTreeSet<_> = parents.lock_only.iter().map(String::as_str).collect();
-        require(
-            sorted_unique(&parents.active)
-                && (parents.lock_only.is_empty() || sorted_unique(&parents.lock_only))
-                && active.is_disjoint(&lock_only),
-            ROUTE_ORDER,
-        );
-        let target = (duplicate.package.as_str(), version.as_str());
+    for (version, parents) in duplicate.parents() {
+        let (recorded_parents, valid) = parents.union();
+        require(valid, ROUTE_ORDER);
+        let target = (duplicate.package(), version);
+        require(parents.sources_match(&packages, target), SYN_SOURCES);
         let locked: BTreeSet<_> = graph
             .iter()
             .filter(|(_, edges)| edges.contains(&target))
@@ -1008,7 +1421,7 @@ fn scope_problems(
             locked
                 .iter()
                 .map(String::as_str)
-                .eq(active.union(&lock_only).copied()),
+                .eq(recorded_parents.iter().copied()),
             SYN_PARENTS,
         );
     }
@@ -1021,14 +1434,13 @@ fn scope_problems(
     let skips = bans_array(policy, "skip")
         .and_then(|rows| rows.into_iter().map(skip_row).collect::<Option<Vec<_>>>())
         .unwrap_or_default();
-    require(
-        skips
-            .iter()
-            .filter(|(name, _)| *name == duplicate.package)
-            .map(|(_, version)| *version)
-            .eq([duplicate.skip.as_str()]),
-        SKIP,
-    );
+    let mut selected_skips: Vec<_> = skips
+        .iter()
+        .filter(|(name, _)| *name == duplicate.package())
+        .map(|(_, version)| *version)
+        .collect();
+    selected_skips.sort_unstable();
+    require(selected_skips == duplicate.skips(), SKIP);
     require(
         section(policy, "[sources]") == Some(SOURCES.to_vec()),
         SOURCES_CHANGED,
@@ -1127,7 +1539,7 @@ fn native_store_scope_fails_closed_at_the_term_and_without_a_current_review() {
 #[test]
 fn native_store_scope_refuses_a_missing_unknown_or_repeated_fixture_field() {
     let check = |scope: &str| scope_problems(LOCK, POLICY, MANIFEST, scope, at(NOW));
-    for field in [
+    let mut fields = vec![
         "version",
         "source",
         "expiresAt",
@@ -1135,7 +1547,11 @@ fn native_store_scope_refuses_a_missing_unknown_or_repeated_fixture_field() {
         "reviewer",
         "advisories",
         "duplicate",
-    ] {
+    ];
+    if parse_scope(SCOPE).unwrap().version == 2 {
+        fields.extend(["workspaceMembers", "provenance"]);
+    }
+    for field in fields {
         let scope = fixture(|scope| {
             scope.as_object_mut().unwrap().remove(field);
         });
@@ -1149,13 +1565,25 @@ fn native_store_scope_refuses_a_missing_unknown_or_repeated_fixture_field() {
                 .remove("routes");
         }),
         fixture(|scope| {
+            let field = if scope["version"] == 1 {
+                "lockOnly"
+            } else {
+                "lockedParents"
+            };
             scope["duplicate"]["parents"]["3.0.9"]
                 .as_object_mut()
                 .unwrap()
-                .remove("lockOnly");
+                .remove(field);
         }),
         fixture(|scope| scope["note"] = json!("DYTEST")),
-        fixture(|_| {}).replacen("\"version\":1", "\"version\":1,\"version\":1", 1),
+        {
+            let version = parse_scope(SCOPE).unwrap().version;
+            fixture(|_| {}).replacen(
+                &format!("\"version\":{version}"),
+                &format!("\"version\":{version},\"version\":{version}"),
+                1,
+            )
+        },
     ] {
         assert_eq!(check(&scope), [UNREADABLE]);
     }
@@ -1196,24 +1624,23 @@ fn native_store_scope_refuses_unapproved_or_changed_rows() {
         }));
     });
     assert!(check(&added_row).contains(&UNAPPROVED));
-    let other_skip = fixture(|scope| scope["duplicate"]["skip"] = json!("3.0.9"));
-    assert!(check(&other_skip).contains(&UNAPPROVED));
-    let moved_parent = fixture(|scope| {
-        let parents = &mut scope["duplicate"]["parents"]["2.0.119"];
-        let parent = parents["lockOnly"].as_array_mut().unwrap().remove(0);
-        parents["active"].as_array_mut().unwrap().insert(0, parent);
+    let other_skip = fixture(|scope| {
+        if scope["version"] == 1 {
+            scope["duplicate"]["skip"] = json!("3.0.9");
+        } else {
+            scope["duplicate"]["skips"] = json!(["1.0.109", "3.0.9"]);
+        }
     });
-    assert!(
-        check(&moved_parent).is_empty(),
-        "the active split is audit data"
-    );
+    assert!(check(&other_skip).contains(&UNAPPROVED));
     let doubled = fixture(|scope| {
-        let parents = &mut scope["duplicate"]["parents"]["2.0.119"];
-        let parent = parents["active"][0].clone();
-        parents["lockOnly"]
-            .as_array_mut()
-            .unwrap()
-            .insert(0, parent);
+        let field = if scope["version"] == 1 {
+            "active"
+        } else {
+            "lockedParents"
+        };
+        let parents = &mut scope["duplicate"]["parents"]["2.0.119"][field];
+        let parent = parents[0].clone();
+        parents.as_array_mut().unwrap().insert(0, parent);
     });
     assert!(check(&doubled).contains(&ROUTE_ORDER));
 }
@@ -1253,7 +1680,7 @@ fn native_store_scope_fails_when_the_affected_graph_changes() {
     });
     assert_eq!(check(&reparented), [SYN_PARENTS]);
     let third = format!(
-        "{LOCK}\n[[package]]\nname = \"syn\"\nversion = \"1.0.109\"\nsource = \"{REGISTRY}\"\n"
+        "{LOCK}\n[[package]]\nname = \"syn\"\nversion = \"99.0.0\"\nsource = \"{REGISTRY}\"\n"
     );
     assert!(check(&third).contains(&SYN_VERSIONS));
     let dangling = LOCK.replacen(" \"zvariant\",\n", " \"zvariant 9.9.9\",\n", 1);
@@ -1367,5 +1794,192 @@ fn native_store_scope_fails_when_the_audit_policy_or_store_target_changes() {
     ] {
         assert_ne!(manifest, MANIFEST);
         assert_eq!(check(POLICY, &manifest), [STORE_SCOPE]);
+    }
+}
+
+#[test]
+fn legacy_parent_buckets_preserve_the_locked_union_as_audit_data() {
+    let old = Parents {
+        active: vec!["DYTEST-a 0.0.0".to_owned()],
+        lock_only: vec!["DYTEST-b 0.0.0".to_owned()],
+    };
+    let moved = Parents {
+        active: vec!["DYTEST-a 0.0.0".to_owned(), "DYTEST-b 0.0.0".to_owned()],
+        lock_only: vec![],
+    };
+    let overlap = Parents {
+        active: vec!["DYTEST-a 0.0.0".to_owned()],
+        lock_only: vec!["DYTEST-a 0.0.0".to_owned()],
+    };
+    let old_view = ParentView::Legacy(&old);
+    let moved_view = ParentView::Legacy(&moved);
+    let (original, valid) = old_view.union();
+    let (changed, moved_valid) = moved_view.union();
+    assert!(valid && moved_valid);
+    assert_eq!(
+        original, changed,
+        "legacy bucket activity is audit DATA, not recomputed from Cargo.lock"
+    );
+    assert!(!ParentView::Legacy(&overlap).union().1);
+}
+#[test]
+fn app_baseline_provenance_requires_exact_portable_unfiltered_selection() {
+    // Schema-only invented DATA; this never qualifies the actual App4 fixture or current Inputs.
+    let good = json!({
+        "graphDigest": APP_GRAPH, "lockDigest": APP_LOCK,
+        "metadataSelection": {"command":"cargo metadata", "formatVersion":1,
+            "allFeatures":true, "locked":true, "offline":true, "noDeps":false, "filterPlatform":null}
+    });
+    assert!(baseline_data_matches(&parse_baseline_data(&good).unwrap()));
+    for field in ["graphDigest", "lockDigest"] {
+        let mut changed = good.clone();
+        changed[field] = json!("0".repeat(64));
+        assert!(!baseline_data_matches(
+            &parse_baseline_data(&changed).unwrap()
+        ));
+    }
+    for (field, value) in [
+        ("command", json!("cargo tree")),
+        ("formatVersion", json!(2)),
+        ("allFeatures", json!(false)),
+        ("locked", json!(false)),
+        ("offline", json!(false)),
+        ("noDeps", json!(true)),
+        ("filterPlatform", json!("x86_64-pc-windows-msvc")),
+    ] {
+        let mut changed = good.clone();
+        changed["metadataSelection"][field] = value;
+        assert!(!baseline_data_matches(
+            &parse_baseline_data(&changed).unwrap()
+        ));
+    }
+    for field in ["graphDigest", "lockDigest", "metadataSelection"] {
+        let mut changed = good.clone();
+        changed.as_object_mut().unwrap().remove(field);
+        assert!(parse_baseline_data(&changed).is_none());
+    }
+    for field in [
+        "command",
+        "formatVersion",
+        "allFeatures",
+        "locked",
+        "offline",
+        "noDeps",
+        "filterPlatform",
+    ] {
+        let mut changed = good.clone();
+        changed["metadataSelection"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        assert!(parse_baseline_data(&changed).is_none());
+    }
+    let mut unknown = good;
+    unknown["inputDigest"] = json!("0".repeat(64));
+    assert!(parse_baseline_data(&unknown).is_none());
+}
+fn edit_node(lock: &str, name: &str, version: &str, edit: impl Fn(&str) -> String) -> String {
+    edit_package(lock, name, |block| {
+        if block
+            .lines()
+            .any(|line| line == format!("version = \"{version}\""))
+        {
+            edit(block)
+        } else {
+            block.to_owned()
+        }
+    })
+}
+fn changed_checksum(value: &str) -> String {
+    format!(
+        "{}{}",
+        if value.starts_with('0') { '1' } else { '0' },
+        &value[1..]
+    )
+}
+#[test]
+fn every_recorded_syn_version_and_parent_remains_in_the_locked_scope() {
+    let scope = fixture(|_| {});
+    let recorded = parse_scope(&scope).unwrap();
+    let check = |lock: &str| scope_problems(lock, POLICY, MANIFEST, &scope, at(NOW));
+    for version in recorded.duplicate.versions() {
+        let parent = format!(
+            "{LOCK}\n[[package]]\nname = \"dytest-syn-parent\"\nversion = \"0.0.0\"\nsource = \"{REGISTRY}\"\ndependencies = [\n \"syn {version}\",\n]\n"
+        );
+        assert!(check(&parent).contains(&SYN_PARENTS));
+    }
+    if let Duplicate::App(app) = &recorded.duplicate {
+        assert!(app.parents.keys().map(String::as_str).eq(APP_SYN));
+        for (version, parents) in &app.parents {
+            let changed = edit_node(LOCK, "syn", version, |block| {
+                block.replacen(&parents.source, "registry+https://example.invalid/index", 1)
+            });
+            assert_ne!(changed, LOCK);
+            assert!(check(&changed).contains(&SYN_SOURCES));
+            let altered = changed_checksum(&parents.checksum);
+            let changed = edit_node(LOCK, "syn", version, |block| {
+                block.replacen(&parents.checksum, &altered, 1)
+            });
+            assert_ne!(changed, LOCK);
+            assert!(check(&changed).contains(&SYN_SOURCES));
+            for parent in &parents.locked_parents {
+                let (name, parent_version) = parent.package.split_once(' ').unwrap();
+                let changed = edit_node(LOCK, name, parent_version, |block| {
+                    block.replacen(&parent.source, "registry+https://example.invalid/index", 1)
+                });
+                assert_ne!(changed, LOCK);
+                assert!(check(&changed).contains(&SYN_SOURCES));
+                let altered = changed_checksum(&parent.checksum);
+                let changed = edit_node(LOCK, name, parent_version, |block| {
+                    block.replacen(&parent.checksum, &altered, 1)
+                });
+                assert_ne!(changed, LOCK);
+                assert!(check(&changed).contains(&SYN_SOURCES));
+            }
+        }
+    }
+}
+
+#[test]
+fn native_store_skip_rows_ignore_order_but_reject_missing_repeated_and_wrong_versions() {
+    let scope = fixture(|_| {});
+    let check = |policy: &str| scope_problems(LOCK, policy, MANIFEST, &scope, at(NOW));
+    let syn_rows: Vec<_> = bans_array(POLICY, "skip")
+        .unwrap()
+        .into_iter()
+        .filter(|row| skip_row(row).is_some_and(|(name, _)| name == "syn"))
+        .collect();
+    let parsed = parse_scope(&scope).unwrap();
+    assert_eq!(syn_rows.len(), parsed.duplicate.skips().len());
+    assert!(check(POLICY).is_empty());
+    let reversed = if let [first, second] = syn_rows.as_slice() {
+        let marker = "DYTEST-SYN-SKIP-SLOT";
+        assert!(!POLICY.contains(marker));
+        let changed = POLICY
+            .replacen(*first, marker, 1)
+            .replacen(*second, first, 1)
+            .replacen(marker, second, 1);
+        assert_ne!(changed, POLICY);
+        changed
+    } else {
+        assert_eq!(syn_rows.len(), 1);
+        POLICY.to_owned()
+    };
+    assert!(check(&reversed).is_empty());
+    for row in syn_rows {
+        let missing = POLICY.replacen(row, "", 1);
+        let repeated = POLICY.replacen(row, &format!("{row}\n{row}"), 1);
+        let (_, version) = skip_row(row).unwrap();
+        let wrong_row = row.replacen(
+            &format!("version = \"={version}\""),
+            "version = \"=99.0.0\"",
+            1,
+        );
+        assert_ne!(wrong_row, row);
+        let wrong = POLICY.replacen(row, &wrong_row, 1);
+        for changed in [missing, repeated, wrong] {
+            assert_ne!(changed, POLICY);
+            assert!(check(&changed).contains(&SKIP));
+        }
     }
 }

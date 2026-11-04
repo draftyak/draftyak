@@ -90,6 +90,10 @@ const ciCommands: Readonly<Record<string, readonly YamlMap[]>> = {
 		{ run: "pnpm install --frozen-lockfile" },
 		{ run: "pnpm build" },
 		{
+			if: "contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/web')",
+			run: "pnpm --dir apps/web exec playwright install --with-deps chromium",
+		},
+		{
 			if: "needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''",
 			env: {
 				SPIKES: `\${{ needs.changes.outputs.spikes }}`,

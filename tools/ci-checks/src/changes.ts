@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { changedApplication, heavyApplications } from "./app-heavy.ts";
 import { appendSummary, cliArgs, git, revision, runCli, setOutputs } from "./lib.ts";
@@ -20,6 +20,45 @@ export interface Areas {
 
 const communityFiles = new Set(["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES"]);
 const toolchainFiles = new Set(["rust-toolchain.toml", "rust-toolchain"]);
+// These exact policy paths must exercise the mandatory crates/ policy bridge.
+const finitePolicyInputs = new Set([
+	"tools/native-dependency-policy/src/mobile-http-policy.ts",
+	"tools/native-dependency-policy/src/finite-policy-ci.ts",
+	"tools/native-dependency-policy/src/native-audit-source.ts",
+	"tools/verify/steps/rust.ts",
+	"tools/ci-checks/src/changes.ts",
+]);
+// Web is a separate browser suite; it does not expand the fixed native CLI/Hub allowlist.
+const webPackage = "apps/web";
+const webHeavyScript = "pnpm build && vitest run --mode heavy";
+const webHeavyInputs = new Set([".github/workflows/ci.yml", "tools/ci-checks/src/changes.ts"]);
+function changedWeb(file: string): boolean {
+	return (
+		file.startsWith(`${webPackage}/`) &&
+		!file.includes("\\") &&
+		![...file].some(
+			(character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+		) &&
+		file.split("/").every((part) => part !== "" && part !== "." && part !== "..")
+	);
+}
+function eligibleWeb(root: string): boolean {
+	try {
+		for (const dir of ["apps", webPackage]) {
+			const entry = lstatSync(path.join(root, dir));
+			if (!entry.isDirectory() || entry.isSymbolicLink()) return false;
+		}
+		const file = path.join(root, webPackage, "package.json");
+		const entry = lstatSync(file);
+		if (!entry.isFile() || entry.isSymbolicLink()) return false;
+		const value = JSON.parse(readFileSync(file, "utf8"));
+		return value?.name === "@draftyak/web" && value?.scripts?.["test:heavy"] === webHeavyScript;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		throw new Error("cannot inspect Web heavy manifest");
+	}
+}
+
 // Every heavy suite depends on these; so does pnpm-lock.yaml when no package.json changed.
 const globalFiles = new Set([
 	".node-version",
@@ -161,8 +200,97 @@ export function isDocs(file: string): boolean {
 	return /\.md$/i.test(file) || communityFiles.has(file) || /^spikes\/[^/]+\/evidence\//.test(file);
 }
 
-// The Cargo workspace holding a file: the nearest [workspace] manifest above it, else the nearest
-// package. Each Rust spike is its own workspace; the repo root never is one.
+// Only the finite Cargo package.workspace string field is needed here. Unsupported or ambiguous
+// forms refuse rather than assigning a package to a workspace Cargo would not use.
+function packageWorkspace(source: string): string | undefined {
+	let inPackage = false;
+	let packageTables = 0;
+	let multiline = false;
+	const declarations: string[] = [];
+	for (const line of source.split(/\r?\n/)) {
+		if (
+			/^[ \t]*(?:package|"package"|'package')\s*\.\s*(?:workspace|"workspace"|'workspace')/.test(
+				line,
+			)
+		)
+			throw new Error("invalid Cargo package.workspace declaration");
+		const table = /^[ \t]*\[([a-zA-Z0-9_.-]+)\][ \t]*(?:#.*)?$/.exec(line);
+		if (table) {
+			if (table[1] === "package.workspace")
+				throw new Error("invalid Cargo package.workspace declaration");
+			inPackage = table[1] === "package";
+			if (inPackage) packageTables++;
+			continue;
+		}
+		if (/^[ \t]*\[\[/.test(line)) inPackage = false;
+		if (!inPackage) continue;
+		multiline ||= line.includes('"""') || line.includes("'''");
+		if (/^[ \t]*(?:workspace\b|"workspace"|'workspace')/.test(line)) declarations.push(line);
+	}
+	if (declarations.length === 0) return undefined;
+	const declaration = declarations[0] ?? "";
+	const value =
+		/^[ \t]*(?:workspace|"workspace"|'workspace')[ \t]*=[ \t]*(['"])([a-zA-Z0-9_@./-]+)\1[ \t]*(?:#.*)?$/.exec(
+			declaration,
+		)?.[2];
+	if (packageTables !== 1 || declarations.length !== 1 || multiline || !value)
+		throw new Error("invalid Cargo package.workspace declaration");
+	return value;
+}
+
+// External workspace pointers need an explicit member path, not just a target header.
+// Only finite literal members/exclude arrays are supported; unproved membership refuses.
+function externalWorkspaceMember(source: string, workspace: string, member: string): boolean {
+	const invalid: () => never = () => {
+		throw new Error("invalid Cargo package.workspace membership");
+	};
+	if (/^[ \t]*(?:workspace|"workspace"|'workspace')\s*\./m.test(source)) invalid();
+	const lines = source.split(/\r?\n/);
+	const fields = new Map<string, string[]>();
+	let active = false;
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i] ?? "";
+		if (/^[ \t]*\[/.test(line)) {
+			active = /^[ \t]*\[workspace\][ \t]*(?:#.*)?$/.test(line);
+			continue;
+		}
+		if (
+			!active ||
+			!/^[ \t]*(?:members\b|exclude\b|"members"|"exclude"|'members'|'exclude')/.test(line)
+		)
+			continue;
+		const field =
+			/^[ \t]*(members|exclude|"(?:members|exclude)"|'(?:members|exclude)')[ \t]*=[ \t]*(.*)$/.exec(
+				line,
+			);
+		if (!field) invalid();
+		const key = (field[1] ?? "").replace(/["']/g, "");
+		if (fields.has(key)) invalid();
+		let value = (field[2] ?? "").replace(/#.*$/, "");
+		while (!value.includes("]") && i + 1 < lines.length)
+			value += "\n" + (lines[++i] ?? "").replace(/#.*$/, "");
+		const item = "(?:\"[a-zA-Z0-9_@./-]+\"|'[a-zA-Z0-9_@./-]+')";
+		if (
+			!new RegExp("^\\[\\s*(?:" + item + "\\s*(?:,\\s*" + item + "\\s*)*,?\\s*)?\\]\\s*$").test(
+				value,
+			)
+		)
+			invalid();
+		const paths = [...value.matchAll(/(["'])([a-zA-Z0-9_@./-]+)\1/g)].map((entry) => {
+			const relative = entry[2] ?? invalid();
+			const folder = path.posix.normalize(path.posix.join(workspace, relative));
+			if (path.posix.isAbsolute(relative) || folder === ".." || folder.startsWith("../")) invalid();
+			return folder;
+		});
+		fields.set(key, paths);
+	}
+	return (
+		(fields.get("members") ?? []).includes(member) && (fields.get("exclude") ?? []).length === 0
+	);
+}
+
+// The Cargo workspace holding a file: the nearest package's explicit workspace, else the nearest
+// ancestral [workspace], else the nearest package. Each Rust spike is its own workspace.
 export function rustWorkspace(root: string, file: string): string | undefined {
 	if (path.posix.isAbsolute(file)) {
 		throw new Error("Rust workspace paths must be repository-relative");
@@ -171,7 +299,36 @@ export function rustWorkspace(root: string, file: string): string | undefined {
 	for (let dir = path.posix.dirname(file); dir !== "."; dir = path.posix.dirname(dir)) {
 		const manifest = path.join(root, dir, "Cargo.toml");
 		if (!existsSync(manifest)) continue;
-		if (/^\s*\[workspace\]/m.test(readFileSync(manifest, "utf8"))) return dir;
+		const source = readFileSync(manifest, "utf8");
+		if (nearest === undefined) {
+			const declared = packageWorkspace(source);
+			if (declared !== undefined) {
+				const workspace = path.posix.normalize(path.posix.join(dir, declared));
+				if (
+					path.posix.isAbsolute(declared) ||
+					workspace === "." ||
+					workspace === ".." ||
+					workspace.startsWith("../")
+				)
+					throw new Error("invalid Cargo package.workspace target");
+				const target = path.join(root, workspace, "Cargo.toml");
+				if (!existsSync(target)) throw new Error("invalid Cargo package.workspace target");
+				const relative = path.relative(realpathSync(root), realpathSync(target));
+				if (path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`))
+					throw new Error("invalid Cargo package.workspace target");
+				const targetSource = readFileSync(target, "utf8");
+				if (
+					targetSource.includes('"""') ||
+					targetSource.includes("'''") ||
+					[...targetSource.matchAll(/^[ \t]*\[workspace\][ \t]*(?:#.*)?\r?$/gm)].length !== 1
+				)
+					throw new Error("invalid Cargo package.workspace target");
+				if (!externalWorkspaceMember(targetSource, workspace, dir))
+					throw new Error("invalid Cargo package.workspace membership");
+				return workspace;
+			}
+		}
+		if (/^\s*\[workspace\]/m.test(source)) return dir;
 		nearest ??= dir;
 	}
 	return nearest;
@@ -233,6 +390,8 @@ export function classify(
 	const strayRust = new Set<string>();
 	const withDependents = new Set<string>();
 	let applications: readonly string[] | undefined;
+	let webEligible: boolean | undefined;
+	const webSuite = (): boolean => (webEligible ??= eligibleWeb(root));
 	const eligibleApplications = (): readonly string[] => (applications ??= heavyApplications(root));
 	const changedPackages = new Set<string>();
 	let packages: readonly WorkspacePackage[] | undefined;
@@ -272,6 +431,11 @@ export function classify(
 	for (const file of files) {
 		if (isDocs(file)) continue;
 		docsOnly = false;
+		if (finitePolicyInputs.has(file)) addWorkspace("crates/Cargo.toml");
+		if (changedWeb(file)) {
+			if (!webSuite()) throw new Error("changed Web requires its fixed heavy entry");
+			alone.add(webPackage);
+		} else if (webHeavyInputs.has(file) && webSuite()) alone.add(webPackage);
 		shared ||= sharedSpikeFiles.has(file);
 		if (file.startsWith(".github/")) workflows = true;
 		else if (toolchainFiles.has(file)) {
@@ -315,6 +479,7 @@ export function classify(
 	}
 	if (globalApplications) {
 		for (const dir of eligibleApplications()) alone.add(dir);
+		if (webSuite()) alone.add(webPackage);
 	}
 	const heavy = [
 		...[...withDependents].map((dir) => `...{./${dir}}`),

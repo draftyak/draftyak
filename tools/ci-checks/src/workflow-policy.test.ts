@@ -552,6 +552,31 @@ describe("workflow policy", () => {
 			"      - run: pnpm install --frozen-lockfile\n      - run: pnpm build",
 			"      - run: pnpm build\n      - run: pnpm install --frozen-lockfile",
 		],
+		[
+			"Web browser provision removal",
+			"      - name: Prepare selected Web Chromium\n        if: contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/web')\n        run: pnpm --dir apps/web exec playwright install --with-deps chromium\n",
+			"",
+		],
+		[
+			"Web browser provision selection",
+			"if: contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/web')",
+			"if: false",
+		],
+		[
+			"Web browser provision command",
+			"pnpm --dir apps/web exec playwright install --with-deps chromium",
+			"echo browser-unavailable",
+		],
+		[
+			"Web browser provision soft failure",
+			"      - name: Prepare selected Web Chromium\n",
+			"      - name: Prepare selected Web Chromium\n        continue-on-error: true\n",
+		],
+		[
+			"Web browser provision shell",
+			"      - name: Prepare selected Web Chromium\n",
+			"      - name: Prepare selected Web Chromium\n        shell: echo {0}\n",
+		],
 		["heavy condition", "if: needs.changes.outputs.spikes != ''", "if: false"],
 		[
 			"heavy condition removal",
