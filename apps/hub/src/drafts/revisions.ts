@@ -380,13 +380,22 @@ export class NativeDraftRevisions {
 	/** A fixed outbox transition cannot authenticate draft or freeze linkage. */
 	auditOutboxInTransaction(
 		tx: SqlTransaction,
-		action: "outbox.proposed" | "outbox.superseded" | "outbox.approved" | "outbox.missed",
+		action:
+			| "outbox.proposed"
+			| "outbox.superseded"
+			| "outbox.approved"
+			| "outbox.missed"
+			| "outbox.restored",
 		outboxId: string,
 	): DraftAuditReceipt {
 		if (
-			!["outbox.proposed", "outbox.superseded", "outbox.approved", "outbox.missed"].includes(
-				action,
-			) ||
+			![
+				"outbox.proposed",
+				"outbox.superseded",
+				"outbox.approved",
+				"outbox.missed",
+				"outbox.restored",
+			].includes(action) ||
 			!Ulid.safeParse(outboxId).success
 		)
 			throw revisionUnavailable();
@@ -1060,6 +1069,7 @@ const methods = Object.freeze({
 	now: NativeDraftRevisions.prototype.now,
 	prepareLockInTransaction: NativeDraftRevisions.prototype.prepareLockInTransaction,
 	setPreparedLockInTransaction: NativeDraftRevisions.prototype.setPreparedLockInTransaction,
+	setLockInTransaction: NativeDraftRevisions.prototype.setLockInTransaction,
 	sameStore: NativeDraftRevisions.prototype.sameStore,
 });
 const SELECT = `SELECT id,draft_id,outbox_id,CASE WHEN typeof(payload)='text' AND length(CAST(payload AS BLOB)) BETWEEN 1 AND 2097152 THEN payload ELSE NULL END AS payload,audit_seq,CASE WHEN typeof(mac)='text' AND length(CAST(mac AS BLOB))=64 THEN mac ELSE NULL END AS mac FROM main.native_draft_locks WHERE id=?`;
@@ -1354,6 +1364,70 @@ export class NativeDraftFreeze {
 			throw revisionUnavailable();
 		}
 	}
+	/** Offline restore only: authenticate history without minting or reopening a live proof. */
+	releaseForRestoreInTransaction(
+		tx: SqlTransaction,
+		binding: DraftBinding,
+		outboxId: string,
+		lockId: string,
+	): void {
+		try {
+			methods.assertTransaction.call(this.#revisions, tx);
+			if (!Ulid.safeParse(outboxId).success || !Ulid.safeParse(lockId).success)
+				throw revisionUnavailable();
+			const bound = captureDraftBinding(binding),
+				stored = this.#load(tx, lockId),
+				{ row, payload } = stored;
+			if (
+				row.outbox_id !== outboxId ||
+				row.draft_id !== bound.draftId ||
+				canonicalize(payload.binding) !== canonicalize(bound)
+			)
+				throw revisionUnavailable();
+			const current = methods.currentInTransaction.call(this.#revisions, tx, bound);
+			if (payload.status === "active") {
+				if (current.lockId !== lockId) throw revisionUnavailable();
+				// Preserve every ordinary active-release/#current check and write literally.
+				releaseActiveFreezeForRestore.call(this, tx, bound, outboxId);
+				return;
+			}
+			// A consumed/released row is history, never a currentness proof. A later or
+			// already-cleared header association belongs to another operation; leave it alone.
+			if (current.lockId !== lockId) return;
+			if (
+				payload.revisionContentHash !== current.revision.contentSha256 ||
+				payload.flagsHash !== current.flagsHash
+			)
+				throw revisionUnavailable();
+			matches(current, bound, payload.snapshot);
+			const observedAt = methods.now.call(this.#revisions),
+				at = Math.max(
+					observedAt,
+					payload.updatedAt,
+					current.draft.updatedAt,
+					current.revision.createdAt,
+				);
+			// The original header method requires this exact rev/current lock, signs/audits
+			// only its unlock, and leaves the authenticated historical freeze row untouched.
+			const unlocked = methods.setLockInTransaction.call(
+				this.#revisions,
+				tx,
+				bound,
+				current.draft.rev,
+				lockId,
+				null,
+				at,
+			);
+			if (
+				unlocked.lockId !== null ||
+				unlocked.draft.rev !== current.draft.rev ||
+				canonicalize(this.#load(tx, lockId).row) !== canonicalize(row)
+			)
+				throw revisionUnavailable();
+		} catch {
+			throw revisionUnavailable();
+		}
+	}
 	/** Native cancellation/supersede composition may release only an unconsumed data lock. */
 	releaseInTransaction(tx: SqlTransaction, binding: DraftBinding, outboxId: string): void {
 		try {
@@ -1388,3 +1462,6 @@ export class NativeDraftFreeze {
 		}
 	}
 }
+
+// Captured after class initialization; the restore member cannot dispatch a replacement method.
+const releaseActiveFreezeForRestore = NativeDraftFreeze.prototype.releaseInTransaction;

@@ -433,6 +433,63 @@ export class SendTicketStorage {
 			throw unavailable();
 		return saved;
 	}
+	/** Restore restriction only: joins the caller's existing original native transaction. */
+	resetForRestoreInTransaction(tx: SqlTransaction): number {
+		try {
+			if (this.#destroyed) throw unavailable();
+			assertStoreTransaction(this.#store, tx);
+			verifyAudit.call(this.#audit, tx);
+			let after = "";
+			let changed = 0;
+			for (;;) {
+				if (this.#destroyed) throw unavailable();
+				assertStoreTransaction(this.#store, tx);
+				const rows = tx.all<{ id: unknown }>(
+					`SELECT CASE WHEN typeof(id)='text' AND length(CAST(id AS BLOB))=26 THEN id ELSE NULL END AS id
+ FROM main.native_send_attempts
+ WHERE id COLLATE BINARY>? AND state IN ('ISSUED','REDEEMED','SENDING')
+ ORDER BY id COLLATE BINARY LIMIT 128`,
+					[after],
+				);
+				if (rows.length > 128) throw unavailable();
+				for (const candidate of rows) {
+					const id = candidate.id;
+					if (typeof id !== "string" || !Ulid.safeParse(id).success || id <= after)
+						throw unavailable();
+					const row = restoreOriginal.find.call(this, tx, "id", id);
+					if (
+						!row ||
+						(row.state !== "ISSUED" && row.state !== "REDEEMED" && row.state !== "SENDING")
+					)
+						throw unavailable();
+					restoreOriginal.payload.call(this, row);
+					const state = row.state === "SENDING" ? "UNKNOWN" : "NEEDS_REAPPROVAL";
+					const updated = restoreOriginal.transition.call(this, tx, row, state);
+					const stored = restoreOriginal.find.call(this, tx, "id", id);
+					if (
+						this.#destroyed ||
+						updated.id !== id ||
+						updated.state !== state ||
+						!stored ||
+						stored.state !== state ||
+						stored.audit_seq !== updated.audit_seq ||
+						!Number.isSafeInteger(changed + 1)
+					)
+						throw unavailable();
+					restoreOriginal.payload.call(this, stored);
+					changed++;
+					after = id;
+				}
+				if (rows.length < 128) break;
+			}
+			if (this.#destroyed) throw unavailable();
+			assertStoreTransaction(this.#store, tx);
+			verifyAudit.call(this.#audit, tx);
+			return changed;
+		} catch {
+			throw unavailable();
+		}
+	}
 	insertInTransaction(tx: SqlTransaction, input: SendTicketInsert): SendTicket {
 		try {
 			assertStoreTransaction(this.#store, tx);
@@ -510,5 +567,24 @@ export class SendTicketStorage {
 	destroy(): void {
 		this.#destroyed = true;
 		this.#key.fill(0);
+	}
+}
+
+// Capture only this module's initialized original methods; a receiver supplies no override.
+const restoreOriginal = Object.freeze({
+	find: SendTicketStorage.prototype.find,
+	payload: SendTicketStorage.prototype.payload,
+	transition: SendTicketStorage.prototype.transition,
+	reset: SendTicketStorage.prototype.resetForRestoreInTransaction,
+});
+
+/** Offline restore only: no lease, dispatch, credential grant or transaction is created. */
+export function resetSendTicketStorageForRestore(storage: unknown, tx: SqlTransaction): number {
+	try {
+		if (typeof storage !== "object" || storage === null || types.isProxy(storage))
+			throw unavailable();
+		return restoreOriginal.reset.call(storage as SendTicketStorage, tx);
+	} catch {
+		throw unavailable();
 	}
 }
