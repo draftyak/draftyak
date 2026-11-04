@@ -476,7 +476,7 @@ describe("refusals before any read or child start", () => {
 		expect(named.endsWith(": packages/a/gen/x.mjs (unlisted)")).toBe(true);
 	});
 
-	it("follows an exports subpath pattern, and refuses an ignored or untracked match without reading it, naming only the match", async () => {
+	it("follows an exports subpath pattern, and refuses an ignored match without reading it and an untracked one, naming only the match", async () => {
 		const files = {
 			"packages/a/package.json": '{ "name": "a", "exports": { "./*": "./gen/*.js" } }\n',
 			"packages/a/gen/x.js": "export {};\n",
@@ -729,7 +729,7 @@ describe("refusals before any read or child start", () => {
 		]);
 	});
 
-	it("refuses an entry in the root or a package folder named for a command started there with an extension cmd.exe runs, tracked or not and in any case, never reading it", async () => {
+	it("refuses an entry in the root or a package folder named for a command started there with an extension cmd.exe runs, tracked or not and in any case, never reading a .cmd or .exe entry", async () => {
 		const scripts =
 			'{ "name": "a", "scripts": { "test": "FORCE_COLOR=0 vitest run && tsc -b" } }\n';
 		const shadow = (rel: string): boolean => /\.(?:cmd|exe)$/i.test(rel);
