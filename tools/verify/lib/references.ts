@@ -17,8 +17,8 @@ import { type Checkout, fold, type Kind } from "./safe-fs.ts";
 // in real folders. A missing one is fine, as no tool can read it, except one whose path names a
 // reserved word, which is refused either way. Bare specifiers and names, which resolve to installed
 // dependencies, aren't followed, and nothing below node_modules or .git is. A value that redirects
-// a tool in a form these checks don't follow (an imports pattern, a Biome config from a package) is
-// refused as "unsupported".
+// a tool in a form these checks don't follow (an imports pattern, a Biome config from a package, a
+// toolchain path, a .cargo config key but paths and [patch]) is refused as "unsupported".
 
 export type RefusedKind = Kind | "unlisted" | "reserved" | "unparsable" | "unsupported";
 
@@ -481,13 +481,49 @@ const DEPENDENCY_TABLES = [
 ];
 const TARGET_TABLES = ["bin", "test", "bench", "example"];
 
-// A Cargo manifest's and a .cargo config's paths (TOML read with parseToml):
+// The forms of rustup's toolchain file that name a toolchain and nothing else: the [toolchain]
+// table's channel, components, targets and profile, each a plain name or a list of them. Its path
+// key runs the tools in that folder, and a channel spelled as a path does the same; rustup would
+// follow any other key or form, so those are refused before Cargo runs.
+const TOOLCHAIN_FILES = new Set(["rust-toolchain", "rust-toolchain.toml"]);
+const TOOLCHAIN_KEYS = new Set(["channel", "components", "targets", "profile"]);
+const TOOLCHAIN_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function toolchainRefs(candidates: Candidates, file: string, text: string): void {
+	// trim() drops a byte order mark too.
+	const lines = text.trim().split(/\r?\n/);
+	// A rust-toolchain file of one line is the toolchain's name, as rustup reads it.
+	if (fold(baseOf(file)) === "rust-toolchain" && lines.length === 1) {
+		if (!TOOLCHAIN_NAME.test(lines[0] ?? "")) candidates.refuse(file, "unsupported");
+		return;
+	}
+	const toml = parseToml(text);
+	if (toml === null) {
+		candidates.refuse(file, "unparsable");
+		return;
+	}
+	const named = (value: Toml | undefined): boolean =>
+		typeof value === "string"
+			? TOOLCHAIN_NAME.test(value)
+			: Array.isArray(value) &&
+				value.every((item) => typeof item === "string" && TOOLCHAIN_NAME.test(item));
+	const section = tableAt(toml, "toolchain");
+	const plain =
+		Object.keys(toml).every((key) => key === "toolchain" && section !== null) &&
+		Object.entries(section ?? {}).every(([key, value]) => TOOLCHAIN_KEYS.has(key) && named(value));
+	if (!plain) candidates.refuse(file, "unsupported");
+}
+
+// A Cargo manifest's and a .cargo config's paths (TOML read with parseToml), and a toolchain file's
+// forms (toolchainRefs):
 // - a manifest's [package] build (a path; false turns the implicit build.rs off, which the scan
 //   honours) and workspace, its targets' path keys, [workspace] members and exclude (glob members
 //   are the scan's), and every path dependency: each dependency table, target.*'s, [workspace]'s,
 //   [patch.*] and [replace];
-// - a config's paths and [patch.*] path entries, at the folder holding .cargo. Its other keys aren't
-//   followed.
+// - a config's paths and [patch.*] path entries, at the folder holding .cargo. Any other key of a
+//   config ([source] replacement, build.rustc and its wrappers, target linkers and runners, [env],
+//   rustflags, includes and the rest) can point Cargo at sources, programs or settings this check
+//   doesn't follow, so a config holding one is refused.
 function cargoRefs(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -495,6 +531,10 @@ function cargoRefs(
 	text: string,
 ): void {
 	const dir = dirOf(file);
+	if (TOOLCHAIN_FILES.has(fold(baseOf(file)))) {
+		toolchainRefs(candidates, file, text);
+		return;
+	}
 	const manifest = fold(baseOf(file)) === "cargo.toml";
 	const config = !manifest && fold(baseOf(dir)) === ".cargo";
 	if (!manifest && !config) return;
@@ -521,6 +561,9 @@ function cargoRefs(
 		const paths = toml.paths;
 		for (const value of Array.isArray(paths) ? paths : []) crate(value);
 		patches(tableAt(toml, "patch"));
+		if (Object.keys(toml).some((key) => key !== "paths" && key !== "patch")) {
+			candidates.refuse(file, "unsupported");
+		}
 		return;
 	}
 	const pkg = tableAt(toml, "package") ?? tableAt(toml, "project");

@@ -85,7 +85,7 @@ const COUNTED: Readonly<Record<GateCheck, string>> = {
 	kinds: `listed path(s) aren't a regular file in real folders of this checkout (a link, junction, redirect, hard link, folder, special file, or one that couldn't be checked); ${UNREAD}`,
 	"tree-rules": "",
 	"refs-rust": `file(s) that Rust mod, #[path] or include! declarations name aren't regular, listed files of this checkout, or name a reserved word; ${UNREAD}`,
-	"refs-cargo": `file(s) or folder(s) that Cargo manifests or .cargo configs name aren't regular, listed files in real folders of this checkout, or the manifest couldn't be parsed; ${UNREAD}`,
+	"refs-cargo": `file(s) or folder(s) that Cargo manifests or .cargo configs name aren't regular, listed files in real folders of this checkout, or a manifest, .cargo config or toolchain file couldn't be parsed or sets a key or form this check doesn't follow; ${UNREAD}`,
 	"refs-modules": `file(s) or folder(s) that relative module literals or runner configs name, or the package.json a # specifier resolves through, aren't regular, listed files in real folders of this checkout; ${UNREAD}`,
 	"refs-config": `file(s) or folder(s) that package.json specs and imports maps, tsconfig fields, Biome configs' extends and plugins or HTML src and href values name aren't regular, listed files in real folders of this checkout, or a config names one in a form this check doesn't follow; ${UNREAD}`,
 	"scan-pnpm": `workspace package folder(s) or manifest(s) that pnpm and turbo read aren't regular, listed files in real folders; ${UNREAD}`,

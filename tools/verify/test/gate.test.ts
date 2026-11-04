@@ -170,7 +170,7 @@ const LINE: Readonly<Record<string, string>> = {
 	"refs-rust":
 		"reserved tripwire: file(s) that Rust mod, #[path] or include! declarations name aren't regular, listed files of this checkout, or name a reserved word; none of them was read",
 	"refs-cargo":
-		"reserved tripwire: file(s) or folder(s) that Cargo manifests or .cargo configs name aren't regular, listed files in real folders of this checkout, or the manifest couldn't be parsed; none of them was read",
+		"reserved tripwire: file(s) or folder(s) that Cargo manifests or .cargo configs name aren't regular, listed files in real folders of this checkout, or a manifest, .cargo config or toolchain file couldn't be parsed or sets a key or form this check doesn't follow; none of them was read",
 	"refs-modules":
 		"reserved tripwire: file(s) or folder(s) that relative module literals or runner configs name, or the package.json a # specifier resolves through, aren't regular, listed files in real folders of this checkout; none of them was read",
 	"refs-config":
@@ -243,7 +243,7 @@ describe("refusals before any read or child start", () => {
 		expect(run.opens.some(inHeld)).toBe(false);
 	});
 
-	it("refuses a redirection it doesn't follow, in an imports map or a Biome config, naming none", async () => {
+	it("refuses a redirection it doesn't follow, in an imports map, a Biome config, a toolchain file or a .cargo config, naming none", async () => {
 		const cases: readonly (readonly [string, Readonly<Record<string, string>>, string])[] = [
 			[
 				"an imports pattern",
@@ -254,6 +254,12 @@ describe("refusals before any read or child start", () => {
 				"a Biome config extending a package's",
 				{ "biome.json": '{ "extends": ["@scope/config/biome"] }\n' },
 				"refs-config",
+			],
+			["a toolchain path", { "rust-toolchain.toml": '[toolchain]\npath = "./tc"\n' }, "refs-cargo"],
+			[
+				"a .cargo config wrapper",
+				{ "crates/r/.cargo/config.toml": '[build]\nrustc-wrapper = "./wrap.sh"\n' },
+				"refs-cargo",
 			],
 		];
 		for (const [label, files, check] of cases) {

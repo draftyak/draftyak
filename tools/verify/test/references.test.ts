@@ -219,6 +219,48 @@ describe("refs-cargo", () => {
 		};
 		expect(await refused({ files }, "refs-cargo")).toEqual(["bad/Cargo.toml: unparsable"]);
 	});
+
+	it("refuses a .cargo config key other than paths and [patch], which could point Cargo at other sources or programs", async () => {
+		const files = {
+			"a/.cargo/config.toml":
+				'[source.crates-io]\nreplace-with = "vendored"\n\n[source.vendored]\ndirectory = "vendor"\n',
+			"b/.cargo/config.toml": '[build]\nrustc-wrapper = "./wrap.sh"\n',
+			"c/.cargo/config": '[target.x86_64-unknown-linux-gnu]\nlinker = "./ld"\nrunner = "./run"\n',
+			"d/.cargo/config.toml": '[env]\nRUSTC_BOOTSTRAP = "1"\n',
+			"e/.cargo/config.toml": 'include = ["more.toml"]\n',
+			"f/.cargo/config.toml": 'paths = ["p"]\n\n[patch.crates-io]\nq = { path = "q" }\n',
+		};
+		expect(await refused({ files }, "refs-cargo")).toEqual([
+			"a/.cargo/config.toml: unsupported",
+			"b/.cargo/config.toml: unsupported",
+			"c/.cargo/config: unsupported",
+			"d/.cargo/config.toml: unsupported",
+			"e/.cargo/config.toml: unsupported",
+		]);
+	});
+
+	it("refuses a toolchain file that gives rustup a path or a form it doesn't check, and leaves a named toolchain alone", async () => {
+		const files = {
+			"rust-toolchain.toml":
+				'[toolchain]\nchannel = "1.95.0"\ncomponents = ["rustfmt", "clippy"]\nprofile = "minimal"\n',
+			"a/rust-toolchain.toml": '[toolchain]\npath = "./tc"\n',
+			"b/rust-toolchain.toml": '[toolchain]\nchannel = "../tc"\n',
+			"c/rust-toolchain": "./tc\n",
+			"d/rust-toolchain": "stable-x86_64-unknown-linux-gnu\n",
+			"e/rust-toolchain.toml": '[toolchain]\nchannel = "stable"\n\n[other]\nx = 1\n',
+			"f/rust-toolchain.toml": '[toolchain]\ntargets = ["../custom.json"]\n',
+			"g/rust-toolchain.toml": "[toolchain\n",
+			"h/rust-toolchain": '[toolchain]\nchannel = "nightly-2026-10-01"\n',
+		};
+		expect(await refused({ files }, "refs-cargo")).toEqual([
+			"a/rust-toolchain.toml: unsupported",
+			"b/rust-toolchain.toml: unsupported",
+			"c/rust-toolchain: unsupported",
+			"e/rust-toolchain.toml: unsupported",
+			"f/rust-toolchain.toml: unsupported",
+			"g/rust-toolchain.toml: unparsable",
+		]);
+	});
 });
 
 describe("refs-modules", () => {
