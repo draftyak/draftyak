@@ -27,11 +27,14 @@ const WORKSPACE = readFileSync(path.resolve(verify, "..", "..", "pnpm-workspace.
 const manifest = (scripts: Record<string, string>, more: Record<string, unknown> = {}): string =>
 	`${JSON.stringify({ private: true, ...more, scripts }, null, 2)}\n`;
 
+// The allowed root's script names, exactly as the contract has them.
+const CONTRACT = { typecheck: "x", test: "x", "test:heavy": "x", "test:live": "x" };
+
 const BASE: Readonly<Record<string, string>> = {
 	"package.json": manifest({ build: "x", test: "x", preview: "x" }),
 	"pnpm-workspace.yaml": WORKSPACE,
 	"spikes/alpha/package.json": manifest({ test: "x", typecheck: "x", postcss: "x", prettier: "x" }),
-	"spikes/held/package.json": manifest({ test: "x", typecheck: "x", "test:heavy": "x" }),
+	"spikes/held/package.json": manifest(CONTRACT),
 	"tools/beta/package.json": manifest({}),
 };
 const DIRS = ["spikes/alpha", "spikes/held", "tools/beta"];
@@ -111,8 +114,17 @@ const FIXTURES: Readonly<Record<InstallRule, readonly [Change, string]>> = {
 		"pre-install check: 1 install hook script(s) in 1 manifest(s)",
 	],
 	"allowed-root-scripts": [
-		{ files: { "spikes/held/package.json": manifest({ test: "x", lint: "x" }) } },
-		"pre-install check: 1 script name(s) in 1 allowed root manifest(s) are install hooks or not on the allowed list",
+		{
+			files: {
+				"spikes/held/package.json": manifest({
+					typecheck: "x",
+					test: "x",
+					"test:heavy": "x",
+					"test:device": "x",
+				}),
+			},
+		},
+		"pre-install check: 2 script name(s) in 1 allowed root manifest(s) are install hooks, missing from its contract or not on it",
 	],
 };
 
@@ -141,15 +153,11 @@ describe("the hook names", () => {
 		}
 	});
 
-	it("allows the allowed root only the kit's own script names", () => {
-		expect(ALLOWED_ROOT_SCRIPTS).toEqual([
-			"typecheck",
-			"test",
-			"test:heavy",
-			"test:live",
-			"test:device",
-		]);
+	it("holds the allowed root to exactly the kit's own script names, none of them a hook", () => {
+		expect(ALLOWED_ROOT_SCRIPTS).toEqual(["typecheck", "test", "test:heavy", "test:live"]);
 		expect(ALLOWED_ROOT_SCRIPTS.some(hookKey)).toBe(false);
+		expect(new Set(ALLOWED_ROOT_SCRIPTS).size).toBe(ALLOWED_ROOT_SCRIPTS.length);
+		expect(Object.keys(CONTRACT)).toEqual(ALLOWED_ROOT_SCRIPTS);
 	});
 
 	it("loads nothing at runtime, so the proof's and the pre-install check's start sets hold", () => {
@@ -320,17 +328,67 @@ describe("the pre-install inputs", () => {
 			},
 		});
 		const counted = checkInstallInputs({ checkout, listing }, deps).lines;
+		// Two names off the contract (held-only and postinstall), three of it missing.
 		expect(counted).toEqual([
 			"pre-install check: 3 install hook script(s) in 2 manifest(s)",
-			"pre-install check: 2 script name(s) in 1 allowed root manifest(s) are install hooks or not on the allowed list",
+			"pre-install check: 5 script name(s) in 1 allowed root manifest(s) are install hooks, missing from its contract or not on it",
 			STOPPED,
 		]);
 		const named = checkInstallInputs({ checkout, listing, names: true }, deps).lines;
 		expect(named).toEqual([
 			"pre-install check: 3 install hook script(s) in 2 manifest(s): package.json (prepare), spikes/alpha/package.json (postinstall, pnpm:devPreinstall)",
-			"pre-install check: 2 script name(s) in 1 allowed root manifest(s) are install hooks or not on the allowed list: spikes/held/package.json",
+			"pre-install check: 5 script name(s) in 1 allowed root manifest(s) are install hooks, missing from its contract or not on it: spikes/held/package.json",
 			STOPPED,
 		]);
 		expect(named.some((line) => line.includes("held-only"))).toBe(false);
+	});
+
+	// The allowed root's names against the contract as sets: what differs is counted, the same count
+	// of other names never passes, and no line names a script, with --names or without.
+	it("compares the allowed root's script names with its contract as sets, whatever their count", () => {
+		const { typecheck, test, "test:heavy": heavy, "test:live": live } = CONTRACT;
+		const cases: readonly (readonly [string, string, number])[] = [
+			["the contract", manifest(CONTRACT), 0],
+			[
+				"the contract in another order",
+				manifest({ "test:live": live, "test:heavy": heavy, test, typecheck }),
+				0,
+			],
+			["one name missing", manifest({ typecheck, test, "test:heavy": heavy }), 1],
+			[
+				"a rename to another kit script",
+				manifest({ typecheck, test, "test:heavy": heavy, "test:device": "x" }),
+				2,
+			],
+			[
+				"a rename to any other name",
+				manifest({ typecheck, test, "test:heavy": heavy, lint: "x" }),
+				2,
+			],
+			[
+				"a hook in place of a name",
+				manifest({ typecheck, test, "test:heavy": heavy, postinstall: "x" }),
+				2,
+			],
+			["one name more", manifest({ ...CONTRACT, "test:device": "x" }), 1],
+			["a hook more", manifest({ ...CONTRACT, prepare: "x" }), 1],
+			["no scripts", manifest({}), 4],
+			["no scripts field", '{ "private": true }\n', 4],
+			[
+				"a name spelled in another case",
+				manifest({ typecheck, test, "test:heavy": heavy, "Test:live": "x" }),
+				2,
+			],
+		];
+		for (const [label, text, differ] of cases) {
+			const { checkout, listing, deps } = setUp({ files: { "spikes/held/package.json": text } });
+			for (const names of [false, true]) {
+				const { ok, lines } = checkInstallInputs({ checkout, listing, names }, deps);
+				const line = `pre-install check: ${differ} script name(s) in 1 allowed root manifest(s) are install hooks, missing from its contract or not on it`;
+				const expected =
+					differ === 0 ? [PASSED] : [names ? `${line}: spikes/held/package.json` : line, STOPPED];
+				expect([label, ok, lines]).toEqual([label, differ === 0, expected]);
+			}
+		}
 	});
 });

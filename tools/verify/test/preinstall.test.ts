@@ -24,6 +24,8 @@ const WORKSPACE = readFileSync(path.resolve(verify, "..", "..", "pnpm-workspace.
 const HELD = `spikes/s90-${word()}`;
 const HELD_MANIFEST = `${HELD}/package.json`;
 const DIRS = [HELD, "spikes/alpha", "tools/beta"];
+// The allowed root's script names, exactly as the contract has them.
+const CONTRACT = { test: "x", typecheck: "x", "test:heavy": "x", "test:live": "x" };
 
 const manifest = (scripts: Record<string, string>, more: Record<string, unknown> = {}): string =>
 	`${JSON.stringify({ private: true, ...more, scripts }, null, 2)}\n`;
@@ -32,7 +34,7 @@ const BASE: Readonly<Record<string, string>> = {
 	"package.json": manifest({ build: "x", test: "x", preview: "x" }),
 	"pnpm-workspace.yaml": WORKSPACE,
 	"spikes/alpha/package.json": manifest({ test: "x", typecheck: "x", postcss: "x" }),
-	[HELD_MANIFEST]: manifest({ test: "x", typecheck: "x", "test:heavy": "x", "test:live": "x" }),
+	[HELD_MANIFEST]: manifest(CONTRACT),
 	"tools/beta/package.json": manifest({ prettier: "x" }),
 };
 
@@ -105,7 +107,7 @@ const PASSED =
 const hooks = (count: number, files: number): string =>
 	`pre-install check: ${count} install hook script(s) in ${files} manifest(s)`;
 const allowed = (count: number): string =>
-	`pre-install check: ${count} script name(s) in 1 allowed root manifest(s) are install hooks or not on the allowed list`;
+	`pre-install check: ${count} script name(s) in 1 allowed root manifest(s) are install hooks, missing from its contract or not on it`;
 const MANIFESTS =
 	"pre-install check: 1 manifest(s) or package folder(s) aren't listed regular files whose script names can be read";
 const npmrc = (count: number): string =>
@@ -145,13 +147,32 @@ describe("the pre-install check", () => {
 		],
 		[
 			"a postinstall in the allowed root's manifest",
-			{ files: { [HELD_MANIFEST]: manifest({ test: "x", postinstall: "x" }) } },
+			{ files: { [HELD_MANIFEST]: manifest({ ...CONTRACT, postinstall: "x" }) } },
 			allowed(1),
 		],
 		[
 			"an unknown script name in the allowed root's manifest",
-			{ files: { [HELD_MANIFEST]: manifest({ test: "x", lint: "x" }) } },
+			{ files: { [HELD_MANIFEST]: manifest({ ...CONTRACT, lint: "x" }) } },
 			allowed(1),
+		],
+		[
+			"a script name the allowed root's manifest lacks",
+			{ files: { [HELD_MANIFEST]: manifest({ test: "x", typecheck: "x", "test:heavy": "x" }) } },
+			allowed(1),
+		],
+		[
+			"a same-count rename in the allowed root's manifest",
+			{
+				files: {
+					[HELD_MANIFEST]: manifest({
+						test: "x",
+						typecheck: "x",
+						"test:heavy": "x",
+						"test:device": "x",
+					}),
+				},
+			},
+			allowed(2),
 		],
 		[
 			"a pnpm key in the root manifest",
@@ -241,7 +262,7 @@ describe("the pre-install check", () => {
 		const counted = await run([], change);
 		expect([counted.code, counted.lines.map(scrub)]).toEqual([
 			1,
-			[npmrc(1), GYP, MANIFESTS, PNPM_FIELD, hooks(2, 2), allowed(2), INSTALL_STOP_LINE],
+			[npmrc(1), GYP, MANIFESTS, PNPM_FIELD, hooks(2, 2), allowed(5), INSTALL_STOP_LINE],
 		]);
 		expect(countsOnly(counted.lines)).toBe(true);
 		const named = await run(["--names"], change);
@@ -253,7 +274,7 @@ describe("the pre-install check", () => {
 				`${MANIFESTS}: spikes/joined`,
 				`${PNPM_FIELD}: package.json`,
 				`${hooks(2, 2)}: package.json (prepare), spikes/alpha/package.json (postinstall)`,
-				`${allowed(2)}: ${scrub(HELD_MANIFEST)}`,
+				`${allowed(5)}: ${scrub(HELD_MANIFEST)}`,
 				INSTALL_STOP_LINE,
 			],
 		]);

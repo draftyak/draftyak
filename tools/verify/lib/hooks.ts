@@ -30,13 +30,15 @@ export function ordinaryHookKey(key: string): boolean {
 	return INSTALL_HOOKS.includes(key) || key.startsWith("pnpm:");
 }
 
-// The only script names the allowed root's manifest may hold, none of them a hook.
+// The script names the allowed root's manifest must hold, no more and no fewer: the kit's own
+// scripts for its typecheck and its test tiers, none of them a hook. The pre-install check compares
+// the manifest's names with this set as sets, so a name missing, added or renamed is refused
+// whatever their count, and neither set is ever printed.
 export const ALLOWED_ROOT_SCRIPTS: readonly string[] = Object.freeze([
 	"typecheck",
 	"test",
 	"test:heavy",
 	"test:live",
-	"test:device",
 ]);
 
 export type InstallRule =
@@ -97,7 +99,7 @@ const COUNTED: Readonly<Record<InstallRule, (count: number, files: number) => st
 		"the root manifest has a pnpm field, whose settings can change what an install runs",
 	"ordinary-hooks": (count, files) => `${count} install hook script(s) in ${files} manifest(s)`,
 	"allowed-root-scripts": (count, files) =>
-		`${count} script name(s) in ${files} allowed root manifest(s) are install hooks or not on the allowed list`,
+		`${count} script name(s) in ${files} allowed root manifest(s) are install hooks, missing from its contract or not on it`,
 };
 
 // Why the workspace file fails its rule: its kind, "unlisted", or "unapproved" for a text outside the
@@ -229,10 +231,14 @@ export function checkInstallInputs(
 			continue;
 		}
 		if (manifest.via === "allowed") {
-			const refused = manifest.scripts.filter(
-				(key) => hookKey(key) || !ALLOWED_ROOT_SCRIPTS.includes(key),
-			);
-			if (refused.length > 0) add("allowed-root-scripts", rel, refused.length);
+			// Every name the manifest holds that is a hook or not in the contract, and every name of the
+			// contract it lacks: a rename counts twice, so the same count of names never passes for it.
+			const held = new Set(manifest.scripts);
+			const contract = new Set(ALLOWED_ROOT_SCRIPTS);
+			const differ =
+				[...held].filter((key) => hookKey(key) || !contract.has(key)).length +
+				[...contract].filter((key) => !held.has(key)).length;
+			if (differ > 0) add("allowed-root-scripts", rel, differ);
 			continue;
 		}
 		if (rel === MANIFEST && manifest.pnpm) add("no-pnpm-field", rel);
