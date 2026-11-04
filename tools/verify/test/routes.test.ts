@@ -244,6 +244,13 @@ const PLANTED: Readonly<Record<string, (repo: TempRepo) => void>> = {
 		writeFileSync(path.join(repo.outside, "helper.ts"), marks);
 		repo.write("packages/a/src/beside.ts", 'import "../../../../outside/helper.ts";\n');
 	},
+	"an untracked module whose eager glob import matches a module beside the checkout": (repo) => {
+		writeFileSync(path.join(repo.outside, "helper.ts"), marks);
+		repo.write(
+			"packages/a/src/glob.ts",
+			'export const m = import.meta.glob("../../../../outside/*.ts", { eager: true });\n',
+		);
+	},
 	"a test script running a helper that exists beside the checkout": (repo) => {
 		writeFileSync(path.join(repo.outside, "helper.mjs"), marks);
 		repo.write(

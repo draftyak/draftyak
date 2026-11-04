@@ -12,6 +12,7 @@ export type LiteralKind =
 	| "resolve"
 	| "url"
 	| "reference"
+	| "glob"
 	| "other";
 
 export interface Literal {
@@ -401,8 +402,37 @@ function typeOnly(tokens: readonly Token[], start: number, at: number): boolean 
 	return isName(tokens[start], IMPORT) && third?.type === "name" && at === start + 4;
 }
 
+// A pattern of import.meta.glob, given alone or in an array, with type arguments or not: Vite loads
+// every module a pattern matches.
+function globPattern(tokens: readonly Token[], at: number): boolean {
+	let k = at - 1;
+	if (isPunct(tokens[k], ",") || isPunct(tokens[k], "[")) {
+		while (isPunct(tokens[k], ",") || tokens[k]?.type === "string") k--;
+		if (!isPunct(tokens[k], "[")) return false;
+		k--;
+	}
+	if (!isPunct(tokens[k], "(")) return false;
+	k--;
+	if (isPunct(tokens[k], ">")) {
+		let depth = 0;
+		for (; k >= 0 && k > at - 256; k--) {
+			if (isPunct(tokens[k], ">")) depth++;
+			else if (isPunct(tokens[k], "<") && --depth === 0) break;
+		}
+		k--;
+	}
+	return (
+		(isName(tokens[k], "glob") || isName(tokens[k], "globEager")) &&
+		isPunct(tokens[k - 1], ".") &&
+		isName(tokens[k - 2], "meta") &&
+		isPunct(tokens[k - 3], ".") &&
+		isName(tokens[k - 4], IMPORT)
+	);
+}
+
 // A literal passed to a call that loads or resolves it.
 function callKind(tokens: readonly Token[], at: number, names: Aliases): LiteralKind {
+	if (globPattern(tokens, at)) return "glob";
 	if (!isPunct(tokens[at - 1], "(")) return "other";
 	const callee = tokens[at - 2];
 	// createRequire(…)("…")
@@ -457,10 +487,12 @@ export function literals(text: string): Literal[] {
 	return found.map(({ value, kind }) => ({ value, kind: kind ?? "other" }));
 }
 
-// What a module loads or resolves when it runs, or what tsc reads for it: every kind but type and
-// other.
+// What a module loads or resolves when it runs, or what tsc reads for it: every kind but type, glob
+// (a pattern, not a specifier) and other.
 export function runtimeSpecifiers(text: string): Literal[] {
-	return literals(text).filter((literal) => literal.kind !== "type" && literal.kind !== "other");
+	return literals(text).filter(
+		({ kind }) => kind !== "type" && kind !== "glob" && kind !== "other",
+	);
 }
 
 // Every literal that reads as a path relative to its file, whatever code uses it.

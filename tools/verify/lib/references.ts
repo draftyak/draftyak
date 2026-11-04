@@ -19,9 +19,9 @@ import { type Checkout, fold, type Kind } from "./safe-fs.ts";
 // leaves the checkout (absolute elsewhere, or climbing above the root on its way, even if it comes
 // back in) is refused as "outside", whether or not anything is there. Bare specifiers and names,
 // which resolve to installed dependencies, aren't followed, and nothing below node_modules or .git
-// is. A value that redirects a tool in a form these checks don't follow (an imports pattern, a
-// Biome config from a package, a file: URL specifier, a toolchain path, a .cargo config key but
-// paths and [patch]) is refused as "unsupported".
+// is. A value that redirects a tool in a form these checks don't follow (an imports pattern, a glob
+// import, a Biome config from a package, a file: URL specifier, a toolchain path, a .cargo config
+// key but paths and [patch]) is refused as "unsupported".
 
 export type RefusedKind = Kind | "unlisted" | "reserved" | "unparsable" | "unsupported" | "outside";
 
@@ -730,9 +730,11 @@ const ABSOLUTE_SPECIFIER = /^(?:[A-Za-z]:)?[\\/]/;
 const FILE_URL = /^file:/i;
 
 // A module's relative and absolute specifiers that load, resolve or reference a module
-// (lib/imports.ts's kinds but other), the package scope of its # specifiers, and every string of a
-// Vitest or Vite config: its relative ones as modules, the rest as files a config names. One that
-// leaves the checkout refuses the file that names it, and so does a file: URL specifier.
+// (lib/imports.ts's kinds but glob and other), the package scope of its # specifiers, and every
+// string of a Vitest or Vite config: its relative ones as modules, the rest as files a config names.
+// One that leaves the checkout refuses the file that names it, and so does a file: URL specifier.
+// An import.meta.glob pattern, which Vite matches against the folders it names, is refused: as
+// "outside" when it leaves the checkout from the module's folder, and otherwise as "unsupported".
 function moduleRefs(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -744,6 +746,12 @@ function moduleRefs(
 	if (!Array.isArray(pointers)) return;
 	let scoped = false;
 	for (const { value, anchor, field } of pointers) {
+		if (field === "module:glob") {
+			const pattern = value.replace(/^!+/, "");
+			const out = relativeLiteral(pattern) && leaves(input.checkout, dirOf(file), pattern);
+			candidates.refuse(file, out ? "outside" : "unsupported");
+			continue;
+		}
 		if (!scoped && value.startsWith("#") && field !== "module:other") {
 			packageScope(candidates, dirOf(file));
 			scoped = true;

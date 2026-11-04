@@ -194,6 +194,27 @@ describe("literals", () => {
 		]);
 	});
 
+	it("reads import.meta.glob's patterns as glob, alone, in an array and after type arguments", () => {
+		const text = [
+			'const a = import.meta.glob("./a/*.ts");',
+			'const b = import.meta.glob(["./b/*.ts", "!./b/skip.ts"], { eager: true, query: "?raw" });',
+			'const c = import.meta.glob<Record<string, X>>("../c/**/*.ts");',
+			'const d = other.glob("./d/*.ts");',
+			'const e = import.meta.globals("./e.ts");',
+			'const f = list(["./f.ts"]);',
+		].join("\n");
+		expect(kinds(text)).toEqual([
+			["glob", "./a/*.ts"],
+			["glob", "./b/*.ts"],
+			["glob", "!./b/skip.ts"],
+			["other", "?raw"],
+			["glob", "../c/**/*.ts"],
+			["other", "./d/*.ts"],
+			["other", "./e.ts"],
+			["other", "./f.ts"],
+		]);
+	});
+
 	it("cooks escapes, so an escaped specifier or name reads as what it loads", () => {
 		const text = [
 			`import("${bs}u002e/escaped-u.ts");`,
@@ -230,7 +251,7 @@ describe("literals", () => {
 });
 
 describe("runtimeSpecifiers", () => {
-	it("keeps every kind but type and other", () => {
+	it("keeps every kind but type, glob and other", () => {
 		const text = [
 			'import a from "./static.ts";',
 			'import "./bare.ts";',
@@ -242,6 +263,7 @@ describe("runtimeSpecifiers", () => {
 			'/// <reference path="./reference.d.ts" />',
 			'const h = "./other.ts";',
 			'import type { T } from "./type.ts";',
+			'const i = import.meta.glob("./glob/*.ts");',
 		].join("\n");
 		expect(runtimeSpecifiers(text).map(({ kind }) => kind)).toEqual([
 			"static",

@@ -243,12 +243,17 @@ describe("refusals before any read or child start", () => {
 		expect(run.opens.some(inHeld)).toBe(false);
 	});
 
-	it("refuses a redirection it doesn't follow, in an imports map, a Biome config, a toolchain file or a .cargo config, naming none", async () => {
+	it("refuses a redirection it doesn't follow, in an imports map, a glob import, a Biome config, a toolchain file or a .cargo config, naming none", async () => {
 		const cases: readonly (readonly [string, Readonly<Record<string, string>>, string])[] = [
 			[
 				"an imports pattern",
 				{ "packages/a/package.json": '{ "name": "a", "imports": { "#x/*": "./gen/*.js" } }\n' },
 				"refs-config",
+			],
+			[
+				"a glob import inside the checkout",
+				{ "packages/a/src/glob.ts": 'export const m = import.meta.glob("./*.ts");\n' },
+				"refs-modules",
 			],
 			[
 				"a Biome config extending a package's",
@@ -337,6 +342,13 @@ describe("refusals before any read or child start", () => {
 					"packages/a/package.json": `{ "name": "a", "scripts": { "test": "node ${climb.slice(3)}/helper.ts" } }\n`,
 				},
 				"refs-config",
+			],
+			[
+				"an eager glob import",
+				{
+					"packages/a/src/glob.ts": `export const m = import.meta.glob("${climb}/*.ts", { eager: true });\n`,
+				},
+				"refs-modules",
 			],
 			[
 				"a tsconfig types entry",

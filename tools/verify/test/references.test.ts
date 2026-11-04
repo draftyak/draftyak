@@ -435,6 +435,23 @@ describe("refs-modules", () => {
 		]);
 	});
 
+	it("refuses a glob import, as outside when a pattern or a negated one leaves the checkout, opening and listing nothing", async () => {
+		const files = {
+			"p/a.ts": 'export const m = import.meta.glob("../../outside/x/*.ts", { eager: true });\n',
+			"p/b.ts": 'const m = import.meta.glob(["./gen/*.ts", "!./gen/skip.ts"]);\n',
+			"p/c.ts": 'const m = import.meta.glob<Record<string, unknown>>("/src/**/*.ts");\n',
+			"p/d.ts": 'const m = import.meta.glob(["!../../outside/x/*.ts"]);\n',
+			"p/e.ts": 'const pattern = "./gen/*.ts";\nconst m = other.glob("./gen/*.ts");\n',
+		};
+		const ignored = { "p/gen/x.ts": "" };
+		expect(await refused({ files, ignored, outside: BESIDE }, "refs-modules")).toEqual([
+			"p/a.ts: outside",
+			"p/b.ts: unsupported",
+			"p/c.ts: unsupported",
+			"p/d.ts: outside",
+		]);
+	});
+
 	it("reads every path a Vitest config names, as files, and its relative ones as modules", async () => {
 		const files = {
 			"p/vitest.config.ts":
