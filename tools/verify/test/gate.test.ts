@@ -172,9 +172,9 @@ const LINE: Readonly<Record<string, string>> = {
 	"refs-cargo":
 		"reserved tripwire: file(s) or folder(s) that Cargo manifests or .cargo configs name aren't regular, listed files in real folders of this checkout, or the manifest couldn't be parsed; none of them was read",
 	"refs-modules":
-		"reserved tripwire: file(s) or folder(s) that relative module literals or runner configs name aren't regular, listed files in real folders of this checkout; none of them was read",
+		"reserved tripwire: file(s) or folder(s) that relative module literals or runner configs name, or the package.json a # specifier resolves through, aren't regular, listed files in real folders of this checkout; none of them was read",
 	"refs-config":
-		"reserved tripwire: file(s) or folder(s) that package.json specs, tsconfig fields or HTML src and href values name aren't regular, listed files in real folders of this checkout; none of them was read",
+		"reserved tripwire: file(s) or folder(s) that package.json specs and imports maps, tsconfig fields, Biome configs' extends and plugins or HTML src and href values name aren't regular, listed files in real folders of this checkout, or a config names one in a form this check doesn't follow; none of them was read",
 	"scan-pnpm":
 		"reserved tripwire: workspace package folder(s) or manifest(s) that pnpm and turbo read aren't regular, listed files in real folders; none of them was read",
 	"scan-tsc":
@@ -241,6 +241,31 @@ describe("refusals before any read or child start", () => {
 		const run = await gate(fixture({ untracked: { "packages/a/src/helper.ts": helper } }));
 		refusedWith(run, [LINE.G6 ?? "", LINE["refs-modules"] ?? ""]);
 		expect(run.opens.some(inHeld)).toBe(false);
+	});
+
+	it("refuses a redirection it doesn't follow, in an imports map or a Biome config, naming none", async () => {
+		const cases: readonly (readonly [string, Readonly<Record<string, string>>, string])[] = [
+			[
+				"an imports pattern",
+				{ "packages/a/package.json": '{ "name": "a", "imports": { "#x/*": "./gen/*.js" } }\n' },
+				"refs-config",
+			],
+			[
+				"a Biome config extending a package's",
+				{ "biome.json": '{ "extends": ["@scope/config/biome"] }\n' },
+				"refs-config",
+			],
+		];
+		for (const [label, files, check] of cases) {
+			const repo = fixture({ files });
+			const run = await gate(repo);
+			expect([label, uncounted(shown(run))]).toEqual([label, [LINE[check]]]);
+			refusedWith(run, [LINE[check] ?? ""]);
+			// --names says which file, and why.
+			const named = shown(await gate(repo, { names: true }))[0] ?? "";
+			const file = Object.keys(files)[0] ?? "";
+			expect([label, named.endsWith(`: ${file} (unsupported)`)]).toEqual([label, true]);
+		}
 	});
 
 	it("refuses an ignored Rust module a bare mod declaration reaches, without reading it", async () => {

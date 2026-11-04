@@ -1,16 +1,26 @@
 import { reservedWord } from "../../../reserved-tests.ts";
-import { fileKind, isObject, type Json, parseJson, pointersOf } from "../reserved-tripwire.ts";
+import {
+	fileKind,
+	isObject,
+	type Json,
+	type JsonObject,
+	parseJson,
+	pointersOf,
+} from "../reserved-tripwire.ts";
 import { includeLiterals, modDecls } from "./rust-source.ts";
 import { type Checkout, fold, type Kind } from "./safe-fs.ts";
 
 // The inputs that listed files name: Rust modules and includes, Cargo's paths, relative module
-// literals, and the paths package.json specs, tsconfig fields and HTML attributes give. A named file
-// (a candidate) is only kind-checked, never read: one that exists must be a regular, listed file of
-// the checkout, in real folders. A missing one is fine, as no tool can read it, except one whose
-// path names a reserved word, which is refused either way. Bare specifiers and names, which resolve
-// to installed dependencies, aren't followed, and nothing below node_modules or .git is.
+// literals, the package.json a # specifier resolves through, and the paths package.json specs and
+// imports maps, tsconfig fields, Biome configs and HTML attributes give. A named file (a candidate)
+// is only kind-checked, never read: one that exists must be a regular, listed file of the checkout,
+// in real folders. A missing one is fine, as no tool can read it, except one whose path names a
+// reserved word, which is refused either way. Bare specifiers and names, which resolve to installed
+// dependencies, aren't followed, and nothing below node_modules or .git is. A value that redirects
+// a tool in a form these checks don't follow (an imports pattern, a Biome config from a package) is
+// refused as "unsupported".
 
-export type RefusedKind = Kind | "unlisted" | "reserved" | "unparsable";
+export type RefusedKind = Kind | "unlisted" | "reserved" | "unparsable" | "unsupported";
 
 export interface Refusal {
 	// Below the repository root, with / separators.
@@ -141,6 +151,12 @@ export function references(check: ReferenceCheck, input: ReferenceInput): Candid
 	} as const;
 	const [kinds, refs] = follow[check];
 	read(kinds, (file, text) => refs(input, candidates, file, text));
+	if (check === "refs-config") {
+		const seen = new Set<string>();
+		for (const file of input.files) {
+			if (BIOME_CONFIGS.has(baseOf(file).toLowerCase())) biomeRefs(input, candidates, file, seen);
+		}
+	}
 	return candidates;
 }
 
@@ -589,9 +605,23 @@ function moduleTarget(input: ReferenceInput, candidates: Candidates, rel: string
 	if (!KNOWN.test(rel)) for (const added of EXTENSIONS) candidates.file(`${rel}${added}`);
 }
 
+// The package.json a # specifier in a module of folder `dir` resolves through: the nearest one from
+// that folder up, as Node, Vite and tsc find a package's imports map. The one found must be a
+// regular, listed file, whose imports map refs-config follows.
+function packageScope(candidates: Candidates, dir: string): void {
+	for (let at = dir; ; at = dirOf(at)) {
+		const manifest = join(at, "package.json");
+		if (candidates.kindOf(manifest) !== "missing") {
+			candidates.file(manifest);
+			return;
+		}
+		if (at === "") return;
+	}
+}
+
 // A module's relative literals that load, resolve or reference a module (lib/imports.ts's kinds but
-// other), and every string of a Vitest or Vite config: its relative ones as modules, the rest as
-// files a config names.
+// other), the package scope of its # specifiers, and every string of a Vitest or Vite config: its
+// relative ones as modules, the rest as files a config names.
 function moduleRefs(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -601,7 +631,12 @@ function moduleRefs(
 	const config = fileKind(file) === "config";
 	const pointers = pointersOf(file, text);
 	if (!Array.isArray(pointers)) return;
+	let scoped = false;
 	for (const { value, anchor, field } of pointers) {
+		if (!scoped && value.startsWith("#") && field !== "module:other") {
+			packageScope(candidates, dirOf(file));
+			scoped = true;
+		}
 		if (anchor === null) continue;
 		const relative = relativeLiteral(value);
 		if (!config && (field === "module:other" || !relative)) continue;
@@ -612,9 +647,90 @@ function moduleRefs(
 	}
 }
 
-// --- package.json, tsconfig and HTML ---
+// --- package.json, tsconfig, Biome and HTML ---
 
 const MANIFESTS = ["package.json", "package.yaml", "package.json5"];
+
+// An imports target that names an installed dependency or a node: built-in, which aren't followed:
+// a bare package name, scoped or not, with a subpath of plain parts.
+const BARE_TARGET =
+	/^(?:node:[\w/-]+|(?:@[\w~-][\w.~-]*\/)?[\w~-][\w.~-]*(?:\/(?!\.\.?(?:\/|$))[\w.~@-]+)*)$/;
+
+// One target of a package.json imports map, at the manifest's folder: a ./ path is a module the
+// package's # specifiers load, followed as one; a bare name or a built-in isn't followed. Anything
+// else (a * pattern, a ../ or absolute path, an encoded or URL form) is a redirection this check
+// doesn't follow, and the manifest is refused.
+function importsTarget(
+	input: ReferenceInput,
+	candidates: Candidates,
+	file: string,
+	value: string,
+): void {
+	if (value.startsWith("./") && !/[*%]/.test(value)) {
+		const rel = resolveFrom(input.checkout, dirOf(file), value);
+		if (rel !== null) {
+			moduleTarget(input, candidates, rel);
+			return;
+		}
+	} else if (BARE_TARGET.test(value)) return;
+	candidates.refuse(file, "unsupported");
+}
+
+const BIOME_CONFIGS = new Set(["biome.json", "biome.jsonc"]);
+
+// A Biome config's extends and plugins, top level and in overrides: each ./ or ../ path is a file
+// Biome reads, kind-checked as a reference, and a config it extends is followed the same way; extends
+// may also name the root config, "//". Anything else (a package's config, an absolute path, a value
+// that isn't a string) is a redirection this check doesn't follow, and the config is refused, as is
+// one it can't parse.
+function biomeRefs(
+	input: ReferenceInput,
+	candidates: Candidates,
+	file: string,
+	seen: Set<string>,
+	depth = 0,
+): void {
+	if (seen.has(file) || depth > 16) return;
+	seen.add(file);
+	const text = input.listed(file) ? input.text(file) : null;
+	if (text === null) return;
+	const json = parseJson(text);
+	if (!isObject(json)) {
+		candidates.refuse(file, "unparsable");
+		return;
+	}
+	const valuesOf = (holder: JsonObject, key: string): Json[] =>
+		holder.object.filter(([name]) => name === key).map(([, value]) => value);
+	const itemsOf = (value: Json): (string | null)[] =>
+		typeof value === "string"
+			? [value]
+			: Array.isArray(value)
+				? value.map((item: Json) => (typeof item === "string" ? item : null))
+				: [null];
+	const named = (value: string | null, extended: boolean): void => {
+		if (extended && value === "//") return;
+		const rel =
+			value !== null && /^\.\.?\//.test(value) && !value.includes("%")
+				? resolveFrom(input.checkout, dirOf(file), value)
+				: null;
+		if (rel === null) {
+			candidates.refuse(file, "unsupported");
+			return;
+		}
+		candidates.file(rel);
+		if (extended) biomeRefs(input, candidates, rel, seen, depth + 1);
+	};
+	const plugins = (holder: JsonObject): void => {
+		for (const value of valuesOf(holder, "plugins"))
+			for (const item of itemsOf(value)) named(item, false);
+	};
+	for (const value of valuesOf(json, "extends"))
+		for (const item of itemsOf(value)) named(item, true);
+	plugins(json);
+	for (const overrides of valuesOf(json, "overrides")) {
+		for (const item of Array.isArray(overrides) ? overrides : []) if (isObject(item)) plugins(item);
+	}
+}
 
 function configRefs(
 	input: ReferenceInput,
@@ -629,6 +745,10 @@ function configRefs(
 	}
 	for (const { value, anchor, field } of pointers ?? []) {
 		if (anchor === null) continue;
+		if (field === "manifest:imports") {
+			importsTarget(input, candidates, file, value);
+			continue;
+		}
 		const rel = resolveFrom(input.checkout, anchor, value);
 		if (rel === null) continue;
 		const kind = (): Kind => candidates.kindOf(rel);

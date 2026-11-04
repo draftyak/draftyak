@@ -285,6 +285,21 @@ describe("refs-modules", () => {
 		const files = { "p/a.ts": `import "./x-${w}.ts";\n` };
 		expect(await refused({ files }, "refs-modules")).toEqual(["p/x-<reserved>.ts: reserved"]);
 	});
+
+	it("checks the package.json a # specifier resolves through, the nearest one up, and refuses an ignored one", async () => {
+		const files = {
+			"p/package.json": '{ "name": "p" }\n',
+			"p/src/deep/a.ts": 'import { x } from "#x";\nexport type { Y } from "#y";\n',
+			"q/package.json": '{ "name": "q" }\n',
+			"q/src/b.ts": 'const b = await import("#b");\n',
+			"r/c.ts": 'const id = "#c";\n',
+		};
+		const ignored = { "p/src/package.json": '{ "imports": { "#x": "./gen/x.js" } }\n' };
+		// Only a literal that loads or resolves a module counts: r/c.ts has none, so its folder's
+		// ignored package.json is the scans' business, not this check's.
+		const tree = { files, ignored: { ...ignored, "r/package.json": "{}\n" } };
+		expect(await refused(tree, "refs-modules")).toEqual(["p/src/package.json: unlisted"]);
+	});
 });
 
 describe("refs-config", () => {
@@ -349,6 +364,83 @@ describe("refs-config", () => {
 		expect(await refused({ files }, "refs-config")).toEqual([
 			"p/package.json: unparsable",
 			"p/tsconfig.json: unparsable",
+		]);
+	});
+
+	it("follows an imports map's ./ targets as modules, and leaves bare names and built-ins alone", async () => {
+		const imports = {
+			"#a": "./src/a.js",
+			"#b": { node: "./src/b.ts", default: ["./src/b-web.ts"] },
+			"#dep": "some-dependency",
+			"#sub": "@scope/dependency/sub/path.js",
+			"#fs": "node:fs",
+		};
+		const files = { "p/package.json": JSON.stringify({ name: "p", imports }) };
+		const ignored = { "p/src/a.ts": "", "p/src/b.ts": "" };
+		expect(await refused({ files, ignored }, "refs-config")).toEqual([
+			"p/src/a.ts: unlisted",
+			"p/src/b.ts: unlisted",
+		]);
+	});
+
+	it("refuses an imports map whose target is a pattern or a path form it doesn't follow, reading none of them", async () => {
+		const targets = [
+			"./src/*.js",
+			"../shared/x.js",
+			"/abs/x.js",
+			"file:./x.js",
+			"./%2e%2e/x.js",
+			"some-dependency/../x.js",
+		];
+		const files = Object.fromEntries(
+			targets.map((target, index) => [
+				`p${index}/package.json`,
+				JSON.stringify({ name: `p${index}`, imports: { "#x": target } }),
+			]),
+		);
+		expect(await refused({ files }, "refs-config")).toEqual(
+			targets.map((_, index) => `p${index}/package.json: unsupported`),
+		);
+	});
+
+	it("follows a Biome config's extends and plugins, through each config it extends", async () => {
+		const files = {
+			"biome.json": JSON.stringify({
+				extends: ["./configs/base.json"],
+				plugins: ["./rules/a.grit"],
+			}),
+			"configs/base.json": JSON.stringify({
+				extends: "./more.jsonc",
+				overrides: [{ includes: ["x/**"], plugins: ["../rules/b.grit"] }],
+			}),
+			"sub/biome.jsonc": '// nested\n{ "root": false, "extends": "//" }\n',
+			"rules/c.grit": "",
+			"tools/biome.json": JSON.stringify({ plugins: ["../rules/c.grit", "./none.grit"] }),
+		};
+		const ignored = { "configs/more.jsonc": "{}", "rules/a.grit": "", "rules/b.grit": "" };
+		expect(await refused({ files, ignored }, "refs-config")).toEqual([
+			"configs/more.jsonc: unlisted",
+			"rules/b.grit: unlisted",
+			"rules/a.grit: unlisted",
+		]);
+	});
+
+	it("refuses a Biome config that extends a package's config, names a plugin it can't follow or can't be parsed", async () => {
+		const files = {
+			"a/biome.json": JSON.stringify({ extends: ["@scope/config/biome"] }),
+			"b/biome.json": JSON.stringify({ plugins: ["/abs/x.grit"] }),
+			"c/biome.jsonc": "{ nope",
+			"d/biome.json": JSON.stringify({ extends: 5 }),
+			"e/biome.json": JSON.stringify({ overrides: [{ plugins: [{ path: "./x.grit" }] }] }),
+			"f/biome.json": JSON.stringify({ extends: ["base.json"] }),
+		};
+		expect(await refused({ files }, "refs-config")).toEqual([
+			"a/biome.json: unsupported",
+			"b/biome.json: unsupported",
+			"c/biome.jsonc: unparsable",
+			"d/biome.json: unsupported",
+			"e/biome.json: unsupported",
+			"f/biome.json: unsupported",
 		]);
 	});
 });
