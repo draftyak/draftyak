@@ -42,6 +42,11 @@ import { rootDirectory } from "../plugins/installer/tree.ts";
 import { openNativePluginRegistry, type PluginRegistry } from "../plugins/registry/index.ts";
 import { pins as snapshotPins } from "../plugins/registry/values.ts";
 import {
+	createNativeBackupArtifactsHandle,
+	type NativeBackupArtifacts,
+	type NativeBackupArtifactsHandle,
+} from "../recovery/backup-artifact-native.ts";
+import {
 	createNativeBackupImagesHandle,
 	type NativeBackupImages,
 	type NativeBackupImagesHandle,
@@ -180,6 +185,8 @@ interface NativeOwner {
 	pairingWindowsClosed: boolean;
 	recovery?: NativeBackupRecoveryHandle;
 	recoveryClosed: boolean;
+	artifacts?: NativeBackupArtifactsHandle;
+	artifactsClosed: boolean;
 	images?: NativeBackupImagesHandle;
 	imagesClosed: boolean;
 	closePromise?: Promise<void>;
@@ -278,6 +285,29 @@ export async function nativePairingWindows(
 	} catch {
 		throw new HubSessionError("SESSION_UNAVAILABLE");
 	}
+}
+
+/** Private association proof only; the cache comparison precedes key or Store work. */
+export function assertNativeBackupArtifactsOwner(
+	session: unknown,
+	expected: NativeBackupArtifactsHandle,
+): void {
+	const owner =
+		session !== null && typeof session === "object" && !types.isProxy(session)
+			? nativeOwners.get(session)
+			: undefined;
+	if (!owner?.artifacts || owner.artifacts !== expected || owner.artifactsClosed)
+		throw new HubSessionError("SESSION_UNAVAILABLE");
+	sessionOwner(session, "open");
+}
+
+/** Deep consuming seam only; no package-root export or public Session field. */
+export function nativeBackupArtifacts(session: unknown): NativeBackupArtifacts {
+	const owner = sessionOwner(session, "open");
+	owner.artifacts ??= createNativeBackupArtifactsHandle(session, owner.config.masterKey);
+	const facade = owner.artifacts.get();
+	assertNativeBackupArtifactsOwner(session, owner.artifacts);
+	return facade;
 }
 
 /** Internal only; the original factory's exact cached handle owns all image resources. */
@@ -468,6 +498,7 @@ function session(
 		accountApprovalsClosed: false,
 		pairingWindowsClosed: false,
 		recoveryClosed: false,
+		artifactsClosed: false,
 		imagesClosed: false,
 		storeClosed: false,
 	};
@@ -485,6 +516,14 @@ function session(
 		const recovery = owner.recovery;
 		const pairingWindows = owner.pairingWindows;
 		const images = owner.images;
+		const artifacts = owner.artifacts;
+		if (artifacts && !owner.artifactsClosed) {
+			try {
+				artifacts.beginClose();
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
 		if (images && !owner.imagesClosed) {
 			try {
 				images.beginClose();
@@ -551,6 +590,17 @@ function session(
 				draining.push(
 					pairingWindows.close().then(() => {
 						owner.pairingWindowsClosed = true;
+					}),
+				);
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
+		if (artifacts && !owner.artifactsClosed) {
+			try {
+				draining.push(
+					artifacts.close().then(() => {
+						owner.artifactsClosed = true;
 					}),
 				);
 			} catch {
