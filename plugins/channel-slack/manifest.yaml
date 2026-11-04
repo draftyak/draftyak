@@ -1,0 +1,39 @@
+{
+  "_metadata": {
+    "major_version": 1
+  },
+  "display_information": {
+    "name": "DraftYak",
+    "description": "Read Slack conversations and send owner-approved replies from DraftYak."
+  },
+  "oauth_config": {
+    "scopes": {
+      "user": [
+        "channels:history",
+        "channels:read",
+        "groups:history",
+        "groups:read",
+        "im:history",
+        "im:read",
+        "mpim:history",
+        "mpim:read",
+        "users:read",
+        "chat:write"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "user_events": [
+        "message.channels",
+        "message.groups",
+        "message.im",
+        "message.mpim"
+      ]
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false,
+    "is_mcp_enabled": false
+  }
+}
