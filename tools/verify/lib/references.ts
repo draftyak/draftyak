@@ -129,6 +129,8 @@ export function resolveFrom(
 
 // A path from a drive's own working folder (C:x), which may lie anywhere.
 const DRIVE_RELATIVE = /^[A-Za-z]:(?![\\/])/;
+export const driveRelative = (value: string): boolean =>
+	DRIVE_RELATIVE.test(value.replaceAll("\\", "/"));
 
 // Why a value resolveFrom gave null for is still a path a tool would open, for the callers that
 // refuse it rather than skip it: "outside" for one from a drive's own working folder, and

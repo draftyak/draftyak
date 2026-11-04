@@ -462,6 +462,16 @@ describe("refusals before any read or child start", () => {
 		}
 	});
 
+	it("refuses a tsconfig include from a drive's own working folder, naming only the tsconfig", async () => {
+		const files = {
+			"packages/a/tsconfig.json": '{ "include": ["**/*.ts", "C:x/**/*.ts"] }\n',
+		};
+		const repo = fixture({ files });
+		refusedWith(await gate(repo), [LINE["scan-tsc"] ?? ""]);
+		const named = shown(await gate(repo, { names: true }))[0] ?? "";
+		expect(named.endsWith(": packages/a/tsconfig.json (outside)")).toBe(true);
+	});
+
 	it("refuses an ignored Rust module a bare mod declaration reaches, without reading it", async () => {
 		const repo = fixture({
 			files: { "crates/r/src/lib.rs": "mod m;\nmod x;\n" },

@@ -4,6 +4,7 @@ import {
 	absolutePath,
 	belowRoot,
 	Candidates,
+	driveRelative,
 	OUTSIDE,
 	parseToml,
 	type Refusal,
@@ -221,8 +222,8 @@ const TS_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts"];
 const JS_EXTENSIONS = [".js", ".jsx", ".mjs", ".cjs"];
 
 // A pattern from folder `anchor`, an absolute one from the root, resolved below the root; OUTSIDE for
-// one that leaves the checkout, absolute elsewhere or climbing above the root, and null for one tsc
-// refuses (.. after **).
+// one that leaves the checkout, absolute elsewhere, climbing above the root or from a drive's own
+// working folder, and null for one tsc refuses (.. after **).
 function specOf(
 	checkout: Checkout,
 	anchor: string,
@@ -232,6 +233,7 @@ function specOf(
 ): Spec | typeof OUTSIDE | null {
 	let from = anchor;
 	let text = pattern.replaceAll("\\", "/");
+	if (driveRelative(text)) return OUTSIDE;
 	if (absolutePath(text)) {
 		const below = belowRoot(checkout, text);
 		if (below === OUTSIDE) return OUTSIDE;
@@ -533,7 +535,8 @@ function members(input: ScanInput, run: Scan, manifest: string, workspace: TomlT
 		if (!/[*?[]/.test(member)) continue;
 		const text = member.replaceAll("\\", "/");
 		const below = absolutePath(text) ? belowRoot(input.checkout, text) : null;
-		if (below === OUTSIDE || resolveFrom(input.checkout, dir, member) === OUTSIDE) {
+		const out = below === OUTSIDE || driveRelative(text);
+		if (out || resolveFrom(input.checkout, dir, member) === OUTSIDE) {
 			run.candidates.refuse(manifest, "outside");
 			continue;
 		}

@@ -180,6 +180,14 @@ describe("scan-cargo", () => {
 		]);
 	});
 
+	it("refuses a workspace whose glob member starts from a drive's own working folder", async () => {
+		const files = {
+			"w/Cargo.toml": '[workspace]\nmembers = ["C:crates/*"]\n',
+			"x/Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n',
+		};
+		expect(await refused({ files }, "scan-cargo")).toEqual(["w/Cargo.toml: outside"]);
+	});
+
 	it("refuses a workspace whose glob member leaves the checkout, and follows an absolute one below the root", async () => {
 		const files = {
 			"v/Cargo.toml": '[workspace]\nmembers = ["<IN>/crates/*"]\n',
@@ -287,6 +295,22 @@ describe("scan-tsc", () => {
 			"pkgs/b/tsconfig.json: outside",
 			"pkgs/c/src/gen.ts: unlisted",
 			"pkgs/d/tsconfig.json: outside",
+		]);
+	});
+
+	it("refuses a project whose include starts from a drive's own working folder, and drops such an exclude", async () => {
+		const files = {
+			"pkgs/a/package.json": "{}",
+			"pkgs/a/tsconfig.json": JSON.stringify({ include: ["src", "C:x/**/*.ts"] }),
+			"pkgs/a/src/index.ts": "",
+			"pkgs/b/package.json": "{}",
+			"pkgs/b/tsconfig.json": JSON.stringify({ include: ["src"], exclude: ["C:src"] }),
+			"pkgs/b/src/index.ts": "",
+		};
+		const ignored = { "pkgs/b/src/gen.ts": "" };
+		expect(await refused({ files, ignored }, "scan-tsc")).toEqual([
+			"pkgs/a/tsconfig.json: outside",
+			"pkgs/b/src/gen.ts: unlisted",
 		]);
 	});
 
