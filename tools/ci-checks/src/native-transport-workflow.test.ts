@@ -30,7 +30,15 @@ describe("required native transport workflow controls", () => {
 			jobs: Record<string, { "runs-on": string; steps: { run?: string }[]; needs?: string[] }>;
 		};
 		expect(workflow.permissions).toEqual({ contents: "read" });
-		expect(workflow.jobs.required?.needs).toEqual(["changes", "cheap", "full", "windows", "macos"]);
+		expect(workflow.jobs.required?.needs).toEqual([
+			"changes",
+			"cheap",
+			"full",
+			"spikes",
+			"heavy",
+			"windows",
+			"macos",
+		]);
 		expect(workflow.jobs.macos?.["runs-on"]).toBe("macos-15");
 		for (const name of ["full", "windows", "macos"]) {
 			expect(
@@ -68,8 +76,8 @@ describe("required native transport workflow controls", () => {
 		expect(
 			check(
 				source.replace(
-					"needs: [changes, cheap, full, windows, macos]",
-					"needs: [changes, cheap, full, windows]",
+					"needs: [changes, cheap, full, spikes, heavy, windows, macos]",
+					"needs: [changes, cheap, full, spikes, heavy, windows]",
 				),
 			).join("\n"),
 		).toContain("required job execution controls");
@@ -111,53 +119,25 @@ describe("required native transport workflow controls", () => {
 			);
 		}
 	});
-	it("requires both ordinary filters and the nonempty ordinary guard for later product-heavy composition", () => {
-		const addProduct = (condition: string, binding: string) =>
-			source.replace(
-				"  windows:\n",
-				[
-					"      - name: Product heavy tests",
-					`        if: needs.changes.outputs.${condition} != ''`,
-					"        env:",
-					`          HEAVY: \${{ needs.changes.outputs.${binding} }}`,
-					"        run: |",
-					"          filters=()",
-					"          while IFS= read -r filter; do",
-					'            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
-					'          done <<< "$HEAVY"',
-					'          node tools/verify/turbo.ts run test:heavy --concurrency=1 "${filters[@]}"',
-					"",
-					"  windows:",
-					"",
-				].join("\n"),
-			);
-		expect(check(addProduct("ordinary-heavy", "ordinary-heavy"))).toEqual([]);
-		for (const [condition, binding] of [
-			["heavy", "heavy"],
-			["heavy", "ordinary-heavy"],
-			["ordinary-heavy", "heavy"],
+	it("keeps ordinary heavy execution separate from the three-platform native selectors", () => {
+		expect(check(source)).toEqual([]);
+		for (const [before, after] of [
+			["needs.changes.outputs.ordinary-heavy != ''", "needs.changes.outputs.heavy != ''"],
+			[
+				"HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+				"HEAVY: ${{ needs.changes.outputs.heavy }}",
+			],
+			["test:heavy --concurrency=1", "test:heavy --concurrency=2"],
+			["${{ steps.heavy-test.outcome }}", "success"],
 		] as const) {
-			expect(check(addProduct(condition, binding)).join("\n")).toContain(
-				"ordinary heavy suites must exclude",
+			expect(check(job("heavy", (body) => body.replaceAll(before, after))).length).toBeGreaterThan(
+				0,
 			);
 		}
-		const combined = addProduct("ordinary-heavy", "ordinary-heavy")
-			.replace(
-				"if: needs.changes.outputs.ordinary-heavy != ''",
-				"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
-			)
-			.replace(
-				"          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
-				"          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}\n          SPIKES: ${{ needs.changes.outputs.spikes }}",
-			);
-		expect(check(combined)).toEqual([]);
-		expect(
-			check(
-				combined.replace(
-					"name: Product heavy tests\n        if: needs.changes.outputs.spikes != '' || ",
-					"name: Product heavy tests\n        if: ",
-				),
-			).join("\n"),
-		).toContain("ordinary heavy suites must exclude");
+		for (const group of ["spikes", "heavy"]) {
+			expect(
+				check(job("required", (body) => body.replace(`, ${group}`, ""))).length,
+			).toBeGreaterThan(0);
+		}
 	});
 });
