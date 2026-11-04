@@ -3,7 +3,12 @@ import { MessageRef } from "@draftyak/protocol/channel-v1";
 import type { ProbeResult } from "@draftyak/protocol/extension";
 import { HOST_REQUEST_TIMEOUT_MS } from "@draftyak/protocol/host-channel";
 import { parseStrict } from "@draftyak/protocol/jcs";
-import { BlobRef, MAX_INLINE_BYTES, MessageBody } from "@draftyak/protocol/normalized-change";
+import {
+	BlobRef,
+	EmailMessageChange,
+	MAX_INLINE_BYTES,
+	MessageBody,
+} from "@draftyak/protocol/normalized-change";
 import { HostError, type HostResponse, type PluginContext, PluginError } from "@draftyak/sdk";
 import { GMAIL_API_BASE, GMAIL_JSON_MAX_CHUNKS, gmailMessageUrl, gmailPathId } from "./boundary.ts";
 import { decodeGmailMetadata } from "./decode.ts";
@@ -13,6 +18,18 @@ const MAX_METADATA_BYTES = 4 * 1024 * 1024;
 export type GmailMessageBody = Extract<MessageBody, { readonly kind: "email.message" }> & {
 	readonly raw: BlobRef;
 };
+export interface GmailProfilePosition {
+	readonly historyId: string;
+	readonly bytesRead: number;
+}
+export interface GmailMetadataResult {
+	readonly message: EmailMessageChange;
+	readonly bytesRead: number;
+}
+interface JsonDocument {
+	readonly data: unknown;
+	readonly bytesRead: number;
+}
 const responseStatus = Object.getOwnPropertyDescriptor(Response.prototype, "status")?.get;
 const responseBody = Object.getOwnPropertyDescriptor(Response.prototype, "body")?.get;
 const errorCodes = new Set([
@@ -158,11 +175,11 @@ function fetchResponse(
 	});
 }
 
-async function jsonBody(
+async function jsonDocument(
 	response: HostResponse,
 	signal: AbortSignal,
 	maximum: number,
-): Promise<unknown> {
+): Promise<JsonDocument> {
 	live(signal);
 	const body = bodyOf(response);
 	if (!body) throw new PluginError("TRANSIENT");
@@ -203,7 +220,10 @@ async function jsonBody(
 			bytes.set(chunk, at);
 			at += chunk.byteLength;
 		}
-		return parseStrict(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+		return Object.freeze({
+			data: parseStrict(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+			bytesRead: size,
+		});
 	} finally {
 		signal.removeEventListener("abort", abort);
 		if (!complete) {
@@ -215,6 +235,14 @@ async function jsonBody(
 			reader.releaseLock();
 		} catch {}
 	}
+}
+
+async function jsonBody(
+	response: HostResponse,
+	signal: AbortSignal,
+	maximum: number,
+): Promise<unknown> {
+	return (await jsonDocument(response, signal, maximum)).data;
 }
 
 async function checked(response: HostResponse, signal: AbortSignal): Promise<void> {
@@ -251,26 +279,111 @@ async function checked(response: HostResponse, signal: AbortSignal): Promise<voi
 	throw new PluginError("TRANSIENT");
 }
 
+async function profilePosition(
+	context: PluginContext,
+	signal: AbortSignal,
+): Promise<GmailProfilePosition> {
+	const response = await fetchResponse(context, new URL(`${GMAIL_API_BASE}/profile`), signal);
+	await checked(response, signal);
+	const document = await jsonDocument(response, signal, MAX_INLINE_BYTES);
+	const data = historyRecord(copyHistoryData(document.data), [
+		"emailAddress",
+		"messagesTotal",
+		"threadsTotal",
+		"historyId",
+	]);
+	if (
+		typeof data.emailAddress !== "string" ||
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: Reject ASCII controls in provider addresses.
+		!/^[^@\s\x00-\x1f\x7f]+@[^@\s\x00-\x1f\x7f]+$/u.test(data.emailAddress)
+	)
+		throw new PluginError("TRANSIENT");
+	for (const count of [data.messagesTotal, data.threadsTotal])
+		if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
+			throw new PluginError("TRANSIENT");
+	return Object.freeze({
+		historyId: historyDecimal(data.historyId),
+		bytesRead: document.bytesRead,
+	});
+}
+
+/** Provider position DATA only; never the profile's address or native checkpoint authority. */
+export function fetchGmailProfilePosition(context: PluginContext): Promise<GmailProfilePosition> {
+	return operation(context, (signal) => profilePosition(context, signal));
+}
+
 /** Probe only provider reach and credentials; never return the profile's account address. */
 export function probeGmail(context: PluginContext): Promise<ProbeResult> {
 	return operation(context, async (signal) => {
-		const response = await fetchResponse(context, new URL(`${GMAIL_API_BASE}/profile`), signal);
-		await checked(response, signal);
-		const data = historyRecord(
-			copyHistoryData(await jsonBody(response, signal, MAX_INLINE_BYTES)),
-			["emailAddress", "messagesTotal", "threadsTotal", "historyId"],
-		);
-		if (
-			typeof data.emailAddress !== "string" ||
-			// biome-ignore lint/suspicious/noControlCharactersInRegex: Reject ASCII controls in provider addresses.
-			!/^[^@\s\x00-\x1f\x7f]+@[^@\s\x00-\x1f\x7f]+$/u.test(data.emailAddress)
-		)
-			throw new PluginError("TRANSIENT");
-		for (const count of [data.messagesTotal, data.threadsTotal])
-			if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
-				throw new PluginError("TRANSIENT");
-		historyDecimal(data.historyId);
+		await profilePosition(context, signal);
 		return Object.freeze({ status: "ok" as const });
+	});
+}
+
+function messageId(message: MessageRef): string {
+	try {
+		const parsed = MessageRef.safeParse(copyHistoryData(message));
+		if (!parsed.success || parsed.data.kind !== "email") throw new Error();
+		return gmailPathId(parsed.data.providerId);
+	} catch {
+		throw new PluginError("INVALID_INPUT");
+	}
+}
+async function metadataResponse(
+	context: PluginContext,
+	id: string,
+	signal: AbortSignal,
+): Promise<HostResponse> {
+	const response = await fetchResponse(context, gmailMessageUrl(id, "metadata"), signal);
+	await checked(response, signal);
+	return response;
+}
+function metadataData(data: unknown, id: string): ReturnType<typeof decodeGmailMetadata> {
+	const metadata = decodeGmailMetadata(data);
+	if (metadata.providerId !== id || metadata.internalDate === undefined)
+		throw new PluginError("TRANSIENT");
+	return metadata;
+}
+
+/** One metadata-only SDK GET with actual wire-byte accounting, never a body fetch or grant. */
+export function fetchGmailMetadata(
+	context: PluginContext,
+	message: MessageRef,
+	options: { readonly maxBytes?: number } = {},
+): Promise<GmailMetadataResult> {
+	let id: string;
+	let maximum: number;
+	try {
+		id = messageId(message);
+		const settings = historyRecord(copyHistoryData(options), ["maxBytes"]);
+		const requested = Object.hasOwn(settings, "maxBytes") ? settings.maxBytes : MAX_METADATA_BYTES;
+		if (
+			typeof requested !== "number" ||
+			!Number.isSafeInteger(requested) ||
+			requested < 0 ||
+			requested > MAX_METADATA_BYTES
+		)
+			throw new Error();
+		maximum = requested;
+	} catch {
+		return Promise.reject(new PluginError("INVALID_INPUT"));
+	}
+	if (maximum === 0) return Promise.reject(new PluginError("QUOTA_EXCEEDED"));
+	return operation(context, async (signal) => {
+		const response = await metadataResponse(context, id, signal);
+		const document = await jsonDocument(response, signal, maximum);
+		const metadata = metadataData(document.data, id);
+		const result = EmailMessageChange.safeParse({
+			kind: "email.message",
+			providerId: id,
+			threadId: metadata.threadId,
+			internalDate: metadata.internalDate,
+			labelIds: metadata.labelIds,
+			...(metadata.sizeBytes === undefined ? {} : { sizeBytes: metadata.sizeBytes }),
+		});
+		if (!result.success) throw new PluginError("TRANSIENT");
+		Object.freeze(result.data.labelIds);
+		return Object.freeze({ message: Object.freeze(result.data), bytesRead: document.bytesRead });
 	});
 }
 
@@ -281,18 +394,13 @@ export function fetchGmailBody(
 ): Promise<{ readonly message: GmailMessageBody }> {
 	let id: string;
 	try {
-		const parsed = MessageRef.safeParse(copyHistoryData(message));
-		if (!parsed.success || parsed.data.kind !== "email") throw new Error();
-		id = gmailPathId(parsed.data.providerId);
+		id = messageId(message);
 	} catch {
 		return Promise.reject(new PluginError("INVALID_INPUT"));
 	}
 	return operation(context, async (signal) => {
-		const response = await fetchResponse(context, gmailMessageUrl(id, "metadata"), signal);
-		await checked(response, signal);
-		const metadata = decodeGmailMetadata(await jsonBody(response, signal, MAX_METADATA_BYTES));
-		if (metadata.providerId !== id || metadata.internalDate === undefined)
-			throw new PluginError("TRANSIENT");
+		const response = await metadataResponse(context, id, signal);
+		const metadata = metadataData(await jsonBody(response, signal, MAX_METADATA_BYTES), id);
 		const raw = await fetchResponse(context, gmailMessageUrl(id, "raw"), signal, true);
 		await checked(raw, signal);
 		const descriptor = Object.getOwnPropertyDescriptor(raw, "bodyRef");
