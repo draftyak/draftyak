@@ -675,12 +675,16 @@ describe("fixed production composition through the real runner", () => {
 		const options = {
 			repositoryRoot: ROOT,
 			cargoHome: HOME,
+			expectedCargo: path.resolve("original-cargo"),
+			expectedDeny: path.resolve("original-deny"),
 			evidenceDirectory: path.resolve("original-evidence"),
 			environment: commandEnvironment,
 		};
 		const originalPath = process.env.PATH,
 			producer = createProductionProducer(options);
 		options.repositoryRoot = path.resolve("changed-checkout");
+		options.expectedCargo = path.resolve("changed-cargo");
+		options.expectedDeny = path.resolve("changed-deny");
 		commandEnvironment.PATH = "changed-tools";
 		expect(
 			(await runNativePolicy({ phase: "item", authority: s.authority, producer })).exitCode,
@@ -689,6 +693,8 @@ describe("fixed production composition through the real runner", () => {
 			repositoryRoot: ROOT,
 			cargoHome: HOME,
 			evidenceDirectory: path.resolve("original-evidence"),
+			expectedCargo: path.resolve("original-cargo"),
+			expectedDeny: path.resolve("original-deny"),
 			environment: {
 				PATH: "original-tools",
 				CARGO_HOME: HOME,

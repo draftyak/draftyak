@@ -1,0 +1,110 @@
+# cargo-deny 0.20.2 policy for the crates/ workspace; `pnpm verify` and CI run `cargo-deny --locked check`.
+
+# The checks cover every target and every feature of the workspace members.
+[graph]
+all-features = true
+
+# Every RustSec advisory fails the check, for any crate in the graph, as does a yanked version.
+# The only exceptions are the three unmaintained zbus-family crates of the Unix native store.
+# draftyak-transport/tests/key_store_pins.rs binds them to their recorded routes, a weekly review
+# and an end no later than 2026-11-19T13:15:04Z.
+[advisories]
+unmaintained = "all"
+unsound = "all"
+yanked = "deny"
+ignore = [
+    { id = "RUSTSEC-2026-0370", reason = "zvariant 5.15.1 is unmaintained (merged into zbus 6) and has no fix; reached only through the Unix native store's zbus 5.19.0 routes" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names 4.3.5 is unmaintained (merged into zbus 6) and has no fix; reached only through the Unix native store's zbus 5.19.0 routes" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5.15.1 is unmaintained (merged into zbus 6) and has no fix; reached only through the Unix native store's zbus 5.19.0 routes" },
+]
+
+# Exactly the licences the locked crates resolve to, dev-dependencies included. A new crate's
+# licence is one more line here, listed in its PR for the owner.
+[licenses]
+include-dev = true
+allow = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "MIT",
+    # unicode-ident, through serde's and thiserror's derive macros.
+    "Unicode-3.0",
+]
+# ISC is approved only for these exact TLS dependencies, never for another crate or version.
+exceptions = [
+    { name = "ring", version = "=0.17.14", allow = ["Apache-2.0", "ISC"] },
+    { name = "untrusted", version = "=0.9.0", allow = ["ISC"] },
+    { name = "rustls-webpki", version = "=0.103.16", allow = ["ISC"] },
+    { name = "cssparser", version = "=0.37.0", allow = ["MPL-2.0"] },
+    { name = "cssparser-macros", version = "=0.7.1", allow = ["MPL-2.0"] },
+    { name = "dtoa-short", version = "=0.3.5", allow = ["MPL-2.0"] },
+    { name = "foldhash", version = "=0.2.0", allow = ["Zlib"] },
+    { name = "option-ext", version = "=0.2.0", allow = ["MPL-2.0"] },
+    { name = "selectors", version = "=0.38.0", allow = ["MPL-2.0"] },
+    { name = "target-lexicon", version = "=0.12.16", allow = ["Apache-2.0 WITH LLVM-exception"] },
+]
+
+[bans]
+multiple-versions = "deny"
+multiple-versions-include-dev = true
+skip = [
+    { name = "getrandom", version = "=0.2.17", reason = "ring 0.17.14 requires getrandom 0.2; rand 0.10.3 requires getrandom 0.4.3" },
+    { name = "windows-sys", version = "=0.52.0", reason = "ring 0.17.14 requires windows-sys 0.52; tokio, mio and socket2 require 0.61.2" },
+    { name = "syn", version = "=2.0.119", reason = "enumflags2_derive 0.7.12 and tracing-attributes 0.1.31 in the Unix native store require syn 2; serde_derive, thiserror-impl and the zbus macros require syn 3.0.9" },
+    { name = "aes", version = "=0.8.4", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "base64", version = "=0.21.7", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "bitflags", version = "=1.3.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "block-buffer", version = "=0.10.4", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "cipher", version = "=0.4.4", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "cpufeatures", version = "=0.2.17", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "crypto-common", version = "=0.1.7", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "digest", version = "=0.10.7", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "getrandom", version = "=0.3.4", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "hashbrown", version = "=0.12.3", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "heck", version = "=0.4.1", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "indexmap", version = "=1.9.3", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "inout", version = "=0.1.4", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "miniz_oxide", version = "=0.8.9", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "proc-macro-crate", version = "=1.3.1", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "proc-macro-crate", version = "=2.0.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "r-efi", version = "=5.3.0", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "rand_core", version = "=0.6.4", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "serde_spanned", version = "=0.6.9", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "sha2", version = "=0.10.9", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "syn", version = "=1.0.109", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "thiserror", version = "=1.0.69", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "thiserror-impl", version = "=1.0.69", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "toml", version = "=0.8.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "toml_datetime", version = "=0.6.3", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "toml_edit", version = "=0.19.15", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "toml_edit", version = "=0.20.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "windows_aarch64_gnullvm", version = "=0.42.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "windows_aarch64_msvc", version = "=0.42.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "windows_i686_gnu", version = "=0.42.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "windows_i686_msvc", version = "=0.42.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "windows_x86_64_gnu", version = "=0.42.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "windows_x86_64_gnullvm", version = "=0.42.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "windows_x86_64_msvc", version = "=0.42.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "windows-sys", version = "=0.45.0", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "windows-targets", version = "=0.42.2", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+    { name = "winnow", version = "=0.5.40", reason = "Exact proposed desktop graph a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce; no other version scope" },
+]
+deny = [
+    { name = "reqwest" },
+    { name = "native-tls" },
+    { name = "tokio-native-tls" },
+    { name = "openssl" },
+    { name = "openssl-sys" },
+    { name = "aws-lc-rs" },
+    { name = "aws-lc-sys" },
+    { name = "rustls-native-certs" },
+    { name = "webpki-roots" },
+    { name = "rustls-platform-verifier" },
+    { name = "webpki-root-certs" },
+]
+
+# crates.io only.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

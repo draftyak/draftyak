@@ -74,6 +74,8 @@ export interface ProductionProducerOptions {
 	readonly evidenceDirectory?: string;
 	readonly databaseRoot?: string;
 	readonly cargoHome?: string;
+	readonly expectedCargo?: string;
+	readonly expectedDeny?: string;
 	readonly environment?: Readonly<Record<string, string>>;
 }
 function invalid(): never {
@@ -148,6 +150,8 @@ function options(input: ProductionProducerOptions): ProductionProducerOptions {
 					"evidenceDirectory",
 					"databaseRoot",
 					"cargoHome",
+					"expectedCargo",
+					"expectedDeny",
 					"environment",
 				].includes(key),
 		)
@@ -162,6 +166,12 @@ function options(input: ProductionProducerOptions): ProductionProducerOptions {
 			? {}
 			: { databaseRoot: location(selected.databaseRoot) }),
 		...(selected.cargoHome === undefined ? {} : { cargoHome: location(selected.cargoHome) }),
+		...(selected.expectedCargo === undefined
+			? {}
+			: { expectedCargo: location(selected.expectedCargo) }),
+		...(selected.expectedDeny === undefined
+			? {}
+			: { expectedDeny: location(selected.expectedDeny) }),
 		...(selected.environment === undefined
 			? {}
 			: { environment: environment(selected.environment) }),
@@ -170,6 +180,12 @@ function options(input: ProductionProducerOptions): ProductionProducerOptions {
 		result.cargoHome &&
 		result.environment?.CARGO_HOME !== undefined &&
 		location(result.environment.CARGO_HOME) !== result.cargoHome
+	)
+		invalid();
+	if (
+		result.expectedCargo &&
+		result.environment?.CARGO !== undefined &&
+		location(result.environment.CARGO) !== result.expectedCargo
 	)
 		invalid();
 	return Object.freeze(result);
@@ -197,6 +213,8 @@ function nativeOptions(selected: ProductionProducerOptions) {
 		repositoryRoot: selected.repositoryRoot,
 		databaseRoot: selected.databaseRoot ?? path.join(cargoHome, "advisory-dbs", CACHE_CHILD),
 		cargoHome,
+		...(selected.expectedCargo === undefined ? {} : { expectedCargo: selected.expectedCargo }),
+		...(selected.expectedDeny === undefined ? {} : { expectedDeny: selected.expectedDeny }),
 		evidenceDirectory:
 			selected.evidenceDirectory ??
 			path.join(os.tmpdir(), `draftyak-native-policy-${randomUUID()}`),
