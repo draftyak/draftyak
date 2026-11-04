@@ -552,16 +552,20 @@ describe("workflow policy", () => {
 			"      - run: pnpm install --frozen-lockfile\n      - run: pnpm build",
 			"      - run: pnpm build\n      - run: pnpm install --frozen-lockfile",
 		],
-		["heavy condition", "if: needs.changes.outputs.spikes != ''", "if: false"],
+		[
+			"heavy condition",
+			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+			"name: test:heavy for the touched spikes and the selected packages\n        if: false",
+		],
 		[
 			"heavy condition removal",
-			"        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n",
-			"",
+			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n",
+			"name: test:heavy for the touched spikes and the selected packages\n",
 		],
 		[
 			"heavy condition inversion",
-			"if: needs.changes.outputs.spikes != ''",
-			"if: needs.changes.outputs.spikes == ''",
+			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes == '' || needs.changes.outputs.ordinary-heavy != ''",
 		],
 		[
 			"heavy command replacement",
@@ -591,8 +595,8 @@ describe("workflow policy", () => {
 		],
 		[
 			"heavy package condition removal",
-			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
-			"if: needs.changes.outputs.spikes != ''",
+			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != ''",
 		],
 		[
 			"heavy package selection environment",
@@ -1618,6 +1622,94 @@ describe("selected browser provisioning contract", () => {
 		expect(mutated).not.toBe(without);
 		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
 			"must preserve the selected browser cache",
+		);
+	});
+});
+
+describe("authenticated offline Node provisioning contract", () => {
+	const file = ".github/workflows/ci.yml";
+	const source = () => read(file).replaceAll("\r\n", "\n");
+	const preparation = (value: string): string => {
+		const start = value.indexOf("      - name: Prepare authenticated offline Node fixture\n");
+		const marker = "          NODE\n";
+		const end = value.indexOf(marker, start);
+		expect(start).toBeGreaterThan(0);
+		expect(end).toBeGreaterThan(start);
+		return value.slice(start, end + marker.length);
+	};
+	it("accepts the actual authenticated preparation and selected-heavy bindings", () => {
+		expect(checkWorkflow(file, source(), toolchain)).toEqual([]);
+	});
+	it.each([
+		[
+			"extracted binary directory instead of version root",
+			"const cache = path.join(process.env.DRAFTYAK_CACHE_DIR, 'node', bundled);",
+			"const cache = path.join(process.env.DRAFTYAK_CACHE_DIR, 'node', bundled, 'linux-x64');",
+		],
+		[
+			"spike-only preparation that misses ordinary reverse dependencies",
+			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+			"if: needs.changes.outputs.spikes != ''",
+		],
+		[
+			"fake preparation instead of the authenticated producer",
+			"pnpm fetch-node --version bundled --platform linux --arch x64",
+			"echo fake-offline-node",
+		],
+		[
+			"ignored authenticated producer failure",
+			"pnpm fetch-node --version bundled --platform linux --arch x64",
+			"pnpm fetch-node --version bundled --platform linux --arch x64 || true",
+		],
+	])("rejects %s in the actual preparation", (_, before, after) => {
+		const current = source();
+		const block = preparation(current);
+		const changed = block.replace(before, after);
+		expect(changed).not.toBe(block);
+		const mutated = current.replace(block, changed);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"must preserve full command and its execution controls",
+		);
+	});
+	it.each([
+		[
+			"offline version-root input",
+			"          DRAFTYAK_TEST_NODE_CACHE: ${{ steps.offline-node.outputs.cache }}\n",
+		],
+		[
+			"public scratch input",
+			"          DRAFTYAK_CACHE_DIR: ${{ runner.temp }}/draftyak-node-scratch\n",
+		],
+	])("rejects missing selected-heavy %s", (_, binding) => {
+		const current = source();
+		const mutated = current.replace(binding, "");
+		expect(mutated).not.toBe(current);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"must preserve full command and its execution controls",
+		);
+	});
+	it("requires actual preparation to remain before selected heavy execution", () => {
+		const current = source();
+		const block = preparation(current);
+		const without = current.replace(block, "");
+		expect(checkWorkflow(file, without, toolchain).join("\n")).toContain(
+			"must preserve full command and its execution controls",
+		);
+		const fullStart = without.indexOf("\n  full:\n");
+		const fullEnd = without.indexOf("\n  windows:\n", fullStart);
+		expect(fullStart).toBeGreaterThan(0);
+		expect(fullEnd).toBeGreaterThan(fullStart);
+		const full = without.slice(fullStart, fullEnd);
+		const heavyAt = full.indexOf("node tools/verify/turbo.ts run test:heavy");
+		const next = "      - name: Run native transport checks\n";
+		const nextAt = full.indexOf(next);
+		expect(heavyAt).toBeGreaterThan(0);
+		expect(nextAt).toBeGreaterThan(heavyAt);
+		const movedFull = full.slice(0, nextAt) + block + full.slice(nextAt);
+		const moved = without.slice(0, fullStart) + movedFull + without.slice(fullEnd);
+		expect(moved).not.toBe(without);
+		expect(checkWorkflow(file, moved, toolchain).join("\n")).toContain(
+			"must preserve full command and its execution controls",
 		);
 	});
 });
