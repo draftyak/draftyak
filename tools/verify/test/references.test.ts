@@ -887,7 +887,7 @@ describe("refs-config", () => {
 		expect(await refused({ files, ignored }, "refs-config")).toEqual([]);
 	});
 
-	it("refuses a pattern match that is ignored, untracked or a junction, a prefix that leaves the package and a target with two stars, reading none of them", async () => {
+	it("refuses a pattern match that is ignored, untracked or a junction, a junction a match could lie below, a prefix that leaves the package and a target with two stars, reading none of them", async () => {
 		const exports = (target: string): string =>
 			JSON.stringify({ name: "p", exports: { "./*": target } });
 		const files = {
@@ -899,8 +899,11 @@ describe("refs-config", () => {
 		};
 		const ignored = { "a/src/gen/ignored.ts": "" };
 		const untracked = { "a/src/new.ts": "" };
-		const tree = { files, ignored, untracked, outside: BESIDE, junctions: ["a/src/lib"] };
+		// a/src/j.ts is a junction a match names; a/src/lib one that matches could lie below.
+		const junctions = ["a/src/j.ts", "a/src/lib"];
+		const tree = { files, ignored, untracked, outside: BESIDE, junctions };
 		expect(await refused(tree, "refs-config")).toEqual([
+			"a/src/j.ts: link",
 			"a/src/lib: link",
 			"a/src/new.ts: unlisted",
 			"a/src/gen/ignored.ts: unlisted",
