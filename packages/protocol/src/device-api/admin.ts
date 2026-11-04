@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { ChatAccount } from "../entities/account/chat.ts";
 import { EmailAccount } from "../entities/account/email.ts";
+import type { AccountMode } from "../entities/common.ts";
 import { DeviceCapabilities, DeviceCapability } from "../entities/device.ts";
 import { accountFields } from "../entities/fields.ts";
 import { DisplayName } from "../pairing.ts";
@@ -12,6 +13,7 @@ import { type AdminKind, SigningKey } from "../statements.ts";
 const reviewKinds = [
 	"plugin.install",
 	"plugin.upgrade",
+	"account.connect",
 	"account.disconnect",
 	"account.mode-full",
 	"security.device-capabilities",
@@ -19,6 +21,58 @@ const reviewKinds = [
 ] as const;
 export type AdminReviewKind = Extract<AdminKind, (typeof reviewKinds)[number]>;
 export const ADMIN_REVIEW_KINDS: readonly AdminReviewKind[] = Object.freeze([...reviewKinds]);
+
+interface AdminAccountConnectFields {
+	readonly v: 1;
+	readonly account: string;
+	readonly ownerUserId: string;
+	readonly alias: string;
+	readonly mode: AccountMode;
+	readonly historyLimitDays: number;
+	readonly disclosureVersion: number;
+	readonly pluginInstanceId: string;
+}
+export type AdminAccountConnectSubject = AdminAccountConnectFields &
+	(
+		| { readonly channel: "email"; readonly address: string }
+		| {
+				readonly channel: "chat";
+				readonly teamId: string | null;
+				readonly selfUserId: string;
+		  }
+	);
+const accountConnectFields = {
+	v: z.literal(1),
+	account: accountFields.id,
+	ownerUserId: accountFields.userId,
+	alias: accountFields.alias,
+	mode: accountFields.mode,
+	historyLimitDays: accountFields.historyLimitDays,
+	disclosureVersion: accountFields.disclosureVersion,
+	pluginInstanceId: EmailAccount.shape.pluginInstanceId,
+};
+export const AdminAccountConnectSubject: z.ZodType<AdminAccountConnectSubject> = z
+	.discriminatedUnion("channel", [
+		z.strictObject({
+			...accountConnectFields,
+			channel: z.literal("email"),
+			address: EmailAccount.shape.address,
+		}),
+		z.strictObject({
+			...accountConnectFields,
+			channel: z.literal("chat"),
+			teamId: ChatAccount.shape.teamId,
+			selfUserId: ChatAccount.shape.selfUserId,
+		}),
+	])
+	.meta({
+		id: "draftyak.device-api.AdminAccountConnectSubject",
+		description:
+			"Account enrollment DATA: the reserved account, owner choices, plugin instance and " +
+			"provider identity checked by the hub. The original issuer retains and rechecks the " +
+			"disclosure, selected plugin version, credentials and current native operation; this " +
+			"record supplies no credential, selection or accepted-operation authority.",
+	});
 
 export type AdminAccountSubject =
 	| {
@@ -293,6 +347,7 @@ export interface AdminReview<K extends AdminReviewKind, S> {
 export type AdminOperationReview =
 	| AdminReview<"plugin.install", AdminPluginInstallSubject>
 	| AdminReview<"plugin.upgrade", AdminPluginUpgradeSubject>
+	| AdminReview<"account.connect", AdminAccountConnectSubject>
 	| AdminReview<"account.disconnect", AdminAccountSubject>
 	| AdminReview<"account.mode-full", AdminAccountSubject>
 	| AdminReview<"security.device-capabilities", AdminDeviceCapabilitiesSubject>

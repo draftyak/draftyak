@@ -72,20 +72,24 @@ describe("cross-language admin reviews and challenges", () => {
 										surfaceDigest: Buffer.from(pin).toString("hex"),
 									},
 								}
-							: kind.startsWith("account.")
+							: kind === "account.connect"
 								? channel === "email"
-									? { ...adminSubject("email"), alias, address, createdAt: time }
-									: { ...adminSubject("chat"), alias, teamId, createdAt: time }
-								: kind === "security.device-capabilities"
-									? {
-											...adminSubject("device"),
-											name: label,
-											transportSpkiSha256: Buffer.from(pin).toString("hex"),
-											pairedAt: time,
-											current: sets[0],
-											capabilities: sets[1],
-										}
-									: adminSubject("backup");
+									? { ...adminSubject("connect-email"), alias, address }
+									: { ...adminSubject("connect-chat"), alias, teamId }
+								: kind.startsWith("account.")
+									? channel === "email"
+										? { ...adminSubject("email"), alias, address, createdAt: time }
+										: { ...adminSubject("chat"), alias, teamId, createdAt: time }
+									: kind === "security.device-capabilities"
+										? {
+												...adminSubject("device"),
+												name: label,
+												transportSpkiSha256: Buffer.from(pin).toString("hex"),
+												pairedAt: time,
+												current: sets[0],
+												capabilities: sets[1],
+											}
+										: adminSubject("backup");
 					const fixture = adminFixture(kind, subject);
 					const review = member(fixture, "review"),
 						challenge = member(fixture, "challenge");

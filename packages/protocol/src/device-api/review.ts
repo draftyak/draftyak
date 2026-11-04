@@ -15,6 +15,7 @@ import { contentHash, SendSnapshotV1 } from "../snapshot.ts";
 import { AdminKind, AgentSessionReviewSubject, SigningKey } from "../statements.ts";
 import {
 	ADMIN_REVIEW_KINDS,
+	AdminAccountConnectSubject,
 	AdminAccountSubject,
 	AdminDataBackupSubject,
 	AdminDeviceCapabilitiesSubject,
@@ -26,7 +27,8 @@ import {
 import { presetFitsRole } from "./common.ts";
 
 export type OperationRequest =
-	| { readonly kind: AdminKind; readonly ids: readonly string[] }
+	| { readonly kind: Exclude<AdminKind, "account.connect">; readonly ids: readonly string[] }
+	| { readonly kind: "account.connect"; readonly ids: readonly [string] }
 	| {
 			readonly kind: "pair-confirm";
 			readonly ids: readonly [string];
@@ -46,6 +48,7 @@ export const OperationRequest: z.ZodType<OperationRequest> = z
 		// A reviewed kind names the account or device its subject describes, or nothing to back up.
 		z.strictObject({
 			kind: AdminKind.extract([
+				"account.connect",
 				"account.disconnect",
 				"account.mode-full",
 				"security.device-capabilities",
@@ -173,6 +176,7 @@ export const OperationReview: z.ZodType<OperationReview> = z
 		agentSessionReview,
 		adminReview("plugin.install", AdminPluginInstallSubject),
 		adminReview("plugin.upgrade", AdminPluginUpgradeSubject),
+		adminReview("account.connect", AdminAccountConnectSubject),
 		adminReview("account.disconnect", AdminAccountSubject),
 		adminReview("account.mode-full", AdminAccountSubject),
 		adminReview("security.device-capabilities", AdminDeviceCapabilitiesSubject),
