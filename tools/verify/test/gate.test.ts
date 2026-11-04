@@ -178,11 +178,11 @@ const LINE: Readonly<Record<string, string>> = {
 	"scan-pnpm":
 		"reserved tripwire: workspace package folder(s) or manifest(s) that pnpm and turbo read aren't regular, listed files in real folders; none of them was read",
 	"scan-tsc":
-		"reserved tripwire: file(s) or folder(s) tsc would pick up from a project's include folders aren't regular, listed files in real folders; none of them was read",
+		"reserved tripwire: file(s) or folder(s) tsc would pick up from a project's include folders aren't regular, listed files in real folders, or a project's include leaves this checkout; none of them was read",
 	"scan-vitest":
 		"reserved tripwire: file(s) or folder(s) Vitest would pick up from a package folder aren't regular, listed files in real folders; none of them was read",
 	"scan-cargo":
-		"reserved tripwire: file(s) or folder(s) Cargo or rustup would pick up from a crate's folders aren't regular, listed files in real folders; none of them was read",
+		"reserved tripwire: file(s) or folder(s) Cargo or rustup would pick up from a crate's folders aren't regular, listed files in real folders, or a workspace's glob member leaves this checkout; none of them was read",
 	"scan-verify":
 		"reserved tripwire: step or profile file(s) verify would load aren't regular, listed files in real folders; none of them was read",
 	"scan-prefetch":
@@ -300,6 +300,11 @@ describe("refusals before any read or child start", () => {
 				"a Biome config's plugin",
 				{ "biome.json": '{ "plugins": ["../outside/rules.grit"] }\n' },
 				"refs-config",
+			],
+			[
+				"a tsconfig include",
+				{ "packages/a/tsconfig.json": `{ "include": ["**/*.ts", "${climb.slice(3)}/**/*.ts"] }\n` },
+				"scan-tsc",
 			],
 			[
 				"a Cargo path dependency",
@@ -730,8 +735,8 @@ describe("the gate's own lines", () => {
 		const repo = fixture({ ignored: { "packages/a/src/stray.ts": "", "crates/r/tests/x.rs": "" } });
 		const run = await gate(repo);
 		expect(shown(run)).toEqual([
-			"reserved tripwire: 1 file(s) or folder(s) tsc would pick up from a project's include folders aren't regular, listed files in real folders; none of them was read",
-			"reserved tripwire: 1 file(s) or folder(s) Cargo or rustup would pick up from a crate's folders aren't regular, listed files in real folders; none of them was read",
+			"reserved tripwire: 1 file(s) or folder(s) tsc would pick up from a project's include folders aren't regular, listed files in real folders, or a project's include leaves this checkout; none of them was read",
+			"reserved tripwire: 1 file(s) or folder(s) Cargo or rustup would pick up from a crate's folders aren't regular, listed files in real folders, or a workspace's glob member leaves this checkout; none of them was read",
 			STOP_LINE,
 		]);
 		const named = await gate(repo, { names: true });

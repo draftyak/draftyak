@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { reservedWord } from "../../../reserved-tests.ts";
 import { type ScanCheck, scan, Walks } from "../lib/discovery.ts";
@@ -6,7 +8,8 @@ import { Checkout, fold } from "../lib/safe-fs.ts";
 import { gitEnvOf, readerSpy, scrub, type TempRepo, tempRepo, word } from "./temp-repo.ts";
 
 // The folders tools scan, on synthetic repositories: names and kinds only. The reader spy refuses
-// every open of an ignored file, and no scan may try one. Compared paths are scrubbed.
+// every open of an ignored file or of one outside the repository, and no scan may try one.
+// Compared paths are scrubbed.
 const repos: TempRepo[] = [];
 afterEach(() => {
 	for (const repo of repos.splice(0)) repo.remove();
@@ -20,21 +23,35 @@ interface Tree {
 	readonly ignored?: Readonly<Record<string, string>>;
 	// After the files: links at paths below the repository, to folders below it.
 	readonly junctions?: Readonly<Record<string, string>>;
+	// Files in the folder beside the repository, which "../outside/" from its root reaches.
+	readonly outside?: Readonly<Record<string, string>>;
 }
 
 const WORKSPACE = { "pnpm-workspace.yaml": "packages:\n  - pkgs/*\n  - spikes/*\n" };
+
+// In file texts, <IN> stands for the repository's absolute path and <OUT> for the folder beside
+// it, with / separators.
+function placed(repo: TempRepo, text: string): string {
+	const forward = (dir: string): string => dir.split(path.sep).join("/");
+	return text.replaceAll("<IN>", forward(repo.dir)).replaceAll("<OUT>", forward(repo.outside));
+}
 
 function fixture(tree: Tree): TempRepo {
 	const repo = tempRepo();
 	repos.push(repo);
 	for (const [file, text] of Object.entries({ ...WORKSPACE, ...tree.files }))
-		repo.write(file, text);
+		repo.write(file, placed(repo, text));
 	repo.commit();
 	const ignored = Object.keys(tree.ignored ?? {});
 	if (ignored.length > 0) repo.ignore(...ignored);
 	for (const [file, text] of Object.entries(tree.ignored ?? {})) repo.write(file, text);
 	for (const [file, target] of Object.entries(tree.junctions ?? {}))
 		repo.link(file, target, "junction");
+	for (const [file, text] of Object.entries(tree.outside ?? {})) {
+		const at = path.join(repo.outside, ...file.split("/"));
+		mkdirSync(path.dirname(at), { recursive: true });
+		writeFileSync(at, text);
+	}
 	return repo;
 }
 
@@ -47,7 +64,10 @@ async function scanned(
 	const { listing } = await listCheckout(repo.dir, { env: gitEnvOf(repo) });
 	if (listing === null) throw new Error("no listing");
 	const ignored = new Set(Object.keys(tree.ignored ?? {}));
-	const spy = readerSpy(repo.dir, (rel) => ignored.has(rel) || reservedWord.test(rel));
+	const spy = readerSpy(
+		repo.dir,
+		(rel) => ignored.has(rel) || reservedWord.test(rel) || path.isAbsolute(rel),
+	);
 	const checkout = new Checkout(repo.dir, spy.fs, { allowedRoots: [root] });
 	const listed = listedSet(listing);
 	const isListed = (rel: string): boolean => listed.has(fold(rel));
@@ -69,6 +89,7 @@ async function scanned(
 	};
 	const result = scan(check, input);
 	expect(spy.refused).toEqual([]);
+	expect(spy.readdirs.filter((dir) => path.isAbsolute(dir))).toEqual([]);
 	return {
 		refused: result.refused.map(({ rel, kind }) => scrub(`${rel}: ${kind}`)),
 		readdirs: spy.readdirs,
@@ -158,6 +179,23 @@ describe("scan-cargo", () => {
 			"crates/a/Cargo.toml: unlisted",
 		]);
 	});
+
+	it("refuses a workspace whose glob member leaves the checkout, and follows an absolute one below the root", async () => {
+		const files = {
+			"v/Cargo.toml": '[workspace]\nmembers = ["<IN>/crates/*"]\n',
+			"w/Cargo.toml": '[workspace]\nmembers = ["../../outside/*"]\n',
+			"x/Cargo.toml": '[workspace]\nmembers = ["<OUT>/*"]\n',
+			"y/Cargo.toml": '[workspace]\nmembers = ["**/../../*"]\n',
+		};
+		const ignored = { "crates/a/Cargo.toml": "" };
+		const outside = { "c/Cargo.toml": '[package]\nname = "c"\n' };
+		expect(await refused({ files, ignored, outside }, "scan-cargo")).toEqual([
+			"crates/a/Cargo.toml: unlisted",
+			"w/Cargo.toml: outside",
+			"x/Cargo.toml: outside",
+			"y/Cargo.toml: outside",
+		]);
+	});
 });
 
 describe("scan-tsc", () => {
@@ -225,6 +263,31 @@ describe("scan-tsc", () => {
 		};
 		const ignored = { "pkgs/a/src/x.ts": "", "pkgs/a/src/out/y.ts": "" };
 		expect(await refused({ files, ignored }, "scan-tsc")).toEqual(["pkgs/a/src/x.ts: unlisted"]);
+	});
+
+	it("refuses a project whose include leaves the checkout, absolute or climbing, and follows an absolute one below the root", async () => {
+		const files = {
+			"pkgs/a/package.json": "{}",
+			"pkgs/a/tsconfig.json": JSON.stringify({ include: ["src", "../../../outside/x/**/*.ts"] }),
+			"pkgs/b/package.json": "{}",
+			"pkgs/b/tsconfig.json": JSON.stringify({ include: ["<OUT>/x/*.ts"] }),
+			"pkgs/c/package.json": "{}",
+			"pkgs/c/tsconfig.json": JSON.stringify({
+				include: ["<IN>/pkgs/c/src/**/*.ts"],
+				exclude: ["../../../outside"],
+			}),
+			"pkgs/d/tsconfig.json": JSON.stringify({ include: ["../../../repo/pkgs/d/*.ts"] }),
+			"pkgs/c/src/index.ts": "",
+		};
+		const ignored = { "pkgs/a/src/gen.ts": "", "pkgs/c/src/gen.ts": "" };
+		const outside = { "x/a.ts": "" };
+		expect(await refused({ files, ignored, outside }, "scan-tsc")).toEqual([
+			"pkgs/a/tsconfig.json: outside",
+			"pkgs/a/src/gen.ts: unlisted",
+			"pkgs/b/tsconfig.json: outside",
+			"pkgs/c/src/gen.ts: unlisted",
+			"pkgs/d/tsconfig.json: outside",
+		]);
 	});
 
 	it("never lists inside an allowed root, even below a project's include folder", async () => {

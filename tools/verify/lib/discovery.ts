@@ -1,7 +1,10 @@
 import { tierFiles } from "../../../reserved-tests.ts";
 import { isObject, type Json, type JsonObject, parseJson } from "../reserved-tripwire.ts";
 import {
+	absolutePath,
+	belowRoot,
 	Candidates,
+	OUTSIDE,
 	parseToml,
 	type Refusal,
 	resolveFrom,
@@ -217,20 +220,30 @@ interface Spec {
 const TS_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts"];
 const JS_EXTENSIONS = [".js", ".jsx", ".mjs", ".cjs"];
 
-// A pattern from folder `anchor`, resolved below the root; null for one outside it or one tsc
+// A pattern from folder `anchor`, an absolute one from the root, resolved below the root; OUTSIDE for
+// one that leaves the checkout, absolute elsewhere or climbing above the root, and null for one tsc
 // refuses (.. after **).
 function specOf(
+	checkout: Checkout,
 	anchor: string,
 	pattern: string,
 	extensions: readonly string[],
 	exclude: boolean,
-): Spec | null {
+): Spec | typeof OUTSIDE | null {
+	let from = anchor;
+	let text = pattern.replaceAll("\\", "/");
+	if (absolutePath(text)) {
+		const below = belowRoot(checkout, text);
+		if (below === OUTSIDE) return OUTSIDE;
+		from = "";
+		text = below;
+	}
 	const parts: string[] = [];
-	for (const part of [...anchor.split("/"), ...pattern.replaceAll("\\", "/").split("/")]) {
+	for (const part of [...from.split("/"), ...text.split("/")]) {
 		if (part === "" || part === ".") continue;
 		if (part !== "..") parts.push(part);
-		else if (parts.length === 0 || parts.at(-1) === "**") return null;
-		else parts.pop();
+		else if (parts.at(-1) === "**") return null;
+		else if (parts.pop() === undefined) return OUTSIDE;
 	}
 	const last = parts.at(-1) ?? "";
 	if (!/[.*?]/.test(last)) parts.push("**", "*");
@@ -275,6 +288,8 @@ function specMatches(
 interface Project {
 	readonly include: readonly Spec[];
 	readonly exclude: readonly Spec[];
+	// Whether an include pattern leaves the checkout.
+	readonly outside: boolean;
 }
 
 // biome-ignore lint/suspicious/noTemplateCurlyInString: tsconfig's placeholder for its own folder.
@@ -301,7 +316,7 @@ function projectOf(input: ScanInput, file: string): Project | null {
 		const dir = dirOf(config);
 		const bases = lastOf(json, "extends");
 		for (const base of typeof bases === "string" ? [bases] : (stringList(bases) ?? [])) {
-			if (!base.startsWith(".")) continue;
+			if (!base.startsWith(".") && !absolutePath(base.replaceAll("\\", "/"))) continue;
 			const rel = resolveFrom(input.checkout, dir, base);
 			if (typeof rel !== "string") continue;
 			const kind = input.checkout.kindOf(rel);
@@ -349,18 +364,23 @@ function projectOf(input: ScanInput, file: string): Project | null {
 					const out = setting(key, true);
 					return out !== null && typeof out.value === "string" ? [at(out.dir, out.value)] : [];
 				});
+	// An exclude that leaves the checkout leaves nothing out of it.
+	let outside = false;
 	const specs = (list: readonly [string, string][], exclusive: boolean): Spec[] =>
 		list.flatMap(([dir, value]) => {
-			const spec = specOf(dir, value, extensions, exclusive);
-			return spec === null ? [] : [spec];
+			const spec = specOf(input.checkout, dir, value, extensions, exclusive);
+			if (spec === OUTSIDE && !exclusive) outside = true;
+			return spec === null || spec === OUTSIDE ? [] : [spec];
 		});
-	return { include: specs(includes, false), exclude: specs(excludes, true) };
+	const included = specs(includes, false);
+	return { include: included, exclude: specs(excludes, true), outside };
 }
 
 const TSCONFIG = /^tsconfig[^/]*\.json$/i;
 
 // Each listed tsconfig.json, and each other tsconfig*.json that sets include or files, is a project
-// tsc may build: what its include patterns pick up from their folders, outside its excludes.
+// tsc may build: what its include patterns pick up from their folders, outside its excludes. A
+// project whose include leaves the checkout is refused.
 function tscScan(input: ScanInput, run: Scan): void {
 	for (const file of input.files) {
 		const name = baseOf(file);
@@ -374,6 +394,7 @@ function tscScan(input: ScanInput, run: Scan): void {
 		}
 		const project = projectOf(input, file);
 		if (project === null) continue;
+		if (project.outside) run.candidates.refuse(file, "outside");
 		const excluded = (rel: string): boolean => {
 			const names = rel.split("/");
 			return project.exclude.some((spec) =>
@@ -475,7 +496,7 @@ function cargoScan(input: ScanInput, run: Scan): void {
 			for (const folder of ["src/bin", "tests", "benches", "examples"]) targets(join(dir, folder));
 		}
 		const workspace = tableAt(toml, "workspace");
-		if (workspace !== null) members(input, run, dir, workspace);
+		if (workspace !== null) members(input, run, manifest, workspace);
 		for (let at = dir; ; at = dirOf(at)) {
 			if (at !== dir) run.candidates.file(join(at, "Cargo.toml"));
 			for (const name of [
@@ -492,8 +513,10 @@ function cargoScan(input: ScanInput, run: Scan): void {
 }
 
 // A workspace's glob members (members without a wildcard are lib/references.ts's), outside its
-// excludes: each folder they match must hold a regular, listed Cargo.toml where it holds one.
-function members(input: ScanInput, run: Scan, dir: string, workspace: TomlTable): void {
+// excludes: each folder they match must hold a regular, listed Cargo.toml where it holds one. A glob
+// member that leaves the checkout refuses the manifest.
+function members(input: ScanInput, run: Scan, manifest: string, workspace: TomlTable): void {
+	const dir = dirOf(manifest);
 	const list = (key: string): string[] => {
 		const value: Toml | undefined = workspace[key];
 		return Array.isArray(value)
@@ -508,13 +531,18 @@ function members(input: ScanInput, run: Scan, dir: string, workspace: TomlTable)
 	);
 	for (const member of list("members")) {
 		if (!/[*?[]/.test(member)) continue;
+		const text = member.replaceAll("\\", "/");
+		const below = absolutePath(text) ? belowRoot(input.checkout, text) : null;
+		if (below === OUTSIDE || resolveFrom(input.checkout, dir, member) === OUTSIDE) {
+			run.candidates.refuse(manifest, "outside");
+			continue;
+		}
 		const parts: string[] = [];
-		for (const part of [...dir.split("/"), ...member.replaceAll("\\", "/").split("/")]) {
+		for (const part of [...(below === null ? dir.split("/") : []), ...(below ?? text).split("/")]) {
 			if (part === "" || part === ".") continue;
 			if (part !== "..") parts.push(part);
-			else if (parts.pop() === undefined) parts.push(part);
+			else parts.pop();
 		}
-		if (parts.includes("..")) continue;
 		const spec: Spec = {
 			parts,
 			names: parts.map((part) => (part === "**" ? "**" : namePattern(part, true, true))),
