@@ -773,13 +773,19 @@ function packageScope(candidates: Candidates, dir: string): void {
 // can name any file.
 const ABSOLUTE_SPECIFIER = /^(?:[A-Za-z]:)?[\\/]/;
 const FILE_URL = /^file:/i;
+// The one absolute string a runner config may hold, exactly as written: the kernel's folder of the
+// process's own descriptors, which a config probes to detect a feature. It names nothing a tool
+// loads, so it is inert; every other absolute string, below /proc/self/fd/ or beside it included,
+// is refused.
+const DESCRIPTOR_FOLDER = "/proc/self/fd";
 
 // A module's relative and absolute specifiers that load, resolve or reference a module
 // (lib/imports.ts's kinds but glob and other), the package scope of its # specifiers, and every
-// string of a Vitest or Vite config: its relative ones as modules, the rest as files a config names.
-// One that leaves the checkout refuses the file that names it, and so does a file: URL specifier.
-// An import.meta.glob pattern, which Vite matches against the folders it names, is refused: as
-// "outside" when it leaves the checkout from the module's folder, and otherwise as "unsupported".
+// string of a Vitest or Vite config but DESCRIPTOR_FOLDER: its relative ones as modules, the rest as
+// files a config names. One that leaves the checkout refuses the file that names it, and so does a
+// file: URL specifier. An import.meta.glob pattern, which Vite matches against the folders it names,
+// is refused: as "outside" when it leaves the checkout from the module's folder, and otherwise as
+// "unsupported".
 function moduleRefs(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -806,7 +812,7 @@ function moduleRefs(
 		let from = "";
 		let named = value;
 		if (config || (relative && field !== "module:other")) {
-			if (anchor === null) continue;
+			if (anchor === null || (config && value === DESCRIPTOR_FOLDER)) continue;
 			from = anchor;
 			rel = resolveFrom(input.checkout, anchor, value);
 		} else if (field === "module:other") continue;

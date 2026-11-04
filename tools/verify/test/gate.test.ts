@@ -480,6 +480,18 @@ describe("refusals before any read or child start", () => {
 		}
 	});
 
+	it("passes a runner config that probes /proc/self/fd, and refuses one that names a path below it", async () => {
+		const probe = (value: string): string =>
+			`import { accessSync, constants } from "node:fs";\n\nexport default { test: {} };\ntry {\n\taccessSync(${JSON.stringify(value)}, constants.R_OK);\n} catch {}\n`;
+		passed(
+			await gate(fixture({ files: { "packages/a/vitest.config.ts": probe("/proc/self/fd") } })),
+		);
+		const repo = fixture({ files: { "packages/a/vitest.config.ts": probe("/proc/self/fd/0") } });
+		refusedWith(await gate(repo), [LINE["refs-modules"] ?? ""]);
+		const named = shown(await gate(repo, { names: true }))[0] ?? "";
+		expect(named.endsWith(": packages/a/vitest.config.ts (outside)")).toBe(true);
+	});
+
 	it("refuses a tsconfig paths pattern reaching an ignored file outside the include roots, without reading it", async () => {
 		const repo = fixture({
 			files: {

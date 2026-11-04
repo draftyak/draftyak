@@ -527,6 +527,19 @@ describe("refs-modules", () => {
 		]);
 	});
 
+	it("accepts a runner config's probe of /proc/self/fd, and refuses every other absolute string, the paths below it and beside it among them", async () => {
+		const probe = (value: string): string =>
+			`import { accessSync, constants } from "node:fs";\nexport default { test: {} };\ntry {\n\taccessSync(${JSON.stringify(value)}, constants.R_OK | constants.X_OK);\n} catch {}\n`;
+		const variants = ["/proc/self/fd/3", "/proc/self/root", "/proc/self/cwd", "/proc/self/fdx"];
+		const files = Object.fromEntries([
+			["a/vitest.config.ts", probe("/proc/self/fd")],
+			...variants.map((value, index) => [`v${index}/vitest.config.ts`, probe(value)]),
+		]);
+		expect(await refused({ files }, "refs-modules")).toEqual(
+			variants.map((_, index) => `v${index}/vitest.config.ts: outside`),
+		);
+	});
+
 	it("refuses a reserved-named target even when it is missing", async () => {
 		const files = { "p/a.ts": `import "./x-${w}.ts";\n` };
 		expect(await refused({ files }, "refs-modules")).toEqual(["p/x-<reserved>.ts: reserved"]);
