@@ -225,11 +225,22 @@ const pinnedNode = { "node-version-file": ".node-version" };
 const plainBeforeGate = (step: YamlMap): boolean =>
 	only(step, ["name", "uses", "with"]) &&
 	(actionOf(step) === "actions/checkout" || isDeepStrictEqual(step.with, pinnedNode));
-// A step that runs a command or may start a package manager in the checkout.
+// The actions that run no tool in the checkout, whatever their inputs: checkout, cache, the artifact
+// upload and zizmor's.
+const inertActions = new Set([
+	"actions/checkout",
+	"actions/cache",
+	"actions/upload-artifact",
+	"zizmorcore/zizmor-action",
+]);
+// A step that runs a command or may start one in the checkout: a command, and any action but the
+// inert ones and setup-node with the pinned Node version alone. Swatinem/rust-cache, say, runs
+// rustc and cargo metadata there, through rustup, which reads the checkout's toolchain file.
 const startsCommand = (step: YamlMap): boolean =>
 	step.run !== undefined ||
-	actionOf(step) === "pnpm/action-setup" ||
-	(actionOf(step) === "actions/setup-node" && !plainBeforeGate(step));
+	(step.uses !== undefined &&
+		!inertActions.has(actionOf(step)) &&
+		!(actionOf(step) === "actions/setup-node" && plainBeforeGate(step)));
 // A package manager's command, Windows' .cmd, .exe and .ps1 spellings included, and yarnpkg, the
 // second name yarn installs, and a yarn release that node runs from its path (yarn-4.9.1.cjs).
 const yarnRelease = String.raw`yarn-\d[\w.-]*\.c?js`;
@@ -1317,8 +1328,8 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 		}
 		checkCommands("pr-title", asMap(asMap(workflow.jobs)["pr-title"]), prTitleCommands);
 	}
-	// Every job that runs a command or may start a package manager starts with the gate, in any
-	// workflow; a job of other actions alone, such as zizmor's, runs no repository code.
+	// Every job that runs a command, or an action that may run a tool in the checkout, starts with the
+	// gate, in any workflow; a job of inert actions alone, such as zizmor's, runs no repository code.
 	const gated = Object.entries(asMap(workflow.jobs))
 		.map(([job, definition]) => [job, asMap(definition)] as const)
 		.filter(([, definition]) =>

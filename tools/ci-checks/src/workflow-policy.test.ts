@@ -2726,6 +2726,29 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 				toolchain,
 			),
 		).toEqual([]);
+		// An action that runs tools in the checkout needs the gate first as a command does:
+		// rust-cache runs rustc and cargo metadata there.
+		const uses = (action: string, ...inputs: string[]): string[] => [
+			`- uses: ${pin(action)}`,
+			...(inputs.length > 0 ? ["  with:", ...inputs.map((input) => `    ${input}`)] : []),
+		];
+		for (const steps of [
+			uses("Swatinem/rust-cache"),
+			[
+				...uses("dtolnay/rust-toolchain", `toolchain: ${toolchain}`),
+				...uses("Swatinem/rust-cache"),
+			],
+		]) {
+			const alone = checkWorkflow("x.yml", workflow(pr, [...checkout, ...steps]), toolchain);
+			expect(alone.join("\n"), steps.join(" ")).toContain(first("a"));
+			expect(checkWorkflow("x.yml", job(...steps), toolchain), steps.join(" ")).toEqual([]);
+		}
+		// Inert actions alone need none: a cache and an evidence upload.
+		const inert = [
+			...uses("actions/cache", "path: x", "key: k"),
+			...uses("actions/upload-artifact", "path: spikes/s1/evidence/"),
+		];
+		expect(checkWorkflow("x.yml", workflow(pr, [...checkout, ...inert]), toolchain)).toEqual([]);
 	});
 
 	it.each(ciJobs.filter((id) => id !== "required" && id !== "spike-run"))(
