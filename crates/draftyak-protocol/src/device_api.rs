@@ -312,6 +312,8 @@ fn operation_review(value: &Value) -> bool {
         && match text(value, "kind") {
             "pair-confirm" => pair_subject(&value["subject"]),
             "agent-session" => agent_subject(&value["subject"]).is_some(),
+            "plugin.install" => admin::plugin_install_subject(&value["subject"]),
+            "plugin.upgrade" => admin::plugin_upgrade_subject(&value["subject"]),
             "account.disconnect" => admin::account_subject(&value["subject"]),
             "account.mode-full" => admin::account_subject(&value["subject"]),
             "security.device-capabilities" => admin::device_capabilities_subject(&value["subject"]),
@@ -443,6 +445,8 @@ pub fn check_schema(name: &str, value: &Value) -> bool {
         "SendReview" => send_review(value).is_some(),
         "PairConfirmSubject" => pair_subject(value),
         "AgentSessionReviewSubject" => agent_subject(value).is_some(),
+        "AdminPluginInstallSubject" => admin::plugin_install_subject(value),
+        "AdminPluginUpgradeSubject" => admin::plugin_upgrade_subject(value),
         "AdminAccountSubject" => admin::account_subject(value),
         "AdminDeviceCapabilitiesSubject" => admin::device_capabilities_subject(value),
         "AdminDataBackupSubject" => admin::data_backup_subject(value),
@@ -607,6 +611,8 @@ pub fn check_challenge(
                 && s.op == text(request, "id")
                 && s.kind == text(review, "kind")
                 && s.digest == text(review, "digest")
+                && (!["plugin.install", "plugin.upgrade"].contains(&text(review, "kind"))
+                    || review["subject"]["epoch"].as_f64() == Some(s.epoch as f64))
                 && (review["kind"] != "security.device-capabilities"
                     || s.device != text(&review["subject"], "device"))
         }

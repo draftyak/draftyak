@@ -14,6 +14,8 @@ const clone = <T>(value: T): T => structuredClone(value);
 
 // Transcribed independently of ADMIN_REVIEW_KINDS, as catalogue.ts transcribes the admin kinds.
 export const reviewKinds: readonly string[] = [
+	"plugin.install",
+	"plugin.upgrade",
 	"account.disconnect",
 	"account.mode-full",
 	"security.device-capabilities",
@@ -68,7 +70,13 @@ const offCurveKey = spki(
 const createdAt = Date.parse("2026-10-12T15:00:00.000Z");
 const pairedAt = Date.parse("2026-10-14T16:30:00.000Z");
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
-export type SubjectName = "email" | "chat" | "device" | "backup";
+export type SubjectName =
+	| "email"
+	| "chat"
+	| "device"
+	| "backup"
+	| "plugin-install"
+	| "plugin-upgrade";
 export function adminSubject(name: SubjectName): ObjectValue {
 	switch (name) {
 		case "email":
@@ -98,16 +106,50 @@ export function adminSubject(name: SubjectName): ObjectValue {
 				current: ["read", "draft"],
 				capabilities: ["read", "draft", "organize"],
 			};
+		case "plugin-install":
+			return {
+				v: 1,
+				intent: "install",
+				registryId: id.account,
+				pluginId: "channel-gmail",
+				ownerUserId: id.device,
+				epoch: 1,
+				from: null,
+				to: {
+					versionId: id.candidate,
+					version: "1.0.0",
+					registryGeneration: 1,
+					appVersion: "1.0.0",
+					inventoryDigest: "a".repeat(64),
+					manifestDigest: "b".repeat(64),
+					egressDigest: "c".repeat(64),
+					sendDigest: "d".repeat(64),
+					surfaceDigest: "e".repeat(64),
+				},
+			};
+		case "plugin-upgrade": {
+			const install = adminSubject("plugin-install");
+			return {
+				...install,
+				intent: "upgrade",
+				from: { versionId: id.op, version: "1.0.0", registryGeneration: 1, state: "staged" },
+				to: { ...(install.to as ObjectValue), version: "2.0.0", registryGeneration: 2 },
+			};
+		}
 		case "backup":
 			return { scope: "backup" };
 	}
 }
 const subjectFor = (kind: string): SubjectName =>
-	kind.startsWith("account.")
-		? "email"
-		: kind === "security.device-capabilities"
-			? "device"
-			: "backup";
+	kind === "plugin.install"
+		? "plugin-install"
+		: kind === "plugin.upgrade"
+			? "plugin-upgrade"
+			: kind.startsWith("account.")
+				? "email"
+				: kind === "security.device-capabilities"
+					? "device"
+					: "backup";
 const decode = (text: unknown): ObjectValue =>
 	JSON.parse(Buffer.from(text as string, "base64url").toString("utf8"));
 
@@ -127,6 +169,16 @@ export function adminFixture(
 		remainingMs: 120000,
 	};
 	const statement = { ...statementBase(), op: id.op, kind: statementKind, digest };
+	if (
+		(kind === "plugin.install" || kind === "plugin.upgrade") &&
+		subject !== null &&
+		typeof subject === "object" &&
+		!Array.isArray(subject)
+	) {
+		const epoch = (subject as ObjectValue).epoch;
+		if (typeof epoch === "number" && Number.isSafeInteger(epoch) && epoch >= 0)
+			statement.epoch = epoch;
+	}
 	return {
 		challenge: { kind: "admin.v1", id: id.op, statement: encoded(statement) },
 		review,
@@ -347,18 +399,24 @@ export function adminCases(): ApiCase[] {
 		["chat", chat],
 		["device", device],
 		["backup", backup],
+		["plugin-install", adminSubject("plugin-install")],
+		["plugin-upgrade", adminSubject("plugin-upgrade")],
 	];
 	const namedSchema: Record<SubjectName, string> = {
 		email: "AdminAccountSubject",
 		chat: "AdminAccountSubject",
 		device: "AdminDeviceCapabilitiesSubject",
 		backup: "AdminDataBackupSubject",
+		"plugin-install": "AdminPluginInstallSubject",
+		"plugin-upgrade": "AdminPluginUpgradeSubject",
 	};
 	const kindOf: Record<SubjectName, string> = {
 		email: "account.disconnect",
 		chat: "account.disconnect",
 		device: "security.device-capabilities",
 		backup: "data.backup",
+		"plugin-install": "plugin.install",
+		"plugin-upgrade": "plugin.upgrade",
 	};
 	// A refused subject fails as its named schema and as the record of a challenge whose review and
 	// statement both carry its own digest, so only the subject rule refuses it.
@@ -372,6 +430,110 @@ export function adminCases(): ApiCase[] {
 		schema(`review-${name}`, "OperationReview", fixture.review, true);
 		add(`challenge-${name}`, "challenge", fixture, true);
 	};
+
+	// Synthetic plugin DATA only: no candidate provenance or accepted operation is supplied.
+	const pluginInstall = adminSubject("plugin-install"),
+		pluginUpgrade = adminSubject("plugin-upgrade");
+	const selectedInstall = {
+		...pluginInstall,
+		from: { versionId: id.candidate, version: "1.0.0", registryGeneration: 3, state: "staged" },
+		to: { ...(pluginInstall.to as ObjectValue), registryGeneration: 4 },
+	};
+	accept("plugin-install-selected-staged", "plugin-install", selectedInstall);
+	for (const state of ["disabled", "quarantined"])
+		accept("plugin-re-enable-" + state, "plugin-install", {
+			...selectedInstall,
+			intent: "re-enable",
+			from: { ...selectedInstall.from, state },
+		});
+	refuse("plugin-re-enable-absent", "plugin-install", { ...pluginInstall, intent: "re-enable" });
+	refuse("plugin-re-enable-staged", "plugin-install", { ...selectedInstall, intent: "re-enable" });
+	refuse("plugin-install-disabled", "plugin-install", {
+		...selectedInstall,
+		from: { ...selectedInstall.from, state: "disabled" },
+	});
+	for (const name of ["plugin-install", "plugin-upgrade"] as const) {
+		const subject = adminSubject(name),
+			candidate = subject.to as ObjectValue;
+		for (const key of Object.keys(subject))
+			refuse(name + "-missing-" + key, name, without(subject, key));
+		for (const key of Object.keys(candidate))
+			refuse(name + "-candidate-missing-" + key, name, { ...subject, to: without(candidate, key) });
+		refuse(name + "-candidate-extra", name, { ...subject, to: { ...candidate, approved: true } });
+		refuse(name + "-duplicate-ids", name, { ...subject, registryId: candidate.versionId });
+		refuse(name + "-unknown-intent", name, { ...subject, intent: "enable" });
+		for (const key of ["inventoryDigest", "manifestDigest", "egressDigest", "surfaceDigest"])
+			refuse(name + "-bad-" + key, name, {
+				...subject,
+				to: { ...candidate, [key]: "A".repeat(64) },
+			});
+		refuse(name + "-candidate-extra-generation", name, {
+			...subject,
+			to: { ...candidate, registryGeneration: Number(candidate.registryGeneration) + 1 },
+		});
+		accept(name + "-version-128-bytes", name, {
+			...subject,
+			to: { ...candidate, version: String.fromCodePoint(0xe9).repeat(64) },
+		});
+		refuse(name + "-version-130-bytes", name, {
+			...subject,
+			to: { ...candidate, version: String.fromCodePoint(0xe9).repeat(65) },
+		});
+		for (const key of [
+			"appVersion",
+			"versionId",
+			"inventoryDigest",
+			"manifestDigest",
+			"egressDigest",
+			"sendDigest",
+			"surfaceDigest",
+		]) {
+			const value =
+				key === "versionId" ? id.author : key === "appVersion" ? "2.0.0" : "f".repeat(64);
+			add(
+				"stale-" + name + "-candidate-" + key,
+				"challenge",
+				stale(adminFixture(kindOf[name], subject), {
+					...subject,
+					to: { ...candidate, [key]: value },
+				}),
+			);
+		}
+	}
+	for (const key of Object.keys(pluginUpgrade.from as ObjectValue))
+		refuse("plugin-upgrade-from-missing-" + key, "plugin-upgrade", {
+			...pluginUpgrade,
+			from: without(pluginUpgrade.from as ObjectValue, key),
+		});
+	refuse("plugin-upgrade-absent", "plugin-upgrade", { ...pluginUpgrade, from: null });
+	refuse("plugin-upgrade-same-version", "plugin-upgrade", {
+		...pluginUpgrade,
+		to: { ...(pluginUpgrade.to as ObjectValue), version: "1.0.0" },
+	});
+	refuse("plugin-upgrade-same-version-id", "plugin-upgrade", {
+		...pluginUpgrade,
+		to: { ...(pluginUpgrade.to as ObjectValue), versionId: id.op },
+	});
+	for (const kind of ["plugin.install", "plugin.upgrade"])
+		for (const [label, ids, valid] of [
+			["exact", [id.account, id.candidate], true],
+			["empty", [], false],
+			["one", [id.account], false],
+			["three", [id.account, id.candidate, id.op], false],
+			["duplicate", [id.account, id.account], false],
+		] as const)
+			schema("request-" + kind + "-ids-" + label, "OperationRequest", { kind, ids }, valid);
+
+	for (const kind of ["plugin.install", "plugin.upgrade"]) {
+		const differentEpoch = signed(adminFixture(kind), { epoch: 0 });
+		schema(
+			"plugin-challenge-epoch-well-formed-" + kind,
+			"Challenge",
+			part(differentEpoch, "challenge"),
+			true,
+		);
+		add("plugin-challenge-epoch-mismatch-" + kind, "challenge", differentEpoch);
+	}
 
 	// Each included kind with each subject that fits it.
 	for (const kind of reviewKinds)

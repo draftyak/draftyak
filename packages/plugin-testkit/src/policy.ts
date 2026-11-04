@@ -9,11 +9,23 @@ import {
 } from "@draftyak/protocol/manifest/responses-http";
 import { SendUrl } from "@draftyak/protocol/send-ticket";
 import { checkUrlSecret, parseSecretRef, type ToolEgressRule } from "@draftyak/protocol/tool-v1";
+import { type CompatibleHttpBinding, checkCompatibleHttpRequest } from "./compatible-http.ts";
+import { checkMessagesHttpRequest, type MessagesHttpBinding } from "./messages-http.ts";
 
 export type MatchedRule = { readonly rule: EgressRule | ToolEgressRule; readonly url: string };
 
 export interface ResponsesMatchContext {
 	readonly bindings: readonly ResponsesHttpBinding[];
+	readonly headers: HeaderList;
+	readonly body: Uint8Array;
+}
+export interface CompatibleMatchContext {
+	readonly bindings: readonly CompatibleHttpBinding[];
+	readonly headers: HeaderList;
+	readonly body: Uint8Array;
+}
+export interface MessagesMatchContext {
+	readonly bindings: readonly MessagesHttpBinding[];
 	readonly headers: HeaderList;
 	readonly body: Uint8Array;
 }
@@ -107,12 +119,36 @@ export function matchRequest(
 	method: string,
 	secrets: ReadonlyMap<string, string>,
 	responses?: ResponsesMatchContext,
+	compatible?: CompatibleMatchContext,
+	messages?: MessagesMatchContext,
 ): MatchedRule | undefined {
 	if (manifest.kind === "ai-provider") {
-		if (manifest.egress.profile !== "responses-api-v1" || !responses) return;
-		const request = { method, url: requested, headers: responses.headers, body: responses.body };
-		if (!responses.bindings.some((binding) => checkResponsesHttpRequest(request, binding).ok))
-			return;
+		if (manifest.egress.profile === "responses-api-v1") {
+			if (!responses) return;
+			const request = { method, url: requested, headers: responses.headers, body: responses.body };
+			if (!responses.bindings.some((binding) => checkResponsesHttpRequest(request, binding).ok))
+				return;
+		} else if (manifest.egress.profile === "chat-completions-v1") {
+			if (!compatible) return;
+			const request = {
+				method,
+				url: requested,
+				headers: compatible.headers,
+				body: compatible.body,
+			};
+			if (!compatible.bindings.some((binding) => checkCompatibleHttpRequest(request, binding).ok))
+				return;
+		} else if (manifest.egress.profile === "messages-api-v1") {
+			if (!messages) return;
+			const request = {
+				method,
+				url: requested,
+				headers: messages.headers,
+				body: messages.body,
+			};
+			if (!messages.bindings.some((binding) => checkMessagesHttpRequest(request, binding).ok))
+				return;
+		} else return;
 		// The issued binding checks the original request before any host header filtering.
 		// Its exact model URL may contain RFC 3986 path characters outside channel segments.
 		const url = new URL(requested);
