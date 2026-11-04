@@ -751,7 +751,7 @@ describe("the inline start check, START_CHECK", () => {
 		);
 	});
 
-	// What a Vitest worker's own options would be, for the in-process cases: none.
+	// The in-process cases pass no Node options of their own.
 	const plain = { execArgv: [], options: undefined };
 
 	it("passes this checkout and a fixture, and refuses bootstrap.ts's folder as a junction", () => {
