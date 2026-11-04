@@ -122,11 +122,12 @@ describe("test tiers", () => {
 	});
 
 	// A reserved spike's typecheck and build go through the kit, which checks the flag: hashing it
-	// keeps a default run's cached result from standing in for an opted-in one.
+	// keeps a default run's cached result from standing in for an opted-in one. The launcher marker
+	// is hashed too (the case below).
 	it("hashes the flag into typecheck and build, and passes the typecheck marks folder through unhashed", () => {
 		expect([turbo.tasks?.typecheck?.env, turbo.tasks?.build?.env]).toEqual([
-			[RESERVED_TESTS],
-			[RESERVED_TESTS],
+			[RESERVED_TESTS, "DRAFTYAK_GATE_ROOT"],
+			[RESERVED_TESTS, "DRAFTYAK_GATE_ROOT"],
 		]);
 		expect([turbo.tasks?.typecheck?.passThroughEnv, turbo.tasks?.build?.passThroughEnv]).toEqual([
 			["DRAFTYAK_TYPECHECK_MARKS"],
@@ -135,10 +136,11 @@ describe("test tiers", () => {
 	});
 
 	// The launchers set DRAFTYAK_GATE_ROOT after their input gate passed, and the kit trusts it
-	// in their tasks. Every task gets it; test tasks hash it through DRAFTYAK_*, so a gated and an
-	// ungated test run never share a cache entry, while typecheck and build only pass it through. The
-	// kit loads lib/bootstrap.ts in-process, so a change to it misses every cached task.
-	it("passes the launcher marker to every task, hashes it for tests, and hashes bootstrap.ts", () => {
+	// in their tasks. Every task gets it, and every cached task hashes it (test through DRAFTYAK_*),
+	// so a gated and an ungated run never share a cache entry: a launcher never replays the output of
+	// a typecheck, build or test that ran ungated. The kit loads lib/bootstrap.ts in-process, so a
+	// change to it misses every cached task.
+	it("passes the launcher marker to every task, hashes it into every cached task, and hashes bootstrap.ts", () => {
 		const marker = "DRAFTYAK_GATE_ROOT";
 		expect(turbo.globalPassThroughEnv).toContain(marker);
 		const hashed = (task: string) =>
@@ -148,8 +150,8 @@ describe("test tiers", () => {
 		expect(["test", "test:heavy", "typecheck", "build"].map(hashed)).toEqual([
 			true,
 			true,
-			false,
-			false,
+			true,
+			true,
 		]);
 		expect(turbo.globalDependencies).toContain("tools/verify/lib/bootstrap.ts");
 	});

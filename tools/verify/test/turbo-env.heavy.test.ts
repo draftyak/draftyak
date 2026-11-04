@@ -15,9 +15,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { RESERVED_TESTS } from "../../../reserved-tests.ts";
 import { gitEnv } from "../../../spikes/kit/repo.ts";
+import type { GateResult } from "../lib/gate.ts";
 import { capture } from "../lib/spawn.ts";
 import { resolveTurbo, telemetryOff } from "../lib/tools.ts";
-import { launch } from "../turbo.ts";
+import { launch, turboMain } from "../turbo.ts";
 import { scrub, word } from "./temp-repo.ts";
 
 const root = path.resolve(import.meta.dirname, "..", "..", "..");
@@ -168,23 +169,31 @@ function workspace(change: (config: TurboJson) => void = () => {}) {
 	const modules = path.join(dir, "node_modules");
 	symlinkSync(path.join(root, "node_modules"), modules, "junction");
 	const outputs: string[] = [];
+	const envOf = (mode: Mode): NodeJS.ProcessEnv => ({
+		...clean,
+		...(mode.optIn ? { [RESERVED_TESTS]: "1" } : {}),
+		...(mode.marked === false ? {} : { [GATE_ROOT]: dir }),
+	});
+	// The root launcher's launch(), starting this workspace's turbo; each start's output is kept.
+	const started = (argv: readonly string[], env: NodeJS.ProcessEnv): Promise<number> =>
+		launch(argv, env, {
+			root: dir,
+			run: async (invocation, options) => {
+				const result = await capture(invocation, options);
+				outputs.push(`${result.stdout}\n${result.stderr}`);
+				return result.code;
+			},
+			resolveTurbo: () => resolveTurbo(root),
+		});
 	return {
 		init,
+		dir,
+		envOf,
+		started,
+		// How often turbo started.
+		turbos: (): number => outputs.length,
 		async run(tasks: readonly string[], mode: Mode): Promise<void> {
-			const env = {
-				...clean,
-				...(mode.optIn ? { [RESERVED_TESTS]: "1" } : {}),
-				...(mode.marked === false ? {} : { [GATE_ROOT]: dir }),
-			};
-			const code = await launch(["run", ...tasks, "--output-logs=errors-only"], env, {
-				root: dir,
-				run: async (invocation, options) => {
-					const result = await capture(invocation, options);
-					outputs.push(`${result.stdout}\n${result.stderr}`);
-					return result.code;
-				},
-				resolveTurbo: () => resolveTurbo(root),
-			});
+			const code = await started(["run", ...tasks, "--output-logs=errors-only"], envOf(mode));
 			expect(code, scrub(outputs.at(-1) ?? "")).toBe(0);
 		},
 		// The executions recorded since the last call, then a fresh log.
@@ -221,13 +230,12 @@ function splitProblems(lines: readonly string[], modes: readonly string[]): stri
 
 const labelled = (lines: readonly string[], prefix: string): string[] =>
 	lines.filter((line) => line.startsWith(prefix)).toSorted();
-// <label>|<flag>, without the marker: turbo passes it to typecheck and build only through
-// globalPassThroughEnv.
+// <label>|<flag>, without the marker, which every run but an unmarked one sets.
 const withoutMarker = (lines: readonly string[]): string[] =>
 	lines.map((line) => line.split("|").slice(0, 2).join("|"));
 
 describe("turbo's cache and the reserved-tests mode", () => {
-	it("keeps default and opted-in runs apart in both directions, and hashes the launcher marker into test", async () => {
+	it("keeps default and opted-in runs, and marked and unmarked runs, apart in both directions", async () => {
 		const split = workspace();
 		try {
 			expect((await split.init).code).toBe(0);
@@ -250,19 +258,19 @@ describe("turbo's cache and the reserved-tests mode", () => {
 			expect(splitProblems(second, ["1", "unset"])).toEqual([]);
 			expect(labelled(withoutMarker(second), "reserved-")).toEqual(reservedRuns);
 
-			// The marker is hashed into test (env DRAFTYAK_*): marked and unmarked runs miss each other
-			// there, either way round. typecheck and build only pass it through, and replay.
+			// The marker is hashed into every cached task (test through DRAFTYAK_*): marked and
+			// unmarked runs miss each other, either way round, and each repeat replays its own entry.
+			// So a launcher never replays what an ungated run left in the cache.
 			const unmarked = { ...off, marked: false };
 			for (const mode of [unmarked, unmarked]) await split.run(cached, mode);
-			expect(split.executions()).toEqual(["test|unset|unmarked"]);
+			expect(split.executions().toSorted()).toEqual(
+				cached.map((task) => `${task}|unset|unmarked`).toSorted(),
+			);
 			split.clearCache();
-			for (const mode of [unmarked, off, unmarked]) await split.run(cached, mode);
-			expect(split.executions().toSorted()).toEqual([
-				"build|unset|unmarked",
-				"test|unset|marked",
-				"test|unset|unmarked",
-				"typecheck|unset|unmarked",
-			]);
+			for (const mode of [unmarked, off, unmarked, off]) await split.run(cached, mode);
+			expect(split.executions().toSorted()).toEqual(
+				cached.flatMap((task) => [`${task}|unset|marked`, `${task}|unset|unmarked`]).toSorted(),
+			);
 
 			// heavy, live and device are never cached.
 			for (let index = 0; index < 2; index++) await split.run(uncached, off);
@@ -273,6 +281,54 @@ describe("turbo's cache and the reserved-tests mode", () => {
 			split.remove();
 		}
 		expect(existsSync(path.join(root, "node_modules", "vitest", "package.json"))).toBe(true);
+	}, 600_000);
+
+	// The launcher's gate runs before turbo starts, outside every task, so it runs on every launch,
+	// one whose tasks would all replay from the cache included, and a refusing gate starts no turbo.
+	it("runs the input gate before turbo on every launch, one whose every task would replay included", async () => {
+		const split = workspace();
+		try {
+			expect((await split.init).code).toBe(0);
+			const gates: string[] = [];
+			const passing: GateResult = {
+				ok: true,
+				lines: [],
+				listing: { root: split.dir, entries: [], untracked: [] },
+				tracked: [],
+			};
+			const refusing: GateResult = { ok: false, lines: [], listing: null, tracked: [] };
+			const launched = (gate: GateResult): Promise<number> =>
+				turboMain(
+					["run", ...cached, "--output-logs=errors-only"],
+					split.envOf({ optIn: false, marked: false }),
+					{
+						print: () => {},
+						startCheck: () => [],
+						gate: async () => {
+							gates.push(gate.ok ? "passed" : "refused");
+							return gate;
+						},
+						launch: (argv, env) => split.started(argv, env),
+					},
+				);
+			expect(await launched(passing)).toBe(0);
+			expect(split.executions().toSorted()).toEqual(
+				cached.map((task) => `${task}|unset|marked`).toSorted(),
+			);
+			// Every task replays now, and the gate still ran first.
+			expect(await launched(passing)).toBe(0);
+			expect(split.executions()).toEqual([]);
+			const turbos = split.turbos();
+			// The same launch, every task in the cache: the refusal stops it before turbo starts.
+			expect(await launched(refusing)).toBe(2);
+			expect([gates, split.turbos() - turbos, split.executions()]).toEqual([
+				["passed", "passed", "refused"],
+				0,
+				[],
+			]);
+		} finally {
+			split.remove();
+		}
 	}, 600_000);
 
 	// Mutation case: without the task's env entry in turbo.json, the opted-in run replays the

@@ -34,11 +34,11 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
-      "env": ["DRAFTYAK_RESERVED_TESTS"]
+      "env": ["DRAFTYAK_RESERVED_TESTS", "DRAFTYAK_GATE_ROOT"]
     },
     "typecheck": {
       "dependsOn": ["^build"],
-      "env": ["DRAFTYAK_RESERVED_TESTS"],
+      "env": ["DRAFTYAK_RESERVED_TESTS", "DRAFTYAK_GATE_ROOT"],
       "passThroughEnv": ["DRAFTYAK_TYPECHECK_MARKS"]
     },
     "test": {
