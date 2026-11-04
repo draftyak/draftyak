@@ -20,9 +20,10 @@ import { type Checkout, fold, type Kind } from "./safe-fs.ts";
 // root on its way, even if it comes back in, or from a drive's own working folder) is refused as
 // "outside", whether or not anything is there. Bare specifiers and names, which resolve to installed
 // dependencies, aren't followed, and nothing below node_modules or .git is. A value that redirects a
-// tool in a form these checks don't follow (a subpath pattern of another shape, a glob import, a path
-// with a name Windows trims, a Biome config from a package, a file: URL specifier, a toolchain path,
-// a .cargo config key but paths and [patch]) is refused as "unsupported".
+// tool in a form these checks don't follow (a subpath pattern of another shape, a tsconfig paths
+// pattern, moduleSuffixes, typesVersions, a glob import, a path with a name Windows trims, a Biome
+// config from a package, a file: URL specifier, a toolchain path, a .cargo config key but paths and
+// [patch]) is refused as "unsupported".
 
 export type RefusedKind = Kind | "unlisted" | "reserved" | "unparsable" | "unsupported" | "outside";
 
@@ -1127,7 +1128,8 @@ function configRefs(
 		candidates.refuse(file, "unparsable");
 		return;
 	}
-	const json = fileKind(file) === "manifest" ? parseJson(text) : undefined;
+	const kind = fileKind(file);
+	const json = kind === "manifest" || kind === "tsconfig" ? parseJson(text) : undefined;
 	// A config tsc reads through extends or references. These checks read a config's own fields only
 	// when its name is a tsconfig's, so a listed file of another name refuses the one that names it.
 	const config = (target: string): void => {
@@ -1160,8 +1162,9 @@ function configRefs(
 			candidates.refuse(file, "outside");
 			continue;
 		}
-		// TypeScript no longer reads baseUrl, and a tool that still does would read paths from there.
-		if (field === "tsconfig:baseUrl") {
+		// TypeScript no longer reads baseUrl, and a tool that still does would read paths from there. A
+		// paths pattern's target takes whatever its * matches in a specifier, which no check here sees.
+		if (field === "tsconfig:baseUrl" || (field === "tsconfig:paths" && value.includes("*"))) {
 			candidates.refuse(file, "unsupported");
 			continue;
 		}
@@ -1172,16 +1175,16 @@ function configRefs(
 			if (why !== null) candidates.refuse(file, why);
 			continue;
 		}
-		const kind = (): Kind => candidates.kindOf(rel);
+		const kindOf = (): Kind => candidates.kindOf(rel);
 		// A dependency spec here is a path: one anchored at its package starts with a dot.
 		if (field === "manifest:local" || field === "manifest:dependency") {
 			candidates.folder(rel, MANIFESTS);
 		} else if (field === "tsconfig:extends") {
-			if (kind() === "dir") config(join(rel, "tsconfig.json"));
+			if (kindOf() === "dir") config(join(rel, "tsconfig.json"));
 			else config(rel);
 			if (!/\.json$/i.test(rel)) config(`${rel}.json`);
 		} else if (field === "tsconfig:references") {
-			if (kind() === "dir") config(join(rel, "tsconfig.json"));
+			if (kindOf() === "dir") config(join(rel, "tsconfig.json"));
 			else config(rel);
 		} else if (field === "tsconfig:files") candidates.file(rel);
 		else if (field === "tsconfig:paths") moduleTarget(input, candidates, rel);
@@ -1193,10 +1196,25 @@ function configRefs(
 		} else if (field === "tsconfig:typeRoots" || field === "tsconfig:rootDirs") {
 			// tsc reads type packages from a typeRoots folder, and resolves a module's relative imports
 			// through every rootDirs folder; these checks follow neither, so a folder there is refused.
-			if (kind() === "dir") candidates.refuse(file, "unsupported");
+			if (kindOf() === "dir") candidates.refuse(file, "unsupported");
 			else candidates.folder(rel, []);
 		} else if (ENTRY_POINTERS.has(field)) moduleTarget(input, candidates, rel);
-		else if (field === "html" && kind() !== "dir") candidates.file(rel);
+		else if (field === "html" && kindOf() !== "dir") candidates.file(rel);
 	}
-	if (isObject(json)) subpathPatterns(input, candidates, file, json);
+	if (!isObject(json)) return;
+	if (kind === "manifest") subpathPatterns(input, candidates, file, json);
+	if (redirectsTypes(kind === "manifest", json)) candidates.refuse(file, "unsupported");
+}
+
+// Whether a package.json sets typesVersions, from which tsc reads types by its own version, or a
+// tsconfig sets compilerOptions.moduleSuffixes, which tsc tries before a module's own name: files
+// these checks never name, so either is refused, whatever its value.
+function redirectsTypes(manifest: boolean, json: JsonObject): boolean {
+	return json.object.some(([key, value]) =>
+		manifest
+			? key === "typesVersions"
+			: key === "compilerOptions" &&
+				isObject(value) &&
+				value.object.some(([option]) => option === "moduleSuffixes"),
+	);
 }

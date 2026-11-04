@@ -693,6 +693,33 @@ describe("refs-config", () => {
 		]);
 	});
 
+	it("refuses a tsconfig paths target holding a star, one reaching an ignored file outside the include roots among them, and any moduleSuffixes or typesVersions", async () => {
+		const files = {
+			"a/tsconfig.json": JSON.stringify({
+				include: ["src/**/*.ts"],
+				compilerOptions: { paths: { "#gen/*": ["./gen/*"] } },
+			}),
+			"a/src/index.ts": 'import "#gen/x";\n',
+			"b/tsconfig.json": JSON.stringify({
+				compilerOptions: { paths: { "#x": ["./x.ts"], "#y/*": ["./y/*.ts"] } },
+			}),
+			"c/tsconfig.json": JSON.stringify({ compilerOptions: { moduleSuffixes: [".ios", ""] } }),
+			"d/tsconfig.json": JSON.stringify({ compilerOptions: { moduleSuffixes: [] } }),
+			"e/package.json": JSON.stringify({ name: "e", typesVersions: { "*": { "*": ["./t/*"] } } }),
+			"f/package.json": JSON.stringify({ name: "f", typesVersions: {} }),
+			"g/tsconfig.json": JSON.stringify({ compilerOptions: { paths: { "#z": ["./z.ts"] } } }),
+		};
+		const ignored = { "a/gen/x.ts": "" };
+		expect(await refused({ files, ignored }, "refs-config")).toEqual([
+			"a/tsconfig.json: unsupported",
+			"b/tsconfig.json: unsupported",
+			"c/tsconfig.json: unsupported",
+			"d/tsconfig.json: unsupported",
+			"e/package.json: unsupported",
+			"f/package.json: unsupported",
+		]);
+	});
+
 	it("follows an absolute tsconfig types entry as a module path, refuses a relative one and one that leaves the checkout, and leaves package names alone", async () => {
 		const types = (entries: readonly string[]): string =>
 			JSON.stringify({ compilerOptions: { types: entries } });

@@ -272,6 +272,22 @@ describe("refusals before any read or child start", () => {
 				"refs-config",
 			],
 			[
+				"a tsconfig moduleSuffixes",
+				{
+					"packages/a/tsconfig.json":
+						'{ "include": ["**/*.ts"], "compilerOptions": { "moduleSuffixes": [".native", ""] } }\n',
+				},
+				"refs-config",
+			],
+			[
+				"a package.json typesVersions",
+				{
+					"packages/a/package.json":
+						'{ "name": "a", "typesVersions": { "*": { "*": ["./types/*"] } } }\n',
+				},
+				"refs-config",
+			],
+			[
 				"a tsconfig extending a config whose name isn't a tsconfig's",
 				{
 					"packages/a/tsconfig.json": '{ "extends": "./base.json", "include": ["**/*.ts"] }\n',
@@ -455,6 +471,22 @@ describe("refusals before any read or child start", () => {
 			const named = shown(await gate(repo, { names: true }))[0] ?? "";
 			expect([rel, named.endsWith(`: ${rel} (unlisted)`)]).toEqual([rel, true]);
 		}
+	});
+
+	it("refuses a tsconfig paths pattern reaching an ignored file outside the include roots, without reading it", async () => {
+		const repo = fixture({
+			files: {
+				"packages/a/tsconfig.json":
+					'{ "include": ["src/**/*.ts", "test/**/*.ts"], "compilerOptions": { "paths": { "#gen/*": ["./gen/*"] } } }\n',
+				"packages/a/src/gen-user.ts": 'import "#gen/x";\n',
+			},
+			ignored: { "packages/a/gen/x.ts": "export {};\n" },
+		});
+		const run = await gate(repo, { forbidden: (rel) => rel === "packages/a/gen/x.ts" });
+		refusedWith(run, [LINE["refs-config"] ?? ""]);
+		expect(run.opens.includes("packages/a/gen/x.ts")).toBe(false);
+		const named = shown(await gate(repo, { names: true }))[0] ?? "";
+		expect(named.endsWith(": packages/a/tsconfig.json (unsupported)")).toBe(true);
 	});
 
 	it("refuses a package whose entry point is an ignored module in the checkout, without reading it", async () => {
