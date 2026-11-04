@@ -16,6 +16,7 @@ const clone = <T>(value: T): T => structuredClone(value);
 export const reviewKinds: readonly string[] = [
 	"plugin.install",
 	"plugin.upgrade",
+	"account.connect",
 	"account.disconnect",
 	"account.mode-full",
 	"security.device-capabilities",
@@ -71,6 +72,8 @@ const createdAt = Date.parse("2026-10-12T15:00:00.000Z");
 const pairedAt = Date.parse("2026-10-14T16:30:00.000Z");
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 export type SubjectName =
+	| "connect-email"
+	| "connect-chat"
 	| "email"
 	| "chat"
 	| "device"
@@ -79,6 +82,29 @@ export type SubjectName =
 	| "plugin-upgrade";
 export function adminSubject(name: SubjectName): ObjectValue {
 	switch (name) {
+		case "connect-email":
+			return {
+				v: 1,
+				channel: "email",
+				account: id.account,
+				ownerUserId: id.author,
+				alias: "gmail-1",
+				mode: "read_only",
+				historyLimitDays: 30,
+				disclosureVersion: 1,
+				pluginInstanceId: id.candidate,
+				address: "owner@example.test",
+			};
+		case "connect-chat": {
+			const { address: _, ...common } = adminSubject("connect-email");
+			return {
+				...common,
+				channel: "chat",
+				alias: "slack-1",
+				teamId: "T0123ABCD",
+				selfUserId: "U0123ABCD",
+			};
+		}
 		case "email":
 			return {
 				channel: "email",
@@ -145,11 +171,13 @@ const subjectFor = (kind: string): SubjectName =>
 		? "plugin-install"
 		: kind === "plugin.upgrade"
 			? "plugin-upgrade"
-			: kind.startsWith("account.")
-				? "email"
-				: kind === "security.device-capabilities"
-					? "device"
-					: "backup";
+			: kind === "account.connect"
+				? "connect-email"
+				: kind.startsWith("account.")
+					? "email"
+					: kind === "security.device-capabilities"
+						? "device"
+						: "backup";
 const decode = (text: unknown): ObjectValue =>
 	JSON.parse(Buffer.from(text as string, "base64url").toString("utf8"));
 
@@ -395,6 +423,8 @@ export function adminCases(): ApiCase[] {
 		device = adminSubject("device"),
 		backup = adminSubject("backup");
 	const subjects: readonly [SubjectName, ObjectValue][] = [
+		["connect-email", adminSubject("connect-email")],
+		["connect-chat", adminSubject("connect-chat")],
 		["email", email],
 		["chat", chat],
 		["device", device],
@@ -403,6 +433,8 @@ export function adminCases(): ApiCase[] {
 		["plugin-upgrade", adminSubject("plugin-upgrade")],
 	];
 	const namedSchema: Record<SubjectName, string> = {
+		"connect-email": "AdminAccountConnectSubject",
+		"connect-chat": "AdminAccountConnectSubject",
 		email: "AdminAccountSubject",
 		chat: "AdminAccountSubject",
 		device: "AdminDeviceCapabilitiesSubject",
@@ -411,6 +443,8 @@ export function adminCases(): ApiCase[] {
 		"plugin-upgrade": "AdminPluginUpgradeSubject",
 	};
 	const kindOf: Record<SubjectName, string> = {
+		"connect-email": "account.connect",
+		"connect-chat": "account.connect",
 		email: "account.disconnect",
 		chat: "account.disconnect",
 		device: "security.device-capabilities",
@@ -430,6 +464,104 @@ export function adminCases(): ApiCase[] {
 		schema(`review-${name}`, "OperationReview", fixture.review, true);
 		add(`challenge-${name}`, "challenge", fixture, true);
 	};
+
+	// Enrollment subjects are public DATA only, not a native issuer, credential or selection.
+	for (const name of ["connect-email", "connect-chat"] as const) {
+		const subject = adminSubject(name);
+		for (const key of Object.keys(subject))
+			refuse(`${name}-missing-${key}`, name, without(subject, key));
+		for (const key of ["credential", "token", "secret", "checked", "selectionDigest"])
+			refuse(`${name}-extra-${key}`, name, { ...subject, [key]: "x" });
+		for (const mode of ["full", "read_only"])
+			accept(`${name}-mode-${mode}`, name, { ...subject, mode });
+		for (const historyLimitDays of [1, 365])
+			accept(`${name}-history-${historyLimitDays}`, name, { ...subject, historyLimitDays });
+		accept(`${name}-alias-32`, name, { ...subject, alias: `a${"-".repeat(31)}` });
+		accept(`${name}-disclosure-max-safe`, name, { ...subject, disclosureVersion: MAX_SAFE });
+		for (const [label, change] of [
+			["version", { v: 2 }],
+			["account", { account: id.account.toLowerCase() }],
+			["owner", { ownerUserId: "not-a-native-id" }],
+			["instance", { pluginInstanceId: null }],
+			["alias-upper", { alias: "Mail" }],
+			["alias-33", { alias: "a".repeat(33) }],
+			["mode", { mode: "readonly" }],
+			["history-zero", { historyLimitDays: 0 }],
+			["history-366", { historyLimitDays: 366 }],
+			["history-fraction", { historyLimitDays: 1.5 }],
+			["disclosure-zero", { disclosureVersion: 0 }],
+			["disclosure-fraction", { disclosureVersion: 1.5 }],
+			["disclosure-unsafe", { disclosureVersion: 2 ** 53 }],
+		] as const)
+			refuse(`${name}-${label}`, name, { ...subject, ...change });
+		const identityChanges: readonly (readonly [string, unknown])[] =
+			name === "connect-email"
+				? [["address", "other@example.test"]]
+				: [
+						["teamId", "T0123ABCE"],
+						["selfUserId", "U0123ABCE"],
+					];
+		const changes: readonly (readonly [string, unknown])[] = [
+			["account", id.op],
+			["ownerUserId", id.device],
+			["alias", "other-1"],
+			["mode", "full"],
+			["historyLimitDays", 90],
+			["disclosureVersion", 2],
+			["pluginInstanceId", id.op],
+			...identityChanges,
+		];
+		for (const [key, value] of changes)
+			add(
+				`stale-${name}-${key}`,
+				"challenge",
+				stale(adminFixture("account.connect", subject), { ...subject, [key]: value }),
+			);
+	}
+	const connectEmail = adminSubject("connect-email"),
+		connectChat = adminSubject("connect-chat");
+	accept("connect-email-uppercase-local", "connect-email", {
+		...connectEmail,
+		address: "Alice@example.test",
+	});
+	accept("connect-email-unicode-local", "connect-email", {
+		...connectEmail,
+		address: `${String.fromCodePoint(0xe9)}@example.test`,
+	});
+	accept("connect-chat-no-team", "connect-chat", { ...connectChat, teamId: null });
+	accept("connect-chat-provider-256", "connect-chat", {
+		...connectChat,
+		teamId: "T".repeat(256),
+		selfUserId: "U".repeat(256),
+	});
+	for (const [label, subject] of [
+		["email-team", { ...connectEmail, teamId: null }],
+		["email-address-null", { ...connectEmail, address: null }],
+		["email-address-domain", { ...connectEmail, address: "owner@Example.test" }],
+		["chat-address", { ...connectChat, address: "owner@example.test" }],
+		["chat-team-space", { ...connectChat, teamId: "T 1" }],
+		["chat-user-empty", { ...connectChat, selfUserId: "" }],
+		["chat-user-null", { ...connectChat, selfUserId: null }],
+		["chat-user-257", { ...connectChat, selfUserId: "U".repeat(257) }],
+	] as const)
+		refuse(
+			`connect-${label}`,
+			label.startsWith("email") ? "connect-email" : "connect-chat",
+			subject,
+		);
+	for (const [label, ids, valid] of [
+		["exact", [id.account], true],
+		["empty", [], false],
+		["two", [id.account, id.candidate], false],
+		["duplicate", [id.account, id.account], false],
+		["bad-id", ["not-a-native-id"], false],
+	] as const)
+		schema(
+			"request-account.connect-ids-" + label,
+			"OperationRequest",
+			{ kind: "account.connect", ids },
+			valid,
+		);
 
 	// Synthetic plugin DATA only: no candidate provenance or accepted operation is supplied.
 	const pluginInstall = adminSubject("plugin-install"),
@@ -538,7 +670,10 @@ export function adminCases(): ApiCase[] {
 	// Each included kind with each subject that fits it.
 	for (const kind of reviewKinds)
 		for (const [name, subject] of subjects) {
-			const fits = subjectFor(kind) === name || (name === "chat" && kind.startsWith("account."));
+			const fits =
+				subjectFor(kind) === name ||
+				(kind === "account.connect" && name === "connect-chat") ||
+				((kind === "account.disconnect" || kind === "account.mode-full") && name === "chat");
 			const fixture = adminFixture(kind, subject);
 			schema(`review-${kind}-${name}`, "OperationReview", fixture.review, fits);
 			add(`challenge-${kind}-${name}`, "challenge", fixture, fits);

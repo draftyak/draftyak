@@ -33,6 +33,8 @@ const vectors = read("vectors/device-api/admin.json") as {
 	cases: { id: string }[];
 };
 const names: readonly SubjectName[] = [
+	"connect-email",
+	"connect-chat",
 	"email",
 	"chat",
 	"device",
@@ -93,6 +95,7 @@ describe("admin review kinds", () => {
 		expect(check(signed(backup, { kind: "data.export" }))).toBe(false);
 	});
 	it("hold the three subjects in the schema catalogue as the exported objects", () => {
+		expect(api.DEVICE_API_SCHEMAS.AdminAccountConnectSubject).toBe(api.AdminAccountConnectSubject);
 		expect(api.DEVICE_API_SCHEMAS.AdminAccountSubject).toBe(api.AdminAccountSubject);
 		expect(api.DEVICE_API_SCHEMAS.AdminDeviceCapabilitiesSubject).toBe(
 			api.AdminDeviceCapabilitiesSubject,
@@ -129,6 +132,8 @@ describe("admin subjects", () => {
 		]);
 		expect(required("AdminDataBackupSubject")).toEqual([["scope"]]);
 		const schemas = {
+			"connect-email": api.AdminAccountConnectSubject,
+			"connect-chat": api.AdminAccountConnectSubject,
 			email: api.AdminAccountSubject,
 			chat: api.AdminAccountSubject,
 			device: api.AdminDeviceCapabilitiesSubject,
