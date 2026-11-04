@@ -1036,6 +1036,25 @@ describe("refs-config", () => {
 	});
 });
 
+describe("refs-config, Biome extends depth", () => {
+	// biome.json extends c/1.json, each c/<n>.json the next, and the last extends nothing.
+	const chain = (length: number): Record<string, string> => {
+		const files: Record<string, string> = {
+			"biome.json": JSON.stringify({ extends: ["./c/1.json"] }),
+		};
+		for (let at = 1; at < length; at++) {
+			files[`c/${at}.json`] = JSON.stringify({ extends: [`./${at + 1}.json`] });
+		}
+		files[`c/${length}.json`] = "{}";
+		return files;
+	};
+
+	it("follows an extends chain 16 configs deep, and refuses the config one past it", async () => {
+		expect(await refused({ files: chain(16) }, "refs-config")).toEqual([]);
+		expect(await refused({ files: chain(17) }, "refs-config")).toEqual(["c/17.json: unsupported"]);
+	});
+});
+
 describe("resolveFrom", () => {
 	const checkout = new Checkout(ownRepo);
 

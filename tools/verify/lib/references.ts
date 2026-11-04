@@ -1023,10 +1023,10 @@ function subpathPatterns(
 const BIOME_CONFIGS = new Set(["biome.json", "biome.jsonc", ".biome.json", ".biome.jsonc"]);
 
 // A Biome config's extends and plugins, top level and in overrides: each ./ or ../ path is a file
-// Biome reads, kind-checked as a reference, and a config it extends is followed the same way; extends
-// may also name the root config, "//". Anything else (a package's config, an absolute path, a value
-// that isn't a string) is a redirection this check doesn't follow, and the config is refused, as is
-// one it can't parse.
+// Biome reads, kind-checked as a reference, and a config it extends is followed the same way, to a
+// depth of 16; extends may also name the root config, "//". Anything else (a package's config, an
+// absolute path, a value that isn't a string) is a redirection this check doesn't follow, and the
+// config is refused, as is one it can't parse and one extended past that depth.
 function biomeRefs(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -1034,7 +1034,11 @@ function biomeRefs(
 	seen: Set<string>,
 	depth = 0,
 ): void {
-	if (seen.has(file) || depth > 16) return;
+	if (seen.has(file)) return;
+	if (depth > 16) {
+		candidates.refuse(file, "unsupported");
+		return;
+	}
 	seen.add(file);
 	const text = input.listed(file) ? input.text(file) : null;
 	if (text === null) return;
