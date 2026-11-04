@@ -52,6 +52,7 @@ const requiredAssets = [
 	"outbox/migrations/0001_send_attempts.sql",
 	"accounts/migrations/0001_accounts.sql",
 	"plugins/registry/migrations/0001_registry.sql",
+	"plugins/registry/migrations/0002_candidates.sql",
 	"outbox/propose-migrations/0001_proposals.sql",
 	"identity/challenges-migrations/0001_challenges.sql",
 	"outbox/verifier-migrations/0001_approvals.sql",
@@ -86,7 +87,7 @@ function recorder(): { store: HubStore; calls: string[] } {
 	return { store, calls };
 }
 
-it("checks all twenty required assets and migrates all eighteen namespaces exactly once", async () => {
+it("checks all twenty-one required assets and migrates all eighteen namespaces exactly once", async () => {
 	const { store, calls } = recorder();
 	await migrateHubSchemas(store);
 	expect(Object.keys(HUB_NAMESPACES)).toEqual(namespaces);

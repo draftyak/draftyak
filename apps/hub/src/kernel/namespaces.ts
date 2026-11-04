@@ -66,6 +66,7 @@ const SCHEMAS = Object.freeze([
 	["tickets", "0001_send_attempts.sql"],
 	["accounts", "0001_accounts.sql"],
 	["pluginregistry", "0001_registry.sql"],
+	["pluginregistry", "0002_candidates.sql"],
 	["outbox", "0001_proposals.sql"],
 	["challenges", "0001_challenges.sql"],
 	["verifier", "0001_approvals.sql"],

@@ -35,6 +35,10 @@ const assets = [
 		"plugins/registry/migrations/0001_registry.sql",
 		"plugins/registry/migrations/0001_registry.sql",
 	],
+	[
+		"plugins/registry/migrations/0002_candidates.sql",
+		"plugins/registry/migrations/0002_candidates.sql",
+	],
 	["outbox/propose-migrations/0001_proposals.sql", "outbox/propose-migrations/0001_proposals.sql"],
 	[
 		"identity/challenges-migrations/0001_challenges.sql",

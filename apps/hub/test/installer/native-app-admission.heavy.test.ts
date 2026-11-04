@@ -390,7 +390,7 @@ async function prepare(configured: boolean): Promise<Built> {
 			copyFileSync(path.join(hub, "src", from, name), target);
 			migrations++;
 		}
-	expect(migrations).toBe(20);
+	expect(migrations).toBe(21);
 	const packages = BUNDLED_PLUGIN_IDS.map((id, index) =>
 		bundle(id, { version: index + 1 + ".2.3" }),
 	);
