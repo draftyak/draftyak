@@ -1152,10 +1152,11 @@ const ENTRY_POINTERS = new Set(
 	),
 );
 
-// A script token that reads as a path (it starts with a dot or a ~, or holds a separator), from its
-// package's folder: a command may run or read it, so it is checked as a module Node could load from
-// there. One that leaves the checkout refuses the manifest: /dev/null too, which on Windows names a
-// file on the current drive, one from a drive's own working folder, and one that starts with ~,
+// A script token that reads as a path (it starts with a dot, a ~ or a drive's own working folder, or
+// holds a separator), from its package's folder: a command may run or read it, so it is checked as
+// a module Node could load from there. One that leaves the checkout refuses the manifest: /dev/null
+// too, which on Windows names a file on the current drive, one from a drive's own working folder
+// (C:x, which cmd.exe runs from there with each extension), and one that starts with ~,
 // which the shell pnpm runs scripts with on Linux and macOS expands to a home folder. Tokens are free
 // text, so a name Windows trims is refused only in a token that starts with ./ or ../.
 function scriptToken(

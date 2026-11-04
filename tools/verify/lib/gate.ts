@@ -114,12 +114,15 @@ const RUNNABLE = "com exe bat cmd vbs vbe js jse wsf wsh msc cpl".split(" ");
 // What a gated route's children start in a folder: Node, the package managers and git.
 const STARTED = ["node", "pnpm", "pnpx", "npm", "npx", "corepack", "git"];
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+// A command word cmd.exe looks up by a path: one that holds a separator, or one from a drive's own
+// working folder (C:x), which on the checkout's drive is the package folder pnpm runs it in.
+const PATH_WORD = /[\\/]|^[A-Za-z]:/;
 
 // The first word of each command a package.json's scripts run, in lower case: each script split at
 // &&, ||, ;, |, &, parentheses, backticks and line ends, past leading NAME=value assignments, with
-// quotes dropped. A word that holds a separator is kept as it is: cmd.exe still looks one up from
-// the folder (the part before a / as a command, a \ path with each extension), so the gate refuses
-// a script that starts a command so.
+// quotes dropped. A word that starts by a path is kept as it is: cmd.exe still looks one up from
+// the folder (the part before a / as a command, a \ path or a drive's working folder with each
+// extension), so the gate refuses a script that starts a command so.
 export function scriptCommands(text: string): string[] {
 	const json = parseJson(text);
 	const words = new Set<string>();
@@ -297,7 +300,7 @@ export async function gateWith(
 			const manifest = dir === "" ? "package.json" : `${dir}/package.json`;
 			const own = text(manifest);
 			const words = own === null ? [] : scriptCommands(own);
-			const byPath = (word: string): boolean => /[\\/]/.test(word);
+			const byPath = (word: string): boolean => PATH_WORD.test(word);
 			if (words.some(byPath)) found.push({ rel: manifest, kind: "unsupported" });
 			const names = new Set(
 				[...STARTED, ...words.filter((word) => !byPath(word))].flatMap(shadowNames),

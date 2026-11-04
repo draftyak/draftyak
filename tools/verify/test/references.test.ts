@@ -855,6 +855,9 @@ describe("refs-config", () => {
 				name: "h",
 				scripts: { test: "turbo run test --filter=!./tools/x" },
 			}),
+			// With no separator, as a command cmd.exe runs from there and as an argument.
+			"i/package.json": JSON.stringify({ name: "i", scripts: { test: "C:helper arg" } }),
+			"j/package.json": JSON.stringify({ name: "j", scripts: { test: "node d:x.mjs" } }),
 		};
 		expect(await refused({ files }, "refs-config")).toEqual([
 			"a/tsconfig.json: unsupported",
@@ -864,6 +867,8 @@ describe("refs-config", () => {
 			"e/index.html: unsupported",
 			"f/package.json: unsupported",
 			"g/package.json: outside",
+			"i/package.json: outside",
+			"j/package.json: outside",
 		]);
 	});
 

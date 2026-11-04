@@ -823,6 +823,53 @@ describe("refusals before any read or child start", () => {
 		}
 	});
 
+	it("refuses a package.json whose script starts a command from a drive's own working folder, which cmd.exe runs from the package folder, in either case and on any drive, never reading what it would find there", async () => {
+		const manifest = (name: string, test: string): string =>
+			`${JSON.stringify({ name, private: true, scripts: { test } })}\n`;
+		const runnable = (rel: string): boolean => /\.(?:cmd|exe)$/i.test(rel);
+		const cases: readonly (readonly [string, Fixture, string])[] = [
+			[
+				"C:foo beside a tracked foo.cmd",
+				{
+					files: {
+						"packages/a/package.json": manifest("a", "C:foo arg"),
+						"packages/a/foo.cmd": "@echo off\n",
+					},
+				},
+				"packages/a/package.json",
+			],
+			[
+				"c:foo.cmd beside an untracked foo.cmd",
+				{
+					files: { "packages/a/package.json": manifest("a", "c:foo.cmd") },
+					untracked: { "packages/a/foo.cmd": "@echo off\n" },
+				},
+				"packages/a/package.json",
+			],
+			[
+				"D:tool after another command, beside an ignored tool.exe in the root",
+				{
+					files: { "package.json": manifest("fixture", "tsc -b && D:tool run") },
+					ignored: { "tool.exe": "" },
+				},
+				"package.json",
+			],
+		];
+		for (const [label, tree, named] of cases) {
+			const repo = fixture(tree);
+			const run = await gate(repo, { forbidden: runnable });
+			// The script-token check refuses it as a path that leaves the checkout, and the command-name
+			// check as a command started by a path.
+			const lines = [LINE["refs-config"] ?? "", LINE["command-shadows"] ?? ""];
+			expect([label, uncounted(shown(run))]).toEqual([label, lines]);
+			refusedWith(run, lines);
+			expect([label, run.opens.filter(runnable)]).toEqual([label, []]);
+			const listed = shown(await gate(repo, { names: true, forbidden: runnable }));
+			expect([label, listed[0]?.endsWith(`: ${named} (outside)`)]).toEqual([label, true]);
+			expect([label, listed[1]?.endsWith(`: ${named} (unsupported)`)]).toEqual([label, true]);
+		}
+	});
+
 	it("stops on a listing problem with the listing's line and the stop line only", async () => {
 		const repo = fixture();
 		const spy = readerSpy(repo.dir);
