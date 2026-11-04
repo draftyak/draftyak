@@ -1472,10 +1472,18 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				const earlier = steps.slice(0, index);
 				const wanted = nativeSource ? [preinstall, sourcePreinstall] : [preinstall];
 				const checks = earlier.filter((other) => wanted.includes(String(other.run)));
+				// As before an install, only a check that sets nothing but its name, if and run counts:
+				// one marked continue-on-error, say, can't stop what follows it.
+				const plain = checks.filter((check) => only(check, ["name", "if", "run"]));
 				if (checks.length === 0) {
 					report(at, `${job} must run ${preinstall} before ${starts}`);
+				} else if (plain.length === 0) {
+					report(
+						at,
+						`${job}'s pre-install check before ${starts} may set only its name, if and run`,
+					);
 				} else if (
-					!checks.some((check) => check.if === undefined || isDeepStrictEqual(check.if, step.if))
+					!plain.some((check) => check.if === undefined || isDeepStrictEqual(check.if, step.if))
 				) {
 					report(
 						at,

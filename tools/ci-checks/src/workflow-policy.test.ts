@@ -3004,6 +3004,24 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 		expect(checkWorkflow("x.yml", both, toolchain)).toEqual([]);
 	});
 
+	it("counts only a plain pre-install check before a package manager starts, never one marked continue-on-error or given an env", () => {
+		const plainOnly = (what: string): string =>
+			`a's pre-install check before ${what} may set only its name, if and run`;
+		const soft = [`- run: ${preinstall}`, "  continue-on-error: true"];
+		const withEnv = [`- run: ${preinstall}`, "  env:", "    X: '1'"];
+		for (const [what, start] of [
+			["pnpm/action-setup", setupPnpm],
+			["a command that names a package manager", ["- run: pnpm exec tsc -b"]],
+		] as const) {
+			for (const check of [soft, withEnv]) {
+				const found = checkWorkflow("x.yml", job(...check, ...start), toolchain).join("\n");
+				expect(found, `${what}: ${check.join(" ")}`).toContain(plainOnly(what));
+			}
+			const plain = job(...soft, `- run: ${preinstall}`, ...start);
+			expect(checkWorkflow("x.yml", plain, toolchain), what).toEqual([]);
+		}
+	});
+
 	const flagOnly =
 		"DRAFTYAK_RESERVED_TESTS may appear only on the reviewed reserved proof steps, unchanged";
 
