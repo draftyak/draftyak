@@ -7,7 +7,12 @@ import { newId } from "../../src/kernel/ids.ts";
 import type { SqlReader } from "../../src/store/store.ts";
 import { type RevisionFixture, revisionFixture } from "./revision-fixture.ts";
 
-const actions = ["outbox.proposed", "outbox.superseded", "outbox.approved"] as const;
+const actions = [
+	"outbox.proposed",
+	"outbox.superseded",
+	"outbox.approved",
+	"outbox.missed",
+] as const;
 const fixtures: {
 	fixture: RevisionFixture;
 	directory: string;

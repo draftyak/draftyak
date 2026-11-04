@@ -487,7 +487,7 @@ export class NativeOutboxProposals {
 		)
 			refused();
 		const latest = tx.get<{ seq: number }>(
-			"SELECT seq FROM main.audit_events WHERE refs=? AND action IN ('outbox.proposed','outbox.superseded','outbox.approved') ORDER BY seq DESC LIMIT 1",
+			"SELECT seq FROM main.audit_events WHERE refs=? AND action IN ('outbox.proposed','outbox.superseded','outbox.approved','outbox.missed') ORDER BY seq DESC LIMIT 1",
 			[canonicalize({ outbox: value.id })],
 		);
 		if (latest?.seq !== row.audit_seq) refused();
@@ -602,12 +602,30 @@ export class NativeOutboxProposals {
 	#save(
 		scope: WorkScope,
 		raw: NativeProposalRecord,
-		action: "outbox.proposed" | "outbox.superseded" | "outbox.approved",
+		action: "outbox.proposed" | "outbox.superseded" | "outbox.approved" | "outbox.missed",
 		insert = false,
+		expected?: Loaded,
 	): Loaded {
 		const tx = workSql.call(this.#database, scope),
 			value = record(raw),
 			payload = canonicalize(value);
+		if (action === "outbox.missed") {
+			if (
+				insert ||
+				!expected ||
+				!["APPROVED", "SCHEDULED"].includes(expected.record.state) ||
+				value.state !== "NEEDS_REAPPROVAL" ||
+				value.stateReason !== "missed" ||
+				value.updatedAt < expected.record.updatedAt ||
+				canonicalize({
+					...value,
+					state: expected.record.state,
+					stateReason: expected.record.stateReason,
+					updatedAt: expected.record.updatedAt,
+				}) !== canonicalize(expected.record)
+			)
+				refused();
+		} else if (expected !== undefined) refused();
 		if (
 			Buffer.byteLength(payload) > 2097152 ||
 			Buffer.byteLength(
@@ -649,7 +667,27 @@ export class NativeOutboxProposals {
 				"INSERT INTO main.outbox(id,user_id,account_id,draft_id,state,schedule_kind,payload,audit_seq,mac) VALUES(?,?,?,?,?,?,?,?,?)",
 				Object.values({ ...signed, mac }),
 			);
-		else if (
+		else if (action === "outbox.missed") {
+			if (!expected) refused();
+			const before = expected.record;
+			const prior = {
+				id: before.id,
+				user_id: before.userId,
+				account_id: before.accountId,
+				draft_id: before.draftId,
+				state: before.state,
+				schedule_kind: before.snapshot.schedule.kind,
+				payload: canonicalize(before),
+				audit_seq: expected.version,
+			};
+			if (
+				tx.run(
+					"UPDATE main.outbox SET state=?,payload=?,audit_seq=?,mac=? WHERE id=? AND user_id=? AND account_id=? AND draft_id=? AND state=? AND schedule_kind=? AND payload=? AND audit_seq=? AND mac=?",
+					[value.state, payload, audit_seq, mac, ...Object.values(prior), this.#mac(prior)],
+				).changes !== 1
+			)
+				refused();
+		} else if (
 			tx.run(
 				"UPDATE main.outbox SET state=?,payload=?,audit_seq=?,mac=? WHERE id=? AND state='PENDING_APPROVAL'",
 				[value.state, payload, audit_seq, mac, value.id],
@@ -1033,6 +1071,45 @@ export class NativeOutboxProposals {
 			return item.snapshot.schedule.kind === "at" ? "scheduled" : "approved";
 		});
 	}
+	/** Restriction only: the original receiver supplies clock, authentication and transaction. */
+	expireMissed(outboxId: string): boolean {
+		try {
+			this.#active();
+			return original.write.call(this, (tx: SqlTransaction, scope: WorkScope) =>
+				this.#mutate(scope, (actualTx) => {
+					if (actualTx !== tx) refused();
+					const loaded = this.#load(tx, id(outboxId));
+					if (!loaded || !["APPROVED", "SCHEDULED"].includes(loaded.record.state)) return false;
+					const item = loaded.record;
+					if (item.notBefore === null || item.deliverBy === null) refused();
+					const at = this.#now();
+					this.#reader(tx);
+					if (at <= item.deliverBy) return false;
+					freeze.releaseInTransaction.call(this.#freeze, tx, item.binding, item.id);
+					this.#save(
+						scope,
+						{
+							...item,
+							state: "NEEDS_REAPPROVAL",
+							stateReason: "missed",
+							updatedAt: Math.max(at, item.updatedAt),
+						},
+						"outbox.missed",
+						false,
+						loaded,
+					);
+					return true;
+				}),
+			) as boolean;
+		} catch (error) {
+			try {
+				this.#abortCurrent();
+			} catch {
+				/* A foreign receiver grants no scope. */
+			}
+			throw error instanceof ProposalError ? error : new ProposalError();
+		}
+	}
 	destroy(): void {
 		this.#abortCurrent();
 		this.#key?.fill(0);
@@ -1048,6 +1125,7 @@ const original = Object.freeze({
 	write: NativeOutboxProposals.prototype.write,
 	item: NativeOutboxProposals.prototype.item,
 	apply: NativeOutboxProposals.prototype.apply,
+	expireMissed: NativeOutboxProposals.prototype.expireMissed,
 	draftLocked: NativeOutboxProposals.prototype.draftLocked,
 	scheduledCount: NativeOutboxProposals.prototype.scheduledCount,
 	assertScope: NativeOutboxProposals.prototype.assertScope,
@@ -1106,6 +1184,10 @@ export function applyNativeOutboxTarget(
 		}
 		throw error;
 	}
+}
+/** Tightens one native target; the identifier conveys no approval or clock authority. */
+export function expireNativeOutboxMissed(target: unknown, outboxId: string): boolean {
+	return original.expireMissed.call(actual(target), outboxId);
 }
 export function isNativeOutboxDraftLocked(
 	target: unknown,
