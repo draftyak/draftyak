@@ -25,6 +25,10 @@ import {
 	type NativeAppRelease,
 	verifyNativeAppRelease,
 } from "../../src/installer/native-app-release.ts";
+import {
+	type NativeReleaseV2,
+	verifyNativeReleaseV2,
+} from "../../src/plugins/installer/native-release-v2.ts";
 
 const io = vi.hoisted(() => ({
 	onOpen: undefined as ((handle: FileHandle, name: string) => Promise<void> | void) | undefined,
@@ -85,17 +89,29 @@ async function denied(operation: Promise<unknown>): Promise<boolean> {
 	);
 }
 
+function availability(files: NativeAppFiles): "available" | "unavailable" | "unexpected" {
+	try {
+		files.assertAvailable();
+		return "available";
+	} catch (error) {
+		return error instanceof NativeAppFilesError ? "unavailable" : "unexpected";
+	}
+}
+
 type Fixture = {
 	readonly root: string;
-	readonly release: NativeAppRelease;
+	readonly release: NativeAppRelease | NativeReleaseV2;
 	readonly archive: string;
 	readonly archiveBytes: Buffer;
+	readonly candidateArchive: string | undefined;
+	readonly candidateBytes: Buffer | undefined;
 	readonly owner: () => NativeAppFiles;
 };
 
 async function fixture(
 	run: (fixture: Fixture) => Promise<void>,
 	copyExecutable = false,
+	v2 = false,
 ): Promise<void> {
 	const temporary = await realpath(os.tmpdir());
 	const generated = await mkdtemp(path.join(temporary, "draftyak-native-app-files-"));
@@ -116,6 +132,9 @@ async function fixture(
 				(id) => [`bundles/${id}.tgz`, Buffer.from(`DYTEST ${id} archive content`)] as const,
 			),
 		]);
+		const candidateArchive = v2 ? "candidates/channel-gmail.tgz" : undefined;
+		if (candidateArchive)
+			content.set(candidateArchive, Buffer.from("DYTEST signed candidate archive content"));
 		for (const [name, bytes] of content) {
 			const target = path.join(root, ...name.split("/"));
 			await mkdir(path.dirname(target), { recursive: true });
@@ -127,7 +146,7 @@ async function fixture(
 			content.set("bin/draftyak.exe", await readFile(path.join(root, "bin/draftyak.exe")));
 		}
 		const manifest = {
-			v: 1,
+			v: v2 ? 2 : 1,
 			application: "draftyak",
 			version: "9.8.7",
 			platform: process.platform,
@@ -145,7 +164,27 @@ async function fixture(
 					entry: "dist/main.mjs",
 				},
 				archive: `bundles/${id}.tgz`,
+				...(v2 ? { expectedSurfaceDigest: "a".repeat(64) } : {}),
 			})),
+			...(candidateArchive
+				? {
+						candidates: [
+							{
+								id: ids[0],
+								package: {
+									name: `@draftyak/${ids[0]}`,
+									version: "2.0.0",
+									integrity: `sha512-${createHash("sha512")
+										.update(content.get(candidateArchive) ?? Buffer.alloc(0))
+										.digest("base64")}`,
+									entry: "dist/main.mjs",
+								},
+								archive: candidateArchive,
+								expectedSurfaceDigest: "b".repeat(64),
+							},
+						],
+					}
+				: {}),
 			files: [...content].map(([name, bytes]) => ({
 				path: name,
 				bytes: bytes.length,
@@ -156,12 +195,21 @@ async function fixture(
 		const bytes = Buffer.from(canonicalize(manifest));
 		const signature = sign(
 			null,
-			Buffer.concat([Buffer.from("DraftYak native application release v1\0"), bytes]),
+			Buffer.concat([
+				Buffer.from(
+					v2
+						? "DraftYak native application release v2\0"
+						: "DraftYak native application release v1\0",
+				),
+				bytes,
+			]),
 			privateKey,
 		);
 		await writeFile(path.join(root, "release.manifest.json"), bytes);
 		await writeFile(path.join(root, "release.signature"), signature);
-		const release = verifyNativeAppRelease(bytes, signature, publicKey);
+		const release = v2
+			? verifyNativeReleaseV2(bytes, signature, publicKey)
+			: verifyNativeAppRelease(bytes, signature, publicKey);
 		const archive = `bundles/${ids[0]}.tgz`;
 		const archiveBytes = content.get(archive);
 		if (!archiveBytes) throw new Error("DYTEST missing archive fixture");
@@ -170,6 +218,8 @@ async function fixture(
 			release,
 			archive,
 			archiveBytes,
+			candidateArchive,
+			candidateBytes: candidateArchive ? content.get(candidateArchive) : undefined,
 			owner: () => {
 				const owner = createNativeAppFiles(root);
 				owners.push(owner);
@@ -233,6 +283,115 @@ async function fixture(
 }
 
 describe("native application file DATA resources", () => {
+	it("retains v2 candidates in the same signed map without changing selected archive reads", async () => {
+		await fixture(
+			async ({ owner, release, archive, archiveBytes, candidateArchive, candidateBytes }) => {
+				if (!candidateArchive || !candidateBytes)
+					throw new Error("DYTEST missing candidate fixture");
+				const files = owner();
+				let opens = 0;
+				io.onOpen = () => {
+					opens++;
+				};
+				expect(availability(files)).toBe("available");
+				expect(opens).toBe(0);
+				await files.verify(release);
+				expect(release.v).toBe(2);
+				const copy = await files.archive(candidateArchive);
+				expect(copy.equals(candidateBytes)).toBe(true);
+				copy.fill(0);
+				expect((await files.archive(candidateArchive)).equals(candidateBytes)).toBe(true);
+				expect((await files.archive(archive)).equals(archiveBytes)).toBe(true);
+				expect(opens).toBe(release.files.length + 2);
+			},
+			false,
+			true,
+		);
+	});
+
+	it("refuses changed candidate content against the authenticated shared file map", async () => {
+		await fixture(
+			async ({ root, owner, release, candidateArchive }) => {
+				if (!candidateArchive) throw new Error("DYTEST missing candidate fixture");
+				await writeFile(
+					path.join(root, ...candidateArchive.split("/")),
+					"DYTEST changed candidate",
+				);
+				const files = owner();
+				expect(await denied(files.verify(release))).toBe(true);
+				expect(availability(files)).toBe("unavailable");
+				expect(await denied(files.archive(candidateArchive))).toBe(true);
+			},
+			false,
+			true,
+		);
+	});
+
+	it("fences and joins an actual v2 candidate read before closing its retained handle", async () => {
+		await fixture(
+			async ({ root, owner, release, candidateArchive }) => {
+				if (!candidateArchive) throw new Error("DYTEST missing candidate fixture");
+				const entered = deferred();
+				const finish = deferred();
+				let held: { handle: FileHandle; descriptor: PropertyDescriptor | undefined } | undefined;
+				let pause = true;
+				io.onOpen = (handle, name) => {
+					if (name !== path.join(root, ...candidateArchive.split("/"))) return;
+					const descriptor = Object.getOwnPropertyDescriptor(handle, "read");
+					const read = handle.read;
+					held = { handle, descriptor };
+					Object.defineProperty(handle, "read", {
+						configurable: true,
+						enumerable: descriptor?.enumerable ?? false,
+						writable: true,
+						value: async (...args: unknown[]) => {
+							if (pause) {
+								pause = false;
+								entered.release();
+								await finish.promise;
+							}
+							return Reflect.apply(read, handle, args);
+						},
+					});
+				};
+				const files = owner();
+				const verification = files.verify(release);
+				let closing: Promise<void> | undefined;
+				try {
+					await entered.promise;
+					closing = files.close();
+					expect(availability(files)).toBe("unavailable");
+					let settled = false;
+					void closing.then(
+						() => {
+							settled = true;
+						},
+						() => {
+							settled = true;
+						},
+					);
+					await turn();
+					expect(settled).toBe(false);
+					expect(await denied(files.archive(candidateArchive))).toBe(true);
+					finish.release();
+					expect(await denied(verification)).toBe(true);
+					await closing;
+					expect(held !== undefined && (await closed(held.handle))).toBe(true);
+				} finally {
+					finish.release();
+					await Promise.allSettled([verification, ...(closing ? [closing] : [])]);
+					await files.close();
+					if (held) {
+						if (held.descriptor) Object.defineProperty(held.handle, "read", held.descriptor);
+						else Reflect.deleteProperty(held.handle, "read");
+					}
+				}
+			},
+			false,
+			true,
+		);
+	});
+
 	it("retains the real copied executable and exact signed inventory without exposing owned buffers", async () => {
 		await fixture(async ({ owner, release, archive, archiveBytes }) => {
 			let opens = 0;

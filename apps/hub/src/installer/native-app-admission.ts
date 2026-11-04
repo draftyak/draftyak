@@ -2,6 +2,7 @@ import { createPublicKey } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { portableRelativePath } from "@draftyak/bounded-files";
+import { parseStrict } from "@draftyak/protocol/jcs";
 import { preparePinnedPackage } from "../artifacts/index.ts";
 import {
 	assertNativePluginOwner,
@@ -9,6 +10,11 @@ import {
 	nativePluginInputs,
 } from "../lifecycle/native-session-context.ts";
 import type { BundledPluginPin } from "../plugins/installer/index.ts";
+import {
+	type NativeReleaseV2,
+	type NativeReleaseV2Bundle,
+	verifyNativeReleaseV2,
+} from "../plugins/installer/native-release-v2.ts";
 import { type BundledPluginId, declaration } from "../plugins/installer/policy.ts";
 import { createNativeAppFiles, type NativeAppFiles } from "./native-app-files.ts";
 import { type NativeAppRelease, verifyNativeAppRelease } from "./native-app-release.ts";
@@ -25,6 +31,20 @@ export interface NativeAppAdmissionInputs {
 	readonly bundles: readonly BundledPluginPin[];
 }
 
+/** Authenticated descriptor DATA only; this is not accepted review or an execution grant. */
+export interface NativeAppAdmissionBundleFacts extends BundledPluginPin {
+	readonly expectedSurfaceDigest: string;
+}
+
+/** V2 facts from the same original capture, without native paths or caller-selected archives. */
+export interface NativeAppAdmissionReviewInputs {
+	readonly version: string;
+	readonly bundles: readonly NativeAppAdmissionBundleFacts[];
+	readonly candidates: readonly NativeAppAdmissionBundleFacts[];
+}
+
+type CapturedRelease = NativeAppRelease | NativeReleaseV2;
+
 interface Capture {
 	readonly owner: object;
 	readonly parts: NativePluginSessionParts;
@@ -32,8 +52,9 @@ interface Capture {
 	closing: boolean;
 	closed: boolean;
 	files?: NativeAppFiles;
-	release?: NativeAppRelease;
+	release?: CapturedRelease;
 	inputs?: NativeAppAdmissionInputs;
+	reviewInputs?: NativeAppAdmissionReviewInputs;
 	opening?: Promise<NativeAppAdmission>;
 	closingAttempt?: Promise<void>;
 }
@@ -96,7 +117,23 @@ function installedRoot(trust: NativeAppReleaseTrust): string {
 	return root;
 }
 
-function releaseMatchesHost(release: NativeAppRelease, trust: NativeAppReleaseTrust): void {
+function releaseVersion(manifest: Uint8Array): 1 | 2 {
+	const parsed: unknown = parseStrict(manifest);
+	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) refuse();
+	const version = Object.getOwnPropertyDescriptor(parsed, "v");
+	if (!version || !("value" in version) || (version.value !== 1 && version.value !== 2)) refuse();
+	return version.value;
+}
+
+function bundleFacts(bundle: NativeReleaseV2Bundle): NativeAppAdmissionBundleFacts {
+	return Object.freeze({
+		id: bundle.id,
+		package: bundle.package,
+		expectedSurfaceDigest: bundle.expectedSurfaceDigest,
+	});
+}
+
+function releaseMatchesHost(release: CapturedRelease, trust: NativeAppReleaseTrust): void {
 	if (
 		release.version !== trust.version ||
 		release.platform !== host.platform ||
@@ -123,7 +160,11 @@ async function captureInstalledRelease(capture: Capture): Promise<NativeAppAdmis
 		capture.files = files;
 		const signed = await files.readRelease();
 		live(capture);
-		const release = verifyNativeAppRelease(signed.manifest, signed.signature, key);
+		// Dispatch only by the explicit tag; neither signed grammar falls back to the other.
+		const release =
+			releaseVersion(signed.manifest) === 1
+				? verifyNativeAppRelease(signed.manifest, signed.signature, key)
+				: verifyNativeReleaseV2(signed.manifest, signed.signature, key);
 		releaseMatchesHost(release, trust);
 		await files.verify(release);
 		live(capture);
@@ -142,6 +183,12 @@ async function captureInstalledRelease(capture: Capture): Promise<NativeAppAdmis
 			version: release.version,
 			bundles: Object.freeze(bundles),
 		});
+		if (release.v === 2)
+			capture.reviewInputs = Object.freeze({
+				version: release.version,
+				bundles: Object.freeze(release.bundles.map(bundleFacts)),
+				candidates: Object.freeze(release.candidates.map(bundleFacts)),
+			});
 		return capture.handle;
 	} catch {
 		capture.closing = true;
@@ -179,6 +226,72 @@ export function openNativeAppAdmission(originalSession: unknown): Promise<Native
 	return opening;
 }
 
+/** Undefined denotes unconfigured legacy DATA only; it is never native review provenance. */
+export async function nativeAppAdmissionFormat(
+	originalSession: unknown,
+): Promise<1 | 2 | undefined> {
+	try {
+		if (arguments.length !== 1) refuse();
+		const parts = nativePluginInputs(originalSession);
+		const existing = sessions.get(originalSession as object);
+		if (fixedTrust === undefined && existing === undefined) {
+			assertNativePluginOwner(originalSession, parts);
+			return undefined;
+		}
+		// An existing failed, closing or retained capture never downgrades to legacy DATA.
+		const admission = await openNativeAppAdmission(originalSession);
+		const capture = captures.get(admission);
+		if (!capture || capture.owner !== originalSession || capture.parts !== parts) refuse();
+		live(capture);
+		if (!capture.files || !capture.release) refuse();
+		await capture.files.verify(capture.release);
+		live(capture);
+		return capture.release.v;
+	} catch {
+		refuse();
+	}
+}
+
+/** Synchronous retained v2 origin/lifetime only; fresh App file verification remains asynchronous. */
+export function assertNativeAppAdmissionCurrent(
+	admission: unknown,
+	originalSession: unknown,
+): void {
+	try {
+		if (arguments.length !== 2 || admission === null || typeof admission !== "object") refuse();
+		const capture = captures.get(admission);
+		if (
+			!capture ||
+			capture.owner !== originalSession ||
+			capture.handle !== admission ||
+			sessions.get(capture.owner) !== capture
+		)
+			refuse();
+		const files = capture.files;
+		const release = capture.release;
+		const facts = capture.reviewInputs;
+		const parts = capture.parts;
+		if (!files || !release || release.v !== 2 || !capture.inputs || !facts) refuse();
+		live(capture);
+		files.assertAvailable();
+		if (
+			captures.get(admission) !== capture ||
+			sessions.get(capture.owner) !== capture ||
+			capture.owner !== originalSession ||
+			capture.handle !== admission ||
+			capture.parts !== parts ||
+			capture.closing ||
+			capture.closed ||
+			capture.files !== files ||
+			capture.release !== release ||
+			capture.reviewInputs !== facts
+		)
+			refuse();
+	} catch {
+		refuse();
+	}
+}
+
 /** Revalidate the original captured installation before exposing its authenticated content. */
 export async function nativeAppAdmissionInputs(
 	admission: unknown,
@@ -192,6 +305,22 @@ export async function nativeAppAdmissionInputs(
 	await capture.files.verify(capture.release);
 	live(capture);
 	return capture.inputs;
+}
+
+/** Revalidated v2 DATA only; v1 never supplies an invented expected surface digest. */
+export async function nativeAppAdmissionReviewInputs(
+	admission: unknown,
+	originalSession: unknown,
+): Promise<NativeAppAdmissionReviewInputs> {
+	if (arguments.length !== 2 || admission === null || typeof admission !== "object") refuse();
+	const capture = captures.get(admission);
+	if (!capture || capture.owner !== originalSession) refuse();
+	live(capture);
+	if (!capture.files || !capture.release || capture.release.v !== 2 || !capture.reviewInputs)
+		refuse();
+	await capture.files.verify(capture.release);
+	live(capture);
+	return capture.reviewInputs;
 }
 
 /** Detached bytes for a fixed signed bundle, after rechecking the same original live capture. */
@@ -209,6 +338,34 @@ export async function nativeAppAdmissionArchive(
 	if (!bundle) refuse();
 	// The file owner registers this read before opening and joins it during close.
 	const archive = await capture.files.archive(bundle.archive);
+	live(capture);
+	return Buffer.from(archive);
+}
+
+/** Exact signed candidate selection only; the returned bytes grant no installation or review. */
+export async function nativeAppAdmissionCandidateArchive(
+	admission: unknown,
+	originalSession: unknown,
+	id: BundledPluginId,
+	version: string,
+): Promise<Uint8Array> {
+	if (
+		arguments.length !== 4 ||
+		admission === null ||
+		typeof admission !== "object" ||
+		typeof version !== "string"
+	)
+		refuse();
+	const capture = captures.get(admission);
+	if (!capture || capture.owner !== originalSession) refuse();
+	live(capture);
+	if (!capture.files || !capture.release || capture.release.v !== 2 || !capture.reviewInputs)
+		refuse();
+	const candidate = capture.release.candidates.find(
+		(bundle) => bundle.id === id && bundle.package.version === version,
+	);
+	if (!candidate) refuse();
+	const archive = await capture.files.archive(candidate.archive);
 	live(capture);
 	return Buffer.from(archive);
 }
