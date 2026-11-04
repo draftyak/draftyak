@@ -246,8 +246,25 @@ describe("refusals before any read or child start", () => {
 		expect(run.opens.some(inHeld)).toBe(false);
 	});
 
+	// Each case's fixture refused by its check alone, counts only and naming none, and with --names
+	// naming its first file as unsupported.
+	async function refusedAsUnsupported(
+		cases: readonly (readonly [string, Readonly<Record<string, string>>, string])[],
+	): Promise<void> {
+		for (const [label, files, check] of cases) {
+			const repo = fixture({ files });
+			const run = await gate(repo);
+			expect([label, uncounted(shown(run))]).toEqual([label, [LINE[check]]]);
+			refusedWith(run, [LINE[check] ?? ""]);
+			// --names says which file, and why.
+			const named = shown(await gate(repo, { names: true }))[0] ?? "";
+			const file = Object.keys(files)[0] ?? "";
+			expect([label, named.endsWith(`: ${file} (unsupported)`)]).toEqual([label, true]);
+		}
+	}
+
 	it("refuses a redirection it doesn't follow, in an imports map, a glob import, a Biome config, a toolchain file or a .cargo config, naming none", async () => {
-		const cases: readonly (readonly [string, Readonly<Record<string, string>>, string])[] = [
+		await refusedAsUnsupported([
 			[
 				"an imports pattern with two stars",
 				{ "packages/a/package.json": '{ "name": "a", "imports": { "#x/*": "./gen/*/*.js" } }\n' },
@@ -258,6 +275,27 @@ describe("refusals before any read or child start", () => {
 				{ "packages/a/src/glob.ts": 'export const m = import.meta.glob("./*.ts");\n' },
 				"refs-modules",
 			],
+			[
+				"a Biome config extending a package's",
+				{ "biome.json": '{ "extends": ["@scope/config/biome"] }\n' },
+				"refs-config",
+			],
+			[
+				"a nested dot-named Biome config extending a package's",
+				{ "tools/x/.biome.json": '{ "root": false, "extends": ["@scope/config/biome"] }\n' },
+				"refs-config",
+			],
+			["a toolchain path", { "rust-toolchain.toml": '[toolchain]\npath = "./tc"\n' }, "refs-cargo"],
+			[
+				"a .cargo config wrapper",
+				{ "crates/r/.cargo/config.toml": '[build]\nrustc-wrapper = "./wrap.sh"\n' },
+				"refs-cargo",
+			],
+		]);
+	});
+
+	it("refuses a tsconfig or package.json value that redirects tsc in a form these checks don't follow, naming none: baseUrl, a typeRoots folder, moduleSuffixes, typesVersions and an extends whose name isn't a tsconfig's", async () => {
+		await refusedAsUnsupported([
 			[
 				"a tsconfig baseUrl",
 				{
@@ -298,33 +336,7 @@ describe("refusals before any read or child start", () => {
 				},
 				"refs-config",
 			],
-			[
-				"a Biome config extending a package's",
-				{ "biome.json": '{ "extends": ["@scope/config/biome"] }\n' },
-				"refs-config",
-			],
-			[
-				"a nested dot-named Biome config extending a package's",
-				{ "tools/x/.biome.json": '{ "root": false, "extends": ["@scope/config/biome"] }\n' },
-				"refs-config",
-			],
-			["a toolchain path", { "rust-toolchain.toml": '[toolchain]\npath = "./tc"\n' }, "refs-cargo"],
-			[
-				"a .cargo config wrapper",
-				{ "crates/r/.cargo/config.toml": '[build]\nrustc-wrapper = "./wrap.sh"\n' },
-				"refs-cargo",
-			],
-		];
-		for (const [label, files, check] of cases) {
-			const repo = fixture({ files });
-			const run = await gate(repo);
-			expect([label, uncounted(shown(run))]).toEqual([label, [LINE[check]]]);
-			refusedWith(run, [LINE[check] ?? ""]);
-			// --names says which file, and why.
-			const named = shown(await gate(repo, { names: true }))[0] ?? "";
-			const file = Object.keys(files)[0] ?? "";
-			expect([label, named.endsWith(`: ${file} (unsupported)`)]).toEqual([label, true]);
-		}
+		]);
 	});
 
 	it("refuses a nested dot-named Biome config's plugin in the allowed root, never opening it", async () => {
