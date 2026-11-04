@@ -42,6 +42,11 @@ import { rootDirectory } from "../plugins/installer/tree.ts";
 import { openNativePluginRegistry, type PluginRegistry } from "../plugins/registry/index.ts";
 import { pins as snapshotPins } from "../plugins/registry/values.ts";
 import {
+	createNativeBackupImagesHandle,
+	type NativeBackupImages,
+	type NativeBackupImagesHandle,
+} from "../recovery/backup-image.ts";
+import {
 	createNativeBackupRecoveryHandle,
 	type NativeBackupRecovery,
 	type NativeBackupRecoveryHandle,
@@ -139,7 +144,7 @@ const AUDIT_INCOMPLETE =
 	"Audit storage is missing or incomplete. Restore a valid backup; remove and recreate the database only if it was never used.";
 // Without the database, any of these means a lost database rather than a first run.
 const HUB_STATE =
-	/^(?:draftyak\.db-(?:wal|shm|journal)|mk\.recovery|plugins|ext-.+\.db(?:-wal|-shm|-journal)?)$/;
+	/^(?:draftyak\.db-(?:wal|shm|journal)|mk\.recovery|plugins|\.backup-image-.+|ext-.+\.db(?:-wal|-shm|-journal)?)$/;
 const AUDIT_TABLE =
 	"SELECT 1 AS found FROM main.sqlite_schema WHERE type='table' AND name='audit_meta'";
 const deriveKey = MasterKey.prototype.derive;
@@ -175,6 +180,8 @@ interface NativeOwner {
 	pairingWindowsClosed: boolean;
 	recovery?: NativeBackupRecoveryHandle;
 	recoveryClosed: boolean;
+	images?: NativeBackupImagesHandle;
+	imagesClosed: boolean;
 	closePromise?: Promise<void>;
 	stopped: boolean;
 	drained: boolean;
@@ -273,6 +280,31 @@ export async function nativePairingWindows(
 	}
 }
 
+/** Internal only; the original factory's exact cached handle owns all image resources. */
+export function assertNativeBackupImagesOwner(
+	session: unknown,
+	expected: NativeBackupImagesHandle,
+	phase: "open" | "held" = "open",
+): void {
+	const owner = sessionOwner(session, phase);
+	if (!owner.images || owner.images !== expected || owner.imagesClosed)
+		throw new HubSessionError("SESSION_UNAVAILABLE");
+}
+/** Deep native consumer seam; no public Session field or root runtime export. */
+export function nativeBackupImages(session: unknown): NativeBackupImages {
+	const owner = sessionOwner(session, "open");
+	owner.images ??= createNativeBackupImagesHandle(
+		session,
+		owner.parts.store,
+		owner.config.masterKey,
+		owner.parts.audit,
+		owner.config.folder,
+		owner.config.nativeBinding,
+	);
+	const facade = owner.images.get();
+	assertNativeBackupImagesOwner(session, owner.images);
+	return facade;
+}
 /** Internal consuming seam only; not exported from the package root. */
 export function nativePluginSession(
 	session: unknown,
@@ -436,6 +468,7 @@ function session(
 		accountApprovalsClosed: false,
 		pairingWindowsClosed: false,
 		recoveryClosed: false,
+		imagesClosed: false,
 		storeClosed: false,
 	};
 	const close = (): Promise<void> => {
@@ -451,6 +484,14 @@ function session(
 		const approvals = owner.accountApprovals;
 		const recovery = owner.recovery;
 		const pairingWindows = owner.pairingWindows;
+		const images = owner.images;
+		if (images && !owner.imagesClosed) {
+			try {
+				images.beginClose();
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
 		if (pairingWindows && !owner.pairingWindowsClosed) {
 			try {
 				pairingWindows.beginClose();
@@ -510,6 +551,17 @@ function session(
 				draining.push(
 					pairingWindows.close().then(() => {
 						owner.pairingWindowsClosed = true;
+					}),
+				);
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
+		if (images && !owner.imagesClosed) {
+			try {
+				draining.push(
+					images.close().then(() => {
+						owner.imagesClosed = true;
 					}),
 				);
 			} catch {
