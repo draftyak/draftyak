@@ -303,7 +303,7 @@ function projectOf(input: ScanInput, file: string): Project | null {
 		for (const base of typeof bases === "string" ? [bases] : (stringList(bases) ?? [])) {
 			if (!base.startsWith(".")) continue;
 			const rel = resolveFrom(input.checkout, dir, base);
-			if (rel === null) continue;
+			if (typeof rel !== "string") continue;
 			const kind = input.checkout.kindOf(rel);
 			const target =
 				kind === "dir"
@@ -503,7 +503,7 @@ function members(input: ScanInput, run: Scan, dir: string, workspace: TomlTable)
 	const excluded = new Set(
 		list("exclude").flatMap((value) => {
 			const rel = resolveFrom(input.checkout, dir, value);
-			return rel === null ? [] : [fold(rel)];
+			return typeof rel === "string" ? [fold(rel)] : [];
 		}),
 	);
 	for (const member of list("members")) {

@@ -10,17 +10,20 @@ import {
 import { includeLiterals, modDecls } from "./rust-source.ts";
 import { type Checkout, fold, type Kind } from "./safe-fs.ts";
 
-// The inputs that listed files name: Rust modules and includes, Cargo's paths, relative module
-// literals, the package.json a # specifier resolves through, and the paths package.json specs and
-// imports maps, tsconfig fields, Biome configs and HTML attributes give. A named file (a candidate)
-// is only kind-checked, never read: one that exists must be a regular, listed file of the checkout,
-// in real folders. A missing one is fine, as no tool can read it, except one whose path names a
-// reserved word, which is refused either way. Bare specifiers and names, which resolve to installed
-// dependencies, aren't followed, and nothing below node_modules or .git is. A value that redirects
-// a tool in a form these checks don't follow (an imports pattern, a Biome config from a package, a
-// toolchain path, a .cargo config key but paths and [patch]) is refused as "unsupported".
+// The inputs that listed files name: Rust modules and includes, Cargo's paths, relative and
+// absolute module specifiers, the package.json a # specifier resolves through, and the paths
+// package.json specs and imports maps, tsconfig fields, Biome configs and HTML attributes give. A
+// named file (a candidate) is only kind-checked, never read: one that exists must be a regular,
+// listed file of the checkout, in real folders. A missing one is fine, as no tool can read it,
+// except one whose path names a reserved word, which is refused either way. A path or glob that
+// leaves the checkout (absolute elsewhere, or climbing above the root on its way, even if it comes
+// back in) is refused as "outside", whether or not anything is there. Bare specifiers and names,
+// which resolve to installed dependencies, aren't followed, and nothing below node_modules or .git
+// is. A value that redirects a tool in a form these checks don't follow (an imports pattern, a
+// Biome config from a package, a file: URL specifier, a toolchain path, a .cargo config key but
+// paths and [patch]) is refused as "unsupported".
 
-export type RefusedKind = Kind | "unlisted" | "reserved" | "unparsable" | "unsupported";
+export type RefusedKind = Kind | "unlisted" | "reserved" | "unparsable" | "unsupported" | "outside";
 
 export interface Refusal {
 	// Below the repository root, with / separators.
@@ -46,31 +49,80 @@ const WINDOWS_DRIVE = /^[A-Za-z]:\//;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters mark a value that isn't a path.
 const NOT_A_PATH = /[\u0000-\u001f*?"<>|]|\$\{\}|\{[^{}]*,[^{}]*\}/;
 
-// The path a value names from folder `from` (below the root, "" for the root), with . and ..
-// resolved, below the root with / separators; null for a value that isn't a path, one outside the
-// checkout, and one below node_modules or .git.
-export function resolveFrom(checkout: Checkout, from: string, value: string): string | null {
+// What resolveFrom gives for a value that leaves the checkout.
+export const OUTSIDE: unique symbol = Symbol("outside");
+
+// Whether a value, with / separators, is an absolute path: from a drive or from a slash.
+export const absolutePath = (text: string): boolean =>
+	WINDOWS_DRIVE.test(text) || text.startsWith("/");
+
+// An absolute path's part below the checkout's root ("" for the root itself), or OUTSIDE.
+export function belowRoot(checkout: Checkout, value: string): string | typeof OUTSIDE {
 	const text = value.replaceAll("\\", "/");
-	if (text === "" || NOT_A_PATH.test(text)) return null;
+	const root = fold(checkout.root.replaceAll("\\", "/")).replace(/\/$/, "");
+	const folded = fold(text);
+	if (folded !== root && !folded.startsWith(`${root}/`)) return OUTSIDE;
+	return text.slice(root.length + 1);
+}
+
+// A name of dots and spaces alone, which Windows may read as no folder at all.
+const BLANK_NAME = /^[. ]+$/;
+
+// Whether a path or glob from folder `from` may leave the checkout: absolute elsewhere, or climbing
+// above the root on its way. A ** and a name of dots and spaces may stand for no folder, and a part
+// with a brace or an extglob that holds .. for a step up.
+function leaves(checkout: Checkout, from: string, text: string): boolean {
 	let parts: string[];
-	if (WINDOWS_DRIVE.test(text) || text.startsWith("/")) {
-		const root = fold(checkout.root.replaceAll("\\", "/")).replace(/\/$/, "");
-		const folded = fold(text);
-		if (folded !== root && !folded.startsWith(`${root}/`)) return null;
-		parts = text.slice(root.length).split("/");
-	} else {
-		if (text.includes(":")) return null;
-		parts = [...from.split("/"), ...text.split("/")];
+	if (absolutePath(text)) {
+		const below = belowRoot(checkout, text);
+		if (below === OUTSIDE) return true;
+		parts = below.split("/");
+	} else if (text.includes(":")) return false;
+	else parts = [...from.split("/"), ...text.split("/")];
+	let depth = 0;
+	for (const part of parts) {
+		if (part === ".." || (part.includes("..") && /[{}()|!@+]/.test(part))) depth--;
+		else if (part !== "" && part !== "**" && !BLANK_NAME.test(part)) depth++;
+		if (depth < 0) return true;
 	}
+	return false;
+}
+
+// The path a value names from folder `from` (below the root, "" for the root), with . and ..
+// resolved, below the root with / separators; OUTSIDE for a path or glob that leaves the checkout;
+// null for any other value that isn't a path, and for one below node_modules or .git.
+export function resolveFrom(
+	checkout: Checkout,
+	from: string,
+	value: string,
+): string | typeof OUTSIDE | null {
+	const text = value.replaceAll("\\", "/");
+	if (text === "") return null;
+	if (NOT_A_PATH.test(text)) return leaves(checkout, from, text) ? OUTSIDE : null;
+	let parts: string[];
+	if (absolutePath(text)) {
+		const below = belowRoot(checkout, text);
+		if (below === OUTSIDE) return OUTSIDE;
+		parts = below.split("/");
+	} else if (text.includes(":")) return null;
+	else parts = [...from.split("/"), ...text.split("/")];
 	const resolved: string[] = [];
+	// The least depth a platform could give, and whether a name ends in a dot or a space, which
+	// Windows trims: such a value isn't followed.
+	let depth = 0;
+	let trimmed = false;
 	for (const part of parts) {
 		if (part === "" || part === ".") continue;
 		if (part === "..") {
-			if (resolved.pop() === undefined) return null;
-		} else if (/[. ]$/.test(part) || UNFOLLOWED.has(fold(part))) {
-			return null;
-		} else resolved.push(part);
+			resolved.pop();
+			if (--depth < 0) return OUTSIDE;
+			continue;
+		}
+		resolved.push(part);
+		if (!BLANK_NAME.test(part)) depth++;
+		if (/[. ]$/.test(part)) trimmed = true;
 	}
+	if (trimmed || resolved.some((part) => UNFOLLOWED.has(fold(part)))) return null;
 	return resolved.join("/");
 }
 
@@ -174,7 +226,8 @@ function rustRefs(input: ReferenceInput, candidates: Candidates, file: string, t
 	const bases = fold(name) === "mod.rs" ? [dir] : [dir, join(dir, stem)];
 	const named = (from: string, value: string): void => {
 		const rel = resolveFrom(input.checkout, from, value);
-		if (rel !== null) candidates.file(rel);
+		if (rel === OUTSIDE) candidates.refuse(file, "outside");
+		else if (rel !== null) candidates.file(rel);
 	};
 	for (const decl of modDecls(text)) {
 		if (decl.inline) continue;
@@ -544,8 +597,13 @@ function cargoRefs(
 		return;
 	}
 	const at = config ? dirOf(dir) : dir;
-	const named = (value: Toml | undefined): string | null =>
-		typeof value === "string" ? resolveFrom(input.checkout, at, value) : null;
+	// A path below the checkout, or null; one that leaves it refuses this file.
+	const named = (value: Toml | undefined): string | null => {
+		const rel = typeof value === "string" ? resolveFrom(input.checkout, at, value) : null;
+		if (rel !== OUTSIDE) return rel;
+		candidates.refuse(file, "outside");
+		return null;
+	};
 	const crate = (value: Toml | undefined): void => {
 		const rel = named(value);
 		if (rel !== null) candidates.folder(rel, ["Cargo.toml"]);
@@ -634,7 +692,10 @@ function moduleTarget(input: ReferenceInput, candidates: Candidates, rel: string
 			if (!ENTRY_FIELDS.has(field)) continue;
 			for (const entry of stringsOf(value)) {
 				const target = resolveFrom(input.checkout, rel, entry);
-				if (target !== null && target !== rel) moduleTarget(input, candidates, target, depth + 1);
+				if (target === OUTSIDE) candidates.refuse(manifest, "outside");
+				else if (target !== null && target !== rel) {
+					moduleTarget(input, candidates, target, depth + 1);
+				}
 			}
 		}
 		for (const extension of EXTENSIONS)
@@ -662,9 +723,16 @@ function packageScope(candidates: Candidates, dir: string): void {
 	}
 }
 
-// A module's relative literals that load, resolve or reference a module (lib/imports.ts's kinds but
-// other), the package scope of its # specifiers, and every string of a Vitest or Vite config: its
-// relative ones as modules, the rest as files a config names.
+// A specifier that is an absolute path, which Node and tsc load from the file system's root and Vite
+// from its project's (followed only as a path below the checkout's root), and a file: URL, which
+// can name any file.
+const ABSOLUTE_SPECIFIER = /^(?:[A-Za-z]:)?[\\/]/;
+const FILE_URL = /^file:/i;
+
+// A module's relative and absolute specifiers that load, resolve or reference a module
+// (lib/imports.ts's kinds but other), the package scope of its # specifiers, and every string of a
+// Vitest or Vite config: its relative ones as modules, the rest as files a config names. One that
+// leaves the checkout refuses the file that names it, and so does a file: URL specifier.
 function moduleRefs(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -680,12 +748,21 @@ function moduleRefs(
 			packageScope(candidates, dirOf(file));
 			scoped = true;
 		}
-		if (anchor === null) continue;
 		const relative = relativeLiteral(value);
-		if (!config && (field === "module:other" || !relative)) continue;
-		const rel = resolveFrom(input.checkout, anchor, value);
-		if (rel === null) continue;
-		if (relative) moduleTarget(input, candidates, rel);
+		let rel: string | typeof OUTSIDE | null;
+		if (config || (relative && field !== "module:other")) {
+			if (anchor === null) continue;
+			rel = resolveFrom(input.checkout, anchor, value);
+		} else if (field === "module:other") continue;
+		else if (FILE_URL.test(value)) {
+			candidates.refuse(file, "unsupported");
+			continue;
+		} else if (ABSOLUTE_SPECIFIER.test(value)) {
+			rel = resolveFrom(input.checkout, "", value.replace(/[?#].*$/s, ""));
+		} else continue;
+		if (rel === OUTSIDE) candidates.refuse(file, "outside");
+		else if (rel === null) continue;
+		else if (relative || !config) moduleTarget(input, candidates, rel);
 		else if (candidates.kindOf(rel) !== "dir") candidates.file(rel);
 	}
 }
@@ -711,6 +788,10 @@ function importsTarget(
 ): void {
 	if (value.startsWith("./") && !/[*%]/.test(value)) {
 		const rel = resolveFrom(input.checkout, dirOf(file), value);
+		if (rel === OUTSIDE) {
+			candidates.refuse(file, "outside");
+			return;
+		}
 		if (rel !== null) {
 			moduleTarget(input, candidates, rel);
 			return;
@@ -756,8 +837,8 @@ function biomeRefs(
 			value !== null && /^\.\.?\//.test(value) && !value.includes("%")
 				? resolveFrom(input.checkout, dirOf(file), value)
 				: null;
-		if (rel === null) {
-			candidates.refuse(file, "unsupported");
+		if (rel === null || rel === OUTSIDE) {
+			candidates.refuse(file, rel === OUTSIDE ? "outside" : "unsupported");
 			return;
 		}
 		candidates.file(rel);
@@ -775,6 +856,13 @@ function biomeRefs(
 	}
 }
 
+// A dependency spec pnpm reads as a path that leaves the checkout: from the home folder, or from a
+// drive's own working folder.
+const HOME_OR_DRIVE_SPEC = /^(?:~[\\/]|[A-Za-z]:(?![\\/]))/;
+
+// Each pointer of a package.json, tsconfig or HTML file but its scripts, which are commands, and
+// tsconfig include, which scan-tsc follows; with the absolute paths dependency specs and tsconfig
+// extends give. One that leaves the checkout refuses the file that names it.
 function configRefs(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -787,15 +875,27 @@ function configRefs(
 		return;
 	}
 	for (const { value, anchor, field } of pointers ?? []) {
-		if (anchor === null) continue;
-		if (field === "manifest:imports") {
-			importsTarget(input, candidates, file, value);
+		if (field === "manifest:scripts" || field === "tsconfig:include") continue;
+		const spec = field === "manifest:dependency";
+		let rel: string | typeof OUTSIDE | null;
+		if (anchor !== null) {
+			if (field === "manifest:imports") {
+				importsTarget(input, candidates, file, value);
+				continue;
+			}
+			rel = resolveFrom(input.checkout, anchor, value);
+		} else if (spec && HOME_OR_DRIVE_SPEC.test(value)) rel = OUTSIDE;
+		else if ((spec || field === "tsconfig:extends") && ABSOLUTE_SPECIFIER.test(value)) {
+			rel = resolveFrom(input.checkout, "", value);
+		} else continue;
+		if (rel === OUTSIDE) {
+			candidates.refuse(file, "outside");
 			continue;
 		}
-		const rel = resolveFrom(input.checkout, anchor, value);
 		if (rel === null) continue;
 		const kind = (): Kind => candidates.kindOf(rel);
-		if (field === "manifest:local" || (field === "manifest:dependency" && value.startsWith("."))) {
+		// A dependency spec here is a path: one anchored at its package starts with a dot.
+		if (field === "manifest:local" || field === "manifest:dependency") {
 			candidates.folder(rel, MANIFESTS);
 		} else if (field === "tsconfig:extends") {
 			if (kind() === "dir") candidates.file(`${rel}/tsconfig.json`);

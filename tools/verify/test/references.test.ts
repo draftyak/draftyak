@@ -1,15 +1,21 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { reservedWord } from "../../../reserved-tests.ts";
 import { listCheckout, listedSet } from "../lib/listing.ts";
-import { parseToml, type ReferenceCheck, references, resolveFrom } from "../lib/references.ts";
+import {
+	OUTSIDE,
+	parseToml,
+	type ReferenceCheck,
+	references,
+	resolveFrom,
+} from "../lib/references.ts";
 import { Checkout, fold } from "../lib/safe-fs.ts";
 import { gitEnvOf, ownRepo, readerSpy, scrub, type TempRepo, tempRepo, word } from "./temp-repo.ts";
 
 // The references listed files make, on synthetic repositories. A candidate is only kind-checked:
-// the reader spy refuses every open of an ignored file, and no test may see one. Compared paths
-// are scrubbed.
+// the reader spy refuses every open of an ignored file or of one outside the repository, and no
+// test may see one. Compared paths are scrubbed.
 const repos: TempRepo[] = [];
 afterEach(() => {
 	for (const repo of repos.splice(0)) repo.remove();
@@ -20,26 +26,44 @@ const w = word();
 interface Tree {
 	readonly files?: Readonly<Record<string, string>>;
 	readonly ignored?: Readonly<Record<string, string>>;
+	// Files in the folder beside the repository, which "../outside/" from its root reaches.
+	readonly outside?: Readonly<Record<string, string>>;
+}
+
+// In file texts, <IN> stands for the repository's absolute path and <OUT> for the folder beside
+// it, with / separators.
+function placed(repo: TempRepo, text: string): string {
+	const forward = (dir: string): string => dir.split(path.sep).join("/");
+	return text.replaceAll("<IN>", forward(repo.dir)).replaceAll("<OUT>", forward(repo.outside));
 }
 
 function fixture(tree: Tree): TempRepo {
 	const repo = tempRepo();
 	repos.push(repo);
-	for (const [file, text] of Object.entries(tree.files ?? {})) repo.write(file, text);
+	for (const [file, text] of Object.entries(tree.files ?? {})) repo.write(file, placed(repo, text));
 	repo.commit();
 	const ignored = Object.keys(tree.ignored ?? {});
 	if (ignored.length > 0) repo.ignore(...ignored);
 	for (const [file, text] of Object.entries(tree.ignored ?? {})) repo.write(file, text);
+	for (const [file, text] of Object.entries(tree.outside ?? {})) {
+		const at = path.join(repo.outside, ...file.split("/"));
+		mkdirSync(path.dirname(at), { recursive: true });
+		writeFileSync(at, text);
+	}
 	return repo;
 }
 
-// What one check refuses, as "path: kind", with every ignored file's open refused.
+// What one check refuses, as "path: kind", with every ignored file's open refused, and every open
+// outside the repository.
 async function refused(tree: Tree, check: ReferenceCheck): Promise<string[]> {
 	const repo = fixture(tree);
 	const { listing } = await listCheckout(repo.dir, { env: gitEnvOf(repo) });
 	if (listing === null) throw new Error("no listing");
 	const ignored = new Set(Object.keys(tree.ignored ?? {}));
-	const spy = readerSpy(repo.dir, (rel) => ignored.has(rel) || reservedWord.test(rel));
+	const spy = readerSpy(
+		repo.dir,
+		(rel) => ignored.has(rel) || reservedWord.test(rel) || path.isAbsolute(rel),
+	);
 	const checkout = new Checkout(repo.dir, spy.fs);
 	const listed = listedSet(listing);
 	const isListed = (rel: string): boolean => listed.has(fold(rel));
@@ -52,8 +76,25 @@ async function refused(tree: Tree, check: ReferenceCheck): Promise<string[]> {
 	};
 	const found = references(check, { checkout, listed: isListed, files, text });
 	expect(spy.refused).toEqual([]);
+	expect(spy.readdirs.filter((dir) => path.isAbsolute(dir))).toEqual([]);
 	return found.refused.map(({ rel, kind }) => scrub(`${rel}: ${kind}`));
 }
+
+// Targets beside the repository for the references that leave it: each exists, so a refusal never
+// rests on a missing file.
+const BESIDE: Readonly<Record<string, string>> = {
+	"helper.ts": "export {};\n",
+	"helper.js": "",
+	"m.rs": "",
+	"t.txt": "",
+	"base.json": "{}\n",
+	"rules.grit": "",
+	"x/a.ts": "",
+	"x/a.test.ts": "",
+	"c/Cargo.toml": '[package]\nname = "c"\n',
+	"pkg/package.json": '{ "name": "pkg" }\n',
+	"tsconfig.json": "{}\n",
+};
 
 describe("refs-rust", () => {
 	const crate = (lib: string, more: Readonly<Record<string, string>> = {}) => ({
@@ -121,6 +162,21 @@ describe("refs-rust", () => {
 			"r/src/x_<reserved>/mod.rs: reserved",
 			"r/src/lib/x_<reserved>.rs: reserved",
 			"r/src/lib/x_<reserved>/mod.rs: reserved",
+		]);
+	});
+
+	it("refuses a #[path] or include! target outside the checkout, absolute or climbing above the root, naming the file that declares it", async () => {
+		const files = {
+			"r/Cargo.toml": '[package]\nname = "r"\n',
+			"r/src/lib.rs": '#[path = "../../../outside/m.rs"]\nmod m;\nmod plain;\n',
+			"s/src/lib.rs": 'const T: &str = include_str!("<OUT>/t.txt");\n',
+			"t/src/lib.rs": 'include!(concat!("../../../", "repo/t/src/g.rs"));\n',
+			"u/src/lib.rs": '#[path = "../gen/out.rs"]\nmod out;\n',
+		};
+		expect(await refused({ files, outside: BESIDE }, "refs-rust")).toEqual([
+			"r/src/lib.rs: outside",
+			"s/src/lib.rs: outside",
+			"t/src/lib.rs: outside",
 		]);
 	});
 
@@ -220,6 +276,31 @@ describe("refs-cargo", () => {
 		expect(await refused({ files }, "refs-cargo")).toEqual(["bad/Cargo.toml: unparsable"]);
 	});
 
+	it("refuses a Cargo path outside the checkout, absolute or climbing above the root, naming the file that holds it", async () => {
+		const files = {
+			"r/Cargo.toml": '[package]\nname = "r"\nbuild = "../../outside/m.rs"\n',
+			"s/Cargo.toml": '[package]\nname = "s"\nworkspace = "../../outside"\n',
+			"t/Cargo.toml": '[package]\nname = "t"\n\n[lib]\npath = "<OUT>/m.rs"\n',
+			"u/Cargo.toml": '[package]\nname = "u"\n\n[dependencies]\nc = { path = "../../outside/c" }\n',
+			"v/Cargo.toml": '[package]\nname = "v"\n\n[[bin]]\nname = "b"\npath = "../../outside/m.rs"\n',
+			"w/.cargo/config.toml": 'paths = ["../../outside/c"]\n',
+			"x/Cargo.toml": '[workspace]\nmembers = ["../../outside/c"]\n',
+			"y/Cargo.toml":
+				'[package]\nname = "y"\n\n[patch.crates-io]\nc = { path = "../../repo/y/c" }\n',
+			"z/Cargo.toml": '[package]\nname = "z"\n\n[dependencies]\nd = { path = "../d" }\n',
+		};
+		expect(await refused({ files, outside: BESIDE }, "refs-cargo")).toEqual([
+			"r/Cargo.toml: outside",
+			"s/Cargo.toml: outside",
+			"t/Cargo.toml: outside",
+			"u/Cargo.toml: outside",
+			"v/Cargo.toml: outside",
+			"w/.cargo/config.toml: outside",
+			"x/Cargo.toml: outside",
+			"y/Cargo.toml: outside",
+		]);
+	});
+
 	it("refuses a .cargo config key other than paths and [patch], which could point Cargo at other sources or programs", async () => {
 		const files = {
 			"a/.cargo/config.toml":
@@ -304,11 +385,54 @@ describe("refs-modules", () => {
 	it("leaves bare specifiers, missing files and listed files alone", async () => {
 		const files = {
 			"p/a.ts":
-				'import "vitest";\nimport "node:fs";\nimport "./b.ts";\nimport "./none.js";\nimport "../../outside.ts";\n',
+				'import "vitest";\nimport "node:fs";\nimport "./b.ts";\nimport "./none.js";\nimport "../none.ts";\n',
 			"p/b.ts": "",
 		};
 		const ignored = { "node_modules/vitest/index.js": "" };
 		expect(await refused({ files, ignored }, "refs-modules")).toEqual([]);
+	});
+
+	it("refuses a specifier or runner config path that leaves the checkout, absolute or climbing above the root, even back into it", async () => {
+		const files = {
+			"p/a.ts": 'import "../../outside/helper.ts";\n',
+			"p/b.ts": 'export * from "../../repo/p/c.ts";\n',
+			"p/c.ts": 'const m = await import("<OUT>/helper.ts");\n',
+			"p/d.ts": 'const u = new URL("../../outside/t.txt", import.meta.url);\n',
+			"p/e.ts": 'import type { X } from "<OUT>/helper.ts?raw";\n',
+			"p/f.ts": 'const r = require("../../outside/helper.js");\n',
+			"p/g.ts": 'import "./dep";\n',
+			"p/dep/package.json": '{ "main": "../../../outside/helper.js" }\n',
+			"q/vitest.config.ts":
+				'export default { test: { setupFiles: ["../../outside/helper.ts"] } };\n',
+			"r/vitest.config.ts":
+				'export default { test: { include: ["../../outside/x/**/*.test.ts"] } };\n',
+			"s/vite.config.ts": 'export default { root: "<OUT>" };\n',
+		};
+		expect(await refused({ files, outside: BESIDE }, "refs-modules")).toEqual([
+			"p/a.ts: outside",
+			"p/b.ts: outside",
+			"p/c.ts: outside",
+			"p/d.ts: outside",
+			"p/e.ts: outside",
+			"p/f.ts: outside",
+			"p/dep/package.json: outside",
+			"q/vitest.config.ts: outside",
+			"r/vitest.config.ts: outside",
+			"s/vite.config.ts: outside",
+		]);
+	});
+
+	it("follows an absolute specifier below the root as a module, refuses a file: URL one, and leaves other literals alone", async () => {
+		const files = {
+			"p/a.ts": 'import "<IN>/p/gen.js";\n',
+			"p/b.ts": 'import "file:///elsewhere/x.js";\n',
+			"p/c.ts": 'const other = "../../outside/helper.ts";\nconst text = "<OUT>/helper.ts";\n',
+		};
+		const ignored = { "p/gen.ts": "" };
+		expect(await refused({ files, ignored, outside: BESIDE }, "refs-modules")).toEqual([
+			"p/gen.ts: unlisted",
+			"p/b.ts: unsupported",
+		]);
 	});
 
 	it("reads every path a Vitest config names, as files, and its relative ones as modules", async () => {
@@ -401,6 +525,50 @@ describe("refs-config", () => {
 		]);
 	});
 
+	it("refuses a package.json, tsconfig, HTML or Biome path that leaves the checkout, naming the file that holds it", async () => {
+		const files = {
+			"a/package.json": JSON.stringify({ dependencies: { x: "link:../../outside/pkg" } }),
+			"b/package.json": JSON.stringify({ dependencies: { x: "../../outside/pkg" } }),
+			"c/package.json": JSON.stringify({ devDependencies: { x: "<OUT>/pkg" } }),
+			"d/package.json": JSON.stringify({ dependencies: { x: "~/pkg" } }),
+			"e/package.json": JSON.stringify({ main: "../../outside/helper.js" }),
+			"f/package.json": JSON.stringify({ imports: { "#x": "./../../outside/helper.js" } }),
+			"g/tsconfig.json": JSON.stringify({ extends: "../../outside/base.json" }),
+			"h/tsconfig.json": JSON.stringify({ extends: "<OUT>/base.json" }),
+			"i/tsconfig.json": JSON.stringify({ references: [{ path: "../../outside" }] }),
+			"j/tsconfig.json": JSON.stringify({ files: ["../../outside/helper.ts"] }),
+			"k/tsconfig.json": JSON.stringify({
+				compilerOptions: { paths: { "#x/*": ["../../outside/x/*"] } },
+			}),
+			"l/tsconfig.json": JSON.stringify({ compilerOptions: { typeRoots: ["../../outside"] } }),
+			"m/tsconfig.json": JSON.stringify({ compilerOptions: { baseUrl: "<OUT>" } }),
+			"n/index.html": '<script type="module" src="../../outside/helper.js"></script>\n',
+			"o/biome.json": JSON.stringify({ root: false, extends: ["../../outside/base.json"] }),
+		};
+		expect(await refused({ files, outside: BESIDE }, "refs-config")).toEqual([
+			...[..."abcdef"].map((dir) => `${dir}/package.json: outside`),
+			...[..."ghijklm"].map((dir) => `${dir}/tsconfig.json: outside`),
+			"n/index.html: outside",
+			"o/biome.json: outside",
+		]);
+	});
+
+	it("follows an absolute dependency spec or tsconfig extends below the root, and leaves scripts and tsconfig include to the scans", async () => {
+		const files = {
+			"a/package.json": JSON.stringify({ dependencies: { x: "<IN>/vendor/x" } }),
+			"b/tsconfig.json": JSON.stringify({ extends: "<IN>/base/strict.json" }),
+			"c/package.json": JSON.stringify({
+				scripts: { x: "node ../../outside/helper.js > /dev/null" },
+			}),
+			"d/tsconfig.json": JSON.stringify({ include: ["../../outside/x/**/*.ts"] }),
+		};
+		const ignored = { "vendor/x/package.json": "{}", "base/strict.json": "{}" };
+		expect(await refused({ files, ignored, outside: BESIDE }, "refs-config")).toEqual([
+			"vendor/x/package.json: unlisted",
+			"base/strict.json: unlisted",
+		]);
+	});
+
 	it("refuses a package.json or tsconfig it can't parse", async () => {
 		const files = { "p/package.json": "{ nope", "p/tsconfig.json": "[" };
 		expect(await refused({ files }, "refs-config")).toEqual([
@@ -490,31 +658,50 @@ describe("refs-config", () => {
 describe("resolveFrom", () => {
 	const checkout = new Checkout(ownRepo);
 
-	it("resolves a path below the root, and refuses what isn't one", () => {
+	it("resolves a path below the root, and gives null for what isn't one", () => {
 		expect(resolveFrom(checkout, "a/b", "../c/./d.ts")).toBe("a/c/d.ts");
 		expect(resolveFrom(checkout, "a", "..\\x.ts")).toBe("x.ts");
 		expect(resolveFrom(checkout, "", ".")).toBe("");
+		expect(resolveFrom(checkout, "a", "node_modules/../b.ts")).toBe("a/b.ts");
 		for (const value of [
-			"../x",
-			"../../x",
 			"a/node_modules/x",
 			".git/config",
 			"*.ts",
+			"a/**/*.ts",
 			"a?b",
 			"x:y",
+			"https://example.com/../../x",
 			"x.",
+			"a./../x",
 			// biome-ignore lint/suspicious/noTemplateCurlyInString: lib/imports.ts's placeholder for a computed part.
 			"${}/x",
 			"{a,b}.ts",
 			"",
 		]) {
-			expect(resolveFrom(checkout, "", value)).toBe(null);
+			expect([value, resolveFrom(checkout, "", value)]).toEqual([value, null]);
 		}
 		const inside = path.join(ownRepo, "tools", "x.ts");
 		expect(resolveFrom(checkout, "spikes", inside)).toBe("tools/x.ts");
-		expect(
-			resolveFrom(checkout, "spikes", path.join(path.dirname(ownRepo), "elsewhere", "x.ts")),
-		).toBe(null);
+	});
+
+	it("gives OUTSIDE for a path or glob that leaves the checkout on its way, even back into it", () => {
+		const back = `../${path.basename(ownRepo)}/x.ts`;
+		for (const [from, value] of [
+			["", "../x"],
+			["a", "../../x"],
+			["", back],
+			["", "node_modules/../../x"],
+			["", ".../../x"],
+			["", "../*.ts"],
+			["a", "**/../../x"],
+			["", "{..,a}/x"],
+			["a/b", "../../../x/**/*.ts"],
+			["", `${ownRepo}${path.sep}${back}`],
+			["spikes", path.join(path.dirname(ownRepo), "elsewhere", "x.ts")],
+			["", "/elsewhere/**/*.ts"],
+		] as const) {
+			expect([from, value, resolveFrom(checkout, from, value)]).toEqual([from, value, OUTSIDE]);
+		}
 	});
 });
 

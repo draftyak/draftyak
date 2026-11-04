@@ -168,13 +168,13 @@ const LINE: Readonly<Record<string, string>> = {
 	G6: "reserved tripwire: ordinary file(s) point at a reserved path or into an allowed reserved root",
 	G10a: "reserved tripwire: file(s) or folder(s) couldn't be read; nothing about them was checked",
 	"refs-rust":
-		"reserved tripwire: file(s) that Rust mod, #[path] or include! declarations name aren't regular, listed files of this checkout, or name a reserved word; none of them was read",
+		"reserved tripwire: file(s) that Rust mod, #[path] or include! declarations name aren't regular, listed files of this checkout, lie outside it or name a reserved word; none of them was read",
 	"refs-cargo":
-		"reserved tripwire: file(s) or folder(s) that Cargo manifests or .cargo configs name aren't regular, listed files in real folders of this checkout, or a manifest, .cargo config or toolchain file couldn't be parsed or sets a key or form this check doesn't follow; none of them was read",
+		"reserved tripwire: file(s) or folder(s) that Cargo manifests or .cargo configs name aren't regular, listed files in real folders of this checkout or lie outside it, or a manifest, .cargo config or toolchain file couldn't be parsed or sets a key or form this check doesn't follow; none of them was read",
 	"refs-modules":
-		"reserved tripwire: file(s) or folder(s) that relative module literals or runner configs name, or the package.json a # specifier resolves through, aren't regular, listed files in real folders of this checkout; none of them was read",
+		"reserved tripwire: file(s) or folder(s) that relative or absolute module specifiers or runner configs name, or the package.json a # specifier resolves through, aren't regular, listed files in real folders of this checkout or lie outside it, or a module names one in a form this check doesn't follow; none of them was read",
 	"refs-config":
-		"reserved tripwire: file(s) or folder(s) that package.json specs and imports maps, tsconfig fields, Biome configs' extends and plugins or HTML src and href values name aren't regular, listed files in real folders of this checkout, or a config names one in a form this check doesn't follow; none of them was read",
+		"reserved tripwire: file(s) or folder(s) that package.json specs and imports maps, tsconfig fields, Biome configs' extends and plugins or HTML src and href values name aren't regular, listed files in real folders of this checkout or lie outside it, or a config names one in a form this check doesn't follow; none of them was read",
 	"scan-pnpm":
 		"reserved tripwire: workspace package folder(s) or manifest(s) that pnpm and turbo read aren't regular, listed files in real folders; none of them was read",
 	"scan-tsc":
@@ -271,6 +271,76 @@ describe("refusals before any read or child start", () => {
 			const named = shown(await gate(repo, { names: true }))[0] ?? "";
 			const file = Object.keys(files)[0] ?? "";
 			expect([label, named.endsWith(`: ${file} (unsupported)`)]).toEqual([label, true]);
+		}
+	});
+
+	it("refuses a reference that leaves the checkout to a target that exists there, naming only the file that makes it and opening nothing outside", async () => {
+		const climb = "../../../../outside";
+		const cases: readonly (readonly [string, Readonly<Record<string, string>>, string])[] = [
+			[
+				"an import beside the checkout",
+				{ "packages/a/src/helper.ts": `import "${climb}/helper.ts";\n` },
+				"refs-modules",
+			],
+			[
+				"a runner config's include glob",
+				{
+					"packages/a/vitest.config.ts": `export default { test: { include: ["${climb.slice(3)}/**/*.test.ts"] } };\n`,
+				},
+				"refs-modules",
+			],
+			[
+				"a link: spec",
+				{
+					"packages/a/package.json": `{ "name": "a", "dependencies": { "x": "link:${climb.slice(3)}/pkg" } }\n`,
+				},
+				"refs-config",
+			],
+			[
+				"a Biome config's plugin",
+				{ "biome.json": '{ "plugins": ["../outside/rules.grit"] }\n' },
+				"refs-config",
+			],
+			[
+				"a Cargo path dependency",
+				{
+					"crates/r/Cargo.toml": `[package]\nname = "r"\nversion = "0.0.0"\n\n[dependencies]\nc = { path = "${climb.slice(3)}/c" }\n`,
+				},
+				"refs-cargo",
+			],
+			[
+				"a #[path] module",
+				{ "crates/r/src/lib.rs": `mod m;\n#[path = "${climb}/m.rs"]\nmod n;\n` },
+				"refs-rust",
+			],
+		];
+		const beside = (rel: string): boolean => path.isAbsolute(rel);
+		for (const [label, files, check] of cases) {
+			const repo = fixture({ files });
+			for (const [name, text] of [
+				["helper.ts", "export {};\n"],
+				["rules.grit", ""],
+				["x.test.ts", ""],
+				["x.ts", ""],
+				["m.rs", ""],
+				["pkg/package.json", '{ "name": "pkg" }\n'],
+				["c/Cargo.toml", '[package]\nname = "c"\n'],
+			] as const) {
+				mkdirSync(path.dirname(path.join(repo.outside, name)), { recursive: true });
+				writeFileSync(path.join(repo.outside, name), text);
+			}
+			const run = await gate(repo, { forbidden: beside });
+			expect([label, uncounted(shown(run))]).toEqual([label, [LINE[check]]]);
+			refusedWith(run, [LINE[check] ?? ""]);
+			expect([label, run.opens.filter(beside), run.readdirs.filter(beside)]).toEqual([
+				label,
+				[],
+				[],
+			]);
+			// --names says which file made the reference, and why.
+			const named = shown(await gate(repo, { names: true, forbidden: beside }))[0] ?? "";
+			const file = Object.keys(files)[0] ?? "";
+			expect([label, named.endsWith(`: ${file} (outside)`)]).toEqual([label, true]);
 		}
 	});
 

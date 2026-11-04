@@ -240,6 +240,10 @@ const PLANTED: Readonly<Record<string, (repo: TempRepo) => void>> = {
 	"an untracked intermediary holding a literal target in the allowed root": (repo) => {
 		repo.write("packages/a/src/via.ts", `import "../../../spikes/s07-${word()}/src/x.ts";\n`);
 	},
+	"an untracked helper importing a module that exists beside the checkout": (repo) => {
+		writeFileSync(path.join(repo.outside, "helper.ts"), marks);
+		repo.write("packages/a/src/beside.ts", 'import "../../../../outside/helper.ts";\n');
+	},
 	"an ignored Rust module target": (repo) => {
 		repo.git("rm", "-q", "--cached", "--", "crates/r/src/m.rs");
 		repo.ignore("crates/r/src/m.rs");
