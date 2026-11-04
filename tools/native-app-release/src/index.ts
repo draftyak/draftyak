@@ -18,3 +18,4 @@ export {
 	nativeAppReleaseSigningBytes,
 	parseNativeAppRelease,
 } from "./manifest.ts";
+export { buildNativeAppTrustSource } from "./trust-source.ts";
