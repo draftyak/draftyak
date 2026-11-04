@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { rmSync } from "node:fs";
+import { copyFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { workspaceGlobs, workspaceGlobsOf } from "../../../reserved-tests.ts";
@@ -123,6 +123,35 @@ describe("listCheckout", () => {
 			expect(call.env.GIT_OPTIONAL_LOCKS).toBe("0");
 		}
 	});
+
+	// On Windows, Node's spawn looks for git in the working folder first unless this process's own
+	// environment says not to, which no child's environment can. A harmless program stands in
+	// git.exe's place in the root; this process runs without the setting until the listing sets it.
+	it.runIf(process.platform === "win32")(
+		"runs the git on PATH, not a git.exe in the root, even when this process has no search setting",
+		async () => {
+			const repo = fixture();
+			copyFileSync(
+				path.join(process.env.SystemRoot ?? "", "System32", "hostname.exe"),
+				path.join(repo.dir, "git.exe"),
+			);
+			const setting = "NoDefaultCurrentDirectoryInExePath";
+			const name = Object.keys(process.env).find(
+				(key) => key.toUpperCase() === setting.toUpperCase(),
+			);
+			const saved = name === undefined ? undefined : process.env[name];
+			delete process.env[setting];
+			try {
+				const { listing, problems } = await list(repo);
+				expect(problems).toEqual([]);
+				expect(listing?.untracked).toEqual(["git.exe"]);
+				expect(process.env[setting]).toBe("1");
+			} finally {
+				delete process.env[setting];
+				if (name !== undefined && saved !== undefined) process.env[name] = saved;
+			}
+		},
+	);
 
 	it.each([
 		["rev-parse", 0],

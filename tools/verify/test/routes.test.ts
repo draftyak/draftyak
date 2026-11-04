@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -192,18 +192,26 @@ function installFakes(repo: TempRepo): void {
 	);
 }
 
-// `node` goes before the entry on Node's command line, and `env` into its environment.
+// `node` goes before the entry on Node's command line, `env` into its environment, and the names in
+// `drop`, in any case, out of it.
 async function start(
 	route: Pick<Route, "entry" | "args" | "cwd" | "env">,
 	repo: TempRepo,
-	extra: { readonly node?: readonly string[]; readonly env?: NodeJS.ProcessEnv } = {},
+	extra: {
+		readonly node?: readonly string[];
+		readonly env?: NodeJS.ProcessEnv;
+		readonly drop?: readonly string[];
+	} = {},
 ): Promise<Ran> {
 	const marker = path.join(repo.outside, "child-loaded");
 	rmSync(marker, { force: true });
 	// No inherited flag, no outer launcher's marker and no Node options: each run gates this
 	// checkout itself.
+	const dropped = [RESERVED_TESTS, GATE_ROOT_ENV, "NODE_OPTIONS", ...(extra.drop ?? [])].map(
+		(name) => name.toUpperCase(),
+	);
 	const inherited = Object.entries(gitEnvOf(repo)).filter(
-		([name]) => ![RESERVED_TESTS, GATE_ROOT_ENV, "NODE_OPTIONS"].includes(name.toUpperCase()),
+		([name]) => !dropped.includes(name.toUpperCase()),
 	);
 	const entry = path.join(repo.dir, route.entry);
 	const result = await capture(
@@ -298,6 +306,10 @@ const PLANTED: Readonly<Record<string, (repo: TempRepo) => void>> = {
 	},
 };
 
+// The gate's command-name line for one entry.
+const SHADOWED =
+	"reserved tripwire: 1 entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH, or are a package.json whose script starts a command by a path, which cmd.exe looks up there too; none of them was read";
+
 describe("each gated entry on its own checkout", () => {
 	for (const [name, route] of Object.entries(ROUTES)) {
 		describe(name, () => {
@@ -334,6 +346,25 @@ describe("each gated entry on its own checkout", () => {
 				installFakes(repo);
 				expect(refusedBy(route, await start(route, repo))).toEqual([]);
 			});
+
+			// On Windows, Node's spawn looks for git in the child's working folder first unless the
+			// entry's own environment says not to. A harmless program stands in git.exe's place: had it
+			// answered the start check's or the listing's git, the start check would stop the entry.
+			it.runIf(process.platform === "win32")(
+				"lists its checkout with the git on PATH, not a git.exe in the root, even with no search setting in its environment, and refuses that git.exe before its first child",
+				async () => {
+					const repo = checkout(route);
+					copyFileSync(
+						path.join(process.env.SystemRoot ?? "", "System32", "hostname.exe"),
+						path.join(repo.dir, "git.exe"),
+					);
+					const run = await start(route, repo, { drop: ["NoDefaultCurrentDirectoryInExePath"] });
+					expect(refusedBy(route, run)).toEqual([]);
+					const lines = run.lines.map(scrub);
+					expect(lines).toContain(SHADOWED);
+					expect(lines.filter((line) => line.includes(" start file(s) or folder(s) "))).toEqual([]);
+				},
+			);
 
 			// Mutation case: with its gate call replaced by a pass, the same planted tree reaches the child.
 			it("reaches its first child on a planted tree once its gate call always passes", async () => {

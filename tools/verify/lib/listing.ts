@@ -3,7 +3,7 @@ import { realpathSync } from "node:fs";
 import path from "node:path";
 import { workspaceGlobsOf } from "../../../reserved-tests.ts";
 import type { IndexEntry } from "../reserved-tripwire.ts";
-import { gitChildEnv } from "./bootstrap.ts";
+import { gitChildEnv, searchPathOnly } from "./bootstrap.ts";
 import { type Checkout, fold, type Kind } from "./safe-fs.ts";
 
 // One git listing of a checkout: the index and the untracked files git doesn't ignore, from git run
@@ -37,9 +37,11 @@ export const LISTING_CHECKS: readonly ListingCheck[] = Object.freeze([
 ]);
 
 // git with stdin closed and its error output captured and dropped: only the exit code and the
-// listing leave here. A git that can't start exits 127.
+// listing leave here. A git that can't start exits 127. git is looked up on PATH only, never in the
+// checkout's own folder (searchPathOnly).
 const runGit: GitRunner = (args, { cwd, env }) =>
 	new Promise((resolve) => {
+		searchPathOnly();
 		let settled = false;
 		const done = (code: number, stdout: string): void => {
 			if (!settled) resolve({ code, stdout });

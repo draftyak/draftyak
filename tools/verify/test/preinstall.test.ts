@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { HELPERS, START_STOP_LINE } from "../lib/bootstrap.ts";
@@ -395,11 +395,16 @@ function synthetic(files: Readonly<Record<string, string>> = {}, entry = true): 
 	return repo;
 }
 
-async function command(repo: TempRepo, args: readonly string[] = [], cwd = repo.dir) {
+async function command(
+	repo: TempRepo,
+	args: readonly string[] = [],
+	cwd = repo.dir,
+	env = gitEnvOf(repo),
+) {
 	const script = path.join(repo.dir, "tools", "verify", "preinstall.ts");
 	const result = await capture(
 		{ command: process.execPath, args: [script, ...args] },
-		{ cwd, env: gitEnvOf(repo) },
+		{ cwd, env },
 	);
 	const lines = result.stdout.split(/\r?\n/).filter(Boolean).map(scrub);
 	return { code: result.code, lines, stderr: result.stderr };
@@ -454,6 +459,29 @@ describe("node tools/verify/preinstall.ts", () => {
 		expect(named.code).toBe(1);
 		expect(named.lines[0]).toBe(`${hooks(1, 1)}: spikes/alpha/package.json (postinstall)`);
 	});
+
+	// On Windows, Node's spawn looks for git in the child's working folder first unless this process's
+	// own environment says not to. A harmless program stands in git.exe's place: had it answered,
+	// the start check would stop. The gate, which every route runs first, refuses it by name.
+	it.runIf(process.platform === "win32")(
+		"lists the checkout with the git on PATH, not a git.exe in the root, even with no search setting in its environment",
+		async () => {
+			const repo = synthetic();
+			const setting = "NoDefaultCurrentDirectoryInExePath".toUpperCase();
+			const env = Object.fromEntries(
+				Object.entries(gitEnvOf(repo)).filter(([name]) => name.toUpperCase() !== setting),
+			);
+			copyFileSync(
+				path.join(process.env.SystemRoot ?? "", "System32", "hostname.exe"),
+				path.join(repo.dir, "git.exe"),
+			);
+			expect(await command(repo, [], repo.dir, env)).toEqual({
+				code: 0,
+				lines: [CLI_PASSED],
+				stderr: "",
+			});
+		},
+	);
 
 	it("stops at its start check: a helper folder replaced by a junction, and an unlisted helper", async () => {
 		const linked = synthetic();

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { reservedWord } from "../../../reserved-tests.ts";
@@ -1200,10 +1200,15 @@ describe("the repository's own tree", () => {
 
 const ENTRY = ["tools/verify/gate.ts", "tools/verify/lib/bootstrap.ts", ...HELPERS.gate];
 
-async function command(repo: TempRepo, args: readonly string[] = [], cwd = repo.dir) {
+async function command(
+	repo: TempRepo,
+	args: readonly string[] = [],
+	cwd = repo.dir,
+	env = gitEnvOf(repo),
+) {
 	const result = await capture(
 		{ command: process.execPath, args: [at(repo, "tools/verify/gate.ts"), ...args] },
-		{ cwd, env: gitEnvOf(repo) },
+		{ cwd, env },
 	);
 	const lines = result.stdout.split(/\r?\n/).filter(Boolean).map(scrub);
 	return { code: result.code, lines, stderr: result.stderr };
@@ -1385,6 +1390,30 @@ describe("node tools/verify/gate.ts", () => {
 		const named = await command(repo, ["--names"]);
 		expect(named.lines[0]).toBe(`${START_LINES[0]}: tools/verify/lib/gate.ts (link)`);
 	});
+
+	// On Windows, Node's spawn looks for a command it starts by name in the child's working folder
+	// first, unless the starting process's own environment says not to: no child's environment can.
+	// A harmless program stands in git.exe's place; had it answered the start check's or the
+	// listing's git, the gate would stop at the start check.
+	it.runIf(process.platform === "win32")(
+		"lists the checkout with the git on PATH, not a git.exe in the root, even with no search setting in its environment, and refuses that git.exe by name",
+		async () => {
+			const repo = fixture({ entry: true });
+			const setting = "NoDefaultCurrentDirectoryInExePath".toUpperCase();
+			const env = Object.fromEntries(
+				Object.entries(gitEnvOf(repo)).filter(([name]) => name.toUpperCase() !== setting),
+			);
+			copyFileSync(
+				path.join(process.env.SystemRoot ?? "", "System32", "hostname.exe"),
+				at(repo, "git.exe"),
+			);
+			const run = await command(repo, [], repo.dir, env);
+			expect([run.code, uncounted(run.lines)]).toEqual([1, [LINE["command-shadows"]]]);
+			expect(run.lines.at(-1)).toBe(STOP_LINE);
+			const named = await command(repo, ["--names"], repo.dir, env);
+			expect(named.lines[0]).toBe(`${run.lines[0]}: git.exe (file)`);
+		},
+	);
 
 	it("refuses an unlisted helper", async () => {
 		const repo = fixture({ entry: true });

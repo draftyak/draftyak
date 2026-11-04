@@ -172,6 +172,15 @@ export function gitChildEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	};
 }
 
+// On Windows, Node's spawn looks for a command it starts by name, such as git, in the child's working
+// folder (as a .com or .exe file) before PATH, unless this process's own environment sets
+// NoDefaultCurrentDirectoryInExePath: a child's environment doesn't reach that lookup. So each gated
+// entry sets it for itself before its first child, the start check's git listing, and the
+// checkout's listing sets it too: a git.exe in the root never runs in place of git.
+export function searchPathOnly(): void {
+	if (process.platform === "win32") process.env[SEARCH_SETTING] = "1";
+}
+
 // The repository root, `depth` folders above an entry's own folder, as a real path (as given where
 // it can't be resolved; the checks then fail).
 export function realRoot(entryDir: string, depth: number): string {
@@ -337,6 +346,7 @@ const REGULAR = new Set(["100644", "100755"]);
 // ignored. A failing git lists nothing. Its error output is never printed.
 function gitListed(env: NodeJS.ProcessEnv): (root: string, rels: readonly string[]) => string[] {
 	return (root, rels) => {
+		searchPathOnly();
 		const run = (args: readonly string[]) =>
 			spawnSync(
 				"git",
