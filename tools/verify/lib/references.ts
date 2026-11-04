@@ -16,7 +16,8 @@ import { type Checkout, fold, type Kind } from "./safe-fs.ts";
 // fields, Biome configs and HTML attributes give. A named file (a candidate) is only kind-checked,
 // never read: one that exists must be a regular, listed file of the checkout, in real folders. A
 // missing one is fine, as no tool can read it, except one whose path names a reserved word, which is
-// refused either way. A path or glob that leaves the checkout (absolute elsewhere, climbing above the
+// refused either way; for a module path, the files tsc falls back to when it is missing count as
+// named too. A path or glob that leaves the checkout (absolute elsewhere, climbing above the
 // root on its way, even if it comes back in, or from a drive's own working folder) is refused as
 // "outside", whether or not anything is there. Bare specifiers and names, which resolve to installed
 // dependencies, aren't followed, and nothing below node_modules or .git is. A value that redirects a
@@ -716,6 +717,42 @@ const ENTRY_FIELDS = new Set(["main", "module", "exports", "types", "typings"]);
 const relativeLiteral = (value: string): boolean =>
 	value === "." || value === ".." || value.startsWith("./") || value.startsWith("../");
 
+// The files tsc tries for a module path, in its order (moduleResolution node16, nodenext and
+// bundler): for an extension it knows, in the order it strips them, the stem with each extension it
+// maps that one to; for any other, the declaration file <stem>.d<ext>.ts; then, outside ESM, the
+// path with each of its own extensions added.
+const TS_ORDER = [".ts", ".tsx", ".d.ts", ".js", ".jsx"];
+const TSX_ORDER = [".tsx", ".ts", ".d.ts", ".jsx", ".js"];
+const MTS_ORDER = [".mts", ".d.mts", ".mjs"];
+const CTS_ORDER = [".cts", ".d.cts", ".cjs"];
+const TSC_EXTENSIONS: readonly (readonly [string, readonly string[]])[] = [
+	[".d.ts", TS_ORDER],
+	[".d.mts", MTS_ORDER],
+	[".d.cts", CTS_ORDER],
+	[".mjs", MTS_ORDER],
+	[".mts", MTS_ORDER],
+	[".cjs", CTS_ORDER],
+	[".cts", CTS_ORDER],
+	[".ts", TS_ORDER],
+	[".js", TS_ORDER],
+	[".tsx", TSX_ORDER],
+	[".jsx", TSX_ORDER],
+	[".json", [".d.json.ts", ".json"]],
+];
+
+function tscCandidates(rel: string): string[] {
+	const added = TS_ORDER.map((extension) => `${rel}${extension}`);
+	const name = rel.slice(rel.lastIndexOf("/") + 1);
+	if (!name.includes(".")) return added;
+	const known = TSC_EXTENSIONS.find(([extension]) => name.endsWith(extension));
+	if (known === undefined) {
+		const dot = rel.lastIndexOf(".");
+		return [`${rel.slice(0, dot)}.d${rel.slice(dot)}.ts`, ...added];
+	}
+	const [written, mapped] = known;
+	return [...mapped.map((extension) => `${rel.slice(0, -written.length)}${extension}`), ...added];
+}
+
 // Every string in a JSON value, keys aside.
 function stringsOf(value: Json): string[] {
 	if (typeof value === "string") return [value];
@@ -726,7 +763,9 @@ function stringsOf(value: Json): string[] {
 
 // What a module specifier at `rel` can load: the file as written, its .js-to-.ts twins, the file
 // with each usual extension when it has none, and for a folder its package.json, the entry points
-// that names, and its index files.
+// that names, and its index files. tsc's own candidates (tscCandidates) come after, each only while
+// those before it are missing: tsc loads the first it finds, so an output file beside a present
+// source is none of them.
 function moduleTarget(input: ReferenceInput, candidates: Candidates, rel: string, depth = 0): void {
 	if (candidates.kindOf(rel) === "dir") {
 		const manifest = rel === "" ? "package.json" : `${rel}/package.json`;
@@ -752,6 +791,12 @@ function moduleTarget(input: ReferenceInput, candidates: Candidates, rel: string
 	for (const twin of REMAPPED[extension] ?? [])
 		candidates.file(`${rel.slice(0, -extension.length)}${twin}`);
 	if (!KNOWN.test(rel)) for (const added of EXTENSIONS) candidates.file(`${rel}${added}`);
+	// A reserved-named path is refused already, and each of its fallbacks names the same word.
+	if (reservedWord.test(rel)) return;
+	for (const next of tscCandidates(rel)) {
+		candidates.file(next);
+		if (candidates.kindOf(next) !== "missing") break;
+	}
 }
 
 // The package.json a # specifier in a module of folder `dir` resolves through: the nearest one from

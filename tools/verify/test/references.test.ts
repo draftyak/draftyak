@@ -420,6 +420,45 @@ describe("refs-modules", () => {
 		]);
 	});
 
+	it("refuses an ignored file tsc falls back to when the file as written is missing, and leaves one beside a present file alone", async () => {
+		const files = {
+			"p/src/a.ts": [
+				'import "../gen/x.ts";',
+				'import "../assets/logo.svg";',
+				'import "../data/table.json";',
+				'import "../gen/view.jsx";',
+				'import "../gen/esm.mts";',
+				'import "../gen/cjs.cts";',
+				'import "../gen/old.js";',
+				'import "./b.ts";',
+				'import "./c.js";',
+			].join("\n"),
+			"p/src/b.ts": "",
+			"p/src/c.ts": "",
+		};
+		const ignored = {
+			"p/gen/x.d.ts": "",
+			"p/assets/logo.d.svg.ts": "",
+			"p/data/table.d.json.ts": "",
+			"p/gen/view.ts": "",
+			"p/gen/esm.d.mts": "",
+			"p/gen/cjs.d.cts": "",
+			"p/gen/old.jsx": "",
+			// Output beside a file tsc finds first.
+			"p/src/b.d.ts": "",
+			"p/src/c.jsx": "",
+		};
+		expect(await refused({ files, ignored }, "refs-modules")).toEqual([
+			"p/gen/x.d.ts: unlisted",
+			"p/assets/logo.d.svg.ts: unlisted",
+			"p/data/table.d.json.ts: unlisted",
+			"p/gen/view.ts: unlisted",
+			"p/gen/esm.d.mts: unlisted",
+			"p/gen/cjs.d.cts: unlisted",
+			"p/gen/old.jsx: unlisted",
+		]);
+	});
+
 	it("follows a folder's package.json entry points", async () => {
 		const files = {
 			"p/a.ts": 'import "./dep";\n',
