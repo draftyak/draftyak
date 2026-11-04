@@ -233,9 +233,10 @@ const startsCommand = (step: YamlMap): boolean =>
 // A package manager's command, Windows' .cmd, .exe and .ps1 spellings included.
 const packageManager =
 	/(?<![\w.-])(?:pnpm|pnpx|npm|npx|yarn|corepack|bunx?|deno)(?:\.(?:cmd|exe|ps1))?(?![\w.-])/i;
-// A git command, after git's own options, that rewrites the working tree or adds files to it: after
-// the gate, it would leave a tree the gate never saw. git may be started by a path, in quotes or as
-// git.exe, and git-lfs as a command of its own.
+// A git command, after git's own options, that rewrites the working tree, moves or removes files in
+// it, or adds files to it: after the gate, it would leave a tree the gate never saw. git may be
+// started by a path, in quotes or as git.exe, and git-lfs as a command of its own; the check reads
+// a step's command with its line continuations joined.
 const treeCommands = [
 	"checkout",
 	"switch",
@@ -258,11 +259,27 @@ const treeCommands = [
 	"clone",
 	"lfs",
 	"clean",
+	"mv",
+	"rm",
 ];
 const treeChange = new RegExp(
 	String.raw`(?<![\w.-])(?:[^\s'"\x60;|&()]*[\\/])?["']?git(?:-lfs)?(?:\.exe)?["']?(?:\s+(?:-[Cc]\s+\S+|--(?:git-dir|work-tree|namespace|exec-path|config-env)\s+\S+|-{1,2}[\w-]+(?:=\S+)?))*\s+(?:${treeCommands.join("|")})(?![\w.-])`,
 	"i",
 );
+// The line continuations of a step's shell: a backslash's, and in PowerShell a backtick's or in cmd
+// a caret's too, where a line that ends in one goes on to the next.
+const continuations: Readonly<Record<string, RegExp>> = {
+	pwsh: /[\\`]\r?\n/g,
+	powershell: /[\\`]\r?\n/g,
+	cmd: /[\\^]\r?\n/g,
+};
+// A step's command with its shell's continuations joined, so a command split over lines reads as
+// one; "" for a step with no command.
+const joined = (step: YamlMap): string => {
+	if (typeof step.run !== "string") return "";
+	const shell = /^\s*([\w.-]+)/.exec(String(step.shell ?? ""))?.[1]?.toLowerCase() ?? "";
+	return step.run.replace(continuations[shell] ?? /\\\r?\n/g, " ");
+};
 // What a step that may start a package manager in the checkout is, for the rules that must come
 // first: pnpm/action-setup, setup-node with more than the pinned version (a cache input runs one),
 // or a command that names one, in its run or in the shell it runs with (shell: bun {0}); null for
@@ -992,7 +1009,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 			report(["jobs", job, "steps"], `${job} must not check out again after the reserved gate`);
 		}
 		for (const [offset, step] of steps.slice(at + 1).entries()) {
-			if (typeof step.run === "string" && treeChange.test(step.run)) {
+			if (treeChange.test(joined(step))) {
 				report(
 					["jobs", job, "steps", at + 1 + offset],
 					`${job} must not change its working tree with git after the reserved gate`,
@@ -1544,8 +1561,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				report([...at, "with"], "pnpm/action-setup must not set run_install");
 			}
 			// Every install is exactly the checked one, or Intel macOS's scriptless pnpm.
-			const command = typeof step.run === "string" ? step.run.replace(/\\\r?\n/g, " ") : "";
-			if (installCommand.test(command) && step.run !== install && step.run !== intelMacPnpm) {
+			if (installCommand.test(joined(step)) && step.run !== install && step.run !== intelMacPnpm) {
 				report(
 					at,
 					`install commands must be exactly ${install}, or the reviewed Intel macOS pnpm step`,

@@ -2914,6 +2914,8 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 			"git lfs pull",
 			"git-lfs checkout",
 			"git clean -fdx",
+			"git mv spikes/a spikes/b",
+			"git rm -rq spikes/a",
 		]) {
 			const mutated = inJob(ci, "reserved", installStep, installStep + step(command));
 			expect([command, problems(ciFile, mutated).includes(message("reserved"))]).toEqual([
@@ -2932,6 +2934,22 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 			const mutated = inJob(ci, "reserved", installStep, installStep + block(command));
 			expect([command, problems(ciFile, mutated).includes(message("reserved"))]).toEqual([
 				command,
+				true,
+			]);
+		}
+		// git and its command on two lines, joined by the shell's continuation: bash's backslash,
+		// PowerShell's backtick and cmd's caret.
+		for (const [shell, mark] of [
+			["bash", "\\"],
+			["pwsh", "`"],
+			["cmd", "^"],
+		] as const) {
+			const head =
+				shell === "bash" ? "      - run: |\n" : `      - shell: ${shell}\n        run: |\n`;
+			const split = `${head}          git -c advice.detachedHead=false ${mark}\n            checkout --quiet HEAD~1\n`;
+			const mutated = inJob(ci, "reserved", installStep, installStep + split);
+			expect([shell, problems(ciFile, mutated).includes(message("reserved"))]).toEqual([
+				shell,
 				true,
 			]);
 		}
@@ -3427,6 +3445,16 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 		["a block of its own", [install]],
 	])("refuses an install in a script with %s", (_, lines) => {
 		const source = job(`- run: ${preinstall}`, "- run: |", ...lines.map((line) => `    ${line}`));
+		expect(checkWorkflow("x.yml", source, toolchain).join("\n")).toContain(census);
+	});
+
+	it.each([
+		["PowerShell's backtick", "pwsh", "`"],
+		["cmd's caret", "cmd", "^"],
+		["a backslash, in PowerShell too", "pwsh", "\\"],
+	])("refuses an install split over lines with %s", (_, shell, mark) => {
+		const lines = [`pnpm ${mark}`, "  install --frozen-lockfile"].map((line) => `    ${line}`);
+		const source = job(`- run: ${preinstall}`, `- shell: ${shell}`, "  run: |", ...lines);
 		expect(checkWorkflow("x.yml", source, toolchain).join("\n")).toContain(census);
 	});
 
