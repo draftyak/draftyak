@@ -710,7 +710,12 @@ const REMAPPED: Readonly<Record<string, readonly string[]>> = {
 	".mjs": [".mts", ".d.mts"],
 	".cjs": [".cts", ".d.cts"],
 };
-const EXTENSIONS = [".ts", ".tsx", ".d.ts", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json"];
+// The extensions a module path may be given: tsc's, Vite's, and Node's require's, a native addon's
+// .node among them.
+const EXTENSIONS = [
+	...[".ts", ".tsx", ".d.ts", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json"],
+	".node",
+];
 const KNOWN = /\.(?:[cm]?[jt]sx?|json|node)$/i;
 const ENTRY_FIELDS = new Set(["main", "module", "exports", "types", "typings"]);
 

@@ -491,6 +491,26 @@ describe("refs-modules", () => {
 		]);
 	});
 
+	it("refuses an ignored native addon an extensionless require names, as a file or as a folder's index, which Node's require loads", async () => {
+		const files = {
+			"p/src/native.cjs": [
+				'const addon = require("./build/Release/addon");',
+				'const other = require("./prebuilt");',
+				'const named = require("./build/Release/named.node");',
+			].join("\n"),
+		};
+		const ignored = {
+			"p/src/build/Release/addon.node": "",
+			"p/src/prebuilt/index.node": "",
+			"p/src/build/Release/named.node": "",
+		};
+		expect(await refused({ files, ignored }, "refs-modules")).toEqual([
+			"p/src/build/Release/addon.node: unlisted",
+			"p/src/prebuilt/index.node: unlisted",
+			"p/src/build/Release/named.node: unlisted",
+		]);
+	});
+
 	it("leaves bare specifiers, missing files and listed files alone", async () => {
 		const files = {
 			"p/a.ts":
