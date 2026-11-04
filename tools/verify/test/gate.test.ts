@@ -702,6 +702,11 @@ const START_LINES = [
 	"reserved tripwire: 1 start file(s) or folder(s) failed their kind check; nothing was loaded",
 	STOP_LINE,
 ];
+// The inline start check's lines for an entry Node started with a preload or an option file.
+const PRELOADED = [
+	"reserved tripwire: Node loaded code or options before this entry's first line (--require, --import, --loader, a startup snapshot or a config file, on its command line or in NODE_OPTIONS); nothing was checked",
+	STOP_LINE,
+];
 
 describe("the gate's helpers", () => {
 	it("holds the gate's whole runtime import graph, which imports only node: built-ins beyond it", () => {
@@ -741,23 +746,73 @@ describe("the inline start check, START_CHECK", () => {
 		expect(copy("tools/verify/gate.ts")).toBe(START_CHECK);
 		expect(START_CHECK).toContain(JSON.stringify(STOP_LINE));
 		expect(START_CHECK).toContain(JSON.stringify(startLines([{ rel: "x", kind: "link" }])[0]));
-		expect(START_CHECK.startsWith("function startCheckLines(root: string): string[] {")).toBe(true);
+		expect(START_CHECK.startsWith("function startCheckLines(\n\troot: string,\n\tnode: {")).toBe(
+			true,
+		);
 	});
 
+	// What a Vitest worker's own options would be, for the in-process cases: none.
+	const plain = { execArgv: [], options: undefined };
+
 	it("passes this checkout and a fixture, and refuses bootstrap.ts's folder as a junction", () => {
-		expect(startCheckLines(ownRepo)).toEqual([]);
+		expect(startCheckLines(ownRepo, plain)).toEqual([]);
 		const repo = fixture({ entry: true });
-		expect(startCheckLines(repo.dir)).toEqual([]);
+		expect(startCheckLines(repo.dir, plain)).toEqual([]);
 		rmSync(at(repo, "tools/verify/lib"), { recursive: true });
 		repo.link("tools/verify/lib", repo.outside, "junction");
-		expect(startCheckLines(repo.dir)).toEqual(START_LINES);
-		expect(startCheckLines(path.join(repo.outside, "none"))).toEqual(START_LINES);
+		expect(startCheckLines(repo.dir, plain)).toEqual(START_LINES);
+		expect(startCheckLines(path.join(repo.outside, "none"), plain)).toEqual(START_LINES);
 	});
 
 	it("refuses a hard-linked bootstrap.ts", () => {
 		const repo = fixture({ entry: true });
 		repo.hardlink("tools/verify/lib/copy.ts", "tools/verify/lib/bootstrap.ts");
-		expect(startCheckLines(repo.dir)).toEqual(START_LINES);
+		expect(startCheckLines(repo.dir, plain)).toEqual(START_LINES);
+	});
+
+	// Each option Node applies before an entry's first line that loads code or more options, as the
+	// entry's own execArgv holds it or as NODE_OPTIONS spells it, split the way Node splits it.
+	const backslash = String.fromCharCode(92);
+	const LOADING: readonly (readonly [readonly string[], string | undefined])[] = [
+		[["--require", "./x.cjs"], undefined],
+		[["-r", "./x.cjs"], undefined],
+		[["--require=./x.cjs"], undefined],
+		[["--import", "./x.mjs"], undefined],
+		[["--import=data:text/javascript,0"], undefined],
+		[["--loader", "./l.mjs"], undefined],
+		[["--experimental-loader=./l.mjs"], undefined],
+		[["--experimental_loader", "./l.mjs"], undefined],
+		[["--snapshot-blob", "s.blob"], undefined],
+		[["--config-file=node.config.json"], undefined],
+		[["--experimental-config-file=node.config.json"], undefined],
+		[["--experimental-default-config-file"], undefined],
+		[[], "--require ./x.cjs"],
+		[[], "--max-old-space-size=4096 --import=./x.mjs"],
+		[[], '"--require" ./x.cjs'],
+		[[], '--title="a b" -r ./x.cjs'],
+		[[], `"--re${backslash}quire" ./x.cjs`],
+		[[], "--experimental-default-config-file"],
+	];
+	const OTHER: readonly (readonly [readonly string[], string | undefined])[] = [
+		[["--max-old-space-size=4096", "--conditions", "development", "--no-warnings"], undefined],
+		[[], '--max-old-space-size=4096 --title="--require x"'],
+		[[], "--enable-source-maps"],
+		[[], ""],
+	];
+
+	it("refuses an entry Node started with code or options it loads first, before any kind check", () => {
+		const repo = fixture({ entry: true });
+		for (const [execArgv, options] of LOADING) {
+			const node = { execArgv, options };
+			expect([node, startCheckLines(repo.dir, node)]).toEqual([node, PRELOADED]);
+			// The same line where the kind check would fail too: the options come first.
+			expect(startCheckLines(path.join(repo.outside, "none"), node)).toEqual(PRELOADED);
+		}
+		for (const [execArgv, options] of OTHER) {
+			const node = { execArgv, options };
+			expect([node, startCheckLines(repo.dir, node)]).toEqual([node, []]);
+		}
+		expect(neutral(PRELOADED)).toBe(true);
 	});
 });
 

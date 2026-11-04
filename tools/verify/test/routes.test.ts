@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { OFF_NOTICE, RESERVED_TESTS, reservedWord } from "../../../reserved-tests.ts";
 import { aliasedCwd, gatedLauncher, kitMain } from "../../../spikes/kit/run.ts";
@@ -66,8 +67,10 @@ interface Route {
 	readonly args?: readonly string[];
 	readonly cwd?: string;
 	readonly env?: NodeJS.ProcessEnv;
-	// Its exit code when the gate refuses, and what its baseline prints once the gate passed.
+	// Its exit code when the gate refuses, and when its inline start check does; what its baseline
+	// prints once the gate passed.
 	readonly refused: number;
+	readonly started: number;
 	readonly passed: (run: Ran, modules: boolean) => boolean;
 	// The text of its gate call, and a passing stub for it: the committed mutation case.
 	readonly gateCall: readonly [string, string];
@@ -92,6 +95,7 @@ const ROUTES: Readonly<Record<string, Route>> = {
 		files: helpersOf("turbo"),
 		args: ["run", "test"],
 		refused: 2,
+		started: 2,
 		// Past the gate, turbo.ts resolves turbo, which no checkout here installs.
 		passed: (run) =>
 			run.code === 2 && run.lines.some((line) => / not found; run pnpm install$/.test(line)),
@@ -107,6 +111,7 @@ const ROUTES: Readonly<Record<string, Route>> = {
 		},
 		args: ["--list"],
 		refused: 1,
+		started: 1,
 		passed: (run) => run.code === 0 && run.child,
 		gateCall: ["result = await gate();", `result = ${passingGate};`],
 	},
@@ -116,6 +121,7 @@ const ROUTES: Readonly<Record<string, Route>> = {
 		cwd: "spikes/probe",
 		// The gate is a process of the kit's own, so its refusal's exit code passes through.
 		refused: 1,
+		started: 2,
 		passed: (run, modules) =>
 			modules
 				? run.code === 0 && run.child
@@ -129,6 +135,7 @@ const ROUTES: Readonly<Record<string, Route>> = {
 			"tools/verify/prefetch.ts": `${marks}export const prefetchMain = async () => 0;\n`,
 		},
 		refused: 1,
+		started: 1,
 		passed: (run) => run.code === 0 && run.child,
 		gateCall: ["result = await deps.gate();", `result = ${passingGate};`],
 	},
@@ -141,6 +148,7 @@ const ROUTES: Readonly<Record<string, Route>> = {
 		env: { [RESERVED_TESTS]: "1" },
 		args: ["--tier", "unit"],
 		refused: 1,
+		started: 1,
 		passed: (run) => run.code === 0 && run.child,
 		gateCall: ["result = await deps.gate();", `result = ${passingGate};`],
 	},
@@ -184,18 +192,25 @@ function installFakes(repo: TempRepo): void {
 	);
 }
 
-async function start(route: Route, repo: TempRepo): Promise<Ran> {
+// `node` goes before the entry on Node's command line, and `env` into its environment.
+async function start(
+	route: Pick<Route, "entry" | "args" | "cwd" | "env">,
+	repo: TempRepo,
+	extra: { readonly node?: readonly string[]; readonly env?: NodeJS.ProcessEnv } = {},
+): Promise<Ran> {
 	const marker = path.join(repo.outside, "child-loaded");
 	rmSync(marker, { force: true });
-	// No inherited flag and no outer launcher's marker: each run gates this checkout itself.
+	// No inherited flag, no outer launcher's marker and no Node options: each run gates this
+	// checkout itself.
 	const inherited = Object.entries(gitEnvOf(repo)).filter(
-		([name]) => name.toUpperCase() !== RESERVED_TESTS && name.toUpperCase() !== GATE_ROOT_ENV,
+		([name]) => ![RESERVED_TESTS, GATE_ROOT_ENV, "NODE_OPTIONS"].includes(name.toUpperCase()),
 	);
+	const entry = path.join(repo.dir, route.entry);
 	const result = await capture(
-		{ command: process.execPath, args: [path.join(repo.dir, route.entry), ...(route.args ?? [])] },
+		{ command: process.execPath, args: [...(extra.node ?? []), entry, ...(route.args ?? [])] },
 		{
 			cwd: path.join(repo.dir, route.cwd ?? ""),
-			env: { ...Object.fromEntries(inherited), ...route.env, [MARKER]: marker },
+			env: { ...Object.fromEntries(inherited), ...route.env, ...extra.env, [MARKER]: marker },
 		},
 	);
 	const lines = `${result.stdout}\n${result.stderr}`.split(/\r?\n/).filter(Boolean);
@@ -291,6 +306,71 @@ describe("each gated entry on its own checkout", () => {
 				const run = await start(route, repo);
 				expect(route.passed(run, true), JSON.stringify(run.lines.map(scrub))).toBe(true);
 			});
+		});
+	}
+});
+
+// The entries Node starts with code or options it loads before their first line: a preload in
+// NODE_OPTIONS, or --import on the command line. The preload runs, as nothing in the checkout can
+// stop it; each entry then refuses at its inline start check with its own exit code, before any
+// helper loads or any child starts. Harmless NODE_OPTIONS change nothing.
+const PRELOADED = [
+	"reserved tripwire: Node loaded code or options before this entry's first line (--require, --import, --loader, a startup snapshot or a config file, on its command line or in NODE_OPTIONS); nothing was checked",
+	START_STOP_LINE,
+];
+const PRELOAD_MARKER = "DY_PRELOAD_MARKER";
+const STARTED: Readonly<Record<string, Route | Pick<Route, "entry" | "files" | "started">>> = {
+	...ROUTES,
+	"tools/verify/gate.ts": { entry: "tools/verify/gate.ts", files: gateFiles, started: 1 },
+	"tools/verify/preinstall.ts": {
+		entry: "tools/verify/preinstall.ts",
+		files: ["tools/verify/lib/bootstrap.ts", ...HELPERS.preinstall],
+		started: 1,
+	},
+};
+
+describe("each gated entry Node started with code it loads first", () => {
+	for (const [name, route] of Object.entries(STARTED)) {
+		it(`${name} refuses a preload in NODE_OPTIONS or on its command line before its first child`, async () => {
+			const repo = tempRepo();
+			repos.push(repo);
+			copyOwn(repo, [route.entry, ...route.files]);
+			const children = "children" in route ? route.children : {};
+			for (const [file, text] of Object.entries({ ...BASE, ...children })) repo.write(file, text);
+			repo.commit();
+			const preload = path.join(repo.outside, "preload.cjs");
+			const preloaded = path.join(repo.outside, "preloaded");
+			writeFileSync(
+				preload,
+				`require("node:fs").writeFileSync(process.env.${PRELOAD_MARKER} ?? "", "ran");\n`,
+			);
+			const forward = preload.split(path.sep).join("/");
+			const ways: readonly (readonly [string, Parameters<typeof start>[2]])[] = [
+				["NODE_OPTIONS", { env: { NODE_OPTIONS: `--require "${forward}"` } }],
+				["the command line", { node: ["--import", pathToFileURL(preload).href] }],
+			];
+			for (const [way, extra] of ways) {
+				rmSync(preloaded, { force: true });
+				const run = await start(route, repo, {
+					...extra,
+					env: { ...extra?.env, [PRELOAD_MARKER]: preloaded },
+				});
+				expect([way, run.code, run.lines, run.child, existsSync(preloaded)]).toEqual([
+					way,
+					route.started,
+					PRELOADED,
+					false,
+					true,
+				]);
+			}
+			// Options that load nothing leave the entry to its usual run.
+			const harmless = await start(route, repo, {
+				env: { NODE_OPTIONS: "--max-old-space-size=4096 --no-warnings" },
+			});
+			expect(harmless.lines.includes(PRELOADED[0] ?? "")).toBe(false);
+			if ("passed" in route) {
+				expect(route.passed(harmless, false), JSON.stringify(harmless.lines.map(scrub))).toBe(true);
+			} else expect(harmless.code).toBe(0);
 		});
 	}
 });

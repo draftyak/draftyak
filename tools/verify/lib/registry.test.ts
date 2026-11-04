@@ -165,7 +165,7 @@ describe("the gated entries", () => {
 		).toEqual([]);
 		expect(
 			order("tools/verify/verify.ts", "export async function main(", [
-				"startCheckLines(root)",
+				"startCheckLines(root, {",
 				"startCheck()",
 				'import("../../reserved-tests.ts")',
 				"reservedTestsOn(process.env)",
@@ -176,7 +176,7 @@ describe("the gated entries", () => {
 		).toEqual([]);
 		expect(
 			order("tools/verify/m0-prefetch.ts", "export async function prefetchEntry(", [
-				"startCheckLines(deps.root)",
+				"startCheckLines(deps.root, {",
 				"startCheck()",
 				'import("../../reserved-tests.ts")',
 				"reservedTestsOn(env)",

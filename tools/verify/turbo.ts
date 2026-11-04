@@ -78,7 +78,10 @@ export async function turboMain(
 }
 
 // start check
-function startCheckLines(root: string): string[] {
+function startCheckLines(
+	root: string,
+	node: { readonly execArgv: readonly string[]; readonly options: string | undefined },
+): string[] {
 	const nodeFs = process.getBuiltinModule("node:fs");
 	const nodePath = process.getBuiltinModule("node:path");
 	const fold = (file: string): string => {
@@ -86,9 +89,48 @@ function startCheckLines(root: string): string[] {
 		if (process.platform === "win32") return slashed.toLowerCase();
 		return process.platform === "darwin" ? slashed.normalize("NFC").toLowerCase() : slashed;
 	};
+	const stop =
+		"reserved tripwire: stopped before anything was built or tested. Reserved code may sit only in the allowed reserved roots, and no Rust or Cargo may use a reserved name or feature, until that code has its own reviewed gating design; every listed file, every file one of them names and every file a tool would pick up from a folder it scans must be a regular, listed file of this checkout, inside real folders. Don't open the files or follow the links: send this log's path to the reserved files' maintainer.";
+	// Node runs these before an entry's first line: a module to preload, a loader, a startup
+	// snapshot, or a config file that may name them. No check after that code can tell what it
+	// reached, so the entry stops. NODE_OPTIONS splits as Node splits it: at spaces outside double
+	// quotes, which it drops, and a backslash inside quotes takes the next character as it is. One
+	// string, so no scan for import specifiers reads an option's name as one.
+	const preloads = [
+		"--require -r --import --loader --experimental-loader --snapshot-blob --config-file",
+		"--experimental-config-file --experimental-default-config-file",
+	]
+		.join(" ")
+		.split(" ");
+	const words: string[] = [];
+	const options = node.options ?? "";
+	let quoted = false;
+	let fresh = true;
+	for (let index = 0; index < options.length; index++) {
+		let char = options.charAt(index);
+		if (char === String.fromCharCode(92) && quoted) char = options.charAt(++index);
+		else if (char === " " && !quoted) {
+			fresh = true;
+			continue;
+		} else if (char === '"') {
+			quoted = !quoted;
+			continue;
+		}
+		if (fresh) words.push(char);
+		else words[words.length - 1] += char;
+		fresh = false;
+	}
+	const loads = (arg: string): boolean =>
+		preloads.includes((arg.split("=")[0] ?? "").replaceAll("_", "-"));
+	if ([...node.execArgv, ...words].some(loads)) {
+		return [
+			"reserved tripwire: Node loaded code or options before this entry's first line (--require, --import, --loader, a startup snapshot or a config file, on its command line or in NODE_OPTIONS); nothing was checked",
+			stop,
+		];
+	}
 	const stopped = [
 		"reserved tripwire: 1 start file(s) or folder(s) failed their kind check; nothing was loaded",
-		"reserved tripwire: stopped before anything was built or tested. Reserved code may sit only in the allowed reserved roots, and no Rust or Cargo may use a reserved name or feature, until that code has its own reviewed gating design; every listed file, every file one of them names and every file a tool would pick up from a folder it scans must be a regular, listed file of this checkout, inside real folders. Don't open the files or follow the links: send this log's path to the reserved files' maintainer.",
+		stop,
 	];
 	// From the root's real path down: a link or 8.3 alias above the root changes nothing below it.
 	let folder: string;
@@ -126,7 +168,10 @@ if (import.meta.main) {
 	// turbo gets Ctrl+C from the console itself; stay alive until it has shut its tasks down.
 	process.on("SIGINT", () => {});
 	const print = (line: string): void => console.log(line);
-	const early = startCheckLines(path.resolve(import.meta.dirname, "..", ".."));
+	const early = startCheckLines(path.resolve(import.meta.dirname, "..", ".."), {
+		execArgv: process.execArgv,
+		options: process.env.NODE_OPTIONS,
+	});
 	if (early.length > 0) {
 		for (const line of early) print(line);
 		process.exitCode = 2;
