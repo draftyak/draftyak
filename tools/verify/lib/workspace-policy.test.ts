@@ -826,6 +826,63 @@ describe("basename inventory", () => {
 		).toEqual([]);
 	});
 
+	it("bounds the unexplored frontier while preserving every match in a branching tree", async () => {
+		const root = path.resolve("synthetic-depth-first-frontier");
+		const expectedDirectories: string[] = [];
+		const add = (directory: string, depth: number): void => {
+			expectedDirectories.push(directory);
+			if (depth < 5)
+				for (let child = 0; child < 4; child += 1)
+					add(path.posix.join(directory, `branch${child}`), depth + 1);
+		};
+		add("", 0);
+		const permitted = new Set(expectedDirectories);
+		const seen = new Set<string>();
+		let produced = 1;
+		let reads = 0;
+		let peakUnstarted = 0;
+		let active = 0;
+		let peakActive = 0;
+		const found = await namedFiles(
+			".gate-sentinel",
+			root,
+			false,
+			async (target) => {
+				const directory = path.relative(root, target).split(path.sep).join("/");
+				if (!permitted.has(directory) || seen.has(directory))
+					throw new Error("unexpected synthetic directory");
+				seen.add(directory);
+				peakUnstarted = Math.max(peakUnstarted, produced - reads);
+				reads += 1;
+				active += 1;
+				peakActive = Math.max(peakActive, active);
+				await Promise.resolve();
+				try {
+					const depth = directory === "" ? 0 : directory.split("/").length;
+					const children =
+						depth < 5 ? Array.from({ length: 4 }, (_, child) => entry(`branch${child}`, true)) : [];
+					produced += children.length;
+					return [...sentinel, ...children];
+				} finally {
+					active -= 1;
+				}
+			},
+			async () => kind(true),
+		);
+		const expected = expectedDirectories
+			.map((directory) => path.posix.join(directory, ".gate-sentinel"))
+			.toSorted();
+		expect(expectedDirectories.length).toBe(1365);
+		expect(reads).toBe(1365);
+		expect(produced).toBe(1365);
+		expect(seen.size).toBe(1365);
+		expect(found.length).toBe(1365);
+		expect(found.every((name, index) => name === expected[index])).toBe(true);
+		expect(peakUnstarted).toBeLessThanOrEqual(128);
+		expect(peakActive).toBe(4);
+		expect(active).toBe(0);
+	});
+
 	it("lists every level with bounded directory concurrency", async () => {
 		const root = path.resolve("synthetic");
 		let active = 0;
@@ -881,9 +938,9 @@ describe("basename inventory", () => {
 				"slow1",
 				"slow2",
 				"fast",
+				"fast/deep",
 				"queued0",
 				"queued1",
-				"fast/deep",
 			]);
 			expect(peak).toBe(4);
 			expect(active).toBe(3);
