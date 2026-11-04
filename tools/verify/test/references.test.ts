@@ -635,6 +635,34 @@ describe("refs-config", () => {
 		]);
 	});
 
+	it("follows a dot-named Biome config's extends and plugins the same way, and refuses what it can't follow", async () => {
+		const files = {
+			"a/.biome.json": JSON.stringify({
+				root: false,
+				extends: ["../configs/base.json"],
+				plugins: ["./rules/a.grit"],
+			}),
+			"b/.biome.jsonc":
+				'// nested\n{ "root": false, "overrides": [{ "plugins": ["../rules/b.grit"] }] }\n',
+			"c/.biome.json": JSON.stringify({ root: false, extends: ["@scope/config/biome"] }),
+			"d/.biome.jsonc": JSON.stringify({ root: false, plugins: ["/abs/x.grit"] }),
+			"e/.biome.json": JSON.stringify({ root: false, plugins: [`../spikes/zz-${w}/rule.grit`] }),
+			"f/.BIOME.JSON": JSON.stringify({ root: false, plugins: ["../../outside/rules.grit"] }),
+			"g/.biome.json": "{ nope",
+		};
+		const ignored = { "configs/base.json": "{}", "a/rules/a.grit": "", "rules/b.grit": "" };
+		expect(await refused({ files, ignored, outside: BESIDE }, "refs-config")).toEqual([
+			"configs/base.json: unlisted",
+			"a/rules/a.grit: unlisted",
+			"rules/b.grit: unlisted",
+			"c/.biome.json: unsupported",
+			"d/.biome.jsonc: unsupported",
+			"spikes/zz-<reserved>/rule.grit: reserved",
+			"f/.BIOME.JSON: outside",
+			"g/.biome.json: unparsable",
+		]);
+	});
+
 	it("refuses a Biome config that extends a package's config, names a plugin it can't follow or can't be parsed", async () => {
 		const files = {
 			"a/biome.json": JSON.stringify({ extends: ["@scope/config/biome"] }),

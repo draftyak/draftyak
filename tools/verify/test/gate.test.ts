@@ -255,6 +255,11 @@ describe("refusals before any read or child start", () => {
 				{ "biome.json": '{ "extends": ["@scope/config/biome"] }\n' },
 				"refs-config",
 			],
+			[
+				"a nested dot-named Biome config extending a package's",
+				{ "tools/x/.biome.json": '{ "root": false, "extends": ["@scope/config/biome"] }\n' },
+				"refs-config",
+			],
 			["a toolchain path", { "rust-toolchain.toml": '[toolchain]\npath = "./tc"\n' }, "refs-cargo"],
 			[
 				"a .cargo config wrapper",
@@ -272,6 +277,19 @@ describe("refusals before any read or child start", () => {
 			const file = Object.keys(files)[0] ?? "";
 			expect([label, named.endsWith(`: ${file} (unsupported)`)]).toEqual([label, true]);
 		}
+	});
+
+	it("refuses a nested dot-named Biome config's plugin in the allowed root, never opening it", async () => {
+		const files = {
+			"tools/x/.biome.json": `{ "root": false, "plugins": ["../../${root}rule.grit"] }\n`,
+			[`${root}rule.grit`]: "",
+		};
+		const repo = fixture({ files });
+		const run = await gate(repo);
+		refusedWith(run, [LINE["refs-config"] ?? ""]);
+		expect(run.opens.some(inHeld)).toBe(false);
+		const named = shown(await gate(repo, { names: true }))[0] ?? "";
+		expect(named.endsWith(`: ${scrub(root)}rule.grit (reserved)`)).toBe(true);
 	});
 
 	it("refuses a reference that leaves the checkout to a target that exists there, naming only the file that makes it and opening nothing outside", async () => {

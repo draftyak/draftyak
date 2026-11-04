@@ -800,7 +800,8 @@ function importsTarget(
 	candidates.refuse(file, "unsupported");
 }
 
-const BIOME_CONFIGS = new Set(["biome.json", "biome.jsonc"]);
+// Every name Biome takes a config from, in the root or a nested folder.
+const BIOME_CONFIGS = new Set(["biome.json", "biome.jsonc", ".biome.json", ".biome.jsonc"]);
 
 // A Biome config's extends and plugins, top level and in overrides: each ./ or ../ path is a file
 // Biome reads, kind-checked as a reference, and a config it extends is followed the same way; extends
