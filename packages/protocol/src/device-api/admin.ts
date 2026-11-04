@@ -10,6 +10,8 @@ import { type AdminKind, SigningKey } from "../statements.ts";
 // The admin kinds that have a review subject, in ADMIN_KINDS order. Every other admin kind fails
 // closed at review and challenge until its contract adds a subject here.
 const reviewKinds = [
+	"plugin.install",
+	"plugin.upgrade",
 	"account.disconnect",
 	"account.mode-full",
 	"security.device-capabilities",
@@ -142,6 +144,144 @@ export const AdminDataBackupSubject: z.ZodType<AdminDataBackupSubject> = z
 			"chosen natively and isn't part of the record.",
 	});
 
+export interface AdminPluginCurrentSelection {
+	readonly versionId: string;
+	readonly version: string;
+	readonly registryGeneration: number;
+	readonly state: "staged" | "disabled" | "quarantined";
+}
+export interface AdminPluginCandidateSelection {
+	readonly versionId: string;
+	readonly version: string;
+	readonly registryGeneration: number;
+	readonly appVersion: string;
+	readonly inventoryDigest: string;
+	readonly manifestDigest: string;
+	readonly egressDigest: string;
+	readonly sendDigest: string | null;
+	readonly surfaceDigest: string;
+}
+interface AdminPluginSubjectBase {
+	readonly v: 1;
+	readonly registryId: string;
+	readonly pluginId: string;
+	readonly ownerUserId: string;
+	readonly epoch: number;
+	readonly to: AdminPluginCandidateSelection;
+}
+export type AdminPluginInstallSubject = AdminPluginSubjectBase &
+	(
+		| {
+				readonly intent: "install";
+				readonly from: (AdminPluginCurrentSelection & { readonly state: "staged" }) | null;
+		  }
+		| {
+				readonly intent: "re-enable";
+				readonly from: AdminPluginCurrentSelection & {
+					readonly state: "disabled" | "quarantined";
+				};
+		  }
+	);
+export type AdminPluginUpgradeSubject = AdminPluginSubjectBase & {
+	readonly intent: "upgrade";
+	readonly from: AdminPluginCurrentSelection;
+};
+// The registry stores these text bounds in UTF-8 bytes, not UTF-16 units or code points.
+function pluginText(maxBytes: number): z.ZodString {
+	return z
+		.string()
+		.min(1)
+		.max(maxBytes)
+		.refine((value) => value.isWellFormed() && Buffer.byteLength(value, "utf8") <= maxBytes, {
+			message: "well-formed text within its UTF-8 byte bound",
+		});
+}
+const pluginCurrentFields = {
+	versionId: Ulid,
+	version: pluginText(128),
+	registryGeneration: z
+		.int()
+		.min(1)
+		.max(Number.MAX_SAFE_INTEGER - 1),
+};
+const pluginCurrentSelection = z.strictObject({
+	...pluginCurrentFields,
+	state: z.enum(["staged", "disabled", "quarantined"]),
+});
+const pluginCandidateSelection = z.strictObject({
+	versionId: Ulid,
+	version: pluginText(128),
+	registryGeneration: z.int().min(1).max(Number.MAX_SAFE_INTEGER),
+	appVersion: pluginText(128),
+	inventoryDigest: Sha256Hex,
+	manifestDigest: Sha256Hex,
+	egressDigest: Sha256Hex,
+	sendDigest: Sha256Hex.nullable(),
+	surfaceDigest: Sha256Hex,
+});
+const pluginReviewFields = {
+	v: z.literal(1),
+	registryId: Ulid,
+	pluginId: pluginText(64),
+	ownerUserId: Ulid,
+	epoch: UtcMs,
+	to: pluginCandidateSelection,
+};
+export const AdminPluginInstallSubject: z.ZodType<AdminPluginInstallSubject> = z
+	.discriminatedUnion("intent", [
+		z.strictObject({
+			...pluginReviewFields,
+			intent: z.literal("install"),
+			from: z.strictObject({ ...pluginCurrentFields, state: z.literal("staged") }).nullable(),
+		}),
+		z.strictObject({
+			...pluginReviewFields,
+			intent: z.literal("re-enable"),
+			from: z.strictObject({ ...pluginCurrentFields, state: z.enum(["disabled", "quarantined"]) }),
+		}),
+	])
+	.refine(
+		({ registryId, from, to }) =>
+			registryId !== to.versionId &&
+			(from === null
+				? to.registryGeneration === 1
+				: to.versionId === from.versionId &&
+					to.version === from.version &&
+					to.registryGeneration === from.registryGeneration + 1),
+		{ message: "the exact absent or selected install transition and next generation" },
+	)
+	.meta({
+		id: "draftyak.device-api.AdminPluginInstallSubject",
+		description:
+			"Plugin install or re-enable DATA: the actual absent or selected prior state and " +
+			"the retained candidate bindings. Existing selection is never treated as absent. " +
+			"Candidate provenance, surface validation and accepted-operation authority belong to " +
+			"the original producer; these fields grant none. Version/generation relations and " +
+			"UTF-8 byte bounds are also checked at runtime.",
+	});
+export const AdminPluginUpgradeSubject: z.ZodType<AdminPluginUpgradeSubject> = z
+	.strictObject({
+		...pluginReviewFields,
+		intent: z.literal("upgrade"),
+		from: pluginCurrentSelection,
+	})
+	.refine(
+		({ registryId, from, to }) =>
+			registryId !== to.versionId &&
+			to.versionId !== from.versionId &&
+			to.version !== from.version &&
+			to.registryGeneration === from.registryGeneration + 1,
+		{ message: "a different retained version and exactly the next selected generation" },
+	)
+	.meta({
+		id: "draftyak.device-api.AdminPluginUpgradeSubject",
+		description:
+			"Plugin upgrade DATA binds the exact current selection and a different retained " +
+			"candidate at the next generation. It neither switches the selection nor supplies " +
+			"candidate, native or accepted-operation authority. Version/generation relations and " +
+			"UTF-8 byte bounds are also checked at runtime.",
+	});
+
 export interface AdminReview<K extends AdminReviewKind, S> {
 	readonly id: string;
 	readonly kind: K;
@@ -151,6 +291,8 @@ export interface AdminReview<K extends AdminReviewKind, S> {
 	readonly remainingMs: number;
 }
 export type AdminOperationReview =
+	| AdminReview<"plugin.install", AdminPluginInstallSubject>
+	| AdminReview<"plugin.upgrade", AdminPluginUpgradeSubject>
 	| AdminReview<"account.disconnect", AdminAccountSubject>
 	| AdminReview<"account.mode-full", AdminAccountSubject>
 	| AdminReview<"security.device-capabilities", AdminDeviceCapabilitiesSubject>

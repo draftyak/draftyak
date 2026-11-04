@@ -7,6 +7,8 @@ import {
 	AdminAccountSubject,
 	AdminDataBackupSubject,
 	AdminDeviceCapabilitiesSubject,
+	AdminPluginInstallSubject,
+	AdminPluginUpgradeSubject,
 } from "./admin.ts";
 import { copyByteView } from "./bytes.ts";
 import { Challenge, ChallengeRequest } from "./challenge.ts";
@@ -311,6 +313,8 @@ export const DEVICE_API_SCHEMAS: Readonly<Record<string, z.ZodType>> = Object.fr
 	AdminAccountSubject,
 	AdminDeviceCapabilitiesSubject,
 	AdminDataBackupSubject,
+	AdminPluginInstallSubject,
+	AdminPluginUpgradeSubject,
 	ChallengeRequest,
 	Challenge,
 	SignedEnvelope,

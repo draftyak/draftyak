@@ -1,3 +1,4 @@
+import { generateKeyPairSync, sign, verify } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -31,7 +32,14 @@ const vectors = read("vectors/device-api/admin.json") as {
 	grants: { id: string; held: unknown; subject: unknown; valid: boolean }[];
 	cases: { id: string }[];
 };
-const names: readonly SubjectName[] = ["email", "chat", "device", "backup"];
+const names: readonly SubjectName[] = [
+	"email",
+	"chat",
+	"device",
+	"backup",
+	"plugin-install",
+	"plugin-upgrade",
+];
 const fixture = (kind: string, subject?: unknown, statementKind?: string): Fixture =>
 	adminFixture(kind, subject, statementKind) as unknown as Fixture;
 const check = (f: Fixture): boolean =>
@@ -90,6 +98,8 @@ describe("admin review kinds", () => {
 			api.AdminDeviceCapabilitiesSubject,
 		);
 		expect(api.DEVICE_API_SCHEMAS.AdminDataBackupSubject).toBe(api.AdminDataBackupSubject);
+		expect(api.DEVICE_API_SCHEMAS.AdminPluginInstallSubject).toBe(api.AdminPluginInstallSubject);
+		expect(api.DEVICE_API_SCHEMAS.AdminPluginUpgradeSubject).toBe(api.AdminPluginUpgradeSubject);
 	});
 });
 
@@ -123,6 +133,8 @@ describe("admin subjects", () => {
 			chat: api.AdminAccountSubject,
 			device: api.AdminDeviceCapabilitiesSubject,
 			backup: api.AdminDataBackupSubject,
+			"plugin-install": api.AdminPluginInstallSubject,
+			"plugin-upgrade": api.AdminPluginUpgradeSubject,
 		};
 		for (const name of names) {
 			const subject = adminSubject(name);
@@ -312,5 +324,199 @@ describe("admin vectors", () => {
 		expect(admin.every((id) => id.startsWith("admin-"))).toBe(true);
 		expect(ids.filter((id) => id.startsWith("admin-"))).toEqual(admin);
 		expect(vectors.grants.every((grant) => grant.id.startsWith("admin-grant-"))).toBe(true);
+	});
+});
+
+// These subjects are synthetic DATA, not genuine candidate/installed-generation authority.
+describe("plugin review subject DATA", () => {
+	const candidate = (s: Value): Value => s.to as Value;
+	const prior = (s: Value): Value => s.from as Value;
+	const staged = (): Value => {
+		const value = adminSubject("plugin-install");
+		return {
+			...value,
+			from: {
+				versionId: candidate(value).versionId,
+				version: candidate(value).version,
+				registryGeneration: 7,
+				state: "staged",
+			},
+			to: { ...candidate(value), registryGeneration: 8 },
+		};
+	};
+	const schema = (kind: string) =>
+		kind === "plugin.install" ? api.AdminPluginInstallSubject : api.AdminPluginUpgradeSubject;
+	it("captures actual absence, selected staged install and both re-enable states without a new kind", () => {
+		const selected = staged();
+		for (const subject of [
+			adminSubject("plugin-install"),
+			selected,
+			...(["disabled", "quarantined"] as const).map((state) => ({
+				...selected,
+				intent: "re-enable",
+				from: { ...prior(selected), state },
+			})),
+		]) {
+			expect(api.AdminPluginInstallSubject.safeParse(subject).success).toBe(true);
+			expect(check(fixture("plugin.install", subject))).toBe(true);
+		}
+		for (const state of ["staged", "disabled", "quarantined"]) {
+			const value = adminSubject("plugin-upgrade");
+			expect(
+				api.AdminPluginUpgradeSubject.safeParse({ ...value, from: { ...prior(value), state } })
+					.success,
+			).toBe(true);
+		}
+		expect(api.OperationReview.safeParse(fixture("plugin.enable", selected).review).success).toBe(
+			false,
+		);
+	});
+	it("keeps exact two distinct request IDs in registry/candidate role order", () => {
+		for (const [kind, name] of [
+			["plugin.install", "plugin-install"],
+			["plugin.upgrade", "plugin-upgrade"],
+		] as const) {
+			const subject = adminSubject(name),
+				ids = [subject.registryId, candidate(subject).versionId];
+			expect(api.OperationRequest.parse({ kind, ids }).ids).toEqual(ids);
+			for (const value of [[], ids.slice(0, 1), [...ids, SNAPSHOT_IDS.op], [ids[0], ids[0]]])
+				expect(api.OperationRequest.safeParse({ kind, ids: value }).success).toBe(false);
+		}
+		// The producer, not this standalone DATA schema, compares both IDs to its retained candidate.
+	});
+	it("refuses mismatched intent, old selection, version identity and prospective generation", () => {
+		const install = adminSubject("plugin-install"),
+			selected = staged(),
+			upgrade = adminSubject("plugin-upgrade");
+		for (const value of [
+			{ ...install, intent: "re-enable" },
+			{ ...selected, intent: "re-enable" },
+			{ ...selected, from: { ...prior(selected), state: "disabled" } },
+			{ ...selected, to: { ...candidate(selected), version: "different" } },
+			{ ...selected, to: { ...candidate(selected), versionId: SNAPSHOT_IDS.author } },
+			{ ...install, to: { ...candidate(install), registryGeneration: 2 } },
+		])
+			expect(api.AdminPluginInstallSubject.safeParse(value).success).toBe(false);
+		for (const value of [
+			{ ...upgrade, from: null },
+			{ ...upgrade, intent: "install" },
+			{ ...upgrade, to: { ...candidate(upgrade), version: prior(upgrade).version } },
+			{ ...upgrade, to: { ...candidate(upgrade), versionId: prior(upgrade).versionId } },
+			{ ...upgrade, to: { ...candidate(upgrade), registryGeneration: 1 } },
+			{ ...upgrade, to: { ...candidate(upgrade), registryGeneration: 3 } },
+			{ ...upgrade, registryId: candidate(upgrade).versionId },
+		])
+			expect(api.AdminPluginUpgradeSubject.safeParse(value).success).toBe(false);
+	});
+	it("retains exact integer and UTF-8 byte bounds with no missing/null/default coercion", () => {
+		const value = adminSubject("plugin-upgrade");
+		expect(Buffer.byteLength(String.fromCodePoint(0xe9).repeat(64), "utf8")).toBe(128);
+		expect(Buffer.byteLength(String.fromCodePoint(0xe9).repeat(65), "utf8")).toBe(130);
+		const edge = {
+			...value,
+			epoch: Number.MAX_SAFE_INTEGER,
+			from: { ...prior(value), registryGeneration: Number.MAX_SAFE_INTEGER - 1 },
+			to: {
+				...candidate(value),
+				registryGeneration: Number.MAX_SAFE_INTEGER,
+				version: String.fromCodePoint(0xe9).repeat(64),
+			},
+		};
+		expect(api.AdminPluginUpgradeSubject.safeParse(edge).success).toBe(true);
+		for (const bad of [
+			{ ...edge, epoch: Number.MAX_SAFE_INTEGER + 1 },
+			{ ...edge, from: { ...prior(edge), registryGeneration: Number.MAX_SAFE_INTEGER } },
+			{ ...value, to: { ...candidate(value), version: String.fromCodePoint(0xe9).repeat(65) } },
+			{ ...value, to: { ...candidate(value), appVersion: String.fromCodePoint(0xe9).repeat(65) } },
+			{ ...value, to: { ...candidate(value), version: "\ud800" } },
+			{ ...value, to: { ...candidate(value), surfaceDigest: null } },
+			{ ...value, to: { ...candidate(value), sendDigest: undefined } },
+		])
+			expect(api.AdminPluginUpgradeSubject.safeParse(bad).success).toBe(false);
+		for (const key of Object.keys(candidate(value))) {
+			const { [key]: _, ...missing } = candidate(value);
+			expect(api.AdminPluginUpgradeSubject.safeParse({ ...value, to: missing }).success).toBe(
+				false,
+			);
+		}
+		for (const key of Object.keys(prior(value))) {
+			const { [key]: _, ...missing } = prior(value);
+			expect(api.AdminPluginUpgradeSubject.safeParse({ ...value, from: missing }).success).toBe(
+				false,
+			);
+		}
+	});
+	it("refuses another signed plugin epoch with the same valid subject and digest", () => {
+		// Synthetic key/statement DATA: this is not a registered device or a native accepted context.
+		const keys = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+		for (const [kind, name] of [
+			["plugin.install", "plugin-install"],
+			["plugin.upgrade", "plugin-upgrade"],
+		] as const) {
+			const f = fixture(kind, adminSubject(name)),
+				changed = signed(f, { epoch: 0 });
+			const bytes = Buffer.from(changed.challenge.statement as string, "base64url");
+			const signature = sign("sha256", bytes, { key: keys.privateKey, dsaEncoding: "ieee-p1363" });
+			expect(
+				verify("sha256", bytes, { key: keys.publicKey, dsaEncoding: "ieee-p1363" }, signature),
+			).toBe(true);
+			expect(api.Challenge.safeParse(changed.challenge).success).toBe(true);
+			expect(api.OperationReview.safeParse(changed.review).success).toBe(true);
+			expect(changed.review.digest).toBe(f.review.digest);
+			expect(check(changed)).toBe(false);
+			expect(check(f)).toBe(true);
+		}
+	});
+	it("binds every candidate, prior-selection and common fact through the complete signed digest", () => {
+		const original = adminSubject("plugin-upgrade"),
+			old = fixture("plugin.upgrade", original);
+		const changes: Value[] = [
+			{ ...original, registryId: SNAPSHOT_IDS.author },
+			{ ...original, pluginId: "channel-slack" },
+			{ ...original, ownerUserId: SNAPSHOT_IDS.author },
+			{ ...original, epoch: 2 },
+			...Object.keys(candidate(original)).map((key) => ({
+				...original,
+				to: {
+					...candidate(original),
+					[key]:
+						key === "registryGeneration"
+							? 3
+							: key === "versionId"
+								? SNAPSHOT_IDS.author
+								: key === "version"
+									? "3.0.0"
+									: key === "appVersion"
+										? "2.0.0"
+										: "f".repeat(64),
+				},
+				...(key === "registryGeneration"
+					? { from: { ...prior(original), registryGeneration: 2 } }
+					: {}),
+			})),
+			...Object.keys(prior(original)).map((key) => ({
+				...original,
+				from: {
+					...prior(original),
+					[key]:
+						key === "registryGeneration"
+							? 2
+							: key === "versionId"
+								? SNAPSHOT_IDS.author
+								: key === "version"
+									? "0.9.0"
+									: "disabled",
+				},
+				...(key === "registryGeneration"
+					? { to: { ...candidate(original), registryGeneration: 3 } }
+					: {}),
+			})),
+		];
+		for (const changed of changes) {
+			expect(schema("plugin.upgrade").safeParse(changed).success).toBe(true);
+			const fresh = fixture("plugin.upgrade", changed);
+			expect(check(fresh)).toBe(true);
+			expect(check({ ...fresh, challenge: old.challenge })).toBe(false);
+		}
 	});
 });

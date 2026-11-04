@@ -1364,7 +1364,7 @@
           "01JAZ3W3B6Q8M2V0G5T9K00099"
         ]
       },
-      "valid": true
+      "valid": false
     },
     {
       "id": "OperationRequest-plugin.upgrade",
@@ -1475,7 +1475,7 @@
           "01JAZ3W3B6Q8M2V0G5T9K00099"
         ]
       },
-      "valid": true
+      "valid": false
     },
     {
       "id": "OperationRequest-account.connect",
@@ -3915,6 +3915,76 @@
           "01JAZ3W3B6Q8M2V0G5T9K00097",
           "01JAZ3W3B6Q8M2V0G5T9K00098",
           "01JAZ3W3B6Q8M2V0G5T9K00099"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationRequest-plugin.install-count-0",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "plugin.install",
+        "ids": []
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-plugin.install-count-1",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "plugin.install",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-plugin.install-count-2",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "plugin.install",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "OperationRequest-plugin.upgrade-count-0",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "plugin.upgrade",
+        "ids": []
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-plugin.upgrade-count-1",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "plugin.upgrade",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "OperationRequest-plugin.upgrade-count-2",
+      "action": "schema",
+      "schema": "OperationRequest",
+      "value": {
+        "kind": "plugin.upgrade",
+        "ids": [
+          "01JAZ3W3B6Q8M2V0G5T9K00000",
+          "01JAZ3W3B6Q8M2V0G5T9K00001"
         ]
       },
       "valid": true
