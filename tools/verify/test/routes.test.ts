@@ -266,6 +266,14 @@ const PLANTED: Readonly<Record<string, (repo: TempRepo) => void>> = {
 			'{ "name": "a", "private": true, "scripts": { "test": "node ./gen/x.mjs" } }\n',
 		);
 	},
+	"a package whose entry point is an ignored module in the checkout": (repo) => {
+		repo.ignore("packages/a/gen/");
+		repo.write("packages/a/gen/x.js", marks);
+		repo.write(
+			"packages/a/package.json",
+			'{ "name": "a", "private": true, "exports": { ".": "./gen/x.js" } }\n',
+		);
+	},
 	"an ignored Rust module target": (repo) => {
 		repo.git("rm", "-q", "--cached", "--", "crates/r/src/m.rs");
 		repo.ignore("crates/r/src/m.rs");

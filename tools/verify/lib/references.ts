@@ -914,6 +914,14 @@ function biomeRefs(
 // drive's own working folder.
 const HOME_OR_DRIVE_SPEC = /^(?:~[\\/]|[A-Za-z]:(?![\\/]))/;
 
+// A package's own entry points, which a package that imports it by name loads, and its bins, which
+// pnpm runs.
+const ENTRY_POINTERS = new Set(
+	["main", "module", "types", "typings", "bin", "browser", "exports"].map(
+		(key) => `manifest:${key}`,
+	),
+);
+
 // A script token that reads as a path (it starts with a dot or holds a separator), from its
 // package's folder: a command may run or read it, so it is checked as a module Node could load from
 // there. One that leaves the checkout refuses the manifest, /dev/null too, which on Windows names a
@@ -979,7 +987,9 @@ function configRefs(
 			continue;
 		}
 		if (rel === null) {
-			const why = unfollowedPath(input.checkout, anchor ?? "", value);
+			// An exports pattern names modules by pattern, which this check doesn't follow.
+			const pattern = ENTRY_POINTERS.has(field) && value.includes("*");
+			const why = pattern ? "unsupported" : unfollowedPath(input.checkout, anchor ?? "", value);
 			if (why !== null) candidates.refuse(file, why);
 			continue;
 		}
@@ -1003,6 +1013,7 @@ function configRefs(
 			else moduleTarget(input, candidates, rel);
 		} else if (field === "tsconfig:typeRoots" || field === "tsconfig:rootDirs") {
 			candidates.folder(rel, []);
-		} else if (field === "html" && kind() !== "dir") candidates.file(rel);
+		} else if (ENTRY_POINTERS.has(field)) moduleTarget(input, candidates, rel);
+		else if (field === "html" && kind() !== "dir") candidates.file(rel);
 	}
 }

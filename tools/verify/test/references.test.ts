@@ -721,6 +721,36 @@ describe("refs-config", () => {
 		]);
 	});
 
+	it("follows a package's own entry points as modules, as a package that imports it by name loads them", async () => {
+		const files = {
+			"a/package.json": JSON.stringify({
+				name: "a",
+				main: "built/main.js",
+				exports: { ".": { import: "./built/e.js" }, "./sub": "./sub/index.js" },
+				bin: { tool: "./bin/tool.mjs" },
+				types: "types/index.d.ts",
+			}),
+			"b/package.json": JSON.stringify({ name: "b", exports: { ".": "./index.ts" } }),
+			"b/index.ts": "",
+			"c/package.json": JSON.stringify({ name: "c", exports: { "./*": "./gen/*.js" } }),
+		};
+		const ignored = {
+			"a/built/main.js": "",
+			"a/built/e.ts": "",
+			"a/sub/index.js": "",
+			"a/bin/tool.mjs": "",
+			"a/types/index.d.ts": "",
+		};
+		expect(await refused({ files, ignored }, "refs-config")).toEqual([
+			"a/built/main.js: unlisted",
+			"a/built/e.ts: unlisted",
+			"a/sub/index.js: unlisted",
+			"a/bin/tool.mjs: unlisted",
+			"a/types/index.d.ts: unlisted",
+			"c/package.json: unsupported",
+		]);
+	});
+
 	it("refuses a package.json or tsconfig it can't parse", async () => {
 		const files = { "p/package.json": "{ nope", "p/tsconfig.json": "[" };
 		expect(await refused({ files }, "refs-config")).toEqual([

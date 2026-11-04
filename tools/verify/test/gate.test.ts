@@ -422,6 +422,18 @@ describe("refusals before any read or child start", () => {
 		expect(named.endsWith(": packages/a/gen/x.mjs (unlisted)")).toBe(true);
 	});
 
+	it("refuses a package whose entry point is an ignored module in the checkout, without reading it", async () => {
+		const repo = fixture({
+			files: { "packages/a/package.json": '{ "name": "a", "exports": { ".": "./gen/x.js" } }\n' },
+			ignored: { "packages/a/gen/x.js": "export {};\n" },
+		});
+		const run = await gate(repo, { forbidden: (rel) => rel === "packages/a/gen/x.js" });
+		refusedWith(run, [LINE["refs-config"] ?? ""]);
+		expect(run.opens.includes("packages/a/gen/x.js")).toBe(false);
+		const named = shown(await gate(repo, { names: true }))[0] ?? "";
+		expect(named.endsWith(": packages/a/gen/x.js (unlisted)")).toBe(true);
+	});
+
 	it("refuses a path from a drive's own working folder and one with a name Windows trims, naming only the file that holds it", async () => {
 		const cases: readonly (readonly [string, Readonly<Record<string, string>>, string, string])[] =
 			[
