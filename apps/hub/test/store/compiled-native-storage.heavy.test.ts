@@ -53,6 +53,10 @@ const assets = [
 		"plugins/registry/migrations/0001_registry.sql",
 		"plugins/registry/migrations/0001_registry.sql",
 	],
+	[
+		"plugins/registry/migrations/0002_candidates.sql",
+		"plugins/registry/migrations/0002_candidates.sql",
+	],
 	["outbox/propose-migrations/0001_proposals.sql", "outbox/propose-migrations/0001_proposals.sql"],
 	[
 		"identity/challenges-migrations/0001_challenges.sql",
@@ -220,7 +224,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 			path.join(import.meta.dirname, "fixtures/compiled-native-storage.mjs"),
 			path.join(stage, "fixture.mjs"),
 		);
-		expect(assets).toHaveLength(20);
+		expect(assets).toHaveLength(21);
 		for (const [source, built] of assets) {
 			const file = path.join(hub, "dist", built);
 			const original = path.join(hub, "src", source);

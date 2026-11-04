@@ -57,7 +57,7 @@ async function main() {
 				.map((name) => name.slice("_migrations_".length)).sort(), namespaces);
 			for (const table of approvalTables) assert.ok(tables.includes(table));
 			for (const table of [
-				"users", "devices", "plugin_versions", "native_backup_recovery",
+				"users", "devices", "plugin_versions", "plugin_registry_identities", "plugin_candidates", "native_backup_recovery",
 				"native_backup_operations", "native_backup_challenges",
 			]) {
 				assert.deepEqual(db.get(`SELECT count(*) AS n FROM main.${table}`), { n: 0 });

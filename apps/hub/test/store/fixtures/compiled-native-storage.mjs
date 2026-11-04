@@ -141,7 +141,7 @@ async function run() {
 				for (const name of [
 					"device_authority", "devices", "jobs", "jobs_meta", "events", "event_meta", "native_drafts",
 					"native_draft_revisions", "native_draft_locks", "credentials", "native_send_attempts", "accounts",
-					"plugin_versions", "plugin_generations", "native_backup_recovery",
+					"plugin_versions", "plugin_generations", "plugin_registry_identities", "plugin_candidates", "native_backup_recovery",
 					...approvalTables,
 				]) {
 					assert.ok(ordinal("audit_meta") < ordinal(name), "Audit schema must migrate first");
@@ -168,10 +168,10 @@ async function run() {
 					}
 					const applied = sql.get(`SELECT count(*) AS n FROM _migrations_${namespace}`).n;
 					assert.equal(applied,
-						namespace === "credentials" || namespace === "revisions" ? 2 : 1);
+						namespace === "credentials" || namespace === "revisions" || namespace === "pluginregistry" ? 2 : 1);
 					appliedMigrations += applied;
 				}
-				assert.equal(appliedMigrations, 20);
+				assert.equal(appliedMigrations, 21);
 				assert.equal(sql.get("SELECT count(*) AS n FROM audit_meta").n, 1);
 				assert.equal(sql.get("SELECT count(*) AS n FROM hub_meta").n, 1);
 				const core = sql.get("SELECT singleton,identity_wrapped,statement_wrapped,identity_cert FROM hub_meta");
@@ -183,6 +183,8 @@ async function run() {
 				assert.equal(sql.get("SELECT count(*) AS n FROM devices").n, 0);
 				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_versions").n, 0);
 				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_generations").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_registry_identities").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_candidates").n, 0);
 				assert.equal(sql.get("SELECT count(*) AS n FROM native_backup_recovery").n, 0);
 				for (const table of approvalTables) {
 					assert.equal(sql.get(`SELECT count(*) AS n FROM ${table}`).n, 0);
