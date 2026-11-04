@@ -230,9 +230,13 @@ const startsCommand = (step: YamlMap): boolean =>
 	step.run !== undefined ||
 	actionOf(step) === "pnpm/action-setup" ||
 	(actionOf(step) === "actions/setup-node" && !plainBeforeGate(step));
-// A package manager's command, Windows' .cmd, .exe and .ps1 spellings included.
-const packageManager =
-	/(?<![\w.-])(?:pnpm|pnpx|npm|npx|yarn|corepack|bunx?|deno)(?:\.(?:cmd|exe|ps1))?(?![\w.-])/i;
+// A package manager's command, Windows' .cmd, .exe and .ps1 spellings included, and yarnpkg, the
+// second name yarn installs, and a yarn release that node runs from its path (yarn-4.9.1.cjs).
+const yarnRelease = String.raw`yarn-\d[\w.-]*\.c?js`;
+const packageManager = new RegExp(
+	String.raw`(?<![\w.-])(?:(?:pnpm|pnpx|npm|npx|yarn(?:pkg)?|corepack|bunx?|deno)(?:\.(?:cmd|exe|ps1))?|${yarnRelease})(?![\w.-])`,
+	"i",
+);
 // A git command, after git's own options, that rewrites the working tree, moves or removes files in
 // it, or adds files to it: after the gate, it would leave a tree the gate never saw. git may be
 // started by a path, in quotes or as git.exe, and git-lfs as a command of its own; the check reads
@@ -381,9 +385,12 @@ const afterFailure: Readonly<Record<string, Readonly<Record<string, readonly Yam
 // The gate step inherits these, so nothing may set another shell or a working folder.
 const bashDefaults = { run: { shell: "bash" } };
 // An install by any package manager, in any case and with Windows' .cmd, .exe and .ps1 spellings,
-// also after options (pnpm --dir x i); line continuations are joined first.
-const installCommand =
-	/\b(?:pnpm|npm|yarn|corepack|bun|deno)(?:\.(?:cmd|exe|ps1))?(?:\s+-\S+(?:\s+[^\s-]\S*)?)*\s+(?:i|install|ci|add)\b/i;
+// by yarnpkg or a yarn release run from its path, also after options (pnpm --dir x i); line
+// continuations are joined first.
+const installCommand = new RegExp(
+	String.raw`\b(?:(?:pnpm|npm|yarn(?:pkg)?|corepack|bun|deno)(?:\.(?:cmd|exe|ps1))?|${yarnRelease})(?:\s+-\S+(?:\s+[^\s-]\S*)?)*\s+(?:i|install|ci|add)\b`,
+	"i",
+);
 // The one step of each reserved job that carries the flag, and nothing else in it.
 const flag = { DRAFTYAK_RESERVED_TESTS: "1" };
 const unitProof = { env: flag, run: "node tools/verify/reserved-proof.ts --tier unit" };

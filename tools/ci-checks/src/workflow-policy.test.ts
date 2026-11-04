@@ -3231,6 +3231,10 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 			"BUN.EXE run x",
 			"deno run x.ts",
 			"deno.exe task x",
+			"yarnpkg --version",
+			"yarnpkg.cmd --version",
+			"YARNPKG.EXE run x",
+			"node .yarn/releases/yarn-4.9.1.cjs --version",
 		]) {
 			expect(
 				checkWorkflow("x.yml", job(`- run: ${command}`), toolchain).join("\n"),
@@ -3456,6 +3460,10 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 		"bun install",
 		"bun add left-pad",
 		"deno install",
+		"yarnpkg install",
+		"yarnpkg.cmd install",
+		"YARNPKG add left-pad",
+		"node .yarn/releases/yarn-4.9.1.cjs install",
 	])("refuses the install command %s", (command) => {
 		expect(
 			checkWorkflow("x.yml", job(`- run: ${preinstall}`, `- run: ${install}`), toolchain),
