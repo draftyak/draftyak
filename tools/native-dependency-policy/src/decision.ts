@@ -27,6 +27,20 @@ export const BOUNDED_TUPLES: readonly (readonly [string, string, string, number]
 	["zvariant_derive", "5.15.1", "RUSTSEC-2026-0372", OTHER_EXPIRY],
 ] as const;
 
+// The later additions retain their absolute deadline under renewed authority.
+const FIXED_EXPIRY_ADVISORIES = new Set([
+	"RUSTSEC-2026-0370",
+	"RUSTSEC-2026-0371",
+	"RUSTSEC-2026-0372",
+]);
+
+// This exact graph also contains the time-bounded duplicate-version scope.
+export const CURRENT_FINITE_GRAPH_TERM: Readonly<{ digest: string; expiresAt: number }> =
+	Object.freeze({
+		digest: "a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce",
+		expiresAt: OTHER_EXPIRY,
+	});
+
 export interface ScopedFinding {
 	readonly name: string;
 	readonly version: string;
@@ -278,15 +292,21 @@ export function evaluate(input: EvaluationInput): PolicyVerdict {
 			: trusted.review.due;
 	if (completedAt >= reviewDeadline) return refuse("REVIEW_REQUIRED");
 	if (
-		trusted.version === 1 &&
 		BOUNDED_TUPLES.some(
 			([, , advisory, expiry]) =>
-				trusted.exceptions.some((row) => row.advisory === advisory) && completedAt >= expiry,
+				(trusted.version === 1 || FIXED_EXPIRY_ADVISORIES.has(advisory)) &&
+				trusted.exceptions.some((row) => row.advisory === advisory) &&
+				completedAt >= expiry,
 		)
 	)
 		return refuse("EXPIRED");
 	if (BINDING_KEYS.some((key) => input.binding[key] !== trusted.binding[key]))
 		return refuse("BINDING_CHANGED");
+	if (
+		input.binding.graph === CURRENT_FINITE_GRAPH_TERM.digest &&
+		completedAt >= CURRENT_FINITE_GRAPH_TERM.expiresAt
+	)
+		return refuse("EXPIRED");
 	if (
 		audit.complete !== true ||
 		audit.unexpectedErrors !== 0 ||

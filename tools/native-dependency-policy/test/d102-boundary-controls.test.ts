@@ -35,7 +35,7 @@ const BINDING: Binding = {
 	policy: "7".repeat(64),
 };
 const iso = (at: number) => new Date(at).toISOString().replace(".000Z", "Z");
-const findings = (): ScopedFinding[] =>
+const allFindings = (): ScopedFinding[] =>
 	BOUNDED_TUPLES.map(([name, version, advisory], index) => ({
 		name,
 		version,
@@ -43,6 +43,8 @@ const findings = (): ScopedFinding[] =>
 		source: "registry+https://github.com/rust-lang/crates.io-index",
 		ancestor: String(index + 2).repeat(64),
 	}));
+const findings = (): ScopedFinding[] =>
+	allFindings().filter(({ name }) => name === "glib" || name === "proc-macro-error");
 
 function active(rows = findings()) {
 	return {
@@ -148,7 +150,27 @@ describe("renewed policy lifecycle boundaries", () => {
 		expect(result.output.verdict).toBe("pass-with-scoped-exceptions");
 		expect(result.output.accepted).toEqual(findings());
 		expect(result.output.rawExits).toEqual(f.data.rawExits);
+		expect(result.output.audit?.counts.advisories.errors).toBe(2);
+		expect(f.collect).toHaveBeenCalledTimes(1);
+	});
+
+	it.each(PHASES)("refuses the expired D130 additions on December 1 in %s", async (phase) => {
+		const rows = allFindings();
+		expect(rows.map(({ name, version, advisory }) => [name, version, advisory])).toEqual([
+			["glib", "0.18.5", "RUSTSEC-2024-0429"],
+			["proc-macro-error", "1.0.4", "RUSTSEC-2024-0370"],
+			["zvariant", "5.15.1", "RUSTSEC-2026-0370"],
+			["zbus_names", "4.3.5", "RUSTSEC-2026-0371"],
+			["zvariant_derive", "5.15.1", "RUSTSEC-2026-0372"],
+		]);
+		const f = harness(active(rows), evidence(rows));
+		const result = await f.run(phase);
+		expect(result.exitCode).toBe(1);
+		expect(result.output.reason).toBe("EXPIRED");
+		expect(result.output.accepted).toEqual([]);
+		expect(result.output.audit?.findings).toEqual(rows);
 		expect(result.output.audit?.counts.advisories.errors).toBe(5);
+		expect(result.output.rawExits).toEqual(f.data.rawExits);
 		expect(f.collect).toHaveBeenCalledTimes(1);
 	});
 
@@ -196,7 +218,7 @@ describe("renewed policy lifecycle boundaries", () => {
 		expect(result.exitCode).toBe(0);
 		expect(result.output.verdict).toBe("pass-with-scoped-exceptions");
 		expect(result.output.accepted).toEqual(remaining);
-		expect(result.output.audit?.counts.advisories.errors).toBe(4);
+		expect(result.output.audit?.counts.advisories.errors).toBe(1);
 	});
 
 	it("refuses a removed-row finding without rebuilding the complete tuple set", async () => {
@@ -206,7 +228,7 @@ describe("renewed policy lifecycle boundaries", () => {
 		expect(result.output.reason).toBe("FINDINGS_CHANGED");
 		expect(result.output.accepted).toEqual([]);
 		expect(result.output.audit?.findings).toEqual(findings());
-		expect(result.output.audit?.counts.advisories.errors).toBe(5);
+		expect(result.output.audit?.counts.advisories.errors).toBe(2);
 	});
 
 	it("accepts one millisecond before the retained review deadline", async () => {

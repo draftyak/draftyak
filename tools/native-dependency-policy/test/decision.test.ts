@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	type Binding,
 	BOUNDED_TUPLES,
+	CURRENT_FINITE_GRAPH_TERM,
 	type EvaluationInput,
 	evaluate,
 	preflightDecision,
@@ -281,8 +282,8 @@ const iso = (instant: number) => new Date(instant).toISOString().replace(".000Z"
 
 describe("explicit release-or-validated-fix policy version", () => {
 	it.each(BOUNDED_TUPLES.map(([name, , advisory, expiry]) => ({ name, advisory, expiry })))(
-		"keeps only legacy $name bound to its old expiry and gate cutoff",
-		({ advisory, expiry }) => {
+		"preserves the distinct legacy and renewed $name termination terms",
+		({ name, advisory, expiry }) => {
 			for (const version of [1, 2]) {
 				const { record, input } = version === 1 ? fixture() : renewedFixture();
 				record.exceptions = record.exceptions.filter((row) => row.advisory === advisory);
@@ -298,12 +299,12 @@ describe("explicit release-or-validated-fix policy version", () => {
 							evidenceObservedAt: completedAt,
 							audit: { ...input.audit, findings: record.exceptions },
 						});
-						if (version === 2)
+						if (version === 2 && (offset < 0 || name === "glib" || name === "proc-macro-error"))
 							expect(result).toEqual({
 								verdict: "pass-with-scoped-exceptions",
 								accepted: record.exceptions,
 							});
-						else if (offset < 0 && phase === "item")
+						else if (version === 1 && offset < 0 && phase === "item")
 							expect(result.verdict).toBe("pass-with-scoped-exceptions");
 						else
 							expect(result).toMatchObject({
@@ -375,8 +376,11 @@ describe("explicit release-or-validated-fix policy version", () => {
 		}
 		expect(record.review).toEqual(original);
 	});
-	it("retains later weekly review bounds and exact completion-time cutoff", () => {
+	it("retains later weekly review bounds and exact completion-time cutoff for the original pair", () => {
 		const { record, input } = renewedFixture();
+		record.exceptions = record.exceptions.filter((row) =>
+			["glib", "proc-macro-error"].includes(row.name),
+		);
 		const reviewedAt = Date.parse("2026-12-01T00:00:00Z");
 		const due = reviewedAt + 7 * 24 * HOUR;
 		record.review = { at: iso(reviewedAt), due: iso(due) };
@@ -387,6 +391,7 @@ describe("explicit release-or-validated-fix policy version", () => {
 				startedAt: due - 1,
 				completedAt,
 				evidenceObservedAt: due - 1,
+				audit: { ...input.audit, findings: record.exceptions },
 			});
 			if (offset < 0) expect(result.verdict).toBe("pass-with-scoped-exceptions");
 			else expect(result).toMatchObject({ reason: "REVIEW_REQUIRED" });
@@ -466,6 +471,75 @@ describe("explicit release-or-validated-fix policy version", () => {
 });
 
 describe("explicit schema2 release authority", () => {
+	it.each([-1, 0, 1])("checks the finite graph term at final completion offset %s", (offset) => {
+		const { record, input } = renewedFixture();
+		const scopedBinding = { ...binding, graph: CURRENT_FINITE_GRAPH_TERM.digest };
+		const now = CURRENT_FINITE_GRAPH_TERM.expiresAt + offset;
+		const trustedRecord = {
+			...record,
+			releaseBasisSchemaVersion: 2,
+			binding: scopedBinding,
+			review: { at: "2026-11-18T13:15:04Z", due: "2026-11-25T13:15:04Z" },
+			exceptions: [],
+		};
+		const result = evaluate({
+			...input,
+			trustedRecord,
+			binding: scopedBinding,
+			startedAt: CURRENT_FINITE_GRAPH_TERM.expiresAt - 1,
+			completedAt: now,
+			evidenceObservedAt: CURRENT_FINITE_GRAPH_TERM.expiresAt - 1,
+			audit: { complete: true, fullExit: 0, advisoryExit: 0, unexpectedErrors: 0, findings: [] },
+		});
+		if (offset < 0) expect(result).toEqual({ verdict: "strict-pass", accepted: [] });
+		else expect(result).toEqual({ verdict: "refuse", reason: "EXPIRED" });
+	});
+	it.each([
+		["zvariant", "RUSTSEC-2026-0370"],
+		["zbus_names", "RUSTSEC-2026-0371"],
+		["zvariant_derive", "RUSTSEC-2026-0372"],
+	])("keeps the absolute %s cap with a current synthetic marked-v2 review", (_name, advisory) => {
+		const expiry = Date.parse("2026-11-19T13:15:04Z");
+		const { record, input } = renewedFixture();
+		record.exceptions = record.exceptions.filter((row) => row.advisory === advisory);
+		record.review = { at: "2026-11-18T13:15:04Z", due: "2026-11-25T13:15:04Z" };
+		const marked = { ...record, releaseBasisSchemaVersion: 2 };
+		expect(preflightReleaseBasisV2Authority(marked)).toBeNull();
+		for (const offset of [-1, 0, 1]) {
+			for (const phase of ["item", "m4-gate"] as const) {
+				const now = expiry + offset;
+				const result = evaluate({
+					...input,
+					trustedRecord: marked,
+					phase,
+					startedAt: now,
+					completedAt: now,
+					evidenceObservedAt: now,
+					audit: { ...input.audit, findings: record.exceptions },
+				});
+				if (offset < 0) expect(result.verdict).toBe("pass-with-scoped-exceptions");
+				else expect(result).toEqual({ verdict: "refuse", reason: "EXPIRED" });
+			}
+		}
+	});
+	it("keeps the original renewed pair on release-or-fix terms after both legacy dates", () => {
+		const { record, input } = renewedFixture();
+		record.exceptions = record.exceptions.filter((row) =>
+			["glib", "proc-macro-error"].includes(row.name),
+		);
+		record.review = { at: "2026-11-18T13:15:04Z", due: "2026-11-25T13:15:04Z" };
+		const now = Date.parse("2026-11-20T13:15:04Z");
+		expect(
+			evaluate({
+				...input,
+				trustedRecord: { ...record, releaseBasisSchemaVersion: 2 },
+				startedAt: now,
+				completedAt: now,
+				evidenceObservedAt: now,
+				audit: { ...input.audit, findings: record.exceptions },
+			}),
+		).toEqual({ verdict: "pass-with-scoped-exceptions", accepted: record.exceptions });
+	});
 	it("requires its own marker separately from the release/fix policy version", () => {
 		const { record, input } = renewedFixture();
 		expect(preflightReleaseBasisV2Authority(record)).toMatchObject({ reason: "AUTHORITY_INVALID" });

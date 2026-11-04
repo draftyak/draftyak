@@ -55,6 +55,40 @@ function noSource() {
 		expect(fn).not.toHaveBeenCalled();
 }
 describe("production placement boundary", () => {
+	it("accepts physical tool constraints without constructing sources", () => {
+		createProductionProducer({
+			repositoryRoot: root,
+			expectedCargo: path.resolve("selected-cargo"),
+			expectedDeny: path.resolve("selected-deny"),
+		});
+		noSource();
+	});
+	it.each(["expectedCargo", "expectedDeny"])(
+		"refuses relative %s and accessors without native work",
+		(key) => {
+			expect(() =>
+				createProductionProducer({ repositoryRoot: root, [key]: "relative-tool" }),
+			).toThrow();
+			const getter = vi.fn(() => path.resolve("selected-tool"));
+			const input = Object.defineProperty({ repositoryRoot: root }, key, {
+				get: getter,
+				enumerable: true,
+			});
+			expect(() => createProductionProducer(input)).toThrow();
+			expect(getter).not.toHaveBeenCalled();
+			noSource();
+		},
+	);
+	it("refuses conflicting explicit Cargo before authority or source construction", () => {
+		expect(() =>
+			createProductionProducer({
+				repositoryRoot: root,
+				expectedCargo: path.resolve("selected-cargo"),
+				environment: { CARGO: path.resolve("other-cargo") },
+			}),
+		).toThrow();
+		noSource();
+	});
 	it("constructs without creating any source or touching placement", () => {
 		createProductionProducer({ repositoryRoot: root });
 		noSource();

@@ -31,6 +31,7 @@ import {
 	type NativeInputsSnapshot,
 	type NativeInputsSource,
 } from "./inputs.ts";
+import { proposedMobileHttpConfig } from "./mobile-http-policy.ts";
 import { captureNativeProcess, type NativeCommand } from "./native-capture.ts";
 import { parseStrictJson } from "./strict-json.ts";
 import {
@@ -43,7 +44,7 @@ import {
 const HOUR = 3_600_000;
 const CLOSE_MS = 15_000;
 const POLICY_BYTES = 65_536;
-const POLICY_SHA = "54e887f56e8b448f33e22b4df58c17e899063dbed767452184754934b99a6def";
+const POLICY_SHA = "3dfd2b249ce43734a7ec281e10d1353a3bb9ce68a7684fa36639ea98f64791d0";
 const DATABASE_URL = "https://github.com/RustSec/advisory-db";
 const CACHE_CHILD = "advisory-db-3157b0e258782691";
 const noFollow = constants.O_NOFOLLOW ?? 0;
@@ -103,6 +104,8 @@ export interface NativeAuditSourceOptions {
 	readonly databaseRoot: string;
 	readonly cargoHome: string;
 	readonly evidenceDirectory: string;
+	readonly expectedCargo?: string;
+	readonly expectedDeny?: string;
 	readonly environment: Readonly<Record<string, string>>;
 }
 export interface NativeAuditData {
@@ -232,17 +235,26 @@ function record(value: unknown, keys?: readonly string[]): Record<string, unknow
 	return result;
 }
 function options(value: NativeAuditSourceOptions): NativeAuditSourceOptions {
-	const input = record(value, [
+	const required = [
 		"repositoryRoot",
 		"databaseRoot",
 		"cargoHome",
 		"evidenceDirectory",
 		"environment",
-	]);
+	];
+	const allowed = [...required, "expectedCargo", "expectedDeny"];
+	const input = record(value);
+	if (
+		required.some((key) => !Object.hasOwn(input, key)) ||
+		Object.keys(input).some((key) => !allowed.includes(key))
+	)
+		return refuse();
 	const repositoryRoot = absolute(input.repositoryRoot),
 		databaseRoot = absolute(input.databaseRoot),
 		cargoHome = absolute(input.cargoHome),
-		evidenceDirectory = absolute(input.evidenceDirectory);
+		evidenceDirectory = absolute(input.evidenceDirectory),
+		expectedCargo = input.expectedCargo === undefined ? undefined : absolute(input.expectedCargo),
+		expectedDeny = input.expectedDeny === undefined ? undefined : absolute(input.expectedDeny);
 	if (path.basename(databaseRoot) !== CACHE_CHILD) return refuse();
 	const raw = record(input.environment),
 		environment: Record<string, string> = Object.create(null),
@@ -266,7 +278,10 @@ function options(value: NativeAuditSourceOptions): NativeAuditSourceOptions {
 		environment.CARGO_HOME !== cargoHome ||
 		environment.CARGO_NET_OFFLINE !== "true" ||
 		environment.CARGO_TERM_COLOR !== "never" ||
-		environment.NO_COLOR !== "1"
+		environment.NO_COLOR !== "1" ||
+		(expectedCargo !== undefined &&
+			environment.CARGO !== undefined &&
+			environment.CARGO !== expectedCargo)
 	)
 		return refuse();
 	return Object.freeze({
@@ -274,6 +289,8 @@ function options(value: NativeAuditSourceOptions): NativeAuditSourceOptions {
 		databaseRoot,
 		cargoHome,
 		evidenceDirectory,
+		...(expectedCargo === undefined ? {} : { expectedCargo }),
+		...(expectedDeny === undefined ? {} : { expectedDeny }),
 		environment: Object.freeze(environment),
 	});
 }
@@ -359,9 +376,15 @@ async function readFile(state: State, file: string): Promise<{ bytes: Buffer; fa
 		}
 	}
 }
-function strictPolicy(bytes: Buffer, cacheParent: string): Buffer {
+function strictPolicy(bytes: Buffer, cacheParent: string, graph: CargoGraphProjection): Buffer {
 	if (hash(bytes) !== POLICY_SHA) return refuse("NATIVE_AUDIT_CHANGED");
-	const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+	let guarded: Buffer;
+	try {
+		guarded = proposedMobileHttpConfig(graph, bytes);
+	} catch {
+		return refuse("NATIVE_AUDIT_CHANGED");
+	}
+	const text = new TextDecoder("utf-8", { fatal: true }).decode(guarded),
 		marker = "[advisories]\n";
 	const start = text.indexOf(marker),
 		next = text.indexOf("\n[", start + marker.length);
@@ -577,8 +600,21 @@ async function collect(state: State): Promise<NativeAuditObservation> {
 				stderr: await captured(state, result, "stderr"),
 			};
 		},
-		selected.environment,
+		selected.expectedDeny === undefined
+			? selected.environment
+			: Object.freeze({
+					...selected.environment,
+					DRAFTYAK_CARGO_DENY: selected.expectedDeny,
+				}),
 	);
+	guard(state);
+	if (
+		(selected.expectedCargo !== undefined &&
+			(await state.toolSource.nativeToolPath(state.tools, "cargo")) !== selected.expectedCargo) ||
+		(selected.expectedDeny !== undefined &&
+			(await state.toolSource.nativeToolPath(state.tools, "cargo-deny")) !== selected.expectedDeny)
+	)
+		return refuse("NATIVE_AUDIT_CHANGED");
 	guard(state);
 	state.inputs = await state.inputsSource.capture(selected.repositoryRoot, selected.cargoHome);
 	guard(state);
@@ -606,7 +642,7 @@ async function collect(state: State): Promise<NativeAuditObservation> {
 	state.policy = original.fact;
 	state.config = await writeConfig(
 		state,
-		strictPolicy(original.bytes, path.dirname(selected.databaseRoot)),
+		strictPolicy(original.bytes, path.dirname(selected.databaseRoot), initialGraph),
 	);
 	state.database = createDatabaseSource({ databaseRoot: selected.databaseRoot });
 	state.databaseObservation = await state.database.observe();

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import * as fs from "node:fs/promises";
 import os from "node:os";
@@ -13,14 +14,19 @@ import type {
 	NativeVersionProbe,
 } from "../src/tool-provenance.ts";
 
-// Tool/input/R functions are controlled orchestration fixtures. The capture files,
+// Tool/input/R/policy admission are controlled orchestration fixtures. Capture files,
 // sealing, immutable reads, reader status and reader closes use the real module.
+// The policy seam never certifies these small graphs as genuine approved553 input.
+// Only the explicit real-guard refusal below calls the actual policy function.
 // Supplied completion metadata is not evidence of a native process or policy basis.
+const FIXTURE_POLICY_SHA = "3dfd2b249ce43734a7ec281e10d1353a3bb9ce68a7684fa36639ea98f64791d0";
+const REQWEST_DENY_ROW = '    { name = "reqwest" },\n';
 const control = vi.hoisted(() => ({
 	ids: [] as string[],
 	commands: [] as NativeCommand[],
 	captures: new Map<string, NativeCaptureResult>(),
 	mode: "good" as "good" | "missing-summary" | "unconfirmed" | "tampered-full",
+	mobilePolicyMode: "orchestration-fixture" as "orchestration-fixture" | "real-guard",
 	rechecks: 0,
 	changedRecheck: 0,
 	inputsChanged: false,
@@ -44,6 +50,7 @@ const control = vi.hoisted(() => ({
 	toolPhysicalCloses: 0,
 	toolHandle: undefined as fs.FileHandle | undefined,
 	toolOriginalClose: undefined as (() => Promise<void>) | undefined,
+	toolPaths: undefined as Partial<Record<NativeToolName, string>> | undefined,
 	realInputs: false,
 	inputFile: "",
 	inputCloseFault: false,
@@ -127,7 +134,8 @@ vi.mock("../src/tool-provenance.ts", async (original) => {
 		},
 	);
 	const toolPath = vi.fn(
-		async (_snapshot: NativeToolProvenance, name: NativeToolName) => `/invented-tools/${name}`,
+		async (_snapshot: NativeToolProvenance, name: NativeToolName) =>
+			control.toolPaths?.[name] ?? `/invented-tools/${name}`,
 	);
 	const unchanged = vi.fn(async (_snapshot: NativeToolProvenance) => undefined);
 	return {
@@ -214,6 +222,27 @@ vi.mock("../src/database-source.ts", async (original) => {
 		})),
 	};
 });
+vi.mock("../src/mobile-http-policy.ts", async (original) => {
+	const actual = await original<typeof import("../src/mobile-http-policy.ts")>();
+	return {
+		...actual,
+		proposedMobileHttpConfig: vi.fn((graph: unknown, policyBytes: unknown) => {
+			if (control.mobilePolicyMode === "real-guard")
+				return actual.proposedMobileHttpConfig(graph, policyBytes);
+			// TEST ONLY: the small orchestration graph is never certified as approved553.
+			// This fixture preserves the real candidate's exact row transformation only.
+			if (
+				!Buffer.isBuffer(policyBytes) ||
+				createHash("sha256").update(policyBytes).digest("hex") !== FIXTURE_POLICY_SHA
+			)
+				throw new Error("controlled policy fixture refused");
+			const text = policyBytes.toString("utf8");
+			if (text.split(REQWEST_DENY_ROW).length !== 2)
+				throw new Error("controlled policy fixture row refused");
+			return Buffer.from(text.replace(REQWEST_DENY_ROW, ""), "utf8");
+		}),
+	};
+});
 vi.mock("../src/native-capture.ts", async () => {
 	const evidence = await import("../src/evidence.ts");
 	return {
@@ -264,10 +293,12 @@ vi.mock("../src/native-capture.ts", async () => {
 
 import { createDatabaseSource } from "../src/database-source.ts";
 import { retainedEvidenceReaderStatus } from "../src/evidence.ts";
-import { retainedNativeInputsResourceStatus } from "../src/inputs.ts";
+import { captureNativeInputs, retainedNativeInputsResourceStatus } from "../src/inputs.ts";
+import { proposedMobileHttpConfig } from "../src/mobile-http-policy.ts";
 import {
 	createNativeAuditSource,
 	type NativeAuditSource,
+	NativeAuditSourceError,
 	type NativeAuditSourceOptions,
 } from "../src/native-audit-source.ts";
 import { retainedNativeToolResourceStatus } from "../src/tool-provenance.ts";
@@ -557,6 +588,7 @@ beforeEach(async () => {
 	control.commands = [];
 	control.captures.clear();
 	control.mode = "good";
+	control.mobilePolicyMode = "orchestration-fixture";
 	control.rechecks = 0;
 	control.changedRecheck = 0;
 	control.inputsChanged = false;
@@ -577,6 +609,7 @@ beforeEach(async () => {
 	control.toolPhysicalCloses = 0;
 	control.toolHandle = undefined;
 	control.toolOriginalClose = undefined;
+	control.toolPaths = undefined;
 	control.realInputs = false;
 	control.inputFile = "";
 	control.inputCloseFault = false;
@@ -597,7 +630,7 @@ beforeEach(async () => {
 	const databaseRoot = path.join(cache, "advisory-db-3157b0e258782691");
 	await fs.mkdir(databaseRoot);
 	await fs.copyFile(
-		new URL("../../../crates/deny.toml", import.meta.url),
+		new URL("./fixtures/mobile-http-approved-policy.toml", import.meta.url),
 		path.join(repositoryRoot, "crates/deny.toml"),
 	);
 	selected = {
@@ -634,7 +667,102 @@ afterEach(async () => {
 	await expect(fs.lstat(resolved)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
-describe("same-root audit data orchestration with controlled tool/input/R fixtures", () => {
+describe("same-root audit data orchestration with controlled tool/input/R/policy fixtures", () => {
+	it.each(["cargo", "cargo-deny"] as const)(
+		"refuses a different captured %s before input or audit work",
+		async (role) => {
+			const expectedCargo = path.join(temporary, "selected-cargo");
+			const expectedDeny = path.join(temporary, "selected-deny");
+			control.toolPaths = {
+				cargo: expectedCargo,
+				"cargo-deny": expectedDeny,
+				[role]: path.join(temporary, "different-tool"),
+			};
+			const constrained = createNativeAuditSource({ ...selected, expectedCargo, expectedDeny });
+			try {
+				await expect(constrained.observe()).rejects.toMatchObject({ code: "NATIVE_AUDIT_CHANGED" });
+				expect(captureNativeInputs).not.toHaveBeenCalled();
+				expect(control.ids).toEqual(["tool-version-0", "tool-version-1", "tool-version-2"]);
+				expect(createDatabaseSource).not.toHaveBeenCalled();
+			} finally {
+				expect((await constrained.closeResources()).complete).toBe(true);
+				expect((await source.closeResources()).complete).toBe(true);
+			}
+		},
+	);
+	it("uses the constrained deny only for resolution and preserves child environments", async () => {
+		const expectedCargo = path.join(temporary, "selected-cargo");
+		const expectedDeny = path.join(temporary, "selected-deny");
+		control.toolPaths = { cargo: expectedCargo, "cargo-deny": expectedDeny };
+		const constrained = createNativeAuditSource({ ...selected, expectedCargo, expectedDeny });
+		try {
+			const observation = await constrained.observe();
+			expect(control.environment?.DRAFTYAK_CARGO_DENY === expectedDeny).toBe(true);
+			for (const command of control.commands) {
+				expect(Object.hasOwn(command.env, "DRAFTYAK_CARGO_DENY")).toBe(false);
+				expect(command.env).toEqual(selected.environment);
+			}
+			expect(
+				control.commands.find((command) => command.args[0] === "metadata")?.executable ===
+					expectedCargo,
+			).toBe(true);
+			await constrained.revalidate(observation);
+		} finally {
+			expect((await constrained.closeResources()).complete).toBe(true);
+			expect((await source.closeResources()).complete).toBe(true);
+		}
+	});
+	it.each(["expectedCargo", "expectedDeny"])(
+		"refuses relative or accessor %s without IO",
+		async (key) => {
+			try {
+				expect(() => createNativeAuditSource({ ...selected, [key]: "relative-tool" })).toThrow();
+				const getter = vi.fn(() => path.join(temporary, "selected-tool"));
+				const input = Object.defineProperty({ ...selected }, key, {
+					get: getter,
+					enumerable: true,
+				});
+				expect(() => createNativeAuditSource(input)).toThrow();
+				expect(getter).not.toHaveBeenCalled();
+				expect(control.ids).toEqual([]);
+			} finally {
+				expect((await source.closeResources()).complete).toBe(true);
+			}
+		},
+	);
+	it("refuses the real fixed graph guard before config, database or audit dispatch", async () => {
+		control.mobilePolicyMode = "real-guard";
+		try {
+			const refused = await source.observe().then(
+				() => false,
+				(error: unknown) =>
+					error instanceof NativeAuditSourceError && error.code === "NATIVE_AUDIT_CHANGED",
+			);
+			expect(refused).toBe(true);
+			expect(proposedMobileHttpConfig).toHaveBeenCalledTimes(1);
+			const graph = vi.mocked(proposedMobileHttpConfig).mock.calls[0]?.[0];
+			expect(
+				typeof graph === "object" &&
+					graph !== null &&
+					"packageCount" in graph &&
+					graph.packageCount === 2,
+			).toBe(true);
+			let configAbsent = false;
+			try {
+				await fs.lstat(path.join(selected.evidenceDirectory, "strict-deny.toml"));
+			} catch (error) {
+				configAbsent =
+					typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+			}
+			expect(configAbsent).toBe(true);
+			expect(createDatabaseSource).toHaveBeenCalledTimes(0);
+			expect(
+				control.ids.filter((id) => id === "strict-full" || id === "strict-advisory").length,
+			).toBe(0);
+		} finally {
+			expect((await source.closeResources()).complete).toBe(true);
+		}
+	});
 	it("binds real captured input snapshots before their post-metadata unchanged checks", async () => {
 		await source.closeResources();
 		control.metadata = await physicalInputGraph(selected.repositoryRoot);
@@ -793,7 +921,7 @@ describe("same-root audit data orchestration with controlled tool/input/R fixtur
 			expect((await source.closeResources()).complete).toBe(true);
 		}
 	});
-	it("binds both genuine sealed captures, preserves every other policy byte and returns data only", async () => {
+	it("binds sealed fixture captures, preserves every other policy byte and returns data only", async () => {
 		try {
 			const observation = await source.observe(),
 				data = source.data(observation);
@@ -804,6 +932,7 @@ describe("same-root audit data orchestration with controlled tool/input/R fixtur
 				strictPass: true,
 			});
 			expect(data.report.complete).toBe(true);
+			expect(data.policySha256 === FIXTURE_POLICY_SHA).toBe(true);
 			expect(data.captures).toHaveLength(6);
 			expect(data.graph.packageCount).toBe(2);
 			expect(data.graph.ancestorDigests).toEqual([]);
@@ -848,7 +977,10 @@ describe("same-root audit data orchestration with controlled tool/input/R fixtur
 			const inverse = config
 				.replace(/^db-path = .*\ndb-urls = .*\n/mu, "")
 				.replace("ignore = []\n", oldIgnore);
-			expect(inverse).toBe(original);
+			expect(original.split(REQWEST_DENY_ROW).length).toBe(2);
+			expect(config.includes(REQWEST_DENY_ROW)).toBe(false);
+			expect(inverse === original.replace(REQWEST_DENY_ROW, "")).toBe(true);
+			expect(Buffer.byteLength(original) - Buffer.byteLength(inverse)).toBe(26);
 			await source.revalidate(observation);
 			expect(control.rechecks).toBe(7);
 			expect(source.data(observation)).toBe(data);
@@ -942,7 +1074,7 @@ describe("same-root audit data orchestration with controlled tool/input/R fixtur
 			expect((await source.closeResources()).complete).toBe(true);
 		}
 	});
-	it("binds changed enabled-feature ancestor paths from each original metadata capture", async () => {
+	it("binds synthetic feature ancestor paths under the explicit unit policy seam", async () => {
 		control.reportMode = "combined";
 		let other: NativeAuditSource | undefined;
 		try {
@@ -999,6 +1131,7 @@ describe("same-root audit data orchestration with controlled tool/input/R fixtur
 		try {
 			await expect(source.observe()).rejects.toMatchObject({ code: "NATIVE_AUDIT_CHANGED" });
 			expect(control.ids).not.toContain("strict-full");
+			expect(proposedMobileHttpConfig).toHaveBeenCalledTimes(0);
 		} finally {
 			expect((await source.closeResources()).complete).toBe(true);
 		}
