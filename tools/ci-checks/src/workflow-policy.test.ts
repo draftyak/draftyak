@@ -2907,8 +2907,29 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 			"git apply x.patch",
 			"git submodule update --init",
 			"echo x && git pull --ff-only",
+			"/usr/bin/git checkout HEAD~1 -- .",
+			"git.exe checkout HEAD~1 -- .",
+			"GIT.EXE -C . switch main",
+			"./tools/git reset --hard",
+			"git lfs pull",
+			"git-lfs checkout",
+			"git clean -fdx",
 		]) {
 			const mutated = inJob(ci, "reserved", installStep, installStep + step(command));
+			expect([command, problems(ciFile, mutated).includes(message("reserved"))]).toEqual([
+				command,
+				true,
+			]);
+		}
+		// git in quotes, by a quoted path with a space in it, and after another command.
+		const block = (command: string): string => `      - run: |\n          ${command}\n`;
+		for (const command of [
+			'"git" checkout HEAD~1 -- .',
+			"'git' clean -fdx",
+			'"C:\\Program Files\\Git\\cmd\\git.exe" checkout HEAD~1 -- .',
+			'echo x; "/usr/bin/git" restore .',
+		]) {
+			const mutated = inJob(ci, "reserved", installStep, installStep + block(command));
 			expect([command, problems(ciFile, mutated).includes(message("reserved"))]).toEqual([
 				command,
 				true,
@@ -2917,8 +2938,17 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 		expect(
 			problems(spikesFile, inJob(spikes, "run", installStep, installStep + fetched)),
 		).toContain(message("run"));
-		// A git command that only reads leaves the tree as the gate saw it.
-		const reads = step("git diff --name-only HEAD^ HEAD && git log -1 --format=%H");
+		const dco = inJob(
+			sourceOf(dcoFile),
+			"dco",
+			gateStep,
+			gateStep + step("/usr/bin/git checkout HEAD~1"),
+		);
+		expect(problems(dcoFile, dco)).toContain(message("dco"));
+		// A git command that only reads leaves the tree as the gate saw it, however git is spelled.
+		const reads = step(
+			"git diff --name-only HEAD^ HEAD && git log -1 --format=%H && /usr/bin/git status && git.exe show HEAD",
+		);
 		expect(problems(ciFile, inJob(ci, "reserved", installStep, installStep + reads))).not.toContain(
 			message("reserved"),
 		);

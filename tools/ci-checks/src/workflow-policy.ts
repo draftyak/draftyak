@@ -232,7 +232,8 @@ const startsCommand = (step: YamlMap): boolean =>
 	(actionOf(step) === "actions/setup-node" && !plainBeforeGate(step));
 const packageManager = /(?<![\w.-])(?:pnpm|pnpx|npm|npx|yarn|corepack)(?![\w.-])/i;
 // A git command, after git's own options, that rewrites the working tree or adds files to it: after
-// the gate, it would leave a tree the gate never saw.
+// the gate, it would leave a tree the gate never saw. git may be started by a path, in quotes or as
+// git.exe, and git-lfs as a command of its own.
 const treeCommands = [
 	"checkout",
 	"switch",
@@ -253,9 +254,11 @@ const treeCommands = [
 	"submodule",
 	"bisect",
 	"clone",
+	"lfs",
+	"clean",
 ];
 const treeChange = new RegExp(
-	String.raw`(?<![\w./-])git(?:\s+(?:-[Cc]\s+\S+|--(?:git-dir|work-tree|namespace|exec-path|config-env)\s+\S+|-{1,2}[\w-]+(?:=\S+)?))*\s+(?:${treeCommands.join("|")})(?![\w.-])`,
+	String.raw`(?<![\w.-])(?:[^\s'"\x60;|&()]*[\\/])?["']?git(?:-lfs)?(?:\.exe)?["']?(?:\s+(?:-[Cc]\s+\S+|--(?:git-dir|work-tree|namespace|exec-path|config-env)\s+\S+|-{1,2}[\w-]+(?:=\S+)?))*\s+(?:${treeCommands.join("|")})(?![\w.-])`,
 	"i",
 );
 // What a step that may start a package manager in the checkout is, for the rules that must come
