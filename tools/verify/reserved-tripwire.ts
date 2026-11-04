@@ -597,7 +597,9 @@ const DEPENDENCY_FIELDS = new Set([
 ]);
 const LOCAL_SPEC = /^(?:link|file|portal):(.*)$/s;
 
-// package.json: entry points, dependency names and specs, and script tokens, at its package.
+// package.json: entry points, dependency names and specs, and script tokens, at its package. A
+// token reads as a path when it starts with a dot or a ~, which the shell expands to a home folder,
+// or holds a separator.
 function manifestReaches(json: JsonObject, dir: string, reach: Reach): boolean {
 	return json.object.some(([field, value]) => {
 		if (ENTRY_FIELDS.has(field)) {
@@ -621,7 +623,7 @@ function manifestReaches(json: JsonObject, dir: string, reach: Reach): boolean {
 							.some(
 								(token) =>
 									token !== "" &&
-									reach(token, /^\.|[\\/]/.test(token) ? dir : null, "manifest:scripts"),
+									reach(token, /^[.~]|[\\/]/.test(token) ? dir : null, "manifest:scripts"),
 							),
 			);
 		}

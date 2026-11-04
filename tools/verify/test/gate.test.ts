@@ -384,6 +384,13 @@ describe("refusals before any read or child start", () => {
 				"refs-config",
 			],
 			[
+				"a test script running a helper from the home folder",
+				{
+					"packages/a/package.json": '{ "name": "a", "scripts": { "test": "node ~/helper.ts" } }\n',
+				},
+				"refs-config",
+			],
+			[
 				"an eager glob import",
 				{
 					"packages/a/src/glob.ts": `export const m = import.meta.glob("${climb}/*.ts", { eager: true });\n`,

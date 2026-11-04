@@ -772,6 +772,24 @@ describe("refs-config", () => {
 		]);
 	});
 
+	it("refuses a script token that starts with ~, which the shell expands to a home folder, and leaves a script named so alone", async () => {
+		const scripts = (test: string): string => JSON.stringify({ name: "p", scripts: { test } });
+		const files = {
+			"a/package.json": scripts("node ~/helper.js"),
+			"b/package.json": scripts("node ~"),
+			"c/package.json": scripts("node ~other/x.js"),
+			"d/package.json": scripts("tsx --tsconfig=~/cfg.json x.ts"),
+			"e/package.json": JSON.stringify({ name: "e", scripts: { "~x": "node ./x.js" } }),
+			"e/x.js": "",
+		};
+		expect(await refused({ files }, "refs-config")).toEqual([
+			"a/package.json: outside",
+			"b/package.json: outside",
+			"c/package.json: outside",
+			"d/package.json: outside",
+		]);
+	});
+
 	it("refuses a config path with a name Windows trims and one from a drive's own working folder, and leaves a script's free text alone", async () => {
 		const files = {
 			"a/tsconfig.json": JSON.stringify({ files: ["./gen./x.ts"] }),
