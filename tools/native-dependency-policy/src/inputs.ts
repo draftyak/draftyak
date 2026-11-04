@@ -11,6 +11,12 @@ const MEMBERS = [
 	["crates/draftyak-transport/Cargo.toml", "draftyak-transport"],
 	["apps/app/src-tauri/Cargo.toml", "draftyak-desktop"],
 ] as const;
+const FIVE_MEMBERS = [
+	...MEMBERS,
+	["crates/draftyak-sidecar-platform/Cargo.toml", "draftyak-sidecar-platform"],
+] as const;
+type Members = typeof MEMBERS | typeof FIVE_MEMBERS;
+const FIVE_WORKSPACE_SHA = "712f78c418fe86521d5177f265a4ab5975df8056a1e0849896b8630769de7f48";
 const RAW = ["crates/Cargo.toml", "crates/Cargo.lock", "crates/deny.toml", "rust-toolchain.toml"];
 const REGISTRY = "registry+https://github.com/rust-lang/crates.io-index";
 const DOMAIN = "draftyak/native-dependency-policy/inputs/v1\0";
@@ -162,6 +168,7 @@ export function closeLegacyNativeInputsResources(): Promise<NativeInputsResource
 interface Capture {
 	readonly inputDigest: string;
 	readonly lockDigest: string;
+	readonly members: Members;
 	readonly identities: Map<string, string>;
 	readonly rustPaths: Set<string>;
 }
@@ -297,9 +304,9 @@ async function fileHash(
 		}
 	}
 }
-function configDirectories(): string[] {
+function configDirectories(members: Members): string[] {
 	const dirs = new Set<string>([""]);
-	for (const [manifest] of MEMBERS) {
+	for (const [manifest] of members) {
 		let directory = path.posix.dirname(manifest);
 		while (directory !== ".") {
 			dirs.add(directory);
@@ -332,6 +339,7 @@ async function capture(
 	repository: string,
 	cargoHome: string,
 	owner: ResourceOwner,
+	expectedMembers?: Members,
 ): Promise<Capture> {
 	const identities = new Map<string, string>();
 	const track = async (filename: string, kind: "file" | "directory"): Promise<BigIntStats> => {
@@ -347,14 +355,31 @@ async function capture(
 	await outsideConfiguration(repository, cargoHome);
 	const files: FileRow[] = [];
 	let bytes = 0n;
-	for (const name of [...RAW, ...MEMBERS.map(([manifest]) => manifest)]) {
+	const captureFile = async (name: string): Promise<{ hash: string; size: bigint }> => {
 		const filename = path.join(repository, name);
 		const stat = await track(filename, "file");
 		bytes += stat.size;
 		if (bytes > BigInt(MAX_TOTAL_BYTES)) return refuse();
-		files.push([name, await fileHash(filename, stat, owner)]);
+		const hash = await fileHash(filename, stat, owner);
+		files.push([name, hash]);
+		return { hash, size: stat.size };
+	};
+	let workspaceHash = "",
+		workspaceBytes = 0n;
+	for (const name of RAW) {
+		const captured = await captureFile(name);
+		if (name === "crates/Cargo.toml") {
+			workspaceHash = captured.hash;
+			workspaceBytes = captured.size;
+		}
 	}
-	for (const directory of configDirectories()) {
+	// Only the exact retained five-member declaration selects the additional DATA input.
+	// Fresh Cargo metadata must still match that entire fixed captured member set.
+	const members =
+		workspaceBytes === 163n && workspaceHash === FIVE_WORKSPACE_SHA ? FIVE_MEMBERS : MEMBERS;
+	if (expectedMembers !== undefined && members !== expectedMembers) return refuse("INPUTS_CHANGED");
+	for (const [manifest] of members) await captureFile(manifest);
+	for (const directory of configDirectories(members)) {
 		const folder = path.join(repository, directory, ".cargo");
 		const folderNames = (await fs.readdir(path.dirname(folder))).filter(
 			(name) => name.toLowerCase() === ".cargo",
@@ -410,7 +435,7 @@ async function capture(
 			}
 		}
 	};
-	for (const [manifest] of MEMBERS)
+	for (const [manifest] of members)
 		await walk(path.join(repository, path.posix.dirname(manifest)), 0);
 	const ordered = files.sort(([a], [b]) => compare(a, b));
 	const payload = ["inputs", 1, ordered, [...rustPaths].sort(compare), true];
@@ -422,12 +447,14 @@ async function capture(
 			.update(JSON.stringify(payload), "utf8")
 			.digest("hex"),
 		lockDigest,
+		members,
 		identities,
 		rustPaths,
 	};
 }
 function same(before: Capture, after: Capture): boolean {
 	return (
+		before.members === after.members &&
 		before.inputDigest === after.inputDigest &&
 		before.identities.size === after.identities.size &&
 		[...before.identities].every(([name, id]) => after.identities.get(name) === id)
@@ -439,7 +466,12 @@ function state(snapshot: NativeInputsSnapshot): State {
 	return value;
 }
 async function unchanged(value: State): Promise<void> {
-	if (!same(value.capture, await capture(value.repository, value.cargoHome, value.owner)))
+	if (
+		!same(
+			value.capture,
+			await capture(value.repository, value.cargoHome, value.owner, value.capture.members),
+		)
+	)
 		return refuse("INPUTS_CHANGED");
 }
 function object(value: unknown): Record<string, unknown> {
@@ -530,8 +562,9 @@ export async function bindNativeCargoPaths(
 			const input = object(metadata);
 			if (absolute(input.workspace_root) !== path.join(value.repository, "crates")) return refuse();
 			const paths: CargoPackagePaths[] = [];
+			const capturedMembers = value.capture.members;
 			const local = new Map(
-				MEMBERS.map(([manifest, name]) => [
+				capturedMembers.map(([manifest, name]) => [
 					path.join(value.repository, manifest),
 					{ manifest, name },
 				]),
@@ -592,7 +625,7 @@ export async function bindNativeCargoPaths(
 					}),
 				);
 			}
-			if (paths.length !== MEMBERS.length) return refuse();
+			if (paths.length !== capturedMembers.length) return refuse();
 			const members = list(input.workspace_members).map(text);
 			const roots = paths.map((p) => p.id).sort(compare);
 			if (
