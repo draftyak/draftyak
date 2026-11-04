@@ -851,6 +851,23 @@ describe("refusals before any read or child start", () => {
 		}
 	});
 
+	it("reads a path after a parenthesis inside double quotes as text, as cmd.exe and sh do, and refuses one that starts a command outside them", async () => {
+		const manifest = (test: string): string =>
+			`${JSON.stringify({ name: "a", private: true, scripts: { test } })}\n`;
+		const at = (test: string): Fixture => ({
+			files: { "packages/a/package.json": manifest(test) },
+		});
+		passed(await gate(fixture(at(`node -e "console.log(require('./package.json').name)"`))));
+		// A /regex/ there starts no command either; only the script-token check reads its token,
+		// which starts with a slash, as a path outside the checkout.
+		const regex = fixture(at('node -e "process.exit(/^v2/.test(process.version) ? 0 : 1)"'));
+		passed(await gate(regex, { checks: ["command-shadows"] }));
+		refusedWith(await gate(regex), [LINE["refs-config"] ?? ""]);
+		// Outside the quotes, a parenthesis still starts a command.
+		const outside = await gate(fixture(at('node -e "x()" && (cd sub && ./run)')));
+		refusedWith(outside, [LINE["command-shadows"] ?? ""]);
+	});
+
 	it("refuses a package.json whose script starts a command from a drive's own working folder, which cmd.exe runs from the package folder, in either case and on any drive, never reading what it would find there", async () => {
 		const manifest = (name: string, test: string): string =>
 			`${JSON.stringify({ name, private: true, scripts: { test } })}\n`;
@@ -965,6 +982,18 @@ describe("scriptCommands", () => {
 		];
 		expect(scriptCommands(written).toSorted()).toEqual(words.toSorted());
 		expect(scriptCommands("{ nope")).toEqual([]);
+	});
+
+	it("with quoting, splits a script only outside double quotes, to the next quote or the line's end", () => {
+		const scripts = {
+			a: `node -e "console.log(require('./package.json').name)" && "./bin/post" x`,
+			b: 'echo "a & b | c; (d)" | tee out',
+			c: 'node -e "open ( ./x\n./y z',
+		};
+		const text = JSON.stringify({ name: "x", scripts });
+		const quoted = ["./bin/post", "./y", "echo", "node", "tee"];
+		expect(scriptCommands(text, true).toSorted()).toEqual(quoted.toSorted());
+		expect(scriptCommands(text)).toEqual(expect.arrayContaining(["./package.json", "./x", "b"]));
 	});
 });
 

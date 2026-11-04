@@ -121,6 +121,10 @@ const PATH_WORD = /[\\/]|^[A-Za-z]:/;
 // Where a script's commands end: &&, ||, ;, |, & (but a redirection's >& or <&), parentheses,
 // backticks and line ends.
 const COMMAND_END = /&&|\|\||(?<![<>])&|[;|()`\r\n]/;
+// A double-quoted span, to the next " or the line's end, and the marks COMMAND_END splits at that
+// don't end a line.
+const QUOTED = /"[^"\r\n]*"?/g;
+const MARKS = /[&|;()`]/g;
 // A redirection before a command: [n]>, [n]>> or <, with its target or before it.
 const REDIRECTION = /^\d?(?:>>?|<)/;
 const BARE_REDIRECTION = /^\d?(?:>>?|<)$/;
@@ -150,15 +154,20 @@ function firstWord(command: string): string | undefined {
 // COMMAND_END, and each command's first word as cmd.exe reads it (firstWord). A word that starts by
 // a path is kept as it is: cmd.exe still looks one up from the folder (the part before a / as a
 // command, a \ path or a drive's working folder with each extension), so the gate refuses a script
-// that starts a command so.
-export function scriptCommands(text: string): string[] {
+// that starts a command so. With `quoting`, a script is split only outside double quotes, where
+// cmd.exe, which toggles its quoting at each ", reads those marks as text, as sh does: the words a
+// path refusal goes by. Without it, a quoted mark splits too, which gives more words to look for.
+export function scriptCommands(text: string, quoting = false): string[] {
 	const json = parseJson(text);
 	const words = new Set<string>();
 	for (const [field, scripts] of isObject(json) ? json.object : []) {
 		if (field !== "scripts" || !isObject(scripts)) continue;
 		for (const [, script] of scripts.object) {
 			if (typeof script !== "string") continue;
-			for (const command of script.split(COMMAND_END)) {
+			const read = quoting
+				? script.replace(QUOTED, (span) => span.replace(MARKS, "\uE000"))
+				: script;
+			for (const command of read.split(COMMAND_END)) {
 				const word = firstWord(command);
 				if (word !== undefined) words.add(word);
 			}
@@ -316,8 +325,8 @@ export async function gateWith(
 	// started there with an extension cmd.exe runs: pnpm and npm run scripts through cmd.exe on
 	// Windows, which would run it in place of the tool. By names and kinds alone, and in any case;
 	// only each folder's own package.json is read, for its scripts' first words. A package.json
-	// whose script starts a command by a path is refused as unsupported: cmd.exe looks that up from
-	// the folder too, in ways no name here covers.
+	// whose script starts a command by a path, outside double quotes, is refused as unsupported:
+	// cmd.exe looks that up from the folder too, in ways no name here covers.
 	if (enabled.has("command-shadows")) {
 		const found: Refusal[] = [];
 		for (const dir of new Set(["", ...packagesOf().dirs])) {
@@ -325,7 +334,8 @@ export async function gateWith(
 			const own = text(manifest);
 			const words = own === null ? [] : scriptCommands(own);
 			const byPath = (word: string): boolean => PATH_WORD.test(word);
-			if (words.some(byPath)) found.push({ rel: manifest, kind: "unsupported" });
+			const started = own === null ? [] : scriptCommands(own, true);
+			if (started.some(byPath)) found.push({ rel: manifest, kind: "unsupported" });
 			const names = new Set(
 				[...STARTED, ...words.filter((word) => !byPath(word))].flatMap(shadowNames),
 			);
