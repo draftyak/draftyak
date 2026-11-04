@@ -2978,6 +2978,18 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 				true,
 			]);
 		}
+		// A step with no shell runs in pwsh on a Windows runner, or on one a matrix may make Windows,
+		// when nothing sets a default; elsewhere in bash, where a backtick continues no line.
+		const backtick = ["- run: |", "    git `", "      checkout --quiet HEAD~1"];
+		for (const [runner, refused] of [
+			["windows-2025", true],
+			[`\${{ matrix.os }}`, true],
+			["ubuntu-24.04", false],
+		] as const) {
+			const source = job(...backtick).replace("runs-on: ubuntu-24.04", `runs-on: ${runner}`);
+			const found = checkWorkflow("x.yml", source, toolchain).join("\n");
+			expect([runner, found.includes(message("a"))]).toEqual([runner, refused]);
+		}
 		expect(
 			problems(spikesFile, inJob(spikes, "run", installStep, installStep + fetched)),
 		).toContain(message("run"));
@@ -3489,6 +3501,16 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 		const lines = [`pnpm ${mark}`, "  install --frozen-lockfile"].map((line) => `    ${line}`);
 		const source = job(`- run: ${preinstall}`, `- shell: ${shell}`, "  run: |", ...lines);
 		expect(checkWorkflow("x.yml", source, toolchain).join("\n")).toContain(census);
+	});
+
+	it("refuses an install split with a backtick in a step with no shell on a Windows runner, which runs it in pwsh", () => {
+		const lines = ["pnpm `", "  install --frozen-lockfile"].map((line) => `    ${line}`);
+		const source = job(`- run: ${preinstall}`, "- run: |", ...lines);
+		const windows = source.replace("runs-on: ubuntu-24.04", "runs-on: windows-2025");
+		expect(checkWorkflow("x.yml", windows, toolchain).join("\n")).toContain(census);
+		// A workflow default of bash, which ci.yml and spikes.yml set, joins at a backslash only.
+		const bash = windows.replace("jobs:", "defaults:\n  run:\n    shell: bash\njobs:");
+		expect(checkWorkflow("x.yml", bash, toolchain).join("\n")).not.toContain(census);
 	});
 
 	it("refuses pnpm i in place of the install in ci.yml and spikes.yml", () => {

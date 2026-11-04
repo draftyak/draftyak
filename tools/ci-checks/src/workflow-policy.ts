@@ -277,11 +277,24 @@ const continuations: Readonly<Record<string, RegExp>> = {
 	powershell: /[\\`]\r?\n/g,
 	cmd: /[\\^]\r?\n/g,
 };
+// Whether a job may run on Windows: its runs-on names a Windows label or is computed, or isn't a
+// label or a list of labels at all.
+const mayRunOnWindows = (runsOn: Yaml | undefined): boolean => {
+	const labels: readonly (Yaml | undefined)[] = Array.isArray(runsOn) ? runsOn : [runsOn];
+	return labels.some((label) => typeof label !== "string" || /windows|\$\{\{/i.test(label));
+};
+// The shell a step of `job` in `workflow` runs with: its own, else its job's or its workflow's
+// defaults.run.shell, else GitHub's default for its runner, pwsh on Windows and bash elsewhere.
+const shellOf = (step: YamlMap, job: YamlMap, workflow: YamlMap): string => {
+	const preset = (holder: YamlMap): Yaml | undefined => asMap(asMap(holder.defaults).run).shell;
+	const given = [step.shell, preset(job), preset(workflow)].find((shell) => shell !== undefined);
+	if (given === undefined) return mayRunOnWindows(job["runs-on"]) ? "pwsh" : "bash";
+	return /^\s*([\w.-]+)/.exec(String(given))?.[1]?.toLowerCase() ?? "";
+};
 // A step's command with its shell's continuations joined, so a command split over lines reads as
 // one; "" for a step with no command.
-const joined = (step: YamlMap): string => {
+const joined = (step: YamlMap, shell: string): string => {
 	if (typeof step.run !== "string") return "";
-	const shell = /^\s*([\w.-]+)/.exec(String(step.shell ?? ""))?.[1]?.toLowerCase() ?? "";
 	return step.run.replace(continuations[shell] ?? /\\\r?\n/g, " ");
 };
 // What a step that may start a package manager in the checkout is, for the rules that must come
@@ -1018,7 +1031,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 			report(["jobs", job, "steps"], `${job} must not check out again after the reserved gate`);
 		}
 		for (const [offset, step] of steps.slice(at + 1).entries()) {
-			if (treeChange.test(joined(step))) {
+			if (treeChange.test(joined(step, shellOf(step, definition, asMap(doc.value))))) {
 				report(
 					["jobs", job, "steps", at + 1 + offset],
 					`${job} must not change its working tree with git after the reserved gate`,
@@ -1570,7 +1583,8 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				report([...at, "with"], "pnpm/action-setup must not set run_install");
 			}
 			// Every install is exactly the checked one, or Intel macOS's scriptless pnpm.
-			if (installCommand.test(joined(step)) && step.run !== install && step.run !== intelMacPnpm) {
+			const command = joined(step, shellOf(step, jobMap, workflow));
+			if (installCommand.test(command) && step.run !== install && step.run !== intelMacPnpm) {
 				report(
 					at,
 					`install commands must be exactly ${install}, or the reviewed Intel macOS pnpm step`,
