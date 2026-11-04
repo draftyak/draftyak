@@ -97,8 +97,8 @@ function startCheckLines(
 // end start check
 
 // The command after its start checks: --names, --root <dir> (from the working folder; that tree is
-// checked with this checkout's own helpers) and --help. gate defaults to lib/gate.ts's runGate,
-// loaded only now.
+// checked with this checkout's own helpers; an empty one is a usage error, as it would name the
+// working folder) and --help. gate defaults to lib/gate.ts's runGate, loaded only now.
 export async function gateCli(
 	argv: readonly string[],
 	deps: {
@@ -116,7 +116,7 @@ export async function gateCli(
 			return 0;
 		}
 		if (arg === "--names" && !names) names = true;
-		else if (arg === "--root" && root === null && argv[index + 1] !== undefined) {
+		else if (arg === "--root" && root === null && (argv[index + 1] ?? "") !== "") {
 			root = path.resolve(argv[index + 1] ?? "");
 			index++;
 		} else {

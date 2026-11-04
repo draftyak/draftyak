@@ -1197,13 +1197,16 @@ describe("node tools/verify/gate.ts", () => {
 		);
 	});
 
-	it.each([[["--bogus"]], [["--root"]], [["--names", "--names"]], [["--help", "--names"]]])(
-		"exits 2 with the usage line for %j",
-		async (args) => {
-			const repo = fixture({ entry: true });
-			expect(await command(repo, args)).toEqual({ code: 2, lines: [USAGE], stderr: "" });
-		},
-	);
+	it.each([
+		[["--bogus"]],
+		[["--root"]],
+		[["--root", ""]],
+		[["--names", "--names"]],
+		[["--help", "--names"]],
+	])("exits 2 with the usage line for %j", async (args) => {
+		const repo = fixture({ entry: true });
+		expect(await command(repo, args)).toEqual({ code: 2, lines: [USAGE], stderr: "" });
+	});
 
 	it("prints the usage line for --help and exits 0, loading no gate", async () => {
 		const lines: string[] = [];
