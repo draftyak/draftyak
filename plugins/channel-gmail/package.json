@@ -8,7 +8,8 @@
     "./history/reduce": "./src/history/reduce.ts",
     "./history/read": "./src/history/read.ts",
     "./read": "./src/read.ts",
-    "./sync-history": "./src/sync-history.ts"
+    "./sync-history": "./src/sync-history.ts",
+    "./send": "./src/send.ts"
   },
   "publishConfig": {
     "exports": {
@@ -31,6 +32,10 @@
       "./sync-history": {
         "types": "./dist/sync-history.d.mts",
         "default": "./dist/sync-history.mjs"
+      },
+      "./send": {
+        "types": "./dist/send.d.mts",
+        "default": "./dist/send.mjs"
       }
     }
   },
