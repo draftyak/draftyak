@@ -3167,7 +3167,28 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 		const what = "a command that names a package manager";
 		const early = inJob(ci, "full", gateStep, `${gateStep}      - run: pnpm --version\n`);
 		expect(problems(ciFile, early)).toContain(`full must run ${preinstall} before ${what}`);
-		for (const command of ["pnpm --version", "npx tsx x.ts", "PNPM --version", "corepack enable"]) {
+		// Windows' spelling of an install, before the windows job's pre-install check.
+		const spelled = `${gateStep}      - run: pnpm.cmd install --frozen-lockfile\n`;
+		const windows = problems(ciFile, inJob(ci, "windows", gateStep, spelled));
+		expect(windows).toContain(`windows must run ${preinstall} before ${what}`);
+		expect(windows).toContain(census);
+		for (const command of [
+			"pnpm --version",
+			"npx tsx x.ts",
+			"PNPM --version",
+			"corepack enable",
+			"pnpm.cmd --version",
+			"npm.cmd run x",
+			"pnpm.exe --version",
+			"corepack.cmd enable",
+			"npx.cmd tsx x.ts",
+			"pnpm.ps1 --version",
+			"bun x.ts",
+			"bunx tsx x.ts",
+			"BUN.EXE run x",
+			"deno run x.ts",
+			"deno.exe task x",
+		]) {
 			expect(
 				checkWorkflow("x.yml", job(`- run: ${command}`), toolchain).join("\n"),
 				command,
@@ -3369,6 +3390,14 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 		"npx pnpm install --frozen-lockfile",
 		"pnpm --dir . install --frozen-lockfile",
 		"pnpm -C . i",
+		"pnpm.cmd install --frozen-lockfile",
+		"pnpm.exe i",
+		"PNPM.CMD install --frozen-lockfile",
+		"npm.cmd ci --ignore-scripts",
+		"pnpm.ps1 install --frozen-lockfile",
+		"bun install",
+		"bun add left-pad",
+		"deno install",
 	])("refuses the install command %s", (command) => {
 		expect(
 			checkWorkflow("x.yml", job(`- run: ${preinstall}`, `- run: ${install}`), toolchain),
