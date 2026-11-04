@@ -8,6 +8,7 @@ const config: UserConfig = {
 		"src/boundary.ts",
 		"src/decode.ts",
 		"src/read.ts",
+		"src/sync-history.ts",
 	],
 	root: "src",
 	unbundle: true,
