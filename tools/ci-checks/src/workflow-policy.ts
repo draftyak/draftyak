@@ -337,6 +337,15 @@ const installCommand =
 // The one step of each reserved job that carries the flag, and nothing else in it.
 const flag = { DRAFTYAK_RESERVED_TESTS: "1" };
 const unitProof = { env: flag, run: "node tools/verify/reserved-proof.ts --tier unit" };
+// Whether a value names the opt-in flag, in any case, as a key or in any string inside it.
+const flagName = /DRAFTYAK_RESERVED_TESTS/i;
+const namesFlag = (value: Yaml | undefined): boolean =>
+	typeof value === "string"
+		? flagName.test(value)
+		: Array.isArray(value)
+			? value.some(namesFlag)
+			: isMap(value) &&
+				Object.entries(value).some(([key, inner]) => flagName.test(key) || namesFlag(inner));
 // Each ci.yml job's own commands, after the gate and, in every job but required, the source
 // capture, which the check puts first; the shard, collector and ordinary-heavy jobs list their
 // own checkout and setup-node, and the gate right after them.
@@ -1299,6 +1308,29 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				["jobs", job, "container"],
 				`${job} must not run in a container, whose env and options its reserved gate step would inherit`,
 			);
+		}
+	}
+	// The opt-in flag only on the reviewed proof steps, each unchanged in its own job: in no other
+	// step, job setting or workflow setting, as a name or in any text.
+	const flagOnly =
+		"DRAFTYAK_RESERVED_TESTS may appear only on the reviewed reserved proof steps, unchanged";
+	const without = (map: YamlMap, key: string): YamlMap =>
+		Object.fromEntries(Object.entries(map).filter(([name]) => name !== key));
+	if (namesFlag(without(workflow, "jobs"))) report([], flagOnly);
+	const reviewedCommands: Readonly<Record<string, readonly YamlMap[]>> = ci
+		? ciCommands
+		: spikes
+			? spikesCommands
+			: {};
+	for (const [job, definition] of Object.entries(asMap(workflow.jobs))) {
+		const jobMap = asMap(definition);
+		if (namesFlag(without(jobMap, "steps"))) report(["jobs", job], flagOnly);
+		const flagged = (reviewedCommands[job] ?? []).filter(namesFlag);
+		for (const [index, step] of asList(jobMap.steps).map(asMap).entries()) {
+			const own = unnamed(step);
+			if (namesFlag(own) && !flagged.some((reviewed) => isDeepStrictEqual(own, reviewed))) {
+				report(["jobs", job, "steps", index], flagOnly);
+			}
 		}
 	}
 

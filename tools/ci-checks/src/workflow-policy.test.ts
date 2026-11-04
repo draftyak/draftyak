@@ -3004,6 +3004,57 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 		expect(checkWorkflow("x.yml", both, toolchain)).toEqual([]);
 	});
 
+	const flagOnly =
+		"DRAFTYAK_RESERVED_TESTS may appear only on the reviewed reserved proof steps, unchanged";
+
+	it("refuses the opt-in flag anywhere but the reviewed proof steps, unchanged in their own jobs, in any workflow", () => {
+		for (const [file, source] of sources)
+			expect(problems(file, source), file).not.toContain(flagOnly);
+		const cheapLast = "        run: pnpm verify --profile cheap\n";
+		const unitStep =
+			"      - name: Opt-in reserved unit suites and their execution proof\n        env:\n          DRAFTYAK_RESERVED_TESTS: '1'\n        run: node tools/verify/reserved-proof.ts --tier unit\n";
+		expect(ci).toContain(unitStep);
+		// One more step in the cheap job: the flag in its env, its command or its env in lower case,
+		// or an exact copy of the reserved job's proof step.
+		for (const step of [
+			"      - if: needs.changes.outputs.docs-only != 'true'\n        env:\n          DRAFTYAK_RESERVED_TESTS: '1'\n        run: pnpm test\n",
+			"      - run: DRAFTYAK_RESERVED_TESTS=1 pnpm test\n",
+			"      - env:\n          draftyak_reserved_tests: '1'\n        run: pnpm test\n",
+			unitStep,
+		]) {
+			const mutated = inJob(ci, "cheap", cheapLast, cheapLast + step);
+			expect(problems(ciFile, mutated), step).toContain(flagOnly);
+		}
+		// The reviewed steps changed in their own jobs.
+		const changed = unitStep.replace("--tier unit", "--tier unit --names");
+		expect(problems(ciFile, inJob(ci, "reserved", unitStep, changed))).toContain(flagOnly);
+		const everySpike = inJob(
+			spikes,
+			"run",
+			"          reserved=0\n",
+			"          reserved=0\n          export DRAFTYAK_RESERVED_TESTS=1\n",
+		);
+		expect(problems(spikesFile, everySpike)).toContain(flagOnly);
+		// A job of actions alone, a whole workflow, and another workflow's copy of a reviewed step.
+		const jobEnv = workflow(pr).replace(
+			"    runs-on: ubuntu-24.04\n",
+			"    runs-on: ubuntu-24.04\n    env:\n      DRAFTYAK_RESERVED_TESTS: '1'\n",
+		);
+		const workflowEnv = workflow(pr).replace(
+			"  TURBO_TELEMETRY_DISABLED: '1'\n",
+			"  TURBO_TELEMETRY_DISABLED: '1'\n  DRAFTYAK_RESERVED_TESTS: '1'\n",
+		);
+		const copy = job(
+			"- env:",
+			"    DRAFTYAK_RESERVED_TESTS: '1'",
+			"  run: node tools/verify/reserved-proof.ts --tier unit",
+		);
+		for (const source of [jobEnv, workflowEnv, copy]) {
+			expect(source).toContain("DRAFTYAK_RESERVED_TESTS: '1'");
+			expect(checkWorkflow("x.yml", source, toolchain).join("\n")).toContain(flagOnly);
+		}
+	});
+
 	it("needs the gate and the pre-install check before setup-node with more than the pinned version", () => {
 		const what = "setup-node with more than the pinned Node version";
 		const cached = [
