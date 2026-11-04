@@ -16,12 +16,13 @@ import { type Checkout, fold, type Kind } from "./safe-fs.ts";
 // give. A named file (a candidate) is only kind-checked, never read: one that exists must be a
 // regular, listed file of the checkout, in real folders. A missing one is fine, as no tool can read
 // it, except one whose path names a reserved word, which is refused either way. A path or glob that
-// leaves the checkout (absolute elsewhere, or climbing above the root on its way, even if it comes
-// back in) is refused as "outside", whether or not anything is there. Bare specifiers and names,
-// which resolve to installed dependencies, aren't followed, and nothing below node_modules or .git
-// is. A value that redirects a tool in a form these checks don't follow (an imports pattern, a glob
-// import, a Biome config from a package, a file: URL specifier, a toolchain path, a .cargo config
-// key but paths and [patch]) is refused as "unsupported".
+// leaves the checkout (absolute elsewhere, climbing above the root on its way, even if it comes back
+// in, or from a drive's own working folder) is refused as "outside", whether or not anything is
+// there. Bare specifiers and names, which resolve to installed dependencies, aren't followed, and
+// nothing below node_modules or .git is. A value that redirects a tool in a form these checks don't
+// follow (an imports pattern, a glob import, a path with a name Windows trims, a Biome config from a
+// package, a file: URL specifier, a toolchain path, a .cargo config key but paths and [patch]) is
+// refused as "unsupported".
 
 export type RefusedKind = Kind | "unlisted" | "reserved" | "unparsable" | "unsupported" | "outside";
 
@@ -126,6 +127,33 @@ export function resolveFrom(
 	return resolved.join("/");
 }
 
+// A path from a drive's own working folder (C:x), which may lie anywhere.
+const DRIVE_RELATIVE = /^[A-Za-z]:(?![\\/])/;
+
+// Why a value resolveFrom gave null for is still a path a tool would open, for the callers that
+// refuse it rather than skip it: "outside" for one from a drive's own working folder, and
+// "unsupported" for one with a name ending in a dot or a space, which Windows trims, so that it
+// opens another file than the one named. null for any other value: a glob, a URL, a computed part,
+// or a path below node_modules or .git.
+export function unfollowedPath(
+	checkout: Checkout,
+	from: string,
+	value: string,
+): "outside" | "unsupported" | null {
+	const text = value.replaceAll("\\", "/");
+	if (DRIVE_RELATIVE.test(text)) return "outside";
+	if (text === "" || NOT_A_PATH.test(text)) return null;
+	let parts: string[];
+	if (absolutePath(text)) {
+		const below = belowRoot(checkout, text);
+		if (below === OUTSIDE) return null;
+		parts = below.split("/");
+	} else if (text.includes(":")) return null;
+	else parts = [...from.split("/"), ...text.split("/")];
+	const trimmed = (part: string): boolean => part !== "." && part !== ".." && /[. ]$/.test(part);
+	return parts.some(trimmed) ? "unsupported" : null;
+}
+
 // The candidates one check names, each checked once, and what it refused.
 export class Candidates {
 	readonly #checkout: Checkout;
@@ -228,6 +256,10 @@ function rustRefs(input: ReferenceInput, candidates: Candidates, file: string, t
 		const rel = resolveFrom(input.checkout, from, value);
 		if (rel === OUTSIDE) candidates.refuse(file, "outside");
 		else if (rel !== null) candidates.file(rel);
+		else {
+			const why = unfollowedPath(input.checkout, from, value);
+			if (why !== null) candidates.refuse(file, why);
+		}
 	};
 	for (const decl of modDecls(text)) {
 		if (decl.inline) continue;
@@ -597,12 +629,18 @@ function cargoRefs(
 		return;
 	}
 	const at = config ? dirOf(dir) : dir;
-	// A path below the checkout, or null; one that leaves it refuses this file.
+	// A path below the checkout, or null; one that leaves it, or that unfollowedPath names, refuses
+	// this file.
 	const named = (value: Toml | undefined): string | null => {
-		const rel = typeof value === "string" ? resolveFrom(input.checkout, at, value) : null;
-		if (rel !== OUTSIDE) return rel;
-		candidates.refuse(file, "outside");
-		return null;
+		if (typeof value !== "string") return null;
+		const rel = resolveFrom(input.checkout, at, value);
+		if (rel === OUTSIDE) {
+			candidates.refuse(file, "outside");
+			return null;
+		}
+		const why = rel === null ? unfollowedPath(input.checkout, at, value) : null;
+		if (why !== null) candidates.refuse(file, why);
+		return rel;
 	};
 	const crate = (value: Toml | undefined): void => {
 		const rel = named(value);
@@ -758,19 +796,26 @@ function moduleRefs(
 		}
 		const relative = relativeLiteral(value);
 		let rel: string | typeof OUTSIDE | null;
+		let from = "";
+		let named = value;
 		if (config || (relative && field !== "module:other")) {
 			if (anchor === null) continue;
+			from = anchor;
 			rel = resolveFrom(input.checkout, anchor, value);
 		} else if (field === "module:other") continue;
 		else if (FILE_URL.test(value)) {
 			candidates.refuse(file, "unsupported");
 			continue;
 		} else if (ABSOLUTE_SPECIFIER.test(value)) {
-			rel = resolveFrom(input.checkout, "", value.replace(/[?#].*$/s, ""));
+			named = value.replace(/[?#].*$/s, "");
+			rel = resolveFrom(input.checkout, "", named);
 		} else continue;
 		if (rel === OUTSIDE) candidates.refuse(file, "outside");
-		else if (rel === null) continue;
-		else if (relative || !config) moduleTarget(input, candidates, rel);
+		else if (rel === null) {
+			// A config's strings are free text: only a module's paths are refused here.
+			const why = config ? null : unfollowedPath(input.checkout, from, named);
+			if (why !== null) candidates.refuse(file, why);
+		} else if (relative || !config) moduleTarget(input, candidates, rel);
 		else if (candidates.kindOf(rel) !== "dir") candidates.file(rel);
 	}
 }
@@ -872,7 +917,8 @@ const HOME_OR_DRIVE_SPEC = /^(?:~[\\/]|[A-Za-z]:(?![\\/]))/;
 // A script token that reads as a path (it starts with a dot or holds a separator), from its
 // package's folder: a command may run or read it, so it is checked as a module Node could load from
 // there. One that leaves the checkout refuses the manifest, /dev/null too, which on Windows names a
-// file on the current drive.
+// file on the current drive, and so does one from a drive's own working folder. Tokens are free
+// text, so a name Windows trims is refused only in a token that starts with ./ or ../.
 function scriptToken(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -883,6 +929,11 @@ function scriptToken(
 	const rel = resolveFrom(input.checkout, anchor, value);
 	if (rel === OUTSIDE) candidates.refuse(file, "outside");
 	else if (rel !== null) moduleTarget(input, candidates, rel);
+	else {
+		const why = unfollowedPath(input.checkout, anchor, value);
+		const relative = relativeLiteral(value.replaceAll("\\", "/"));
+		if (why === "outside" || (why === "unsupported" && relative)) candidates.refuse(file, why);
+	}
 }
 
 // Each pointer of a package.json, tsconfig or HTML file but tsconfig include, which scan-tsc
@@ -914,6 +965,7 @@ function configRefs(
 			}
 			rel = resolveFrom(input.checkout, anchor, value);
 		} else if (spec && HOME_OR_DRIVE_SPEC.test(value)) rel = OUTSIDE;
+		else if (field === "tsconfig:extends" && DRIVE_RELATIVE.test(value)) rel = OUTSIDE;
 		else if ((spec || field === "tsconfig:extends") && ABSOLUTE_SPECIFIER.test(value)) {
 			rel = resolveFrom(input.checkout, "", value);
 		} else continue;
@@ -926,7 +978,11 @@ function configRefs(
 			candidates.refuse(file, "unsupported");
 			continue;
 		}
-		if (rel === null) continue;
+		if (rel === null) {
+			const why = unfollowedPath(input.checkout, anchor ?? "", value);
+			if (why !== null) candidates.refuse(file, why);
+			continue;
+		}
 		const kind = (): Kind => candidates.kindOf(rel);
 		// A dependency spec here is a path: one anchored at its package starts with a dot.
 		if (field === "manifest:local" || field === "manifest:dependency") {

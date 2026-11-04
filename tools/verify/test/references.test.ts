@@ -180,6 +180,21 @@ describe("refs-rust", () => {
 		]);
 	});
 
+	it("refuses a #[path] or include! value with a name Windows trims, and one from a drive's own working folder", async () => {
+		const files = {
+			"r/Cargo.toml": '[package]\nname = "r"\n',
+			"r/src/lib.rs": '#[path = "gen./out.rs"]\nmod out;\n',
+			"s/src/lib.rs": 'const T: &str = include_str!("C:t.txt");\n',
+			"t/src/lib.rs": 'const T: &str = include_str!("data /t.txt");\n',
+			"u/src/lib.rs": '#[path = "gen/out.rs"]\nmod out;\n',
+		};
+		expect(await refused({ files }, "refs-rust")).toEqual([
+			"r/src/lib.rs: unsupported",
+			"s/src/lib.rs: outside",
+			"t/src/lib.rs: unsupported",
+		]);
+	});
+
 	it("refuses a module file replaced by a junction", async () => {
 		const repo = fixture({ files: crate("mod a;\n") });
 		repo.link("r/src/a.rs", repo.outside, "junction");
@@ -298,6 +313,19 @@ describe("refs-cargo", () => {
 			"w/.cargo/config.toml: outside",
 			"x/Cargo.toml: outside",
 			"y/Cargo.toml: outside",
+		]);
+	});
+
+	it("refuses a Cargo path with a name Windows trims, and one from a drive's own working folder", async () => {
+		const files = {
+			"r/Cargo.toml": '[package]\nname = "r"\n\n[lib]\npath = "src./lib.rs"\n',
+			"s/Cargo.toml": '[package]\nname = "s"\n\n[dependencies]\nc = { path = "C:c" }\n',
+			"t/Cargo.toml": '[package]\nname = "t"\n\n[dependencies]\nc = { path = "../c " }\n',
+		};
+		expect(await refused({ files }, "refs-cargo")).toEqual([
+			"r/Cargo.toml: unsupported",
+			"s/Cargo.toml: outside",
+			"t/Cargo.toml: unsupported",
 		]);
 	});
 
@@ -449,6 +477,19 @@ describe("refs-modules", () => {
 			"p/b.ts: unsupported",
 			"p/c.ts: unsupported",
 			"p/d.ts: outside",
+		]);
+	});
+
+	it("refuses a module path with a name Windows trims, relative or absolute, and leaves a config's free text alone", async () => {
+		const files = {
+			"p/a.ts": 'import "./helpers./h.js";\n',
+			"p/b.ts": 'import "<IN>/p/gen./x.js";\n',
+			"p/c.ts": 'const m = await import("./x.ts?raw");\nimport "./ok.ts";\n',
+			"p/vitest.config.ts": 'export default { test: { setupFiles: ["./setup./x.ts"] } };\n',
+		};
+		expect(await refused({ files }, "refs-modules")).toEqual([
+			"p/a.ts: unsupported",
+			"p/b.ts: unsupported",
 		]);
 	});
 
@@ -652,6 +693,31 @@ describe("refs-config", () => {
 			"c/package.json: outside",
 			"d/package.json: outside",
 			"e/package.json: outside",
+		]);
+	});
+
+	it("refuses a config path with a name Windows trims and one from a drive's own working folder, and leaves a script's free text alone", async () => {
+		const files = {
+			"a/tsconfig.json": JSON.stringify({ files: ["./gen./x.ts"] }),
+			"b/tsconfig.json": JSON.stringify({ extends: "C:base.json" }),
+			"c/tsconfig.json": JSON.stringify({ compilerOptions: { types: ["C:types"] } }),
+			"d/package.json": JSON.stringify({ name: "d", main: "C:main.js" }),
+			"e/index.html": '<script type="module" src="./src./main.js"></script>\n',
+			"f/package.json": JSON.stringify({ name: "f", scripts: { test: "node ./gen./x.mjs" } }),
+			"g/package.json": JSON.stringify({ name: "g", scripts: { test: "node C:x/y.js" } }),
+			"h/package.json": JSON.stringify({
+				name: "h",
+				scripts: { test: "turbo run test --filter=!./tools/x" },
+			}),
+		};
+		expect(await refused({ files }, "refs-config")).toEqual([
+			"a/tsconfig.json: unsupported",
+			"b/tsconfig.json: outside",
+			"c/tsconfig.json: outside",
+			"d/package.json: outside",
+			"e/index.html: unsupported",
+			"f/package.json: unsupported",
+			"g/package.json: outside",
 		]);
 	});
 

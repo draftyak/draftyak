@@ -422,6 +422,34 @@ describe("refusals before any read or child start", () => {
 		expect(named.endsWith(": packages/a/gen/x.mjs (unlisted)")).toBe(true);
 	});
 
+	it("refuses a path from a drive's own working folder and one with a name Windows trims, naming only the file that holds it", async () => {
+		const cases: readonly (readonly [string, Readonly<Record<string, string>>, string, string])[] =
+			[
+				[
+					"a Cargo path from a drive's own working folder",
+					{
+						"crates/r/Cargo.toml":
+							'[package]\nname = "r"\nversion = "0.0.0"\n\n[dependencies]\nc = { path = "C:c" }\n',
+					},
+					"refs-cargo",
+					"outside",
+				],
+				[
+					"a module path with a name Windows trims",
+					{ "packages/a/src/trim.ts": 'import "./gen./x.ts";\n' },
+					"refs-modules",
+					"unsupported",
+				],
+			];
+		for (const [label, files, check, kind] of cases) {
+			const repo = fixture({ files });
+			refusedWith(await gate(repo), [LINE[check] ?? ""]);
+			const named = shown(await gate(repo, { names: true }))[0] ?? "";
+			const file = Object.keys(files)[0] ?? "";
+			expect([label, named.endsWith(`: ${file} (${kind})`)]).toEqual([label, true]);
+		}
+	});
+
 	it("refuses an ignored Rust module a bare mod declaration reaches, without reading it", async () => {
 		const repo = fixture({
 			files: { "crates/r/src/lib.rs": "mod m;\nmod x;\n" },
