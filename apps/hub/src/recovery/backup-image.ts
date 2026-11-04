@@ -26,6 +26,13 @@ import { DATABASE_FILE_SUFFIXES, flushDirectory } from "../store/durable-file.ts
 import { captureMigrationPlan, migrate } from "../store/migrator.ts";
 import { assertSettings, type SqliteDatabase } from "../store/open.ts";
 import { HubStore, type SqlReader } from "../store/store.ts";
+import {
+	BACKUP_ARTIFACT_HEADER_SIZE,
+	decodeBackupArtifactHeader,
+	encodeBackupArtifactHeader,
+} from "./backup-artifact.ts";
+import { verifyRecoveryBinding } from "./backup-bindings.ts";
+import { captureBackupImageBinding } from "./backup-image-binding.ts";
 import { copyBackupImageRows } from "./backup-image-copy.ts";
 export const NATIVE_BACKUP_IMAGE_CHUNK_BYTES = 65_536;
 export class NativeBackupImageError extends Error {
@@ -38,8 +45,15 @@ export class NativeBackupImageError extends Error {
 export interface NativeBackupImage {
 	readonly byteLength: number;
 	readonly sha256: string;
+	/** Owned mutable DATA copy from the image's source transaction, never key or grant proof. */
+	readonly recoveryBinding: Buffer | null;
+	digestArtifact(header: unknown, peer: unknown): Promise<NativeBackupArtifactDigest>;
 	bytes(peer: unknown): AsyncIterable<Uint8Array>;
 	close(): Promise<void>;
+}
+export interface NativeBackupArtifactDigest {
+	readonly byteLength: number;
+	readonly sha256: string;
 }
 export interface NativeBackupImages {
 	create(execution: unknown, peer: unknown): Promise<NativeBackupImage>;
@@ -274,6 +288,13 @@ export function createNativeBackupImagesHandle(
 	let closing: Promise<void> | undefined;
 	const pending = new Set<Promise<unknown>>();
 	const resources = new Set<ImageFiles>();
+	const snapshotBindings = new Set<Buffer>();
+	const discardSnapshotBinding = (binding: Buffer | null): void => {
+		if (binding) {
+			binding.fill(0);
+			snapshotBindings.delete(binding);
+		}
+	};
 	const streams = new Set<Stream>();
 	const used = new WeakSet<object>();
 	const held = (): void => {
@@ -301,6 +322,8 @@ export function createNativeBackupImagesHandle(
 	};
 	const materialize = async (execution: unknown, peer: unknown): Promise<NativeBackupImage> => {
 		let files: ImageFiles | undefined;
+		let recoveryBinding: Buffer | null = null;
+		let published = false;
 		try {
 			signer(execution, peer);
 			if (
@@ -325,6 +348,8 @@ export function createNativeBackupImagesHandle(
 			signer(execution, peer);
 			original.write.call(store, (source) => {
 				original.verify.call(audit, source);
+				recoveryBinding = captureBackupImageBinding(source);
+				if (recoveryBinding) snapshotBindings.add(recoveryBinding);
 				copyBackupImageRows(source, destination, reader(template));
 			});
 			signer(execution, peer);
@@ -389,21 +414,97 @@ export function createNativeBackupImagesHandle(
 			signer(execution, peer);
 			let started = false;
 			const ownedStreams = new Set<Stream>();
+			const scans = new Set<Promise<unknown>>();
+			let scanStarted = false;
 			const closeImage = (): Promise<void> => {
 				stopped = true;
+				discardSnapshotBinding(recoveryBinding);
 				return Promise.allSettled([...ownedStreams].map((stop) => stop()))
-					.then((results) => {
+					.then(async (results) => {
+						await Promise.allSettled([...scans]);
 						if (results.some((result) => result.status === "rejected")) unavailable();
 						return closeFiles(owned);
 					})
 					.catch(unavailable);
 			};
-			return Object.freeze({
+			const image: NativeBackupImage = Object.freeze({
 				byteLength,
 				sha256,
+				recoveryBinding: recoveryBinding === null ? null : Buffer.from(recoveryBinding),
+				digestArtifact(...arguments_: unknown[]): Promise<NativeBackupArtifactDigest> {
+					const settled = Promise.withResolvers<NativeBackupArtifactDigest>();
+					pending.add(settled.promise);
+					scans.add(settled.promise);
+					let prefix: Buffer | undefined;
+					try {
+						if (arguments_.length !== 2 || scanStarted || started) unavailable();
+						scanStarted = true;
+						const finalPeer = arguments_[1];
+						check(finalPeer);
+						const decoded = decodeBackupArtifactHeader(arguments_[0]);
+						try {
+							if (
+								decoded.byteLength !== byteLength ||
+								decoded.sha256 !== sha256 ||
+								!recoveryBinding ||
+								!decoded.binding.equals(recoveryBinding) ||
+								!verifyRecoveryBinding(masterKey, decoded.capsule, decoded.binding)
+							)
+								unavailable();
+							prefix = encodeBackupArtifactHeader(
+								decoded.capsule,
+								decoded.binding,
+								decoded.byteLength,
+								decoded.sha256,
+							);
+						} finally {
+							decoded.capsule.fill(0);
+							decoded.binding.fill(0);
+						}
+						check(finalPeer);
+						const wholeLength = byteLength + BACKUP_ARTIFACT_HEADER_SIZE;
+						if (!Number.isSafeInteger(wholeLength) || !prefix) unavailable();
+						const ownedPrefix = prefix;
+						void (async () => {
+							let buffer: Buffer | undefined;
+							try {
+								buffer = Buffer.alloc(NATIVE_BACKUP_IMAGE_CHUNK_BYTES);
+								const whole = createHash("sha256").update(ownedPrefix);
+								const body = createHash("sha256");
+								for (let offset = 0; offset < byteLength; ) {
+									const count = await readChunk(buffer, offset, finalPeer);
+									check(finalPeer);
+									const chunk = buffer.subarray(0, count);
+									whole.update(chunk);
+									body.update(chunk);
+									offset += count;
+								}
+								const size = (await imageFile.stat({ bigint: true })).size;
+								check(finalPeer);
+								if (size !== info.size || body.digest("hex") !== sha256) unavailable();
+								settled.resolve(
+									Object.freeze({ byteLength: wholeLength, sha256: whole.digest("hex") }),
+								);
+							} catch {
+								settled.reject(new NativeBackupImageError());
+							} finally {
+								buffer?.fill(0);
+								ownedPrefix.fill(0);
+								scans.delete(settled.promise);
+								pending.delete(settled.promise);
+							}
+						})();
+					} catch {
+						prefix?.fill(0);
+						scans.delete(settled.promise);
+						pending.delete(settled.promise);
+						settled.reject(new NativeBackupImageError());
+					}
+					return settled.promise;
+				},
 				bytes(finalPeer: unknown): AsyncIterable<Uint8Array> {
 					try {
-						if (stopped || started) unavailable();
+						if (stopped || started || scans.size > 0) unavailable();
 						signer(execution, finalPeer);
 						started = true;
 						const deliveries = new Set<Promise<void>>();
@@ -478,13 +579,19 @@ export function createNativeBackupImagesHandle(
 				},
 				close: closeImage,
 			});
+			published = true;
+			return image;
 		} catch {
 			if (files) await closeFiles(files).catch(() => unavailable());
 			throw new NativeBackupImageError();
+		} finally {
+			if (!published) discardSnapshotBinding(recoveryBinding);
 		}
 	};
 	const beginClose = (): void => {
 		if (phase === "open") phase = "closing";
+		for (const binding of snapshotBindings) binding.fill(0);
+		snapshotBindings.clear();
 	};
 	const close = (): Promise<void> => {
 		beginClose();
