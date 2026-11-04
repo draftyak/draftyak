@@ -271,6 +271,7 @@ class Fixture {
 		GITHUB_REF: "refs/heads/m0",
 		GITHUB_SHA: CONTROL,
 		GITHUB_WORKFLOW_SHA: CONTROL,
+		NATIVE_SUPERVISOR_CONTROL_SHA: CONTROL,
 		GITHUB_WORKFLOW_REF: "draftyak/draftyak/.github/workflows/native-supervisor.yml@refs/heads/m0",
 		GITHUB_WORKSPACE: this.workspace,
 		RUNNER_TEMP: this.temporary,
@@ -772,6 +773,27 @@ describe("native supervisor controlled execution", () => {
 			expect(f.commands).toHaveLength(0);
 		},
 	);
+	it("refuses a self-consistent unadmitted control before executing any source command", async () => {
+		const f = fixture();
+		const resolved = "e".repeat(40);
+		const env = {
+			...f.env,
+			GITHUB_SHA: resolved,
+			GITHUB_WORKFLOW_SHA: resolved,
+		};
+		f.state.control = resolved;
+		const context = nativeSupervisorContext(env, "darwin", "arm64", "26.12.0");
+		expect(context.sha).toBe(context.workflowSha);
+		expect(f.state.control).toBe(context.sha);
+		expect(context.controlSha).toBe(CONTROL);
+		await expect(
+			runNativeSupervisor(context, env, f.git, f.execute, f.request, f.held.io),
+		).rejects.toThrow();
+		expect(f.execute).not.toHaveBeenCalled();
+		expect(f.commands).toHaveLength(0);
+		expect(f.request).not.toHaveBeenCalled();
+		expect(existsSync(f.receipt)).toBe(false);
+	});
 	it.each(["control", "head", "dirty", "untracked", "controlTree", "sourceTree"] as const)(
 		"rechecks %s after source execution",
 		async (field) => {
