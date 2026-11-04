@@ -118,11 +118,39 @@ const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 // working folder (C:x), which on the checkout's drive is the package folder pnpm runs it in.
 const PATH_WORD = /[\\/]|^[A-Za-z]:/;
 
+// Where a script's commands end: &&, ||, ;, |, & (but a redirection's >& or <&), parentheses,
+// backticks and line ends.
+const COMMAND_END = /&&|\|\||(?<![<>])&|[;|()`\r\n]/;
+// A redirection before a command: [n]>, [n]>> or <, with its target or before it.
+const REDIRECTION = /^\d?(?:>>?|<)/;
+const BARE_REDIRECTION = /^\d?(?:>>?|<)$/;
+
+// A command's first word as cmd.exe reads it, in lower case: past a leading @, leading NAME=value
+// assignments and redirections (>x, >> x, 2>x, <x), and ending at the first <, >, , or =, with
+// carets and quotes dropped; undefined for a command with none.
+function firstWord(command: string): string | undefined {
+	const tokens = command
+		.replaceAll("^", "")
+		.replace(/^[\s@]+/, "")
+		.split(/\s+/);
+	for (let at = 0; at < tokens.length; at++) {
+		const token = (tokens[at] ?? "").replace(/^[,;=]+/, "").replace(/^["']+|["']+$/g, "");
+		if (token === "" || ASSIGNMENT.test(token)) continue;
+		if (REDIRECTION.test(token)) {
+			if (BARE_REDIRECTION.test(token)) at++;
+			continue;
+		}
+		const word = (token.split(/[<>,=]/)[0] ?? "").replace(/["']+$/, "");
+		if (word !== "") return word.toLowerCase();
+	}
+	return undefined;
+}
+
 // The first word of each command a package.json's scripts run, in lower case: each script split at
-// &&, ||, ;, |, &, parentheses, backticks and line ends, past leading NAME=value assignments, with
-// quotes dropped. A word that starts by a path is kept as it is: cmd.exe still looks one up from
-// the folder (the part before a / as a command, a \ path or a drive's working folder with each
-// extension), so the gate refuses a script that starts a command so.
+// COMMAND_END, and each command's first word as cmd.exe reads it (firstWord). A word that starts by
+// a path is kept as it is: cmd.exe still looks one up from the folder (the part before a / as a
+// command, a \ path or a drive's working folder with each extension), so the gate refuses a script
+// that starts a command so.
 export function scriptCommands(text: string): string[] {
 	const json = parseJson(text);
 	const words = new Set<string>();
@@ -130,13 +158,9 @@ export function scriptCommands(text: string): string[] {
 		if (field !== "scripts" || !isObject(scripts)) continue;
 		for (const [, script] of scripts.object) {
 			if (typeof script !== "string") continue;
-			for (const command of script.split(/&&|\|\||[;&|()`\r\n]/)) {
-				const word = command
-					.trim()
-					.split(/\s+/)
-					.map((part) => part.replace(/^["']+|["']+$/g, ""))
-					.find((part) => part !== "" && !ASSIGNMENT.test(part));
-				if (word !== undefined) words.add(word.toLowerCase());
+			for (const command of script.split(COMMAND_END)) {
+				const word = firstWord(command);
+				if (word !== undefined) words.add(word);
 			}
 		}
 	}

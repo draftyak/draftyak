@@ -771,6 +771,34 @@ describe("refusals before any read or child start", () => {
 		}
 	});
 
+	it("refuses a vitest.cmd beside a script whose first word cmd.exe ends at <, > or a comma, or reads past a leading redirection, @ or a caret", async () => {
+		const manifest = (test: string): string =>
+			`${JSON.stringify({ name: "a", private: true, scripts: { test } })}\n`;
+		const shadow = (rel: string): boolean => /\.cmd$/i.test(rel);
+		for (const test of [
+			"vitest>out.log",
+			">out.log vitest run",
+			"2> err.txt vitest run",
+			">>out.log vitest run",
+			"vitest<in.txt",
+			"vitest,run",
+			"@vitest run",
+			"vi^test run",
+			"tsc -b && 2>&1 vitest run",
+		]) {
+			const files = {
+				"packages/a/package.json": manifest(test),
+				"packages/a/vitest.cmd": "@echo off\n",
+			};
+			const repo = fixture({ files });
+			const run = await gate(repo, { forbidden: shadow });
+			expect([test, uncounted(shown(run))]).toEqual([test, [LINE["command-shadows"]]]);
+			refusedWith(run, [LINE["command-shadows"] ?? ""]);
+			const line = shown(await gate(repo, { names: true, forbidden: shadow }))[0] ?? "";
+			expect([test, line.endsWith(": packages/a/vitest.cmd (file)")]).toEqual([test, true]);
+		}
+	});
+
 	it("passes vitest.config.js beside a script that starts vitest, and a command's name below a package folder or without an extension cmd.exe runs", async () => {
 		const files = {
 			"packages/a/package.json": '{ "name": "a", "scripts": { "test": "vitest run" } }\n',
@@ -916,6 +944,26 @@ describe("scriptCommands", () => {
 				"..\\bin\\other",
 			].toSorted(),
 		);
+		// Where cmd.exe ends the word, and what it reads past before one; a redirection's >& joins.
+		const cmd = {
+			a: "jest>out.log && >log.txt mocha run && 2> err.txt ava x && >>all.log tap",
+			b: "esbuild<in.txt; rollup,x; @parcel build; sw^c x",
+			c: 'lerna run 2>&1 | "nx">out',
+		};
+		const written = JSON.stringify({ name: "x", scripts: cmd });
+		const words = [
+			"ava",
+			"esbuild",
+			"jest",
+			"lerna",
+			"mocha",
+			"nx",
+			"parcel",
+			"rollup",
+			"swc",
+			"tap",
+		];
+		expect(scriptCommands(written).toSorted()).toEqual(words.toSorted());
 		expect(scriptCommands("{ nope")).toEqual([]);
 	});
 });
