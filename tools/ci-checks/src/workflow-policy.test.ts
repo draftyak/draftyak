@@ -2522,8 +2522,8 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 				"install",
 				"pnpm build",
 				...prepare,
-				"heavy-test",
 				"Opt-in heavy suites in the touched spikes",
+				"heavy-test",
 				"receipt",
 				"actions/upload-artifact",
 			],
@@ -2574,6 +2574,31 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 				"actions/upload-artifact",
 			],
 		});
+	});
+
+	it("runs each shard's opted-in heavy proof before its ordinary heavy suites, and no gated entry after them in either heavy job, since a heavy suite may stage files that listed files name", () => {
+		const { jobs } = parseYaml(ci).value as Steps;
+		const runs = (job: string): string[] =>
+			(jobs[job]?.steps ?? []).map((step) => String(step.run ?? ""));
+		const heavyAt = (job: string): number =>
+			runs(job).findIndex((run) => run.includes("tools/verify/turbo.ts run test:heavy"));
+		const proof = runs("spike-run").findIndex((run) =>
+			run.includes("tools/verify/reserved-proof.ts --tier heavy"),
+		);
+		// The launchers, and the root scripts that start one.
+		const gated =
+			/tools\/verify\/(?:gate|preinstall|turbo|verify|reserved-proof|m0-prefetch)\.ts|spikes\/kit\/run\.ts|\bpnpm\s+(?:run\s+)?(?:lint|format|typecheck|test|build|verify(?::m0)?|m0:prefetch)\b/;
+		expect(proof).toBeGreaterThan(0);
+		expect(proof).toBeLessThan(heavyAt("spike-run"));
+		for (const job of ["spike-run", "heavy"]) {
+			expect(heavyAt(job), job).toBeGreaterThan(0);
+			expect(
+				runs(job)
+					.slice(heavyAt(job) + 1)
+					.filter((run) => gated.test(run)),
+				job,
+			).toEqual([]);
+		}
 	});
 
 	it("runs spikes.yml's gate after the run job's start steps and before pnpm, and its check right before the install", () => {

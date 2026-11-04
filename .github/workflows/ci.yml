@@ -242,6 +242,15 @@ jobs:
           SPIKES: ${{ matrix.spike }}
           PLAYWRIGHT_BROWSERS_PATH: ${{ steps.browser-setup.outputs.path }}
         run: node tools/ci-checks/src/browser-setup.ts install
+      # The reserved heavy suites of the shard's spike, opted in and uncached, with the proof from
+      # their counts that they ran. They run before the shard's ordinary heavy suites, which leave
+      # reserved packages out, since a heavy suite may stage files that listed files name, and every
+      # gated entry after it would refuse those.
+      - name: Opt-in heavy suites in the touched spikes
+        env:
+          DRAFTYAK_RESERVED_TESTS: '1'
+        run: |
+          node tools/verify/reserved-proof.ts --tier heavy "--filter=./$SPIKE"
       - name: test:heavy for the touched spikes
         id: heavy-test
         env:
@@ -250,13 +259,6 @@ jobs:
           DRAFTYAK_CACHE_DIR: ${{ runner.temp }}/draftyak-node-scratch
         run: |
           node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "--filter=./$SPIKE"
-      # The step above leaves reserved packages out; this one runs the reserved heavy suites of
-      # the shard's spike opted in, uncached, and proves from their counts that they ran.
-      - name: Opt-in heavy suites in the touched spikes
-        env:
-          DRAFTYAK_RESERVED_TESTS: '1'
-        run: |
-          node tools/verify/reserved-proof.ts --tier heavy "--filter=./$SPIKE"
       - id: receipt
         env:
           SHARD_COMMAND_RESULT: ${{ steps.heavy-test.outcome }}

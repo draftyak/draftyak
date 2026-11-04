@@ -468,6 +468,12 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 			},
 			run: "node tools/ci-checks/src/browser-setup.ts install",
 		},
+		// The opted-in heavy proof comes before the ordinary heavy suites: a heavy suite may stage
+		// files that listed files name, and the proof's gate would refuse them.
+		{
+			env: flag,
+			run: ['node tools/verify/reserved-proof.ts --tier heavy "--filter=./$SPIKE"', ""].join("\n"),
+		},
 		{
 			id: "heavy-test",
 			env: {
@@ -479,10 +485,6 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 				'node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "--filter=./$SPIKE"',
 				"",
 			].join("\n"),
-		},
-		{
-			env: flag,
-			run: ['node tools/verify/reserved-proof.ts --tier heavy "--filter=./$SPIKE"', ""].join("\n"),
 		},
 		{
 			id: "receipt",
