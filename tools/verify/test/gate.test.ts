@@ -12,6 +12,7 @@ import {
 	type GateResult,
 	gateWith,
 	runGate,
+	scriptCommands,
 } from "../lib/gate.ts";
 import { checkInstallInputs, INSTALL_STOP_LINE } from "../lib/hooks.ts";
 import { runtimeSpecifiers } from "../lib/imports.ts";
@@ -189,6 +190,8 @@ const LINE: Readonly<Record<string, string>> = {
 		"reserved tripwire: spike folder(s) or prefetch script(s) pnpm m0:prefetch would run aren't regular, listed files in real folders; none of them was read",
 	npmrc:
 		"reserved tripwire: .npmrc path(s) in the root or a package folder; pnpm takes settings from them, node-options among them, before anything it starts; none of them was read",
+	"command-shadows":
+		"reserved tripwire: entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH; none of them was read",
 	"workspace-file":
 		"reserved tripwire: workspace file(s) aren't a listed regular file in the approved form; pnpm takes settings from it, nodeOptions and scriptShell among them, before anything it starts",
 };
@@ -680,6 +683,60 @@ describe("refusals before any read or child start", () => {
 		]);
 	});
 
+	it("refuses an entry in the root or a package folder named for a command started there with an extension cmd.exe runs, tracked or not and in any case, never reading it", async () => {
+		const scripts =
+			'{ "name": "a", "scripts": { "test": "FORCE_COLOR=0 vitest run && tsc -b" } }\n';
+		const shadow = (rel: string): boolean => /\.(?:cmd|exe)$/i.test(rel);
+		const cases: readonly (readonly [string, Fixture, string])[] = [
+			[
+				"a tracked vitest.cmd",
+				{ files: { "packages/a/package.json": scripts, "packages/a/vitest.cmd": "@echo off\n" } },
+				"packages/a/vitest.cmd (file)",
+			],
+			[
+				"an untracked vitest.cmd",
+				{
+					files: { "packages/a/package.json": scripts },
+					untracked: { "packages/a/vitest.cmd": "@echo off\n" },
+				},
+				"packages/a/vitest.cmd (file)",
+			],
+			[
+				"an ignored tsc.exe",
+				{ files: { "packages/a/package.json": scripts }, ignored: { "packages/a/tsc.exe": "" } },
+				"packages/a/tsc.exe (file)",
+			],
+			["node.js at the root", { files: { "node.js": "" } }, "node.js (file)"],
+			[
+				"NPX.CMD in mixed case",
+				{ files: { "packages/a/NpX.CmD": "" } },
+				"packages/a/NpX.CmD (file)",
+			],
+			["a git.bat folder", { files: { "git.bat/x.txt": "" } }, "git.bat (dir)"],
+		];
+		for (const [label, tree, named] of cases) {
+			const repo = fixture(tree);
+			const run = await gate(repo, { forbidden: shadow });
+			expect([label, uncounted(shown(run))]).toEqual([label, [LINE["command-shadows"]]]);
+			refusedWith(run, [LINE["command-shadows"] ?? ""]);
+			expect([label, run.opens.filter(shadow)]).toEqual([label, []]);
+			const line = shown(await gate(repo, { names: true, forbidden: shadow }))[0] ?? "";
+			expect([label, line.endsWith(`: ${named}`)]).toEqual([label, true]);
+		}
+	});
+
+	it("passes vitest.config.js beside a script that starts vitest, and a command's name below a package folder or without an extension cmd.exe runs", async () => {
+		const files = {
+			"packages/a/package.json": '{ "name": "a", "scripts": { "test": "vitest run" } }\n',
+			"packages/a/vitest.config.js": "export default {};\n",
+			"packages/a/vitest.ps1": "",
+			"packages/a/vitest": "",
+			"packages/a/src/node.cmd": "",
+			"docs/pnpm.cmd": "",
+		};
+		passed(await gate(fixture({ files })));
+	});
+
 	it("stops on a listing problem with the listing's line and the stop line only", async () => {
 		const repo = fixture();
 		const spy = readerSpy(repo.dir);
@@ -696,6 +753,35 @@ describe("refusals before any read or child start", () => {
 			tracked: [],
 		});
 		expect([...spy.opens, ...spy.readdirs]).toEqual([]);
+	});
+});
+
+describe("scriptCommands", () => {
+	it("gives each command's first word, split at &&, ||, ;, | and & and past NAME=value assignments, and leaves paths out", () => {
+		const scripts = {
+			a: "vitest run && tsc -b || echo x; biome ci . | tee out & turbo run",
+			b: 'FORCE_COLOR=0 CI=1 "tsx" ./x.ts',
+			c: "(cd sub && cargo test)",
+			d: "./node_modules/.bin/thing x && ..\\bin\\other y",
+			e: "Node --version\npnpm -r test",
+		};
+		const text = JSON.stringify({ name: "x", scripts, other: { f: "never this" } });
+		expect(scriptCommands(text).toSorted()).toEqual(
+			[
+				"biome",
+				"cargo",
+				"cd",
+				"echo",
+				"node",
+				"pnpm",
+				"tee",
+				"tsc",
+				"tsx",
+				"turbo",
+				"vitest",
+			].toSorted(),
+		);
+		expect(scriptCommands("{ nope")).toEqual([]);
 	});
 });
 
@@ -896,6 +982,11 @@ const ONLY: readonly (readonly [GateCheck, string, Build])[] = [
 	["scan-prefetch", "an ignored prefetch script", { ignored: { "spikes/s1/prefetch.ts": "" } }],
 	["npmrc", "an ignored .npmrc in a package folder", { ignored: { "packages/a/.npmrc": "x\n" } }],
 	[
+		"command-shadows",
+		"a tracked pnpm.cmd in a package folder",
+		{ files: { "packages/a/pnpm.cmd": "@echo off\n" } },
+	],
+	[
 		"workspace-file",
 		"a workspace file with a setting the approved form leaves out",
 		{ files: { "pnpm-workspace.yaml": `${ownWorkspace}nodeOptions: --require ./preload.cjs\n` } },
@@ -925,6 +1016,7 @@ describe("mutations: each check removed lets its own fixture through", () => {
 			"scan-verify",
 			"scan-prefetch",
 			"npmrc",
+			"command-shadows",
 			"workspace-file",
 		]);
 		expect(ONLY.map(([check]) => check)).toEqual(GATE_CHECKS);

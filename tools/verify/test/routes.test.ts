@@ -293,6 +293,9 @@ const PLANTED: Readonly<Record<string, (repo: TempRepo) => void>> = {
 	"an input the gate can't read as what it is": (repo) => {
 		repo.write("packages/a/package.json", "{ not json\n");
 	},
+	"a pnpm.cmd in the root that cmd.exe would run in place of pnpm": (repo) => {
+		repo.write("pnpm.cmd", `@echo off\r\necho loaded> "%${MARKER}%"\r\n`);
+	},
 };
 
 describe("each gated entry on its own checkout", () => {
