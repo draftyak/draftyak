@@ -1,4 +1,5 @@
 export { NativeAppReleaseBuilder } from "./builder.ts";
+export { buildNativeAppReleaseFromBundle } from "./bundle.ts";
 export {
 	MAX_FILE_BYTES,
 	MAX_FILES,
