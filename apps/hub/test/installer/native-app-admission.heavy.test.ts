@@ -2,13 +2,18 @@ import { spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync, type KeyObject, sign } from "node:crypto";
 import {
 	chmodSync,
+	closeSync,
+	constants,
 	copyFileSync,
 	cpSync,
 	existsSync,
+	fchmodSync,
+	fstatSync,
 	linkSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	openSync,
 	readdirSync,
 	readFileSync,
 	realpathSync,
@@ -41,6 +46,7 @@ import {
 import { API } from "typescript/unstable/sync";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { NativeAppRelease } from "../../src/installer/native-app-release.ts";
+import type { NativeReleaseV2 } from "../../src/plugins/installer/native-release-v2.ts";
 import { BUNDLED_PLUGIN_IDS } from "../../src/plugins/installer/policy.ts";
 import { bundle } from "../plugins/installer-fixtures.ts";
 import { nativeBinding } from "../store/helpers.ts";
@@ -50,6 +56,7 @@ const temporary = realpathSync.native(os.tmpdir());
 const entrySource = path.join(import.meta.dirname, "fixtures/native-app-admission.mjs");
 const trustSource = path.join(hub, "src/installer/native-app-trust.ts");
 const domain = Buffer.from("DraftYak native application release v1\0");
+const v2Domain = Buffer.from("DraftYak native application release v2\0");
 const prelude =
 	'import { constants } from "node:fs";\nimport promises from "node:fs/promises";\nimport { syncBuiltinESMExports } from "node:module";\nimport path from "node:path";\nimport { fileURLToPath } from "node:url";\nconst appRoot=path.dirname(fileURLToPath(import.meta.url));\nconst tcp=process.binding("tcp_wrap"),cares=process.binding("cares_wrap");\nconst denied=process.binding("uv").UV_EACCES;\nconst loopback=(address)=>typeof address==="string"&&(address==="127.0.0.1"||address==="::1");\nfor(const name of ["connect","connect6"]){const original=tcp.TCP.prototype[name];Object.defineProperty(tcp.TCP.prototype,name,{value:function(...args){return loopback(args[1])?Reflect.apply(original,this,args):denied;},writable:false,configurable:false});}\nfor(const name of ["getaddrinfo","getnameinfo"])Object.defineProperty(cares,name,{value:()=>denied,writable:false,configurable:false});\nfor(const name of Object.getOwnPropertyNames(cares.ChannelWrap.prototype))if(name.startsWith("query")||name==="getHostByAddr")Object.defineProperty(cares.ChannelWrap.prototype,name,{value:()=>denied,writable:false,configurable:false});\nlet openRelease,openEnter,closeRelease,closeEnter,otherCloseResolve;\nconst otherCloseSettled=new Promise(r=>otherCloseResolve=r);\nconst openReached=new Promise(r=>openEnter=r),openGate=new Promise(r=>openRelease=r);\nconst closeReached=new Promise(r=>closeEnter=r),closeGate=new Promise(r=>closeRelease=r);\nconst records=[];\nconst state={openReached,closeReached,otherCloseSettled,releaseOpen:()=>openRelease(),releaseClose:()=>closeRelease(),failClose:false,opened:0,attempts:0,closed:0,remaining:()=>records.filter(r=>!r.closed).length,appOnly:()=>records.every(r=>r.inApp===true),firstIsManifest:()=>records.length>0&&records[0].manifest===true,firstAttempts:()=>records[0]?.attempts??0,async cleanup(){const results=await Promise.allSettled(records.map(async r=>{let failed=false;try{await r.original();r.closed=true;}catch{failed=true;}try{if(r.descriptor)Object.defineProperty(r.handle,"close",r.descriptor);else Reflect.deleteProperty(r.handle,"close");}catch{failed=true;}if(failed)throw new Error("DYTEST owned IO cleanup incomplete");}));if(results.some(r=>r.status==="rejected"))throw new Error("DYTEST owned IO cleanup incomplete");}};\nObject.defineProperty(globalThis,Symbol.for("draftyak.test.native-app-io"),{value:state});\nconst mode=process.argv[2];\nif(mode==="during-capture"||mode==="drain-retry"){\n const original=promises.open;\n promises.open=async function(...args){\n  const handle=await Reflect.apply(original,this,args);const name=typeof args[0]==="string"?path.resolve(args[0]):undefined;const relative=name===undefined?undefined:path.relative(appRoot,name);const inApp=relative!==undefined&&relative!==""&&!path.isAbsolute(relative)&&relative!==".."&&!relative.startsWith(".."+path.sep);if(!inApp)return handle;const manifest=path.join(appRoot,"release.manifest.json");if(records.length===0&&name!==manifest)return handle;\n  const descriptor=Object.getOwnPropertyDescriptor(handle,"close"),close=handle.close.bind(handle);\n  const record={handle,descriptor,original:close,closed:false,otherSettled:false,attempts:0,inApp:true,manifest:name===manifest};records.push(record);state.opened++;\n  const first=records.length===1;\n  Object.defineProperty(handle,"close",{configurable:true,enumerable:descriptor?.enumerable??false,writable:true,value:async()=>{\n   record.attempts++;state.attempts++;\n   if(first&&state.failClose){state.failClose=false;closeEnter();await closeGate;throw new Error("DYTEST controlled owned close");}\n   try{await close();}catch(error){if(!first)otherCloseResolve(false);throw error;}if(!record.closed){record.closed=true;state.closed++;}if(!first){record.otherSettled=true;if(records.slice(1).every(r=>r.otherSettled))otherCloseResolve(true);}\n  }});\n  if(first&&mode==="during-capture"){openEnter();await openGate;}\n  return handle;\n };\n syncBuiltinESMExports();\n}\n';
 const combinedModes = ["recovery-starts", "recovery-held", "recovery-retry"] as const;
@@ -159,18 +166,20 @@ const folders = [
 	["identity/backup-challenge-migrations", "identity/backup-challenge-migrations"],
 ] as const;
 interface Owned {
-	root: string;
-	dev: number;
-	ino: number;
+	readonly root: string;
+	readonly dev: number;
+	readonly ino: number;
+	readonly uid: number;
 }
 const owned: Owned[] = [];
 function root(): string {
 	const root = realpathSync.native(mkdtempSync(path.join(temporary, "draftyak-native-app-")));
 	const stat = lstatSync(root);
-	owned.push({ root, dev: stat.dev, ino: stat.ino });
+	owned.push(Object.freeze({ root, dev: stat.dev, ino: stat.ino, uid: stat.uid }));
 	return root;
 }
-function remove(entry: Owned): void {
+function assertOwned(entry: Owned): void {
+	if (!owned.includes(entry)) throw new Error("DYTEST unowned application cleanup");
 	const stat = lstatSync(entry.root);
 	if (
 		path.dirname(entry.root) !== temporary ||
@@ -179,9 +188,59 @@ function remove(entry: Owned): void {
 		stat.isSymbolicLink() ||
 		stat.dev !== entry.dev ||
 		stat.ino !== entry.ino ||
+		stat.uid !== entry.uid ||
 		realpathSync.native(entry.root) !== entry.root
 	)
 		throw new Error("DYTEST unowned application cleanup");
+}
+/** Restore only owner-write on original-owned POSIX directories after the child has exited. */
+function writableDirectories(entry: Owned, name: string): void {
+	assertOwned(entry);
+	const before = lstatSync(name);
+	// Recursive removal unlinks these names; it must never chmod a link or a hard-linked file.
+	if (before.isSymbolicLink() || !before.isDirectory()) return;
+	const relative = path.relative(entry.root, name);
+	if (
+		path.isAbsolute(relative) ||
+		relative === ".." ||
+		relative.startsWith(".." + path.sep) ||
+		before.dev !== entry.dev ||
+		before.uid !== entry.uid ||
+		before.uid !== process.geteuid?.() ||
+		realpathSync.native(name) !== name
+	)
+		throw new Error("DYTEST unowned application cleanup");
+	const fd = openSync(name, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+	try {
+		const held = fstatSync(fd);
+		if (
+			!held.isDirectory() ||
+			held.dev !== before.dev ||
+			held.ino !== before.ino ||
+			held.uid !== before.uid
+		)
+			throw new Error("DYTEST unowned application cleanup");
+		fchmodSync(fd, (held.mode & 0o7777) | 0o200);
+		const after = lstatSync(name);
+		if (
+			after.isSymbolicLink() ||
+			!after.isDirectory() ||
+			after.dev !== held.dev ||
+			after.ino !== held.ino ||
+			after.uid !== held.uid ||
+			(after.mode & 0o200) === 0 ||
+			realpathSync.native(name) !== name
+		)
+			throw new Error("DYTEST unowned application cleanup");
+	} finally {
+		closeSync(fd);
+	}
+	for (const child of readdirSync(name)) writableDirectories(entry, path.join(name, child));
+}
+function remove(entry: Owned): void {
+	assertOwned(entry);
+	if (process.platform !== "win32") writableDirectories(entry, entry.root);
+	assertOwned(entry);
 	rmSync(entry.root, { recursive: true, force: true });
 	expect(existsSync(entry.root)).toBe(false);
 }
@@ -378,10 +437,10 @@ function closedJavaScript(app: string): void {
 	expect(existsSync(path.join(app, "node_modules"))).toBe(false);
 	expect(existsSync(path.join(path.dirname(app), "node_modules"))).toBe(false);
 }
-interface Built {
+interface Built<Release extends NativeAppRelease | NativeReleaseV2 = NativeAppRelease> {
 	app: string;
 	privateKey: KeyObject;
-	manifest: NativeAppRelease;
+	manifest: Release;
 }
 async function prepare(configured: boolean): Promise<Built> {
 	const parent = root(),
@@ -494,15 +553,55 @@ async function prepare(configured: boolean): Promise<Built> {
 	writeRelease(app, manifest, privateKey);
 	return { app, privateKey, manifest };
 }
-function writeRelease(app: string, manifest: NativeAppRelease, key: KeyObject): void {
+async function prepareV2(): Promise<Built<NativeReleaseV2>> {
+	const base = await prepare(true);
+	const candidate = bundle("channel-gmail", { version: "99.2.3" });
+	const candidateArchive = "bundles/channel-gmail-candidate.tgz";
+	writeFileSync(path.join(base.app, candidateArchive), candidate.archive);
+	const manifest: NativeReleaseV2 = {
+		...base.manifest,
+		v: 2,
+		// These signed fixture digests are declared DATA, not observed runtime surfaces.
+		bundles: base.manifest.bundles.map((selected) => ({
+			...selected,
+			expectedSurfaceDigest: "a".repeat(64),
+		})),
+		candidates: [
+			{
+				id: candidate.id,
+				package: candidate.lock,
+				archive: candidateArchive,
+				expectedSurfaceDigest: "b".repeat(64),
+			},
+		],
+		files: files(base.app)
+			.filter((name) => name !== "release.manifest.json" && name !== "release.signature")
+			.map((name) => {
+				const bytes = readFileSync(path.join(base.app, name));
+				return {
+					path: name,
+					bytes: bytes.length,
+					sha256: createHash("sha256").update(bytes).digest("hex"),
+				};
+			}),
+	};
+	writeRelease(base.app, manifest, base.privateKey, v2Domain);
+	return { ...base, manifest };
+}
+function writeRelease(
+	app: string,
+	manifest: NativeAppRelease | NativeReleaseV2,
+	key: KeyObject,
+	signatureDomain: Buffer = domain,
+): void {
 	const bytes = Buffer.from(canonicalize(manifest));
 	writeFileSync(path.join(app, "release.manifest.json"), bytes);
 	writeFileSync(
 		path.join(app, "release.signature"),
-		sign(null, Buffer.concat([domain, bytes]), key),
+		sign(null, Buffer.concat([signatureDomain, bytes]), key),
 	);
 }
-function execute(base: Built, mode: string): void {
+function execute(base: Built<NativeAppRelease | NativeReleaseV2>, mode: string): void {
 	const parent = root(),
 		app = path.join(parent, "installed"),
 		profile = path.join(parent, "profile");
@@ -584,6 +683,7 @@ function execute(base: Built, mode: string): void {
 				"drain-retry",
 				"unconfigured",
 				...combinedModes,
+				"candidate-installer",
 			];
 			const markers = [
 				...diagnostic.matchAll(/^DYTEST native application fixture failed \(([a-z-]+)\)\r?$/gm),
@@ -747,7 +847,19 @@ beforeAll(async () => {
 	execute(configured, "positive");
 });
 afterAll(() => {
-	for (const entry of owned.splice(0).reverse()) remove(entry);
+	let failed = false;
+	let failure: unknown;
+	for (const entry of [...owned].reverse()) {
+		try {
+			remove(entry);
+			const index = owned.indexOf(entry);
+			if (index !== -1) owned.splice(index, 1);
+		} catch (error) {
+			if (!failed) failure = error;
+			failed = true;
+		}
+	}
+	if (failed) throw failure;
 });
 it("captures a configured signed Node release with a real original session", () => {
 	expect(configured.manifest.bundles.length).toBe(5);
@@ -776,4 +888,8 @@ it.each(combinedModes)("joins real App and recovery lifetimes (%s)", (mode) =>
 );
 it("keeps the actual unconfigured production trust build without application authority", async () => {
 	execute(await prepare(false), "unconfigured");
+});
+
+it("captures a signed v2 candidate in the original session's cached installer", async () => {
+	execute(await prepareV2(), "candidate-installer");
 });

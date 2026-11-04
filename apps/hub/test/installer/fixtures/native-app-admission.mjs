@@ -8,6 +8,7 @@ import path from "node:path";
 import { connect } from "node:tls";
 import { fileURLToPath } from "node:url";
 import { X509CertificateGenerator } from "@peculiar/x509";
+import { canonicalize } from "@draftyak/protocol/jcs";
 import { makePairingClaim, pairingEkm, sidecarWindowSecrets } from "@draftyak/protocol/pairing";
 import { exportSpki } from "@draftyak/protocol/sign";
 import {
@@ -21,9 +22,17 @@ import { admitDataFolder } from "../../../src/kernel/data-directory.ts";
 import {
 	closeNativeAppAdmission,
 	nativeAppAdmissionArchive,
+	nativeAppAdmissionCandidateArchive,
+	nativeAppAdmissionFormat,
 	nativeAppAdmissionInputs,
+	nativeAppAdmissionReviewInputs,
 	openNativeAppAdmission,
 } from "../../../src/installer/native-app-admission.ts";
+import {
+	assertNativePluginInstallerCatalogueCurrent,
+	nativePluginInstallerCatalogue,
+	openNativePluginInstaller,
+} from "../../../src/plugins/installer/index.ts";
 
 import { openNativeBackupRecovery } from "../../../src/recovery/backup-recovery.ts";
 import { generateRecoveryCode } from "../../../src/recovery/recovery-code.ts";
@@ -34,6 +43,7 @@ const modes = new Set([
 	"preloaded", "missing-flag", "duplicate-flag", "node-options", "node-path",
 	"during-capture", "drain-retry", "unconfigured",
 	"recovery-starts", "recovery-held", "recovery-retry",
+	"candidate-installer",
 ]);
 const profile = process.argv[3];
 const install = path.dirname(fileURLToPath(import.meta.url));
@@ -150,6 +160,58 @@ async function open(folder, bundles) {
 	sessions.push(session);
 	assert.equal(loadExtensionConfig(folder).modules.length, 0);
 	return { session, key };
+}
+async function candidateInstaller(session, admission) {
+	step = 1;
+	assert.equal(await nativeAppAdmissionFormat(session), 2);
+	assert.equal(admission === await openNativeAppAdmission(session), true);
+	const review = await nativeAppAdmissionReviewInputs(admission, session);
+	assert.equal(Object.isFrozen(review) && Object.isFrozen(review.bundles) && Object.isFrozen(review.candidates), true);
+	assert.equal(review.bundles.length === 5 && review.candidates.length === 1, true);
+	assert.equal(review.bundles.every((facts) => facts.expectedSurfaceDigest === "a".repeat(64)), true);
+	const candidate = review.candidates[0];
+	assert.equal(candidate?.id === "channel-gmail" && candidate.package.version === "99.2.3" && candidate.expectedSurfaceDigest === "b".repeat(64), true);
+	step = 2;
+	const installer = await openNativePluginInstaller(session);
+	assert.equal(installer === await openNativePluginInstaller(session), true);
+	const catalogue = await nativePluginInstallerCatalogue(session);
+	assert.equal(catalogue === await nativePluginInstallerCatalogue(session), true);
+	assert.equal(catalogue.mode === "v2-data" && Object.isFrozen(catalogue), true);
+	assert.equal(Object.isFrozen(catalogue.pins) && Object.isFrozen(catalogue.expectedSurfaces), true);
+	assert.equal(catalogue.pins.length === 6 && catalogue.expectedSurfaces.length === 6, true);
+	for (const facts of [...review.bundles, ...review.candidates]) {
+		const pins = catalogue.pins.filter((pin) => pin.id === facts.id && pin.package.version === facts.package.version);
+		const surfaces = catalogue.expectedSurfaces.filter((surface) => surface.id === facts.id && surface.version === facts.package.version);
+		assert.equal(pins.length === 1 && canonicalize(pins[0].package) === canonicalize(facts.package), true);
+		assert.equal(surfaces.length === 1 && surfaces[0].expectedSurfaceDigest === facts.expectedSurfaceDigest, true);
+	}
+	assertNativePluginInstallerCatalogueCurrent(session, installer, catalogue);
+	step = 3;
+	const archive = await nativeAppAdmissionCandidateArchive(admission, session, candidate.id, candidate.package.version);
+	assert.equal("sha512-" + createHash("sha512").update(archive).digest("base64") === candidate.package.integrity, true);
+	await refuses(() => nativeAppAdmissionCandidateArchive(admission, session, candidate.id, "98.2.3"));
+	step = 4;
+	const installed = await installer.install(candidate.id, candidate.package.version, archive);
+	assertNativePluginInstallerCatalogueCurrent(session, installer, catalogue);
+	const inspected = await installer.inspect(candidate.id, candidate.package.version, archive);
+	assert.equal(canonicalize(installed) === canonicalize(inspected), true);
+	assert.equal(canonicalize({
+		name: inspected.bundle.inventory.name,
+		version: inspected.bundle.inventory.version,
+		integrity: inspected.bundle.inventory.integrity,
+		entry: inspected.bundle.inventory.entry,
+	}) === canonicalize(candidate.package), true);
+	assert.equal(globalThis[Symbol.for("draftyak.test.installer.executed")] === true, false);
+	step = 5;
+	await installer.close();
+	assert.equal(session.store.read((db) => db.get("SELECT 1 AS alive")).alive, 1);
+	await refuses(() => assertNativePluginInstallerCatalogueCurrent(session, installer, catalogue), "Plugin installation refused.");
+	await refuses(() => nativePluginInstallerCatalogue(session), "Plugin installation refused.");
+	await refuses(() => installer.inspect(candidate.id, candidate.package.version, archive), "Plugin installation refused.");
+	step = 6;
+	await session.close();
+	await refuses(() => nativeAppAdmissionReviewInputs(admission, session));
+	await refuses(() => nativeAppAdmissionCandidateArchive(admission, session, candidate.id, candidate.package.version));
 }
 async function combinedLifetime(session, key, admission) {
  const io = control.recovery;
@@ -317,6 +379,10 @@ async function main() {
 	const first = inputs.bundles[0];
 	if (["recovery-starts", "recovery-held", "recovery-retry"].includes(mode)) {
 		await combinedLifetime(session, key, admission);
+		return;
+	}
+	if (mode === "candidate-installer") {
+		await candidateInstaller(session, admission);
 		return;
 	}
 	if (mode === "positive") {

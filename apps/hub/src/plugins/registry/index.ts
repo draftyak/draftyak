@@ -22,6 +22,7 @@ import {
 	type BundledPluginId,
 	closeNativePluginInstaller,
 	type InstalledPlugin,
+	nativePluginInstallerCatalogue,
 	openNativePluginInstaller,
 	openPluginInstaller,
 	type PluginInstaller,
@@ -108,9 +109,16 @@ export function openNativePluginRegistry(session: unknown): Promise<PluginRegist
 			return previous.opening;
 		}
 		let owner: NativeRegistry;
+		let creationEntered = false;
 		const opening = Promise.resolve()
 			.then(async () => {
 				assertNativePluginOwner(session, parts);
+				await openNativePluginInstaller(session);
+				assertNativePluginOwner(session, parts);
+				const catalogue = await nativePluginInstallerCatalogue(session);
+				assertNativePluginOwner(session, parts);
+				if (owner.closing) refuse("unavailable");
+				creationEntered = true;
 				const value = await createPluginRegistry(
 					{
 						store: parts.store,
@@ -121,7 +129,7 @@ export function openNativePluginRegistry(session: unknown): Promise<PluginRegist
 						clock: parts.clock,
 						installer: {
 							directory: parts.directory,
-							bundles: parts.bundles,
+							bundles: catalogue.pins,
 							nativeBinding: parts.nativeBinding,
 						},
 					},
@@ -131,7 +139,14 @@ export function openNativePluginRegistry(session: unknown): Promise<PluginRegist
 				if (owner.closing) refuse("unavailable");
 				return value;
 			})
-			.catch(() => {
+			.catch(async () => {
+				if (!creationEntered) {
+					try {
+						await closeNativePluginInstaller(session);
+					} catch {
+						// The canonical native installer retains failed resources for its close retry.
+					}
+				}
 				throw new PluginRegistryError("unavailable");
 			});
 		owner = { parts, opening, closing: false };

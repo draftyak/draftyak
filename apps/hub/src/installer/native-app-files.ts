@@ -8,7 +8,10 @@ import {
 	checkedFileRecord,
 	portableRelativePath,
 } from "@draftyak/bounded-files";
+import type { NativeReleaseV2 } from "../plugins/installer/native-release-v2.ts";
 import type { NativeAppRelease } from "./native-app-release.ts";
+
+type FileRelease = NativeAppRelease | NativeReleaseV2;
 
 const manifestName = "release.manifest.json";
 const signatureName = "release.signature";
@@ -33,8 +36,10 @@ export class NativeAppFilesError extends Error {
 
 /** Content and owned resources only; this is not native application authority. */
 export interface NativeAppFiles {
+	/** Retained closed/failed flags only; this performs no fresh file identity or hash check. */
+	assertAvailable(): void;
 	readRelease(): Promise<Readonly<{ manifest: Buffer; signature: Buffer }>>;
-	verify(release: NativeAppRelease): Promise<void>;
+	verify(release: FileRelease): Promise<void>;
 	archive(name: string): Promise<Buffer>;
 	close(): Promise<void>;
 }
@@ -103,7 +108,7 @@ function array(raw: unknown, minimum: number, maximum: number): readonly unknown
 	return result;
 }
 
-function inventory(release: NativeAppRelease): Inventory {
+function inventory(release: FileRelease): Inventory {
 	const files = new Map<string, FileRecord>();
 	let bytes = 0;
 	for (const raw of array(field(release, "files"), 1, maximumFiles)) {
@@ -120,7 +125,11 @@ function inventory(release: NativeAppRelease): Inventory {
 	}
 	assertPortableFileTree([...files.keys(), manifestName, signatureName]);
 	const archives = new Set<string>();
-	for (const raw of array(field(release, "bundles"), 5, 5)) {
+	const version = field(release, "v");
+	if (version !== 1 && version !== 2) refuse();
+	const selected = array(field(release, "bundles"), 5, 5);
+	const candidates = version === 2 ? array(field(release, "candidates"), 0, 5) : [];
+	for (const raw of [...selected, ...candidates]) {
 		const name = portableName(field(raw, "archive"));
 		if (!files.has(name) || archives.has(name)) refuse();
 		archives.add(name);
@@ -217,7 +226,7 @@ class Files {
 	readonly #directories = new Map<string, BigIntStats>();
 	#ancestors: readonly { name: string; stat: BigIntStats }[] | undefined;
 	#metadata: { manifest: Buffer; signature: Buffer } | undefined;
-	#release: NativeAppRelease | undefined;
+	#release: FileRelease | undefined;
 	#inventory: Inventory | undefined;
 	#tail: Promise<void> = Promise.resolve();
 	readonly #pending = new Set<Promise<unknown>>();
@@ -231,6 +240,10 @@ class Files {
 
 	#available(): void {
 		if (this.#closed || this.#failed) refuse();
+	}
+
+	assertAvailable(): void {
+		this.#available();
 	}
 
 	#run<T>(operation: () => Promise<T>): Promise<T> {
@@ -448,7 +461,7 @@ class Files {
 		}
 	}
 
-	async #verify(release: NativeAppRelease): Promise<void> {
+	async #verify(release: FileRelease): Promise<void> {
 		if (this.#release === undefined) {
 			this.#inventory = inventory(release);
 			this.#release = release;
@@ -471,7 +484,7 @@ class Files {
 		await this.#chain();
 	}
 
-	verify(release: NativeAppRelease): Promise<void> {
+	verify(release: FileRelease): Promise<void> {
 		return this.#run(() => this.#verify(release));
 	}
 
@@ -519,8 +532,9 @@ export function createNativeAppFiles(root: string): NativeAppFiles {
 	try {
 		const files = new Files(root);
 		return Object.freeze({
+			assertAvailable: () => files.assertAvailable(),
 			readRelease: () => files.readRelease(),
-			verify: (release: NativeAppRelease) => files.verify(release),
+			verify: (release: FileRelease) => files.verify(release),
 			archive: (name: string) => files.archive(name),
 			close: () => files.close(),
 		});
