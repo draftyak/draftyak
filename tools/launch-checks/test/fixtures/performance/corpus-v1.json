@@ -1,0 +1,22 @@
+{
+  "fixtureFormat": "DYTEST-PERFORMANCE-CORPUS",
+  "version": 1,
+  "messageCount": 50000,
+  "seed": "DYTEST-FTS-2026-V1",
+  "algorithm": "sha256-seed-word-be/per-index-xorshift32-v1",
+  "fixtureDate": "Wed, 04 Nov 2026 16:06:25 +0000",
+  "recordKeys": ["version", "fixtureId", "rfc822"],
+  "jsonlRecordTerminator": "LF",
+  "mailLineTerminator": "CRLF",
+  "mailContentType": "text/plain; charset=us-ascii",
+  "seededBodyLinesByLastDigit": [4, 4, 4, 4, 4, 4, 16, 16, 16, 64],
+  "queryFixtures": [
+    {"fixtureId": "DYTEST-QUERY-ALL", "asciiTerm": "dytestall", "expectedCorpusMatches": 50000},
+    {"fixtureId": "DYTEST-QUERY-BUCKET", "asciiTerm": "dytestbucket07", "expectedCorpusMatches": 500},
+    {"fixtureId": "DYTEST-QUERY-ONE", "asciiTerm": "dytestunique12345", "expectedCorpusMatches": 1},
+    {"fixtureId": "DYTEST-QUERY-NONE", "asciiTerm": "dytestabsent", "expectedCorpusMatches": 0}
+  ],
+  "expectedFirstFixtureId": "DYTEST-MESSAGE-00000",
+  "expectedLastFixtureId": "DYTEST-MESSAGE-49999",
+  "purpose": "Synthetic corpus DATA and literal term-presence fixtures; no search API, ingestion or measured performance result."
+}
