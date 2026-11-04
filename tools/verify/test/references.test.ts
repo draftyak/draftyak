@@ -471,6 +471,26 @@ describe("refs-modules", () => {
 		]);
 	});
 
+	it("refuses an ignored file beside a folder a module path names, which Node, Vite and tsc load before the folder, and leaves the folder alone without one", async () => {
+		const files = { "p/test/x.test.ts": 'import { c } from "../gen/client";\n' };
+		const folder = { "p/gen/client/models.ts": "" };
+		expect(await refused({ files, ignored: folder }, "refs-modules")).toEqual([]);
+		// Vite tries .json there too, which tsc never does.
+		const beside = { ...folder, "p/gen/client.ts": "", "p/gen/client.json": "" };
+		expect(await refused({ files, ignored: beside }, "refs-modules")).toEqual([
+			"p/gen/client.ts: unlisted",
+			"p/gen/client.json: unlisted",
+		]);
+		// A script token that names a folder, beside a file Node runs in its place.
+		const scripts = {
+			"p/package.json": JSON.stringify({ name: "p", scripts: { build: "node ./scripts/build" } }),
+		};
+		const built = { "p/scripts/build/notes.txt": "", "p/scripts/build.js": "" };
+		expect(await refused({ files: scripts, ignored: built }, "refs-config")).toEqual([
+			"p/scripts/build.js: unlisted",
+		]);
+	});
+
 	it("leaves bare specifiers, missing files and listed files alone", async () => {
 		const files = {
 			"p/a.ts":

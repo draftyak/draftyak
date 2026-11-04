@@ -762,41 +762,47 @@ function stringsOf(value: Json): string[] {
 }
 
 // What a module specifier at `rel` can load: the file as written, its .js-to-.ts twins, the file
-// with each usual extension when it has none, and for a folder its package.json, the entry points
-// that names, and its index files. tsc's own candidates (tscCandidates) come after, each only while
-// those before it are missing: tsc loads the first it finds, so an output file beside a present
-// source is none of them.
+// with each usual extension when it has none, and tsc's own candidates (tscCandidates), each only
+// while those before it are missing: tsc loads the first it finds, so an output file beside a
+// present source is none of them. For a folder, Node, Vite and tsc try the files beside it first,
+// the path with each usual extension and tsc's candidates, and only then its package.json, the
+// entry points that names, and its index files. The checkout's root has its neighbours outside it,
+// where no check looks.
 function moduleTarget(input: ReferenceInput, candidates: Candidates, rel: string, depth = 0): void {
-	if (candidates.kindOf(rel) === "dir") {
-		const manifest = rel === "" ? "package.json" : `${rel}/package.json`;
-		candidates.file(manifest);
-		const text = depth < 2 && input.listed(manifest) ? input.text(manifest) : null;
-		const json = text === null ? undefined : parseJson(text);
-		for (const [field, value] of isObject(json) ? json.object : []) {
-			if (!ENTRY_FIELDS.has(field)) continue;
-			for (const entry of stringsOf(value)) {
-				const target = resolveFrom(input.checkout, rel, entry);
-				if (target === OUTSIDE) candidates.refuse(manifest, "outside");
-				else if (target !== null && target !== rel) {
-					moduleTarget(input, candidates, target, depth + 1);
-				}
+	const folder = candidates.kindOf(rel) === "dir";
+	if (!folder) candidates.file(rel);
+	if (!folder || rel !== "") {
+		const extension = /\.[^./]*$/.exec(rel)?.[0].toLowerCase() ?? "";
+		for (const twin of REMAPPED[extension] ?? [])
+			candidates.file(`${rel.slice(0, -extension.length)}${twin}`);
+		if (folder || !KNOWN.test(rel)) {
+			for (const added of EXTENSIONS) candidates.file(`${rel}${added}`);
+		}
+		// A reserved-named path is refused already, and each of its fallbacks names the same word.
+		if (!reservedWord.test(rel)) {
+			for (const next of tscCandidates(rel)) {
+				candidates.file(next);
+				if (candidates.kindOf(next) !== "missing") break;
 			}
 		}
-		for (const extension of EXTENSIONS)
-			candidates.file(rel === "" ? `index${extension}` : `${rel}/index${extension}`);
-		return;
 	}
-	candidates.file(rel);
-	const extension = /\.[^./]*$/.exec(rel)?.[0].toLowerCase() ?? "";
-	for (const twin of REMAPPED[extension] ?? [])
-		candidates.file(`${rel.slice(0, -extension.length)}${twin}`);
-	if (!KNOWN.test(rel)) for (const added of EXTENSIONS) candidates.file(`${rel}${added}`);
-	// A reserved-named path is refused already, and each of its fallbacks names the same word.
-	if (reservedWord.test(rel)) return;
-	for (const next of tscCandidates(rel)) {
-		candidates.file(next);
-		if (candidates.kindOf(next) !== "missing") break;
+	if (!folder) return;
+	const manifest = rel === "" ? "package.json" : `${rel}/package.json`;
+	candidates.file(manifest);
+	const text = depth < 2 && input.listed(manifest) ? input.text(manifest) : null;
+	const json = text === null ? undefined : parseJson(text);
+	for (const [field, value] of isObject(json) ? json.object : []) {
+		if (!ENTRY_FIELDS.has(field)) continue;
+		for (const entry of stringsOf(value)) {
+			const target = resolveFrom(input.checkout, rel, entry);
+			if (target === OUTSIDE) candidates.refuse(manifest, "outside");
+			else if (target !== null && target !== rel) {
+				moduleTarget(input, candidates, target, depth + 1);
+			}
+		}
 	}
+	for (const extension of EXTENSIONS)
+		candidates.file(rel === "" ? `index${extension}` : `${rel}/index${extension}`);
 }
 
 // The package.json a # specifier in a module of folder `dir` resolves through: the nearest one from
