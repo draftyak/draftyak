@@ -60,6 +60,267 @@ fn matches(case: &Value) -> bool {
     )
 }
 
+// Synthetic proposed account DATA only; native enrollment and credential provenance are separate.
+fn account_connect_data(channel: &str) -> Value {
+    let mut subject = json!({
+        "v": 1,
+        "channel": channel,
+        "account": "01JAZ3W3B6Q8M2V0G5T9K4X7RA",
+        "ownerUserId": "01JAZ3W3B6Q8M2V0G5T9K4X7RD",
+        "alias": "slack-1",
+        "mode": "full",
+        "historyLimitDays": 30,
+        "disclosureVersion": 1,
+        "pluginInstanceId": "01JAZ3W3B6Q8M2V0G5T9K4X7RC"
+    });
+    if channel == "email" {
+        subject["address"] = json!("reader@example.test");
+    } else {
+        subject["teamId"] = json!("T_TEST");
+        subject["selfUserId"] = json!("U_TEST");
+    }
+    subject
+}
+
+#[test]
+fn account_connect_reviews_describe_new_accounts_without_reusing_connected_subjects() {
+    for channel in ["email", "chat"] {
+        let mut subject = account_connect_data(channel);
+        for mode in ["full", "read_only"] {
+            subject["mode"] = json!(mode);
+            assert!(api::check_schema("AdminAccountConnectSubject", &subject));
+            assert!(api::check_schema(
+                "OperationReview",
+                &review("account.connect", &subject)
+            ));
+            assert!(!api::check_schema("AdminAccountSubject", &subject));
+            for kind in ["account.disconnect", "account.mode-full"] {
+                assert!(!api::check_schema(
+                    "OperationReview",
+                    &review(kind, &subject)
+                ));
+            }
+        }
+        if channel == "chat" {
+            subject["teamId"] = Value::Null;
+            assert!(api::check_schema("AdminAccountConnectSubject", &subject));
+        }
+    }
+    let existing = case(&vectors(), "admin-subject-email")["value"].clone();
+    assert!(api::check_schema("AdminAccountSubject", &existing));
+    assert!(!api::check_schema("AdminAccountConnectSubject", &existing));
+    assert!(!api::check_schema(
+        "OperationReview",
+        &review("account.connect", &existing)
+    ));
+}
+
+#[test]
+fn account_connect_subjects_are_closed_and_require_every_variant_member() {
+    for channel in ["email", "chat"] {
+        let original = account_connect_data(channel);
+        for key in original.as_object().unwrap().keys() {
+            let mut changed = original.clone();
+            changed.as_object_mut().unwrap().remove(key);
+            assert!(
+                !api::check_schema("AdminAccountConnectSubject", &changed),
+                "{channel}: missing {key}"
+            );
+        }
+        for field in [
+            "credential",
+            "checked",
+            "grant",
+            "disclosureDigest",
+            "createdAt",
+        ] {
+            let mut changed = original.clone();
+            changed[field] = json!(true);
+            assert!(
+                !api::check_schema("AdminAccountConnectSubject", &changed),
+                "{channel}: extra {field}"
+            );
+        }
+        assert!(!api::check_schema(
+            "AdminAccountConnectSubject",
+            &json!([original.clone()])
+        ));
+        assert!(!api::check_schema(
+            "AdminAccountConnectSubject",
+            &json!({"account.connect": original.clone()})
+        ));
+        let mut mixed = original;
+        if channel == "email" {
+            mixed["teamId"] = Value::Null;
+            mixed["selfUserId"] = json!("U_TEST");
+        } else {
+            mixed["address"] = json!("reader@example.test");
+        }
+        assert!(!api::check_schema("AdminAccountConnectSubject", &mixed));
+    }
+}
+
+#[test]
+fn account_connect_scalar_limits_reuse_the_account_data_contract() {
+    let original = account_connect_data("chat");
+    for (field, value) in [
+        ("alias", json!("a")),
+        ("alias", json!("a".repeat(32))),
+        ("alias", json!("a-")),
+        ("historyLimitDays", json!(1)),
+        ("historyLimitDays", json!(365)),
+        ("disclosureVersion", json!(9_007_199_254_740_991_u64)),
+        ("v", json!(1.0)),
+        ("historyLimitDays", json!(30.0)),
+        ("disclosureVersion", json!(1.0)),
+        ("teamId", json!("!")),
+        ("teamId", json!("T".repeat(256))),
+        ("teamId", Value::Null),
+        ("selfUserId", json!("U".repeat(256))),
+    ] {
+        let mut changed = original.clone();
+        changed[field] = value;
+        assert!(
+            api::check_schema("AdminAccountConnectSubject", &changed),
+            "positive {field}"
+        );
+    }
+    for (field, value) in [
+        ("v", json!(0)),
+        ("v", json!(2)),
+        ("account", json!("invalid")),
+        ("ownerUserId", Value::Null),
+        ("pluginInstanceId", json!("invalid")),
+        ("alias", json!("")),
+        ("alias", json!("A")),
+        ("alias", json!("a".repeat(33))),
+        ("alias", json!("é")),
+        ("alias", json!("-a")),
+        ("mode", json!("read")),
+        ("historyLimitDays", json!(0)),
+        ("historyLimitDays", json!(366)),
+        ("historyLimitDays", json!(1.5)),
+        ("disclosureVersion", json!(0)),
+        ("disclosureVersion", json!(1.5)),
+        ("disclosureVersion", json!(9_007_199_254_740_992_u64)),
+        ("teamId", json!("")),
+        ("teamId", json!("T".repeat(257))),
+        ("teamId", json!("T TEST")),
+        ("selfUserId", Value::Null),
+        ("selfUserId", json!("U".repeat(257))),
+        ("selfUserId", json!("用")),
+        ("channel", json!("sms")),
+    ] {
+        let mut changed = original.clone();
+        changed[field] = value;
+        assert!(
+            !api::check_schema("AdminAccountConnectSubject", &changed),
+            "refused {field}"
+        );
+    }
+    let mut email = account_connect_data("email");
+    for valid in ["Alice@example.invalid", "é@example.invalid"] {
+        email["address"] = json!(valid);
+        assert!(api::check_schema("AdminAccountConnectSubject", &email));
+    }
+    for invalid in ["reader", "reader@example.TEST", "reader name@example.test"] {
+        email["address"] = json!(invalid);
+        assert!(!api::check_schema("AdminAccountConnectSubject", &email));
+    }
+}
+
+#[test]
+fn account_connect_operation_requests_name_exactly_one_native_account_id() {
+    let account = account_connect_data("chat")["account"].clone();
+    assert!(api::check_schema(
+        "OperationRequest",
+        &json!({"kind":"account.connect","ids":[account]})
+    ));
+    for ids in [
+        json!([]),
+        json!([account, OTHER_ID]),
+        json!([account, account]),
+        json!(["invalid"]),
+    ] {
+        assert!(!api::check_schema(
+            "OperationRequest",
+            &json!({"kind":"account.connect","ids":ids})
+        ));
+    }
+}
+
+#[test]
+fn account_connect_review_digest_binds_each_reviewed_choice() {
+    let original = account_connect_data("email");
+    let original_review = review("account.connect", &original);
+    for (field, value) in [
+        ("account", json!(OTHER_ID)),
+        ("ownerUserId", json!(OTHER_ID)),
+        ("alias", json!("mail-2")),
+        ("mode", json!("read_only")),
+        ("historyLimitDays", json!(7)),
+        ("disclosureVersion", json!(2)),
+        ("pluginInstanceId", json!(OTHER_ID)),
+        ("address", json!("other@example.test")),
+    ] {
+        let mut changed = original_review.clone();
+        changed["subject"][field] = value;
+        assert!(api::check_schema(
+            "AdminAccountConnectSubject",
+            &changed["subject"]
+        ));
+        assert!(!api::check_schema("OperationReview", &changed), "{field}");
+        changed["digest"] = json!(jcs_sha256(&changed["subject"]).unwrap());
+        assert!(api::check_schema("OperationReview", &changed));
+    }
+}
+
+#[test]
+fn account_connect_challenges_bind_both_provider_variants_to_the_exact_review() {
+    let vectors = vectors();
+    for name in ["connect-email", "connect-chat"] {
+        let mut source = case(&vectors, &format!("admin-challenge-account.connect-{name}"));
+        assert!(matches(&source));
+        source["review"]["subject"] = account_connect_data(if name == "connect-email" {
+            "email"
+        } else {
+            "chat"
+        });
+        source["review"]["digest"] = json!(jcs_sha256(&source["review"]["subject"]).unwrap());
+        let mut signed = statement(&source);
+        signed["digest"] = source["review"]["digest"].clone();
+        let original = with_statement(&source, &signed);
+        assert!(matches(&original));
+        let mut changes = vec![
+            ("account", json!(OTHER_ID)),
+            ("ownerUserId", json!(OTHER_ID)),
+            ("alias", json!("account-2")),
+            ("mode", json!("read_only")),
+            ("historyLimitDays", json!(7)),
+            ("disclosureVersion", json!(2)),
+            ("pluginInstanceId", json!(OTHER_ID)),
+        ];
+        if name == "connect-email" {
+            changes.push(("address", json!("other@example.test")));
+        } else {
+            changes.push(("teamId", json!("T_OTHER")));
+            changes.push(("selfUserId", json!("U_OTHER")));
+        }
+        for (field, value) in changes {
+            let mut changed = original.clone();
+            changed["review"]["subject"][field] = value;
+            assert_ne!(changed["review"]["subject"], original["review"]["subject"]);
+            changed["review"]["digest"] = json!(jcs_sha256(&changed["review"]["subject"]).unwrap());
+            assert!(api::check_schema("OperationReview", &changed["review"]));
+            assert!(!matches(&changed), "{name}: stale signed {field}");
+            // Matching newly projected bytes is DATA validation, never native acceptance.
+            let mut projected = statement(&changed);
+            projected["digest"] = changed["review"]["digest"].clone();
+            assert!(matches(&with_statement(&changed, &projected)));
+        }
+    }
+}
+
 // Invented review DATA only: no candidate, process or accepted-context provenance.
 fn plugin_upgrade_data() -> Value {
     json!({
@@ -378,6 +639,8 @@ fn review_kinds_are_exactly_the_admin_kinds_with_a_review_member() {
     let subjects: Vec<Value> = [
         "plugin-install",
         "plugin-upgrade",
+        "connect-email",
+        "connect-chat",
         "email",
         "chat",
         "device",
@@ -462,6 +725,7 @@ fn admin_statement_binds_op_kind_digest_and_identity_for_every_reviewable_kind()
         let name = match *kind {
             "plugin.install" => "plugin-install",
             "plugin.upgrade" => "plugin-upgrade",
+            "account.connect" => "connect-email",
             "security.device-capabilities" => "device",
             "data.backup" => "backup",
             _ => "email",

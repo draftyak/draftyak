@@ -16,6 +16,7 @@ use serde_json::Value;
 pub const ADMIN_REVIEW_KINDS: &[&str] = &[
     "plugin.install",
     "plugin.upgrade",
+    "account.connect",
     "account.disconnect",
     "account.mode-full",
     "security.device-capabilities",
@@ -28,7 +29,10 @@ pub const ADMIN_REVIEW_KINDS: &[&str] = &[
 pub(super) fn request_ids(kind: &str) -> (usize, usize) {
     match kind {
         "plugin.install" | "plugin.upgrade" => (2, 2),
-        "account.disconnect" | "account.mode-full" | "security.device-capabilities" => (1, 1),
+        "account.connect"
+        | "account.disconnect"
+        | "account.mode-full"
+        | "security.device-capabilities" => (1, 1),
         "data.backup" => (0, 0),
         _ => (0, 100),
     }
@@ -145,6 +149,57 @@ fn alias(s: &str) -> bool {
         && bytes
             .iter()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+}
+
+// A connection review is proposed account DATA, not an existing account or an enrollment grant.
+pub(super) fn account_connect_subject(value: &Value) -> bool {
+    plugin_integer(&value["v"], 1, 1).is_some()
+        && is_text(value, "account", id)
+        && is_text(value, "ownerUserId", id)
+        && is_text(value, "alias", alias)
+        && ["full", "read_only"].contains(&text(value, "mode"))
+        && plugin_integer(&value["historyLimitDays"], 1, 365).is_some()
+        && plugin_integer(&value["disclosureVersion"], 1, MAX_SAFE).is_some()
+        && is_text(value, "pluginInstanceId", id)
+        && match text(value, "channel") {
+            "email" => {
+                shape(
+                    value,
+                    &[
+                        "v",
+                        "channel",
+                        "account",
+                        "ownerUserId",
+                        "alias",
+                        "mode",
+                        "historyLimitDays",
+                        "disclosureVersion",
+                        "pluginInstanceId",
+                        "address",
+                    ],
+                ) && is_text(value, "address", address)
+            }
+            "chat" => {
+                shape(
+                    value,
+                    &[
+                        "v",
+                        "channel",
+                        "account",
+                        "ownerUserId",
+                        "alias",
+                        "mode",
+                        "historyLimitDays",
+                        "disclosureVersion",
+                        "pluginInstanceId",
+                        "teamId",
+                        "selfUserId",
+                    ],
+                ) && (value["teamId"].is_null() || is_text(value, "teamId", provider))
+                    && is_text(value, "selfUserId", provider)
+            }
+            _ => false,
+        }
 }
 
 // Only the values this contract defines: a later capability stays refused until its own

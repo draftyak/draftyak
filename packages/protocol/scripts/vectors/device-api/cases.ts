@@ -296,6 +296,7 @@ const ids = Array.from(
 const requestIds: Readonly<Record<string, number>> = {
 	"plugin.install": 2,
 	"plugin.upgrade": 2,
+	"account.connect": 1,
 	"account.disconnect": 1,
 	"account.mode-full": 1,
 	"security.device-capabilities": 1,
