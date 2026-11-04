@@ -19,6 +19,7 @@ const config: UserConfig = {
 		"src/legacy-sync.ts",
 		"src/plugin.ts",
 		"src/manifest.ts",
+		"src/install-manifest.ts",
 		"src/bootstrap.ts",
 	],
 	format: "esm",

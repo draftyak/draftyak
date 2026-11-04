@@ -22,6 +22,7 @@
     "./legacy-sync": "./src/legacy-sync.ts",
     "./plugin": "./src/plugin.ts",
     "./manifest": "./src/manifest.ts",
+    "./install-manifest": "./src/install-manifest.ts",
     "./bootstrap": "./src/bootstrap.ts"
   },
   "publishConfig": {
@@ -98,6 +99,10 @@
         "types": "./dist/manifest.d.mts",
         "default": "./dist/manifest.mjs"
       },
+      "./install-manifest": {
+        "types": "./dist/install-manifest.d.mts",
+        "default": "./dist/install-manifest.mjs"
+      },
       "./bootstrap": {
         "types": "./dist/bootstrap.d.mts",
         "default": "./dist/bootstrap.mjs"
@@ -106,7 +111,8 @@
   },
   "files": [
     "dist",
-    "draftyak.plugin.json"
+    "draftyak.plugin.json",
+    "manifest.yaml"
   ],
   "scripts": {
     "typecheck": "tsc -b",
