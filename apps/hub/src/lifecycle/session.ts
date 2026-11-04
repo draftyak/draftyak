@@ -26,6 +26,11 @@ import {
 	type NativeAccountApprovals,
 	type NativeAccountApprovalsHandle,
 } from "../identity/native-account-approvals.ts";
+import {
+	createNativePairingWindowsHandle,
+	type NativePairingWindows,
+	type NativePairingWindowsHandle,
+} from "../identity/pairing-windows.ts";
 import { PinService } from "../identity/pin.ts";
 import { WorkDatabase } from "../jobs/database.ts";
 import { systemClock, type TimerClock } from "../kernel/clock.ts";
@@ -166,6 +171,8 @@ interface NativeOwner {
 	pluginsPromise?: Promise<PluginRegistry>;
 	accountApprovals?: NativeAccountApprovalsHandle;
 	accountApprovalsClosed: boolean;
+	pairingWindows?: NativePairingWindowsHandle;
+	pairingWindowsClosed: boolean;
 	recovery?: NativeBackupRecoveryHandle;
 	recoveryClosed: boolean;
 	closePromise?: Promise<void>;
@@ -238,6 +245,32 @@ export function nativeBackupRecovery(session: unknown): NativeBackupRecovery {
 	const facade = owner.recovery.get();
 	assertNativeBackupRecoveryOwner(session, owner.recovery);
 	return facade;
+}
+
+/** Deep consuming seam; the original Session retains and drains the private handle. */
+export async function nativePairingWindows(
+	...arguments_: unknown[]
+): Promise<NativePairingWindows> {
+	try {
+		if (arguments_.length !== 1) throw new HubSessionError("SESSION_UNAVAILABLE");
+		const session = arguments_[0];
+		const owner = sessionOwner(session, "open");
+		owner.pairingWindows ??= createNativePairingWindowsHandle(
+			session as HubSession,
+			owner.config.masterKey,
+		);
+		const handle = owner.pairingWindows;
+		const facade = await handle.get();
+		if (
+			sessionOwner(session, "open") !== owner ||
+			owner.pairingWindows !== handle ||
+			owner.pairingWindowsClosed
+		)
+			throw new HubSessionError("SESSION_UNAVAILABLE");
+		return facade;
+	} catch {
+		throw new HubSessionError("SESSION_UNAVAILABLE");
+	}
 }
 
 /** Internal consuming seam only; not exported from the package root. */
@@ -401,6 +434,7 @@ function session(
 		stopped: false,
 		drained: false,
 		accountApprovalsClosed: false,
+		pairingWindowsClosed: false,
 		recoveryClosed: false,
 		storeClosed: false,
 	};
@@ -416,6 +450,14 @@ function session(
 		const draining: Promise<void>[] = [];
 		const approvals = owner.accountApprovals;
 		const recovery = owner.recovery;
+		const pairingWindows = owner.pairingWindows;
+		if (pairingWindows && !owner.pairingWindowsClosed) {
+			try {
+				pairingWindows.beginClose();
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
 		if (recovery && !owner.recoveryClosed) {
 			try {
 				recovery.beginClose();
@@ -457,6 +499,17 @@ function session(
 				draining.push(
 					recovery.close().then(() => {
 						owner.recoveryClosed = true;
+					}),
+				);
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
+		if (pairingWindows && !owner.pairingWindowsClosed) {
+			try {
+				draining.push(
+					pairingWindows.close().then(() => {
+						owner.pairingWindowsClosed = true;
 					}),
 				);
 			} catch {

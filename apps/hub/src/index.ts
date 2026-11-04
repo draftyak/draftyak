@@ -173,6 +173,7 @@ export {
 	type LifecycleSchedulerOptions,
 } from "./lifecycle/scheduler.ts";
 export {
+	assertHubSessionAdmission,
 	type HubSession,
 	HubSessionError,
 	type HubSessionErrorCode,

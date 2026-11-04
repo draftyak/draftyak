@@ -8,9 +8,14 @@ import type { Fixture as AdminFixture } from "./admin-operations-fixture.ts";
 
 requireLoopbackNetworkGuard();
 const { fixture: nativeAdminFixture, native } = await import("./admin-operations-fixture.ts");
-const { ChallengeService } = await import("../../src/identity/challenges.ts");
+const { ChallengeError, ChallengeService } = await import("../../src/identity/challenges.ts");
 const { connectFakeDevice } = await import("../support/fake-device/harness.ts");
 const { FakeDeviceError } = await import("../support/fake-device/index.ts");
+const { cliConfirmPinScope } = await import("../../src/authz/scopes.ts");
+const { NativeAdminError } = await import("../../src/identity/admin-operations.ts");
+const { nativePairingWindows } = await import("../../src/lifecycle/session.ts");
+const { originalSessionAdminFixture, closeOriginalSessionAdminFixtures, pairingExchange } =
+	await import("./original-session-admin-fixture.ts");
 const { registerTransportCases } = await import("../support/fake-device/transport.cases.ts");
 
 registerTransportCases();
@@ -20,6 +25,10 @@ interface Fixture extends AdminFixture {
 	readonly owner: FakeDeviceConnection;
 	readonly clients: FakeDevice[];
 }
+type ApprovalFixture = Pick<
+	Fixture,
+	"native" | "device" | "account" | "operations" | "service" | "owner"
+>;
 interface Evidence {
 	readonly accountAudit: number;
 	readonly accountEvents: number;
@@ -70,7 +79,8 @@ afterEach(async () => {
 		}
 	}
 });
-function evidence(f: Fixture): Evidence {
+afterEach(closeOriginalSessionAdminFixtures);
+function evidence(f: ApprovalFixture): Evidence {
 	return f.native.store.read((tx) => ({
 		accountAudit:
 			tx.get<{ n: number }>(
@@ -89,7 +99,7 @@ function evidence(f: Fixture): Evidence {
 			])?.failures ?? 0,
 	}));
 }
-function settled(f: Fixture, operation: string): Settlement {
+function settled(f: ApprovalFixture, operation: string): Settlement {
 	return f.native.store.read((tx) => {
 		const row = tx.get<{ state: string }>(
 			"SELECT state FROM main.native_admin_operations WHERE id=?",
@@ -103,7 +113,7 @@ function settled(f: Fixture, operation: string): Settlement {
 		return { state: row.state, consumed: challenge.consumed_at, signature: challenge.signature };
 	});
 }
-function open(f: Fixture): Extract<OperationReview, { kind: "account.mode-full" }> {
+function open(f: ApprovalFixture): Extract<OperationReview, { kind: "account.mode-full" }> {
 	const review = f.operations.open(f.owner.device.peer, {
 		kind: "account.mode-full",
 		ids: [f.account.account.id],
@@ -111,7 +121,7 @@ function open(f: Fixture): Extract<OperationReview, { kind: "account.mode-full" 
 	if (review.kind !== "account.mode-full") throw new Error("DYTEST native review kind refused");
 	return review;
 }
-function issued(f: Fixture): {
+function issued(f: ApprovalFixture): {
 	review: OperationReview;
 	challenge: Challenge;
 	envelope: SignedEnvelope;
@@ -227,6 +237,72 @@ describe("fake device native approval primitives", () => {
 			expect(settled(f, review.id)).toEqual({ state: "pending", consumed: null, signature: null });
 		},
 	);
+
+	it("refuses a confirmed non-approver at admin open and issue before PIN work", async () => {
+		const f = await originalSessionAdminFixture();
+		const reader = await connectFakeDevice(f.native);
+		f.clients.push(reader.client);
+		const windows = await nativePairingWindows(f.originalSession);
+		const opened = await windows.open(f.owner.device.peer, { role: "device", pin: native.PIN });
+		const exchange = pairingExchange(reader.client, opened.pairingCode);
+		let candidate: string;
+		try {
+			const claimed = windows.claim(reader.device.peer, exchange.claim);
+			const recorded = windows.reveal(reader.device.peer, exchange.reveal);
+			expect(claimed.deviceId === recorded.deviceId && claimed.epoch === recorded.epoch).toBe(true);
+			candidate = recorded.deviceId;
+		} finally {
+			exchange.claim.fill(0);
+			exchange.reveal.fill(0);
+		}
+		const proof = await f.native.pins.verify(
+			native.owner(f.native),
+			native.PIN,
+			cliConfirmPinScope(candidate),
+		);
+		try {
+			f.native.store.write((tx) => f.native.registry.confirmFromCli(tx, candidate, proof));
+		} finally {
+			f.native.pins.discard(proof);
+		}
+		const grant = f.native.store.read((tx) =>
+			f.native.authorizer.requirePeerDevice(tx, reader.device.peer, "read"),
+		);
+		expect(
+			grant.deviceId === candidate &&
+				grant.userId === native.owner(f.native) &&
+				grant.approvalKey === reader.client.signingKey,
+		).toBe(true);
+		expect(grant.capabilities.includes("approve") || grant.capabilities.includes("admin")).toBe(
+			false,
+		);
+		const { review } = issued(f);
+		const before = f.current(),
+			counts = evidence(f),
+			pending = settled(f, review.id);
+		let openRefused = false,
+			issueRefused = false;
+		try {
+			f.operations.open(reader.device.peer, {
+				kind: "account.mode-full",
+				ids: [f.account.account.id],
+			});
+		} catch (error) {
+			openRefused = error instanceof NativeAdminError && error.code === "UNAVAILABLE";
+		}
+		try {
+			f.service.issue(reader.device.peer, { kind: "admin.v1", id: review.id });
+		} catch (error) {
+			issueRefused = error instanceof ChallengeError && error.code === "UNAVAILABLE";
+		}
+		expect(openRefused).toBe(true);
+		expect(issueRefused).toBe(true);
+		expect(evidence(f)).toEqual(counts);
+		expect(f.current()).toEqual(before);
+		expect(settled(f, review.id)).toEqual(pending);
+		const current = f.operations.review(f.owner.device.peer, review.id);
+		expect(current.id === review.id && current.digest === review.digest).toBe(true);
+	});
 
 	it("refuses a different pending TLS peer before attempting the owner's PIN", async () => {
 		const f = await fixture(),

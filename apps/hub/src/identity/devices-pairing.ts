@@ -23,6 +23,7 @@ import {
 	DeviceRegistry,
 	isDeviceRegistry,
 } from "./devices.ts";
+import { takePostBootstrapPairingCandidate } from "./pairing-windows.ts";
 
 export interface VerifiedCandidate {
 	readonly __verifiedCandidate: never;
@@ -102,6 +103,8 @@ export function takeCandidate(
 	proof: VerifiedCandidate,
 ): CandidateEvidence {
 	if (typeof proof !== "object" || proof === null || types.isProxy(proof)) return refuse();
+	const postBootstrap = takePostBootstrapPairingCandidate(registry, tx, proof);
+	if (postBootstrap !== undefined) return postBootstrap;
 	const candidate = candidates.get(proof);
 	candidates.delete(proof);
 	if (
