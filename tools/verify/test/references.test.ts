@@ -26,9 +26,16 @@ const w = word();
 interface Tree {
 	readonly files?: Readonly<Record<string, string>>;
 	readonly ignored?: Readonly<Record<string, string>>;
+	// Written after the commit and not ignored: listed, but not in the index.
+	readonly untracked?: Readonly<Record<string, string>>;
 	// Files in the folder beside the repository, which "../outside/" from its root reaches.
 	readonly outside?: Readonly<Record<string, string>>;
+	// Junctions to the folder beside the repository, made after the commit.
+	readonly junctions?: readonly string[];
 }
+
+// The allowed root the reference checks get, which no walk may enter.
+const allowedRoot = `spikes/zz-${w}/`;
 
 // In file texts, <IN> stands for the repository's absolute path and <OUT> for the folder beside
 // it, with / separators.
@@ -44,12 +51,15 @@ function fixture(tree: Tree): TempRepo {
 	repo.commit();
 	const ignored = Object.keys(tree.ignored ?? {});
 	if (ignored.length > 0) repo.ignore(...ignored);
-	for (const [file, text] of Object.entries(tree.ignored ?? {})) repo.write(file, text);
+	for (const [file, text] of Object.entries({ ...tree.ignored, ...tree.untracked })) {
+		repo.write(file, text);
+	}
 	for (const [file, text] of Object.entries(tree.outside ?? {})) {
 		const at = path.join(repo.outside, ...file.split("/"));
 		mkdirSync(path.dirname(at), { recursive: true });
 		writeFileSync(at, text);
 	}
+	for (const file of tree.junctions ?? []) repo.link(file, repo.outside, "junction");
 	return repo;
 }
 
@@ -67,6 +77,8 @@ async function refused(tree: Tree, check: ReferenceCheck): Promise<string[]> {
 	const checkout = new Checkout(repo.dir, spy.fs);
 	const listed = listedSet(listing);
 	const isListed = (rel: string): boolean => listed.has(fold(rel));
+	const indexed = new Set(listing.entries.map((entry) => fold(entry.path)));
+	const tracked = (rel: string): boolean => indexed.has(fold(rel));
 	const files = [...listing.entries.map((entry) => entry.path), ...listing.untracked].filter(
 		(rel) => checkout.kindOf(rel) === "file" && !reservedWord.test(rel),
 	);
@@ -74,7 +86,15 @@ async function refused(tree: Tree, check: ReferenceCheck): Promise<string[]> {
 		const got = isListed(rel) ? checkout.readText(rel) : "unreadable";
 		return got === "unreadable" ? null : got;
 	};
-	const found = references(check, { checkout, listed: isListed, files, text });
+	const allowedRoots = [allowedRoot];
+	const found = references(check, {
+		checkout,
+		listed: isListed,
+		tracked,
+		files,
+		text,
+		allowedRoots,
+	});
 	expect(spy.refused).toEqual([]);
 	expect(spy.readdirs.filter((dir) => path.isAbsolute(dir))).toEqual([]);
 	return found.refused.map(({ rel, kind }) => scrub(`${rel}: ${kind}`));
@@ -204,8 +224,10 @@ describe("refs-rust", () => {
 		const input = {
 			checkout,
 			listed: (rel: string) => listed.has(fold(rel)),
+			tracked: (rel: string) => listed.has(fold(rel)),
 			files: ["r/src/lib.rs"],
 			text: () => "mod a;\n",
+			allowedRoots: [],
 		};
 		expect(references("refs-rust", input).refused).toEqual([{ rel: "r/src/a.rs", kind: "link" }]);
 	});
@@ -759,7 +781,6 @@ describe("refs-config", () => {
 			}),
 			"b/package.json": JSON.stringify({ name: "b", exports: { ".": "./index.ts" } }),
 			"b/index.ts": "",
-			"c/package.json": JSON.stringify({ name: "c", exports: { "./*": "./gen/*.js" } }),
 		};
 		const ignored = {
 			"a/built/main.js": "",
@@ -774,7 +795,85 @@ describe("refs-config", () => {
 			"a/sub/index.js: unlisted",
 			"a/bin/tool.mjs: unlisted",
 			"a/types/index.d.ts: unlisted",
+		]);
+	});
+
+	it("follows an exports subpath pattern, under a condition object too, and an imports #gen/* pattern, when every match is a regular file in the index", async () => {
+		const files = {
+			"a/package.json": JSON.stringify({
+				name: "a",
+				exports: { ".": "./src/index.ts", "./*": "./src/*.ts" },
+			}),
+			"a/src/index.ts": "",
+			"a/src/x.ts": "",
+			"a/src/deep/y.ts": "",
+			"a/src/notes.md": "",
+			"b/package.json": JSON.stringify({
+				name: "b",
+				exports: {
+					"./*": { types: "./src/*.ts", default: ["./src/*.ts"] },
+					"./internal/*": null,
+				},
+			}),
+			"b/src/x.ts": "",
+			"c/package.json": JSON.stringify({ name: "c", imports: { "#gen/*": "./gen/*.ts" } }),
+			"c/gen/x.ts": "",
+		};
+		// Ignored files no match can be: another ending, or outside every pattern's prefix.
+		const ignored = {
+			"a/src/out.log": "",
+			"a/dist/x.ts": "",
+			"b/internal/x.ts": "",
+			"c/src/x.ts": "",
+		};
+		expect(await refused({ files, ignored }, "refs-config")).toEqual([]);
+	});
+
+	it("refuses a pattern match that is ignored, untracked or a junction, a prefix that leaves the package and a target with two stars, reading none of them", async () => {
+		const exports = (target: string): string =>
+			JSON.stringify({ name: "p", exports: { "./*": target } });
+		const files = {
+			"a/package.json": exports("./src/*.ts"),
+			"a/src/ok.ts": "",
+			"b/package.json": exports("./../shared/*.ts"),
+			"c/package.json": exports("./src/*/*.ts"),
+			"shared/x.ts": "",
+		};
+		const ignored = { "a/src/gen/ignored.ts": "" };
+		const untracked = { "a/src/new.ts": "" };
+		const tree = { files, ignored, untracked, outside: BESIDE, junctions: ["a/src/lib"] };
+		expect(await refused(tree, "refs-config")).toEqual([
+			"a/src/lib: link",
+			"a/src/new.ts: unlisted",
+			"a/src/gen/ignored.ts: unlisted",
+			"b/package.json: outside",
 			"c/package.json: unsupported",
+		]);
+	});
+
+	it("refuses a pattern of another shape: a star in its key or target alone, a target that doesn't start with ./, one through node_modules, naming a reserved word or reaching the allowed root", async () => {
+		const exports = (name: string, map: Readonly<Record<string, string>>): string =>
+			JSON.stringify({ name, exports: map });
+		const files = {
+			"a/package.json": exports("a", { "./*": "./index.js" }),
+			"b/package.json": exports("b", { "./x": "./src/*.js" }),
+			"c/package.json": exports("c", { "./*": "src/*.js" }),
+			"d/package.json": JSON.stringify({ name: "d", imports: { "#dep/*": "dep/*" } }),
+			"e/package.json": exports("e", { "./*": "./node_modules/x/*.js" }),
+			"f/package.json": exports("f", { "./*": `./gen/${w}-*.js` }),
+			"g/package.json": exports("g", { "./*": "./src/*.js" }),
+			"spikes/package.json": exports("s", { "./*": "./*/index.ts" }),
+		};
+		const ignored = { "g/src/node_modules/x/index.js": "" };
+		expect(await refused({ files, ignored }, "refs-config")).toEqual([
+			"a/package.json: unsupported",
+			"b/package.json: unsupported",
+			"c/package.json: unsupported",
+			"d/package.json: unsupported",
+			"e/package.json: unsupported",
+			"f/package.json: reserved",
+			"g/package.json: unsupported",
+			"spikes/package.json: reserved",
 		]);
 	});
 

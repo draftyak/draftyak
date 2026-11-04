@@ -195,7 +195,9 @@ export async function gateWith(
 		: null;
 
 	const files = paths.filter((rel) => kinds.get(rel) === "file" && !reserved(rel));
-	const input = { checkout, listed: isListed, files, text };
+	const indexed = new Set(tracked.map((rel) => fold(rel)));
+	const isTracked = (rel: string): boolean => indexed.has(fold(rel));
+	const input = { checkout, listed: isListed, tracked: isTracked, files, text, allowedRoots };
 	let packages: ReturnType<typeof packageDirs> | undefined;
 	const packagesOf = (): ReturnType<typeof packageDirs> =>
 		(packages ??= packageDirs(checkout, listing));

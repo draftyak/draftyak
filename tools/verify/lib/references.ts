@@ -12,17 +12,17 @@ import { type Checkout, fold, type Kind } from "./safe-fs.ts";
 
 // The inputs that listed files name: Rust modules and includes, Cargo's paths, relative and
 // absolute module specifiers, the package.json a # specifier resolves through, and the paths
-// package.json specs, scripts and imports maps, tsconfig fields, Biome configs and HTML attributes
-// give. A named file (a candidate) is only kind-checked, never read: one that exists must be a
-// regular, listed file of the checkout, in real folders. A missing one is fine, as no tool can read
-// it, except one whose path names a reserved word, which is refused either way. A path or glob that
-// leaves the checkout (absolute elsewhere, climbing above the root on its way, even if it comes back
-// in, or from a drive's own working folder) is refused as "outside", whether or not anything is
-// there. Bare specifiers and names, which resolve to installed dependencies, aren't followed, and
-// nothing below node_modules or .git is. A value that redirects a tool in a form these checks don't
-// follow (an imports pattern, a glob import, a path with a name Windows trims, a Biome config from a
-// package, a file: URL specifier, a toolchain path, a .cargo config key but paths and [patch]) is
-// refused as "unsupported".
+// package.json specs, scripts, entry points and imports maps (subpath patterns among them), tsconfig
+// fields, Biome configs and HTML attributes give. A named file (a candidate) is only kind-checked,
+// never read: one that exists must be a regular, listed file of the checkout, in real folders. A
+// missing one is fine, as no tool can read it, except one whose path names a reserved word, which is
+// refused either way. A path or glob that leaves the checkout (absolute elsewhere, climbing above the
+// root on its way, even if it comes back in, or from a drive's own working folder) is refused as
+// "outside", whether or not anything is there. Bare specifiers and names, which resolve to installed
+// dependencies, aren't followed, and nothing below node_modules or .git is. A value that redirects a
+// tool in a form these checks don't follow (a subpath pattern of another shape, a glob import, a path
+// with a name Windows trims, a Biome config from a package, a file: URL specifier, a toolchain path,
+// a .cargo config key but paths and [patch]) is refused as "unsupported".
 
 export type RefusedKind = Kind | "unlisted" | "reserved" | "unparsable" | "unsupported" | "outside";
 
@@ -38,10 +38,14 @@ export interface ReferenceInput {
 	readonly checkout: Checkout;
 	// Whether a path is listed: in the index, or untracked and not ignored.
 	readonly listed: (rel: string) => boolean;
+	// Whether a path is in the index.
+	readonly tracked: (rel: string) => boolean;
 	// The ordinary listed files that are regular files: the only files read here.
 	readonly files: readonly string[];
 	// A listed file's text, read through the checkout once; null where it can't be read.
 	readonly text: (rel: string) => string | null;
+	// The allowed reserved roots, each ending in "/": no walk here enters one.
+	readonly allowedRoots: readonly string[];
 }
 
 const UNFOLLOWED = new Set(["node_modules", ".git"]);
@@ -832,9 +836,9 @@ const BARE_TARGET =
 	/^(?:node:[\w/-]+|(?:@[\w~-][\w.~-]*\/)?[\w~-][\w.~-]*(?:\/(?!\.\.?(?:\/|$))[\w.~@-]+)*)$/;
 
 // One target of a package.json imports map, at the manifest's folder: a ./ path is a module the
-// package's # specifiers load, followed as one; a bare name or a built-in isn't followed. Anything
-// else (a * pattern, a ../ or absolute path, an encoded or URL form) is a redirection this check
-// doesn't follow, and the manifest is refused.
+// package's # specifiers load, followed as one; a bare name or a built-in isn't followed. A *
+// pattern is subpathPatterns'. Anything else (a ../ or absolute path, an encoded or URL form) is a
+// redirection this check doesn't follow, and the manifest is refused.
 function importsTarget(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -853,6 +857,165 @@ function importsTarget(
 		}
 	} else if (BARE_TARGET.test(value)) return;
 	candidates.refuse(file, "unsupported");
+}
+
+// Each target of an exports or imports value with its subpath key: every string at any condition
+// depth and in fallback arrays. An exports value without "." keys is the "." subpath's. A null
+// target excludes, and is left out.
+function subpathTargets(field: string, value: Json): (readonly [string, string])[] {
+	const found: (readonly [string, string])[] = [];
+	const leaves = (key: string, target: Json): void => {
+		if (typeof target === "string") found.push([key, target]);
+		else if (Array.isArray(target)) for (const item of target) leaves(key, item);
+		else if (isObject(target)) for (const [, inner] of target.object) leaves(key, inner);
+	};
+	const keyed =
+		isObject(value) && (field === "imports" || value.object.some(([key]) => key.startsWith(".")));
+	if (!keyed) leaves(field === "exports" ? "." : "", value);
+	else if (isObject(value)) {
+		for (const [key, target] of value.object) {
+			leaves(field === "exports" && !key.startsWith(".") ? "." : key, target);
+		}
+	}
+	return found;
+}
+
+const starsIn = (text: string): number => text.split("*").length - 1;
+
+// A folder or file name a pattern's fixed parts may give: no empty, . or .. step, no node_modules
+// or .git, which no walk enters, and no name Windows trims.
+const plainPart = (part: string): boolean =>
+	part !== "" &&
+	part !== "." &&
+	part !== ".." &&
+	!/[. ]$/.test(part) &&
+	!UNFOLLOWED.has(part.toLowerCase());
+
+// The endings a pattern's match may have, in lower case: its suffix, the suffix's .js-to-.ts twins,
+// and, with no usual extension, the suffix with each one added, as moduleTarget tries them.
+function endingsOf(suffix: string): string[] {
+	const extension = /\.[^./]*$/.exec(suffix)?.[0].toLowerCase() ?? "";
+	const twins = (REMAPPED[extension] ?? []).map(
+		(twin) => `${suffix.slice(0, -extension.length)}${twin}`,
+	);
+	const added = KNOWN.test(suffix) ? [] : EXTENSIONS.map((more) => `${suffix}${more}`);
+	return [suffix, ...twins, ...added].map((ending) => ending.toLowerCase());
+}
+
+// One subpath pattern's target, from its package's folder: a fixed prefix and suffix around one *,
+// which may stand for any path. The target must start with ./ and its fixed parts hold plain names:
+// a prefix that leaves the package is refused as outside, and a part naming a reserved word, or a
+// walk that could reach an allowed root, as reserved. The prefix's folder is then walked, names and
+// kinds only, as scan-tsc walks an include root: every entry a match could be must be a regular file
+// in the index (a pattern makes any file it matches loadable by name, so an untracked one, ignored
+// or not, is refused as unlisted), and no entry a match could lie below may be a link, a junction or
+// another kind the walk doesn't enter. A walk that meets node_modules or .git there is unsupported.
+function patternTarget(
+	input: ReferenceInput,
+	candidates: Candidates,
+	file: string,
+	target: string,
+): void {
+	const text = target.replaceAll("\\", "/");
+	const star = text.indexOf("*");
+	const prefix = text.slice(2, star);
+	const suffix = text.slice(star + 1);
+	const forms = !NOT_A_PATH.test(prefix) && !NOT_A_PATH.test(suffix) && !/[%#]/.test(text);
+	if (!text.startsWith("./") || !forms) {
+		candidates.refuse(file, "unsupported");
+		return;
+	}
+	if (reservedWord.test(prefix) || reservedWord.test(suffix)) {
+		candidates.refuse(file, "reserved");
+		return;
+	}
+	const folders = prefix.split("/");
+	const head = folders.pop() ?? "";
+	const [tail = "", ...names] = suffix.split("/");
+	let depth = 0;
+	for (const part of folders) {
+		depth += part === ".." ? -1 : 1;
+		if (depth < 0) {
+			candidates.refuse(file, "outside");
+			return;
+		}
+	}
+	const plain =
+		folders.every(plainPart) &&
+		names.every(plainPart) &&
+		head !== "." &&
+		head !== ".." &&
+		!/[. ]$/.test(tail);
+	if (!plain) {
+		candidates.refuse(file, "unsupported");
+		return;
+	}
+	const pkg = dirOf(file);
+	const base = [pkg, ...folders].filter((part) => part !== "").join("/");
+	const within = fold(base === "" ? "" : `${base}/`);
+	const allowed = (rel: string): boolean =>
+		input.allowedRoots.some((root) => fold(`${rel}/`).startsWith(fold(root)));
+	if (input.allowedRoots.some((root) => fold(root).startsWith(within)) || allowed(base)) {
+		candidates.refuse(file, "reserved");
+		return;
+	}
+	const lead = prefix.toLowerCase();
+	const endings = endingsOf(suffix);
+	const inPackage = (rel: string): string =>
+		(pkg === "" ? rel : rel.slice(pkg.length + 1)).toLowerCase();
+	const kind = input.checkout.walk(base, (rel, found) => {
+		const name = inPackage(rel);
+		const match =
+			name.startsWith(lead) &&
+			endings.some((end) => name.length >= lead.length + end.length && name.endsWith(end));
+		// As a folder, it could hold a match.
+		const holds = `${name}/`.startsWith(lead);
+		if (!match && !holds) return false;
+		if (reservedWord.test(rel) || allowed(rel)) {
+			candidates.refuse(rel, "reserved");
+			return false;
+		}
+		if (UNFOLLOWED.has(baseOf(rel).toLowerCase())) {
+			candidates.refuse(file, "unsupported");
+			return false;
+		}
+		if (found === "dir") {
+			if (match) candidates.refuse(rel, "dir");
+			return holds;
+		}
+		if (found === "file") {
+			if (match && !input.tracked(rel)) candidates.refuse(rel, "unlisted");
+		} else if (match || (holds && found !== "hardlink" && found !== "special")) {
+			candidates.refuse(rel, found);
+		}
+		return false;
+	});
+	if (kind === "link" || kind === "redirect" || kind === "unreadable")
+		candidates.refuse(base, kind);
+}
+
+// A package.json's exports and imports subpath patterns: a key holding one * whose targets each
+// hold one too, followed by patternTarget. A target or key holding one alone, or more than one, is
+// refused as unsupported.
+function subpathPatterns(
+	input: ReferenceInput,
+	candidates: Candidates,
+	file: string,
+	json: JsonObject,
+): void {
+	for (const [field, value] of json.object) {
+		if (field !== "exports" && field !== "imports") continue;
+		const done = new Set<string>();
+		for (const [key, target] of subpathTargets(field, value)) {
+			const [keyed, targeted] = [starsIn(key), starsIn(target)];
+			if (keyed === 0 && targeted === 0) continue;
+			if (keyed !== 1 || targeted !== 1) candidates.refuse(file, "unsupported");
+			else if (!done.has(target)) {
+				done.add(target);
+				patternTarget(input, candidates, file, target);
+			}
+		}
+	}
 }
 
 // Every name Biome takes a config from, in the root or a nested folder.
@@ -946,9 +1109,13 @@ function scriptToken(
 	}
 }
 
+// The pointers whose * patterns subpathPatterns follows.
+const PATTERNED = new Set(["manifest:exports", "manifest:imports"]);
+
 // Each pointer of a package.json, tsconfig or HTML file but tsconfig include, which scan-tsc
-// follows, with the absolute paths dependency specs and tsconfig extends give, and each script
-// token that reads as a path. One that leaves the checkout refuses the file that names it.
+// follows, with the absolute paths dependency specs and tsconfig extends give, each script token
+// that reads as a path, and a package.json's subpath patterns. One that leaves the checkout refuses
+// the file that names it.
 function configRefs(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -960,6 +1127,7 @@ function configRefs(
 		candidates.refuse(file, "unparsable");
 		return;
 	}
+	const json = fileKind(file) === "manifest" ? parseJson(text) : undefined;
 	// A config tsc reads through extends or references. These checks read a config's own fields only
 	// when its name is a tsconfig's, so a listed file of another name refuses the one that names it.
 	const config = (target: string): void => {
@@ -970,7 +1138,7 @@ function configRefs(
 		}
 	};
 	for (const { value, anchor, field } of pointers ?? []) {
-		if (field === "tsconfig:include") continue;
+		if (field === "tsconfig:include" || (PATTERNED.has(field) && value.includes("*"))) continue;
 		if (field === "manifest:scripts") {
 			if (anchor !== null) scriptToken(input, candidates, file, anchor, value);
 			continue;
@@ -998,7 +1166,7 @@ function configRefs(
 			continue;
 		}
 		if (rel === null) {
-			// An exports pattern names modules by pattern, which this check doesn't follow.
+			// A * in main, bin or another entry field but exports names no one module.
 			const pattern = ENTRY_POINTERS.has(field) && value.includes("*");
 			const why = pattern ? "unsupported" : unfollowedPath(input.checkout, anchor ?? "", value);
 			if (why !== null) candidates.refuse(file, why);
@@ -1030,4 +1198,5 @@ function configRefs(
 		} else if (ENTRY_POINTERS.has(field)) moduleTarget(input, candidates, rel);
 		else if (field === "html" && kind() !== "dir") candidates.file(rel);
 	}
+	if (isObject(json)) subpathPatterns(input, candidates, file, json);
 }

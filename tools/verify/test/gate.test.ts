@@ -246,8 +246,8 @@ describe("refusals before any read or child start", () => {
 	it("refuses a redirection it doesn't follow, in an imports map, a glob import, a Biome config, a toolchain file or a .cargo config, naming none", async () => {
 		const cases: readonly (readonly [string, Readonly<Record<string, string>>, string])[] = [
 			[
-				"an imports pattern",
-				{ "packages/a/package.json": '{ "name": "a", "imports": { "#x/*": "./gen/*.js" } }\n' },
+				"an imports pattern with two stars",
+				{ "packages/a/package.json": '{ "name": "a", "imports": { "#x/*": "./gen/*/*.js" } }\n' },
 				"refs-config",
 			],
 			[
@@ -436,6 +436,25 @@ describe("refusals before any read or child start", () => {
 		expect(run.opens.includes("packages/a/gen/x.mjs")).toBe(false);
 		const named = shown(await gate(repo, { names: true }))[0] ?? "";
 		expect(named.endsWith(": packages/a/gen/x.mjs (unlisted)")).toBe(true);
+	});
+
+	it("follows an exports subpath pattern, and refuses an ignored or untracked match without reading it, naming only the match", async () => {
+		const files = {
+			"packages/a/package.json": '{ "name": "a", "exports": { "./*": "./gen/*.js" } }\n',
+			"packages/a/gen/x.js": "export {};\n",
+		};
+		passed(await gate(fixture({ files })));
+		for (const [tree, rel] of [
+			[{ files, ignored: { "packages/a/gen/y.js": "export {};\n" } }, "packages/a/gen/y.js"],
+			[{ files, untracked: { "packages/a/gen/z.js": "export {};\n" } }, "packages/a/gen/z.js"],
+		] as const) {
+			const repo = fixture(tree);
+			const run = await gate(repo, { forbidden: (open) => open === "packages/a/gen/y.js" });
+			refusedWith(run, [LINE["refs-config"] ?? ""]);
+			expect(run.opens.includes("packages/a/gen/y.js")).toBe(false);
+			const named = shown(await gate(repo, { names: true }))[0] ?? "";
+			expect([rel, named.endsWith(`: ${rel} (unlisted)`)]).toEqual([rel, true]);
+		}
 	});
 
 	it("refuses a package whose entry point is an ignored module in the checkout, without reading it", async () => {
