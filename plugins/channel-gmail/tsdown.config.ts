@@ -9,6 +9,7 @@ const config: UserConfig = {
 		"src/decode.ts",
 		"src/read.ts",
 		"src/sync-history.ts",
+		"src/send.ts",
 	],
 	root: "src",
 	unbundle: true,
