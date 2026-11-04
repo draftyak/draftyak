@@ -27,21 +27,12 @@ import { pathToFileURL } from "node:url";
 import { canonicalize } from "@draftyak/protocol/jcs";
 import { build } from "tsdown";
 import {
-	isArrowFunction,
 	isCallExpression,
 	isExportDeclaration,
-	isExpressionStatement,
-	isFunctionDeclaration,
-	isIdentifier,
 	isImportDeclaration,
-	isPropertyAccessExpression,
 	isStringLiteralLikeNode,
-	isTemplateExpression,
-	isVariableDeclaration,
-	isVariableDeclarationList,
 	type Node,
 	SyntaxKind,
-	type VariableDeclaration,
 } from "typescript/unstable/ast";
 import { API } from "typescript/unstable/sync";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -50,6 +41,7 @@ import type { NativeReleaseV2 } from "../../src/plugins/installer/native-release
 import { BUNDLED_PLUGIN_IDS } from "../../src/plugins/installer/policy.ts";
 import { bundle } from "../plugins/installer-fixtures.ts";
 import { nativeBinding } from "../store/helpers.ts";
+import { assertNativeAppModuleLoader } from "./native-app-module-loader.ts";
 
 const hub = path.resolve(import.meta.dirname, "../..");
 const temporary = realpathSync.native(os.tmpdir());
@@ -280,112 +272,6 @@ function closedJavaScript(app: string): void {
 			const ast = project.program.getSourceFile(path.join(app, script));
 			if (!ast) throw new Error("DYTEST application module unavailable");
 			expect(project.program.getSyntacticDiagnostics(path.join(app, script)).length).toBe(0);
-			const dataImports: Node[] = [];
-			const dataHelpers: VariableDeclaration[] = [];
-			let helperIdentifiers = 0;
-			const named = (node: Node | undefined, name: string): boolean =>
-				node !== undefined && isIdentifier(node) && node.text === name;
-			function verifiedDataImport(node: Node, helper: VariableDeclaration): string {
-				const declaration = helper.parent;
-				const arrow = helper.initializer;
-				if (
-					!isVariableDeclarationList(declaration) ||
-					declaration.parent.parent !== ast ||
-					!arrow ||
-					!isArrowFunction(arrow) ||
-					(arrow.modifiers?.length ?? 0) !== 0 ||
-					arrow.parameters.length !== 1
-				)
-					return "binding";
-				const parameter = arrow.parameters[0];
-				const body = arrow.body;
-				if (
-					!parameter ||
-					!named(parameter.name, "verified") ||
-					parameter.initializer ||
-					parameter.dotDotDotToken ||
-					parameter.questionToken ||
-					!isTemplateExpression(body) ||
-					body.head.text !== "data:text/javascript;base64," ||
-					body.templateSpans.length !== 1
-				)
-					return "data-template";
-				const span = body.templateSpans[0];
-				if (!span || span.literal.text !== "" || !isCallExpression(span.expression))
-					return "data-span";
-				const encode = span.expression;
-				const method = encode.expression;
-				const encoding = encode.arguments[0];
-				if (
-					encode.questionDotToken ||
-					encode.arguments.length !== 1 ||
-					!encoding ||
-					!isStringLiteralLikeNode(encoding) ||
-					encoding.text !== "base64" ||
-					!isPropertyAccessExpression(method) ||
-					method.questionDotToken ||
-					!named(method.name, "toString") ||
-					!isPropertyAccessExpression(method.expression) ||
-					method.expression.questionDotToken ||
-					!named(method.expression.name, "entry") ||
-					!named(method.expression.expression, "verified") ||
-					!isCallExpression(node) ||
-					node.arguments.length !== 1
-				)
-					return "base64-encoding";
-				const call = node.arguments[0];
-				if (
-					!call ||
-					!isCallExpression(call) ||
-					call.questionDotToken ||
-					!named(call.expression, "moduleUrl") ||
-					call.arguments.length !== 1 ||
-					!named(call.arguments[0], "verified")
-				)
-					return "import-call";
-				const callback = node.parent;
-				const settle = callback.parent;
-				if (
-					!isArrowFunction(callback) ||
-					callback.body !== node ||
-					callback.parameters.length !== 0 ||
-					(callback.modifiers?.length ?? 0) !== 0 ||
-					!isCallExpression(settle) ||
-					!named(settle.expression, "settleWithin") ||
-					settle.arguments.length !== 3 ||
-					settle.arguments[0] !== callback ||
-					!named(settle.arguments[1], "MODULE_TIMEOUT_MS") ||
-					!named(settle.arguments[2], "clock")
-				)
-					return "settle-callback";
-				let owner = node.parent;
-				while (owner !== ast && !isFunctionDeclaration(owner)) owner = owner.parent;
-				if (
-					!isFunctionDeclaration(owner) ||
-					owner.parent !== ast ||
-					!named(owner.name, "loadModule") ||
-					owner.parameters.length !== 2 ||
-					!named(owner.parameters[0]?.name, "verified") ||
-					!named(owner.parameters[1]?.name, "clock") ||
-					!owner.body
-				)
-					return "load-module";
-				let statement: Node = node;
-				while (statement.parent !== owner.body) statement = statement.parent;
-				const index = owner.body.statements.findIndex((candidate) => candidate === statement);
-				const reverified = owner.body.statements.slice(0, index).some((candidate) => {
-					if (!isExpressionStatement(candidate) || !isCallExpression(candidate.expression))
-						return false;
-					const reverify = candidate.expression;
-					return (
-						!reverify.questionDotToken &&
-						named(reverify.expression, "reverifyModule") &&
-						reverify.arguments.length === 1 &&
-						named(reverify.arguments[0], "verified")
-					);
-				});
-				return reverified ? "verified-data-loader" : "reverify";
-			}
 			function specifier(value: string): void {
 				if (isBuiltin(value)) return;
 				expect(value.startsWith("./") || value.startsWith("../")).toBe(true);
@@ -399,8 +285,6 @@ function closedJavaScript(app: string): void {
 				expect(scripts.includes(relative.replaceAll(path.sep, "/"))).toBe(true);
 			}
 			function visit(node: Node): void {
-				if (named(node, "moduleUrl")) helperIdentifiers++;
-				if (isVariableDeclaration(node) && named(node.name, "moduleUrl")) dataHelpers.push(node);
 				if (
 					(isImportDeclaration(node) || isExportDeclaration(node)) &&
 					node.moduleSpecifier &&
@@ -409,27 +293,12 @@ function closedJavaScript(app: string): void {
 					specifier(node.moduleSpecifier.text);
 				if (isCallExpression(node) && node.expression.kind === SyntaxKind.ImportKeyword) {
 					const arg = node.arguments[0];
-					if (!arg || !isStringLiteralLikeNode(arg)) dataImports.push(node);
-					else specifier(arg.text);
+					if (arg && isStringLiteralLikeNode(arg)) specifier(arg.text);
 				}
 				node.forEachChild(visit);
 			}
 			visit(ast);
-			const helper = dataHelpers[0];
-			const dataImport = dataImports[0];
-			if (
-				dataImports.length !== 1 ||
-				dataHelpers.length !== 1 ||
-				helperIdentifiers !== 2 ||
-				!helper ||
-				!dataImport
-			)
-				throw new Error(
-					`DYTEST import shape counts imports=${dataImports.length} helpers=${dataHelpers.length} uses=${helperIdentifiers}`,
-				);
-			const category = verifiedDataImport(dataImport, helper);
-			if (category !== "verified-data-loader")
-				throw new Error(`DYTEST import shape category=${category}`);
+			assertNativeAppModuleLoader(ast);
 		}
 	} finally {
 		api.close();
