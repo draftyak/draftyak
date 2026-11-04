@@ -927,7 +927,12 @@ function configRefs(
 			else candidates.file(rel);
 		} else if (field === "tsconfig:files") candidates.file(rel);
 		else if (field === "tsconfig:paths") moduleTarget(input, candidates, rel);
-		else if (
+		else if (field === "tsconfig:types") {
+			// tsc resolves a relative types entry from the folder of each project that extends this
+			// config, which this check doesn't follow; an absolute one is a module path.
+			if (relativeLiteral(value.replaceAll("\\", "/"))) candidates.refuse(file, "unsupported");
+			else moduleTarget(input, candidates, rel);
+		} else if (
 			field === "tsconfig:typeRoots" ||
 			field === "tsconfig:baseUrl" ||
 			field === "tsconfig:rootDirs"

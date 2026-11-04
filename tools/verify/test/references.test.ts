@@ -566,6 +566,26 @@ describe("refs-config", () => {
 		]);
 	});
 
+	it("follows an absolute tsconfig types entry as a module path, refuses a relative one and one that leaves the checkout, and leaves package names alone", async () => {
+		const types = (entries: readonly string[]): string =>
+			JSON.stringify({ compilerOptions: { types: entries } });
+		const files = {
+			"a/tsconfig.json": types(["node", "vitest/globals", "<IN>/types/x"]),
+			"b/tsconfig.json": types(["./types/y"]),
+			"c/tsconfig.json": types(["../../outside/helper.ts"]),
+			"d/tsconfig.json": types(["<OUT>/helper.ts"]),
+			"e/tsconfig.json": types([".\\types\\z"]),
+		};
+		const ignored = { "types/x.d.ts": "" };
+		expect(await refused({ files, ignored, outside: BESIDE }, "refs-config")).toEqual([
+			"types/x.d.ts: unlisted",
+			"b/tsconfig.json: unsupported",
+			"c/tsconfig.json: outside",
+			"d/tsconfig.json: outside",
+			"e/tsconfig.json: unsupported",
+		]);
+	});
+
 	it("follows each script token that reads as a path as a module from its package, and refuses one that leaves the checkout", async () => {
 		const scripts = (map: Readonly<Record<string, string>>): string =>
 			JSON.stringify({ name: "p", scripts: map });

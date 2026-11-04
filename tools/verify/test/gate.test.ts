@@ -339,6 +339,13 @@ describe("refusals before any read or child start", () => {
 				"refs-config",
 			],
 			[
+				"a tsconfig types entry",
+				{
+					"packages/a/tsconfig.json": `{ "include": ["**/*.ts"], "compilerOptions": { "types": ["${climb.slice(3)}/helper.ts"] } }\n`,
+				},
+				"refs-config",
+			],
+			[
 				"a #[path] module",
 				{ "crates/r/src/lib.rs": `mod m;\n#[path = "${climb}/m.rs"]\nmod n;\n` },
 				"refs-rust",

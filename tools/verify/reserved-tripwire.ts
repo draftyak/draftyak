@@ -631,6 +631,9 @@ function manifestReaches(json: JsonObject, dir: string, reach: Reach): boolean {
 
 // biome-ignore lint/suspicious/noTemplateCurlyInString: tsconfig's placeholder for its own folder.
 const CONFIG_DIR = "${configDir}";
+// A types entry names a package, or a path when it starts like one: relative, from a slash or
+// from a drive.
+const TYPES_PATH = /^(?:\.\.?(?:[\\/]|$)|[\\/]|[A-Za-z]:)/;
 
 // tsconfig: the keys through which tsc reaches files, at its folder (paths at baseUrl).
 function tsconfigReaches(json: JsonObject, dir: string, reach: Reach): boolean {
@@ -657,7 +660,10 @@ function tsconfigReaches(json: JsonObject, dir: string, reach: Reach): boolean {
 				if (option === "baseUrl" || option === "rootDirs" || option === "typeRoots") {
 					if (stringsIn(setting).some(at(dir, option))) return true;
 				} else if (option === "types") {
-					if (stringsIn(setting).some(at(null, option))) return true;
+					const hit = stringsIn(setting).some((text) =>
+						at(TYPES_PATH.test(text.replaceAll(CONFIG_DIR, ".")) ? dir : null, option)(text),
+					);
+					if (hit) return true;
 				} else if (option === "paths") {
 					const hit = someString(setting, (text, alias) =>
 						alias
