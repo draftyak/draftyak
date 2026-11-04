@@ -20,10 +20,10 @@ import { type Checkout, fold, type Kind } from "./safe-fs.ts";
 // root on its way, even if it comes back in, or from a drive's own working folder) is refused as
 // "outside", whether or not anything is there. Bare specifiers and names, which resolve to installed
 // dependencies, aren't followed, and nothing below node_modules or .git is. A value that redirects a
-// tool in a form these checks don't follow (a subpath pattern of another shape, a tsconfig paths
-// pattern, moduleSuffixes, typesVersions, a glob import, a path with a name Windows trims, a Biome
-// config from a package, a file: URL specifier, a toolchain path, a .cargo config key but paths and
-// [patch]) is refused as "unsupported".
+// tool in a form these checks don't follow (a subpath pattern of another shape, an exports or
+// imports folder mapping, a tsconfig paths pattern, moduleSuffixes, typesVersions, a glob import, a
+// path with a name Windows trims, a Biome config from a package, a file: URL specifier, a toolchain
+// path, a .cargo config key but paths and [patch]) is refused as "unsupported".
 
 export type RefusedKind = Kind | "unlisted" | "reserved" | "unparsable" | "unsupported" | "outside";
 
@@ -1001,9 +1001,14 @@ function patternTarget(
 		candidates.refuse(base, kind);
 }
 
+// A subpath key or target that ends in a separator: a folder mapping, such as "./gen/": "./gen/",
+// which maps every path below a folder. Node no longer honours one, but tsc still expands it.
+const FOLDER_MAPPING = /[\\/]$/;
+
 // A package.json's exports and imports subpath patterns: a key holding one * whose targets each
 // hold one too, followed by patternTarget. A target or key holding one alone, or more than one, is
-// refused as unsupported.
+// refused as unsupported, and so is a folder mapping, a key or target that ends in /, which these
+// checks don't follow.
 function subpathPatterns(
 	input: ReferenceInput,
 	candidates: Candidates,
@@ -1014,6 +1019,10 @@ function subpathPatterns(
 		if (field !== "exports" && field !== "imports") continue;
 		const done = new Set<string>();
 		for (const [key, target] of subpathTargets(field, value)) {
+			if (FOLDER_MAPPING.test(key) || FOLDER_MAPPING.test(target)) {
+				candidates.refuse(file, "unsupported");
+				continue;
+			}
 			const [keyed, targeted] = [starsIn(key), starsIn(target)];
 			if (keyed === 0 && targeted === 0) continue;
 			if (keyed !== 1 || targeted !== 1) candidates.refuse(file, "unsupported");

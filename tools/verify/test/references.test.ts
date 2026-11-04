@@ -938,6 +938,36 @@ describe("refs-config", () => {
 		]);
 	});
 
+	it("refuses an exports or imports folder mapping, a key or target that ends in /, at any condition depth and in fallback arrays, reading nothing below it", async () => {
+		const manifest = (name: string, more: Readonly<Record<string, unknown>>): string =>
+			JSON.stringify({ name, ...more });
+		const files = {
+			"a/package.json": manifest("a", { exports: { "./gen/": "./gen/" } }),
+			"b/package.json": manifest("b", { imports: { "#gen/": "./gen/" } }),
+			"c/package.json": manifest("c", { exports: { "./gen/": { node: { import: ["./gen/"] } } } }),
+			"d/package.json": manifest("d", { imports: { "#gen/": [{ default: "./out/" }] } }),
+			"e/package.json": manifest("e", { exports: { "./x": "./gen/" } }),
+			"f/package.json": manifest("f", { exports: { "./gen/": "./lib/x.js" } }),
+			"g/package.json": manifest("g", { exports: "./gen\\" }),
+			// A folder key whose target is null excludes, and is left alone.
+			"h/package.json": manifest("h", { exports: { ".": "./index.ts", "./gen/": null } }),
+			"h/index.ts": "",
+		};
+		// What each mapping would let tsc load by name, outside every scan.
+		const ignored = {
+			"a/gen/x.ts": "",
+			"b/gen/x.ts": "",
+			"c/gen/x.ts": "",
+			"d/out/x.ts": "",
+			"e/gen/x.ts": "",
+			"g/gen/x.ts": "",
+			"h/gen/x.ts": "",
+		};
+		expect(await refused({ files, ignored }, "refs-config")).toEqual(
+			["a", "b", "c", "d", "e", "f", "g"].map((dir) => `${dir}/package.json: unsupported`),
+		);
+	});
+
 	it("refuses a package.json or tsconfig it can't parse", async () => {
 		const files = { "p/package.json": "{ nope", "p/tsconfig.json": "[" };
 		expect(await refused({ files }, "refs-config")).toEqual([

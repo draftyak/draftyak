@@ -523,6 +523,40 @@ describe("refusals before any read or child start", () => {
 		expect(named.endsWith(": packages/a/tsconfig.json (unsupported)")).toBe(true);
 	});
 
+	it("refuses an exports or imports folder mapping reaching an ignored file outside the include roots, without reading it", async () => {
+		const include = '{ "include": ["src/**/*.ts", "test/**/*.ts"] }\n';
+		for (const [label, manifest, user] of [
+			[
+				"an exports folder mapping",
+				'{ "name": "a", "exports": { "./gen/": "./gen/" } }\n',
+				'import "a/gen/x.js";\n',
+			],
+			[
+				"an imports folder mapping",
+				'{ "name": "a", "imports": { "#gen/": "./gen/" } }\n',
+				'import "#gen/x.js";\n',
+			],
+		] as const) {
+			const repo = fixture({
+				files: {
+					"packages/a/package.json": manifest,
+					"packages/a/tsconfig.json": include,
+					"packages/a/src/gen-user.ts": user,
+				},
+				ignored: { "packages/a/gen/x.ts": "export {};\n" },
+			});
+			const run = await gate(repo, { forbidden: (rel) => rel === "packages/a/gen/x.ts" });
+			expect([label, uncounted(shown(run))]).toEqual([label, [LINE["refs-config"]]]);
+			refusedWith(run, [LINE["refs-config"] ?? ""]);
+			expect([label, run.opens.includes("packages/a/gen/x.ts")]).toEqual([label, false]);
+			const named = shown(await gate(repo, { names: true }))[0] ?? "";
+			expect([label, named.endsWith(": packages/a/package.json (unsupported)")]).toEqual([
+				label,
+				true,
+			]);
+		}
+	});
+
 	it("refuses a package whose entry point is an ignored module in the checkout, without reading it", async () => {
 		const repo = fixture({
 			files: { "packages/a/package.json": '{ "name": "a", "exports": { ".": "./gen/x.js" } }\n' },
