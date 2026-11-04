@@ -302,6 +302,14 @@ describe("signed native release v2 DATA", { concurrent: false }, () => {
 		).toBe(true);
 	});
 
+	it("refuses a non-retained candidate with its matching signed package name", () => {
+		const data = release(1);
+		const candidate = at(data.candidates, 0);
+		candidate.id = "tool-hello";
+		candidate.package.name = "@draftyak/tool-hello";
+		expect(refused(() => decode(data))).toBe(true);
+	});
+
 	it("requires the bounded candidate section with no duplicate or foreign candidate id", () => {
 		expect(
 			mutationsRefused([
