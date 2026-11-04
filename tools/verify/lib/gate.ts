@@ -100,7 +100,7 @@ const COUNTED: Readonly<Record<GateCheck, string>> = {
 	"scan-verify": `step or profile file(s) verify would load aren't regular, listed files in real folders; ${UNREAD}`,
 	"scan-prefetch": `spike folder(s) or prefetch script(s) pnpm m0:prefetch would run aren't regular, listed files in real folders; ${UNREAD}`,
 	npmrc: `.npmrc path(s) in the root or a package folder; pnpm takes settings from them, node-options among them, before anything it starts; ${UNREAD}`,
-	"command-shadows": `entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH; ${UNREAD}`,
+	"command-shadows": `entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH, or are a package.json whose script starts a command by a path, which cmd.exe looks up there too; ${UNREAD}`,
 	"workspace-file":
 		"workspace file(s) aren't a listed regular file in the approved form; pnpm takes settings from it, nodeOptions and scriptShell among them, before anything it starts",
 };
@@ -117,7 +117,9 @@ const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 // The first word of each command a package.json's scripts run, in lower case: each script split at
 // &&, ||, ;, |, &, parentheses, backticks and line ends, past leading NAME=value assignments, with
-// quotes dropped. A word that holds a separator is a path, which no folder lookup finds.
+// quotes dropped. A word that holds a separator is kept as it is: cmd.exe still looks one up from
+// the folder (the part before a / as a command, a \ path with each extension), so the gate refuses
+// a script that starts a command so.
 export function scriptCommands(text: string): string[] {
 	const json = parseJson(text);
 	const words = new Set<string>();
@@ -131,7 +133,7 @@ export function scriptCommands(text: string): string[] {
 					.split(/\s+/)
 					.map((part) => part.replace(/^["']+|["']+$/g, ""))
 					.find((part) => part !== "" && !ASSIGNMENT.test(part));
-				if (word !== undefined && !/[\\/]/.test(word)) words.add(word.toLowerCase());
+				if (word !== undefined) words.add(word.toLowerCase());
 			}
 		}
 	}
@@ -286,13 +288,19 @@ export async function gateWith(
 	// An entry of any kind in the root or a package folder, tracked or not, named for a command
 	// started there with an extension cmd.exe runs: pnpm and npm run scripts through cmd.exe on
 	// Windows, which would run it in place of the tool. By names and kinds alone, and in any case;
-	// only each folder's own package.json is read, for its scripts' first words.
+	// only each folder's own package.json is read, for its scripts' first words. A package.json
+	// whose script starts a command by a path is refused as unsupported: cmd.exe looks that up from
+	// the folder too, in ways no name here covers.
 	if (enabled.has("command-shadows")) {
 		const found: Refusal[] = [];
 		for (const dir of new Set(["", ...packagesOf().dirs])) {
-			const own = text(dir === "" ? "package.json" : `${dir}/package.json`);
+			const manifest = dir === "" ? "package.json" : `${dir}/package.json`;
+			const own = text(manifest);
+			const words = own === null ? [] : scriptCommands(own);
+			const byPath = (word: string): boolean => /[\\/]/.test(word);
+			if (words.some(byPath)) found.push({ rel: manifest, kind: "unsupported" });
 			const names = new Set(
-				[...STARTED, ...(own === null ? [] : scriptCommands(own))].flatMap(shadowNames),
+				[...STARTED, ...words.filter((word) => !byPath(word))].flatMap(shadowNames),
 			);
 			checkout.walk(dir, (rel, kind) => {
 				const name = rel.slice(rel.lastIndexOf("/") + 1).toLowerCase();

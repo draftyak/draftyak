@@ -191,7 +191,7 @@ const LINE: Readonly<Record<string, string>> = {
 	npmrc:
 		"reserved tripwire: .npmrc path(s) in the root or a package folder; pnpm takes settings from them, node-options among them, before anything it starts; none of them was read",
 	"command-shadows":
-		"reserved tripwire: entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH; none of them was read",
+		"reserved tripwire: entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH, or are a package.json whose script starts a command by a path, which cmd.exe looks up there too; none of them was read",
 	"workspace-file":
 		"reserved tripwire: workspace file(s) aren't a listed regular file in the approved form; pnpm takes settings from it, nodeOptions and scriptShell among them, before anything it starts",
 };
@@ -783,6 +783,46 @@ describe("refusals before any read or child start", () => {
 		passed(await gate(fixture({ files })));
 	});
 
+	it("refuses a package.json whose script starts a command by a path, with either separator, never reading what cmd.exe would find there", async () => {
+		const manifest = (name: string, test: string): string =>
+			`${JSON.stringify({ name, private: true, scripts: { test } })}\n`;
+		const runnable = (rel: string): boolean => /\.(?:cmd|exe)$/i.test(rel);
+		const cases: readonly (readonly [string, Fixture, string])[] = [
+			[
+				"a / path beside a tracked command file named for its first part",
+				{ files: { "package.json": manifest("fixture", "zz/foo"), "zz.cmd": "@echo off\n" } },
+				"package.json (unsupported)",
+			],
+			[
+				"a \\ path to an ignored command file",
+				{
+					files: { "packages/a/package.json": manifest("a", "sub\\tool arg") },
+					ignored: { "packages/a/sub/tool.cmd": "@echo off\n" },
+				},
+				"packages/a/package.json (unsupported)",
+			],
+			[
+				"a quoted path after an assignment and another command",
+				{ files: { "packages/a/package.json": manifest("a", 'tsc -b && CI=1 "./bin/post" x') } },
+				"packages/a/package.json (unsupported)",
+			],
+			[
+				"an installed tool's path",
+				{ files: { "packages/a/package.json": manifest("a", "./node_modules/.bin/vitest run") } },
+				"packages/a/package.json (unsupported)",
+			],
+		];
+		for (const [label, tree, named] of cases) {
+			const repo = fixture(tree);
+			const run = await gate(repo, { forbidden: runnable });
+			expect([label, uncounted(shown(run))]).toEqual([label, [LINE["command-shadows"]]]);
+			refusedWith(run, [LINE["command-shadows"] ?? ""]);
+			expect([label, run.opens.filter(runnable)]).toEqual([label, []]);
+			const line = shown(await gate(repo, { names: true, forbidden: runnable }))[0] ?? "";
+			expect([label, line.endsWith(`: ${named}`)]).toEqual([label, true]);
+		}
+	});
+
 	it("stops on a listing problem with the listing's line and the stop line only", async () => {
 		const repo = fixture();
 		const spy = readerSpy(repo.dir);
@@ -803,7 +843,7 @@ describe("refusals before any read or child start", () => {
 });
 
 describe("scriptCommands", () => {
-	it("gives each command's first word, split at &&, ||, ;, | and & and past NAME=value assignments, and leaves paths out", () => {
+	it("gives each command's first word, split at &&, ||, ;, | and & and past NAME=value assignments, paths included", () => {
 		const scripts = {
 			a: "vitest run && tsc -b || echo x; biome ci . | tee out & turbo run",
 			b: 'FORCE_COLOR=0 CI=1 "tsx" ./x.ts',
@@ -825,6 +865,8 @@ describe("scriptCommands", () => {
 				"tsx",
 				"turbo",
 				"vitest",
+				"./node_modules/.bin/thing",
+				"..\\bin\\other",
 			].toSorted(),
 		);
 		expect(scriptCommands("{ nope")).toEqual([]);
