@@ -60,11 +60,13 @@ function profileRule(
 		profile.startsWith("gmail-") &&
 		["gmail.googleapis.com", "www.googleapis.com"].includes(url.hostname)
 	) {
+		const profileRead = /^\/gmail\/v1\/users\/[^/]+\/profile$/.test(path) && url.search === "";
 		if (
 			method === "GET" &&
-			/^\/gmail\/v1\/users\/[^/]+\/(?:messages(?:\/[^/]+(?:\/attachments\/[^/]+)?)?|threads(?:\/[^/]+)?|history|labels(?:\/[^/]+)?)$/.test(
-				path,
-			)
+			(profileRead ||
+				/^\/gmail\/v1\/users\/[^/]+\/(?:messages(?:\/[^/]+(?:\/attachments\/[^/]+)?)?|threads(?:\/[^/]+)?|history|labels(?:\/[^/]+)?)$/.test(
+					path,
+				))
 		)
 			classification = "read";
 		if (
