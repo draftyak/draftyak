@@ -2887,6 +2887,43 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 		);
 	});
 
+	it("refuses a git command after the gate that changes the working tree, which would test a tree the gate never saw", () => {
+		const message = (id: string): string =>
+			`${id} must not change its working tree with git after the reserved gate`;
+		const step = (command: string): string => `      - run: ${command}\n`;
+		const fetched = step(
+			"git fetch --depth=1 origin main && git checkout --quiet --detach FETCH_HEAD",
+		);
+		for (const id of ["cheap", "required"]) {
+			expect(problems(ciFile, inJob(ci, id, gateStep, gateStep + fetched))).toContain(message(id));
+		}
+		for (const command of [
+			"git checkout --quiet --detach HEAD^",
+			"git -C . reset --hard HEAD^",
+			"git -c core.autocrlf=true restore .",
+			"git switch -",
+			"git stash pop",
+			"git worktree add ../w",
+			"git apply x.patch",
+			"git submodule update --init",
+			"echo x && git pull --ff-only",
+		]) {
+			const mutated = inJob(ci, "reserved", installStep, installStep + step(command));
+			expect([command, problems(ciFile, mutated).includes(message("reserved"))]).toEqual([
+				command,
+				true,
+			]);
+		}
+		expect(
+			problems(spikesFile, inJob(spikes, "run", installStep, installStep + fetched)),
+		).toContain(message("run"));
+		// A git command that only reads leaves the tree as the gate saw it.
+		const reads = step("git diff --name-only HEAD^ HEAD && git log -1 --format=%H");
+		expect(problems(ciFile, inJob(ci, "reserved", installStep, installStep + reads))).not.toContain(
+			message("reserved"),
+		);
+	});
+
 	it.each([
 		[
 			"a changed start step",

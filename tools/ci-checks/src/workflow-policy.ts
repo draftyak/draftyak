@@ -231,6 +231,33 @@ const startsCommand = (step: YamlMap): boolean =>
 	actionOf(step) === "pnpm/action-setup" ||
 	(actionOf(step) === "actions/setup-node" && !plainBeforeGate(step));
 const packageManager = /(?<![\w.-])(?:pnpm|pnpx|npm|npx|yarn|corepack)(?![\w.-])/i;
+// A git command, after git's own options, that rewrites the working tree or adds files to it: after
+// the gate, it would leave a tree the gate never saw.
+const treeCommands = [
+	"checkout",
+	"switch",
+	"reset",
+	"restore",
+	"stash",
+	"pull",
+	"merge",
+	"rebase",
+	"cherry-pick",
+	"revert",
+	"am",
+	"apply",
+	"read-tree",
+	"checkout-index",
+	"worktree",
+	"sparse-checkout",
+	"submodule",
+	"bisect",
+	"clone",
+];
+const treeChange = new RegExp(
+	String.raw`(?<![\w./-])git(?:\s+(?:-[Cc]\s+\S+|--(?:git-dir|work-tree|namespace|exec-path|config-env)\s+\S+|-{1,2}[\w-]+(?:=\S+)?))*\s+(?:${treeCommands.join("|")})(?![\w.-])`,
+	"i",
+);
 // What a step that may start a package manager in the checkout is, for the rules that must come
 // first: pnpm/action-setup, setup-node with more than the pinned version (a cache input runs one),
 // or a command that names one; null for any other step.
@@ -900,7 +927,8 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	};
 	// Before the gate, only checkout, setup-node and the given reviewed steps; the gate step itself
 	// bare, and no checkout after it, except the one source checkout of an exact native contract,
-	// which its own gate and pre-install check read with --root.
+	// which its own gate and pre-install check read with --root, and no git command that changes the
+	// working tree.
 	const gateFirst = (
 		job: string,
 		definition: YamlMap,
@@ -956,6 +984,14 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 			sourceCheckout && later.length === 1 && asMap(later[0]?.with).path === "source";
 		if (later.length > 0 && !reviewed) {
 			report(["jobs", job, "steps"], `${job} must not check out again after the reserved gate`);
+		}
+		for (const [offset, step] of steps.slice(at + 1).entries()) {
+			if (typeof step.run === "string" && treeChange.test(step.run)) {
+				report(
+					["jobs", job, "steps", at + 1 + offset],
+					`${job} must not change its working tree with git after the reserved gate`,
+				);
+			}
 		}
 		// A later step that runs after a failure would run after a refused gate or check too.
 		const late = afterFailure[file]?.[job] ?? [];
