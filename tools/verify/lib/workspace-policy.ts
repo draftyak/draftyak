@@ -196,7 +196,8 @@ export async function namedFiles(
 				let discoveredLast: PendingDirectory | undefined;
 				for (const entry of children) {
 					const name = entry.name;
-					if (typeof name !== "string") throw inventoryFailed();
+					if (typeof name !== "string" || !name.isWellFormed() || name.includes("\uFFFD"))
+						throw inventoryFailed();
 					const matches = equal(name);
 					const descend = entry.isDirectory() && !entry.isSymbolicLink();
 					// Ordinary files need no relative path; keep normalization for synthetic edge names.

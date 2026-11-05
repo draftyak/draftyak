@@ -38,8 +38,32 @@ export interface InventoryProcessRuntime {
 	now(): number;
 	setTimer(callback: () => void, delayMs: number): unknown;
 	clearTimer(timer: unknown): void;
+	// A throw guarantees no child was created. After creation, return the original
+	// owned handle, including a failed handle whose pipes could not be established.
 	spawn(options: InventorySpawn): InventoryChild;
 }
+
+export interface InventoryClosure {
+	readonly kind: "no-child" | "closed";
+	readonly originals: number;
+	readonly closedAt: number | null;
+}
+
+export interface InventoryExecution {
+	readonly reported: Promise<void>;
+	readonly closed: Promise<InventoryClosure>;
+	readonly prechecked: Promise<"not-started" | "settled">;
+	readonly deadline: number;
+}
+
+interface InventoryJoinTiming {
+	readonly ports: InventoryProcessRuntime;
+	readonly deadline: number;
+	readonly diagnostic: () => string;
+	joined?: Promise<void>;
+}
+
+const executions = new WeakMap<InventoryExecution, InventoryJoinTiming>();
 
 const failed = (diagnostic?: string): Error =>
 	new Error(`file-name inventory failed${diagnostic === undefined ? "" : ` [${diagnostic}]`}`);
@@ -65,19 +89,36 @@ export function inventoryEnvironment(source: NodeJS.ProcessEnv = process.env): N
 
 export function ownedProcess(child: ChildProcess): OwnedProcess {
 	const errors = new Set<(error: unknown) => void>();
-	child.on("error", (error) => {
+	const closes = new Set<(code: number | null) => void>();
+	let errorSeen = false;
+	let originalError: unknown;
+	let closeSeen = false;
+	let originalCode: number | null = null;
+	const rememberError = (error: unknown): void => {
+		if (!errorSeen) {
+			errorSeen = true;
+			originalError = error;
+		}
 		for (const listener of errors) listener(error);
+	};
+	child.on("error", rememberError);
+	child.once("close", (code) => {
+		closeSeen = true;
+		originalCode = code;
+		for (const listener of closes) listener(code);
+		closes.clear();
 	});
-	if (child.stdout === null || child.stderr === null) {
-		child.kill();
-		throw failed();
-	}
-	const pipe = (stream: NonNullable<ChildProcess["stdout"]>): InventoryPipe => ({
+	// A created child remains owned even if its requested pipes were unavailable.
+	// Replay that refusal only after the caller can register its original-close listener.
+	const missingPipe = failed();
+	if (child.stdout === null || child.stderr === null) rememberError(missingPipe);
+	const pipe = (stream: ChildProcess["stdout"]): InventoryPipe => ({
 		onData: (listener) => {
-			stream.on("data", listener);
+			stream?.on("data", listener);
 		},
 		onError: (listener) => {
-			stream.on("error", listener);
+			if (stream === null) listener(missingPipe);
+			else stream.on("error", listener);
 		},
 	});
 	return {
@@ -85,9 +126,11 @@ export function ownedProcess(child: ChildProcess): OwnedProcess {
 		stderr: pipe(child.stderr),
 		onError: (listener) => {
 			errors.add(listener);
+			if (errorSeen) listener(originalError);
 		},
 		onClose: (listener) => {
-			child.once("close", listener);
+			if (closeSeen) listener(originalCode);
+			else closes.add(listener);
 		},
 		kill: () => {
 			child.kill();
@@ -124,16 +167,22 @@ const runtime: InventoryProcessRuntime = {
 	},
 };
 
-// The original test budget includes prechecks, startup, traversal, output and owned close.
-export function runInventoryAfter(
+// Reporting, precheck settlement and physical closure share one original budget.
+export function startInventoryAfter(
 	precheck: (git: InventoryGitCheck) => Promise<void>,
 	ports: InventoryProcessRuntime = runtime,
-): Promise<void> {
-	return new Promise<void>((resolve, reject) => {
-		let deadline: number;
+): InventoryExecution {
+	let deadline = Number.NaN;
+	const physical = Promise.withResolvers<InventoryClosure>();
+	const prechecked = Promise.withResolvers<"not-started" | "settled">();
+	let precheckStarted = false;
+	let joinTiming: InventoryJoinTiming | undefined;
+	const reported = new Promise<void>((resolve, reject) => {
 		try {
 			deadline = ports.now() + INVENTORY_TIMEOUT_MS;
 		} catch {
+			physical.resolve(Object.freeze({ kind: "no-child", originals: 0, closedAt: null }));
+			prechecked.resolve("not-started");
 			reject(failed());
 			return;
 		}
@@ -152,12 +201,35 @@ export function runInventoryAfter(
 		let prechecking = true;
 		let refused = false;
 		let settled = false;
+		let admissionSealed = false;
+		let registering = 0;
+		let closurePublished = false;
 		let stdout = Buffer.alloc(0);
 		let stderrBytes = 0;
 		const timers: unknown[] = [];
 		const drained = (): boolean => {
 			for (const handle of handles.values()) if (!handle.closed) return false;
 			return true;
+		};
+		const publishClosure = (): void => {
+			if (closurePublished || !admissionSealed || registering !== 0 || !drained()) return;
+			closurePublished = true;
+			let closedAt: number | null = null;
+			if (handles.size > 0) {
+				try {
+					const now = ports.now();
+					if (Number.isFinite(now)) closedAt = now;
+				} catch {
+					// Physical close is known even when its timing cannot be qualified.
+				}
+			}
+			physical.resolve(
+				Object.freeze({
+					kind: handles.size === 0 ? "no-child" : "closed",
+					originals: handles.size,
+					closedAt,
+				}),
+			);
 		};
 		const own = (child: InventoryChild, kind: Handle["kind"]): Handle => {
 			if (handles.has(child)) throw failed();
@@ -205,9 +277,13 @@ export function runInventoryAfter(
 				`elapsedMs=${elapsedMs}`,
 			].join(",");
 		};
+		joinTiming = { ports, deadline, diagnostic };
 		const finish = (failure: boolean): void => {
 			if (settled) return;
 			settled = true;
+			admissionSealed = true;
+			if (!precheckStarted) prechecked.resolve("not-started");
+			publishClosure();
 			for (const timer of timers) {
 				try {
 					ports.clearTimer(timer);
@@ -220,6 +296,8 @@ export function runInventoryAfter(
 		};
 		const stop = (): void => {
 			refused = true;
+			admissionSealed = true;
+			if (!precheckStarted) prechecked.resolve("not-started");
 			for (const handle of handles.values()) {
 				if (handle.closed || handle.stopSent) continue;
 				handle.stopSent = true;
@@ -229,6 +307,7 @@ export function runInventoryAfter(
 					// Retain ownership and listeners until actual close, even when stopping throws.
 				}
 			}
+			publishClosure();
 		};
 		const force = (): void => {
 			stop();
@@ -258,6 +337,7 @@ export function runInventoryAfter(
 				}
 				let stdoutBytes = 0;
 				let gitStderrBytes = 0;
+				registering += 1;
 				try {
 					const original = own(
 						ports.spawn({ command: "git", args, cwd: root, env: process.env, ipc: false }),
@@ -266,6 +346,7 @@ export function runInventoryAfter(
 					original.child.onClose((code) => {
 						if (original.closed) return;
 						original.closed = true;
+						publishClosure();
 						if (settled || refused || !timely() || code === null || !Number.isFinite(code)) {
 							stop();
 							rejectGit(failed());
@@ -296,6 +377,9 @@ export function runInventoryAfter(
 					stop();
 					rejectGit(failed());
 					if (drained()) finish(true);
+				} finally {
+					registering -= 1;
+					publishClosure();
 				}
 			});
 		try {
@@ -322,10 +406,12 @@ export function runInventoryAfter(
 		Promise.resolve()
 			.then(() => {
 				if (settled || refused || !timely(INVENTORY_STOP_RESERVE_MS)) throw failed();
+				precheckStarted = true;
 				return precheck(git);
 			})
 			.then(
 				() => {
+					prechecked.resolve("settled");
 					prechecking = false;
 					if (settled) return;
 					if (refused || !timely(INVENTORY_STOP_RESERVE_MS) || !drained()) {
@@ -333,6 +419,7 @@ export function runInventoryAfter(
 						if (drained()) finish(true);
 						return;
 					}
+					registering += 1;
 					try {
 						phase = "worker";
 						const original = own(
@@ -347,6 +434,7 @@ export function runInventoryAfter(
 						original.child.onClose((code) => {
 							if (original.closed) return;
 							original.closed = true;
+							publishClosure();
 							finish(
 								refused ||
 									!timely() ||
@@ -377,13 +465,107 @@ export function runInventoryAfter(
 					} catch {
 						stop();
 						if (drained()) finish(true);
+					} finally {
+						registering -= 1;
+						admissionSealed = true;
+						publishClosure();
 					}
 				},
 				() => {
+					prechecked.resolve(precheckStarted ? "settled" : "not-started");
 					prechecking = false;
 					stop();
 					if (drained()) finish(true);
 				},
 			);
 	});
+	const execution = Object.freeze({
+		reported,
+		closed: physical.promise,
+		prechecked: prechecked.promise,
+		deadline,
+	});
+	executions.set(
+		execution,
+		joinTiming ?? {
+			ports,
+			deadline,
+			diagnostic: () =>
+				"phase=precheck,cleanup=none,pending=0,gitOwned=0,gitClosed=0,workerOwned=0,workerClosed=0,stopRequests=0,killRequests=0,elapsedMs=-1",
+		},
+	);
+	return execution;
+}
+
+// Reporting keeps its earlier deadline; caller completion additionally requires the
+// actual precheck settlement and physical closure within the original deadline.
+export function joinInventoryExecution(execution: InventoryExecution): Promise<void> {
+	const timing = executions.get(execution);
+	if (timing === undefined) return Promise.reject(failed());
+	if (timing.joined !== undefined) return timing.joined;
+	timing.joined = new Promise<void>((resolve, reject) => {
+		let settled = false;
+		let timer: unknown;
+		let timerSet = false;
+		// Observe reporting rejection even when the original deadline/clock refuses
+		// before a physical-close wait can be installed.
+		const report = execution.reported.then(
+			() => ({ failed: false as const }),
+			(error: unknown) => ({ failed: true as const, error }),
+		);
+		const finish = (error?: unknown): void => {
+			if (settled) return;
+			settled = true;
+			if (timerSet) {
+				try {
+					timing.ports.clearTimer(timer);
+				} catch {
+					error = failed(timing.diagnostic());
+				}
+			}
+			if (error === undefined) resolve();
+			else reject(error);
+		};
+		try {
+			const remaining = timing.deadline - timing.ports.now();
+			if (!Number.isFinite(remaining) || remaining <= 0) throw failed(timing.diagnostic());
+			timer = timing.ports.setTimer(() => finish(failed(timing.diagnostic())), remaining);
+			timerSet = true;
+		} catch {
+			finish(failed(timing.diagnostic()));
+			return;
+		}
+		void Promise.all([report, execution.closed, execution.prechecked]).then(
+			([outcome, closure]) => {
+				if (settled) return;
+				try {
+					const now = timing.ports.now();
+					if (!Number.isFinite(now) || now >= timing.deadline) throw failed(timing.diagnostic());
+					if (closure.kind === "closed") {
+						if (
+							closure.originals <= 0 ||
+							closure.closedAt === null ||
+							!Number.isFinite(closure.closedAt) ||
+							closure.closedAt >= timing.deadline
+						)
+							throw failed(timing.diagnostic());
+					} else if (closure.originals !== 0 || closure.closedAt !== null || !outcome.failed) {
+						throw failed(timing.diagnostic());
+					}
+					finish(outcome.failed ? outcome.error : undefined);
+				} catch {
+					finish(failed(timing.diagnostic()));
+				}
+			},
+		);
+	});
+	return timing.joined;
+}
+
+// Compatibility: existing consumers may still observe the reporting result alone.
+export function runInventoryAfter(
+	precheck: (git: InventoryGitCheck) => Promise<void>,
+	ports: InventoryProcessRuntime = runtime,
+): Promise<void> {
+	return startInventoryAfter(precheck, ports).reported;
 }
