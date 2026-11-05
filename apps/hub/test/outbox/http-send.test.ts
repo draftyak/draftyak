@@ -108,7 +108,7 @@ async function fixture(kind: "slack-token" | "gmail-oauth" = "slack-token", expi
 	await store.migrate("tickets");
 	const owner: CredentialBinding = { ownerKind: "account", ownerId: newId(), kind },
 		secret = `DYTEST-${randomBytes(24).toString("hex")}`,
-		vault = new CredentialVault(store, audit),
+		vault = new CredentialVault(store, audit, key),
 		time = { wall: 1_800_000_000_000, mono: 10_000 },
 		clock = { wallMs: () => time.wall, monotonicMs: () => time.mono };
 	const value = () =>

@@ -6,9 +6,20 @@ const config: UserConfig = defineConfig({
 	platform: "node",
 	dts: { generator: "oxc" },
 	copy: [
+		{
+			from: "src/channels/gmail/connection/credential-migrations/*.sql",
+			to: "dist/credential-migrations",
+		},
+		{ from: "src/drafts/migrations/*.sql", to: "dist/drafts/migrations" },
+		{ from: "src/identity/devices-migrations/*.sql", to: "dist/devices-migrations" },
 		{ from: "src/jobs/jobs-migrations/*.sql", to: "dist/jobs-migrations" },
 		{ from: "src/events/events-migrations/*.sql", to: "dist/events-migrations" },
 		{ from: "src/store/migrations/audit/*.sql", to: "dist/store/migrations/audit" },
+		{ from: "src/store/migrations/core/*.sql", to: "dist/store/migrations/core" },
+		{ from: "src/credentials/migrations/*.sql", to: "dist/credentials/migrations" },
+		{ from: "src/outbox/migrations/*.sql", to: "dist/outbox/migrations" },
+		{ from: "src/plugins/registry/migrations/*.sql", to: "dist/plugins/registry/migrations" },
+		{ from: "src/accounts/migrations/*.sql", to: "dist/accounts/migrations" },
 	],
 });
 export default config;

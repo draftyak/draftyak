@@ -81,6 +81,30 @@ impl Zeroize for SidecarWindowSecrets {
 
 impl ZeroizeOnDrop for SidecarWindowSecrets {}
 
+/// Compiles only for a value that zeroizes itself on drop; a plain `String` or byte array
+/// does not.
+fn erases<T: ZeroizeOnDrop>(_: &T) {}
+
+// The marker above holds only while every field zeroizes on drop: a new field, or a plain
+// `String` field, stops this compiling.
+const _: fn(&SidecarWindowSecrets) = |SidecarWindowSecrets { pid, sec }| {
+    erases(pid);
+    erases(sec);
+};
+
+// `_` resolves only while the type has none of `Clone`, `Display` and `Serialize`: each
+// one adds a second matching impl and stops this compiling.
+const _: () = {
+    trait AmbiguousIfImpl<Marker> {
+        const CHECK: () = ();
+    }
+    impl<T> AmbiguousIfImpl<()> for T {}
+    impl<T: Clone> AmbiguousIfImpl<u8> for T {}
+    impl<T: fmt::Display> AmbiguousIfImpl<u16> for T {}
+    impl<T: serde::Serialize> AmbiguousIfImpl<u32> for T {}
+    <SidecarWindowSecrets as AmbiguousIfImpl<_>>::CHECK
+};
+
 /// Derive the two fixed 16-byte outputs with HKDF-SHA-256 and an empty salt.
 ///
 /// The caller cannot choose the algorithm, salt, labels or output lengths. The input
@@ -93,10 +117,13 @@ pub fn derive_window_secrets(
     }
 
     let mut owned_input = Zeroizing::new([0u8; SECRET_LENGTH]);
+    erases(&owned_input);
     owned_input.copy_from_slice(bootstrap_secret);
     let hkdf = Hkdf::<Sha256>::new(Some(&[]), &*owned_input);
     let mut pid = Zeroizing::new([0u8; SECRET_LENGTH]);
     let mut sec = Zeroizing::new([0u8; SECRET_LENGTH]);
+    erases(&pid);
+    erases(&sec);
     hkdf.expand(PID_INFO, &mut *pid)
         .map_err(|_| SidecarError::DerivationFailed)?;
     hkdf.expand(SEC_INFO, &mut *sec)

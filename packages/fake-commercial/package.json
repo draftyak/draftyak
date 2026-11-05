@@ -1,0 +1,16 @@
+{
+  "name": "@draftyak/fake-commercial",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@draftyak/extensions": "workspace:*"
+  }
+}

@@ -4,5 +4,5 @@
     "lib": ["es2025", "esnext.temporal"]
   },
   "include": ["**/*.ts"],
-  "exclude": ["grit-check", "jiff-check", "node_modules"]
+  "exclude": ["jiff-check", "node_modules"]
 }

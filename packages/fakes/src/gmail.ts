@@ -13,6 +13,7 @@ import {
 import {
 	body,
 	check,
+	compileGmailProjection,
 	decimal,
 	failure,
 	GmailInputError,
@@ -22,7 +23,6 @@ import {
 	labels,
 	MAX_GMAIL_SEND_STEPS,
 	MAX_GMAIL_WIRE_BYTES,
-	project,
 	query,
 	record,
 	rewrite,
@@ -188,7 +188,22 @@ export function createGmailFake(options: GmailOptions): GmailFake {
 								? ["format", "metadataHeaders"]
 								: [],
 			);
-			project({}, params.get("fields"));
+			const projectResponse = compileGmailProjection(
+				params.get("fields"),
+				profile
+					? "Profile"
+					: history
+						? "ListHistoryResponse"
+						: list
+							? relative === "/messages"
+								? "ListMessagesResponse"
+								: "ListThreadsResponse"
+							: batch
+								? "Empty"
+								: getOne && match?.[1] === "threads"
+									? "Thread"
+									: "Message",
+			);
 			if (uploadPath) check(params.get("uploadType") === "multipart");
 			const format = params.get("format") ?? "full";
 			if (getOne)
@@ -248,7 +263,7 @@ export function createGmailFake(options: GmailOptions): GmailFake {
 					isSend ? "Mail sending quota exceeded" : "Read quota exceeded",
 					{ "retry-after": "60" },
 				);
-			const answer = (value: unknown) => json(project(value, params.get("fields")));
+			const answer = (value: unknown) => json(projectResponse(value));
 			if (profile)
 				return answer({
 					emailAddress: "owner@draftyak.example",

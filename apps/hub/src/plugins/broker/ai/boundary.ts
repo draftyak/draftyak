@@ -93,3 +93,12 @@ export function copyBoundedBytes(value: unknown, maximum: number): Uint8Array {
 export function exactBody(actual: unknown, expected: unknown): void {
 	if (canonicalize(actual) !== canonicalize(expected)) refuse();
 }
+
+/**
+ * Spells a model as one request-path segment the way the bundled provider clients do: RFC 3986
+ * path characters stay literal, the rest is percent-encoded, and dot segments are refused.
+ */
+export function modelPathSegment(model: string): string {
+	if (model === "." || model === "..") refuse();
+	return model.replace(/[^A-Za-z0-9._~!$&'()*+,;=:@-]/gu, encodeURIComponent);
+}

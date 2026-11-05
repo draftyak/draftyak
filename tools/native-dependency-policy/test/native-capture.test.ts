@@ -465,32 +465,42 @@ describe("completion and owned process lifetime", () => {
 		expect(injected.calls).toHaveLength(1);
 	});
 	it("terminates only its real owned child tree within the total deadline", async () => {
+		// Windows process start-up and taskkill can each take hundreds of milliseconds under parallel
+		// test load, so the deadline keeps the capture's full two-second teardown.
+		const deadlineMs = 4000;
+		const boundMs = deadlineMs + 2000;
+		const markerMs = boundMs + 1000;
+		const lifetimeMs = markerMs + 1000;
 		// The grandchild has its own finite stop even if this assertion is exercised under mutation.
+		// It is detached on Windows, where Node's kill-on-close job would otherwise end it with its
+		// parent and hide a termination that misses the tree.
 		const marker = path.join(root, "grandchild-completed");
 		const childSource =
 			"require('node:child_process').spawn(process.execPath,['-e'," +
 			JSON.stringify(
 				"setTimeout(()=>require('node:fs').writeFileSync(" +
 					JSON.stringify(marker) +
-					",'synthetic-late'),2500);",
+					`,'synthetic-late'),${markerMs});`,
 			) +
-			"],{stdio:'inherit',env:process.env});setTimeout(()=>{},3000);";
-		const input = await command(childSource, { deadlineMs: 1500 });
+			"],{stdio:'inherit',env:process.env,detached:process.platform==='win32'});" +
+			`setTimeout(()=>{},${lifetimeMs});`;
+		const input = await command(childSource, { deadlineMs });
 		const start = performance.now();
 		const result = await captureNativeProcess(evidence, "timeout", input);
 		try {
 			expect(result.failure).toBe("TIMED_OUT");
-			expect(performance.now() - start).toBeLessThan(2300);
+			expect(performance.now() - start).toBeLessThan(boundMs);
 			expect(result.exitCode !== null || result.signal !== null).toBe(true);
 		} finally {
 			// Also drain the synthetic finite lifetime when a guard mutation makes an assertion fail.
+			const drainMs = Math.ceil(Math.max(0, start + lifetimeMs + 1000 - performance.now()));
 			const control = await captureNativeProcess(
 				evidence,
 				"wait",
-				await command("setTimeout(()=>{},2000);", { deadlineMs: 5000 }),
+				await command(`setTimeout(()=>{},${drainMs});`, { deadlineMs: drainMs + 5000 }),
 			);
 			expect(control.exitCode).toBe(0);
 		}
 		await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" });
-	}, 10_000);
+	}, 30_000);
 });
