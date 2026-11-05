@@ -760,6 +760,20 @@ export function takeNativeSlackConnectProbeResult(
 	releaseRequest(result.attempt);
 	return Object.freeze({ rawBody: result.body, rawHeaders: result.headers });
 }
+/** Denial-only response cleanup; does not require a live Session or peer. */
+export function discardNativeSlackConnectProbeResult(probe: unknown, value: unknown): void {
+	const state = stateOf(probe);
+	if (arguments.length !== 2 || !value || typeof value !== "object" || types.isProxy(value))
+		unavailable();
+	const held = results.get(value);
+	if (!held) return;
+	if (held.owner !== state) unavailable();
+	held.body.fill(0);
+	releaseRequest(held.attempt);
+	results.delete(value);
+	state.results.delete(value);
+}
+
 export function beginCloseNativeSlackConnectProbe(probe: unknown): void {
 	const state = stateOf(probe);
 	if (arguments.length !== 1) unavailable();
