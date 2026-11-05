@@ -41,6 +41,8 @@ export interface NativeAppFiles {
 	readRelease(): Promise<Readonly<{ manifest: Buffer; signature: Buffer }>>;
 	verify(release: FileRelease): Promise<void>;
 	archive(name: string): Promise<Buffer>;
+	/** Copy one exact verified inventory member; this supplies content, never native authority. */
+	resource(name: string): Promise<Buffer>;
 	close(): Promise<void>;
 }
 
@@ -500,6 +502,26 @@ class Files {
 		});
 	}
 
+	resource(name: string): Promise<Buffer> {
+		return this.#run(async () => {
+			const release = this.#release;
+			if (!release || typeof name !== "string") refuse();
+			const record = this.#inventory?.files.get(name);
+			if (!record) refuse();
+			await this.#verify(release);
+			const file = this.#files.get(name);
+			if (!file) refuse();
+			const bytes = await this.#read(file);
+			if (
+				bytes.length !== record.bytes ||
+				createHash("sha256").update(bytes).digest("hex") !== record.sha256
+			)
+				refuse();
+			await this.#verify(release);
+			return Buffer.from(bytes);
+		});
+	}
+
 	close(): Promise<void> {
 		this.#closed = true;
 		if (this.#closing) return this.#closing;
@@ -536,6 +558,7 @@ export function createNativeAppFiles(root: string): NativeAppFiles {
 			readRelease: () => files.readRelease(),
 			verify: (release: FileRelease) => files.verify(release),
 			archive: (name: string) => files.archive(name),
+			resource: (name: string) => files.resource(name),
 			close: () => files.close(),
 		});
 	} catch {
