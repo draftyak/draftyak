@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { planHeavyShards } from "./heavy-shards.ts";
 import { nativeTransportSelection } from "./native-transport.ts";
 import { checkWorkflow } from "./workflow-policy.ts";
 import { parseYaml } from "./yaml.ts";
@@ -22,11 +23,17 @@ const job = (name: string, change: (text: string) => string): string => {
 	expect(changed).toBe(true);
 	return result;
 };
+const replaceOnce = (body: string, before: string, after: string): string => {
+	expect(body.split(before)).toHaveLength(2);
+	const changed = body.replace(before, after);
+	expect(changed).not.toBe(body);
+	return changed;
+};
 const heavyStep = (body: string, change: (text: string) => string): string => {
-	const marker = "      - name: test:heavy for the touched spikes and the selected packages\n";
+	const marker = "      - name: test:heavy for ordinary product suites\n";
+	expect(body.split(marker)).toHaveLength(2);
 	const start = body.indexOf(marker);
 	const end = body.indexOf("\n      - ", start + marker.length);
-	expect(start).toBeGreaterThanOrEqual(0);
 	expect(end).toBeGreaterThan(start);
 	const original = body.slice(start, end);
 	const changed = change(original);
@@ -39,10 +46,16 @@ type Step = {
 	readonly if?: string;
 	readonly env?: Readonly<Record<string, string>>;
 };
-const steps = (name: string): readonly Step[] =>
-	(parseYaml(source).value as unknown as { jobs: Record<string, { steps: readonly Step[] }> }).jobs[
-		name
-	]?.steps ?? [];
+type Job = {
+	readonly if?: string;
+	readonly env?: Readonly<Record<string, string>>;
+	readonly steps: readonly Step[];
+};
+const definition = (name: string): Job => {
+	const jobs = (parseYaml(source).value as unknown as { jobs: Record<string, Job> }).jobs;
+	expect(Object.hasOwn(jobs, name)).toBe(true);
+	return jobs[name] as Job;
+};
 const selected = (expression: string, terms: Readonly<Record<string, boolean>>): boolean =>
 	expression
 		.split(" || ")
@@ -51,6 +64,8 @@ const selected = (expression: string, terms: Readonly<Record<string, boolean>>):
 			return terms[term];
 		})
 		.some(Boolean);
+const readySelection =
+	"needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && ";
 
 describe("required native transport workflow controls", () => {
 	it("admits the current three-platform wiring without granting additional workflow privileges", () => {
@@ -60,7 +75,15 @@ describe("required native transport workflow controls", () => {
 			jobs: Record<string, { "runs-on": string; steps: { run?: string }[]; needs?: string[] }>;
 		};
 		expect(workflow.permissions).toEqual({ contents: "read" });
-		expect(workflow.jobs.required?.needs).toEqual(["changes", "cheap", "full", "windows", "macos"]);
+		expect(workflow.jobs.required?.needs).toEqual([
+			"changes",
+			"cheap",
+			"full",
+			"spikes",
+			"heavy",
+			"windows",
+			"macos",
+		]);
 		expect(workflow.jobs.macos?.["runs-on"]).toBe("macos-15");
 		for (const name of ["full", "windows", "macos"]) {
 			expect(
@@ -98,8 +121,8 @@ describe("required native transport workflow controls", () => {
 		expect(
 			check(
 				source.replace(
-					"needs: [changes, cheap, full, windows, macos]",
-					"needs: [changes, cheap, full, windows]",
+					"needs: [changes, cheap, full, spikes, heavy, windows, macos]",
+					"needs: [changes, cheap, full, spikes, heavy, windows]",
 				),
 			).join("\n"),
 		).toContain("required job execution controls");
@@ -145,33 +168,52 @@ describe("required native transport workflow controls", () => {
 			);
 		}
 	});
-	it("requires ordinary filters and the nonempty spike-or-ordinary guard on the real combined step", () => {
+	it("requires ordinary filters and independent spike and ordinary job guards", () => {
 		expect(check(source)).toEqual([]);
-		const combined = steps("full").filter((step) => Object.hasOwn(step.env ?? {}, "HEAVY"));
-		expect(combined).toHaveLength(1);
-		expect(combined[0]?.env).toMatchObject({
-			HEAVY: "${{ needs.changes.outputs.ordinary-heavy }}",
+		const ordinary = definition("heavy");
+		const consumers = ordinary.steps.filter((step) => Object.hasOwn(step.env ?? {}, "SMOKE"));
+		expect(consumers).toHaveLength(1);
+		expect(consumers[0]?.env?.HEAVY).toBe("${{ needs.changes.outputs.ordinary-heavy }}");
+		expect(ordinary.env?.DRAFTYAK_STRICT_SKIPS).toBe("1");
+		expect(definition("spike-run").env).toMatchObject({
+			SPIKE: "${{ matrix.spike }}",
 			SPIKES: "${{ needs.changes.outputs.spikes }}",
 			DRAFTYAK_STRICT_SKIPS: "1",
 		});
-		expect(combined[0]?.if).toBe(
-			"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
-		);
-		for (const [before, after] of [
+		for (const [name, before, after, diagnostic] of [
 			[
-				"HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
-				"HEAVY: ${{ needs.changes.outputs.heavy }}",
+				"heavy",
+				"needs.changes.outputs.ordinary-heavy != ''",
+				"needs.changes.outputs.heavy != ''",
+				"must preserve heavy job execution controls",
 			],
-			["needs.changes.outputs.ordinary-heavy != ''", "needs.changes.outputs.heavy != ''"],
-			["needs.changes.outputs.spikes != '' || ", ""],
-			[" || needs.changes.outputs.ordinary-heavy != ''", ""],
+			[
+				"heavy",
+				"needs.changes.outputs.ordinary-heavy != ''",
+				"needs.changes.outputs.spike-count != '0'",
+				"must preserve heavy job execution controls",
+			],
+			[
+				"spike-run",
+				"needs.changes.outputs.spike-count != '0'",
+				"needs.changes.outputs.ordinary-heavy != ''",
+				"must preserve spike-run job execution controls",
+			],
 		] as const) {
-			expect(
-				check(job("full", (body) => heavyStep(body, (step) => step.replace(before, after)))).join(
-					"\n",
-				),
-			).toContain("must preserve");
+			expect(check(job(name, (body) => replaceOnce(body, before, after))).join("\n")).toContain(
+				diagnostic,
+			);
 		}
+		const changed = job("heavy", (body) =>
+			heavyStep(body, (step) =>
+				replaceOnce(
+					step,
+					"HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+					"HEAVY: ${{ needs.changes.outputs.heavy }}",
+				),
+			),
+		);
+		expect(check(changed).join("\n")).toContain("must preserve heavy command");
 		const duplicate = job(
 			"full",
 			(body) => `${body}      - run: pnpm exec node tools/ci-checks/src/native-transport.ts run\n`,
@@ -179,38 +221,44 @@ describe("required native transport workflow controls", () => {
 		expect(check(duplicate).join("\n")).toContain("must preserve full command");
 	});
 	it.each([
-		["no work", "", "", false],
-		["native only", "", "./tools/transport-tests", false],
-		["ordinary only", "", "./apps/cli", true],
-		["spikes only", "spikes/kit", "", true],
-		["mixed", "spikes/kit", "./tools/transport-tests\n./apps/cli", true],
+		["no work", "", "", false, false],
+		["native only", "", "./tools/transport-tests", false, false],
+		["ordinary only", "", "./apps/cli", true, false],
+		["spikes only", "spikes/kit", "", false, true],
+		["mixed", "spikes/kit", "./tools/transport-tests\n./apps/cli", true, true],
 	] as const)(
-		"keeps the real combined step correctly selected for %s",
-		(_, spikes, heavy, expected) => {
+		"keeps the two real heavy jobs correctly selected for %s",
+		(_, spikes, heavy, expectedOrdinary, expectedSpikes) => {
 			const binding = nativeTransportSelection(
 				heavy,
 				heavy.includes("./tools/transport-tests") ? "crates" : "",
 			);
-			const [combined] = steps("full").filter((step) => Object.hasOwn(step.env ?? {}, "HEAVY"));
-			expect(combined?.env?.HEAVY).toBe("${{ needs.changes.outputs.ordinary-heavy }}");
+			const plan = planHeavyShards(spikes);
+			const ordinary = definition("heavy");
+			const shard = definition("spike-run");
+			expect(ordinary.if).toBe(`${readySelection}needs.changes.outputs.ordinary-heavy != ''`);
+			expect(shard.if).toBe(`${readySelection}needs.changes.outputs.spike-count != '0'`);
 			expect(binding.ordinaryHeavy.split("\n")).not.toContain("./tools/transport-tests");
 			expect(
-				selected(combined?.if ?? "", {
-					"needs.changes.outputs.spikes != ''": spikes !== "",
+				selected((ordinary.if ?? "").slice(readySelection.length), {
 					"needs.changes.outputs.ordinary-heavy != ''": binding.ordinaryHeavy !== "",
 				}),
-			).toBe(expected);
+			).toBe(expectedOrdinary);
+			expect(
+				selected((shard.if ?? "").slice(readySelection.length), {
+					"needs.changes.outputs.spike-count != '0'": plan.count !== 0,
+				}),
+			).toBe(expectedSpikes);
 		},
 	);
 	it("keeps one pinned Windows Rust setup for either parent condition before its native cache", () => {
-		const windows = steps("windows");
+		const windows = definition("windows").steps;
 		const rust = windows.filter((step) => step.uses?.startsWith("dtolnay/rust-toolchain@"));
 		expect(rust).toHaveLength(1);
 		const condition =
 			"hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'";
 		expect(rust[0]?.if).toBe(condition);
-		const rustIndex = windows.indexOf(rust[0] as Step);
-		expect(rustIndex).toBeLessThan(
+		expect(windows.indexOf(rust[0] as Step)).toBeLessThan(
 			windows.findIndex((step) => step.uses?.startsWith("Swatinem/rust-cache@")),
 		);
 		for (const [manifest, native, expected] of [
@@ -233,60 +281,65 @@ describe("required native transport workflow controls", () => {
 			condition.replace(" || ", " && "),
 		]) {
 			expect(
-				check(job("windows", (body) => body.replace(condition, replacement))).join("\n"),
+				check(job("windows", (body) => replaceOnce(body, condition, replacement))).join("\n"),
 			).toContain("pinned native Rust setup");
 		}
 	});
-	it("requires both ordinary filters and the nonempty ordinary guard for later product-heavy composition", () => {
-		const addProduct = (condition: string, binding: string) => {
-			const augmented = source.replace(
-				"  windows:\n",
-				[
-					"      - name: Product heavy tests",
-					`        if: needs.changes.outputs.${condition} != ''`,
-					"        env:",
-					`          HEAVY: \${{ needs.changes.outputs.${binding} }}`,
-					"        run: |",
-					"          filters=()",
-					"          while IFS= read -r filter; do",
-					'            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
-					'          done <<< "$HEAVY"',
-					'          node tools/verify/turbo.ts run test:heavy --concurrency=1 "${filters[@]}"',
-					"",
-					"  windows:",
-					"",
-				].join("\n"),
-			);
-			expect(augmented).not.toBe(source);
-			return augmented;
-		};
-		expect(check(addProduct("ordinary-heavy", "ordinary-heavy"))).toEqual([]);
-		for (const [condition, binding] of [
-			["heavy", "heavy"],
-			["heavy", "ordinary-heavy"],
-			["ordinary-heavy", "heavy"],
+	it("requires ordinary filters and the nonempty ordinary guard for later product-heavy composition", () => {
+		expect(check(source)).toEqual([]);
+		for (const replacement of [
+			"needs.changes.outputs.heavy != ''",
+			"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+		]) {
+			expect(
+				check(
+					job("heavy", (body) =>
+						replaceOnce(
+							body,
+							`${readySelection}needs.changes.outputs.ordinary-heavy != ''`,
+							`${readySelection}${replacement}`,
+						),
+					),
+				).join("\n"),
+			).toContain("must preserve heavy job execution controls");
+		}
+		const combined = job("heavy", (body) =>
+			heavyStep(body, (step) =>
+				replaceOnce(
+					step,
+					"          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+					"          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}\n          SPIKES: ${{ needs.changes.outputs.spikes }}",
+				),
+			),
+		);
+		expect(check(combined).join("\n")).toContain("must preserve heavy command");
+		const misplaced = job(
+			"full",
+			(body) => `${body}      - run: node tools/verify/turbo.ts run test:heavy --concurrency=1\n`,
+		);
+		expect(check(misplaced).join("\n")).toContain(
+			"test:heavy must preserve the selected shard or ordinary-heavy command",
+		);
+	});
+	it("keeps ordinary heavy execution separate from the three-platform native selectors", () => {
+		expect(check(source)).toEqual([]);
+		for (const [before, after] of [
+			["needs.changes.outputs.ordinary-heavy != ''", "needs.changes.outputs.heavy != ''"],
+			[
+				"HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+				"HEAVY: ${{ needs.changes.outputs.heavy }}",
+			],
+			["test:heavy --concurrency=1", "test:heavy --concurrency=2"],
+			["${{ steps.heavy-test.outcome }}", "success"],
 		] as const) {
-			expect(check(addProduct(condition, binding)).join("\n")).toContain(
-				"ordinary heavy suites must exclude",
+			expect(check(job("heavy", (body) => body.replaceAll(before, after))).length).toBeGreaterThan(
+				0,
 			);
 		}
-		const combined = addProduct("ordinary-heavy", "ordinary-heavy")
-			.replace(
-				"name: Product heavy tests\n        if: needs.changes.outputs.ordinary-heavy != ''",
-				"name: Product heavy tests\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
-			)
-			.replace(
-				"name: Product heavy tests\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n        env:\n          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
-				"name: Product heavy tests\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n        env:\n          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}\n          SPIKES: ${{ needs.changes.outputs.spikes }}",
-			);
-		expect(check(combined)).toEqual([]);
-		expect(
-			check(
-				combined.replace(
-					"name: Product heavy tests\n        if: needs.changes.outputs.spikes != '' || ",
-					"name: Product heavy tests\n        if: ",
-				),
-			).join("\n"),
-		).toContain("ordinary heavy suites must exclude");
+		for (const group of ["spikes", "heavy"]) {
+			expect(
+				check(job("required", (body) => body.replace(`, ${group}`, ""))).length,
+			).toBeGreaterThan(0);
+		}
 	});
 });

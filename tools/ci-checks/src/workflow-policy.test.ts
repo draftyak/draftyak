@@ -189,13 +189,29 @@ const classifierChange = (before: string, after: string): string => {
 	if (end < 0 || !prefix.includes(before)) throw new Error("missing classifier fixture anchor");
 	return prefix.replace(before, after) + source.slice(end);
 };
+const ciJobSource = (source: string, job: string): string => {
+	const header = `\n  ${job}:\n`;
+	const start = source.indexOf(header);
+	if (start < 0 || start !== source.lastIndexOf(header)) throw new Error("missing unique CI job");
+	const next = source.slice(start + header.length).search(/\n {2}[a-z][a-z0-9-]*:\n/);
+	return source.slice(start, next < 0 ? source.length : start + header.length + next);
+};
+const ciJobChange = (source: string, job: string, before: string, after: string): string => {
+	const block = ciJobSource(source, job);
+	if (!block.includes(before)) throw new Error("missing CI job mutation anchor");
+	const changed = block.replace(before, after);
+	if (changed === block) throw new Error("unchanged CI job mutation");
+	return source.replace(block, changed);
+};
 const classifierOutputs = [
 	["areas", `\${{ steps.areas.outputs.areas }}`],
 	["docs-only", `\${{ steps.areas.outputs.docs-only }}`],
 	["rust", `\${{ steps.areas.outputs.rust }}`],
 	["spikes", `\${{ steps.areas.outputs.spikes }}`],
+	["spike-matrix", `\${{ steps.shards.outputs.matrix }}`],
+	["spike-count", `\${{ steps.shards.outputs.count }}`],
 	["heavy", `\${{ steps.areas.outputs.heavy }}`],
-	["template-smoke", `\${{ steps.areas.outputs.template-smoke }}`],
+	["template-smoke", `\${{ steps.areas.outputs.template-smoke || 'false' }}`],
 	["source", `\${{ steps.source.outputs.source }}`],
 ] as const;
 
@@ -552,20 +568,12 @@ describe("workflow policy", () => {
 			"      - run: pnpm install --frozen-lockfile\n      - run: pnpm build",
 			"      - run: pnpm build\n      - run: pnpm install --frozen-lockfile",
 		],
-		[
-			"heavy condition",
-			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
-			"name: test:heavy for the touched spikes and the selected packages\n        if: false",
-		],
-		[
-			"heavy condition removal",
-			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n",
-			"name: test:heavy for the touched spikes and the selected packages\n",
-		],
+		["heavy condition", "&& needs.changes.outputs.spike-count != '0'", "&& false"],
+		["heavy condition removal", " && needs.changes.outputs.spike-count != '0'", ""],
 		[
 			"heavy condition inversion",
-			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
-			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes == '' || needs.changes.outputs.ordinary-heavy != ''",
+			"&& needs.changes.outputs.spike-count != '0'",
+			"&& needs.changes.outputs.spike-count == '0'",
 		],
 		[
 			"heavy command replacement",
@@ -583,73 +591,8 @@ describe("workflow policy", () => {
 			`node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
 			`echo node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
 		],
-		[
-			"heavy filter removal",
-			'          for dir in $SPIKES; do filters+=("--filter=./$dir"); done\n',
-			"",
-		],
-		[
-			"heavy selection environment",
-			`name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n        env:\n          SPIKES: \${{ needs.changes.outputs.spikes }}`,
-			`name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n        env:\n          SPIKES: ''`,
-		],
-		[
-			"heavy package condition removal",
-			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
-			"name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != ''",
-		],
-		[
-			"heavy package selection environment",
-			`HEAVY: \${{ needs.changes.outputs.ordinary-heavy }}`,
-			"HEAVY: ''",
-		],
-		[
-			"heavy package selection environment removal",
-			`          HEAVY: \${{ needs.changes.outputs.ordinary-heavy }}\n`,
-			"",
-		],
-		[
-			"heavy smoke selection environment",
-			`SMOKE: \${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}`,
-			"SMOKE: 'true'",
-		],
-		[
-			"heavy strict skips",
-			"          DRAFTYAK_STRICT_SKIPS: '1'",
-			"          DRAFTYAK_STRICT_SKIPS: '0'",
-		],
-		["heavy strict skips removal", "          DRAFTYAK_STRICT_SKIPS: '1'\n", ""],
-		[
-			"heavy package filter loop removal",
-			'          while IFS= read -r filter; do\n            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi\n          done <<< "$HEAVY"\n',
-			"",
-		],
-		[
-			"heavy package filter blank guard",
-			'if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
-			'if false; then filters+=("--filter=$filter"); fi',
-		],
-		[
-			"heavy smoke exclusion removal",
-			'          if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then\n            filters+=("--filter=!./packages/create-plugin")\n          fi\n',
-			"",
-		],
-		["heavy smoke exclusion inversion", 'if [ "$SMOKE" != true ]', 'if [ "$SMOKE" == true ]'],
-		[
-			"heavy shell override",
-			"      - name: test:heavy for the touched spikes and the selected packages\n",
-			"      - name: test:heavy for the touched spikes and the selected packages\n        shell: echo {0}\n",
-		],
-		[
-			"heavy working directory",
-			"      - name: test:heavy for the touched spikes and the selected packages\n",
-			"      - name: test:heavy for the touched spikes and the selected packages\n        working-directory: elsewhere\n",
-		],
-		[
-			"heavy soft failure",
-			"      - name: test:heavy for the touched spikes and the selected packages\n",
-			"      - name: test:heavy for the touched spikes and the selected packages\n        continue-on-error: true\n",
-		],
+		["heavy filter removal", ' "--filter=./$SPIKE"', ""],
+		["heavy selection environment", `      SPIKE: \${{ matrix.spike }}`, "      SPIKE: ''"],
 		[
 			"Windows condition",
 			"      - run: pnpm verify\n",
@@ -720,11 +663,21 @@ describe("workflow policy", () => {
 			(parseYaml(read(`.github/workflows/${name}`)).value as { jobs: Record<string, unknown> })
 				.jobs;
 		const ci = jobs("ci.yml");
-		expect(Object.keys(ci)).toEqual(["changes", "cheap", "full", "windows", "macos", "required"]);
+		expect(Object.keys(ci)).toEqual([
+			"changes",
+			"cheap",
+			"full",
+			"spike-run",
+			"spikes",
+			"heavy",
+			"windows",
+			"macos",
+			"required",
+		]);
 		expect(ci.required).toMatchObject({
 			if: "always()",
 			name: `\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`,
-			needs: ["changes", "cheap", "full", "windows", "macos"],
+			needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"],
 		});
 		const reportedJobs = files.flatMap((file) =>
 			Object.entries(jobs(path.basename(file))).map(([id, job]) => ({
@@ -821,7 +774,7 @@ describe("workflow policy", () => {
 		expect(ci.windows?.steps.at(-1)?.run).toBe(
 			"pnpm exec node tools/ci-checks/src/native-transport.ts run",
 		);
-		for (const name of ["changes", "cheap", "full", "windows", "macos"]) {
+		for (const name of ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"]) {
 			const job = ci[name];
 			expect(job?.outputs?.source, name).toBe(`\${{ steps.source.outputs.source }}`);
 			const steps = job?.steps ?? [];
@@ -895,7 +848,10 @@ describe("workflow policy", () => {
 		],
 	])("refuses receipt uploads with %s", (_, file, mutate) => {
 		const source = read(".github/workflows/ci.yml").replaceAll("\r\n", "\n");
-		expect(checkWorkflow(file, mutate(source), toolchain).join("\n")).toContain("fixed CI receipt");
+		const required = ciJobSource(source, "required");
+		expect(
+			checkWorkflow(file, source.replace(required, mutate(required)), toolchain).join("\n"),
+		).toContain("fixed CI receipt");
 	});
 
 	it.each(["true", "false", `\${{ failure() }}`, "[]"])(
@@ -1601,43 +1557,49 @@ describe("selected browser provisioning contract", () => {
 			"name: Install browser prerequisites\n        if: steps.browser-setup.outputs.required == 'true'",
 			"name: Install browser prerequisites\n        if: steps.browser-cache.outputs.cache-hit != 'true'",
 		],
-	])("rejects %s in the actual workflow", (_, before, after) => {
+	])("rejects %s in each heavy job", (_, before, after) => {
 		const source = read(file).replaceAll("\r\n", "\n");
-		const mutated = source.replace(before, after);
-		expect(mutated).not.toBe(source);
-		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain("must preserve");
+		for (const job of ["spike-run", "heavy"]) {
+			const mutated = ciJobChange(source, job, before, after);
+			expect(checkWorkflow(file, mutated, toolchain).join("\n"), job).toContain("must preserve");
+		}
 	});
-	it("requires the cache between the plan and install", () => {
+	it("requires each browser cache between its plan and install", () => {
 		const source = read(file).replaceAll("\r\n", "\n");
-		const start = source.indexOf("      - name: Cache Playwright browsers\n");
-		const end = source.indexOf("      - name: Install browser prerequisites\n", start);
-		expect(start).toBeGreaterThan(0);
-		expect(end).toBeGreaterThan(start);
-		const cache = source.slice(start, end);
-		const without = source.slice(0, start) + source.slice(end);
-		const mutated = without.replace(
-			"      - name: test:heavy for the touched spikes and the selected packages\n",
-			cache + "      - name: test:heavy for the touched spikes and the selected packages\n",
-		);
-		expect(mutated).not.toBe(without);
-		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
-			"must preserve the selected browser cache",
-		);
+		for (const job of ["spike-run", "heavy"]) {
+			const block = ciJobSource(source, job);
+			const start = block.indexOf("      - name: Cache Playwright browsers\n");
+			const end = block.indexOf("      - name: Install browser prerequisites\n", start);
+			expect(start).toBeGreaterThan(0);
+			expect(end).toBeGreaterThan(start);
+			const cache = block.slice(start, end);
+			const without = block.slice(0, start) + block.slice(end);
+			// Move the whole action after browser installation, while keeping valid YAML.
+			const heavyStart = without.indexOf("      - name: test:heavy");
+			expect(heavyStart).toBeGreaterThan(0);
+			const reordered = without.slice(0, heavyStart) + cache + without.slice(heavyStart);
+			expect(reordered).not.toBe(block);
+			expect(
+				checkWorkflow(file, source.replace(block, reordered), toolchain).join("\n"),
+				job,
+			).toContain("must preserve the selected browser cache");
+		}
 	});
 });
 
 describe("authenticated offline Node provisioning contract", () => {
 	const file = ".github/workflows/ci.yml";
 	const source = () => read(file).replaceAll("\r\n", "\n");
-	const preparation = (value: string): string => {
-		const start = value.indexOf("      - name: Prepare authenticated offline Node fixture\n");
+	const preparation = (value: string, job: string): string => {
+		const block = ciJobSource(value, job);
+		const start = block.indexOf("      - name: Prepare authenticated offline Node fixture\n");
 		const marker = "          NODE\n";
-		const end = value.indexOf(marker, start);
+		const end = block.indexOf(marker, start);
 		expect(start).toBeGreaterThan(0);
 		expect(end).toBeGreaterThan(start);
-		return value.slice(start, end + marker.length);
+		return block.slice(start, end + marker.length);
 	};
-	it("accepts the actual authenticated preparation and selected-heavy bindings", () => {
+	it("accepts authenticated preparation and both selected-heavy bindings", () => {
 		expect(checkWorkflow(file, source(), toolchain)).toEqual([]);
 	});
 	it.each([
@@ -1645,11 +1607,6 @@ describe("authenticated offline Node provisioning contract", () => {
 			"extracted binary directory instead of version root",
 			"const cache = path.join(process.env.DRAFTYAK_CACHE_DIR, 'node', bundled);",
 			"const cache = path.join(process.env.DRAFTYAK_CACHE_DIR, 'node', bundled, 'linux-x64');",
-		],
-		[
-			"spike-only preparation that misses ordinary reverse dependencies",
-			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
-			"if: needs.changes.outputs.spikes != ''",
 		],
 		[
 			"fake preparation instead of the authenticated producer",
@@ -1661,14 +1618,28 @@ describe("authenticated offline Node provisioning contract", () => {
 			"pnpm fetch-node --version bundled --platform linux --arch x64",
 			"pnpm fetch-node --version bundled --platform linux --arch x64 || true",
 		],
-	])("rejects %s in the actual preparation", (_, before, after) => {
+	])("rejects %s in both preparations", (_, before, after) => {
 		const current = source();
-		const block = preparation(current);
-		const changed = block.replace(before, after);
-		expect(changed).not.toBe(block);
-		const mutated = current.replace(block, changed);
+		for (const job of ["spike-run", "heavy"]) {
+			const block = preparation(current, job);
+			const changed = block.replace(before, after);
+			expect(changed).not.toBe(block);
+			expect(
+				checkWorkflow(file, current.replace(block, changed), toolchain).join("\n"),
+				job,
+			).toContain(`must preserve ${job} command and its execution controls`);
+		}
+	});
+	it("does not skip the ordinary producer when no spike is selected", () => {
+		const current = source();
+		const mutated = ciJobChange(
+			current,
+			"heavy",
+			"        id: offline-node\n",
+			"        id: offline-node\n        if: needs.changes.outputs.spikes != ''\n",
+		);
 		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
-			"must preserve full command and its execution controls",
+			"must preserve heavy command",
 		);
 	});
 	it.each([
@@ -1682,34 +1653,401 @@ describe("authenticated offline Node provisioning contract", () => {
 		],
 	])("rejects missing selected-heavy %s", (_, binding) => {
 		const current = source();
-		const mutated = current.replace(binding, "");
-		expect(mutated).not.toBe(current);
-		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
-			"must preserve full command and its execution controls",
+		for (const job of ["spike-run", "heavy"]) {
+			const mutated = ciJobChange(current, job, binding, "");
+			expect(checkWorkflow(file, mutated, toolchain).join("\n"), job).toContain(
+				`must preserve ${job} command and its execution controls`,
+			);
+		}
+	});
+	it("requires each actual preparation before its heavy execution", () => {
+		const current = source();
+		for (const job of ["spike-run", "heavy"]) {
+			const block = ciJobSource(current, job);
+			const producer = preparation(current, job);
+			const without = block.replace(producer, "");
+			expect(
+				checkWorkflow(file, current.replace(block, without), toolchain).join("\n"),
+				job,
+			).toContain(`must preserve ${job} command and its execution controls`);
+			const marker = job === "spike-run" ? "      - id: receipt\n" : "      - id: complete\n";
+			const afterHeavy = without.replace(marker, producer + marker);
+			expect(afterHeavy).not.toBe(without);
+			expect(
+				checkWorkflow(file, current.replace(block, afterHeavy), toolchain).join("\n"),
+				job,
+			).toContain(`must preserve ${job} command and its execution controls`);
+		}
+	});
+});
+
+describe("one-task CI heavy shards", () => {
+	const file = ".github/workflows/ci.yml";
+	const source = () => read(file).replaceAll("\r\n", "\n");
+	it("accepts the exact shard, collector and ordinary-heavy workflow", () => {
+		expect(checkWorkflow(file, source(), toolchain)).toEqual([]);
+	});
+	it.each([
+		["plan omission", "node tools/ci-checks/src/heavy-shards.ts plan", "echo no-shard-plan"],
+		["plan identity", "id: shards", "id: other-shards"],
+		["plan input", "SPIKES: ${{ steps.areas.outputs.spikes }}", "SPIKES: ''"],
+		["conditional plan", "      - id: shards\n", "      - id: shards\n        if: false\n"],
+	])("rejects changes-job %s", (_, before, after) => {
+		expect(
+			checkWorkflow(file, ciJobChange(source(), "changes", before, after), toolchain).join("\n"),
+		).toContain("must preserve changes command");
+	});
+	it.each([
+		["changed reported name", "name: Spike heavy (${{ matrix.id }})", "name: Other spike heavy"],
+		[
+			"path-valued reported name",
+			"name: Spike heavy (${{ matrix.id }})",
+			"name: Spike heavy (${{ matrix.spike }})",
+		],
+		[
+			"protected reported name",
+			"name: Spike heavy (${{ matrix.id }})",
+			"name: required (${{ matrix.id }})",
+		],
+		["fail-fast", "fail-fast: false", "fail-fast: true"],
+		["fanout bound", "max-parallel: 4", "max-parallel: 5"],
+		[
+			"matrix source",
+			"fromJSON(needs.changes.outputs.spike-matrix)",
+			"fromJSON(needs.changes.outputs.spikes)",
+		],
+		["strict skips", "DRAFTYAK_STRICT_SKIPS: '1'", "STRICT_SKIP: '1'"],
+		["shard identity", "SHARD_ID: ${{ matrix.id }}", "SHARD_ID: arbitrary"],
+		["single task", "SPIKE: ${{ matrix.spike }}", "SPIKE: ${{ needs.changes.outputs.spikes }}"],
+		["selected plan", "SPIKES: ${{ needs.changes.outputs.spikes }}", "SPIKES: ''"],
+		[
+			"validation omission",
+			"node tools/ci-checks/src/heavy-shards.ts validate",
+			"echo no-validation",
+		],
+		[
+			"conditional validation",
+			"      - run: node tools/ci-checks/src/heavy-shards.ts validate",
+			"      - if: false\n        run: node tools/ci-checks/src/heavy-shards.ts validate",
+		],
+		["Node version source", "node-version-file: .node-version", "node-version: latest"],
+		["package setup", "cache: true", "cache: false"],
+		["locked install", "pnpm install --frozen-lockfile", "pnpm install --no-frozen-lockfile"],
+		["build omission", "run: pnpm build", "run: echo no-build"],
+		["serial execution", "test:heavy --concurrency=1", "test:heavy --concurrency=2"],
+		["one exact filter", '"--filter=./$SPIKE"', '"--filter=./spikes/*"'],
+		["unquoted filter", '"--filter=./$SPIKE"', "--filter=./$SPIKE"],
+		["completion step", "id: heavy-test", "id: other-heavy-test"],
+		["receipt omission", "node tools/ci-checks/src/heavy-shards.ts receipt", "echo no-receipt"],
+		["conditional receipt", "      - id: receipt\n", "      - id: receipt\n        if: false\n"],
+		[
+			"fabricated command outcome",
+			"SHARD_COMMAND_RESULT: ${{ steps.heavy-test.outcome }}",
+			"SHARD_COMMAND_RESULT: success",
+		],
+		[
+			"conclusion instead of actual outcome",
+			"steps.heavy-test.outcome",
+			"steps.heavy-test.conclusion",
+		],
+		["upload directory", "path: ${{ steps.receipt.outputs.path }}", "path: ${{ runner.temp }}/"],
+		[
+			"extra upload path",
+			"path: ${{ steps.receipt.outputs.path }}",
+			"path: |\n            ${{ steps.receipt.outputs.path }}\n            another-file.json",
+		],
+		["missing receipt accepted", "if-no-files-found: error", "if-no-files-found: warn"],
+		["long retention", "retention-days: 1", "retention-days: 2"],
+		[
+			"wrong artifact attempt",
+			"ci-spike-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.id }}",
+			"ci-spike-${{ github.run_id }}-${{ matrix.id }}",
+		],
+		["nonstandard runner", "runs-on: ubuntu-24.04", "runs-on: ubuntu-latest"],
+		["longer timeout", "timeout-minutes: 30", "timeout-minutes: 60"],
+	])("rejects shard %s", (_, before, after) => {
+		const mutated = ciJobChange(source(), "spike-run", before, after);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain("must preserve");
+	});
+	it.each([
+		["missing shard dependency", "needs: [changes, spike-run]", "needs: changes"],
+		["collector result fence", "always() && needs.changes.result == 'success'", "always()"],
+		[
+			"success requirement omission",
+			'if (process.env.SHARD_RESULT !== "success") process.exit(1)',
+			"process.exit(0)",
+		],
+		[
+			"fabricated job result",
+			"SHARD_RESULT: ${{ needs.spike-run.result }}",
+			"SHARD_RESULT: success",
+		],
+		[
+			"wrong artifact attempt",
+			"ci-spike-${{ github.run_id }}-${{ github.run_attempt }}-*",
+			"ci-spike-${{ github.run_id }}-*",
+		],
+		[
+			"broad artifact pattern",
+			"pattern: ci-spike-${{ github.run_id }}-${{ github.run_attempt }}-*",
+			"pattern: '*'",
+		],
+		["download omission", `uses: ${pin("actions/download-artifact")}`, "run: echo no-download"],
+		["separate receipt folders", "merge-multiple: true", "merge-multiple: false"],
+		["receipt directory", "path: ${{ runner.temp }}/spike-receipts", "path: another-receipts"],
+		[
+			"collection omission",
+			"node tools/ci-checks/src/heavy-shards.ts collect",
+			"echo no-collection",
+		],
+		["conditional collection", "      - id: collect\n", "      - id: collect\n        if: false\n"],
+		["wrong collection plan", "SPIKES: ${{ needs.changes.outputs.spikes }}", "SPIKES: ''"],
+		[
+			"wrong collection directory",
+			"SHARD_RECEIPTS: ${{ runner.temp }}/spike-receipts",
+			"SHARD_RECEIPTS: another-receipts",
+		],
+		[
+			"fabricated completion output",
+			"completed: ${{ steps.collect.outputs.completed }}",
+			"completed: '[]'",
+		],
+		[
+			"wrong completed producer",
+			"steps.collect.outputs.completed",
+			"steps.source.outputs.completed",
+		],
+		["longer timeout", "timeout-minutes: 5", "timeout-minutes: 30"],
+	])("rejects collector %s", (_, before, after) => {
+		expect(
+			checkWorkflow(file, ciJobChange(source(), "spikes", before, after), toolchain).join("\n"),
+		).toContain("must preserve");
+	});
+	it("requires collection after the exact artifact download", () => {
+		const current = source();
+		const block = ciJobSource(current, "spikes");
+		const start = block.indexOf("      - id: collect\n");
+		expect(start).toBeGreaterThan(block.indexOf(pin("actions/download-artifact")));
+		const collection = block.slice(start);
+		const without = block.slice(0, start);
+		const downloadAt = without.indexOf(`      - uses: ${pin("actions/download-artifact")}`);
+		expect(downloadAt).toBeGreaterThan(0);
+		const moved = without.slice(0, downloadAt) + collection + without.slice(downloadAt);
+		expect(checkWorkflow(file, current.replace(block, moved), toolchain).join("\n")).toContain(
+			"must preserve spikes command",
 		);
 	});
-	it("requires actual preparation to remain before selected heavy execution", () => {
+	it.each([
+		["strict skips", "DRAFTYAK_STRICT_SKIPS: '1'", "DRAFTYAK_STRICT_SKIPS: '0'"],
+		[
+			"native filter leakage",
+			"HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+			"HEAVY: ${{ needs.changes.outputs.heavy }}",
+		],
+		[
+			"smoke selection omitted",
+			"          SMOKE: ${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}\n",
+			"",
+		],
+		["smoke classifier ignored", "needs.changes.outputs.template-smoke == 'true'", "false"],
+		["main push smoke omitted", " || github.ref == 'refs/heads/main'", ""],
+		["main base smoke omitted", " || github.base_ref == 'main'", ""],
+		["inverted smoke exclusion", 'if [ "$SMOKE" != true ]', 'if [ "$SMOKE" == true ]'],
+		["missing template package guard", " && [ -f packages/create-plugin/package.json ]", ""],
+		[
+			"missing template exclusion",
+			'            filters+=("--filter=!./packages/create-plugin")\n',
+			"",
+		],
+		[
+			"wrong template exclusion",
+			'"--filter=!./packages/create-plugin"',
+			'"--filter=!./packages/another-template"',
+		],
+		[
+			"filter loss",
+			'          while IFS= read -r filter; do\n            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi\n          done <<< "$HEAVY"\n',
+			"",
+		],
+		["parallel execution", "test:heavy --concurrency=1", "test:heavy --concurrency=2"],
+		[
+			"fabricated completion",
+			"HEAVY_COMMAND_RESULT: ${{ steps.heavy-test.outcome }}",
+			"HEAVY_COMMAND_RESULT: success",
+		],
+		[
+			"missing completion refusal",
+			"          if (process.env.HEAVY_COMMAND_RESULT !== 'success') process.exit(1);\n",
+			"",
+		],
+		[
+			"fabricated completed output",
+			"completed: ${{ steps.complete.outputs.completed }}",
+			"completed: '[]'",
+		],
+		["longer timeout", "timeout-minutes: 30", "timeout-minutes: 60"],
+	])("rejects ordinary-heavy %s", (_, before, after) => {
+		expect(
+			checkWorkflow(file, ciJobChange(source(), "heavy", before, after), toolchain).join("\n"),
+		).toContain("must preserve");
+	});
+	it("requires receipts and ordinary completion after the actual command", () => {
 		const current = source();
-		const block = preparation(current);
-		const without = current.replace(block, "");
-		expect(checkWorkflow(file, without, toolchain).join("\n")).toContain(
-			"must preserve full command and its execution controls",
+		for (const [job, marker] of [
+			["spike-run", "      - id: receipt\n"],
+			["heavy", "      - id: complete\n"],
+		] as const) {
+			const block = ciJobSource(current, job);
+			const start = block.indexOf(marker);
+			expect(start).toBeGreaterThan(block.indexOf("        id: heavy-test\n"));
+			const nextStep = block.indexOf("\n      - ", start + marker.length);
+			const end = nextStep < 0 ? block.length : nextStep + 1;
+			const completion = block.slice(start, end);
+			const without = block.replace(completion, "");
+			const heavyAt = without.indexOf("      - name: test:heavy");
+			expect(heavyAt).toBeGreaterThan(0);
+			const mutated = current.replace(
+				block,
+				without.slice(0, heavyAt) + completion + without.slice(heavyAt),
+			);
+			expect(checkWorkflow(file, mutated, toolchain).join("\n"), job).toContain(
+				`must preserve ${job} command`,
+			);
+		}
+	});
+	it.each(["spike-run", "heavy"])("keeps selected Rust setup/cache before install in %s", (job) => {
+		const current = source();
+		const rust = `      - uses: ${pin("dtolnay/rust-toolchain")}\n        if: needs.changes.outputs.rust != ''\n        with:\n          toolchain: ${toolchain}\n          components: clippy, rustfmt\n`;
+		const cache = `      - uses: ${pin("Swatinem/rust-cache")}\n        if: needs.changes.outputs.rust != ''\n        with:\n          workspaces: \${{ needs.changes.outputs.rust }}\n`;
+		for (const [before, after] of [
+			[rust, ""],
+			[cache, ""],
+			[rust, rust.replace("if: needs.changes.outputs.rust != ''", "if: false")],
+			[cache, cache.replace("${{ needs.changes.outputs.rust }}", "crates/unselected")],
+		] as const) {
+			expect(
+				checkWorkflow(file, ciJobChange(current, job, before, after), toolchain).join("\n"),
+			).toContain("must preserve selected Rust setup and cache");
+		}
+		const block = ciJobSource(current, job);
+		const without = block.replace(rust + cache, "");
+		expect(without).not.toBe(block);
+		const moved = without.replace(
+			"      - run: pnpm build\n",
+			"      - run: pnpm build\n" + rust + cache,
 		);
-		const fullStart = without.indexOf("\n  full:\n");
-		const fullEnd = without.indexOf("\n  windows:\n", fullStart);
-		expect(fullStart).toBeGreaterThan(0);
-		expect(fullEnd).toBeGreaterThan(fullStart);
-		const full = without.slice(fullStart, fullEnd);
-		const heavyAt = full.indexOf("node tools/verify/turbo.ts run test:heavy");
-		const next = "      - name: Run native transport checks\n";
-		const nextAt = full.indexOf(next);
-		expect(heavyAt).toBeGreaterThan(0);
-		expect(nextAt).toBeGreaterThan(heavyAt);
-		const movedFull = full.slice(0, nextAt) + block + full.slice(nextAt);
-		const moved = without.slice(0, fullStart) + movedFull + without.slice(fullEnd);
-		expect(moved).not.toBe(without);
-		expect(checkWorkflow(file, moved, toolchain).join("\n")).toContain(
-			"must preserve full command and its execution controls",
+		expect(checkWorkflow(file, current.replace(block, moved), toolchain).join("\n")).toContain(
+			"must preserve selected Rust setup and cache",
+		);
+	});
+	it.each(["full", "spikes", "windows", "macos"])(
+		"rejects misplaced heavy execution in %s",
+		(job) => {
+			const current = source();
+			const block = ciJobSource(current, job);
+			const mutated = current.replace(
+				block,
+				block +
+					'      - run: node tools/verify/turbo.ts run test:heavy --concurrency=1 "--filter=./spikes/extra"\n',
+			);
+			expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+				"test:heavy must preserve the selected shard or ordinary-heavy command",
+			);
+		},
+	);
+	it.each(["spikes", "heavy"])("keeps %s in the required collector dependencies", (job) => {
+		const current = source();
+		const mutated = ciJobChange(current, "required", `, ${job}`, "");
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"must preserve required job execution controls",
+		);
+	});
+});
+
+describe("ordinary heavy execution controls", () => {
+	const file = ".github/workflows/ci.yml";
+	const condition =
+		"needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.ordinary-heavy != ''";
+	const marker = "      - name: test:heavy for ordinary product suites\n";
+	it.each([
+		["condition", "job", `    if: ${condition}\n`, "    if: false\n"],
+		["condition removal", "job", `    if: ${condition}\n`, ""],
+		[
+			"condition inversion",
+			"job",
+			"needs.changes.outputs.ordinary-heavy != ''",
+			"needs.changes.outputs.ordinary-heavy == ''",
+		],
+		[
+			"ordinary condition replaced by spike selection",
+			"job",
+			"needs.changes.outputs.ordinary-heavy != ''",
+			"needs.changes.outputs.spikes != ''",
+		],
+		[
+			"package selection environment",
+			"step",
+			"HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+			"HEAVY: ''",
+		],
+		[
+			"package selection environment removal",
+			"step",
+			"          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}\n",
+			"",
+		],
+		[
+			"smoke selection environment",
+			"step",
+			"SMOKE: ${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}",
+			"SMOKE: 'true'",
+		],
+		["strict skips", "job", "      DRAFTYAK_STRICT_SKIPS: '1'", "      DRAFTYAK_STRICT_SKIPS: '0'"],
+		["strict skips removal", "job", "      DRAFTYAK_STRICT_SKIPS: '1'\n", ""],
+		[
+			"package filter loop removal",
+			"step",
+			'          while IFS= read -r filter; do\n            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi\n          done <<< "$HEAVY"\n',
+			"",
+		],
+		[
+			"package filter blank guard",
+			"step",
+			'if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
+			'if false; then filters+=("--filter=$filter"); fi',
+		],
+		[
+			"smoke exclusion removal",
+			"step",
+			'          if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then\n            filters+=("--filter=!./packages/create-plugin")\n          fi\n',
+			"",
+		],
+		["smoke exclusion inversion", "step", 'if [ "$SMOKE" != true ]', 'if [ "$SMOKE" == true ]'],
+		["shell override", "step", marker, `${marker}        shell: echo {0}\n`],
+		["working directory", "step", marker, `${marker}        working-directory: elsewhere\n`],
+		["soft failure", "step", marker, `${marker}        continue-on-error: true\n`],
+	])("rejects changed ordinary heavy %s", (_, scope, before, after) => {
+		const current = read(file).replaceAll("\r\n", "\n");
+		expect(checkWorkflow(file, current, toolchain)).toEqual([]);
+		const block = ciJobSource(current, "heavy");
+		let start = 0;
+		let end = block.length;
+		if (scope === "step") {
+			expect(block.split(marker)).toHaveLength(2);
+			start = block.indexOf(marker);
+			end = block.indexOf("\n      - ", start + marker.length);
+			expect(end).toBeGreaterThan(start);
+		}
+		const target = block.slice(start, end);
+		expect(target.split(before)).toHaveLength(2);
+		const changed = target.replace(before, after);
+		expect(changed).not.toBe(target);
+		const mutated = current.replace(block, block.slice(0, start) + changed + block.slice(end));
+		expect(mutated).not.toBe(current);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			scope === "job"
+				? "must preserve heavy job execution controls"
+				: "must preserve heavy command",
 		);
 	});
 });
