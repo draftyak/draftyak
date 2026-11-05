@@ -1,8 +1,9 @@
 import { setImmediate } from "node:timers";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	closeNativeSlackConnectProbe,
 	createNativeSlackConnectProbe,
+	discardNativeSlackConnectProbeResult,
 	type NativeSlackConnectProbe,
 	NativeSlackConnectProbeError,
 	type NativeSlackConnectProbeResult,
@@ -510,5 +511,119 @@ describe("original Session Slack connect transport", () => {
 		} finally {
 			tail.release();
 		}
+	});
+
+	async function unconsumedResponse(f: NativeSlackConnectFixture, probe: NativeSlackConnectProbe) {
+		const originalConcat = Buffer.concat;
+		const bodies: Buffer[] = [];
+		const observer = vi.spyOn(Buffer, "concat").mockImplementation((chunks, length) => {
+			const bytes = Reflect.apply(originalConcat, Buffer, [chunks, length]) as ReturnType<
+				typeof Buffer.concat
+			>;
+			if (length === BODY.length && bytes.equals(BODY)) bodies.push(bytes);
+			return bytes;
+		});
+		try {
+			const pending = start(f, probe),
+				request = await nextRequest(f, pending);
+			await request.end(response());
+			const result = await pending;
+			await request.closed;
+			expect(bodies).toHaveLength(1);
+			return { result, body: bodies[0] ?? expect.unreachable("Missing actual owned response") };
+		} finally {
+			observer.mockRestore();
+		}
+	}
+
+	it("discards an owned response after the original probe deadline has expired", async () => {
+		const wall = systemClock.wallMs();
+		let mono = 0;
+		const clock: TimerClock = {
+			wallMs: () => wall,
+			monotonicMs: () => mono,
+			after: (ms, signal) => systemClock.after(ms, signal),
+		};
+		await usingFixture(async (f, probe) => {
+			const held = await unconsumedResponse(f, probe);
+			try {
+				mono = 10_000;
+				expect(() => takeNativeSlackConnectProbeResult(probe, held.result)).toThrow(
+					NativeSlackConnectProbeError,
+				);
+				expect(held.body.equals(BODY)).toBe(true);
+				discardNativeSlackConnectProbeResult(probe, held.result);
+				expect(held.body.every((byte) => byte === 0)).toBe(true);
+				expect(() => discardNativeSlackConnectProbeResult(probe, held.result)).not.toThrow();
+			} finally {
+				held.body.fill(0);
+			}
+		}, clock);
+	});
+
+	it("discards an owned response after its genuine native peer is invalidated", async () => {
+		await usingFixture(async (f, probe) => {
+			const held = await unconsumedResponse(f, probe);
+			try {
+				// Actual supplied TLS-peer closure, not a fabricated administrative revocation grant.
+				await closeSessionTransport(f.transport);
+				expect(() => takeNativeSlackConnectProbeResult(probe, held.result)).toThrow(
+					NativeSlackConnectProbeError,
+				);
+				discardNativeSlackConnectProbeResult(probe, held.result);
+				expect(held.body.every((byte) => byte === 0)).toBe(true);
+				expect(() => discardNativeSlackConnectProbeResult(probe, held.result)).not.toThrow();
+			} finally {
+				held.body.fill(0);
+			}
+		});
+	});
+
+	it("allows idempotent cleanup after original Session close and key erasure", async () => {
+		await usingFixture(async (f, probe) => {
+			const held = await unconsumedResponse(f, probe);
+			try {
+				await f.session.close();
+				let derived: Buffer | undefined;
+				try {
+					expect(() => {
+						derived = f.masterKey.derive("db");
+					}).toThrow();
+				} finally {
+					derived?.fill(0);
+				}
+				expect(() => takeNativeSlackConnectProbeResult(probe, held.result)).toThrow(
+					NativeSlackConnectProbeError,
+				);
+				expect(() => discardNativeSlackConnectProbeResult(probe, held.result)).not.toThrow();
+				expect(() => discardNativeSlackConnectProbeResult(probe, held.result)).not.toThrow();
+				expect(held.body.every((byte) => byte === 0)).toBe(true);
+			} finally {
+				held.body.fill(0);
+			}
+		});
+	});
+
+	it("refuses a live foreign result without erasing or consuming its owner's response", async () => {
+		await usingFixture(async (f, probe) => {
+			const foreign = await nativeSlackConnectFixture();
+			try {
+				const other = createNativeSlackConnectProbe(foreign.session, foreign.clock);
+				const held = await unconsumedResponse(f, probe);
+				try {
+					expect(() => discardNativeSlackConnectProbeResult(other, held.result)).toThrow(
+						NativeSlackConnectProbeError,
+					);
+					expect(held.body.equals(BODY)).toBe(true);
+					checkResponse(probe, held.result);
+					// Once consumed, no private pairing remains: this no-op proves no provenance.
+					expect(() => discardNativeSlackConnectProbeResult(other, held.result)).not.toThrow();
+				} finally {
+					held.body.fill(0);
+				}
+			} finally {
+				await foreign.close();
+			}
+		});
 	});
 });
