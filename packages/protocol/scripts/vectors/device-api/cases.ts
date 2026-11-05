@@ -294,6 +294,9 @@ const ids = Array.from(
 // The IDs a request of each admin kind with a review subject names: the account or device the
 // subject describes, or none for Back up now. Every other admin kind takes up to 100.
 const requestIds: Readonly<Record<string, number>> = {
+	"plugin.install": 2,
+	"plugin.upgrade": 2,
+	"account.connect": 1,
 	"account.disconnect": 1,
 	"account.mode-full": 1,
 	"security.device-capabilities": 1,

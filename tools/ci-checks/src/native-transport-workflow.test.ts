@@ -22,6 +22,17 @@ const job = (name: string, change: (text: string) => string): string => {
 	expect(changed).toBe(true);
 	return result;
 };
+const heavyStep = (body: string, change: (text: string) => string): string => {
+	const marker = "      - name: test:heavy for the touched spikes and the selected packages\n";
+	const start = body.indexOf(marker);
+	const end = body.indexOf("\n      - ", start + marker.length);
+	expect(start).toBeGreaterThanOrEqual(0);
+	expect(end).toBeGreaterThan(start);
+	const original = body.slice(start, end);
+	const changed = change(original);
+	expect(changed).not.toBe(original);
+	return body.slice(0, start) + changed + body.slice(end);
+};
 type Step = {
 	readonly run?: string;
 	readonly uses?: string;
@@ -155,9 +166,11 @@ describe("required native transport workflow controls", () => {
 			["needs.changes.outputs.spikes != '' || ", ""],
 			[" || needs.changes.outputs.ordinary-heavy != ''", ""],
 		] as const) {
-			expect(check(job("full", (body) => body.replace(before, after))).join("\n")).toContain(
-				"must preserve",
-			);
+			expect(
+				check(job("full", (body) => heavyStep(body, (step) => step.replace(before, after)))).join(
+					"\n",
+				),
+			).toContain("must preserve");
 		}
 		const duplicate = job(
 			"full",
@@ -223,5 +236,57 @@ describe("required native transport workflow controls", () => {
 				check(job("windows", (body) => body.replace(condition, replacement))).join("\n"),
 			).toContain("pinned native Rust setup");
 		}
+	});
+	it("requires both ordinary filters and the nonempty ordinary guard for later product-heavy composition", () => {
+		const addProduct = (condition: string, binding: string) => {
+			const augmented = source.replace(
+				"  windows:\n",
+				[
+					"      - name: Product heavy tests",
+					`        if: needs.changes.outputs.${condition} != ''`,
+					"        env:",
+					`          HEAVY: \${{ needs.changes.outputs.${binding} }}`,
+					"        run: |",
+					"          filters=()",
+					"          while IFS= read -r filter; do",
+					'            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
+					'          done <<< "$HEAVY"',
+					'          node tools/verify/turbo.ts run test:heavy --concurrency=1 "${filters[@]}"',
+					"",
+					"  windows:",
+					"",
+				].join("\n"),
+			);
+			expect(augmented).not.toBe(source);
+			return augmented;
+		};
+		expect(check(addProduct("ordinary-heavy", "ordinary-heavy"))).toEqual([]);
+		for (const [condition, binding] of [
+			["heavy", "heavy"],
+			["heavy", "ordinary-heavy"],
+			["ordinary-heavy", "heavy"],
+		] as const) {
+			expect(check(addProduct(condition, binding)).join("\n")).toContain(
+				"ordinary heavy suites must exclude",
+			);
+		}
+		const combined = addProduct("ordinary-heavy", "ordinary-heavy")
+			.replace(
+				"name: Product heavy tests\n        if: needs.changes.outputs.ordinary-heavy != ''",
+				"name: Product heavy tests\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+			)
+			.replace(
+				"name: Product heavy tests\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n        env:\n          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+				"name: Product heavy tests\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n        env:\n          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}\n          SPIKES: ${{ needs.changes.outputs.spikes }}",
+			);
+		expect(check(combined)).toEqual([]);
+		expect(
+			check(
+				combined.replace(
+					"name: Product heavy tests\n        if: needs.changes.outputs.spikes != '' || ",
+					"name: Product heavy tests\n        if: ",
+				),
+			).join("\n"),
+		).toContain("ordinary heavy suites must exclude");
 	});
 });
