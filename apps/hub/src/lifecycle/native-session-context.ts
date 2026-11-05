@@ -1,6 +1,7 @@
 import type { AuditChain } from "../audit/chain.ts";
 import type { EventLog } from "../events/log.ts";
 import type { DeviceRegistry } from "../identity/devices.ts";
+import { closeNativeSlackConnectProbeForSession } from "../identity/native-slack-connect-probe.ts";
 import { closeNativeAppAdmission } from "../installer/native-app-admission.ts";
 import type { WorkDatabase } from "../jobs/database.ts";
 import type { Clock } from "../kernel/clock.ts";
@@ -45,6 +46,7 @@ export async function drainNativePlugins(session: unknown): Promise<void> {
 		closeNativePluginRegistry(session),
 		closeNativePluginInstaller(session),
 		closeNativeAppAdmission(session),
+		closeNativeSlackConnectProbeForSession(session),
 	]);
 	if (results.some((result) => result.status === "rejected"))
 		throw new Error("Native plugin drain incomplete");
