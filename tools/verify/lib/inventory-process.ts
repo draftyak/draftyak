@@ -41,7 +41,8 @@ export interface InventoryProcessRuntime {
 	spawn(options: InventorySpawn): InventoryChild;
 }
 
-const failed = (): Error => new Error("file-name inventory failed");
+const failed = (diagnostic?: string): Error =>
+	new Error(`file-name inventory failed${diagnostic === undefined ? "" : ` [${diagnostic}]`}`);
 const root = path.resolve(import.meta.dirname, "..", "..", "..");
 const entry = path.join(import.meta.dirname, "worktree-inventory.ts");
 
@@ -136,8 +137,18 @@ export function runInventoryAfter(
 			reject(failed());
 			return;
 		}
-		type Handle = { readonly child: InventoryChild; closed: boolean; stopSent: boolean };
+		// Keep work admission's original 250ms reserve. Report failure halfway through that
+		// reserve so an outer 300000ms test can observe it; this is not a close receipt.
+		const completionReserve = Math.floor(INVENTORY_STOP_RESERVE_MS / 2);
+		type Handle = {
+			readonly child: InventoryChild;
+			readonly kind: "git" | "worker";
+			closed: boolean;
+			stopSent: boolean;
+			killSent: boolean;
+		};
 		const handles = new Map<InventoryChild, Handle>();
+		let phase: "precheck" | "worker" = "precheck";
 		let prechecking = true;
 		let refused = false;
 		let settled = false;
@@ -148,11 +159,51 @@ export function runInventoryAfter(
 			for (const handle of handles.values()) if (!handle.closed) return false;
 			return true;
 		};
-		const own = (child: InventoryChild): Handle => {
+		const own = (child: InventoryChild, kind: Handle["kind"]): Handle => {
 			if (handles.has(child)) throw failed();
-			const handle = { child, closed: false, stopSent: false };
+			const handle = { child, kind, closed: false, stopSent: false, killSent: false };
 			handles.set(child, handle);
 			return handle;
+		};
+		const diagnostic = (): string => {
+			let gitOwned = 0;
+			let gitClosed = 0;
+			let workerOwned = 0;
+			let workerClosed = 0;
+			let pending = 0;
+			let stopRequests = 0;
+			let killRequests = 0;
+			for (const handle of handles.values()) {
+				if (handle.kind === "git") {
+					gitOwned++;
+					if (handle.closed) gitClosed++;
+				} else {
+					workerOwned++;
+					if (handle.closed) workerClosed++;
+				}
+				if (!handle.closed) pending++;
+				if (handle.stopSent) stopRequests++;
+				if (handle.killSent) killRequests++;
+			}
+			let elapsedMs = -1;
+			try {
+				const elapsed = Math.floor(ports.now() - (deadline - INVENTORY_TIMEOUT_MS));
+				if (Number.isSafeInteger(elapsed) && elapsed >= 0) elapsedMs = elapsed;
+			} catch {
+				// Unknown timing remains unknown, never a successful deadline receipt.
+			}
+			return [
+				`phase=${phase}`,
+				`cleanup=${handles.size === 0 ? "none" : pending === 0 ? "closed" : "pending"}`,
+				`pending=${pending}`,
+				`gitOwned=${gitOwned}`,
+				`gitClosed=${gitClosed}`,
+				`workerOwned=${workerOwned}`,
+				`workerClosed=${workerClosed}`,
+				`stopRequests=${stopRequests}`,
+				`killRequests=${killRequests}`,
+				`elapsedMs=${elapsedMs}`,
+			].join(",");
 		};
 		const finish = (failure: boolean): void => {
 			if (settled) return;
@@ -164,7 +215,7 @@ export function runInventoryAfter(
 					failure = true;
 				}
 			}
-			if (failure) reject(failed());
+			if (failure) reject(failed(diagnostic()));
 			else resolve();
 		};
 		const stop = (): void => {
@@ -179,7 +230,19 @@ export function runInventoryAfter(
 				}
 			}
 		};
-		const timely = (reserve = 0): boolean => {
+		const force = (): void => {
+			stop();
+			for (const handle of handles.values()) {
+				if (handle.closed || handle.killSent) continue;
+				handle.killSent = true;
+				try {
+					handle.child.kill();
+				} catch {
+					// A submitted or throwing kill is never an original close callback.
+				}
+			}
+		};
+		const timely = (reserve = completionReserve): boolean => {
 			try {
 				const now = ports.now();
 				return Number.isFinite(now) && now < deadline - reserve;
@@ -198,6 +261,7 @@ export function runInventoryAfter(
 				try {
 					const original = own(
 						ports.spawn({ command: "git", args, cwd: root, env: process.env, ipc: false }),
+						"git",
 					);
 					original.child.onClose((code) => {
 						if (original.closed) return;
@@ -242,18 +306,12 @@ export function runInventoryAfter(
 			timers.push(
 				ports.setTimer(
 					() => {
-						stop();
-						for (const handle of handles.values()) {
-							if (handle.closed) continue;
-							try {
-								handle.child.kill();
-							} catch {
-								// Do not invent a closed/drained receipt when termination is uncertain.
-							}
-						}
+						force();
+						// Failure is observable before the outer deadline. Pending originals
+						// retain their handlers; rejection does not assert physical cleanup.
 						finish(true);
 					},
-					Math.max(0, deadline - ports.now()),
+					Math.max(0, deadline - ports.now() - completionReserve),
 				),
 			);
 		} catch {
@@ -276,6 +334,7 @@ export function runInventoryAfter(
 						return;
 					}
 					try {
+						phase = "worker";
 						const original = own(
 							ports.spawn({
 								command: process.execPath,
@@ -283,6 +342,7 @@ export function runInventoryAfter(
 								cwd: root,
 								env: inventoryEnvironment(),
 							}),
+							"worker",
 						);
 						original.child.onClose((code) => {
 							if (original.closed) return;
