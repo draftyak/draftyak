@@ -29,7 +29,10 @@ export interface InventorySpawn {
 	readonly args: readonly string[];
 	readonly cwd: string;
 	readonly env: NodeJS.ProcessEnv;
+	readonly ipc?: boolean;
 }
+
+export type InventoryGitCheck = (...args: string[]) => Promise<{ code: number }>;
 
 export interface InventoryProcessRuntime {
 	now(): number;
@@ -38,7 +41,8 @@ export interface InventoryProcessRuntime {
 	spawn(options: InventorySpawn): InventoryChild;
 }
 
-const failed = (): Error => new Error("file-name inventory failed");
+const failed = (diagnostic?: string): Error =>
+	new Error(`file-name inventory failed${diagnostic === undefined ? "" : ` [${diagnostic}]`}`);
 const root = path.resolve(import.meta.dirname, "..", "..", "..");
 const entry = path.join(import.meta.dirname, "worktree-inventory.ts");
 
@@ -99,7 +103,7 @@ const runtime: InventoryProcessRuntime = {
 		const child = spawn(options.command, [...options.args], {
 			cwd: options.cwd,
 			env: options.env,
-			stdio: ["ignore", "pipe", "pipe", "ipc"],
+			stdio: options.ipc === false ? ["ignore", "pipe", "pipe"] : ["ignore", "pipe", "pipe", "ipc"],
 			shell: false,
 			windowsHide: true,
 		});
@@ -107,6 +111,10 @@ const runtime: InventoryProcessRuntime = {
 		return {
 			...owned,
 			stop: () => {
+				if (options.ipc === false) {
+					owned.kill();
+					return;
+				}
 				if (!child.connected) throw failed();
 				child.send("stop", (error) => {
 					if (error !== undefined && error !== null) child.emit("error", error);
@@ -118,7 +126,7 @@ const runtime: InventoryProcessRuntime = {
 
 // The original test budget includes prechecks, startup, traversal, output and owned close.
 export function runInventoryAfter(
-	precheck: () => Promise<void>,
+	precheck: (git: InventoryGitCheck) => Promise<void>,
 	ports: InventoryProcessRuntime = runtime,
 ): Promise<void> {
 	return new Promise<void>((resolve, reject) => {
@@ -129,14 +137,74 @@ export function runInventoryAfter(
 			reject(failed());
 			return;
 		}
-		let child: InventoryChild | undefined;
-		let closed = false;
+		// Keep work admission's original 250ms reserve. Report failure halfway through that
+		// reserve so an outer 300000ms test can observe it; this is not a close receipt.
+		const completionReserve = Math.floor(INVENTORY_STOP_RESERVE_MS / 2);
+		type Handle = {
+			readonly child: InventoryChild;
+			readonly kind: "git" | "worker";
+			closed: boolean;
+			stopSent: boolean;
+			killSent: boolean;
+		};
+		const handles = new Map<InventoryChild, Handle>();
+		let phase: "precheck" | "worker" = "precheck";
+		let prechecking = true;
 		let refused = false;
 		let settled = false;
-		let stopSent = false;
 		let stdout = Buffer.alloc(0);
 		let stderrBytes = 0;
 		const timers: unknown[] = [];
+		const drained = (): boolean => {
+			for (const handle of handles.values()) if (!handle.closed) return false;
+			return true;
+		};
+		const own = (child: InventoryChild, kind: Handle["kind"]): Handle => {
+			if (handles.has(child)) throw failed();
+			const handle = { child, kind, closed: false, stopSent: false, killSent: false };
+			handles.set(child, handle);
+			return handle;
+		};
+		const diagnostic = (): string => {
+			let gitOwned = 0;
+			let gitClosed = 0;
+			let workerOwned = 0;
+			let workerClosed = 0;
+			let pending = 0;
+			let stopRequests = 0;
+			let killRequests = 0;
+			for (const handle of handles.values()) {
+				if (handle.kind === "git") {
+					gitOwned++;
+					if (handle.closed) gitClosed++;
+				} else {
+					workerOwned++;
+					if (handle.closed) workerClosed++;
+				}
+				if (!handle.closed) pending++;
+				if (handle.stopSent) stopRequests++;
+				if (handle.killSent) killRequests++;
+			}
+			let elapsedMs = -1;
+			try {
+				const elapsed = Math.floor(ports.now() - (deadline - INVENTORY_TIMEOUT_MS));
+				if (Number.isSafeInteger(elapsed) && elapsed >= 0) elapsedMs = elapsed;
+			} catch {
+				// Unknown timing remains unknown, never a successful deadline receipt.
+			}
+			return [
+				`phase=${phase}`,
+				`cleanup=${handles.size === 0 ? "none" : pending === 0 ? "closed" : "pending"}`,
+				`pending=${pending}`,
+				`gitOwned=${gitOwned}`,
+				`gitClosed=${gitClosed}`,
+				`workerOwned=${workerOwned}`,
+				`workerClosed=${workerClosed}`,
+				`stopRequests=${stopRequests}`,
+				`killRequests=${killRequests}`,
+				`elapsedMs=${elapsedMs}`,
+			].join(",");
+		};
 		const finish = (failure: boolean): void => {
 			if (settled) return;
 			settled = true;
@@ -147,20 +215,34 @@ export function runInventoryAfter(
 					failure = true;
 				}
 			}
-			if (failure) reject(failed());
+			if (failure) reject(failed(diagnostic()));
 			else resolve();
 		};
 		const stop = (): void => {
 			refused = true;
-			if (child === undefined || closed || stopSent) return;
-			stopSent = true;
-			try {
-				child.stop();
-			} catch {
-				// Failure is latched; retain close/error listeners until the owned process closes.
+			for (const handle of handles.values()) {
+				if (handle.closed || handle.stopSent) continue;
+				handle.stopSent = true;
+				try {
+					handle.child.stop();
+				} catch {
+					// Retain ownership and listeners until actual close, even when stopping throws.
+				}
 			}
 		};
-		const timely = (reserve = 0): boolean => {
+		const force = (): void => {
+			stop();
+			for (const handle of handles.values()) {
+				if (handle.closed || handle.killSent) continue;
+				handle.killSent = true;
+				try {
+					handle.child.kill();
+				} catch {
+					// A submitted or throwing kill is never an original close callback.
+				}
+			}
+		};
+		const timely = (reserve = completionReserve): boolean => {
 			try {
 				const now = ports.now();
 				return Number.isFinite(now) && now < deadline - reserve;
@@ -168,6 +250,54 @@ export function runInventoryAfter(
 				return false;
 			}
 		};
+		const git: InventoryGitCheck = (...args) =>
+			new Promise<{ code: number }>((resolveGit, rejectGit) => {
+				if (settled || refused || !prechecking || !timely(INVENTORY_STOP_RESERVE_MS)) {
+					rejectGit(failed());
+					return;
+				}
+				let stdoutBytes = 0;
+				let gitStderrBytes = 0;
+				try {
+					const original = own(
+						ports.spawn({ command: "git", args, cwd: root, env: process.env, ipc: false }),
+						"git",
+					);
+					original.child.onClose((code) => {
+						if (original.closed) return;
+						original.closed = true;
+						if (settled || refused || !timely() || code === null || !Number.isFinite(code)) {
+							stop();
+							rejectGit(failed());
+							if (drained()) finish(true);
+						} else resolveGit({ code });
+					});
+					original.child.onError(stop);
+					original.child.stdout.onError(stop);
+					original.child.stderr.onError(stop);
+					original.child.stdout.onData((chunk) => {
+						if (!Buffer.isBuffer(chunk)) {
+							stop();
+							return;
+						}
+						stdoutBytes += chunk.length;
+						if (stdoutBytes > INVENTORY_STDOUT_MAX) stop();
+					});
+					original.child.stderr.onData((chunk) => {
+						if (!Buffer.isBuffer(chunk)) {
+							stop();
+							return;
+						}
+						gitStderrBytes += chunk.length;
+						if (gitStderrBytes > INVENTORY_STDERR_MAX) stop();
+					});
+					if (!timely(INVENTORY_STOP_RESERVE_MS)) stop();
+				} catch {
+					stop();
+					rejectGit(failed());
+					if (drained()) finish(true);
+				}
+			});
 		try {
 			if (!Number.isFinite(deadline)) throw failed();
 			timers.push(
@@ -176,61 +306,66 @@ export function runInventoryAfter(
 			timers.push(
 				ports.setTimer(
 					() => {
-						stop();
-						if (child !== undefined && !closed) {
-							try {
-								child.kill();
-							} catch {
-								// Do not invent a closed/drained receipt when termination is uncertain.
-							}
-						}
+						force();
+						// Failure is observable before the outer deadline. Pending originals
+						// retain their handlers; rejection does not assert physical cleanup.
 						finish(true);
 					},
-					Math.max(0, deadline - ports.now()),
+					Math.max(0, deadline - ports.now() - completionReserve),
 				),
 			);
 		} catch {
 			finish(true);
 			return;
 		}
-		// Both handlers stay attached when a hanging precheck outlives the original deadline.
+		// Precheck promises and every original handle retain their handlers after deadline failure.
 		Promise.resolve()
-			.then(precheck)
+			.then(() => {
+				if (settled || refused || !timely(INVENTORY_STOP_RESERVE_MS)) throw failed();
+				return precheck(git);
+			})
 			.then(
 				() => {
+					prechecking = false;
 					if (settled) return;
-					if (refused || !timely(INVENTORY_STOP_RESERVE_MS)) {
-						finish(true);
+					if (refused || !timely(INVENTORY_STOP_RESERVE_MS) || !drained()) {
+						stop();
+						if (drained()) finish(true);
 						return;
 					}
 					try {
-						child = ports.spawn({
-							command: process.execPath,
-							args: [entry],
-							cwd: root,
-							env: inventoryEnvironment(),
-						});
-						child.onError(stop);
-						child.onClose((code) => {
-							if (closed) return;
-							closed = true;
+						phase = "worker";
+						const original = own(
+							ports.spawn({
+								command: process.execPath,
+								args: [entry],
+								cwd: root,
+								env: inventoryEnvironment(),
+							}),
+							"worker",
+						);
+						original.child.onClose((code) => {
+							if (original.closed) return;
+							original.closed = true;
 							finish(
 								refused ||
 									!timely() ||
+									!drained() ||
 									code !== 0 ||
 									!stdout.equals(Buffer.from(INVENTORY_SENTINEL)),
 							);
 						});
-						child.stdout.onError(stop);
-						child.stderr.onError(stop);
-						child.stdout.onData((chunk) => {
+						original.child.onError(stop);
+						original.child.stdout.onError(stop);
+						original.child.stderr.onError(stop);
+						original.child.stdout.onData((chunk) => {
 							if (!Buffer.isBuffer(chunk) || stdout.length + chunk.length > INVENTORY_STDOUT_MAX) {
 								stop();
 								return;
 							}
 							stdout = Buffer.concat([stdout, chunk]);
 						});
-						child.stderr.onData((chunk) => {
+						original.child.stderr.onData((chunk) => {
 							if (!Buffer.isBuffer(chunk)) {
 								stop();
 								return;
@@ -241,10 +376,14 @@ export function runInventoryAfter(
 						if (!timely()) stop();
 					} catch {
 						stop();
-						if (child === undefined) finish(true);
+						if (drained()) finish(true);
 					}
 				},
-				() => finish(true),
+				() => {
+					prechecking = false;
+					stop();
+					if (drained()) finish(true);
+				},
 			);
 	});
 }

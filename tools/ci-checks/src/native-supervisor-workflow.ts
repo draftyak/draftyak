@@ -16,6 +16,11 @@ export function nativeSupervisorWorkflowContract(
 						required: true,
 						type: "string",
 					},
+					controlSha: {
+						description: "Exact immutable approved control commit (40 lowercase hex characters)",
+						required: true,
+						type: "string",
+					},
 				},
 			},
 		},
@@ -24,7 +29,7 @@ export function nativeSupervisorWorkflowContract(
 		defaults: { run: { shell: "bash" } },
 		jobs: {
 			"native-supervisor": {
-				if: "${{ github.event_name == 'workflow_dispatch' && github.repository == 'draftyak/draftyak' && github.actor == 'nicksavov' && github.triggering_actor == 'nicksavov' && github.ref == 'refs/heads/m0' }}",
+				if: "${{ github.event_name == 'workflow_dispatch' && github.repository == 'draftyak/draftyak' && github.actor == 'nicksavov' && github.triggering_actor == 'nicksavov' && github.ref == 'refs/heads/m0' && inputs.controlSha == github.sha && inputs.controlSha == github.workflow_sha }}",
 				"runs-on": "macos-15",
 				"timeout-minutes": 20,
 				steps: [
@@ -44,6 +49,7 @@ export function nativeSupervisorWorkflowContract(
 						env: {
 							NATIVE_SUPERVISOR_PR: "${{ inputs.pr }}",
 							NATIVE_SUPERVISOR_HEAD: "${{ inputs.head }}",
+							NATIVE_SUPERVISOR_CONTROL_SHA: "${{ inputs.controlSha }}",
 						},
 						run: "node tools/ci-checks/src/native-supervisor.ts admit",
 					},
@@ -64,6 +70,7 @@ export function nativeSupervisorWorkflowContract(
 						env: {
 							NATIVE_SUPERVISOR_PR: "${{ steps.source.outputs.pr }}",
 							NATIVE_SUPERVISOR_HEAD: "${{ steps.source.outputs.head }}",
+							NATIVE_SUPERVISOR_CONTROL_SHA: "${{ inputs.controlSha }}",
 						},
 						run: "node tools/ci-checks/src/native-supervisor.ts run",
 					},

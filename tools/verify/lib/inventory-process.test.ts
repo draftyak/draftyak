@@ -387,3 +387,555 @@ describe("owned inventory process", () => {
 		await expect(result).rejects.toThrow("file-name inventory failed");
 	});
 });
+
+// Separate originals for every precheck and inventory invocation. No actual process is spawned.
+type PrecheckGit = Parameters<Parameters<typeof runInventoryAfter>[0]>[0];
+interface SpawnFact {
+	readonly command: string;
+	readonly args: readonly string[];
+	readonly ipc: boolean | undefined;
+	readonly inheritedEnvironment: boolean;
+}
+const ignoredCheck = ["check-ignore", "--quiet", "--", "DYTEST_IGNORED"] as const;
+const ordinaryCheck = ["check-ignore", "--quiet", "--", "DYTEST_ORDINARY"] as const;
+function precheckHarness() {
+	const clock = new Clock();
+	const children: Child[] = [];
+	const commands: SpawnFact[] = [];
+	const runtime: InventoryProcessRuntime = {
+		now: () => clock.now,
+		setTimer: (callback, delay) => clock.set(callback, delay),
+		clearTimer: (token) => clock.clear(token),
+		spawn: (options) => {
+			const child = new Child();
+			children.push(child);
+			commands.push({
+				command: options.command,
+				args: [...options.args],
+				ipc: options.ipc,
+				inheritedEnvironment: options.env === process.env,
+			});
+			return child;
+		},
+	};
+	return { clock, children, commands, runtime };
+}
+function outcome(promise: Promise<unknown>): () => "pending" | "passed" | "refused" {
+	let state: "pending" | "passed" | "refused" = "pending";
+	void promise.then(
+		() => {
+			state = "passed";
+		},
+		() => {
+			state = "refused";
+		},
+	);
+	return () => state;
+}
+function originalChild(h: ReturnType<typeof precheckHarness>, index: number): Child {
+	expect(h.children.length > index).toBe(true);
+	const child = h.children[index];
+	if (!child) throw new Error("DYTEST original child unavailable");
+	return child;
+}
+async function retireSynthetic(h: ReturnType<typeof precheckHarness>): Promise<void> {
+	// Every wait is a single event-loop turn; a broken implementation cannot hang a new case.
+	h.clock.advance(600_000);
+	for (const child of h.children) child.close(1);
+	await turn();
+	for (const child of h.children) child.close(1);
+	await turn();
+}
+async function originalChecks(git: PrecheckGit): Promise<void> {
+	const ignored = await git(...ignoredCheck);
+	expect(ignored.code).toBe(0);
+	const ordinary = await git(...ordinaryCheck);
+	expect(ordinary.code).toBe(1);
+}
+
+describe("original deadline-owned inventory prechecks", () => {
+	it.each([
+		[0, 1],
+		[1, 0],
+	] as const)(
+		"needs both actual Git closes for codes %s/%s before the plain Node phase",
+		async (firstCode, secondCode) => {
+			const h = precheckHarness();
+			let seenFirst: number | undefined, seenSecond: number | undefined;
+			const state = outcome(
+				runInventoryAfter(async (git) => {
+					seenFirst = (await git(...ignoredCheck)).code;
+					seenSecond = (await git(...ordinaryCheck)).code;
+				}, h.runtime),
+			);
+			try {
+				await turn();
+				expect(h.commands).toHaveLength(1);
+				expect(h.commands[0]?.command).toBe("git");
+				expect(h.commands[0]?.args).toEqual(ignoredCheck);
+				expect(h.commands[0]?.ipc).toBe(false);
+				expect(h.commands[0]?.inheritedEnvironment).toBe(true);
+				expect(seenFirst).toBeUndefined();
+				expect(state()).toBe("pending");
+				originalChild(h, 0).close(firstCode);
+				await turn();
+				expect(seenFirst).toBe(firstCode);
+				expect(h.commands).toHaveLength(2);
+				expect(h.commands[1]?.command).toBe("git");
+				expect(h.commands[1]?.args).toEqual(ordinaryCheck);
+				expect(h.commands[1]?.ipc).toBe(false);
+				expect(h.commands[1]?.inheritedEnvironment).toBe(true);
+				expect(seenSecond).toBeUndefined();
+				originalChild(h, 1).close(secondCode);
+				await turn();
+				expect(seenSecond).toBe(secondCode);
+				expect(h.commands).toHaveLength(3);
+				expect(new Set(h.children).size).toBe(3);
+				expect(h.commands[2]?.command).toBe(process.execPath);
+				expect(h.commands[2]?.args).toHaveLength(1);
+				expect(h.commands[2]?.args[0]?.endsWith("worktree-inventory.ts")).toBe(true);
+				expect(h.commands[2]?.ipc).not.toBe(false);
+				const inventory = originalChild(h, 2);
+				inventory.stdout.data(complete);
+				await turn();
+				expect(state()).toBe("pending");
+				inventory.close(0);
+				await turn();
+				expect(state()).toBe("passed");
+				h.clock.advance(600_000);
+				expect(h.children.every((child) => child.stopCalls === 0 && child.killCalls === 0)).toBe(
+					true,
+				);
+			} finally {
+				await retireSynthetic(h);
+			}
+		},
+	);
+
+	it.each([0, 1] as const)(
+		"stops and kills only original active Git %s under the shared deadline",
+		async (index) => {
+			const h = precheckHarness();
+			const state = outcome(runInventoryAfter(originalChecks, h.runtime));
+			try {
+				await turn();
+				if (index === 1) {
+					originalChild(h, 0).close(0);
+					await turn();
+				}
+				const active = originalChild(h, index);
+				expect(h.commands).toHaveLength(index + 1);
+				h.clock.advance(299_749);
+				expect(active.stopCalls + active.killCalls).toBe(0);
+				h.clock.advance(299_750);
+				expect(active.stopCalls).toBeGreaterThan(0);
+				expect(active.closed).toBe(false);
+				expect(state()).toBe("pending");
+				h.clock.advance(300_000);
+				await turn();
+				expect(active.killCalls).toBeGreaterThan(0);
+				expect(active.closed).toBe(false);
+				expect(state()).toBe("refused");
+				if (index === 1) {
+					expect(originalChild(h, 0).stopCalls + originalChild(h, 0).killCalls).toBe(0);
+				}
+				expect(active.closes.length > 0 && active.errors.length > 0).toBe(true);
+				expect(() => {
+					active.stdout.data(Buffer.from("late"));
+					active.error();
+					active.close(index === 0 ? 0 : 1);
+				}).not.toThrow();
+				await turn();
+				expect(state()).toBe("refused");
+				expect(h.commands).toHaveLength(index + 1);
+			} finally {
+				await retireSynthetic(h);
+			}
+		},
+	);
+
+	it("does not launch a next phase after a Git zero close during the stop reserve", async () => {
+		const h = precheckHarness();
+		const state = outcome(runInventoryAfter(originalChecks, h.runtime));
+		try {
+			await turn();
+			h.clock.advance(299_750);
+			originalChild(h, 0).close(0);
+			await turn();
+			expect(state()).toBe("refused");
+			expect(h.commands).toHaveLength(1);
+		} finally {
+			await retireSynthetic(h);
+		}
+	});
+
+	it("accepts the existing exact Git stdout/stderr ceilings without exposing their contents", async () => {
+		const h = precheckHarness();
+		const state = outcome(runInventoryAfter(originalChecks, h.runtime));
+		try {
+			await turn();
+			const first = originalChild(h, 0);
+			first.stdout.data(Buffer.alloc(128, 65));
+			first.stderr.data(Buffer.alloc(4096, 66));
+			first.close(0);
+			await turn();
+			originalChild(h, 1).close(1);
+			await turn();
+			const inventory = originalChild(h, 2);
+			inventory.stdout.data(complete);
+			inventory.close(0);
+			await turn();
+			expect(state()).toBe("passed");
+		} finally {
+			await retireSynthetic(h);
+		}
+	});
+
+	it.each([
+		"stdout-cap",
+		"stderr-cap",
+		"stdout-type",
+		"stderr-type",
+		"stdout-error",
+		"stderr-error",
+		"child-error",
+	] as const)(
+		"latches original Git %s until actual close and never enters another phase",
+		async (fault) => {
+			const h = precheckHarness();
+			const state = outcome(runInventoryAfter(originalChecks, h.runtime));
+			try {
+				await turn();
+				const first = originalChild(h, 0);
+				if (fault === "stdout-cap") {
+					first.stdout.data(Buffer.alloc(64, 65));
+					first.stdout.data(Buffer.alloc(65, 65));
+				} else if (fault === "stderr-cap") {
+					first.stderr.data(Buffer.alloc(2048, 65));
+					first.stderr.data(Buffer.alloc(2049, 65));
+				} else if (fault === "stdout-type" || fault === "stderr-type") {
+					first[fault === "stdout-type" ? "stdout" : "stderr"].data(
+						new Uint8Array(1) as unknown as Buffer,
+					);
+				} else if (fault === "child-error") first.error();
+				else first[fault === "stdout-error" ? "stdout" : "stderr"].error();
+				await turn();
+				expect(first.stopCalls + first.killCalls).toBeGreaterThan(0);
+				expect(first.closed).toBe(false);
+				expect(state()).toBe("pending");
+				expect(h.commands).toHaveLength(1);
+				first.close(0);
+				await turn();
+				expect(state()).toBe("refused");
+				expect(h.commands).toHaveLength(1);
+			} finally {
+				await retireSynthetic(h);
+			}
+		},
+	);
+
+	it.each([null, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+		"refuses original Git close %s instead of inventing a return code",
+		async (code) => {
+			const h = precheckHarness();
+			const state = outcome(
+				runInventoryAfter(async (git) => {
+					await git(...ignoredCheck);
+				}, h.runtime),
+			);
+			try {
+				await turn();
+				originalChild(h, 0).close(code);
+				await turn();
+				expect(state()).toBe("refused");
+				expect(h.commands).toHaveLength(1);
+			} finally {
+				await retireSynthetic(h);
+			}
+		},
+	);
+
+	it("preserves the owning precheck's exit-code assertions rather than blessing any Git close", async () => {
+		const h = precheckHarness();
+		const state = outcome(
+			runInventoryAfter(async (git) => {
+				const checked = await git(...ordinaryCheck);
+				expect(checked.code).toBe(1);
+			}, h.runtime),
+		);
+		try {
+			await turn();
+			originalChild(h, 0).close(2);
+			await turn();
+			expect(state()).toBe("refused");
+			expect(h.commands).toHaveLength(1);
+		} finally {
+			await retireSynthetic(h);
+		}
+	});
+
+	it("refuses a captured precheck callback that tries to start Git after the hard deadline", async () => {
+		const h = precheckHarness(),
+			released = Promise.withResolvers<void>();
+		const state = outcome(
+			runInventoryAfter(async (git) => {
+				await released.promise;
+				await git(...ignoredCheck);
+			}, h.runtime),
+		);
+		try {
+			await turn();
+			h.clock.advance(300_000);
+			await turn();
+			expect(state()).toBe("refused");
+			released.resolve();
+			await turn();
+			expect(h.commands).toHaveLength(0);
+		} finally {
+			released.resolve();
+			await retireSynthetic(h);
+		}
+	});
+
+	it.each(["inventory", "completed"] as const)(
+		"rejects a retained Git function during %s without spawning",
+		async (phase) => {
+			const h = precheckHarness();
+			let retained: PrecheckGit | undefined;
+			const state = outcome(
+				runInventoryAfter(async (git) => {
+					retained = git;
+				}, h.runtime),
+			);
+			try {
+				await turn();
+				const inventory = originalChild(h, 0);
+				expect(h.commands[0]?.command).toBe(process.execPath);
+				if (phase === "completed") {
+					inventory.stdout.data(complete);
+					inventory.close(0);
+					await turn();
+					expect(state()).toBe("passed");
+				}
+				expect(typeof retained).toBe("function");
+				if (!retained) throw new Error("DYTEST retained function unavailable");
+				const late = outcome(retained(...ignoredCheck));
+				await turn();
+				expect(late()).toBe("refused");
+				expect(h.commands).toHaveLength(1);
+			} finally {
+				await retireSynthetic(h);
+			}
+		},
+	);
+
+	it.each(["close", "deadline"] as const)(
+		"retains the original Git after precheck throws until %s",
+		async (finish) => {
+			const h = precheckHarness();
+			const state = outcome(
+				runInventoryAfter(async (git) => {
+					void git(...ignoredCheck).catch(() => {});
+					throw new Error("DYTEST precheck failure with original child");
+				}, h.runtime),
+			);
+			try {
+				await turn();
+				const first = originalChild(h, 0);
+				expect(first.stopCalls + first.killCalls).toBeGreaterThan(0);
+				expect(first.closed).toBe(false);
+				expect(state()).toBe("pending");
+				if (finish === "close") first.close(0);
+				else h.clock.advance(300_000);
+				await turn();
+				expect(state()).toBe("refused");
+				if (finish === "deadline") {
+					expect(first.closed).toBe(false);
+					expect(first.killCalls).toBeGreaterThan(0);
+				}
+				expect(h.commands).toHaveLength(1);
+			} finally {
+				await retireSynthetic(h);
+			}
+		},
+	);
+	it("keeps an unawaited issued Git owned after precheck returns instead of starting Node", async () => {
+		const h = precheckHarness();
+		const state = outcome(
+			runInventoryAfter(async (git) => {
+				void git(...ignoredCheck).catch(() => {});
+			}, h.runtime),
+		);
+		try {
+			await turn();
+			const first = originalChild(h, 0);
+			expect(h.commands).toHaveLength(1);
+			expect(h.commands[0]?.command).toBe("git");
+			expect(first.stopCalls + first.killCalls).toBeGreaterThan(0);
+			expect(first.closed).toBe(false);
+			expect(state()).toBe("pending");
+			first.close(0);
+			await turn();
+			expect(state()).toBe("refused");
+			expect(h.commands).toHaveLength(1);
+		} finally {
+			await retireSynthetic(h);
+		}
+	});
+});
+
+describe("initial precheck callback admission", () => {
+	it("does not invoke precheck after the original deadline expires before its first microtask", async () => {
+		const h = precheckHarness();
+		let entered = false;
+		const result = runInventoryAfter(async (git) => {
+			entered = true;
+			await git(...ignoredCheck);
+		}, h.runtime);
+		void result.catch(() => {});
+		const state = outcome(result);
+		try {
+			// No event-loop turn occurs before the original deadline is consumed.
+			h.clock.advance(300_000);
+			await turn();
+			expect(entered).toBe(false);
+			expect(h.commands).toHaveLength(0);
+			expect(state()).toBe("refused");
+			expect(h.clock.timers.size).toBe(0);
+		} finally {
+			await retireSynthetic(h);
+		}
+	});
+});
+
+describe("bounded inventory failure reporting and pending ownership", () => {
+	it("reports before the outer budget after consuming real precheck time without inventing close", async () => {
+		const h = harness();
+		const precheck = Promise.withResolvers<void>();
+		const result = runInventoryAfter(() => precheck.promise, h.runtime);
+		const state = outcome(result);
+		const failure = result.catch((error: unknown) => error);
+		try {
+			await turn();
+			h.clock.advance(10_000);
+			precheck.resolve();
+			await started(h, result);
+			h.child.stdout.data(complete);
+			h.clock.advance(299_749);
+			expect(h.child.stopCalls + h.child.killCalls).toBe(0);
+			h.clock.advance(299_750);
+			expect(h.child.stopCalls).toBe(1);
+			expect(h.child.killCalls).toBe(0);
+			h.clock.advance(299_874);
+			await turn();
+			expect(state()).toBe("pending");
+			expect(h.child.killCalls).toBe(0);
+			h.clock.advance(299_875);
+			await turn();
+			expect(state()).toBe("refused");
+			expect(h.child.killCalls).toBe(1);
+			expect(h.child.closed).toBe(false);
+			const error = await failure;
+			expect(error).toBeInstanceOf(Error);
+			expect((error as Error).message).toContain("phase=worker");
+			expect((error as Error).message).toContain("cleanup=pending,pending=1");
+			expect((error as Error).message).toContain("workerOwned=1,workerClosed=0");
+			h.child.close(0);
+			await turn();
+			expect(state()).toBe("refused");
+		} finally {
+			precheck.resolve();
+			h.child.close(1);
+			h.clock.advance(600_000);
+			await result.catch(() => {});
+		}
+	});
+
+	it("observes an actual close in the stop reserve and never targets that retired child", async () => {
+		const h = harness();
+		const result = runInventoryAfter(async () => {}, h.runtime);
+		const failure = result.catch((error: unknown) => error);
+		await started(h, result);
+		h.child.stdout.data(complete);
+		h.clock.advance(299_750);
+		expect(h.child.stopCalls).toBe(1);
+		h.clock.advance(299_800);
+		h.child.close(0);
+		const error = await failure;
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toContain("cleanup=closed,pending=0");
+		expect((error as Error).message).toContain("workerOwned=1,workerClosed=1");
+		h.clock.advance(300_001);
+		expect(h.child.killCalls).toBe(0);
+	});
+
+	it.each([
+		[299_874, "passed"],
+		[299_875, "refused"],
+	] as const)(
+		"checks completion at %s even when due timers have not run",
+		async (now, expected) => {
+			const h = harness();
+			const result = runInventoryAfter(async () => {}, h.runtime);
+			const state = outcome(result);
+			try {
+				await started(h, result);
+				h.child.stdout.data(complete);
+				// Deliberately move time without invoking the scheduled stop/report callbacks.
+				h.clock.now = now;
+				h.child.close(0);
+				await turn();
+				expect(state()).toBe(expected);
+				expect(h.child.closed).toBe(true);
+				expect(h.child.killCalls).toBe(0);
+			} finally {
+				h.child.close(1);
+				h.clock.advance(600_000);
+				await result.catch(() => {});
+			}
+		},
+	);
+
+	it("reports original Git ownership and attempted stops without claiming acknowledgements", async () => {
+		const h = precheckHarness();
+		const result = runInventoryAfter(originalChecks, h.runtime);
+		const state = outcome(result);
+		const failure = result.catch((error: unknown) => error);
+		try {
+			await turn();
+			const first = originalChild(h, 0);
+			first.failStop = true;
+			first.failKill = true;
+			h.clock.advance(299_875);
+			const error = await failure;
+			expect(error).toBeInstanceOf(Error);
+			expect(first.closed).toBe(false);
+			expect(first.stopCalls).toBe(1);
+			expect(first.killCalls).toBe(1);
+			expect((error as Error).message).toContain("phase=precheck");
+			expect((error as Error).message).toContain("cleanup=pending,pending=1");
+			expect((error as Error).message).toContain("gitOwned=1,gitClosed=0");
+			expect((error as Error).message).toContain("workerOwned=0,workerClosed=0");
+			expect((error as Error).message).toContain("stopRequests=1,killRequests=1");
+			first.close(0);
+			await turn();
+			expect(state()).toBe("refused");
+			expect(h.commands).toHaveLength(1);
+		} finally {
+			await retireSynthetic(h);
+		}
+	});
+
+	it("keeps phase diagnostics free of precheck prose and payloads", async () => {
+		const h = harness();
+		const error = await runInventoryAfter(async () => {
+			throw new Error("DYTEST_PRIVATE_PRECHECK_BODY /DYTEST_PRIVATE_PATH");
+		}, h.runtime).catch((failure: unknown) => failure);
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toContain("file-name inventory failed");
+		expect((error as Error).message).toContain("phase=precheck");
+		expect((error as Error).message).toContain("gitOwned=0,gitClosed=0");
+		expect((error as Error).message).not.toContain("DYTEST_PRIVATE");
+		expect(h.spawns()).toBe(0);
+	});
+});
