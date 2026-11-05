@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
+import { isKnownSyncedPath } from "@draftyak/bounded-files";
 import { test } from "vitest";
-import { isKnownSyncedPath } from "../synced-folders.ts";
 
 test("known sync components and managed Apple containers match at any depth", () => {
 	for (const component of [

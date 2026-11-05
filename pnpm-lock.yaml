@@ -462,6 +462,9 @@ importers:
 
   tools/doctor:
     dependencies:
+      '@draftyak/bounded-files':
+        specifier: workspace:*
+        version: link:../../packages/bounded-files
       '@draftyak/fetch-node':
         specifier: workspace:*
         version: link:../fetch-node
