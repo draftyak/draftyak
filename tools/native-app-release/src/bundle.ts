@@ -4,6 +4,7 @@ import type { NativeAppReleaseBuilder } from "./builder.ts";
 import {
 	MAX_FILE_BYTES,
 	MAX_MANIFEST_BYTES,
+	type NativeAppReleaseDescriptor,
 	type NativeAppReleaseManifest,
 	releaseDescriptor,
 } from "./manifest.ts";
@@ -97,14 +98,18 @@ function member(raw: unknown, key: string): unknown {
 	return slot.value;
 }
 
-/** Build release DATA from bundle.json and separately supplied package/archive tuples.
- * The caller retains the builder, including responsibility for retrying close on failure.
- */
-export async function buildNativeAppReleaseFromBundle(
-	builder: NativeAppReleaseBuilder,
+export interface CapturedNativeAppReleaseBundle {
+	readonly descriptor: NativeAppReleaseDescriptor;
+	readonly metadataBytes: number;
+	readonly metadataSha256: string;
+	readonly binding: string;
+}
+
+/** Capture bundle DATA before any filesystem operation. */
+export function captureNativeAppReleaseBundle(
 	metadata: unknown,
 	bundles: unknown,
-): Promise<NativeAppReleaseManifest> {
+): CapturedNativeAppReleaseBundle {
 	const captured = captureBundle(metadata);
 	if (member(captured.data, "schemaVersion") !== 1) refuse("manifest");
 	const target = member(captured.data, "target");
@@ -129,16 +134,40 @@ export async function buildNativeAppReleaseFromBundle(
 		entry,
 		bundles,
 	});
-	const manifest = await builder.build(descriptor);
+	return Object.freeze({
+		descriptor,
+		metadataBytes: captured.bytes.byteLength,
+		metadataSha256: createHash("sha256").update(captured.bytes).digest("hex"),
+		binding,
+	});
+}
+
+export function assertNativeAppReleaseBundle(
+	manifest: NativeAppReleaseManifest,
+	captured: CapturedNativeAppReleaseBundle,
+): void {
 	const metadataFile = manifest.files.find((file) => file.path === "bundle.json");
 	if (
 		!metadataFile ||
-		metadataFile.bytes !== captured.bytes.byteLength ||
-		metadataFile.sha256 !== createHash("sha256").update(captured.bytes).digest("hex")
+		metadataFile.bytes !== captured.metadataBytes ||
+		metadataFile.sha256 !== captured.metadataSha256
 	)
 		refuse("manifest");
-	const bindingFile = manifest.files.find((file) => file.path === binding);
+	const bindingFile = manifest.files.find((file) => file.path === captured.binding);
 	if (!bindingFile || bindingFile.bytes === 0 || bindingFile.bytes > MAX_FILE_BYTES)
 		refuse("manifest");
+}
+
+/** Build release DATA from bundle.json and separately supplied package/archive tuples.
+ * The caller retains the builder, including responsibility for retrying close on failure.
+ */
+export async function buildNativeAppReleaseFromBundle(
+	builder: NativeAppReleaseBuilder,
+	metadata: unknown,
+	bundles: unknown,
+): Promise<NativeAppReleaseManifest> {
+	const captured = captureNativeAppReleaseBundle(metadata, bundles);
+	const manifest = await builder.build(captured.descriptor);
+	assertNativeAppReleaseBundle(manifest, captured);
 	return manifest;
 }
