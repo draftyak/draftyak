@@ -807,3 +807,135 @@ describe("initial precheck callback admission", () => {
 		}
 	});
 });
+
+describe("bounded inventory failure reporting and pending ownership", () => {
+	it("reports before the outer budget after consuming real precheck time without inventing close", async () => {
+		const h = harness();
+		const precheck = Promise.withResolvers<void>();
+		const result = runInventoryAfter(() => precheck.promise, h.runtime);
+		const state = outcome(result);
+		const failure = result.catch((error: unknown) => error);
+		try {
+			await turn();
+			h.clock.advance(10_000);
+			precheck.resolve();
+			await started(h, result);
+			h.child.stdout.data(complete);
+			h.clock.advance(299_749);
+			expect(h.child.stopCalls + h.child.killCalls).toBe(0);
+			h.clock.advance(299_750);
+			expect(h.child.stopCalls).toBe(1);
+			expect(h.child.killCalls).toBe(0);
+			h.clock.advance(299_874);
+			await turn();
+			expect(state()).toBe("pending");
+			expect(h.child.killCalls).toBe(0);
+			h.clock.advance(299_875);
+			await turn();
+			expect(state()).toBe("refused");
+			expect(h.child.killCalls).toBe(1);
+			expect(h.child.closed).toBe(false);
+			const error = await failure;
+			expect(error).toBeInstanceOf(Error);
+			expect((error as Error).message).toContain("phase=worker");
+			expect((error as Error).message).toContain("cleanup=pending,pending=1");
+			expect((error as Error).message).toContain("workerOwned=1,workerClosed=0");
+			h.child.close(0);
+			await turn();
+			expect(state()).toBe("refused");
+		} finally {
+			precheck.resolve();
+			h.child.close(1);
+			h.clock.advance(600_000);
+			await result.catch(() => {});
+		}
+	});
+
+	it("observes an actual close in the stop reserve and never targets that retired child", async () => {
+		const h = harness();
+		const result = runInventoryAfter(async () => {}, h.runtime);
+		const failure = result.catch((error: unknown) => error);
+		await started(h, result);
+		h.child.stdout.data(complete);
+		h.clock.advance(299_750);
+		expect(h.child.stopCalls).toBe(1);
+		h.clock.advance(299_800);
+		h.child.close(0);
+		const error = await failure;
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toContain("cleanup=closed,pending=0");
+		expect((error as Error).message).toContain("workerOwned=1,workerClosed=1");
+		h.clock.advance(300_001);
+		expect(h.child.killCalls).toBe(0);
+	});
+
+	it.each([
+		[299_874, "passed"],
+		[299_875, "refused"],
+	] as const)(
+		"checks completion at %s even when due timers have not run",
+		async (now, expected) => {
+			const h = harness();
+			const result = runInventoryAfter(async () => {}, h.runtime);
+			const state = outcome(result);
+			try {
+				await started(h, result);
+				h.child.stdout.data(complete);
+				// Deliberately move time without invoking the scheduled stop/report callbacks.
+				h.clock.now = now;
+				h.child.close(0);
+				await turn();
+				expect(state()).toBe(expected);
+				expect(h.child.closed).toBe(true);
+				expect(h.child.killCalls).toBe(0);
+			} finally {
+				h.child.close(1);
+				h.clock.advance(600_000);
+				await result.catch(() => {});
+			}
+		},
+	);
+
+	it("reports original Git ownership and attempted stops without claiming acknowledgements", async () => {
+		const h = precheckHarness();
+		const result = runInventoryAfter(originalChecks, h.runtime);
+		const state = outcome(result);
+		const failure = result.catch((error: unknown) => error);
+		try {
+			await turn();
+			const first = originalChild(h, 0);
+			first.failStop = true;
+			first.failKill = true;
+			h.clock.advance(299_875);
+			const error = await failure;
+			expect(error).toBeInstanceOf(Error);
+			expect(first.closed).toBe(false);
+			expect(first.stopCalls).toBe(1);
+			expect(first.killCalls).toBe(1);
+			expect((error as Error).message).toContain("phase=precheck");
+			expect((error as Error).message).toContain("cleanup=pending,pending=1");
+			expect((error as Error).message).toContain("gitOwned=1,gitClosed=0");
+			expect((error as Error).message).toContain("workerOwned=0,workerClosed=0");
+			expect((error as Error).message).toContain("stopRequests=1,killRequests=1");
+			first.close(0);
+			await turn();
+			expect(state()).toBe("refused");
+			expect(h.commands).toHaveLength(1);
+		} finally {
+			await retireSynthetic(h);
+		}
+	});
+
+	it("keeps phase diagnostics free of precheck prose and payloads", async () => {
+		const h = harness();
+		const error = await runInventoryAfter(async () => {
+			throw new Error("DYTEST_PRIVATE_PRECHECK_BODY /DYTEST_PRIVATE_PATH");
+		}, h.runtime).catch((failure: unknown) => failure);
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toContain("file-name inventory failed");
+		expect((error as Error).message).toContain("phase=precheck");
+		expect((error as Error).message).toContain("gitOwned=0,gitClosed=0");
+		expect((error as Error).message).not.toContain("DYTEST_PRIVATE");
+		expect(h.spawns()).toBe(0);
+	});
+});
