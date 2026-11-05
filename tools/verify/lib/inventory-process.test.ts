@@ -1,10 +1,14 @@
+import { ChildProcess } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
 	type InventoryChild,
 	type InventoryPipe,
 	type InventoryProcessRuntime,
 	inventoryEnvironment,
+	joinInventoryExecution,
+	ownedProcess,
 	runInventoryAfter,
+	startInventoryAfter,
 } from "./inventory-process.ts";
 
 const complete = Buffer.from("WORKTREE_INVENTORY_COMPLETE\n");
@@ -937,5 +941,525 @@ describe("bounded inventory failure reporting and pending ownership", () => {
 		expect((error as Error).message).toContain("gitOwned=0,gitClosed=0");
 		expect((error as Error).message).not.toContain("DYTEST_PRIVATE");
 		expect(h.spawns()).toBe(0);
+	});
+});
+
+type InventoryReceipt = ReturnType<typeof startInventoryAfter>;
+async function retireReceipt(
+	h: ReturnType<typeof precheckHarness>,
+	execution: InventoryReceipt,
+	joined: Promise<void>,
+): Promise<void> {
+	await retireSynthetic(h);
+	await execution.reported.catch(() => {});
+	await joined.catch(() => {});
+}
+
+describe("inventory physical closure and the real caller join", () => {
+	it("joins successful reporting only after the original worker actually closes", async () => {
+		const h = precheckHarness();
+		const execution = startInventoryAfter(async () => {}, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		const reportState = outcome(execution.reported),
+			closeState = outcome(execution.closed),
+			joinState = outcome(joined);
+		try {
+			await turn();
+			const child = originalChild(h, 0);
+			expect(execution.deadline).toBe(300_000);
+			child.stdout.data(complete);
+			await turn();
+			expect([reportState(), closeState(), joinState()]).toEqual(["pending", "pending", "pending"]);
+			h.clock.advance(21);
+			child.close(0);
+			await turn();
+			expect([reportState(), closeState(), joinState()]).toEqual(["passed", "passed", "passed"]);
+			expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: 21 });
+			expect(h.commands).toHaveLength(1);
+		} finally {
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it("waits for actual physical close before exposing a reported inventory failure to the real caller", async () => {
+		const h = precheckHarness();
+		const execution = startInventoryAfter(async () => {}, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		const reportState = outcome(execution.reported),
+			closeState = outcome(execution.closed),
+			joinState = outcome(joined);
+		try {
+			await turn();
+			const child = originalChild(h, 0);
+			expect(await execution.prechecked).toBe("settled");
+			h.clock.advance(299_875);
+			await turn();
+			expect(reportState()).toBe("refused");
+			expect(child.closed).toBe(false);
+			expect(closeState()).toBe("pending");
+			expect(joinState()).toBe("pending");
+			h.clock.advance(299_900);
+			child.close(0);
+			await turn();
+			expect(closeState()).toBe("passed");
+			expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: 299_900 });
+			expect(joinState()).toBe("refused");
+			await expect(joined).rejects.toThrow("file-name inventory failed");
+		} finally {
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it("bounds the caller join at the original deadline without fabricating physical closure", async () => {
+		const h = precheckHarness();
+		const execution = startInventoryAfter(async () => {}, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		const reportState = outcome(execution.reported),
+			closeState = outcome(execution.closed),
+			joinState = outcome(joined);
+		try {
+			await turn();
+			const child = originalChild(h, 0);
+			h.clock.advance(299_875);
+			await turn();
+			expect(reportState()).toBe("refused");
+			expect(joinState()).toBe("pending");
+			h.clock.advance(299_999);
+			await turn();
+			expect(joinState()).toBe("pending");
+			h.clock.advance(300_000);
+			await turn();
+			expect(joinState()).toBe("refused");
+			expect(closeState()).toBe("pending");
+			expect(child.closed).toBe(false);
+			expect(child.closes.length > 0 && child.errors.length > 0).toBe(true);
+			h.clock.advance(450_000);
+			child.close(0);
+			await turn();
+			expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: 450_000 });
+			expect(joinState()).toBe("refused");
+			expect(reportState()).toBe("refused");
+			expect(h.commands).toHaveLength(1);
+		} finally {
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it("joins an original failed worker close without blessing its later completion bytes", async () => {
+		const h = precheckHarness();
+		const execution = startInventoryAfter(async () => {}, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		const closeState = outcome(execution.closed),
+			joinState = outcome(joined);
+		void execution.reported.catch(() => {});
+		try {
+			await turn();
+			const child = originalChild(h, 0);
+			child.error();
+			await turn();
+			expect(child.stopCalls).toBeGreaterThan(0);
+			expect(closeState()).toBe("pending");
+			expect(joinState()).toBe("pending");
+			h.clock.advance(50);
+			child.stdout.data(complete);
+			child.close(0);
+			await turn();
+			expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: 50 });
+			expect(joinState()).toBe("refused");
+			await expect(joined).rejects.toThrow("file-name inventory failed");
+		} finally {
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it.each(["precheck", "spawn"] as const)(
+		"truthfully closes an empty execution after %s fails",
+		async (fault) => {
+			const h = precheckHarness();
+			const ports: InventoryProcessRuntime = {
+				...h.runtime,
+				spawn: (options) => {
+					if (fault === "spawn") throw new Error("DYTEST spawn did not create a child");
+					return h.runtime.spawn(options);
+				},
+			};
+			const execution = startInventoryAfter(async () => {
+				if (fault === "precheck") throw new Error("DYTEST precheck did not create a child");
+			}, ports);
+			const joined = joinInventoryExecution(execution);
+			const closeState = outcome(execution.closed),
+				joinState = outcome(joined);
+			void execution.reported.catch(() => {});
+			try {
+				await turn();
+				expect(h.children).toHaveLength(0);
+				expect(closeState()).toBe("passed");
+				expect(await execution.closed).toEqual({ kind: "no-child", originals: 0, closedAt: null });
+				expect(joinState()).toBe("refused");
+				await expect(joined).rejects.toThrow("file-name inventory failed");
+			} finally {
+				await retireReceipt(h, execution, joined);
+			}
+		},
+	);
+
+	it("keeps an empty physical fence pending while precheck admission remains open", async () => {
+		const h = precheckHarness(),
+			precheck = Promise.withResolvers<void>();
+		const execution = startInventoryAfter(() => precheck.promise, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		const closeState = outcome(execution.closed),
+			joinState = outcome(joined);
+		void execution.reported.catch(() => {});
+		try {
+			await turn();
+			expect(h.children).toHaveLength(0);
+			expect(closeState()).toBe("pending");
+			expect(joinState()).toBe("pending");
+			h.clock.advance(10);
+			precheck.resolve();
+			await turn();
+			const child = originalChild(h, 0);
+			child.stdout.data(complete);
+			child.close(0);
+			await turn();
+			expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: 10 });
+			expect(joinState()).toBe("passed");
+		} finally {
+			precheck.resolve();
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it.each(["resolve", "reject"] as const)(
+		"seals no-child admission before a hanging precheck settles late by %s",
+		async (late) => {
+			const h = precheckHarness(),
+				precheck = Promise.withResolvers<void>();
+			const execution = startInventoryAfter(() => precheck.promise, h.runtime);
+			const joined = joinInventoryExecution(execution);
+			const reportState = outcome(execution.reported),
+				closeState = outcome(execution.closed),
+				joinState = outcome(joined);
+			const precheckState = outcome(execution.prechecked);
+			try {
+				await turn();
+				h.clock.advance(299_875);
+				await turn();
+				expect(reportState()).toBe("refused");
+				expect(closeState()).toBe("passed");
+				expect(await execution.closed).toEqual({ kind: "no-child", originals: 0, closedAt: null });
+				expect(precheckState()).toBe("pending");
+				expect(joinState()).toBe("pending");
+				h.clock.advance(299_900);
+				if (late === "resolve") precheck.resolve();
+				else precheck.reject(new Error("DYTEST late precheck failure"));
+				await turn();
+				expect(precheckState()).toBe("passed");
+				expect(await execution.prechecked).toBe("settled");
+				expect(h.children).toHaveLength(0);
+				expect(h.clock.timers.size).toBe(0);
+				expect(joinState()).toBe("refused");
+			} finally {
+				precheck.resolve();
+				await retireReceipt(h, execution, joined);
+			}
+		},
+	);
+
+	it("retains both original Git children until their independent physical closes", async () => {
+		const h = precheckHarness();
+		const execution = startInventoryAfter(async (git) => {
+			await Promise.all([git(...ignoredCheck), git(...ordinaryCheck)]);
+		}, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		const closeState = outcome(execution.closed),
+			joinState = outcome(joined);
+		void execution.reported.catch(() => {});
+		try {
+			await turn();
+			expect(h.commands.map((row) => row.command)).toEqual(["git", "git"]);
+			h.clock.advance(299_875);
+			await turn();
+			expect(closeState()).toBe("pending");
+			expect(joinState()).toBe("pending");
+			h.clock.advance(299_900);
+			originalChild(h, 0).close(0);
+			await turn();
+			expect(originalChild(h, 1).closed).toBe(false);
+			expect(closeState()).toBe("pending");
+			expect(joinState()).toBe("pending");
+			h.clock.advance(299_950);
+			originalChild(h, 1).close(1);
+			await turn();
+			expect(await execution.closed).toEqual({ kind: "closed", originals: 2, closedAt: 299_950 });
+			expect(joinState()).toBe("refused");
+			expect(h.commands).toHaveLength(2);
+		} finally {
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it("retains an already-created original when the next Git spawn throws", async () => {
+		const h = precheckHarness();
+		let attempts = 0;
+		const ports: InventoryProcessRuntime = {
+			...h.runtime,
+			spawn: (options) => {
+				attempts++;
+				if (attempts === 2) throw new Error("DYTEST second spawn created no child");
+				return h.runtime.spawn(options);
+			},
+		};
+		const execution = startInventoryAfter(async (git) => {
+			await Promise.all([git(...ignoredCheck), git(...ordinaryCheck)]);
+		}, ports);
+		const joined = joinInventoryExecution(execution);
+		const closeState = outcome(execution.closed),
+			joinState = outcome(joined);
+		void execution.reported.catch(() => {});
+		try {
+			await turn();
+			expect(attempts).toBe(2);
+			expect(h.children).toHaveLength(1);
+			expect(closeState()).toBe("pending");
+			expect(joinState()).toBe("pending");
+			h.clock.advance(10);
+			originalChild(h, 0).close(0);
+			await turn();
+			expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: 10 });
+			expect(joinState()).toBe("refused");
+			expect(h.commands).toHaveLength(1);
+		} finally {
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it("never renews the caller join budget after precheck consumes original time", async () => {
+		const h = precheckHarness(),
+			precheck = Promise.withResolvers<void>();
+		const execution = startInventoryAfter(() => precheck.promise, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		const closeState = outcome(execution.closed),
+			joinState = outcome(joined);
+		void execution.reported.catch(() => {});
+		try {
+			await turn();
+			h.clock.advance(10_000);
+			precheck.resolve();
+			await turn();
+			expect(execution.deadline).toBe(300_000);
+			h.clock.advance(299_999);
+			await turn();
+			expect(joinState()).toBe("pending");
+			h.clock.advance(300_000);
+			await turn();
+			expect(joinState()).toBe("refused");
+			expect(closeState()).toBe("pending");
+			h.clock.advance(300_001);
+			originalChild(h, 0).close(0);
+			await turn();
+			expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: 300_001 });
+			expect(joinState()).toBe("refused");
+			expect(h.commands).toHaveLength(1);
+		} finally {
+			precheck.resolve();
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it.each([299_749, 299_750] as const)(
+		"retains the original worker admission boundary at %s",
+		async (at) => {
+			const h = precheckHarness(),
+				precheck = Promise.withResolvers<void>();
+			const execution = startInventoryAfter(() => precheck.promise, h.runtime);
+			const joined = joinInventoryExecution(execution);
+			const joinState = outcome(joined);
+			void execution.reported.catch(() => {});
+			try {
+				await turn();
+				h.clock.now = at;
+				precheck.resolve();
+				await turn();
+				if (at === 299_749) {
+					const child = originalChild(h, 0);
+					child.stdout.data(complete);
+					child.close(0);
+					await turn();
+					expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: at });
+					expect(joinState()).toBe("passed");
+				} else {
+					expect(h.children).toHaveLength(0);
+					expect(await execution.closed).toEqual({
+						kind: "no-child",
+						originals: 0,
+						closedAt: null,
+					});
+					expect(joinState()).toBe("refused");
+				}
+			} finally {
+				precheck.resolve();
+				await retireReceipt(h, execution, joined);
+			}
+		},
+	);
+
+	it.each([299_874, 299_875] as const)(
+		"retains the original completion report boundary at %s",
+		async (at) => {
+			const h = precheckHarness();
+			const execution = startInventoryAfter(async () => {}, h.runtime);
+			const joined = joinInventoryExecution(execution);
+			const joinState = outcome(joined);
+			void execution.reported.catch(() => {});
+			try {
+				await turn();
+				h.clock.now = at;
+				const child = originalChild(h, 0);
+				child.stdout.data(complete);
+				child.close(0);
+				await turn();
+				expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: at });
+				expect(joinState()).toBe(at === 299_874 ? "passed" : "refused");
+			} finally {
+				await retireReceipt(h, execution, joined);
+			}
+		},
+	);
+});
+
+describe("original owned process adapter", () => {
+	it("retains a child with unavailable stdio until its original close event", () => {
+		// This builtin event source has never spawned and has no PID or OS handle.
+		const original = new ChildProcess();
+		original.stdout = null;
+		original.stderr = null;
+		const child = ownedProcess(original);
+		const errors: unknown[] = [],
+			closes: (number | null)[] = [];
+		let pipeFailures = 0;
+		child.onError((error) => errors.push(error));
+		child.stdout.onError(() => {
+			pipeFailures++;
+		});
+		child.stderr.onError(() => {
+			pipeFailures++;
+		});
+		child.onClose((code) => closes.push(code));
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toBeInstanceOf(Error);
+		expect(pipeFailures).toBe(2);
+		expect(closes).toHaveLength(0);
+		original.emit("close", null, null);
+		expect(closes).toEqual([null]);
+		child.onClose((code) => closes.push(code));
+		expect(closes).toEqual([null, null]);
+	});
+
+	it("replays an observed original close when a failed created handle reaches the execution", async () => {
+		const h = precheckHarness();
+		const original = new ChildProcess();
+		original.stdout = null;
+		original.stderr = null;
+		let spawns = 0;
+		const ports: InventoryProcessRuntime = {
+			...h.runtime,
+			spawn: () => {
+				spawns++;
+				const child = ownedProcess(original);
+				// The same source observed this close before the receiver can subscribe.
+				original.emit("close", 1, null);
+				return { ...child, stop: () => {} };
+			},
+		};
+		const execution = startInventoryAfter(async () => {}, ports);
+		const joined = joinInventoryExecution(execution);
+		const closeState = outcome(execution.closed),
+			joinState = outcome(joined);
+		void execution.reported.catch(() => {});
+		try {
+			await turn();
+			expect(spawns).toBe(1);
+			expect(closeState()).toBe("passed");
+			expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: 0 });
+			expect(joinState()).toBe("refused");
+			await expect(joined).rejects.toThrow("file-name inventory failed");
+		} finally {
+			original.emit("close", 1, null);
+			await retireReceipt(h, execution, joined);
+		}
+	});
+});
+
+describe("original precheck settlement receipt", () => {
+	it.each(["resolve", "reject"] as const)(
+		"retains actual precheck settlement after deadline when it later %s",
+		async (late) => {
+			const h = precheckHarness(),
+				precheck = Promise.withResolvers<void>();
+			let entered = false;
+			const execution = startInventoryAfter(() => {
+				entered = true;
+				return precheck.promise;
+			}, h.runtime);
+			const joined = joinInventoryExecution(execution);
+			const reportState = outcome(execution.reported),
+				closeState = outcome(execution.closed),
+				precheckState = outcome(execution.prechecked),
+				joinState = outcome(joined);
+			try {
+				await turn();
+				expect(entered).toBe(true);
+				h.clock.advance(299_875);
+				await turn();
+				expect(reportState()).toBe("refused");
+				expect(closeState()).toBe("passed");
+				expect(precheckState()).toBe("pending");
+				expect(joinState()).toBe("pending");
+				h.clock.advance(300_000);
+				await turn();
+				expect(joinState()).toBe("refused");
+				expect(precheckState()).toBe("pending");
+				expect(await execution.closed).toEqual({ kind: "no-child", originals: 0, closedAt: null });
+				h.clock.advance(310_000);
+				if (late === "resolve") precheck.resolve();
+				else precheck.reject(new Error("DYTEST late original precheck"));
+				await turn();
+				expect(await execution.prechecked).toBe("settled");
+				expect(precheckState()).toBe("passed");
+				expect(joinState()).toBe("refused");
+				expect(h.children).toHaveLength(0);
+				expect(h.clock.timers.size).toBe(0);
+			} finally {
+				precheck.resolve();
+				await retireReceipt(h, execution, joined);
+			}
+		},
+	);
+
+	it("distinguishes a never-started precheck from an invoked callback still pending", async () => {
+		const h = precheckHarness();
+		let entered = false;
+		const execution = startInventoryAfter(async () => {
+			entered = true;
+		}, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		const reportState = outcome(execution.reported),
+			joinState = outcome(joined);
+		try {
+			// Consume the original budget before the first precheck admission microtask.
+			h.clock.advance(300_000);
+			await turn();
+			expect(entered).toBe(false);
+			expect(await execution.prechecked).toBe("not-started");
+			expect(await execution.closed).toEqual({ kind: "no-child", originals: 0, closedAt: null });
+			expect(reportState()).toBe("refused");
+			expect(joinState()).toBe("refused");
+			expect(h.children).toHaveLength(0);
+			expect(h.clock.timers.size).toBe(0);
+		} finally {
+			await retireReceipt(h, execution, joined);
+		}
 	});
 });
