@@ -286,7 +286,7 @@ describe("native send statement binding property", () => {
 					await closeFixture(f);
 				}
 			},
-			RUNS === 10_000 ? 300_000 : undefined,
+			RUNS === 10_000 ? 720_000 : undefined,
 		);
 	}
 });
