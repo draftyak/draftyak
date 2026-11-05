@@ -1,9 +1,11 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, createPublicKey, KeyObject, sign, timingSafeEqual, verify } from "node:crypto";
 import { type BigIntStats, constants, type Dir } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import * as fs from "node:fs/promises";
 import path from "node:path";
+import { types } from "node:util";
 import { assertPortableFileTree } from "@draftyak/bounded-files";
+import { assertNativeAppReleaseBundle, captureNativeAppReleaseBundle } from "./bundle.ts";
 import {
 	integrityDigest,
 	MAX_FILE_BYTES,
@@ -13,6 +15,7 @@ import {
 	type NativeAppReleaseFile,
 	type NativeAppReleaseManifest,
 	nativeAppReleaseBytes,
+	nativeAppReleaseSigningBytes,
 	parseNativeAppRelease,
 	releaseDescriptor,
 } from "./manifest.ts";
@@ -31,9 +34,37 @@ interface Tree {
 	readonly files: Snapshot;
 	readonly directories: Snapshot;
 }
+interface Finalization {
+	readonly metadata: unknown;
+	readonly bundles: unknown;
+	readonly privateKey: KeyObject;
+}
+interface OwnedMetadata {
+	readonly name: string;
+	readonly handle: FileHandle;
+	readonly bytes: Buffer;
+	identity?: BigIntStats;
+}
 const chunkSize = 64 * 1024;
 const maximumEntries = MAX_FILES * 16 + 2;
 const exclusiveSharing = process.platform === "win32" ? 0x10000000 : 0;
+const keyType = Object.getOwnPropertyDescriptor(KeyObject.prototype, "type")?.get;
+
+function signingPublicKey(key: KeyObject): KeyObject {
+	if (
+		types.isProxy(key) ||
+		!types.isKeyObject(key) ||
+		!keyType ||
+		Reflect.apply(keyType, key, []) !== "private" ||
+		["type", "asymmetricKeyType", "export"].some((name) => Object.hasOwn(key, name))
+	)
+		refuse("manifest");
+	const prototype = Object.getPrototypeOf(key);
+	if (!prototype || types.isProxy(prototype)) refuse("manifest");
+	const publicKey = createPublicKey(key);
+	if (publicKey.asymmetricKeyType !== "ed25519") refuse("manifest");
+	return publicKey;
+}
 
 function same(a: BigIntStats, b: BigIntStats): boolean {
 	return (
@@ -72,13 +103,15 @@ function sameTree(before: Tree, after: Tree): boolean {
 	return true;
 }
 
-/** Builds release DATA from one closed source tree; it grants no load or install authority. */
+/** Measures explicit release candidates; it grants no load or install authority. */
 export class NativeAppReleaseBuilder {
 	readonly #root: string;
 	readonly #resources = new Set<Resource>();
 	readonly #failedClose = new Set<Resource>();
 	readonly #pending = new Set<Promise<unknown>>();
 	readonly #measured = new Map<FileHandle, { readonly name: string; readonly stat: BigIntStats }>();
+	readonly #metadata: OwnedMetadata[] = [];
+	#committed = false;
 	#state: "ready" | "building" | "spent" | "closing" | "closed" = "ready";
 	#buildJob: Promise<NativeAppReleaseManifest> | undefined;
 	#closeJob: Promise<void> | undefined;
@@ -95,6 +128,19 @@ export class NativeAppReleaseBuilder {
 		return this.#buildJob;
 	}
 
+	/** Finalize only this measured root; the explicit key never becomes runtime configuration. */
+	finalizeFromBundle(
+		metadata: unknown,
+		bundles: unknown,
+		privateKey: KeyObject,
+	): Promise<NativeAppReleaseManifest> {
+		if (this.#state !== "ready") return Promise.reject(new NativeAppReleaseError("state"));
+		this.#state = "building";
+		this.#buildJob = this.#build(undefined, { metadata, bundles, privateKey });
+		return this.#buildJob;
+	}
+
+	/** Settle retained handles; failed finalization files remain in the candidate. */
 	close(): Promise<void> {
 		if (this.#state === "closed") return Promise.resolve();
 		this.#state = "closing";
@@ -344,11 +390,145 @@ export class NativeAppReleaseBuilder {
 		}
 	}
 
-	async #build(raw: unknown): Promise<NativeAppReleaseManifest> {
+	async #writeMetadata(name: string, bytes: Uint8Array, chain: Snapshot): Promise<void> {
+		await this.#checkChain(chain);
+		const file = path.join(this.#root, name);
+		const data = Buffer.from(bytes);
+		const item = await this.#step(() =>
+			fs
+				.open(
+					file,
+					constants.O_RDWR |
+						constants.O_CREAT |
+						constants.O_EXCL |
+						(constants.O_NOFOLLOW ?? 0) |
+						(constants.O_NONBLOCK ?? 0) |
+						exclusiveSharing,
+					0o644,
+				)
+				.then((handle) => {
+					this.#resources.add(handle);
+					const owned: OwnedMetadata = { name: file, handle, bytes: data };
+					this.#metadata.push(owned);
+					return owned;
+				}),
+		);
+		await this.#checkChain(chain);
+		item.identity = await this.#step(() => item.handle.stat({ bigint: true }));
+		regular(item.identity);
+		if (item.identity.size !== 0n) refuse("file");
+		for (let position = 0; position < data.length; ) {
+			const { bytesWritten } = await this.#step(() =>
+				item.handle.write(data, position, data.length - position, position),
+			);
+			if (
+				!Number.isSafeInteger(bytesWritten) ||
+				bytesWritten < 1 ||
+				bytesWritten > data.length - position
+			)
+				refuse("file");
+			position += bytesWritten;
+		}
+		await this.#step(() => item.handle.sync());
+		await this.#readMetadata(item);
+	}
+
+	async #readMetadata(item: OwnedMetadata): Promise<Buffer> {
+		const before = await this.#step(() => item.handle.stat({ bigint: true }));
+		regular(before);
+		if (
+			!item.identity ||
+			before.dev !== item.identity.dev ||
+			before.ino !== item.identity.ino ||
+			before.mode !== item.identity.mode ||
+			before.size !== BigInt(item.bytes.length)
+		)
+			refuse("file");
+		const bytes = Buffer.alloc(item.bytes.length);
+		for (let position = 0; position < bytes.length; ) {
+			const { bytesRead } = await this.#step(() =>
+				item.handle.read(bytes, position, bytes.length - position, position),
+			);
+			if (!Number.isSafeInteger(bytesRead) || bytesRead < 1 || bytesRead > bytes.length - position)
+				refuse("file");
+			position += bytesRead;
+		}
+		if (
+			(await this.#step(() => item.handle.read(Buffer.alloc(1), 0, 1, bytes.length))).bytesRead !==
+				0 ||
+			!bytes.equals(item.bytes)
+		)
+			refuse("file");
+		const after = await this.#step(() => item.handle.stat({ bigint: true }));
+		const named = await this.#stat(item.name);
+		regular(after);
+		regular(named);
+		if (!same(before, after) || !same(after, named)) refuse("file");
+		await this.#real(item.name);
+		return bytes;
+	}
+
+	async #validateFinalization(before: Tree, chain: Snapshot, publicKey: KeyObject): Promise<void> {
+		const after = await this.#scan();
+		if (
+			after.files.size !== before.files.size + 2 ||
+			after.directories.size !== before.directories.size
+		)
+			refuse("file");
+		for (const [name, stat] of before.files) {
+			const found = after.files.get(name);
+			if (!found || !same(stat, found)) refuse("file");
+		}
+		for (const [name, stat] of before.directories) {
+			const found = after.directories.get(name);
+			if (
+				!found ||
+				(name === ""
+					? stat.dev !== found.dev ||
+						stat.ino !== found.ino ||
+						stat.mode !== found.mode ||
+						stat.nlink !== found.nlink
+					: !same(stat, found))
+			)
+				refuse("path");
+		}
+		await this.#checkChain(chain);
+		await this.#checkMeasured();
+		const [manifest, signature] = await Promise.all(
+			this.#metadata.map((item) => this.#readMetadata(item)),
+		);
+		if (
+			!manifest ||
+			!signature ||
+			!verify(
+				null,
+				nativeAppReleaseSigningBytes(parseNativeAppRelease(manifest)),
+				publicKey,
+				signature,
+			)
+		)
+			refuse("manifest");
+		if (!sameTree(after, await this.#scan())) refuse("file");
+		await this.#checkChain(chain);
+		await this.#checkMeasured();
+		for (const item of this.#metadata) await this.#readMetadata(item);
+	}
+
+	#metadataDisposition(): void {
+		// Retain failed candidate files: path-based unlink cannot atomically compare their identities.
+		if (!this.#committed && this.#metadata.length) refuse("cleanup");
+	}
+
+	async #build(raw: unknown, finalization?: Finalization): Promise<NativeAppReleaseManifest> {
 		try {
-			const descriptor = releaseDescriptor(raw);
+			const captured = finalization
+				? captureNativeAppReleaseBundle(finalization.metadata, finalization.bundles)
+				: undefined;
+			const descriptor = captured?.descriptor ?? releaseDescriptor(raw);
+			const publicKey = finalization ? signingPublicKey(finalization.privateKey) : undefined;
 			const chain = await this.#chain();
 			const tree = await this.#scan();
+			if (finalization && [...tree.files.keys()].some(metadata)) refuse("file");
 			const archives = new Map(
 				descriptor.bundles.map((bundle) => [bundle.archive, bundle.package.integrity]),
 			);
@@ -362,15 +542,40 @@ export class NativeAppReleaseBuilder {
 			await this.#checkChain(chain);
 			await this.#checkMeasured();
 			this.#active();
-			return parseNativeAppRelease(
+			const manifest = parseNativeAppRelease(
 				nativeAppReleaseBytes({ v: 1, application: "draftyak", ...descriptor, files }),
 			);
+			if (finalization && captured && publicKey) {
+				assertNativeAppReleaseBundle(manifest, captured);
+				await this.#checkChain(chain);
+				await this.#checkMeasured();
+				this.#active();
+				const signature = sign(
+					null,
+					nativeAppReleaseSigningBytes(manifest),
+					finalization.privateKey,
+				);
+				if (
+					signature.length !== 64 ||
+					!verify(null, nativeAppReleaseSigningBytes(manifest), publicKey, signature)
+				)
+					refuse("manifest");
+				await this.#writeMetadata(MANIFEST_FILE, nativeAppReleaseBytes(manifest), chain);
+				await this.#writeMetadata(SIGNATURE_FILE, signature, chain);
+				await this.#validateFinalization(tree, chain, publicKey);
+				this.#committed = true;
+			}
+			return manifest;
 		} catch (error) {
 			if (error instanceof NativeAppReleaseError) throw error;
 			throw new NativeAppReleaseError("file");
 		} finally {
 			try {
-				await this.#release();
+				try {
+					await this.#release();
+				} finally {
+					this.#metadataDisposition();
+				}
 			} finally {
 				if (this.#state === "building") this.#state = "spent";
 			}
