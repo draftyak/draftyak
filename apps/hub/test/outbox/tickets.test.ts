@@ -13,6 +13,8 @@ import { MasterKey } from "../../src/kernel/master-key.ts";
 import { createNativeHttpSendTransport } from "../../src/outbox/http-send.ts";
 import {
 	MAX_SEND_BODY_BYTES,
+	resetSendTicketStorageForRestore,
+	SendTicketError,
 	type SendTicketInsert,
 	SendTicketStorage,
 } from "../../src/outbox/ticket-storage.ts";
@@ -698,5 +700,240 @@ describe("native encrypted send-ticket transaction kernel", () => {
 			"Send ticket unavailable",
 		);
 		expect(f.ledger.recordOutcome(dispatch.dispatch, "FAILED").state).toBe("FAILED");
+	});
+});
+
+// Persistence DATA setup below is the existing internal fixture. It neither creates native
+// approval/caller authority nor covers the absent signed-approval/revision-to-ticket issuer.
+// resetSendTicketStorageForRestore is a proposed, unadopted original-domain dependency.
+describe("offline restore send-ticket storage restriction", () => {
+	type F = Awaited<ReturnType<typeof fixture>>;
+	function state(f: F): string {
+		return f.store.read((db) =>
+			sha256Hex(
+				JSON.stringify({
+					attempts: db.all("SELECT * FROM main.native_send_attempts ORDER BY id"),
+					audit: db.all("SELECT * FROM main.audit_events ORDER BY seq"),
+					head: db.all("SELECT * FROM main.audit_meta ORDER BY singleton"),
+				}),
+			),
+		);
+	}
+	function reset(f: F): number {
+		return f.store.write((tx) => resetSendTicketStorageForRestore(f.storage, tx));
+	}
+	function row(f: F, outboxId: string) {
+		return f.storage.read((db) => {
+			const value = f.storage.find(db, "outbox_id", outboxId);
+			if (!value) throw new Error("DYTEST original ticket row unavailable");
+			f.storage.payload(value);
+			return value;
+		});
+	}
+	function refused(work: () => unknown): void {
+		let failure: unknown;
+		try {
+			work();
+		} catch (error) {
+			failure = error;
+		}
+		expect(failure instanceof SendTicketError).toBe(true);
+		if (!(failure instanceof SendTicketError))
+			throw new Error("DYTEST ticket reset refusal unavailable");
+		expect(
+			failure.code === "SEND_TICKET_UNAVAILABLE" && failure.message === "Send ticket unavailable",
+		).toBe(true);
+		expect(Object.hasOwn(failure, "cause")).toBe(false);
+	}
+	it("restricts original kernel ISSUED/REDEEMED/SENDING rows, preserves payloads and refuses their retained kernel handles", async () => {
+		const f = await fixture();
+		const input = Array.from({ length: 4 }, () => f.make());
+		const tickets = input.map((value) => f.insert(value));
+		const a = input[0],
+			b = input[1],
+			c = input[2],
+			d = input[3];
+		const ta = tickets[0],
+			tb = tickets[1],
+			tc = tickets[2],
+			td = tickets[3];
+		if (!a || !b || !c || !d || !ta || !tb || !tc || !td)
+			throw new Error("DYTEST ticket inventory unavailable");
+		const redeemed = f.ledger.redeem(f.request(tb, b));
+		const sending = f.ledger.beginDispatch(f.ledger.redeem(f.request(tc, c)));
+		const terminal = f.ledger.beginDispatch(f.ledger.redeem(f.request(td, d)));
+		try {
+			// Actual original persistence transitions only; no network write is attempted.
+			f.ledger.recordOutcome(terminal.dispatch, "SENT");
+			const before = input.map((value) => row(f, value.outboxId));
+			expect(before.map((value) => value.state)).toEqual(["ISSUED", "REDEEMED", "SENDING", "SENT"]);
+			expect(reset(f)).toBe(3);
+			const after = input.map((value) => row(f, value.outboxId));
+			expect(after.map((value) => value.state)).toEqual([
+				"NEEDS_REAPPROVAL",
+				"NEEDS_REAPPROVAL",
+				"UNKNOWN",
+				"SENT",
+			]);
+			for (let i = 0; i < input.length; i++) {
+				const prior = before[i],
+					current = after[i];
+				if (!prior || !current) throw new Error("DYTEST original ticket snapshot unavailable");
+				expect(
+					current.id === prior.id &&
+						current.outbox_id === prior.outbox_id &&
+						current.ticket_id === prior.ticket_id &&
+						current.payload === prior.payload &&
+						Buffer.from(current.body).equals(Buffer.from(prior.body)),
+				).toBe(true);
+				if (i < 3)
+					expect(current.audit_seq > prior.audit_seq && current.mac !== prior.mac).toBe(true);
+				else
+					expect(sha256Hex(JSON.stringify(current)) === sha256Hex(JSON.stringify(prior))).toBe(
+						true,
+					);
+			}
+			const settled = state(f);
+			refused(() => f.ledger.redeem(f.request(ta, a)));
+			refused(() => f.ledger.beginDispatch(redeemed));
+			refused(() => f.ledger.prepareDispatchWrite(sending.dispatch));
+			expect(state(f)).toBe(settled);
+			expect(reset(f)).toBe(0);
+			expect(state(f)).toBe(settled);
+			f.store.read((db) => f.audit.verify(db));
+		} finally {
+			sending.body.fill(0);
+			terminal.body.fill(0);
+			for (const value of input) value.body.fill(0);
+		}
+	});
+	it.each([128, 129])(
+		"restricts exactly %i kernel-DATA attempts across the original 128-row page boundary",
+		async (count) => {
+			const f = await fixture();
+			const input = Array.from({ length: count }, () => f.make());
+			try {
+				for (const value of input) f.insert(value);
+				const before = input.map((value) => row(f, value.outboxId));
+				expect(reset(f)).toBe(count);
+				for (let i = 0; i < count; i++) {
+					const value = input[i],
+						prior = before[i];
+					if (!value || !prior) throw new Error("DYTEST kernel reset inventory unavailable");
+					const current = row(f, value.outboxId);
+					expect(
+						current.state === "NEEDS_REAPPROVAL" &&
+							current.id === prior.id &&
+							current.ticket_id === prior.ticket_id &&
+							current.payload === prior.payload &&
+							Buffer.from(current.body).equals(Buffer.from(prior.body)) &&
+							current.audit_seq > prior.audit_seq,
+					).toBe(true);
+				}
+				const settled = state(f);
+				expect(reset(f)).toBe(0);
+				expect(state(f)).toBe(settled);
+			} finally {
+				for (const value of input) value.body.fill(0);
+			}
+		},
+	);
+	it("rolls back prior kernel transitions and their audit when a later original row MAC refuses", async () => {
+		const f = await fixture();
+		const input = [f.make(), f.make()];
+		try {
+			for (const value of input) f.insert(value);
+			const rows = input
+				.map((value) => row(f, value.outboxId))
+				.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+			const first = rows[0],
+				last = rows[1];
+			if (!first || !last) throw new Error("DYTEST kernel ordering unavailable");
+			expect(last.mac !== "0".repeat(64)).toBe(true);
+			f.store.write((tx) => {
+				expect(
+					tx.run("UPDATE main.native_send_attempts SET mac=? WHERE id=?", ["0".repeat(64), last.id])
+						.changes,
+				).toBe(1);
+			});
+			const before = state(f);
+			// Let the original refusal escape the native transaction; catching it is not poisoning.
+			refused(() => reset(f));
+			expect(state(f)).toBe(before);
+			expect(row(f, first.outbox_id).state === "ISSUED").toBe(true);
+		} finally {
+			for (const value of input) value.body.fill(0);
+		}
+	});
+	it("refuses genuine foreign and expired transactions before kernel mutation", async () => {
+		const f = await fixture(),
+			other = await fixture();
+		const input = f.make();
+		try {
+			f.insert(input);
+			const before = state(f),
+				foreignBefore = state(other);
+			const ended = f.store.write((tx) => tx);
+			refused(() => resetSendTicketStorageForRestore(f.storage, ended));
+			refused(() => other.store.write((tx) => resetSendTicketStorageForRestore(f.storage, tx)));
+			expect(state(f)).toBe(before);
+			expect(state(other)).toBe(foreignBefore);
+			expect(reset(f)).toBe(1);
+		} finally {
+			input.body.fill(0);
+		}
+	});
+	it("refuses forged, copied, proxy and destroyed storage receivers without reading caller hooks", async () => {
+		const f = await fixture();
+		const input = f.make();
+		let reads = 0;
+		try {
+			f.insert(input);
+			const before = state(f);
+			const effect = () => {
+				reads++;
+				throw new Error("DYTEST kernel receiver hook");
+			};
+			const structural = Object.create(SendTicketStorage.prototype);
+			Object.defineProperty(structural, "resetForRestoreInTransaction", { get: effect });
+			for (const receiver of [
+				{},
+				{ ...f.storage },
+				structural,
+				new Proxy(f.storage, { get: effect }),
+			])
+				refused(() => f.store.write((tx) => resetSendTicketStorageForRestore(receiver, tx)));
+			expect(reads).toBe(0);
+			expect(state(f)).toBe(before);
+			f.storage.destroy();
+			refused(() => f.store.write((tx) => resetSendTicketStorageForRestore(f.storage, tx)));
+			expect(state(f)).toBe(before);
+		} finally {
+			input.body.fill(0);
+		}
+	});
+	it("preserves an original possibly-effective UNKNOWN kernel attempt without granting another write", async () => {
+		const f = await fixture();
+		const input = f.make();
+		const ticket = f.insert(input);
+		const dispatch = f.ledger.beginDispatch(f.ledger.redeem(f.request(ticket, input)));
+		try {
+			// Existing kernel DATA setup only. No native approval or network effect is asserted.
+			f.ledger.recordOutcome(dispatch.dispatch, "UNKNOWN");
+			const original = row(f, input.outboxId);
+			expect(original.state === "UNKNOWN").toBe(true);
+			const before = state(f);
+			expect(reset(f)).toBe(0);
+			expect(state(f)).toBe(before);
+			refused(() => f.ledger.redeem(f.request(ticket, input)));
+			refused(() => f.ledger.prepareDispatchWrite(dispatch.dispatch));
+			expect(state(f)).toBe(before);
+			expect(
+				sha256Hex(JSON.stringify(row(f, input.outboxId))) === sha256Hex(JSON.stringify(original)),
+			).toBe(true);
+		} finally {
+			dispatch.body.fill(0);
+			input.body.fill(0);
+		}
 	});
 });
