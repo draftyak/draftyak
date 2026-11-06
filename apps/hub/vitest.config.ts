@@ -1,23 +1,15 @@
-import { accessSync, constants, statfsSync } from "node:fs";
+import { statfsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import type { ConfigEnv, ViteUserConfig } from "vitest/config";
 import { heavyVitestConfig } from "../../vitest.shared.ts";
+import { tempFileScanSupported } from "./test/store/temp-file-observer.ts";
 
 export default function config(env: ConfigEnv): ViteUserConfig {
 	const config = heavyVitestConfig(env, {
 		"temp-file-scan": {
-			description: "reading live SQLite temporary files on Windows or Linux /proc",
-			detect: () => {
-				if (process.platform === "win32") return true;
-				if (process.platform !== "linux") return false;
-				try {
-					accessSync("/proc/self/fd", constants.R_OK | constants.X_OK);
-					return true;
-				} catch {
-					return false;
-				}
-			},
+			description: "required native SQLite temporary-file observation on Windows, Linux and macOS",
+			detect: () => tempFileScanSupported(process.platform),
 		},
 		ext4: {
 			description: "an ext4 temporary folder (statfs type 0xEF53, which ext2 and ext3 share)",
