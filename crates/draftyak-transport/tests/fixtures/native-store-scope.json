@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "source": "registry+https://github.com/rust-lang/crates.io-index",
   "expiresAt": "2026-11-19T13:15:04Z",
   "reviewedAt": "2026-10-30T12:08:26Z",
@@ -46,39 +46,283 @@
   ],
   "duplicate": {
     "crate": "syn",
-    "skip": "2.0.119",
+    "skips": [
+      "1.0.109",
+      "2.0.119"
+    ],
     "parents": {
+      "1.0.109": {
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "checksum": "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237",
+        "lockedParents": [
+          {
+            "package": "proc-macro-error 1.0.4",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "da25490ff9892aab3fcf7c36f08cfb902dd3e71ca0f9f9517bea02a73a5ce38c"
+          }
+        ]
+      },
       "2.0.119": {
-        "active": [
-          "enumflags2_derive 0.7.12",
-          "tracing-attributes 0.1.31"
-        ],
-        "lockOnly": [
-          "asn1-rs-derive 0.6.0",
-          "asn1-rs-impl 0.2.0",
-          "jiff-static 0.2.38",
-          "synstructure 0.13.2"
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "checksum": "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297",
+        "lockedParents": [
+          {
+            "package": "asn1-rs-derive 0.6.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "3109e49b1e4909e9db6515a30c633684d68cdeaa252f215214cb4fa1a5bfee2c"
+          },
+          {
+            "package": "asn1-rs-impl 0.2.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "7b18050c2cd6fe86c3a76584ef5e0baf286d038cda203eb6223df2cc413565f7"
+          },
+          {
+            "package": "derive_more-impl 2.1.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "799a97264921d8623a957f6c3b9011f3b5492f557bbb7a5a19b7fa6d06ba8dcb"
+          },
+          {
+            "package": "dlopen2_derive 0.4.3",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "0fbbb781877580993a8707ec48672673ec7b81eeba04cfd2310bd28c08e47c8f"
+          },
+          {
+            "package": "enumflags2_derive 0.7.12",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "67c78a4d8fdf9953a5c9d458f9efe940fd97a0cab0941c075a813ac594733827"
+          },
+          {
+            "package": "glib-macros 0.18.5",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "0bb0228f477c0900c880fd78c8759b95c7636dbd7842707f49e132378aa2acdc"
+          },
+          {
+            "package": "gtk3-macros 0.18.2",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "52ff3c5b21f14f0736fed6dcfc0bfb4225ebf5725f3c0209edeec181e4d73e9d"
+          },
+          {
+            "package": "jiff-static 0.2.38",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "2cc9817253cf7c7ee4684451bd327e88d6f3658014e54a29198625590650695c"
+          },
+          {
+            "package": "jni-sys-macros 0.4.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264"
+          },
+          {
+            "package": "num_enum_derive 0.7.6",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
+          },
+          {
+            "package": "phf_macros 0.13.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "812f032b54b1e759ccd5f8b6677695d5268c588701effba24601f6932f8269ef"
+          },
+          {
+            "package": "schemars_derive 0.8.22",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "32e265784ad618884abaea0600a9adf15393368d840e0222d101a072f3f7534d"
+          },
+          {
+            "package": "serde_derive_internals 0.29.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
+          },
+          {
+            "package": "serialize-to-javascript-impl 0.1.2",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "772ee033c0916d670af7860b6e1ef7d658a4629a6d0b4c8c3e67f09b3765b75d"
+          },
+          {
+            "package": "synstructure 0.13.2",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "728a70f3dbaf5bab7f0c4b1ac8d7ae5ea60a4b5549c8a5914361c99147a709d2"
+          },
+          {
+            "package": "tao-macros 0.1.4",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "5f7eeb6d99155545da6150a1795945f16ac9c178deb2a5f2e74d776107bd5849"
+          },
+          {
+            "package": "tauri-codegen 2.7.4",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "fb37631cf71dab5e8ab55e1bdd701e18a52653d90b78e71d0e5598b1e0a61316"
+          },
+          {
+            "package": "tauri-macros 2.7.4",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "0cc38db58854c10fb5f91a887ed8bf82d3239bb92b5d8db86eda09e96d9963d1"
+          },
+          {
+            "package": "thiserror-impl 1.0.69",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+          },
+          {
+            "package": "tracing-attributes 0.1.31",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "7490cfa5ec963746568740651ac6781f701c9c5ea257c58e057f3ba8cf69e8da"
+          },
+          {
+            "package": "webview2-com-macros 0.8.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "67a921c1b6914c367b2b823cd4cde6f96beec77d30a939c8199bb377cf9b9b54"
+          },
+          {
+            "package": "windows-implement 0.60.2",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf"
+          },
+          {
+            "package": "windows-interface 0.59.3",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "3f316c4a2570ba26bbec722032c4099d8c8bc095efccdc15688708623367e358"
+          }
         ]
       },
       "3.0.9": {
-        "active": [
-          "async-recursion 1.2.0",
-          "async-trait 0.1.92",
-          "futures-macro 0.3.34",
-          "serde_derive 1.0.229",
-          "serde_repr 0.1.21",
-          "thiserror-impl 2.0.21",
-          "tokio-macros 2.7.2",
-          "zbus_macros 5.19.0",
-          "zvariant_derive 5.15.1",
-          "zvariant_utils 4.2.0"
-        ],
-        "lockOnly": [
-          "defmt-macros 1.2.0",
-          "displaydoc 0.2.7",
-          "wasm-bindgen-macro-support 0.2.129"
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "checksum": "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b",
+        "lockedParents": [
+          {
+            "package": "async-recursion 1.2.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "4f8abc12baad266b1c8cec146854c195b5864b4221d4b2ca7296a7ae82d9e451"
+          },
+          {
+            "package": "async-trait 0.1.92",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
+          },
+          {
+            "package": "cssparser-macros 0.7.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
+          },
+          {
+            "package": "darling_core 0.24.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "6837e2cf7485aaae18f86181d2f0e9a7ed297a025e220aeabf63fdebd3a2ddff"
+          },
+          {
+            "package": "darling_macro 0.24.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "2ac7135c3ef02b2f7833bbeb1be5ba7f966dcde8a87c6b87f65a778d71a02785"
+          },
+          {
+            "package": "defmt-macros 1.2.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "840bb056bd99c495c9188198a258ab787c79f306d864db3e6e8451442d6d8366"
+          },
+          {
+            "package": "displaydoc 0.2.7",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "c6232dd377dcc64799954cbd3a9bb882e9cdc1308ccd87b1c098f1fb2eaf82a8"
+          },
+          {
+            "package": "foreign-types-macros 0.2.4",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "ea5190182e6915eb873ddbc16e23b711b6eb1f9c00a0d0a3a91b5f6228475225"
+          },
+          {
+            "package": "futures-macro 0.3.34",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "9fb9654ba8355388abeb8dcb4fc62f511300867002afc858860463bdd9fe0c44"
+          },
+          {
+            "package": "ref-cast-impl 1.0.27",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "92ecd8964f8453721699a1ed72037b0db49ce2f5a5138486ee89bed6f67cdf3a"
+          },
+          {
+            "package": "serde_derive 1.0.229",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
+          },
+          {
+            "package": "serde_repr 0.1.21",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "8d3b1629de253c70a0508c3899572da79ca359fdab27c7920ff00406df418906"
+          },
+          {
+            "package": "serde_with_macros 3.24.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "3e17bbc68e28663bbbb90df47e058aa7eda4fb445b89fe70457bb94fbccf6e49"
+          },
+          {
+            "package": "synstructure 0.14.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "901704edd0dfe137f1987838ee4f259e4e063c31371bdb423f7ae38ec6f77f02"
+          },
+          {
+            "package": "thiserror-impl 2.0.21",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
+          },
+          {
+            "package": "tokio-macros 2.7.2",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e"
+          },
+          {
+            "package": "wasm-bindgen-macro-support 0.2.129",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "6f501a8bc3719dba86ef8ae4728879c08001bea749eb1333ac5b91e040e2a6b7"
+          },
+          {
+            "package": "yoke-derive 0.8.4",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "ec8ebde2db3681e8c9980cc27822030e68752690ddfa9473e739aeb4dbde6d71"
+          },
+          {
+            "package": "zbus_macros 5.19.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "2990635d09ade6df1868f72f8cac69a876a90981e8bd3c40b1be413f8dc88f40"
+          },
+          {
+            "package": "zerofrom-derive 0.1.8",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "f75b4683f6c7f45248d4d64056a24298c6281e0993356d7d1b4a1a962ef10d4a"
+          },
+          {
+            "package": "zerovec-derive 0.11.7",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "c3743ddbf47738d929cd1ae2e199d40d0162979dfe31aef8ae646d2bf00bf97a"
+          },
+          {
+            "package": "zvariant_derive 5.15.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "ef2672456ba1cb54b5eaec136e63135b3c7495fb938e53b28a62e633496d486d"
+          },
+          {
+            "package": "zvariant_utils 4.2.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "checksum": "bad0294361a320b694a328460dc73add56c306150f5cb6bfafc44446120008a3"
+          }
         ]
       }
+    }
+  },
+  "workspaceMembers": [
+    "draftyak-protocol",
+    "draftyak-transport",
+    "draftyak-desktop-pairing",
+    "../apps/app/src-tauri"
+  ],
+  "provenance": {
+    "graphDigest": "a4662c495976436a169207f85fe6ecd21aea53adbcb6d7e8ecb8349a18d446ce",
+    "lockDigest": "f8a940be9d97416d8e07af0ce7acbe8d35f45177176de227cf0a64c5aa8cb6bf",
+    "metadataSelection": {
+      "command": "cargo metadata",
+      "formatVersion": 1,
+      "allFeatures": true,
+      "locked": true,
+      "offline": true,
+      "noDeps": false,
+      "filterPlatform": null
     }
   }
 }

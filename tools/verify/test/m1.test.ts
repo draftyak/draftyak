@@ -12,7 +12,7 @@ import {
 } from "../lib/registry.ts";
 import type { Captured, RunOptions } from "../lib/spawn.ts";
 import { benchLockWait, checkPrerequisites, heavy, m1Profile } from "../profiles/m1.ts";
-import { crateManifests, findCargoDeny, step as rust } from "../steps/rust.ts";
+import { crateManifests, findCargoDeny, findOnPath, step as rust } from "../steps/rust.ts";
 
 const here = path.resolve(import.meta.dirname, "..");
 const tmp = mkdtempSync(path.join(tmpdir(), "draftyak-m1-"));
@@ -44,10 +44,27 @@ function fakeBin(name: string, tools: readonly string[]): string {
 	return bin;
 }
 
+interface PolicyDispatchFacts {
+	readonly fixedEntry: boolean;
+	readonly argumentCount: number;
+	readonly cwdIsRoot: boolean;
+	readonly environmentProvided: boolean;
+	readonly definedVariablesAllowed: boolean;
+	readonly unknownVariablesRemoved: boolean;
+	readonly cargoMatches: boolean;
+	readonly denyMatches: boolean;
+	readonly cargoHomeMatches: boolean;
+	readonly databaseMatches: boolean;
+	readonly pathMatches: boolean;
+	readonly aliasesCanonical: boolean;
+	readonly flagsFixed: boolean;
+	readonly offlinePreserved: boolean;
+}
 interface Call {
 	readonly command: string;
 	readonly args: readonly string[];
 	readonly cwd?: string;
+	readonly policy?: PolicyDispatchFacts;
 }
 
 // capture() answers "<tool> <first argument>" first, then "<tool>"; run() exits with the code
@@ -65,6 +82,60 @@ function context(
 		return { code: stdout === undefined ? 1 : 0, stdout: stdout ?? "", stderr: "" };
 	};
 	const run = async (command: string, args: readonly string[], options?: RunOptions) => {
+		if (command === process.execPath) {
+			// Observe only synthetic verifier dispatch, never invoke the bridge or retain env values/paths.
+			const selected: NodeJS.ProcessEnv = options?.env ?? {};
+			const merged = { ...env, ...selected };
+			const allowed = new Set([
+				"SYSTEMROOT",
+				"PATH",
+				"HOME",
+				"USERPROFILE",
+				"TEMP",
+				"TMP",
+				"TMPDIR",
+				"CARGO",
+				"CARGO_HOME",
+				"RUSTUP_HOME",
+				"RUSTUP_TOOLCHAIN",
+				"CARGO_NET_OFFLINE",
+				"CARGO_TERM_COLOR",
+				"NO_COLOR",
+				"DRAFTYAK_CARGO_DENY",
+				"DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT",
+			]);
+			const onlyAllowed = Object.entries(merged).every(
+				([key, value]) => value === undefined || allowed.has(key),
+			);
+			calls.push({
+				command: name(command),
+				args: ["<fixed-policy-entry>"],
+				policy: {
+					fixedEntry:
+						args.length === 1 &&
+						args[0] === path.join(root, "tools/native-dependency-policy/src/finite-policy-ci.ts"),
+					argumentCount: args.length,
+					cwdIsRoot: options?.cwd === root,
+					environmentProvided: options?.env !== undefined,
+					definedVariablesAllowed: onlyAllowed,
+					unknownVariablesRemoved:
+						merged.NODE_OPTIONS === undefined && merged.UNSELECTED_FIXTURE_VALUE === undefined,
+					cargoMatches: selected.CARGO === findOnPath("cargo", env),
+					denyMatches: selected.DRAFTYAK_CARGO_DENY === findCargoDeny(root, env).file,
+					cargoHomeMatches:
+						env.CARGO_HOME !== undefined && selected.CARGO_HOME === path.resolve(env.CARGO_HOME),
+					databaseMatches:
+						env.DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT !== undefined &&
+						selected.DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT ===
+							path.resolve(env.DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT),
+					pathMatches: selected.PATH === (env.PATH ?? env.Path),
+					aliasesCanonical: merged.Path === undefined && merged.SystemRoot === undefined,
+					flagsFixed: selected.CARGO_TERM_COLOR === "never" && selected.NO_COLOR === "1",
+					offlinePreserved: selected.CARGO_NET_OFFLINE === env.CARGO_NET_OFFLINE,
+				},
+			});
+			return codes["policy-entry"] ?? 0;
+		}
 		calls.push({ command: name(command), args, cwd: options?.cwd });
 		return codes[`${name(command)} ${args[0]}`] ?? 0;
 	};
@@ -391,7 +462,7 @@ describe("rust step", () => {
 		});
 	});
 
-	it("runs fmt, then cargo-deny where it's installed, then clippy and the tests, from crates/", async () => {
+	it("runs fmt, then the fixed policy Node entry through ctx.run, then clippy and tests", async () => {
 		const root = fakeRoot(workspace);
 		const bin = fakeBin("bin-rust", ["cargo"]);
 		const plain = context(root, { PATH: bin }, answers(root));
@@ -401,17 +472,563 @@ describe("rust step", () => {
 		expect(plain.calls).toEqual(cargoCalls(root));
 
 		const deny = path.join(fakeBin("bin-deny", ["cargo-deny"]), `cargo-deny${exe}`);
-		const full = context(root, { PATH: bin, DRAFTYAK_CARGO_DENY: deny }, answers(root));
+		const full = context(
+			root,
+			{
+				PATH: bin,
+				CARGO_HOME: path.join(root, "cargo-home"),
+				DRAFTYAK_CARGO_DENY: deny,
+				DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT: path.join(
+					root,
+					"advisory-cache",
+					"advisory-db-3157b0e258782691",
+				),
+			},
+			answers(root),
+		);
 		const checked = await quietly(() => rust.run(full.ctx));
 		expect(checked.result).toEqual({ status: "passed" });
 		expect(checked.output).toContain(`rust: cargo-deny 0.20.2 at ${deny}`);
 		const [fmt, clippy, tests] = cargoCalls(root);
-		const check = {
-			command: "cargo-deny",
-			args: ["--locked", "check"],
-			cwd: path.join(root, "crates"),
-		};
+		const check = fixedPolicyCall();
 		expect(full.calls).toEqual([fmt, check, clippy, tests]);
+	});
+
+	function fixedPolicyCall(): Call {
+		return {
+			command: path.parse(process.execPath).name,
+			args: ["<fixed-policy-entry>"],
+			policy: {
+				fixedEntry: true,
+				argumentCount: 1,
+				cwdIsRoot: true,
+				environmentProvided: true,
+				definedVariablesAllowed: true,
+				unknownVariablesRemoved: true,
+				cargoMatches: true,
+				denyMatches: true,
+				cargoHomeMatches: true,
+				databaseMatches: true,
+				pathMatches: true,
+				aliasesCanonical: true,
+				flagsFixed: true,
+				offlinePreserved: true,
+			},
+		};
+	}
+
+	it("passes only controlled physical environment facts to the mocked fixed entry", async () => {
+		const root = fakeRoot(workspace),
+			bin = fakeBin("bin-controlled-policy", ["cargo"]);
+		const deny = path.join(fakeBin("deny-controlled-policy", ["cargo-deny"]), `cargo-deny${exe}`);
+		const env = {
+			Path: bin,
+			CARGO_HOME: path.join(root, "cargo-home"),
+			DRAFTYAK_CARGO_DENY: deny,
+			DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT: path.join(
+				root,
+				"advisory-cache",
+				"advisory-db-3157b0e258782691",
+			),
+			SystemRoot: path.join(root, "system-root"),
+			CARGO_NET_OFFLINE: "false",
+			NODE_OPTIONS: "unselected-fixture-value",
+			UNSELECTED_FIXTURE_VALUE: "unused",
+		};
+		const selected = context(root, env, answers(root));
+		expect((await quietly(() => rust.run(withProfile(selected.ctx, "rust")))).result).toEqual({
+			status: "passed",
+		});
+		expect(selected.calls.filter((call) => call.policy)).toEqual([fixedPolicyCall()]);
+	});
+
+	it.each([1, 7])(
+		"preserves fixed policy child exit %s and never dispatches clippy or tests",
+		async (code) => {
+			const root = fakeRoot(workspace),
+				bin = fakeBin(`bin-policy-exit-${code}`, ["cargo"]);
+			const deny = path.join(
+				fakeBin(`deny-policy-exit-${code}`, ["cargo-deny"]),
+				`cargo-deny${exe}`,
+			);
+			const selected = context(
+				root,
+				{
+					PATH: bin,
+					CARGO_HOME: path.join(root, "cargo-home"),
+					DRAFTYAK_CARGO_DENY: deny,
+					DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT: path.join(
+						root,
+						"advisory-cache",
+						"advisory-db-3157b0e258782691",
+					),
+				},
+				answers(root),
+				{ "policy-entry": code },
+			);
+			expect((await quietly(() => rust.run(withProfile(selected.ctx, "rust")))).result).toEqual({
+				status: "failed",
+				reason: `cargo-deny guarded finite policy check failed in crates (exit code ${code})`,
+			});
+			expect(selected.calls.map((call) => [call.command, call.args[0]])).toEqual([
+				["cargo", "fmt"],
+				[path.parse(process.execPath).name, "<fixed-policy-entry>"],
+			]);
+			expect(selected.calls.filter((call) => call.policy)).toEqual([fixedPolicyCall()]);
+		},
+	);
+
+	it("does not dispatch the fixed policy entry after fmt fails", async () => {
+		const root = fakeRoot(workspace),
+			bin = fakeBin("bin-fmt-policy", ["cargo"]);
+		const deny = path.join(fakeBin("deny-fmt-policy", ["cargo-deny"]), `cargo-deny${exe}`);
+		const selected = context(
+			root,
+			{
+				PATH: bin,
+				CARGO_HOME: path.join(root, "cargo-home"),
+				DRAFTYAK_CARGO_DENY: deny,
+				DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT: path.join(
+					root,
+					"advisory-cache",
+					"advisory-db-3157b0e258782691",
+				),
+			},
+			answers(root),
+			{ "cargo fmt": 2 },
+		);
+		expect((await quietly(() => rust.run(selected.ctx))).result.status).toBe("failed");
+		expect(selected.calls.map((call) => [call.command, call.args[0]])).toEqual([["cargo", "fmt"]]);
+	});
+
+	it("awaits the mocked policy child before later Rust commands", async () => {
+		const root = fakeRoot(workspace),
+			bin = fakeBin("bin-held-policy", ["cargo"]);
+		const deny = path.join(fakeBin("deny-held-policy", ["cargo-deny"]), `cargo-deny${exe}`);
+		const selected = context(
+			root,
+			{
+				PATH: bin,
+				CARGO_HOME: path.join(root, "cargo-home"),
+				DRAFTYAK_CARGO_DENY: deny,
+				DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT: path.join(
+					root,
+					"advisory-cache",
+					"advisory-db-3157b0e258782691",
+				),
+			},
+			answers(root),
+		);
+		let release!: () => void,
+			entered = false,
+			returned = false;
+		const held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const ctx: StepContext = {
+			...selected.ctx,
+			run: async (command, args, options) => {
+				const code = await selected.ctx.run(command, args, options);
+				if (command === process.execPath) {
+					entered = true;
+					await held;
+				}
+				return code;
+			},
+		};
+		const operation = quietly(() => rust.run(ctx)).then((value) => {
+			returned = true;
+			return value;
+		});
+		try {
+			for (let i = 0; i < 30 && !entered; i++) await Promise.resolve();
+			expect(entered).toBe(true);
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(returned).toBe(false);
+			expect(selected.calls.map((call) => call.args[0])).toEqual(["fmt", "<fixed-policy-entry>"]);
+		} finally {
+			release();
+			await operation;
+		}
+		expect((await operation).result).toEqual({ status: "passed" });
+		expect(selected.calls.map((call) => call.args[0])).toEqual([
+			"fmt",
+			"<fixed-policy-entry>",
+			"clippy",
+			"test",
+		]);
+	});
+
+	it.each(["cargo", "path-alias"])(
+		"refuses conflicting fixture %s before Node dispatch",
+		async (fault) => {
+			const root = fakeRoot(workspace),
+				bin = fakeBin(`bin-conflict-${fault}`, ["cargo"]);
+			const deny = path.join(fakeBin(`deny-conflict-${fault}`, ["cargo-deny"]), `cargo-deny${exe}`);
+			const env: NodeJS.ProcessEnv = {
+				PATH: bin,
+				CARGO_HOME: path.join(root, "cargo-home"),
+				DRAFTYAK_CARGO_DENY: deny,
+				DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT: path.join(
+					root,
+					"advisory-cache",
+					"advisory-db-3157b0e258782691",
+				),
+			};
+			if (fault === "cargo") env.CARGO = path.join(root, "other-cargo");
+			else env.Path = path.join(root, "other-bin");
+			const selected = context(root, env, answers(root));
+			const errorClass = await quietly(() => rust.run(selected.ctx)).then(
+				() => "NO_ERROR",
+				(error: unknown) => (error instanceof Error ? "Error" : "FOREIGN"),
+			);
+			expect(errorClass).toBe("Error");
+			expect(selected.calls.map((call) => call.args[0])).toEqual(["fmt"]);
+		},
+	);
+
+	describe("App15 CI execution", () => {
+		const app = "apps/app/src-tauri/Cargo.toml";
+		const webArgs = ["--filter", "@draftyak/web", "--fail-if-no-match", "run", "build"];
+		const desktopArgs = [
+			"build",
+			"--manifest-path",
+			app,
+			"--package",
+			"draftyak-desktop",
+			"--bin",
+			"draftyak-desktop",
+			"--locked",
+			"--offline",
+			"--no-default-features",
+			"--features",
+			"desktop",
+		];
+		const appArgs = [
+			"test",
+			"--manifest-path",
+			app,
+			"--package",
+			"draftyak-desktop",
+			"--locked",
+			"--offline",
+			"--no-default-features",
+			"--features",
+			"desktop-tests",
+			"--test",
+			"shell_acl",
+			"--test",
+			"window_security",
+		];
+		let sequence = 0;
+		function fixture(codes: Record<string, number> = {}, includeAppMember = true) {
+			const root = fakeRoot({
+				...workspace,
+				"crates/Cargo.toml":
+					"[workspace]\nmembers = ['draftyak-protocol', '../apps/app/src-tauri']\n",
+				[app]:
+					"[package]\nname = 'draftyak-desktop'\nversion = '0.0.0'\nworkspace = '../../../crates'\n",
+				"apps/web/package.json": '{"name":"@draftyak/web","scripts":{"build":"DYTEST"}}',
+			});
+			const bin = fakeBin("app15-tools-" + ++sequence, ["cargo", "cargo-deny"]);
+			const env = {
+				PATH: bin,
+				CARGO_HOME: path.join(root, "cargo-home"),
+				DRAFTYAK_CARGO_DENY: path.join(bin, "cargo-deny" + exe),
+				DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT: path.join(
+					root,
+					"advisory-cache",
+					"advisory-db-3157b0e258782691",
+				),
+				CARGO_NET_OFFLINE: "true",
+				RUSTUP_TOOLCHAIN: "1.95.0",
+			};
+			const selected = context(
+				root,
+				env,
+				answers(
+					root,
+					includeAppMember
+						? ["crates/draftyak-protocol", "apps/app/src-tauri"]
+						: ["crates/draftyak-protocol"],
+				),
+				codes,
+			);
+			const ctx: StepContext = {
+				...selected.ctx,
+				profile: "rust",
+				pnpm: async (args, options) => {
+					selected.calls.push({ command: "pnpm", args, cwd: options?.cwd });
+					const code = codes["web"] ?? 0;
+					if (code === 0 && codes["omit-web-output"] !== 1)
+						write(path.join(root, "apps/web/dist/index.html"), "DYTEST built asset");
+					return code;
+				},
+			};
+			return { root, env, ctx, calls: selected.calls };
+		}
+		const phases = (calls: readonly Call[]) =>
+			calls.map((call) =>
+				call.command === "pnpm"
+					? "web"
+					: call.policy
+						? "policy"
+						: call.args.includes("desktop-tests")
+							? "App15"
+							: call.args.includes("desktop")
+								? "desktop"
+								: call.args[0],
+			);
+
+		it("builds the production desktop before exact App15 targets after policy and fresh Web assets", async () => {
+			const selected = fixture();
+			expect((await quietly(() => rust.run(selected.ctx))).result).toEqual({ status: "passed" });
+			expect(phases(selected.calls)).toEqual([
+				"fmt",
+				"policy",
+				"web",
+				"clippy",
+				"test",
+				"desktop",
+				"App15",
+			]);
+			expect(selected.calls.find((call) => call.command === "pnpm")).toEqual({
+				command: "pnpm",
+				args: webArgs,
+				cwd: selected.root,
+			});
+			expect(selected.calls.find((call) => call.args.includes("desktop"))).toEqual({
+				command: "cargo",
+				args: desktopArgs,
+				cwd: selected.root,
+			});
+			expect(selected.calls.at(-1)).toEqual({
+				command: "cargo",
+				args: appArgs,
+				cwd: selected.root,
+			});
+			expect(selected.calls.filter((call) => call.policy)).toEqual([fixedPolicyCall()]);
+		});
+		it("refuses App15 when the external App package is absent from workspace metadata", async () => {
+			const selected = fixture({}, false);
+			expect((await quietly(() => rust.run(selected.ctx))).result.status).toBe("failed");
+			expect(selected.calls).toEqual([]);
+		});
+		it("refuses App15 when the Web package is missing", async () => {
+			const selected = fixture();
+			rmSync(path.join(selected.root, "apps/web/package.json"));
+			expect((await quietly(() => rust.run(selected.ctx))).result).toEqual({
+				status: "failed",
+				reason: "App15 requires the Web package before embedding",
+			});
+			expect(selected.calls).toEqual([]);
+		});
+		it.each([1, 2])(
+			"preserves failed policy child %s before Web or App compilation",
+			async (code) => {
+				const selected = fixture({ "policy-entry": code });
+				expect((await quietly(() => rust.run(selected.ctx))).result.status).toBe("failed");
+				expect(phases(selected.calls)).toEqual(["fmt", "policy"]);
+			},
+		);
+		it("awaits the policy child before Web and App compilation", async () => {
+			const selected = fixture();
+			let release!: () => void,
+				entered = false,
+				returned = false;
+			const held = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const ctx: StepContext = {
+				...selected.ctx,
+				run: async (command, args, options) => {
+					const code = await selected.ctx.run(command, args, options);
+					if (command === process.execPath) {
+						entered = true;
+						await held;
+					}
+					return code;
+				},
+			};
+			const operation = quietly(() => rust.run(ctx)).then((value) => {
+				returned = true;
+				return value;
+			});
+			try {
+				for (let i = 0; i < 30 && !entered; i++) await Promise.resolve();
+				expect(entered).toBe(true);
+				await new Promise<void>((resolve) => setImmediate(resolve));
+				expect(returned).toBe(false);
+				expect(phases(selected.calls)).toEqual(["fmt", "policy"]);
+			} finally {
+				release();
+				await operation;
+			}
+			expect((await operation).result.status).toBe("passed");
+		});
+		it("stops compilation after a failed fresh Web build", async () => {
+			const selected = fixture({ web: 7 });
+			expect((await quietly(() => rust.run(selected.ctx))).result).toEqual({
+				status: "failed",
+				reason: "Web build before App15 failed (exit code 7)",
+			});
+			expect(phases(selected.calls)).toEqual(["fmt", "policy", "web"]);
+		});
+		it("refuses a successful Web command without an embedding entry", async () => {
+			const selected = fixture({ "omit-web-output": 1 });
+			expect((await quietly(() => rust.run(selected.ctx))).result).toEqual({
+				status: "failed",
+				reason: "Web build produced no App embedding entry",
+			});
+			expect(phases(selected.calls)).toEqual(["fmt", "policy", "web"]);
+		});
+		it("awaits the fresh Web build before workspace or App compilation", async () => {
+			const selected = fixture();
+			let release!: () => void,
+				entered = false,
+				returned = false;
+			const held = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const ctx: StepContext = {
+				...selected.ctx,
+				pnpm: async (args, options) => {
+					entered = true;
+					await held;
+					return selected.ctx.pnpm(args, options);
+				},
+			};
+			const operation = quietly(() => rust.run(ctx)).then((value) => {
+				returned = true;
+				return value;
+			});
+			try {
+				for (let i = 0; i < 30 && !entered; i++) await Promise.resolve();
+				expect(entered).toBe(true);
+				await new Promise<void>((resolve) => setImmediate(resolve));
+				expect(returned).toBe(false);
+				expect(phases(selected.calls)).toEqual(["fmt", "policy"]);
+			} finally {
+				release();
+				await operation;
+			}
+			expect((await operation).result.status).toBe("passed");
+		});
+		it.each([1, 101])(
+			"preserves production desktop build failure %s before App15",
+			async (code) => {
+				const selected = fixture({ "cargo build": code });
+				expect((await quietly(() => rust.run(selected.ctx))).result).toEqual({
+					status: "failed",
+					reason: "App desktop build failed (exit code " + code + ")",
+				});
+				expect(phases(selected.calls)).toEqual([
+					"fmt",
+					"policy",
+					"web",
+					"clippy",
+					"test",
+					"desktop",
+				]);
+			},
+		);
+		it("awaits the production desktop build before dispatching App15", async () => {
+			const selected = fixture();
+			let release!: () => void,
+				entered = false,
+				returned = false;
+			const held = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const ctx: StepContext = {
+				...selected.ctx,
+				run: async (command, args, options) => {
+					const code = await selected.ctx.run(command, args, options);
+					if (args[0] === "build" && args.includes("desktop")) {
+						entered = true;
+						await held;
+					}
+					return code;
+				},
+			};
+			const operation = quietly(() => rust.run(ctx)).then((value) => {
+				returned = true;
+				return value;
+			});
+			try {
+				for (let i = 0; i < 30 && !entered; i++) await Promise.resolve();
+				expect(entered).toBe(true);
+				await new Promise<void>((resolve) => setImmediate(resolve));
+				expect(returned).toBe(false);
+				expect(phases(selected.calls)).toEqual([
+					"fmt",
+					"policy",
+					"web",
+					"clippy",
+					"test",
+					"desktop",
+				]);
+			} finally {
+				release();
+				await operation;
+			}
+			expect((await operation).result.status).toBe("passed");
+			expect(phases(selected.calls)).toEqual([
+				"fmt",
+				"policy",
+				"web",
+				"clippy",
+				"test",
+				"desktop",
+				"App15",
+			]);
+		});
+		it("preserves the explicit App15 command's failure", async () => {
+			const selected = fixture();
+			const ctx: StepContext = {
+				...selected.ctx,
+				run: async (command, args, options) => {
+					const code = await selected.ctx.run(command, args, options);
+					return args.includes("desktop-tests") ? 101 : code;
+				},
+			};
+			expect((await quietly(() => rust.run(ctx))).result).toEqual({
+				status: "failed",
+				reason: "App15 desktop-tests failed (exit code 101)",
+			});
+			expect(phases(selected.calls)).toEqual([
+				"fmt",
+				"policy",
+				"web",
+				"clippy",
+				"test",
+				"desktop",
+				"App15",
+			]);
+		});
+		it.each(["default", "m1"])("does not expand the %s profile to App15", async (profile) => {
+			const selected = fixture();
+			expect((await quietly(() => rust.run({ ...selected.ctx, profile }))).result.status).toBe(
+				"passed",
+			);
+			expect(phases(selected.calls)).toEqual(["fmt", "policy", "clippy", "test"]);
+		});
+		it.each([undefined, "relative/advisory-db-3157b0e258782691"])(
+			"refuses missing or relative policy database placement before child dispatch: %s",
+			async (database) => {
+				const selected = fixture();
+				const ctx: StepContext = {
+					...selected.ctx,
+					env: { ...selected.env, DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT: database },
+				};
+				const category = await quietly(() => rust.run(ctx)).then(
+					() => "NO_ERROR",
+					(error: unknown) => (error instanceof Error ? "Error" : "FOREIGN"),
+				);
+				expect(category).toBe("Error");
+				expect(phases(selected.calls)).toEqual(["fmt"]);
+			},
+		);
 	});
 
 	it("takes DRAFTYAK_CARGO_DENY over PATH, from the repo root when relative", () => {

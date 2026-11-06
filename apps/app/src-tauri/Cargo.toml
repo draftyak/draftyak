@@ -1,0 +1,52 @@
+[package]
+name = "draftyak-desktop"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+license = "Apache-2.0"
+publish = false
+workspace = "../../../crates"
+
+[lib]
+name = "draftyak_desktop"
+
+[[bin]]
+name = "draftyak-desktop"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[[test]]
+name = "shell_acl"
+path = "tests/shell_acl.rs"
+required-features = ["desktop-tests"]
+
+[[test]]
+name = "window_security"
+path = "tests/window_security.rs"
+required-features = ["desktop-tests"]
+
+[features]
+default = []
+native-engine-tests = ["desktop"]
+desktop = [
+  "dep:serde",
+  "dep:tauri",
+  "dep:tauri-build",
+  "tauri/wry",
+  "tauri/compression",
+  "tauri/custom-protocol",
+  "tauri/common-controls-v6",
+  "tauri/x11",
+  "tauri/dbus",
+]
+desktop-tests = ["dep:serde", "dep:tauri", "dep:tauri-build", "tauri/test"]
+
+[dependencies]
+serde = { version = "=1.0.229", optional = true, features = ["derive"] }
+tauri = { version = "=2.12.4", optional = true, default-features = false, features = ["isolation"] }
+
+[build-dependencies]
+tauri-build = { version = "=2.7.3", optional = true, features = ["isolation"] }
+
+[dev-dependencies]
+serde_json = "=1.0.154"

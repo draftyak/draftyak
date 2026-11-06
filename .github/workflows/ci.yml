@@ -136,9 +136,35 @@ jobs:
           echo "$DENY_SHA256  $dir/$name.tar.gz" | sha256sum --check --strict
           tar -xzf "$dir/$name.tar.gz" -C "$dir" --strip-components=1 "$name/cargo-deny"
           "$dir/cargo-deny" --version
+      - name: Prepare locked Rust dependencies
+        if: contains(fromJSON(needs.changes.outputs.areas), 'rust:crates')
+        run: cargo fetch --locked --manifest-path crates/Cargo.toml
+      - name: Prepare Linux desktop development libraries
+        if: contains(fromJSON(needs.changes.outputs.areas), 'rust:crates')
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev
+      - name: Prepare physical advisory database
+        if: contains(fromJSON(needs.changes.outputs.areas), 'rust:crates')
+        run: |
+          database_parent="$RUNNER_TEMP/draftyak-native-policy-db-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          database_root="$database_parent/advisory-db-3157b0e258782691"
+          node tools/native-dependency-policy/src/database-materializer-cli.ts --database-root "$database_root" || exit $?
+          printf 'DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT=%s\n' "$database_root" >> "$GITHUB_ENV"
       - name: Rust checks for crates/ (fmt, cargo-deny, clippy, tests)
         if: contains(fromJSON(needs.changes.outputs.areas), 'rust:crates')
-        run: DRAFTYAK_CARGO_DENY="$RUNNER_TEMP/cargo-deny/cargo-deny" node tools/verify/verify.ts --profile rust
+        env:
+          CARGO_NET_OFFLINE: 'true'
+          RUSTUP_TOOLCHAIN: '1.95.0'
+        run: |
+          # Require a prepared physical database; select no global-cache fallback.
+          # The native policy source validates its actual source and currentness.
+          test -n "${DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT:-}" || { echo "Native policy database placement unavailable" >&2; exit 1; }
+          test -d "$DRAFTYAK_NATIVE_POLICY_DATABASE_ROOT" || { echo "Native policy database placement unavailable" >&2; exit 1; }
+          DRAFTYAK_CARGO_DENY="$RUNNER_TEMP/cargo-deny/cargo-deny" node tools/verify/verify.ts --profile rust
+      - name: Prepare selected Web Chromium
+        if: contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/web')
+        run: pnpm --dir apps/web exec playwright install --with-deps chromium
       - name: test:heavy for the touched spikes and the selected packages
         if: needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''
         env:

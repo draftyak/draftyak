@@ -1,0 +1,13 @@
+{
+  "name": "@draftyak/app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "desktop:build": "tauri build --debug --no-bundle --features desktop",
+    "desktop:check": "cargo clippy --manifest-path src-tauri/Cargo.toml --locked --no-default-features --features desktop -- -D warnings"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.3"
+  }
+}

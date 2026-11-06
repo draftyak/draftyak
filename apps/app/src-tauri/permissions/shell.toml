@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "shell-mode"
+description = "Read and select a process-local shell mode without starting any service."
+commands.allow = ["shell_state", "shell_select_mode"]

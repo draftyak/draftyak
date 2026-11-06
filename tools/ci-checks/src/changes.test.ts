@@ -179,6 +179,188 @@ describe("lockfile workspace metadata", () => {
 	});
 });
 
+describe("external Cargo package.workspace selection", () => {
+	let sequence = 0;
+	const packageHeader = "[package]\nname = 'synthetic-desktop'\nversion = '0.0.0'\n";
+	const declaration = 'workspace = "../../../crates"\n';
+	function fixture(packageSource = packageHeader + declaration): string {
+		const directory = path.join(root, `external-workspace-${++sequence}`);
+		const files: Record<string, string> = {
+			"crates/Cargo.toml": "[workspace]\nmembers = ['../apps/app/src-tauri']\n",
+			"apps/app/src-tauri/Cargo.toml": packageSource,
+			"apps/app/src-tauri/src/lib.rs": "",
+			"apps/app/src-tauri/build.rs": "",
+			"apps/app/src-tauri/tests/window_security.rs": "",
+			"standalone/Cargo.toml": "[package]\nname = 'standalone'\n",
+		};
+		for (const [file, content] of Object.entries(files)) {
+			mkdirSync(path.dirname(path.join(directory, file)), { recursive: true });
+			writeFileSync(path.join(directory, file), content);
+		}
+		return directory;
+	}
+	const appFiles = [
+		"apps/app/src-tauri/Cargo.toml",
+		"apps/app/src-tauri/src/lib.rs",
+		"apps/app/src-tauri/build.rs",
+		"apps/app/src-tauri/tests/window_security.rs",
+	];
+	it.each(appFiles)("selects crates for the App external workspace member %s", (file) => {
+		const directory = fixture();
+		expect(rustWorkspace(directory, file)).toBe("crates");
+		const areas = classify(
+			[file],
+			directory,
+			() => ["crates/Cargo.toml", "apps/app/src-tauri/Cargo.toml"],
+			() => [],
+		);
+		expect(areas.rust).toEqual(["crates"]);
+		expect(untestedRust(areas)).toEqual([]);
+		expect(areas.strayRust).toEqual([]);
+	});
+	it.each(["apps/unlisted/src-tauri", "spikes/unlisted/rust"])(
+		"refuses an unlisted external package despite its workspace pointer: %s",
+		(folder) => {
+			const directory = fixture();
+			const manifest = folder + "/Cargo.toml";
+			const file = folder + "/src/lib.rs";
+			mkdirSync(path.dirname(path.join(directory, file)), { recursive: true });
+			writeFileSync(path.join(directory, manifest), packageHeader + declaration);
+			writeFileSync(path.join(directory, file), "");
+			expect(() => rustWorkspace(directory, file)).toThrow(
+				/invalid Cargo package\.workspace membership/,
+			);
+			expect(() =>
+				classify(
+					[file],
+					directory,
+					() => ["crates/Cargo.toml", "apps/app/src-tauri/Cargo.toml", manifest],
+					() => [],
+				),
+			).toThrow(/invalid Cargo package\.workspace membership/);
+		},
+	);
+	it("refuses an explicitly excluded external workspace member", () => {
+		const directory = fixture();
+		writeFileSync(
+			path.join(directory, "crates/Cargo.toml"),
+			"[workspace]\nmembers = ['../apps/app/src-tauri']\nexclude = ['../apps/app/src-tauri']\n",
+		);
+		expect(() => rustWorkspace(directory, appFiles[0] ?? "")).toThrow(
+			/invalid Cargo package\.workspace membership/,
+		);
+		expect(() =>
+			classify(
+				[appFiles[1] ?? ""],
+				directory,
+				() => ["crates/Cargo.toml", "apps/app/src-tauri/Cargo.toml"],
+				() => [],
+			),
+		).toThrow(/invalid Cargo package\.workspace membership/);
+	});
+	it("accepts the App in a multiline literal member list with an empty exclusion", () => {
+		const directory = fixture();
+		writeFileSync(
+			path.join(directory, "crates/Cargo.toml"),
+			[
+				"[workspace]",
+				"members = [",
+				'  "draftyak-protocol", "draftyak-transport",',
+				'  "draftyak-desktop-pairing",',
+				'  "../apps/app/src-tauri", # the actual external member',
+				"]",
+				"exclude = []",
+				'resolver = "3"',
+				"",
+			].join("\n"),
+		);
+		expect(rustWorkspace(directory, appFiles[0] ?? "")).toBe("crates");
+		const areas = classify(
+			[appFiles[1] ?? ""],
+			directory,
+			() => ["crates/Cargo.toml", "apps/app/src-tauri/Cargo.toml"],
+			() => [],
+		);
+		expect(areas.rust).toEqual(["crates"]);
+		expect(untestedRust(areas)).toEqual([]);
+	});
+	it.each([
+		["missing members", "[workspace]\n"],
+		["non-array members", "[workspace]\nmembers = '../apps/app/src-tauri'\n"],
+		["repeated members", "[workspace]\nmembers = ['../apps/app/src-tauri']\nmembers = []\n"],
+		[
+			"trailing-slash exclusion",
+			"[workspace]\nmembers = ['../apps/app/src-tauri']\nexclude = ['../apps/app/src-tauri/']\n",
+		],
+		[
+			"unsupported exclusion glob",
+			"[workspace]\nmembers = ['../apps/app/src-tauri']\nexclude = ['../apps/*/src-tauri']\n",
+		],
+		[
+			"member key in another table",
+			"[workspace]\n[workspace.package]\nmembers = ['../apps/app/src-tauri']\n",
+		],
+	])("refuses unproved external membership: %s", (_name, workspaceSource) => {
+		const directory = fixture();
+		writeFileSync(path.join(directory, "crates/Cargo.toml"), workspaceSource);
+		expect(() => rustWorkspace(directory, appFiles[0] ?? "")).toThrow(
+			/invalid Cargo package\.workspace membership/,
+		);
+		expect(() =>
+			classify(
+				[appFiles[1] ?? ""],
+				directory,
+				() => ["crates/Cargo.toml", "apps/app/src-tauri/Cargo.toml"],
+				() => [],
+			),
+		).toThrow(/invalid Cargo package\.workspace membership/);
+	});
+	it("refuses a workspace header inside a target multiline literal", () => {
+		const directory = fixture();
+		writeFileSync(
+			path.join(directory, "crates/Cargo.toml"),
+			"[package]\nname = 'not-a-workspace'\ndescription = '''\n[workspace]\n'''\n",
+		);
+		expect(() => rustWorkspace(directory, appFiles[0] ?? "")).toThrow(
+			/invalid Cargo package\.workspace target/,
+		);
+		expect(() =>
+			classify(
+				[appFiles[1] ?? ""],
+				directory,
+				() => ["crates/Cargo.toml", "apps/app/src-tauri/Cargo.toml"],
+				() => [],
+			),
+		).toThrow(/invalid Cargo package\.workspace target/);
+	});
+	it.each([
+		["missing target", packageHeader + 'workspace = "../../../missing"\n'],
+		["escaping target", packageHeader + 'workspace = "../../../../outside"\n'],
+		["absolute target", packageHeader + 'workspace = "/outside"\n'],
+		["Windows absolute target", packageHeader + 'workspace = "C:/outside"\n'],
+		["non-workspace target", packageHeader + 'workspace = "../../../standalone"\n'],
+		["non-string declaration", packageHeader + "workspace = 17\n"],
+		["multiline declaration", packageHeader + 'workspace = """../../../crates"""\n'],
+		["duplicate declaration", packageHeader + declaration + declaration],
+		["duplicate package table", packageHeader + declaration + packageHeader],
+		["unsupported dotted declaration", 'package.workspace = "../../../crates"\n' + packageHeader],
+		["workspace table instead of string", packageHeader + "[package.workspace]\n"],
+	])("refuses %s without falling back to an unrelated Rust owner", (_name, source) => {
+		const directory = fixture(source);
+		expect(() => rustWorkspace(directory, appFiles[0] ?? "")).toThrow(
+			/invalid Cargo package\.workspace/,
+		);
+		expect(() =>
+			classify(
+				[appFiles[1] ?? ""],
+				directory,
+				() => ["crates/Cargo.toml", "apps/app/src-tauri/Cargo.toml"],
+				() => [],
+			),
+		).toThrow(/invalid Cargo package\.workspace/);
+	});
+});
+
 describe("changed areas", () => {
 	it("selects synthetic shared-root consumers before Rust derivation", () => {
 		expect(fixtureClassify(["pnpm-lock.yaml"]).spikes).toEqual([
@@ -369,6 +551,65 @@ const everyHeavy = [
 	"./tools/verify",
 ];
 
+describe("finite policy mandatory Rust selection", () => {
+	const inputs = [
+		"tools/native-dependency-policy/src/mobile-http-policy.ts",
+		"tools/native-dependency-policy/src/finite-policy-ci.ts",
+		"tools/native-dependency-policy/src/native-audit-source.ts",
+		"tools/verify/steps/rust.ts",
+		"tools/ci-checks/src/changes.ts",
+	];
+	const select = (files: string[]) => classify(files, m1Root, () => m1Manifests);
+
+	it.each(inputs)("selects mandatory crates for exactly %s", (file) => {
+		const areas = select([file]);
+		expect(areas.rust.includes("crates")).toBe(true);
+		expect(areaNames(areas).includes("rust:crates")).toBe(true);
+		expect(untestedRust(areas)).toEqual([]);
+	});
+
+	it("keeps documentation neighbors docs-only without selecting Rust", () => {
+		const areas = select([
+			"README.md",
+			"tools/native-dependency-policy/README.md",
+			"tools/native-dependency-policy/src/mobile-http-policy.ts.md",
+		]);
+		expect(areaNames(areas)).toEqual(["docs-only"]);
+		expect(areas.rust).toEqual([]);
+	});
+
+	it("does not widen the exact policy set to unrelated source neighbors", () => {
+		for (const file of [
+			"tools/native-dependency-policy/src/mobile-http-policy-extra.ts",
+			"tools/native-dependency-policy/src/finite-policy-ci-extra.ts",
+			"tools/verify/steps/rust-extra.ts",
+			"tools/ci-checks/src/changes-extra.ts",
+		]) {
+			const areas = select([file]);
+			expect(areas.rust.includes("crates")).toBe(false);
+			expect(areaNames(areas).includes("ts")).toBe(true);
+		}
+	});
+
+	it("does not invent a crates workspace for policy paths when none exists", () => {
+		const withoutCrates = path.join(root, "finite-policy-no-crates");
+		mkdirSync(withoutCrates);
+		for (const file of [
+			...inputs,
+			"tools/native-dependency-policy/src/finite-policy-ci-extra.ts",
+		]) {
+			const areas = classify(
+				[file],
+				withoutCrates,
+				() => [],
+				() => [],
+			);
+			expect(areas.rust).toEqual([]);
+			expect(areaNames(areas).includes("rust:crates")).toBe(false);
+		}
+	});
+});
+
 describe("heavy selection for full", () => {
 	const select = (files: string[]) => classify(files, m1Root, () => m1Manifests);
 
@@ -525,5 +766,110 @@ describe("heavy selection for full", () => {
 		} finally {
 			repo.remove();
 		}
+	});
+});
+
+describe("required Web browser heavy selection", () => {
+	const roots: string[] = [];
+	afterAll(() => {
+		for (const directory of roots) rmSync(directory, { recursive: true, force: true });
+	});
+	function webFixture(
+		content = JSON.stringify({
+			name: "@draftyak/web",
+			scripts: { "test:heavy": "pnpm build && vitest run --mode heavy" },
+		}),
+	) {
+		const directory = mkdtempSync(path.join(tmpdir(), "draftyak-web-heavy-"));
+		roots.push(directory);
+		mkdirSync(path.join(directory, "apps/web"), { recursive: true });
+		writeFileSync(path.join(directory, "apps/web/package.json"), content);
+		return directory;
+	}
+	const select = (files: string[], directory: string) =>
+		classify(
+			files,
+			directory,
+			() => [],
+			() => [{ folder: "apps/web", dependencies: [] }],
+		);
+	it.each([
+		"src/App.tsx",
+		"package.json",
+		"vite.config.ts",
+		"vitest.config.ts",
+		"test/setup.heavy.test.ts",
+		"index.html",
+	])("requires Web heavy for %s", (file) => {
+		const result = select([`apps/web/${file}`], webFixture());
+		expect(result.heavy).toEqual(["./apps/web"]);
+		expect(areaNames(result)).toContain("heavy:./apps/web");
+	});
+	it.each([
+		".node-version",
+		"vitest.shared.ts",
+		"pnpm-lock.yaml",
+		"turbo.json",
+		".github/workflows/ci.yml",
+		"tools/ci-checks/src/changes.ts",
+	])("retains the Web caller on %s changes", (file) => {
+		expect(select([file], webFixture()).heavy).toContain("./apps/web");
+	});
+	it("deduplicates Web and keeps documentation-only changes light", () => {
+		const directory = webFixture();
+		expect(
+			select(
+				["apps/web/src/a.ts", "apps/web/test/setup.heavy.test.ts", "pnpm-lock.yaml"],
+				directory,
+			).heavy,
+		).toEqual(["./apps/web"]);
+		expect(areaNames(select(["apps/web/README.md"], directory))).toEqual(["docs-only"]);
+	});
+	it.each([
+		"apps/web-other/src/a.ts",
+		"apps/Web/src/a.ts",
+		"apps/web",
+		"apps/web/../hub/a.ts",
+		"apps/web//a.ts",
+		"apps/web/",
+		"apps\\web\\a.ts",
+	])("does not normalize another path %j into Web", (file) => {
+		expect(select([file], webFixture()).heavy).toEqual([]);
+	});
+	it.each([
+		"{}",
+		"null",
+		"[]",
+		'{"name":"other","scripts":{"test:heavy":"test"}}',
+		'{"name":"@draftyak/web"}',
+		'{"name":"@draftyak/web","scripts":{"test:heavy":""}}',
+		'{"name":"@draftyak/web","scripts":{"test:heavy":1}}',
+		'{"name":"@draftyak/web","scripts":{"test:heavy":" "}}',
+		'{"name":"@draftyak/web","scripts":{"test:heavy":"echo skipped"}}',
+		'{"name":"@draftyak/web","scripts":{"test:browser":"pnpm build && vitest run --mode heavy"}}',
+	])("refuses a changed Web path without its fixed heavy entry: %s", (content) => {
+		expect(() => select(["apps/web/test/setup.heavy.test.ts"], webFixture(content))).toThrow(
+			"changed Web requires its fixed heavy entry",
+		);
+	});
+	it.each(["manifest", "directory"])("refuses removal of the Web %s", (removed) => {
+		const directory = webFixture();
+		rmSync(path.join(directory, removed === "manifest" ? "apps/web/package.json" : "apps/web"), {
+			recursive: true,
+		});
+		expect(() => select(["apps/web/package.json"], directory)).toThrow(
+			"changed Web requires its fixed heavy entry",
+		);
+	});
+	it("refuses an unreadable changed Web manifest", () => {
+		expect(() => select(["apps/web/package.json"], webFixture("{"))).toThrow(
+			"cannot inspect Web heavy manifest",
+		);
+	});
+	it("keeps unrelated and shared changes usable on a branch without Web", () => {
+		const directory = webFixture();
+		rmSync(path.join(directory, "apps/web"), { recursive: true });
+		expect(select(["apps/other/src/a.ts"], directory).heavy).toEqual([]);
+		expect(select([".github/workflows/ci.yml"], directory).heavy).toEqual([]);
 	});
 });
