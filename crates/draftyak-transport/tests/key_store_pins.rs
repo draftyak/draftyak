@@ -710,7 +710,7 @@ fn no_workspace_member_enables_the_mock_store_outside_dev_dependencies() {
     )));
 }
 
-fn mock_inventory<'a>(app: Option<&'a str>) -> Vec<(&'a str, &'a str)> {
+fn mock_inventory(app: Option<&str>) -> Vec<(&str, &str)> {
     let mut rows = vec![
         (CORE_PATHS[0], PROTOCOL_MANIFEST),
         (CORE_PATHS[1], MANIFEST),
