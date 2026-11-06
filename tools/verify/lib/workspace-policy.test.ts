@@ -755,15 +755,62 @@ describe("basename inventory", () => {
 		},
 	);
 
-	it.each(["trailing.", "lone-\ud800", "invalid-\uFFFD"])(
+	it("refuses decoded directory-name aliases before following the readable sibling", async () => {
+		const root = path.resolve("synthetic-successful-name-alias");
+		const alias = "alias-\uFFFD";
+		const reads: string[] = [];
+		let stats = 0;
+		const list: ReadDirectory = async (target) => {
+			reads.push(target);
+			// A malformed raw name and a literal U+FFFD name can decode identically.
+			// A string lookup would read the valid alias twice and miss the other tree.
+			if (target === root) return [entry(alias, true), entry(alias, true)];
+			if (target === path.join(root, alias)) return [];
+			throw new Error("DYTEST unexpected directory read");
+		};
+		const stat: StatPath = async () => {
+			stats++;
+			return kind(true);
+		};
+		await expect(namedFiles(".gate-sentinel", root, false, list, stat)).rejects.toThrow(
+			"file-name inventory failed",
+		);
+		expect(reads).toEqual([root]);
+		expect(stats).toBe(0);
+	});
+
+	it("refuses a lone-surrogate entry before the ordinary ASCII-name fast path", async () => {
+		const root = path.resolve("synthetic-successful-name-surrogate");
+		const reads: string[] = [];
+		let stats = 0;
+		const list: ReadDirectory = async (target) => {
+			reads.push(target);
+			return [entry("ordinary-\ud800")];
+		};
+		const stat: StatPath = async () => {
+			stats++;
+			return kind(true);
+		};
+		await expect(namedFiles(".gate-sentinel", root, true, list, stat)).rejects.toThrow(
+			"file-name inventory failed",
+		);
+		expect(reads).toEqual([root]);
+		expect(stats).toBe(0);
+	});
+
+	it.each([
+		["trailing.", 3],
+		["lone-\ud800", 1],
+		["invalid-\uFFFD", 1],
+	] as const)(
 		"does not mistake a still-listed non-round-tripping name %j for a removed folder",
-		async (name) => {
+		async (name, parentReads) => {
 			const fs = synthetic(
 				{ "": [[entry(name, true)]], [name]: [failure("ENOENT")] },
 				{ [name]: [failure("ENOENT")] },
 			);
 			await expect(fs.run()).rejects.toThrow("file-name inventory failed");
-			expect(fs.listed.filter((dir) => dir === "")).toHaveLength(3);
+			expect(fs.listed.filter((dir) => dir === "")).toHaveLength(parentReads);
 		},
 	);
 

@@ -1,7 +1,7 @@
 import { existsSync, globSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { runInventoryAfter } from "../lib/inventory-process.ts";
+import { joinInventoryExecution, startInventoryAfter } from "../lib/inventory-process.ts";
 import { capture } from "../lib/spawn.ts";
 import { approvedWorkspace } from "../lib/workspace-policy.ts";
 
@@ -197,7 +197,7 @@ describe("workspace policy", () => {
 	});
 
 	it("ignores .env.live, which only the main checkout may hold, and lists names only in the example", async () => {
-		await runInventoryAfter(async (git) => {
+		const execution = startInventoryAfter(async (git) => {
 			expect((await git("check-ignore", "-q", ".env.live")).code).toBe(0);
 			expect((await git("check-ignore", "-q", ".env.live.example")).code).toBe(1);
 			const values = read(".env.live.example")
@@ -206,5 +206,6 @@ describe("workspace policy", () => {
 				.filter((line) => !/^[A-Z][A-Z0-9_]*=$/.test(line));
 			expect(values).toEqual([]);
 		});
+		await joinInventoryExecution(execution);
 	}, 300_000);
 });
