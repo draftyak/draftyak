@@ -65,8 +65,9 @@ describe("heavyVitestConfig", () => {
 		nowhere: { description: "never", detect: () => false },
 		here: { description: "always", detect: () => true },
 	};
-	const heavyConfig = (mode: string, strict = "") => {
+	const heavyConfig = (mode: string, strict = "", ci?: string) => {
 		vi.stubEnv("DRAFTYAK_STRICT_SKIPS", strict);
+		if (ci !== undefined) vi.stubEnv("CI", ci);
 		try {
 			return heavyVitestConfig({ command: "serve", mode }, extra);
 		} finally {
@@ -96,10 +97,20 @@ describe("heavyVitestConfig", () => {
 			undefined,
 			undefined,
 		]);
-		const timeouts = ["test", "heavy", "live", "device"].map(
-			(mode) => heavyConfig(mode).test?.testTimeout,
-		);
-		expect(timeouts).toEqual([30_000, 300_000, 600_000, 600_000]);
+	});
+
+	it.each(["", "true"])("preserves platform and CI timeouts for every tier (CI=%j)", (ci) => {
+		const timeouts = ["test", "heavy", "live", "device"].map((mode) => {
+			const test = heavyConfig(mode, "", ci).test;
+			return [test?.testTimeout, test?.hookTimeout];
+		});
+		const unit = process.platform === "win32" && ci === "true" ? 90_000 : 30_000;
+		expect(timeouts).toEqual([
+			[unit, unit],
+			[300_000, 300_000],
+			[600_000, 600_000],
+			[600_000, 600_000],
+		]);
 	});
 
 	it("detects and describes the tags it shares with the spike kit as the kit does", () => {
