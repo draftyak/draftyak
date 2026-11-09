@@ -168,10 +168,18 @@ describe("native draft guards each refuse on their own", () => {
 			let refusedBinding = false;
 			expect(() =>
 				f.store.write((tx) => {
-					const operation = preparedRelease(f, tx, bound, snapshot.outbox);
+					const operation =
+						kind === "changed header"
+							? f.revisions.prepareLockInTransaction(
+									tx,
+									bound,
+									1,
+									f.revisions.currentInTransaction(tx, bound).lockId,
+									null,
+								)
+							: preparedRelease(f, tx, bound, snapshot.outbox);
 					if (kind === "changed header") {
-						const current = f.revisions.currentInTransaction(tx, bound);
-						f.revisions.setLockInTransaction(tx, bound, 1, current.lockId, null);
+						f.freeze.releaseInTransaction(tx, bound, snapshot.outbox);
 					}
 					try {
 						bind.call(f.revisions, kind === "retired transaction" ? retired : tx, operation);
@@ -522,7 +530,7 @@ describe("native draft guards each refuse on their own", () => {
 		expect(facts.snapshotHash).toBe(contentHash(snapshot));
 		expect([statusOf(f, first.id), statusOf(f, second)]).toEqual(["active", "consumed"]);
 	});
-	it("lets setLockInTransaction set only an active lock row of the same draft", async () => {
+	it("binds only a matching active row and preserves released and consumed locks", async () => {
 		const f = await fixture(),
 			input = f.make(),
 			bound = f.bind(input),
@@ -530,17 +538,35 @@ describe("native draft guards each refuse on their own", () => {
 			other = f.make(),
 			otherSnapshot = f.snapshot(f.create(other));
 		f.store.write((tx) => f.freeze.freezeInTransaction(tx, f.bind(other), 1, otherSnapshot));
-		const set = (expectedLock: string | null, lockId: string) => () =>
-			f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 1, expectedLock, lockId));
-		expect(set(null, newId())).toThrow(refused);
-		expect(set(null, lockRow(f, otherSnapshot.outbox).id)).toThrow(refused);
+		const stored = () =>
+			f.store.read((db) => ({
+				locks: db.all("SELECT * FROM native_draft_locks"),
+				headers: db.all("SELECT * FROM native_drafts"),
+				revisions: db.all("SELECT * FROM native_draft_revisions"),
+				events: db.all("SELECT * FROM audit_events"),
+				head: db.all("SELECT * FROM audit_meta"),
+			}));
+		const refuseBind = (lockId: string) => {
+			const before = stored();
+			expect(() =>
+				f.store.write((tx) => {
+					const operation = f.revisions.prepareLockInTransaction(tx, bound, 1, null, lockId);
+					return f.revisions.setPreparedLockInTransaction(tx, operation);
+				}),
+			).toThrow(refused);
+			expect(stored()).toEqual(before);
+		};
+		expect(Reflect.get(f.revisions, "setLockInTransaction")).toBeUndefined();
+		refuseBind(newId());
+		refuseBind(lockRow(f, otherSnapshot.outbox).id);
 		f.store.write((tx) => f.freeze.freezeInTransaction(tx, bound, 1, snapshot));
 		const active = lockRow(f, snapshot.outbox),
 			own = active.id;
-		f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 1, own, null));
-		expect(set(null, own)().lockId).toBe(own);
+		expect(f.revisions.current(bound).lockId).toBe(own);
 		f.store.write((tx) => f.freeze.releaseInTransaction(tx, bound, snapshot.outbox));
-		expect(set(null, own)).toThrow(refused);
+		expect(f.revisions.current(bound).lockId).toBeNull();
+		expect(statusOf(f, own)).toBe("released");
+		refuseBind(own);
 		f.store.write((tx) =>
 			tx.run("UPDATE native_draft_locks SET payload=?,audit_seq=?,mac=? WHERE id=?", [
 				active.payload,
@@ -549,13 +575,22 @@ describe("native draft guards each refuse on their own", () => {
 				own,
 			]),
 		);
-		expect(set(null, own)).toThrow(refused);
+		refuseBind(own);
 		const next = { ...snapshot, outbox: newId() },
 			proof = f.store.write((tx) => f.freeze.freezeInTransaction(tx, bound, 1, next));
 		f.store.write((tx) => f.freeze.consumeInTransaction(tx, proof));
 		const consumed = lockRow(f, next.outbox).id;
-		expect(set(consumed, consumed)).toThrow(refused);
+		const before = stored();
+		expect(() =>
+			f.store.write((tx) => f.revisions.prepareLockInTransaction(tx, bound, 1, consumed, null)),
+		).toThrow(refused);
+		expect(() =>
+			f.store.write((tx) => f.freeze.releaseInTransaction(tx, bound, next.outbox)),
+		).toThrow(refused);
+		expect(stored()).toEqual(before);
+		expect(statusOf(f, consumed)).toBe("consumed");
 		expect(f.revisions.current(bound).lockId).toBe(consumed);
+		f.store.read((db) => f.audit.verify(db));
 	});
 	it("refuses a consuming facade on another store object for the same file", async () => {
 		const f = await fixture(),
@@ -594,7 +629,7 @@ describe("native draft guards each refuse on their own", () => {
 		);
 		expect(f.revisions.current(bound).lockId).toBeNull();
 	});
-	it("refuses a direct lock change whose expected lock is stale, even for the draft's own lock", async () => {
+	it("refuses a release preparation whose revision or expected lock is stale", async () => {
 		const f = await fixture(),
 			input = f.make(),
 			bound = f.bind(input),
@@ -602,10 +637,10 @@ describe("native draft guards each refuse on their own", () => {
 		f.store.write((tx) => f.freeze.freezeInTransaction(tx, bound, 1, one));
 		const own = lockRow(f, one.outbox).id;
 		expect(() =>
-			f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 1, null, own)),
+			f.store.write((tx) => f.revisions.prepareLockInTransaction(tx, bound, 2, own, null)),
 		).toThrow(refused);
 		expect(() =>
-			f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 1, newId(), null)),
+			f.store.write((tx) => f.revisions.prepareLockInTransaction(tx, bound, 1, newId(), null)),
 		).toThrow(refused);
 		expect(() =>
 			f.store.write((tx) =>
