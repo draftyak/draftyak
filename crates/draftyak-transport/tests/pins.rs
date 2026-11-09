@@ -728,6 +728,12 @@ version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 "#;
 #[test]
+fn reqwest_lock_parent_refuses_an_unknown_scalar_field_in_a_valid_package() {
+    assert!(reqwest_lock_parent_matches(&packages(REQWEST_LOCK_FIXTURE)));
+    let unknown_scalar = format!("{REQWEST_LOCK_FIXTURE}\nunreviewed = true\n");
+    assert!(!reqwest_lock_parent_matches(&packages(&unknown_scalar)));
+}
+#[test]
 fn reqwest_lock_parent_accepts_only_exact_unversioned_or_versioned_reference() {
     let parsed = packages(REQWEST_LOCK_FIXTURE);
     assert_eq!(parsed[0].source.as_deref(), Some(LOCK_REGISTRY));
