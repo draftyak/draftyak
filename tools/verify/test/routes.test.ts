@@ -308,7 +308,7 @@ const PLANTED: Readonly<Record<string, (repo: TempRepo) => void>> = {
 
 // The gate's command-name line for one entry.
 const SHADOWED =
-	"reserved tripwire: 1 entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH, or are a package.json whose script starts a command by a path, which cmd.exe looks up there too; none of them was read";
+	"reserved tripwire: 1 entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH, or are a package.json whose script starts a command by a path, which cmd.exe looks up there too, or holds a %, which cmd.exe expands before it splits the line; none of them was read";
 
 describe("each gated entry on its own checkout", () => {
 	for (const [name, route] of Object.entries(ROUTES)) {

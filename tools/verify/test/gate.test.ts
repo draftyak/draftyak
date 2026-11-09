@@ -191,7 +191,7 @@ const LINE: Readonly<Record<string, string>> = {
 	npmrc:
 		"reserved tripwire: .npmrc path(s) in the root or a package folder; pnpm takes settings from them, node-options among them, before anything it starts; none of them was read",
 	"command-shadows":
-		"reserved tripwire: entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH, or are a package.json whose script starts a command by a path, which cmd.exe looks up there too; none of them was read",
+		"reserved tripwire: entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH, or are a package.json whose script starts a command by a path, which cmd.exe looks up there too, or holds a %, which cmd.exe expands before it splits the line; none of them was read",
 	"workspace-file":
 		"reserved tripwire: workspace file(s) aren't a listed regular file in the approved form; pnpm takes settings from it, nodeOptions and scriptShell among them, before anything it starts",
 };
@@ -866,6 +866,51 @@ describe("refusals before any read or child start", () => {
 		// Outside the quotes, a parenthesis still starts a command.
 		const outside = await gate(fixture(at('node -e "x()" && (cd sub && ./run)')));
 		refusedWith(outside, [LINE["command-shadows"] ?? ""]);
+	});
+
+	it("refuses a package.json whose script starts a command by a path that cmd.exe reads outside double quotes, or that holds a %, never reading what cmd.exe would find there", async () => {
+		const manifest = (test: string, config?: Readonly<Record<string, string>>): string =>
+			`${JSON.stringify({ name: "a", private: true, ...(config === undefined ? {} : { config }), scripts: { test } })}\n`;
+		const runnable = (rel: string): boolean => /\.(?:cmd|exe)$/i.test(rel);
+		const evil = ".\\zzevil";
+		const cases: readonly (readonly [string, string, Readonly<Record<string, string>>?])[] = [
+			["a caret's quote, which toggles nothing", `echo ^" & ${evil} & echo "`],
+			["a script in double quotes, which /s drops", `"echo & ${evil} & echo"`],
+			["a script in double quotes after a blank", ` "echo & ${evil} & echo"`],
+			["a script whose first and last quotes /s drops", `"echo" "a & ${evil}"`],
+			["a carriage return inside quotes", `echo "a\r" & ${evil}`],
+			["a carriage return in a drive's working folder, which cmd.exe drops", "echo a & C\r:zzevil"],
+			["a caret's >, which starts no redirection", `echo x ^>& ${evil}`],
+			["a % that gives a quote", `echo "%npm_package_config_q% & ${evil} & echo "`, { q: '"' }],
+			["a % that gives a command", "echo %npm_package_config_x%", { x: `& ${evil}` }],
+			[
+				"a % that gives a command's name",
+				"tsc -v & %npm_package_config_tool% run",
+				{ tool: "vitest" },
+			],
+		];
+		for (const [label, test, config] of cases) {
+			const repo = fixture({
+				files: { "packages/a/package.json": manifest(test, config) },
+				ignored: {
+					"packages/a/zzevil.cmd": "@echo off\r\n",
+					"packages/a/vitest.cmd": "@echo off\r\n",
+				},
+			});
+			const run = await gate(repo, { forbidden: runnable });
+			expect([label, uncounted(shown(run))]).toEqual([label, [LINE["command-shadows"]]]);
+			refusedWith(run, [LINE["command-shadows"] ?? ""]);
+			expect([label, run.opens.filter(runnable)]).toEqual([label, []]);
+			const line = shown(await gate(repo, { names: true, forbidden: runnable }))[0] ?? "";
+			expect([label, line.endsWith(": packages/a/package.json (unsupported)")]).toEqual([
+				label,
+				true,
+			]);
+		}
+		// Truly quoted, and quoted after a caret's caret: one echo command each.
+		for (const test of [`echo " & ${evil} & echo "`, `echo ^^" & ${evil} & echo "`]) {
+			passed(await gate(fixture({ files: { "packages/a/package.json": manifest(test) } })));
+		}
 	});
 
 	it("refuses a package.json whose script starts a command from a drive's own working folder, which cmd.exe runs from the package folder, in either case and on any drive, never reading what it would find there", async () => {
