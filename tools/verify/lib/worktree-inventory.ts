@@ -98,7 +98,9 @@ export function createInventoryHost(
 		if (stopped) throw failed();
 		activeFs += 1;
 		try {
-			return await work();
+			const result = await work();
+			if (stopped) throw failed();
+			return result;
 		} finally {
 			activeFs -= 1;
 			if (activeFs === 0) {

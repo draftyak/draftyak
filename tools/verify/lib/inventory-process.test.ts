@@ -1463,3 +1463,187 @@ describe("original precheck settlement receipt", () => {
 		}
 	});
 });
+
+const unknownWorkerFields = {
+	workerPhase: -1,
+	workerRoots: -1,
+	workerPendingGit: -1,
+	workerPendingFs: -1,
+	workerDirectories: -1,
+	workerEntries: -1,
+	workerElapsedMs: -1,
+};
+function expectWorkerFields(error: unknown, fields: Readonly<Record<string, number>>): void {
+	expect(error).toBeInstanceOf(Error);
+	for (const [name, value] of Object.entries(fields))
+		expect((error as Error).message).toMatch(new RegExp(`${name}=${value}(?:,|\\])`));
+}
+
+describe("worker progress is diagnostic data rather than completion authority", () => {
+	it.each(["complete", "partial"] as const)(
+		"reports only the %s split frame at the original timeout",
+		async (kind) => {
+			const h = precheckHarness();
+			const execution = startInventoryAfter(async () => {}, h.runtime);
+			const joined = joinInventoryExecution(execution);
+			const joinState = outcome(joined);
+			const failure = execution.reported.catch((error: unknown) => error);
+			void joined.catch(() => {});
+			try {
+				await turn();
+				const child = originalChild(h, 0);
+				const frame = Buffer.from("I1 0 3 3731 2 64 11 99 42000\n");
+				child.stderr.data(frame.subarray(0, 11));
+				if (kind === "complete") child.stderr.data(frame.subarray(11));
+				h.clock.advance(299_875);
+				const error = await failure;
+				expectWorkerFields(
+					error,
+					kind === "complete"
+						? {
+								workerPhase: 3,
+								workerRoots: 3731,
+								workerPendingGit: 2,
+								workerPendingFs: 64,
+								workerDirectories: 11,
+								workerEntries: 99,
+								workerElapsedMs: 42000,
+							}
+						: unknownWorkerFields,
+				);
+				expect((error as Error).message).not.toContain("I1 ");
+				expect(child.closed).toBe(false);
+				expect(child.stopCalls).toBe(1);
+				expect(child.killCalls).toBe(1);
+				expect(joinState()).toBe("pending");
+				child.close(1);
+				await expect(joined).rejects.toThrow("file-name inventory failed");
+			} finally {
+				await retireReceipt(h, execution, joined);
+			}
+		},
+	);
+
+	it("does not echo malformed worker prose or retain its previous numeric frame", async () => {
+		const h = precheckHarness();
+		const execution = startInventoryAfter(async () => {}, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		const failure = execution.reported.catch((error: unknown) => error);
+		void joined.catch(() => {});
+		try {
+			await turn();
+			const child = originalChild(h, 0);
+			child.stderr.data(Buffer.from("I1 0 3 3731 0 1 11 99 42000\n"));
+			child.stderr.data(Buffer.from("DYTEST_PRIVATE_FRAME /DYTEST_PRIVATE_PATH\n"));
+			expect(child.stopCalls + child.killCalls).toBe(0);
+			h.clock.advance(299_875);
+			const error = await failure;
+			expectWorkerFields(error, unknownWorkerFields);
+			expect((error as Error).message).not.toContain("DYTEST_PRIVATE");
+			expect((error as Error).message).not.toContain("I1 ");
+		} finally {
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it("never treats forged final zero-pending progress and a sentinel as an original close", async () => {
+		const h = precheckHarness();
+		const execution = startInventoryAfter(async () => {}, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		const reportState = outcome(execution.reported),
+			closeState = outcome(execution.closed),
+			joinState = outcome(joined);
+		void execution.reported.catch(() => {});
+		void joined.catch(() => {});
+		try {
+			await turn();
+			const child = originalChild(h, 0);
+			child.stderr.data(Buffer.from("I1 2 5 3731 0 0 5000 8000 9000\n"));
+			child.stdout.data(complete);
+			await turn();
+			expect([reportState(), closeState(), joinState()]).toEqual(["pending", "pending", "pending"]);
+			h.clock.advance(299_875);
+			await turn();
+			expect([reportState(), closeState(), joinState()]).toEqual(["refused", "pending", "pending"]);
+			expect(child.closed).toBe(false);
+			h.clock.advance(299_900);
+			child.close(0);
+			await expect(joined).rejects.toThrow("file-name inventory failed");
+			expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: 299_900 });
+			expect(joinState()).toBe("refused");
+		} finally {
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it("does not let valid progress replace the exact stdout sentinel", async () => {
+		const h = precheckHarness();
+		const execution = startInventoryAfter(async () => {}, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		void execution.reported.catch(() => {});
+		void joined.catch(() => {});
+		try {
+			await turn();
+			const child = originalChild(h, 0);
+			child.stderr.data(Buffer.from("I1 2 4 3731 0 0 5000 8000 9000\n"));
+			child.close(0);
+			await expect(joined).rejects.toThrow("file-name inventory failed");
+			expect(await execution.closed).toEqual({ kind: "closed", originals: 1, closedAt: 0 });
+		} finally {
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it("never feeds original Git precheck stderr into the worker observation", async () => {
+		const h = precheckHarness();
+		const execution = startInventoryAfter(originalChecks, h.runtime);
+		const joined = joinInventoryExecution(execution);
+		const failure = execution.reported.catch((error: unknown) => error);
+		void joined.catch(() => {});
+		try {
+			await turn();
+			const frame = Buffer.from("I1 0 3 3731 2 64 11 99 42000\n");
+			originalChild(h, 0).stderr.data(frame);
+			originalChild(h, 0).close(0);
+			await turn();
+			originalChild(h, 1).stderr.data(frame);
+			originalChild(h, 1).close(1);
+			await turn();
+			expect(h.commands).toHaveLength(3);
+			expect(await execution.prechecked).toBe("settled");
+			h.clock.advance(299_875);
+			expectWorkerFields(await failure, unknownWorkerFields);
+		} finally {
+			await retireReceipt(h, execution, joined);
+		}
+	});
+
+	it.each(["non-Buffer", "over-cap"] as const)(
+		"discards a valid observation after an original worker %s stderr refusal",
+		async (kind) => {
+			const h = precheckHarness();
+			const execution = startInventoryAfter(async () => {}, h.runtime);
+			const joined = joinInventoryExecution(execution);
+			const failure = execution.reported.catch((error: unknown) => error);
+			void joined.catch(() => {});
+			try {
+				await turn();
+				const child = originalChild(h, 0);
+				child.stderr.data(Buffer.from("I1 0 3 3731 2 64 11 99 42000\n"));
+				if (kind === "non-Buffer")
+					Reflect.apply(child.stderr.data, child.stderr, ["DYTEST_PRIVATE_BAD_CHUNK"]);
+				else child.stderr.data(Buffer.alloc(4097, 65));
+				expect(child.stopCalls).toBe(1);
+				expect(child.closed).toBe(false);
+				h.clock.advance(299_875);
+				const error = await failure;
+				expectWorkerFields(error, unknownWorkerFields);
+				expect((error as Error).message).not.toContain("DYTEST_PRIVATE");
+				expect((error as Error).message).not.toContain("I1 ");
+				expect(child.closed).toBe(false);
+			} finally {
+				await retireReceipt(h, execution, joined);
+			}
+		},
+	);
+});
