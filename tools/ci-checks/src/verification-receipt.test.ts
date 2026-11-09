@@ -21,6 +21,7 @@ const treeSha = "d".repeat(40);
 const lockfileSha256 = "e".repeat(64);
 const nodeVersion = "26.12.0";
 type JobName = (typeof jobNames)[number];
+const baseRequiredJobNames = ["changes", "cheap", "full", "windows"] as const;
 interface TestJob {
 	result: string;
 	outputs: Record<string, unknown>;
@@ -33,6 +34,7 @@ const source = (extra: Partial<Source> = {}): Source => ({
 	lockfileSha256,
 	nodeVersion,
 	platform: "linux",
+	architecture: "x64",
 	...extra,
 });
 const job = (platform = "linux"): TestJob => ({
@@ -47,11 +49,18 @@ const needs = (docsOnly = false): Needs => ({
 			"docs-only": String(docsOnly),
 			areas: JSON.stringify(docsOnly ? ["docs-only"] : ["ts"]),
 			"template-smoke": "false",
+			"native-transport": "false",
+			"ordinary-heavy": "",
+			"spike-matrix": JSON.stringify({ include: [{ id: "spike-empty", spike: "" }] }),
+			"spike-count": "0",
 		},
 	},
 	cheap: job(),
 	full: job(),
+	spikes: { result: "skipped", outputs: {} },
+	heavy: { result: "skipped", outputs: {} },
 	windows: job("win32"),
+	macos: { result: "skipped", outputs: {} },
 });
 const input = (extra: Partial<ReceiptInput> = {}, jobs = needs()): ReceiptInput => ({
 	repository: "example/project",
@@ -69,6 +78,24 @@ const input = (extra: Partial<ReceiptInput> = {}, jobs = needs()): ReceiptInput 
 });
 const skip = (jobs: Needs, name: JobName): void => {
 	jobs[name] = { result: "skipped", outputs: {} };
+};
+const listOutput = (value: unknown): string[] =>
+	typeof value === "string" && value !== "" ? value.replaceAll("\r\n", "\n").split("\n") : [];
+const completeSelectedGroups = (jobs: Needs): void => {
+	const shards = listOutput(jobs.changes.outputs.spikes)
+		.sort()
+		.map((spike, index) => ({ id: `spike-${String(index + 1).padStart(3, "0")}`, spike }));
+	jobs.changes.outputs["spike-matrix"] = JSON.stringify({
+		include: shards.length ? shards : [{ id: "spike-empty", spike: "" }],
+	});
+	jobs.changes.outputs["spike-count"] = String(shards.length);
+	jobs.spikes = shards.length
+		? { ...job(), outputs: { ...job().outputs, completed: JSON.stringify(shards) } }
+		: { result: "skipped", outputs: {} };
+	const heavy = listOutput(jobs.changes.outputs["ordinary-heavy"]);
+	jobs.heavy = heavy.length
+		? { ...job(), outputs: { ...job().outputs, completed: JSON.stringify(heavy) } }
+		: { result: "skipped", outputs: {} };
 };
 const changeSource = (jobs: Needs, name: JobName, extra: Record<string, unknown>): void => {
 	jobs[name].outputs.source = JSON.stringify({
@@ -89,6 +116,8 @@ describe("CI verification receipts", () => {
 			spikes: [],
 			heavy: [],
 			templateSmoke: false,
+			nativeTransport: false,
+			ordinaryHeavy: [],
 		});
 		expect(Object.keys(receipt).sort()).toEqual(
 			[
@@ -108,8 +137,14 @@ describe("CI verification receipts", () => {
 			attempt: "2",
 			event: "pull_request",
 		});
-		expect(Object.keys(receipt.jobResults)).toEqual(["changes", "cheap", "full", "windows"]);
-		expect(Object.values(receipt.jobResults).every((entry) => entry.required)).toBe(true);
+		expect(Object.keys(receipt.jobResults)).toEqual(jobNames);
+		expect(jobNames).toEqual(["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"]);
+		expect(baseRequiredJobNames.every((name) => receipt.jobResults[name].required)).toBe(true);
+		for (const name of ["spikes", "heavy"] as const) {
+			expect(receipt.jobResults[name]).toMatchObject({ required: false, result: "skipped" });
+			expect(receipt.jobResults[name].source).toBeNull();
+		}
+		expect(receipt.jobResults.macos).toMatchObject({ required: false, result: "skipped" });
 		expect(JSON.stringify(buildReceipt(input()))).toBe(JSON.stringify(receipt));
 	});
 
@@ -158,7 +193,11 @@ describe("CI verification receipts", () => {
 		expect(receipt.passed).toBe(true);
 		expect(receipt.coverage).toBe(coverage);
 		for (const name of jobNames) {
-			const omitted = (skipped as readonly string[]).includes(name);
+			const omitted =
+				name === "macos" ||
+				name === "spikes" ||
+				name === "heavy" ||
+				(skipped as readonly string[]).includes(name);
 			expect(receipt.jobResults[name]).toMatchObject({
 				result: omitted ? "skipped" : "success",
 				required: !omitted,
@@ -167,17 +206,20 @@ describe("CI verification receipts", () => {
 		}
 	});
 
-	it.each(jobNames)("fails when required %s is skipped, failed or cancelled", (name) => {
-		for (const result of ["skipped", "failure", "cancelled"]) {
-			const jobs = needs();
-			jobs[name] = { result, outputs: {} };
-			const receipt = buildReceipt(input({}, jobs));
-			expect(receipt.passed, `${name}: ${result}`).toBe(false);
-			expect(receipt.jobResults[name].result).toBe(result);
-			expect(receipt.problems).toContain(`${name}: ${result}`);
-			if (name === "changes") expect(receipt.selection).toBeNull();
-		}
-	});
+	it.each(baseRequiredJobNames)(
+		"fails when required %s is skipped, failed or cancelled",
+		(name) => {
+			for (const result of ["skipped", "failure", "cancelled"]) {
+				const jobs = needs();
+				jobs[name] = { result, outputs: {} };
+				const receipt = buildReceipt(input({}, jobs));
+				expect(receipt.passed, `${name}: ${result}`).toBe(false);
+				expect(receipt.jobResults[name].result).toBe(result);
+				expect(receipt.problems).toContain(`${name}: ${result}`);
+				if (name === "changes") expect(receipt.selection).toBeNull();
+			}
+		},
+	);
 
 	it.each(["failure", "cancelled"])("does not forgive an optional job's %s", (result) => {
 		const jobs = needs(true);
@@ -189,7 +231,7 @@ describe("CI verification receipts", () => {
 		expect(receipt.problems).toContain(`full: ${result}`);
 	});
 
-	it.each(jobNames)("requires source metadata for a successful %s", (name) => {
+	it.each(baseRequiredJobNames)("requires source metadata for a successful %s", (name) => {
 		const jobs = needs();
 		delete jobs[name].outputs.source;
 		const receipt = buildReceipt(input({}, jobs));
@@ -239,7 +281,7 @@ describe("CI verification receipts", () => {
 		}
 	});
 
-	it("refuses an unrecognized fifth job instead of ignoring its failure", () => {
+	it("refuses an unrecognized job instead of ignoring its failure", () => {
 		const jobs = { ...needs(), python: { result: "failure", outputs: {} } };
 		expect(() => buildReceipt(input({ needs: JSON.stringify(jobs) }))).toThrow(
 			new UsageError("unknown job in CI metadata"),
@@ -269,7 +311,8 @@ describe("CI verification receipts", () => {
 		["treeSha", "d".repeat(39)],
 		["lockfileSha256", "e".repeat(63)],
 		["nodeVersion", "26.12.0\nextra"],
-		["platform", "darwin"],
+		["platform", "freebsd"],
+		["architecture", "ia32"],
 	])("refuses invalid %s syntax", (field, value) => {
 		const jobs = needs();
 		changeSource(jobs, "cheap", { [field]: value });
@@ -321,10 +364,414 @@ describe("CI verification receipts", () => {
 	});
 });
 
+describe("selected spike and ordinary heavy receipts", () => {
+	const groupNames = ["spikes", "heavy"] as const;
+	const spikeCompletions = [
+		{ id: "spike-001", spike: "spikes/a-first" },
+		{ id: "spike-002", spike: "spikes/z-last" },
+	];
+	const heavyCompletions = ["./packages/protocol", "...{./plugins/calendar}"];
+	const selectedNeeds = (): Needs => {
+		const jobs = needs();
+		Object.assign(jobs.changes.outputs, {
+			areas:
+				'["spikes/z-last","spikes/a-first","heavy:./packages/protocol","heavy:...{./plugins/calendar}"]',
+			spikes: "spikes/z-last\nspikes/a-first",
+			heavy: heavyCompletions.join("\n"),
+			"ordinary-heavy": heavyCompletions.join("\n"),
+		});
+		completeSelectedGroups(jobs);
+		return jobs;
+	};
+	const completionProblem = (name: string) =>
+		`${name}: missing or mismatched selected-suite completion`;
+	const unselectedProblem = (name: string) =>
+		`${name}: unexpected execution or completion without selected suites`;
+
+	it("binds sorted spike identities and every ordinary heavy selection to separate successful jobs", () => {
+		const jobs = selectedNeeds();
+		expect(JSON.parse(String(jobs.changes.outputs["spike-matrix"]))).toEqual({
+			include: spikeCompletions,
+		});
+		expect(jobs.changes.outputs["spike-count"]).toBe("2");
+		expect(JSON.parse(String(jobs.spikes.outputs.completed))).toEqual(spikeCompletions);
+		expect(JSON.parse(String(jobs.heavy.outputs.completed))).toEqual(heavyCompletions);
+		const receipt = buildReceipt(input({}, jobs));
+		expect(receipt.passed).toBe(true);
+		expect(receipt.problems).toEqual([]);
+		expect(receipt.selection?.spikes).toEqual(["spikes/z-last", "spikes/a-first"]);
+		expect(receipt.selection?.ordinaryHeavy).toEqual(heavyCompletions);
+		for (const name of groupNames) {
+			expect(receipt.jobResults[name]).toMatchObject({ required: true, result: "success" });
+			expect(receipt.jobResults[name].source).toEqual(source());
+			expect(renderSummary(receipt)).toContain(`| ${name} | success | yes |`);
+		}
+	});
+
+	it.each(groupNames)(
+		"does not replace required %s execution with a successful full job",
+		(name) => {
+			for (const result of ["skipped", "failure", "cancelled"]) {
+				const jobs = selectedNeeds();
+				jobs[name] = { result, outputs: {} };
+				const receipt = buildReceipt(input({}, jobs));
+				expect(receipt.jobResults.full.result).toBe("success");
+				expect(receipt.jobResults[name].required).toBe(true);
+				expect(receipt.passed).toBe(false);
+				expect(receipt.problems).toContain(`${name}: ${result}`);
+				expect(receipt.problems).toContain(completionProblem(name));
+			}
+		},
+	);
+
+	it.each(groupNames)("refuses a missing %s aggregation record", (name) => {
+		const omitted: Partial<Needs> = selectedNeeds();
+		delete omitted[name];
+		expect(() => buildReceipt(input({ needs: JSON.stringify(omitted) }))).toThrow(UsageError);
+	});
+
+	it.each(groupNames)("requires independent source metadata for selected %s", (name) => {
+		const jobs = selectedNeeds();
+		delete jobs[name].outputs.source;
+		const receipt = buildReceipt(input({}, jobs));
+		expect(receipt.passed).toBe(false);
+		expect(receipt.problems).toContain(`${name}: missing source metadata`);
+	});
+
+	it.each(groupNames)("does not accept changed selected %s checkout or tree metadata", (name) => {
+		for (const [field, value, problem] of [
+			["checkoutSha", headSha, "checkout differs from tested SHA"],
+			["treeSha", "f".repeat(40), "tree differs between jobs"],
+		] as const) {
+			const jobs = selectedNeeds();
+			changeSource(jobs, name, { [field]: value });
+			const receipt = buildReceipt(input({}, jobs));
+			expect(receipt.passed).toBe(false);
+			expect(receipt.problems).toContain(`${name}: ${problem}`);
+		}
+	});
+
+	it.each(groupNames)(
+		"refuses missing or non-string selected %s completion despite success",
+		(name) => {
+			for (const value of [undefined, null, false, 0, [], {}]) {
+				const jobs = selectedNeeds();
+				jobs[name].outputs.completed = value;
+				const receipt = buildReceipt(input({}, jobs));
+				expect(receipt.jobResults[name].result).toBe("success");
+				expect(receipt.passed).toBe(false);
+				expect(receipt.problems).toContain(completionProblem(name));
+			}
+		},
+	);
+
+	it.each(groupNames)("refuses malformed selected %s completion JSON", (name) => {
+		for (const value of ["", "{", "[not-json]"]) {
+			const jobs = selectedNeeds();
+			jobs[name].outputs.completed = value;
+			expect(() => buildReceipt(input({}, jobs))).toThrow(UsageError);
+		}
+	});
+
+	it.each(groupNames)("refuses parseable %s completion with the wrong JSON shape", (name) => {
+		for (const value of ["null", "true", "{}", '"passed"']) {
+			const jobs = selectedNeeds();
+			jobs[name].outputs.completed = value;
+			const receipt = buildReceipt(input({}, jobs));
+			expect(receipt.passed).toBe(false);
+			expect(receipt.problems).toContain(completionProblem(name));
+		}
+	});
+
+	it("requires every selected spike exactly once with its deterministic identity and order", () => {
+		for (const completed of [
+			[],
+			[spikeCompletions[0]],
+			[spikeCompletions[1], spikeCompletions[0]],
+			[spikeCompletions[0], spikeCompletions[0]],
+			[{ id: "spike-002", spike: "spikes/a-first" }, spikeCompletions[1]],
+			[{ id: "spike-001", spike: "spikes/unselected" }, spikeCompletions[1]],
+			[...spikeCompletions, { id: "spike-003", spike: "spikes/unselected" }],
+		]) {
+			const jobs = selectedNeeds();
+			jobs.spikes.outputs.completed = JSON.stringify(completed);
+			const receipt = buildReceipt(input({}, jobs));
+			expect(receipt.passed).toBe(false);
+			expect(receipt.problems).toContain(completionProblem("spikes"));
+		}
+	});
+
+	it("requires the exact selected ordinary heavy filters without subset, duplicate or invented completion", () => {
+		for (const completed of [
+			[],
+			[heavyCompletions[0]],
+			[heavyCompletions[1], heavyCompletions[0]],
+			[heavyCompletions[0], heavyCompletions[0]],
+			["./tools/unselected", heavyCompletions[1]],
+			[...heavyCompletions, "./tools/unselected"],
+		]) {
+			const jobs = selectedNeeds();
+			jobs.heavy.outputs.completed = JSON.stringify(completed);
+			const receipt = buildReceipt(input({}, jobs));
+			expect(receipt.passed).toBe(false);
+			expect(receipt.problems).toContain(completionProblem("heavy"));
+		}
+	});
+
+	it.each(groupNames)("bounds %s completion independently of overall metadata", (name) => {
+		const jobs = selectedNeeds();
+		const exact = String(jobs[name].outputs.completed).padEnd(32 * 1024, " ");
+		jobs[name].outputs.completed = exact;
+		expect(JSON.stringify(jobs).length).toBeLessThan(64 * 1024);
+		expect(buildReceipt(input({}, jobs)).passed).toBe(true);
+		jobs[name].outputs.completed = `${exact} `;
+		const receipt = buildReceipt(input({}, jobs));
+		expect(receipt.passed).toBe(false);
+		expect(receipt.problems).toContain(completionProblem(name));
+	});
+
+	it.each([
+		["spike-matrix", undefined],
+		["spike-matrix", "{"],
+		["spike-matrix", '{"include":[]}'],
+		["spike-matrix", '{"include":[{"id":"spike-empty","spike":""}]}'],
+		["spike-count", undefined],
+		["spike-count", 2],
+		["spike-count", "0"],
+		["spike-count", "02"],
+		["spike-count", "2\n"],
+	] as const)("refuses missing, malformed or stale classifier %s binding %#", (name, value) => {
+		const jobs = selectedNeeds();
+		jobs.changes.outputs[name] = value;
+		expect(() => buildReceipt(input({}, jobs))).toThrow(UsageError);
+	});
+
+	it("rejects an exact-count matrix that swaps selected spike identities", () => {
+		const jobs = selectedNeeds();
+		jobs.changes.outputs["spike-matrix"] = JSON.stringify({
+			include: [...spikeCompletions].reverse(),
+		});
+		expect(() => buildReceipt(input({}, jobs))).toThrow(UsageError);
+	});
+
+	it("bounds the spike matrix independently of its valid parsed contents", () => {
+		const jobs = selectedNeeds();
+		const exact = String(jobs.changes.outputs["spike-matrix"]).padEnd(32 * 1024, " ");
+		jobs.changes.outputs["spike-matrix"] = exact;
+		expect(JSON.stringify(jobs).length).toBeLessThan(64 * 1024);
+		expect(buildReceipt(input({}, jobs)).passed).toBe(true);
+		jobs.changes.outputs["spike-matrix"] = `${exact} `;
+		expect(() => buildReceipt(input({}, jobs))).toThrow(UsageError);
+	});
+
+	it("keeps the empty matrix placeholder out of collector completion", () => {
+		const jobs = needs();
+		expect(jobs.changes.outputs["spike-count"]).toBe("0");
+		expect(JSON.parse(String(jobs.changes.outputs["spike-matrix"]))).toEqual({
+			include: [{ id: "spike-empty", spike: "" }],
+		});
+		expect(buildReceipt(input({}, jobs)).passed).toBe(true);
+		const missingPlaceholder = structuredClone(jobs);
+		missingPlaceholder.changes.outputs["spike-matrix"] = '{"include":[]}';
+		expect(() => buildReceipt(input({}, missingPlaceholder))).toThrow(UsageError);
+		jobs.spikes.outputs.completed = JSON.stringify([{ id: "spike-empty", spike: "" }]);
+		const receipt = buildReceipt(input({}, jobs));
+		expect(receipt.passed).toBe(false);
+		expect(receipt.problems).toContain(unselectedProblem("spikes"));
+	});
+
+	it.each(groupNames)("refuses fabricated empty-selection %s execution or completion", (name) => {
+		for (const result of ["success", "failure", "cancelled"]) {
+			const jobs = needs();
+			jobs[name] = result === "success" ? job() : { result, outputs: {} };
+			jobs[name].outputs.completed = "[]";
+			const receipt = buildReceipt(input({}, jobs));
+			expect(receipt.jobResults[name].required).toBe(false);
+			expect(receipt.passed).toBe(false);
+			expect(receipt.problems).toContain(unselectedProblem(name));
+			if (result !== "success") expect(receipt.problems).toContain(`${name}: ${result}`);
+		}
+		const jobs = needs();
+		jobs[name].outputs.completed = "[]";
+		const skipped = buildReceipt(input({}, jobs));
+		expect(skipped.passed).toBe(false);
+		expect(skipped.problems).toContain(unselectedProblem(name));
+	});
+
+	it.each(["docs", "draft"] as const)(
+		"records selected but unexecuted groups for %s without a pass marker",
+		(scope) => {
+			const jobs = selectedNeeds();
+			jobs.changes.outputs["docs-only"] = String(scope === "docs");
+			for (const name of ["full", "windows", ...groupNames] as const) skip(jobs, name);
+			const extra = { draft: scope === "draft" };
+			const receipt = buildReceipt(input(extra, jobs));
+			expect(receipt.passed).toBe(true);
+			expect(receipt.coverage).toBe(scope);
+			for (const name of groupNames) {
+				expect(receipt.jobResults[name]).toMatchObject({ required: false, result: "skipped" });
+				expect(receipt.jobResults[name].source).toBeNull();
+				expect(renderSummary(receipt)).toContain(`| ${name} | skipped | no |`);
+			}
+			for (const name of groupNames) {
+				const executed = structuredClone(jobs);
+				executed[name] = { ...job(), outputs: { ...job().outputs, completed: "[]" } };
+				const unexpected = buildReceipt(input(extra, executed));
+				expect(unexpected.passed).toBe(false);
+				expect(unexpected.problems).toContain(unselectedProblem(name));
+			}
+		},
+	);
+});
+
+describe("selected three-platform native transport receipts", () => {
+	const nativeNames = ["full", "windows", "macos"] as const;
+	const nativeNeeds = (): Needs => {
+		const jobs = needs();
+		Object.assign(jobs.changes.outputs, {
+			areas: '["rust:crates","heavy:./tools/transport-tests","heavy:./packages/protocol"]',
+			rust: "crates",
+			heavy: "./tools/transport-tests\n./packages/protocol",
+			"native-transport": "true",
+			"ordinary-heavy": "./packages/protocol",
+		});
+		completeSelectedGroups(jobs);
+		jobs.full.outputs["native-transport"] = "passed";
+		jobs.windows.outputs["native-transport"] = "passed";
+		jobs.macos = {
+			result: "success",
+			outputs: {
+				source: JSON.stringify(source({ platform: "darwin", architecture: "arm64" })),
+				"native-transport": "passed",
+			},
+		};
+		return jobs;
+	};
+	it("requires actual Linux, Windows and Apple-silicon completion with unchanged source bindings", () => {
+		const receipt = buildReceipt(input({}, nativeNeeds()));
+		expect(receipt.passed).toBe(true);
+		expect(receipt.coverage).toBe("native-three-platforms");
+		expect(receipt.selection?.heavy).toEqual(["./tools/transport-tests", "./packages/protocol"]);
+		expect(receipt.selection?.ordinaryHeavy).toEqual(["./packages/protocol"]);
+		for (const name of nativeNames) {
+			expect(receipt.jobResults[name]).toMatchObject({
+				required: true,
+				nativeRequired: true,
+				nativeTransport: "passed",
+			});
+		}
+		expect(receipt.jobResults.macos.source).toEqual(
+			source({ platform: "darwin", architecture: "arm64" }),
+		);
+		expect(renderSummary(receipt)).toContain("darwin/arm64");
+	});
+	it.each(nativeNames)("refuses selected %s fail, cancellation and skip", (name) => {
+		for (const result of ["failure", "cancelled", "skipped"]) {
+			const jobs = nativeNeeds();
+			jobs[name] = { result, outputs: {} };
+			const receipt = buildReceipt(input({}, jobs));
+			expect(receipt.passed).toBe(false);
+			expect(receipt.problems).toContain(`${name}: ${result}`);
+			expect(receipt.problems).toContain(`${name}: missing native transport completion`);
+		}
+	});
+	it.each(nativeNames)(
+		"does not count ordinary success as selected native %s completion",
+		(name) => {
+			const jobs = nativeNeeds();
+			delete jobs[name].outputs["native-transport"];
+			const receipt = buildReceipt(input({}, jobs));
+			expect(receipt.passed).toBe(false);
+			expect(receipt.problems).toContain(`${name}: missing native transport completion`);
+		},
+	);
+	it.each(nativeNames)(
+		"refuses missing selected %s source despite its completion marker",
+		(name) => {
+			const jobs = nativeNeeds();
+			delete jobs[name].outputs.source;
+			expect(buildReceipt(input({}, jobs)).problems).toContain(`${name}: missing source metadata`);
+		},
+	);
+	it.each([
+		["platform", "linux", "unexpected runner platform"],
+		["architecture", "x64", "unexpected runner architecture"],
+		["checkoutSha", headSha, "checkout differs from tested SHA"],
+		["treeSha", "f".repeat(40), "tree differs between jobs"],
+		["lockfileSha256", "f".repeat(64), "lockfile differs between jobs"],
+		["nodeVersion", "26.1.0", "Node differs from the pin"],
+	])("keeps the Mac source %s independently bound", (field, value, problem) => {
+		const jobs = nativeNeeds();
+		jobs.macos.outputs.source = JSON.stringify({
+			...source({ platform: "darwin", architecture: "arm64" }),
+			[field]: value,
+		});
+		expect(buildReceipt(input({}, jobs)).problems).toContain(`macos: ${problem}`);
+	});
+	it("refuses missing Mac aggregation instead of treating four jobs as a native pass", () => {
+		const jobs: Partial<Needs> = nativeNeeds();
+		delete jobs.macos;
+		expect(() => buildReceipt(input({ needs: JSON.stringify(jobs) }))).toThrow();
+	});
+	it.each([
+		{ "native-transport": "false" },
+		{ "native-transport": undefined },
+		{ "ordinary-heavy": "" },
+		{ "ordinary-heavy": "./tools/transport-tests\n./packages/protocol" },
+		{ rust: "" },
+	])("refuses omitted, hidden or duplicated native selection %#", (change) => {
+		const jobs = nativeNeeds();
+		Object.assign(jobs.changes.outputs, change);
+		expect(() => buildReceipt(input({}, jobs))).toThrow();
+	});
+	it.each(["true", "ready", "skipped", 1])("refuses an invented completion %s", (value) => {
+		const jobs = nativeNeeds();
+		jobs.macos.outputs["native-transport"] = value;
+		expect(() => buildReceipt(input({}, jobs))).toThrow();
+	});
+	it("does not run all ordinary heavy packages when transport is the only selected wrapper", () => {
+		const jobs = nativeNeeds();
+		jobs.changes.outputs.heavy = "./tools/transport-tests";
+		jobs.changes.outputs["ordinary-heavy"] = "";
+		skip(jobs, "heavy");
+		const receipt = buildReceipt(input({}, jobs));
+		expect(receipt.passed).toBe(true);
+		expect(receipt.selection?.ordinaryHeavy).toEqual([]);
+		expect(renderSummary(receipt)).toContain("| Ordinary heavy filters | none |");
+	});
+	it("requires Windows native execution on an explicitly selected item dispatch", () => {
+		const jobs = nativeNeeds();
+		const extra = { event: "workflow_dispatch", ref: "refs/heads/m1b", baseSha: null };
+		expect(buildReceipt(input(extra, jobs)).passed).toBe(true);
+		skip(jobs, "windows");
+		expect(buildReceipt(input(extra, jobs)).passed).toBe(false);
+	});
+	it.each([false, true])("does not claim native execution for docs/draft scope %s", (docs) => {
+		const jobs = nativeNeeds();
+		jobs.changes.outputs["docs-only"] = String(docs);
+		for (const name of nativeNames) skip(jobs, name);
+		skip(jobs, "heavy");
+		const receipt = buildReceipt(input({ draft: !docs }, jobs));
+		expect(receipt.passed).toBe(true);
+		for (const name of nativeNames) {
+			expect(receipt.jobResults[name]).toMatchObject({
+				nativeRequired: false,
+				nativeTransport: null,
+			});
+		}
+		expect(receipt.coverage).toBe(docs ? "docs" : "draft");
+		expect(renderSummary(receipt)).toContain("| macos | no | not executed | not run |");
+	});
+});
+
 describe("verification receipt selection metadata", () => {
 	const selected = (outputs: Record<string, unknown>) => {
 		const jobs = needs();
 		Object.assign(jobs.changes.outputs, outputs);
+		if (!("ordinary-heavy" in outputs))
+			jobs.changes.outputs["ordinary-heavy"] =
+				typeof outputs.heavy === "string" ? outputs.heavy : "";
+		completeSelectedGroups(jobs);
 		return buildReceipt(input({}, jobs));
 	};
 
@@ -339,6 +786,8 @@ describe("verification receipt selection metadata", () => {
 				spikes: [],
 				heavy: [],
 				templateSmoke: false,
+				nativeTransport: false,
+				ordinaryHeavy: [],
 			});
 		},
 	);
@@ -377,8 +826,9 @@ describe("verification receipt selection metadata", () => {
 			"template-smoke": "true",
 		});
 		expect(receipt.passed).toBe(true);
-		expect(receipt.selection).toEqual(selection);
-		expect(JSON.parse(JSON.stringify(receipt)).selection).toEqual(selection);
+		const expected = { ...selection, nativeTransport: false, ordinaryHeavy: selection.heavy };
+		expect(receipt.selection).toEqual(expected);
+		expect(JSON.parse(JSON.stringify(receipt)).selection).toEqual(expected);
 		const summary = renderSummary(receipt);
 		for (const value of [
 			...selection.areas,
@@ -529,6 +979,8 @@ describe("verification receipt selection metadata", () => {
 			spikes: ["spikes/s01-sqlite3mc", "spikes/s11-python-runtime"],
 			heavy: ["./packages/protocol", "...{./plugins/calendar}"],
 			templateSmoke: false,
+			nativeTransport: false,
+			ordinaryHeavy: ["./packages/protocol", "...{./plugins/calendar}"],
 		});
 	});
 
@@ -575,6 +1027,8 @@ describe("verification receipt selection metadata", () => {
 			spikes: ["apps/android-host/probe", "experiments/python-runtime"],
 			heavy: ["./apps/hub", "...{./apps/android-host}", "./tools/ci-checks"],
 			templateSmoke: false,
+			nativeTransport: false,
+			ordinaryHeavy: ["./apps/hub", "...{./apps/android-host}", "./tools/ci-checks"],
 		});
 	});
 
@@ -607,8 +1061,10 @@ describe("verification receipt selection metadata", () => {
 				rust: classified.rust.join("\n"),
 				spikes: classified.spikes.join("\n"),
 				heavy: heavy.join("\n"),
+				"ordinary-heavy": heavy.join("\n"),
 				"template-smoke": String(templateSmoke),
 			});
+			completeSelectedGroups(jobs);
 			const receipt = buildReceipt(input({}, jobs));
 			expect(receipt.passed).toBe(true);
 			expect(receipt.selection).toEqual({
@@ -617,6 +1073,8 @@ describe("verification receipt selection metadata", () => {
 				spikes: classified.spikes,
 				heavy,
 				templateSmoke,
+				nativeTransport: false,
+				ordinaryHeavy: heavy,
 			});
 			expect(receipt.selection?.areas).toContain("rust:apps/android-host/native");
 		} finally {
@@ -760,9 +1218,10 @@ describe("verification receipt CLI", () => {
 				lockfileSha256: createHash("sha256").update(lock).digest("hex"),
 				nodeVersion: process.versions.node,
 				platform: process.platform,
+				architecture: process.arch,
 			});
 			const jobs = needs();
-			for (const name of jobNames) {
+			for (const name of baseRequiredJobNames) {
 				jobs[name].outputs.source = JSON.stringify({
 					...captured,
 					platform: name === "windows" ? "win32" : "linux",
@@ -797,6 +1256,8 @@ describe("verification receipt CLI", () => {
 				spikes: [],
 				heavy: [],
 				templateSmoke: false,
+				nativeTransport: false,
+				ordinaryHeavy: [],
 			});
 			expect(readFileSync(summary, "utf8")).toContain("CI verification: passed");
 

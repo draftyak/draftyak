@@ -33,6 +33,7 @@ import {
 	nativeStoreCase,
 	nativeStoreContext,
 	nativeStoreFile,
+	nativeStoreReceiptFile,
 	readNativeStoreReport,
 	runNativeStore,
 	verifyNativeStoreSource,
@@ -79,6 +80,9 @@ const context = (extra: Partial<NativeStoreContext> = {}): NativeStoreContext =>
 	temporary,
 	pr: "999999",
 	head,
+	runId: "999999001",
+	runAttempt: "1",
+	job: "native-store",
 	...extra,
 });
 const source = { pr: "999999", head };
@@ -345,6 +349,12 @@ describe("native store admission", () => {
 		["control SHA", { sha: "refs/heads/m0", workflowSha: "refs/heads/m0" }],
 		["runner", { runnerOs: "Linux" }],
 		["actual platform", { platform: "linux" }],
+		["job", { job: "unrelated" }],
+		["missing run", { runId: "" }],
+		["noncanonical run", { runId: "01" }],
+		["unsafe run", { runId: "9007199254740992" }],
+		["missing attempt", { runAttempt: "" }],
+		["noncanonical attempt", { runAttempt: "01" }],
 		["relative workspace", { workspace: "relative" }],
 		["relative report directory", { temporary: "relative" }],
 		["PR ref", { pr: "refs/pull/999999/head" }],
@@ -481,6 +491,9 @@ describe("native store admission", () => {
 			GITHUB_SHA: control,
 			GITHUB_WORKFLOW_SHA: control,
 			GITHUB_WORKFLOW_REF: "draftyak/draftyak/.github/workflows/native-store.yml@refs/heads/m0",
+			GITHUB_RUN_ID: "999999001",
+			GITHUB_RUN_ATTEMPT: "1",
+			GITHUB_JOB: "native-store",
 			RUNNER_OS: "macOS",
 			GITHUB_WORKSPACE: context().workspace,
 			RUNNER_TEMP: temporary,
@@ -563,6 +576,14 @@ describe("native store executed-case result", () => {
 			"extra failed suite",
 			(value: Record<string, unknown>) => {
 				value.numFailedTestSuites = 1;
+			},
+		],
+		[
+			"duplicate target cases",
+			(value: Record<string, unknown>) => {
+				reportSuite(value).assertionResults = [assertion(value), { ...assertion(value) }];
+				value.numTotalTests = 2;
+				value.numPassedTests = 2;
 			},
 		],
 		[
@@ -796,6 +817,105 @@ describe("native store source and execution wiring", () => {
 	});
 });
 
+describe("native store minimal execution receipt", () => {
+	it("writes only bounded run/source identities and validated counts after a successful command", () => {
+		const input = context({ temporary: directory() });
+		const receipt = path.join(input.temporary, nativeStoreReceiptFile);
+		writeFileSync(receipt, "stale synthetic receipt");
+		expect(
+			runNativeStore(
+				input,
+				{ NATIVE_STORE_PASSED: "999", NATIVE_STORE_SOURCE_UNCHANGED: "false" },
+				readGit,
+				() => {
+					expect(existsSync(receipt)).toBe(false);
+					const value = report(input.workspace);
+					value.untrusted = "synthetic ignored report field";
+					writeFileSync(path.join(input.temporary, "native-store.json"), JSON.stringify(value));
+					return 0;
+				},
+			),
+		).toBe(1);
+		const text = readFileSync(receipt, "utf8");
+		expect(Buffer.byteLength(text)).toBeLessThanOrEqual(4096);
+		expect(JSON.parse(text)).toEqual({
+			version: 1,
+			repository: "draftyak/draftyak",
+			workflowRef: "draftyak/draftyak/.github/workflows/native-store.yml@refs/heads/m0",
+			ref: "refs/heads/m0",
+			actor: "nicksavov",
+			triggeringActor: "nicksavov",
+			controlSha: control,
+			pr: "999999",
+			sourceHead: head,
+			runId: "999999001",
+			runAttempt: "1",
+			job: "native-store",
+			runnerOs: "macOS",
+			platform: "darwin",
+			testFile: nativeStoreFile,
+			testCase: nativeStoreCase,
+			passed: 1,
+			failed: 0,
+			skipped: 0,
+			pending: 0,
+			todo: 0,
+			sourceUnchanged: true,
+		});
+		expect(text).not.toContain(input.workspace);
+		expect(text).not.toContain(input.temporary);
+		expect(text).not.toContain("synthetic ignored");
+		const info = lstatSync(receipt);
+		expect(info.isFile() && !info.isSymbolicLink()).toBe(true);
+	});
+
+	it.each([
+		"failed command",
+		"missing report",
+		"skipped case",
+		"empty suite",
+		"mismatched source",
+		"duplicate case",
+	])("publishes no receipt for %s", (fault) => {
+		const input = context({ temporary: directory() });
+		const receipt = path.join(input.temporary, nativeStoreReceiptFile);
+		writeFileSync(receipt, "stale synthetic receipt");
+		expect(() =>
+			runNativeStore(input, {}, readGit, () => {
+				if (fault === "missing report") return 0;
+				const value = report(input.workspace);
+				if (fault === "skipped case") assertion(value).status = "skipped";
+				if (fault === "empty suite") value.testResults = [];
+				if (fault === "mismatched source") reportSuite(value).name = "synthetic unrelated suite";
+				if (fault === "duplicate case") {
+					reportSuite(value).assertionResults = [assertion(value), { ...assertion(value) }];
+					value.numTotalTests = 2;
+					value.numPassedTests = 2;
+				}
+				writeFileSync(path.join(input.temporary, "native-store.json"), JSON.stringify(value));
+				return fault === "failed command" ? 1 : 0;
+			}),
+		).toThrow(NativeStoreError);
+		expect(existsSync(receipt)).toBe(false);
+	});
+
+	it("refuses receipt-path replacement during source execution instead of overwriting it", () => {
+		const input = context({ temporary: directory() });
+		const receipt = path.join(input.temporary, nativeStoreReceiptFile);
+		expect(() =>
+			runNativeStore(input, {}, readGit, () => {
+				writeFileSync(receipt, "synthetic replacement");
+				writeFileSync(
+					path.join(input.temporary, "native-store.json"),
+					JSON.stringify(report(input.workspace)),
+				);
+				return 0;
+			}),
+		).toThrow(/^Native store receipt is unavailable$/);
+		expect(readFileSync(receipt, "utf8")).toBe("synthetic replacement");
+	});
+});
+
 it("keeps the real manual workflow disjoint, source-bound and within the generic policy", () => {
 	const file = ".github/workflows/native-store.yml";
 	const text = readFileSync(path.join(root, file), "utf8");
@@ -833,6 +953,18 @@ it("keeps the real manual workflow disjoint, source-bound and within the generic
 		path: "source",
 		"persist-credentials": false,
 	});
-	expect(steps.at(-1)?.run).toBe("node tools/ci-checks/src/native-store.ts run");
-	expect(text).not.toMatch(/continue-on-error|github\.token|secrets\.|upload-artifact/);
+	expect(steps.at(-2)?.run).toBe("node tools/ci-checks/src/native-store.ts run");
+	expect(steps.at(-2)?.id).toBe("native");
+	expect(steps.at(-1)).toEqual({
+		name: "Upload the verified native receipt",
+		if: `\${{ success() && steps.native.outputs.receipt == 'ready' }}`,
+		uses: "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+		with: {
+			name: `native-store-receipt-\${{ github.run_id }}-\${{ github.run_attempt }}`,
+			path: `\${{ runner.temp }}/native-store-receipt.json`,
+			"if-no-files-found": "error",
+			"retention-days": 1,
+		},
+	});
+	expect(text).not.toMatch(/continue-on-error|github\.token|secrets\./);
 });
