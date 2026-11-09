@@ -496,9 +496,6 @@ export class NativeDraftRevisions {
 			},
 		};
 	}
-	#activeLock(tx: SqlTransaction, draftId: string, lockId: string): void {
-		if (this.#lock(tx, draftId, lockId).payload.status !== "active") throw revisionUnavailable();
-	}
 	#header(db: SqlReader, bound: DraftBinding): Header {
 		return this.#loadedHeader(db, bound).header;
 	}
@@ -965,49 +962,6 @@ export class NativeDraftRevisions {
 				false,
 			);
 			return this.#facts(tx, saved.binding);
-		} catch {
-			throw revisionUnavailable();
-		}
-	}
-	/** Internal freeze composition only; authorization must already be checked by its native caller. */
-	setLockInTransaction(
-		tx: SqlTransaction,
-		bound: DraftBinding,
-		expectedRev: number,
-		expectedLock: string | null,
-		lockId: string | null,
-		timestampFloor = 0,
-	): NativeRevision {
-		try {
-			this.#assertTransaction(tx);
-			const captured = captureDraftBinding(bound),
-				header = this.#header(tx, captured),
-				current = this.#facts(tx, captured, header);
-			if (
-				current.draft.rev !== expectedRev ||
-				current.lockId !== expectedLock ||
-				current.draft.state !== "open" ||
-				!(lockId === null || Ulid.safeParse(lockId).success) ||
-				!UtcMs.safeParse(timestampFloor).success
-			)
-				throw revisionUnavailable();
-			if (lockId !== null) this.#activeLock(tx, current.draft.id, lockId);
-			const observedAt = this.#now(),
-				at = Math.max(observedAt, current.draft.updatedAt, timestampFloor);
-			if (observedAt < at)
-				this.#auditInTransaction(tx, "draft.clock_skew", { clockSkewDraft: bound.draftId });
-			this.#saveHeader(
-				tx,
-				{
-					draft: { ...current.draft, updatedAt: at },
-					channel: current.channel,
-					lockId,
-					latestRevisionMac: header.latestRevisionMac,
-				},
-				lockId === null ? "draft.unlocked" : "draft.locked",
-				false,
-			);
-			return this.#facts(tx, captured);
 		} catch {
 			throw revisionUnavailable();
 		}

@@ -150,20 +150,21 @@ describe("draft MAC key purpose", () => {
 		f.store.write((tx) => f.freeze.releaseInTransaction(tx, bound, snapshot.outbox));
 		expect(f.revisions.current(bound).lockId).toBeNull();
 	});
-	it("refuses to set a lock whose row is MACed under the old handles purpose", async () => {
+	it("refuses a release preparation for a lock MACed under the old handles purpose", async () => {
 		const f = await fixture(),
 			input = f.make(),
 			bound = f.bind(input),
 			snapshot = f.snapshot(f.create(input));
 		f.store.write((tx) => f.freeze.freezeInTransaction(tx, bound, 1, snapshot));
 		const lock = f.revisions.current(bound).lockId as string,
-			set = () => f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 1, null, lock));
-		f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 1, lock, null));
+			prepare = () =>
+				f.store.write((tx) => f.revisions.prepareLockInTransaction(tx, bound, 1, lock, null));
 		resign(f, "lock", bound, "handles");
-		expect(set).toThrow(refused);
-		expect(f.revisions.current(bound).lockId).toBeNull();
+		expect(prepare).toThrow(refused);
+		expect(f.revisions.current(bound).lockId).toBe(lock);
 		resign(f, "lock", bound, "drafts");
-		expect(set().lockId).toBe(lock);
+		f.store.write((tx) => f.freeze.releaseInTransaction(tx, bound, snapshot.outbox));
+		expect(f.revisions.current(bound).lockId).toBeNull();
 	});
 	it.each(["callback", "restoration"] as const)(
 		"rolls back a failed %s without leaving changed rows or schema",

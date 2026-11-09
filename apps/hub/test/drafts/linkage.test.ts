@@ -173,20 +173,19 @@ describe("draft audit linkage", () => {
 			f.store.write((tx) => f.freeze.releaseInTransaction(tx, bound, snapshot.outbox)),
 		).toThrow(refused);
 	});
-	it("authenticates a lock's audit event before a direct lock change sets it", async () => {
+	it("authenticates a lock's audit event before preparing its release", async () => {
 		const f = await fixture(),
 			input = f.make(),
 			bound = f.bind(input),
 			snapshot = f.snapshot(f.create(input));
 		f.store.write((tx) => f.freeze.freezeInTransaction(tx, bound, 1, snapshot));
 		const lock = f.revisions.current(bound).lockId as string;
-		f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 1, lock, null));
 		rewrite(f, lockSeq(f, snapshot.outbox));
-		expect(f.revisions.current(bound).lockId).toBeNull();
+		expect(f.revisions.current(bound).lockId).toBe(lock);
 		expect(() =>
-			f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 1, null, lock)),
+			f.store.write((tx) => f.revisions.prepareLockInTransaction(tx, bound, 1, lock, null)),
 		).toThrow(refused);
-		expect(f.revisions.current(bound).lockId).toBeNull();
+		expect(f.revisions.current(bound).lockId).toBe(lock);
 	});
 	it("ignores another module's event naming exactly the draft, also after reopen", async () => {
 		const f = await fixture(),
