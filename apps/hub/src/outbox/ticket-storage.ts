@@ -92,6 +92,7 @@ const appendAudit = AuditChain.prototype.append,
 	verifyAudit = AuditChain.prototype.verify;
 const describeCredential = CredentialVault.prototype.describeInTransaction;
 const derive = MasterKey.prototype.derive;
+const restoreApply = Reflect.apply;
 const restoreResets = new WeakMap<object, (tx: SqlTransaction) => number>();
 const states: readonly string[] = [
 	"ISSUED",
@@ -256,7 +257,7 @@ export class SendTicketStorage {
 	#restoreTransaction(tx: SqlTransaction): void {
 		if (this.#destroyed) throw unavailable();
 		assertStoreTransaction(this.#store, tx);
-		verifyAudit.call(this.#audit, tx);
+		restoreApply(verifyAudit, this.#audit, [tx]);
 	}
 	#restoreValid(tx: SqlReader, row: StoredAttempt): void {
 		if (
@@ -285,23 +286,26 @@ export class SendTicketStorage {
 			latest.action !== `send.${row.state.toLowerCase()}`
 		)
 			throw unavailable();
-		restoreOriginal.payload.call(this, row);
+		restoreApply(restoreOriginal.payload, this, [row]);
 	}
 	#restoreReduce(
 		tx: SqlTransaction,
 		prior: StoredAttempt,
 		state: "NEEDS_REAPPROVAL" | "UNKNOWN",
 	): void {
-		const updatedAt = restoreOriginal.now.call(this);
+		const updatedAt = restoreApply(restoreOriginal.now, this, []);
 		this.#restoreTransaction(tx);
 		if (updatedAt < prior.updated_at) throw unavailable();
-		appendAudit.call(this.#audit, tx, {
-			id: newId(updatedAt),
-			at: updatedAt,
-			action: `send.${state.toLowerCase()}`,
-			actor: { kind: "hub", id: null },
-			refs: JSON.parse(this.#refs(prior)),
-		});
+		restoreApply(appendAudit, this.#audit, [
+			tx,
+			{
+				id: newId(updatedAt),
+				at: updatedAt,
+				action: `send.${state.toLowerCase()}`,
+				actor: { kind: "hub", id: null },
+				refs: JSON.parse(this.#refs(prior)),
+			},
+		]);
 		const seq = tx.get<{ audit_seq: number }>(
 			"SELECT audit_seq FROM main.audit_meta WHERE singleton=1",
 		)?.audit_seq;

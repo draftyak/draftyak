@@ -24,7 +24,37 @@ const original = Object.freeze({
 	insert: SendTicketStorage.prototype.insertInTransaction,
 	find: SendTicketStorage.prototype.find,
 	transition: SendTicketStorage.prototype.transition,
+	now: SendTicketStorage.prototype.now,
+	payload: SendTicketStorage.prototype.payload,
+	verifyAudit: AuditChain.prototype.verify,
+	appendAudit: AuditChain.prototype.append,
 });
+const invokeOriginal = Reflect.apply;
+interface CallHook {
+	readonly method: (typeof original)["now" | "payload" | "verifyAudit" | "appendAudit"];
+	readonly descriptor: PropertyDescriptor | undefined;
+	calls: number;
+}
+const callHooks = new Set<CallHook>();
+function interceptCall(method: CallHook["method"]): CallHook {
+	const hook = { method, descriptor: Object.getOwnPropertyDescriptor(method, "call"), calls: 0 };
+	callHooks.add(hook);
+	Object.defineProperty(method, "call", {
+		configurable: true,
+		value: (receiver: unknown, ...args: unknown[]) => {
+			hook.calls++;
+			return invokeOriginal(method, receiver, args);
+		},
+	});
+	return hook;
+}
+function restoreCall(hook: CallHook): void {
+	if (hook.descriptor) Object.defineProperty(hook.method, "call", hook.descriptor);
+	else if (!Reflect.deleteProperty(hook.method, "call"))
+		throw new Error("Function dispatch restoration refused");
+	expect(Object.getOwnPropertyDescriptor(hook.method, "call")).toEqual(hook.descriptor);
+	callHooks.delete(hook);
+}
 interface OwnedFixture {
 	dir: string;
 	key: MasterKey;
@@ -62,6 +92,15 @@ function closeEditor(f: OwnedFixture): void {
 }
 afterEach(async () => {
 	while (bodies.size) await Promise.allSettled([...bodies]);
+	let dispatchIncomplete = false;
+	for (const hook of callHooks) {
+		try {
+			restoreCall(hook);
+		} catch {
+			dispatchIncomplete = true;
+		}
+	}
+	if (dispatchIncomplete) throw new Error("Function dispatch cleanup is incomplete");
 	let incomplete = false;
 	for (const f of fixtures) {
 		try {
@@ -244,6 +283,25 @@ function verify(f: Fixture): void {
 		for (const row of rows(db))
 			expect(original.find.call(f.storage, db, "id", row.id)?.id).toBe(row.id);
 	});
+}
+function expectSingleReduction(f: Fixture, prior: StoredAttempt, beforeHead: number): void {
+	const after = f.store.read(rows);
+	expect(after).toHaveLength(1);
+	const actual = after[0];
+	if (!actual) throw new Error("Missing reduced storage DATA record");
+	expect(actual.state).toBe("NEEDS_REAPPROVAL");
+	expect(actual.updated_at).toBe(f.time.wall);
+	expect(actual.audit_seq).toBe(beforeHead + 1);
+	expect(actual.mac).not.toBe(prior.mac);
+	expect({
+		...actual,
+		state: prior.state,
+		updated_at: prior.updated_at,
+		audit_seq: prior.audit_seq,
+		mac: prior.mac,
+	}).toEqual(prior);
+	expect(f.store.read(head)).toBe(beforeHead + 1);
+	verify(f);
 }
 
 describe("restored send-ticket storage DATA restriction", () => {
@@ -524,6 +582,50 @@ describe("restored send-ticket storage DATA restriction", () => {
 				expect(Object.getOwnPropertyDescriptor(f.storage, name)).toEqual(descriptor);
 			verify(f);
 		}));
+
+	for (const name of ["now", "payload"] as const) {
+		it(`ignores an own call property on the original storage ${name} function`, () =>
+			owned(async () => {
+				const f = await fixture();
+				seed(f, "ISSUED");
+				const prior = f.store.read(rows)[0],
+					beforeHead = f.store.read(head);
+				if (!prior) throw new Error("Missing issued storage DATA record");
+				const hook = interceptCall(original[name]);
+				let count: number | undefined;
+				try {
+					count = f.store.write((tx) => resetSendTicketStorageForRestore(f.storage, tx));
+				} finally {
+					restoreCall(hook);
+				}
+				expect(count).toBe(1);
+				expectSingleReduction(f, prior, beforeHead);
+				expect(hook.calls).toBe(0);
+			}));
+	}
+
+	for (const name of ["verifyAudit", "appendAudit"] as const) {
+		it(`ignores an own call property on the original ${name} function inside a live write`, () =>
+			owned(async () => {
+				const f = await fixture();
+				seed(f, "ISSUED");
+				const prior = f.store.read(rows)[0],
+					beforeHead = f.store.read(head);
+				if (!prior) throw new Error("Missing issued storage DATA record");
+				// The ordinary write verifies before this callback; its baseline call is not a reset call.
+				const result = f.storage.write((tx) => {
+					const hook = interceptCall(original[name]);
+					try {
+						return { count: resetSendTicketStorageForRestore(f.storage, tx), hook };
+					} finally {
+						restoreCall(hook);
+					}
+				});
+				expect(result.count).toBe(1);
+				expectSingleReduction(f, prior, beforeHead);
+				expect(result.hook.calls).toBe(0);
+			}));
+	}
 
 	it("authenticates a late preserved row and rolls back earlier reductions and audit", () =>
 		owned(async () => {
