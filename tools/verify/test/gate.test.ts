@@ -913,6 +913,37 @@ describe("refusals before any read or child start", () => {
 		}
 	});
 
+	it("refuses a command file beside a script whose first word cmd.exe reads past double quotes, carets and carriage returns, single quotes kept or not", async () => {
+		const manifest = (test: string): string =>
+			`${JSON.stringify({ name: "a", private: true, scripts: { test } })}\n`;
+		const shadow = (rel: string): boolean => /\.cmd$/i.test(rel);
+		const cases: readonly (readonly [string, string])[] = [
+			['tsc -v & vi"test" run', "vitest.cmd"],
+			['"vi"test run', "vitest.cmd"],
+			["tsc -v & 'vitest' run", "'vitest'.cmd"],
+			["tsc -v & 'vitest' run", "vitest.cmd"],
+			['tsc -v & "vi test" run', "vi test.cmd"],
+			['tsc -v & "vi&test" run', "vi&test.cmd"],
+			["tsc -v & vi^&test run", "vi&test.cmd"],
+			['tsc -v & "a,b" run', "a,b.cmd"],
+			['tsc -v & "vi^test" run', "vi^test.cmd"],
+			["tsc -v & vi^ test run", "vi.cmd"],
+			["tsc -v & vitest^", "vitest.cmd"],
+			["tsc -v & vi\rtest run", "vitest.cmd"],
+		];
+		for (const [test, planted] of cases) {
+			const repo = fixture({
+				files: { "packages/a/package.json": manifest(test) },
+				ignored: { [`packages/a/${planted}`]: "@echo off\r\n" },
+			});
+			const run = await gate(repo, { forbidden: shadow });
+			expect([test, uncounted(shown(run))]).toEqual([test, [LINE["command-shadows"]]]);
+			refusedWith(run, [LINE["command-shadows"] ?? ""]);
+			const line = shown(await gate(repo, { names: true, forbidden: shadow }))[0] ?? "";
+			expect([test, line.endsWith(`: packages/a/${planted} (file)`)]).toEqual([test, true]);
+		}
+	});
+
 	it("refuses a package.json whose script starts a command from a drive's own working folder, which cmd.exe runs from the package folder, in either case and on any drive, never reading what it would find there", async () => {
 		const manifest = (name: string, test: string): string =>
 			`${JSON.stringify({ name, private: true, scripts: { test } })}\n`;

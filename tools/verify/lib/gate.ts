@@ -124,6 +124,8 @@ const COMMAND_END = /&&|\|\||(?<![<>])&|[;|()`\r\n]/;
 // The marks among those that end a command in cmd.exe's own split, outside double quotes and not
 // after a caret.
 const MARKS = "&|;()`";
+// What ends a command's first word outside double quotes, besides a blank.
+const WORD_END = "<>,;=";
 // A redirection before a command: [n]>, [n]>> or <, with its target or before it.
 const REDIRECTION = /^\d?(?:>>?|<)/;
 const BARE_REDIRECTION = /^\d?(?:>>?|<)$/;
@@ -188,25 +190,83 @@ function leadingQuote(script: string): boolean {
 	return false;
 }
 
-// A command's first word as cmd.exe reads it, in lower case: past a leading @, leading NAME=value
-// assignments and redirections (>x, >> x, 2>x, <x), and ending at the first <, >, , or =, with
-// carets and quotes dropped; undefined for a command with none.
-function firstWord(command: string): string | undefined {
-	const tokens = command
-		.replaceAll("^", "")
-		.replace(/^[\s@]+/, "")
-		.split(/\s+/);
+// A command's tokens as cmd.exe groups them, at blanks outside double quotes, each past a leading
+// comma, ; or =: its text, and the words its name could be. A word ends at the first <, >, comma, ;
+// or = outside quotes and drops each ". Outside quotes, a caret takes the next character as it is
+// (a last one is dropped), and a blank or one of those marks it takes also ends a word, as cmd.exe
+// ends a name at an escaped blank: each piece between them counts too.
+function cmdTokens(command: string): { readonly raw: string; readonly words: string[] }[] {
+	const tokens: { readonly raw: string; readonly words: string[] }[] = [];
+	let raw = "";
+	let words: string[] = [];
+	let piece = "";
+	let full: string | undefined = "";
+	let quoted = false;
+	const close = (): void => {
+		if (raw !== "")
+			tokens.push({ raw, words: full === undefined ? words : [...words, piece, full] });
+		raw = "";
+		words = [];
+		piece = "";
+		full = "";
+	};
+	const add = (char: string): void => {
+		if (full === undefined) return;
+		piece += char;
+		full += char;
+	};
+	for (let at = 0; at < command.length; at++) {
+		const char = command.charAt(at);
+		if (!quoted && /\s/u.test(char)) {
+			close();
+		} else if (raw === "" && ",;=".includes(char)) {
+			// cmd.exe reads a leading comma, ; or = as a blank.
+		} else if (char === '"') {
+			raw += char;
+			quoted = !quoted;
+		} else if (quoted) {
+			raw += char;
+			add(char);
+		} else if (char === "^") {
+			if (at + 1 >= command.length) continue;
+			const next = command.charAt(++at);
+			raw += `${char}${next}`;
+			if (full !== undefined && (/\s/u.test(next) || WORD_END.includes(next))) {
+				words.push(piece);
+				piece = "";
+			}
+			if (next !== '"') add(next);
+		} else if (WORD_END.includes(char)) {
+			raw += char;
+			if (full !== undefined) words.push(piece, full);
+			full = undefined;
+		} else {
+			raw += char;
+			add(char);
+		}
+	}
+	close();
+	return tokens;
+}
+
+// The names cmd.exe could look a command up by, in lower case, each again without single quotes,
+// which cmd.exe keeps in a name: past leading blanks and @, NAME=value assignments and redirections
+// (>x, >> x, 2>x, <x), the first token's words (cmdTokens).
+function firstWords(command: string): string[] {
+	const tokens = cmdTokens(command.replace(/^[\s@]+/u, ""));
 	for (let at = 0; at < tokens.length; at++) {
-		const token = (tokens[at] ?? "").replace(/^[,;=]+/, "").replace(/^["']+|["']+$/g, "");
-		if (token === "" || ASSIGNMENT.test(token)) continue;
-		if (REDIRECTION.test(token)) {
-			if (BARE_REDIRECTION.test(token)) at++;
+		const { raw, words } = tokens[at] ?? { raw: "", words: [] };
+		if (ASSIGNMENT.test(raw)) continue;
+		if (REDIRECTION.test(raw)) {
+			if (BARE_REDIRECTION.test(raw)) at++;
 			continue;
 		}
-		const word = (token.split(/[<>,=]/)[0] ?? "").replace(/["']+$/, "");
-		if (word !== "") return word.toLowerCase();
+		const found = words.map((word) => word.trim().toLowerCase()).filter((word) => word !== "");
+		if (found.length === 0) continue;
+		const both = found.flatMap((word) => [word, word.replaceAll("'", "")]);
+		return [...new Set(both.filter((word) => word !== ""))];
 	}
-	return undefined;
+	return [];
 }
 
 // The scripts of a package.json, each as written.
@@ -220,8 +280,8 @@ function scriptsOf(text: string): string[] {
 	return found;
 }
 
-// The first word of each command a package.json's scripts run, in lower case, as cmd.exe reads it
-// (firstWord). A word that starts by a path is kept as it is: cmd.exe still looks one up from the
+// The names each command a package.json's scripts start could be looked up by, in lower case
+// (firstWords). A word that starts by a path is kept as it is: cmd.exe still looks one up from the
 // folder (the part before a / as a command, a \ path or a drive's working folder with each
 // extension), so the gate refuses a script that starts a command so. Without `quoting`, each script
 // is split at COMMAND_END wherever it stands, which gives more words to look for. With it, each is
@@ -233,10 +293,7 @@ export function scriptCommands(text: string, quoting = false): string[] {
 		const commands = quoting
 			? [...cmdCommands(script, false), ...(leadingQuote(script) ? cmdCommands(script, true) : [])]
 			: script.split(COMMAND_END);
-		for (const command of commands) {
-			const word = firstWord(command);
-			if (word !== undefined) words.add(word);
-		}
+		for (const command of commands) for (const word of firstWords(command)) words.add(word);
 	}
 	return [...words];
 }
@@ -411,7 +468,7 @@ export async function gateWith(
 				found.push({ rel: manifest, kind: "unsupported" });
 			}
 			const names = new Set(
-				[...STARTED, ...words.filter((word) => !byPath(word))].flatMap(shadowNames),
+				[...STARTED, ...words, ...started].filter((word) => !byPath(word)).flatMap(shadowNames),
 			);
 			checkout.walk(dir, (rel, kind) => {
 				const name = rel.slice(rel.lastIndexOf("/") + 1).toLowerCase();
