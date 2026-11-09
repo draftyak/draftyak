@@ -214,8 +214,8 @@ const spikeUpload: YamlMap = {
 const gate = "node tools/verify/gate.ts";
 const preinstall = "node tools/verify/preinstall.ts";
 const install = "pnpm install --frozen-lockfile";
-// The second checkout of native-store.yml and native-supervisor.yml, at source/, which the trusted
-// checkout's gate and pre-install check read with --root before pnpm starts there.
+// The second checkout of native-store.yml, native-supervisor.yml and nightly.yml, at source/, which
+// the trusted checkout's gate and pre-install check read with --root before pnpm starts there.
 const sourceGate = `${gate} --root source`;
 const sourcePreinstall = `${preinstall} --root source`;
 const beforeGate = new Set(["actions/checkout", "actions/setup-node"]);
@@ -885,6 +885,59 @@ const nativeStoreContract: Yaml = {
 	},
 };
 
+const nightlyFile = ".github/workflows/nightly.yml";
+// The nightly approval binding run checks m2 out at source/ after the gate on its own commit, and
+// checks it there with that commit's gate and pre-install check before pnpm starts.
+const nightlyContract: Yaml = {
+	name: "nightly",
+	on: { schedule: [{ cron: "0 3 * * *" }], workflow_dispatch: null },
+	permissions: { contents: "read" },
+	concurrency: { group: "approval-binding-nightly-m2", "cancel-in-progress": false },
+	env: {
+		CI: "true",
+		DO_NOT_TRACK: "1",
+		TURBO_TELEMETRY_DISABLED: "1",
+		DRAFTYAK_STRICT_SKIPS: "1",
+		DRAFTYAK_APPROVAL_BINDING_RUNS: "10000",
+	},
+	defaults: { run: { shell: "bash" } },
+	jobs: {
+		"approval-binding": {
+			name: "Approval statement binding (10000 runs per channel)",
+			"runs-on": "ubuntu-24.04",
+			"timeout-minutes": 30,
+			steps: [
+				{ name: "Check out trusted controls", ...ciCheckout },
+				ciNode,
+				{ name: "Reserved paths and execution inputs", run: gate },
+				{
+					name: "Check out m2",
+					uses: `actions/checkout@${actionPins["actions/checkout"]?.[0]}`,
+					with: { "persist-credentials": false, ref: "m2", path: "source" },
+				},
+				{ name: "Reserved paths and execution inputs of m2", run: sourceGate },
+				{ name: "Pre-install script check of m2", run: sourcePreinstall },
+				ciPnpm,
+				{ "working-directory": "source", run: install },
+				{ "working-directory": "source", run: "pnpm build --filter=@draftyak/hub..." },
+				{
+					name: "Check approval statement binding",
+					"working-directory": "source/apps/hub",
+					run: [
+						'node "$GITHUB_WORKSPACE/source/node_modules/vitest/vitest.mjs" run \\',
+						"  test/model/send-approval-binding.test.ts \\",
+						"  --mode test --config vitest.config.ts --no-file-parallelism \\",
+						"  --maxWorkers=1 --reporter=default \\",
+						"  --exclude '**/*siwc*/**' --exclude '**/*siwc*' \\",
+						"  --exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'",
+						"",
+					].join("\n"),
+				},
+			],
+		},
+	},
+};
+
 const labelsFile = ".github/workflows/labels.yml";
 // The sole write-permission exception pins the whole execution context, including every step.
 // A one-line condition retains the parser's refusal of folded and multiline scalars.
@@ -982,9 +1035,9 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 		}
 	};
 	// Before the gate, only checkout, setup-node and the given reviewed steps; the gate step itself
-	// bare, and no checkout after it, except the one source checkout of an exact native contract,
-	// which its own gate and pre-install check read with --root, and no git command that changes the
-	// working tree.
+	// bare, and no checkout after it, except the one source checkout of an exact native or nightly
+	// contract, which its own gate and pre-install check read with --root, and no git command that
+	// changes the working tree.
 	const gateFirst = (
 		job: string,
 		definition: YamlMap,
@@ -1079,11 +1132,17 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	if (file === nativeSupervisorWorkflowFile && !reviewedNativeSupervisor) {
 		report([], "native-supervisor.yml must exactly match the trusted native supervisor contract");
 	}
+	const reviewedNightly = file === nightlyFile && isDeepStrictEqual(doc.value, nightlyContract);
+	if (file === nightlyFile && !reviewedNightly) {
+		report([], "nightly.yml must exactly match the reviewed nightly approval binding contract");
+	}
 	// The one job of each exact native contract, which checks out the admitted source at source/
-	// after its gate and checks it there with --root before pnpm starts.
+	// after its gate and checks it there with --root before pnpm starts, and the nightly run's,
+	// which checks out m2 there.
 	const admittedSource = (job: string): boolean =>
 		(reviewedNativeStore && job === "native-store") ||
-		(reviewedNativeSupervisor && job === "native-supervisor");
+		(reviewedNativeSupervisor && job === "native-supervisor") ||
+		(reviewedNightly && job === "approval-binding");
 	const ci = file === ".github/workflows/ci.yml";
 	const spikes = file === ".github/workflows/spikes.yml";
 	if (ci) {
@@ -1532,8 +1591,8 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 			// The pre-install check is the last command before each install and runs whenever it does;
 			// in every workflow the gate and the check, with no condition or the step's own, also come
 			// before each step that may start a package manager in the checkout. Only the exact native
-			// contracts set up pnpm for their source checkout, checked there with --root, and only
-			// native-store's installs in it.
+			// and nightly contracts set up pnpm for their source checkout, checked there with --root,
+			// and only native-store's and the nightly run's install in it.
 			const nativeSource = admittedSource(job);
 			if (step.run === install) {
 				let before = index - 1;

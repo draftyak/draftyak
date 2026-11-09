@@ -302,6 +302,120 @@ describe("the native supervisor's gate and its admitted source's checks", () => 
 	});
 });
 
+// The nightly approval binding run gates m2, which holds no gate of its own, from its own commit:
+// the gate first, then m2 checked out at source/ and the same gate and pre-install check on it with
+// --root before pnpm starts.
+describe("the nightly approval binding run's gate and its m2 checkout's checks", () => {
+	const file = ".github/workflows/nightly.yml";
+	const source = (): string => read(file).replaceAll("\r\n", "\n");
+	const gateStep =
+		"      - name: Reserved paths and execution inputs\n        run: node tools/verify/gate.ts\n";
+	const m2Checkout = [
+		"      - name: Check out m2",
+		`        uses: ${pin("actions/checkout")}`,
+		"        with:",
+		"          persist-credentials: false",
+		"          ref: m2",
+		"          path: source",
+		"",
+	].join("\n");
+	const m2Gate =
+		"      - name: Reserved paths and execution inputs of m2\n        run: node tools/verify/gate.ts --root source\n";
+	const m2Check =
+		"      - name: Pre-install script check of m2\n        run: node tools/verify/preinstall.ts --root source\n";
+	const setup = `      - uses: ${pin("pnpm/action-setup")}\n        with:\n          cache: true\n`;
+	const m2Install =
+		"      - working-directory: source\n        run: pnpm install --frozen-lockfile\n";
+	const trusted = `ref: \${{ github.sha }}`;
+	const contract = "nightly.yml must exactly match the reviewed nightly approval binding contract";
+
+	it("runs the gate on its own commit first, then checks m2 out at source/ and runs the gate and pre-install check on it before pnpm", () => {
+		const text = source();
+		expect(checkWorkflow(file, text, toolchain)).toEqual([]);
+		const parts = [trusted, gateStep, m2Checkout, m2Gate, m2Check, setup, m2Install];
+		expect(parts.map((part) => text.split(part).length)).toEqual([2, 2, 2, 2, 2, 2, 2]);
+		expect(text.indexOf(trusted)).toBeLessThan(text.indexOf(gateStep));
+		expect(text).toContain(gateStep + m2Checkout + m2Gate + m2Check + setup + m2Install);
+	});
+
+	it.each([
+		["the gate removed", (text: string) => text.replace(gateStep, "")],
+		[
+			"the gate after the m2 checkout",
+			(text: string) => text.replace(gateStep + m2Checkout, m2Checkout + gateStep),
+		],
+		["the m2 gate removed", (text: string) => text.replace(m2Gate, "")],
+		["the m2 check removed", (text: string) => text.replace(m2Check, "")],
+		[
+			"the m2 gate without --root",
+			(text: string) => text.replace("gate.ts --root source", "gate.ts"),
+		],
+		[
+			"the m2 check without --root",
+			(text: string) => text.replace("preinstall.ts --root source", "preinstall.ts"),
+		],
+		[
+			"the checks in the other order",
+			(text: string) => text.replace(m2Gate + m2Check, m2Check + m2Gate),
+		],
+		[
+			"pnpm set up before the checks",
+			(text: string) => text.replace(m2Gate + m2Check + setup, setup + m2Gate + m2Check),
+		],
+		[
+			"an install in m2 before its checks",
+			(text: string) => text.replace(m2Gate, m2Install + m2Gate),
+		],
+		["the controls checked out from m2", (text: string) => text.replace(trusted, "ref: m2")],
+		["m2 checked out at the root", (text: string) => text.replace("          path: source\n", "")],
+		[
+			"another branch checked out",
+			(text: string) => text.replace("          ref: m2\n", "          ref: m3\n"),
+		],
+		[
+			"the install at the root",
+			(text: string) => text.replace(m2Install, "      - run: pnpm install --frozen-lockfile\n"),
+		],
+		[
+			"the binding check outside m2",
+			(text: string) =>
+				text.replace("working-directory: source/apps/hub", "working-directory: apps/hub"),
+		],
+		[
+			"fewer runs per channel",
+			(text: string) =>
+				text.replace(
+					'DRAFTYAK_APPROVAL_BINDING_RUNS: "10000"',
+					'DRAFTYAK_APPROVAL_BINDING_RUNS: "500"',
+				),
+		],
+		["another command", (text: string) => `${text}      - run: echo synthetic-extra\n`],
+	] as const)("refuses %s", (_name, mutate) => {
+		const mutated = mutate(source());
+		expect(mutated).not.toBe(source());
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(contract);
+	});
+
+	it("allows the second checkout and the install in it only in the exact contract", () => {
+		const elsewhere = checkWorkflow(".github/workflows/unrelated.yml", source(), toolchain);
+		const install = "pnpm install --frozen-lockfile";
+		expect(elsewhere).toEqual(
+			expect.arrayContaining([
+				expect.stringContaining(
+					"approval-binding must not check out again after the reserved gate",
+				),
+				expect.stringContaining(
+					`approval-binding must run node tools/verify/preinstall.ts as the last command before ${install}`,
+				),
+				expect.stringContaining(
+					`approval-binding's ${install} step may set only its name, if and run`,
+				),
+			]),
+		);
+		expect(elsewhere.join("\n")).not.toContain(contract);
+	});
+});
+
 // The reviewed source contract, with a one-line condition within the current YAML subset.
 const labelsFixture = `name: Sync approved labels
 on:
@@ -2434,7 +2548,6 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 		[ciFile, "reserved", installStep, preinstallStep],
 		[ciFile, "reserved-windows", installStep, preinstallStep],
 		[spikesFile, "run", installStep, preinstallStep],
-		[nightlyFile, "approval-binding", installStep, preinstallStep],
 		[securityFile, "approval-binding", installStep, preinstallStep],
 	] as const;
 	const problems = (file: string, source: string): string =>
@@ -2634,19 +2747,31 @@ describe("the reserved gate and the pre-install check in workflows", () => {
 	});
 
 	it("runs the approval binding workflows' gate after setup-node, and their check before pnpm", () => {
-		for (const source of [nightly, security]) {
-			const steps = (parseYaml(source).value as Steps).jobs["approval-binding"]?.steps ?? [];
-			expect(steps.map(label)).toEqual([
-				"actions/checkout",
-				"actions/setup-node",
-				"gate",
-				"pre-install check",
-				"pnpm/action-setup",
-				"install",
-				"pnpm build --filter=@draftyak/hub...",
-				"Check approval statement binding",
-			]);
-		}
+		const steps = (source: string): string[] =>
+			((parseYaml(source).value as Steps).jobs["approval-binding"]?.steps ?? []).map(label);
+		expect(steps(security)).toEqual([
+			"actions/checkout",
+			"actions/setup-node",
+			"gate",
+			"pre-install check",
+			"pnpm/action-setup",
+			"install",
+			"pnpm build --filter=@draftyak/hub...",
+			"Check approval statement binding",
+		]);
+		// nightly checks m2 out at source/ after its own gate, and checks it there before pnpm.
+		expect(steps(nightly)).toEqual([
+			"actions/checkout",
+			"actions/setup-node",
+			"gate",
+			"actions/checkout",
+			"Reserved paths and execution inputs of m2",
+			"Pre-install script check of m2",
+			"pnpm/action-setup",
+			"install",
+			"pnpm build --filter=@draftyak/hub...",
+			"Check approval statement binding",
+		]);
 	});
 
 	it("keeps the approval binding workflows' env names to those two workflows", () => {
