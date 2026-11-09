@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import path from "node:path";
+import { createInventoryObservation } from "./inventory-observation.ts";
 
 export const INVENTORY_TIMEOUT_MS = 300_000;
 export const INVENTORY_STOP_RESERVE_MS = 250;
@@ -69,6 +70,9 @@ const failed = (diagnostic?: string): Error =>
 	new Error(`file-name inventory failed${diagnostic === undefined ? "" : ` [${diagnostic}]`}`);
 const root = path.resolve(import.meta.dirname, "..", "..", "..");
 const entry = path.join(import.meta.dirname, "worktree-inventory.ts");
+const UNKNOWN_WORKER_DIAGNOSTIC =
+	"workerPhase=-1,workerRoots=-1,workerPendingGit=-1,workerPendingFs=-1," +
+	"workerDirectories=-1,workerEntries=-1,workerElapsedMs=-1";
 
 export function inventoryEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = {};
@@ -206,6 +210,8 @@ export function startInventoryAfter(
 		let closurePublished = false;
 		let stdout = Buffer.alloc(0);
 		let stderrBytes = 0;
+		const observation = createInventoryObservation();
+		let observationFailed = false;
 		const timers: unknown[] = [];
 		const drained = (): boolean => {
 			for (const handle of handles.values()) if (!handle.closed) return false;
@@ -264,6 +270,25 @@ export function startInventoryAfter(
 			} catch {
 				// Unknown timing remains unknown, never a successful deadline receipt.
 			}
+			let workerDiagnostic = UNKNOWN_WORKER_DIAGNOSTIC;
+			if (!observationFailed) {
+				try {
+					const worker = observation.snapshot();
+					if (worker !== null)
+						workerDiagnostic = [
+							`workerPhase=${worker.phase}`,
+							`workerRoots=${worker.roots}`,
+							`workerPendingGit=${worker.pendingGit}`,
+							`workerPendingFs=${worker.pendingFs}`,
+							`workerDirectories=${worker.directoryVisits}`,
+							`workerEntries=${worker.entries}`,
+							`workerElapsedMs=${worker.elapsedMs}`,
+						].join(",");
+				} catch {
+					// Observation cannot replace the original failure or its close receipt.
+					observationFailed = true;
+				}
+			}
 			return [
 				`phase=${phase}`,
 				`cleanup=${handles.size === 0 ? "none" : pending === 0 ? "closed" : "pending"}`,
@@ -275,6 +300,7 @@ export function startInventoryAfter(
 				`stopRequests=${stopRequests}`,
 				`killRequests=${killRequests}`,
 				`elapsedMs=${elapsedMs}`,
+				workerDiagnostic,
 			].join(",");
 		};
 		joinTiming = { ports, deadline, diagnostic };
@@ -455,11 +481,21 @@ export function startInventoryAfter(
 						});
 						original.child.stderr.onData((chunk) => {
 							if (!Buffer.isBuffer(chunk)) {
+								observationFailed = true;
 								stop();
 								return;
 							}
 							stderrBytes += chunk.length;
-							if (stderrBytes > INVENTORY_STDERR_MAX) stop();
+							if (stderrBytes > INVENTORY_STDERR_MAX) {
+								observationFailed = true;
+								stop();
+							} else if (!observationFailed) {
+								try {
+									observation.push(chunk);
+								} catch {
+									observationFailed = true;
+								}
+							}
 						});
 						if (!timely()) stop();
 					} catch {
@@ -491,7 +527,8 @@ export function startInventoryAfter(
 			ports,
 			deadline,
 			diagnostic: () =>
-				"phase=precheck,cleanup=none,pending=0,gitOwned=0,gitClosed=0,workerOwned=0,workerClosed=0,stopRequests=0,killRequests=0,elapsedMs=-1",
+				"phase=precheck,cleanup=none,pending=0,gitOwned=0,gitClosed=0,workerOwned=0,workerClosed=0,stopRequests=0,killRequests=0,elapsedMs=-1," +
+				UNKNOWN_WORKER_DIAGNOSTIC,
 		},
 	);
 	return execution;
