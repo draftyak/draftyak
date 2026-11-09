@@ -61,14 +61,98 @@ const RUST_CRYPTO: &[(&str, &str)] = &[
 ];
 const DUPLICATES: &[(&str, &[&str])] = &[
     ("bitflags", &["1.3.2", "2.13.2"]),
-    ("getrandom", &["0.2.17", "0.4.3"]),
-    ("syn", &["2.0.119", "3.0.9"]),
-    ("windows-sys", &["0.52.0", "0.61.2"]),
+    ("getrandom", &["0.2.17", "0.3.4", "0.4.3"]),
+    ("syn", &["1.0.109", "2.0.119", "3.0.9"]),
+    ("windows-sys", &["0.45.0", "0.52.0", "0.61.2"]),
+    ("aes", &["0.8.4", "0.9.2"]),
+    ("base64", &["0.21.7", "0.23.1"]),
+    ("bit-vec", &["0.8.0", "0.9.1"]),
+    ("block-buffer", &["0.10.4", "0.12.1"]),
+    ("cipher", &["0.4.4", "0.5.2"]),
+    ("cpufeatures", &["0.2.17", "0.3.1"]),
+    ("crypto-common", &["0.1.7", "0.2.2"]),
+    ("digest", &["0.10.7", "0.11.3"]),
+    ("hashbrown", &["0.12.3", "0.17.1"]),
+    ("heck", &["0.4.1", "0.5.0"]),
+    ("indexmap", &["1.9.3", "2.14.2"]),
+    ("inout", &["0.1.4", "0.2.5"]),
+    ("jni-sys", &["0.3.1", "0.4.1"]),
+    ("miniz_oxide", &["0.8.9", "0.9.1"]),
+    ("proc-macro-crate", &["1.3.1", "2.0.2", "3.5.0"]),
+    ("r-efi", &["5.3.0", "6.0.0"]),
+    ("rand_core", &["0.10.1", "0.6.4"]),
+    ("schemars", &["0.8.22", "0.9.0", "1.2.3"]),
+    ("serde_spanned", &["0.6.9", "1.1.2"]),
+    ("sha2", &["0.10.9", "0.11.1"]),
+    ("synstructure", &["0.13.2", "0.14.0"]),
+    ("thiserror", &["1.0.69", "2.0.21"]),
+    ("thiserror-impl", &["1.0.69", "2.0.21"]),
+    ("toml", &["0.8.2", "1.1.8+spec-1.1.0"]),
+    ("toml_datetime", &["0.6.3", "1.1.2+spec-1.1.0"]),
+    ("toml_edit", &["0.19.15", "0.20.2", "0.25.17+spec-1.1.0"]),
+    ("windows-targets", &["0.42.2", "0.52.6"]),
+    ("windows_aarch64_gnullvm", &["0.42.2", "0.52.6"]),
+    ("windows_aarch64_msvc", &["0.42.2", "0.52.6"]),
+    ("windows_i686_gnu", &["0.42.2", "0.52.6"]),
+    ("windows_i686_msvc", &["0.42.2", "0.52.6"]),
+    ("windows_x86_64_gnu", &["0.42.2", "0.52.6"]),
+    ("windows_x86_64_gnullvm", &["0.42.2", "0.52.6"]),
+    ("windows_x86_64_msvc", &["0.42.2", "0.52.6"]),
+    ("winnow", &["0.5.40", "1.0.4"]),
 ];
 const SKIPS: &[(&str, &str)] = &[
     ("getrandom", "0.2.17"),
     ("windows-sys", "0.52.0"),
     ("syn", "2.0.119"),
+    ("aes", "0.8.4"),
+    ("base64", "0.21.7"),
+    ("bitflags", "1.3.2"),
+    ("block-buffer", "0.10.4"),
+    ("cipher", "0.4.4"),
+    ("cpufeatures", "0.2.17"),
+    ("crypto-common", "0.1.7"),
+    ("digest", "0.10.7"),
+    ("getrandom", "0.3.4"),
+    ("hashbrown", "0.12.3"),
+    ("heck", "0.4.1"),
+    ("indexmap", "1.9.3"),
+    ("inout", "0.1.4"),
+    ("miniz_oxide", "0.8.9"),
+    ("proc-macro-crate", "1.3.1"),
+    ("proc-macro-crate", "2.0.2"),
+    ("r-efi", "5.3.0"),
+    ("rand_core", "0.6.4"),
+    ("serde_spanned", "0.6.9"),
+    ("sha2", "0.10.9"),
+    ("syn", "1.0.109"),
+    ("thiserror", "1.0.69"),
+    ("thiserror-impl", "1.0.69"),
+    ("toml", "0.8.2"),
+    ("toml_datetime", "0.6.3"),
+    ("toml_edit", "0.19.15"),
+    ("toml_edit", "0.20.2"),
+    ("windows_aarch64_gnullvm", "0.42.2"),
+    ("windows_aarch64_msvc", "0.42.2"),
+    ("windows_i686_gnu", "0.42.2"),
+    ("windows_i686_msvc", "0.42.2"),
+    ("windows_x86_64_gnu", "0.42.2"),
+    ("windows_x86_64_gnullvm", "0.42.2"),
+    ("windows_x86_64_msvc", "0.42.2"),
+    ("windows-sys", "0.45.0"),
+    ("windows-targets", "0.42.2"),
+    ("winnow", "0.5.40"),
+];
+const LICENSE_EXCEPTIONS: &[&str] = &[
+    "{ name = \"ring\", version = \"=0.17.14\", allow = [\"Apache-2.0\", \"ISC\"] }",
+    "{ name = \"untrusted\", version = \"=0.9.0\", allow = [\"ISC\"] }",
+    "{ name = \"rustls-webpki\", version = \"=0.103.16\", allow = [\"ISC\"] }",
+    "{ name = \"cssparser\", version = \"=0.37.0\", allow = [\"MPL-2.0\"] }",
+    "{ name = \"cssparser-macros\", version = \"=0.7.1\", allow = [\"MPL-2.0\"] }",
+    "{ name = \"dtoa-short\", version = \"=0.3.5\", allow = [\"MPL-2.0\"] }",
+    "{ name = \"foldhash\", version = \"=0.2.0\", allow = [\"Zlib\"] }",
+    "{ name = \"option-ext\", version = \"=0.2.0\", allow = [\"MPL-2.0\"] }",
+    "{ name = \"selectors\", version = \"=0.38.0\", allow = [\"MPL-2.0\"] }",
+    "{ name = \"target-lexicon\", version = \"=0.12.16\", allow = [\"Apache-2.0 WITH LLVM-exception\"] }",
 ];
 const P256: &str =
     "p256 = { version = \"=0.14.0\", default-features = false, features = [\"ecdsa\", \"pkcs8\"] }";
@@ -89,12 +173,84 @@ const BANNED: &[&str] = &[
 struct Locked {
     name: String,
     version: String,
+    source: Option<String>,
+    dependencies: Vec<String>,
+    parse_valid: bool,
 }
 fn quoted(text: &str) -> Option<&str> {
     text.trim()
         .strip_prefix('"')?
         .split_once('"')
         .map(|(s, _)| s)
+}
+fn exact_lock_string(text: &str) -> Option<&str> {
+    let value = text.trim().strip_prefix('"')?.strip_suffix('"')?;
+    (!value.contains(['"', '\\']) && !value.chars().any(char::is_control)).then_some(value)
+}
+fn lock_details(block: &str) -> (Option<String>, Vec<String>, bool) {
+    let mut source = None;
+    let mut dependencies = Vec::new();
+    let mut seen = [false; 5];
+    let mut in_dependencies = false;
+    let mut valid = true;
+    for line in block
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !s.starts_with('#'))
+    {
+        if in_dependencies {
+            if line == "]" {
+                in_dependencies = false;
+            } else if let Some(reference) = line.strip_suffix(',').and_then(exact_lock_string) {
+                dependencies.push(reference.to_owned());
+            } else {
+                valid = false;
+            }
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            valid = false;
+            continue;
+        };
+        let value = value.trim();
+        let index = match key.trim() {
+            "name" => 0,
+            "version" => 1,
+            "source" => 2,
+            "dependencies" => 3,
+            "checksum" => 4,
+            _ => {
+                valid = false;
+                continue;
+            }
+        };
+        if seen[index] {
+            valid = false;
+        }
+        seen[index] = true;
+        if index == 3 {
+            match value {
+                "[]" => {}
+                "[" => in_dependencies = true,
+                _ => valid = false,
+            }
+        } else if let Some(text) = exact_lock_string(value) {
+            if index == 2 {
+                source = Some(text.to_owned());
+            } else if index == 4 {
+                valid &= text.len() == 64 && text.bytes().all(|byte| byte.is_ascii_hexdigit());
+            } else if text.is_empty() {
+                valid = false;
+            }
+        } else {
+            valid = false;
+        }
+    }
+    (
+        source,
+        dependencies,
+        valid && seen[0] && seen[1] && !in_dependencies,
+    )
 }
 fn packages(lock: &str) -> Vec<Locked> {
     lock.split("[[package]]")
@@ -106,9 +262,13 @@ fn packages(lock: &str) -> Vec<Locked> {
                     .find_map(|line| line.trim().strip_prefix(key).and_then(quoted))
                     .unwrap()
             };
+            let (source, dependencies, parse_valid) = lock_details(block);
             Locked {
                 name: field("name = ").into(),
                 version: field("version = ").into(),
+                source,
+                dependencies,
+                parse_valid,
             }
         })
         .collect()
@@ -190,8 +350,103 @@ fn exact_denies(policy: &str) -> bool {
         .map(|name| format!("{{ name = \"{name}\" }},")))
 }
 fn pins_match(packages: &[Locked], pins: &[(&str, &str)]) -> bool {
-    pins.iter()
-        .all(|(name, version)| versions(packages, name) == [*version])
+    pins.iter().all(|(name, version)| {
+        match DUPLICATES.iter().find(|(duplicate, _)| duplicate == name) {
+            Some((_, expected)) => {
+                expected.contains(version) && versions(packages, name) == expected.to_vec()
+            }
+            None => versions(packages, name) == [*version],
+        }
+    })
+}
+fn license_exceptions(policy: &str) -> Vec<&str> {
+    let Some((_, licenses)) = policy.split_once("[licenses]") else {
+        return Vec::new();
+    };
+    let Some((_, exceptions)) = licenses.split_once("exceptions = [") else {
+        return Vec::new();
+    };
+    exceptions
+        .lines()
+        .map(str::trim)
+        .take_while(|line| *line != "]")
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| line.strip_suffix(',').unwrap_or(line))
+        .collect()
+}
+fn exact_license_exceptions(policy: &str) -> bool {
+    license_exceptions(policy)
+        .into_iter()
+        .eq(LICENSE_EXCEPTIONS.iter().copied())
+}
+fn exact_global_license_allow(policy: &str) -> bool {
+    let Some((_, licenses)) = policy.split_once("[licenses]") else {
+        return false;
+    };
+    let Some((_, allow)) = licenses.split_once("allow = [") else {
+        return false;
+    };
+    allow
+        .lines()
+        .map(str::trim)
+        .take_while(|line| *line != "]")
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .eq([
+            "\"Apache-2.0\",",
+            "\"BSD-3-Clause\",",
+            "\"MIT\",",
+            "\"Unicode-3.0\",",
+        ])
+}
+const LOCK_REGISTRY: &str = "registry+https://github.com/rust-lang/crates.io-index";
+fn resolve_locked_reference(packages: &[Locked], reference: &str) -> Option<usize> {
+    let parts: Vec<_> = reference.split_ascii_whitespace().collect();
+    if parts.join(" ") != reference {
+        return None;
+    }
+    let (name, version) = match parts.as_slice() {
+        [name] => (*name, None),
+        [name, version] => (*name, Some(*version)),
+        _ => return None,
+    };
+    let mut matches = packages.iter().enumerate().filter(|(_, package)| {
+        package.name == name && version.is_none_or(|version| package.version == version)
+    });
+    let (index, _) = matches.next()?;
+    matches.next().is_none().then_some(index)
+}
+fn reqwest_lock_parent_matches(packages: &[Locked]) -> bool {
+    if packages.iter().any(|package| !package.parse_valid) {
+        return false;
+    }
+    let (Some(reqwest), Some(tauri)) = (
+        resolve_locked_reference(packages, "reqwest"),
+        resolve_locked_reference(packages, "tauri"),
+    ) else {
+        return false;
+    };
+    if packages[reqwest].version != "0.13.5"
+        || packages[tauri].version != "2.12.4"
+        || packages[reqwest].source.as_deref() != Some(LOCK_REGISTRY)
+        || packages[tauri].source.as_deref() != Some(LOCK_REGISTRY)
+    {
+        return false;
+    }
+    let mut inbound = 0;
+    for (parent, package) in packages.iter().enumerate() {
+        for reference in &package.dependencies {
+            let Some(dependency) = resolve_locked_reference(packages, reference) else {
+                return false;
+            };
+            if dependency == reqwest {
+                if parent != tauri || inbound != 0 {
+                    return false;
+                }
+                inbound += 1;
+            }
+        }
+    }
+    inbound == 1
 }
 fn manifest_pins_match(manifest: &str) -> bool {
     let mut dependencies = false;
@@ -232,7 +487,7 @@ fn manifest_pins_match(manifest: &str) -> bool {
     count > 0
 }
 #[test]
-fn every_owned_registry_pin_is_exact_and_locked_once() {
+fn every_owned_registry_pin_is_exact_with_only_recorded_locked_versions() {
     let packages = packages(include_str!("../../Cargo.lock"));
     for manifest in [
         include_str!("../Cargo.toml"),
@@ -245,15 +500,16 @@ fn every_owned_registry_pin_is_exact_and_locked_once() {
     }
     assert!(
         pins_match(&packages, OWNED_PINS),
-        "an owned pin is missing, changed or duplicated"
+        "an owned pin is missing, changed or has an unrecorded version"
     );
 }
 #[test]
-fn one_rustcrypto_generation_and_only_the_recorded_duplicate_versions() {
+fn rustcrypto_versions_and_only_the_recorded_workspace_duplicates() {
     let packages = packages(include_str!("../../Cargo.lock"));
+    assert_eq!(packages.len(), 553, "the fixed workspace inventory changed");
     assert!(
         pins_match(&packages, RUST_CRYPTO),
-        "RustCrypto must remain one pinned generation"
+        "RustCrypto versions must match the exact workspace inventory"
     );
     let expected: BTreeMap<_, _> = DUPLICATES.iter().map(|(n, v)| (*n, v.to_vec())).collect();
     assert_eq!(
@@ -302,14 +558,17 @@ fn pin_predicates_reject_widening_changed_versions_and_added_generations() {
     let mut locked = packages(include_str!("../../Cargo.lock"));
     locked.push(Locked {
         name: "sha2".into(),
-        version: "0.10.9".into(),
+        version: "0.10.10".into(),
+        source: None,
+        dependencies: Vec::new(),
+        parse_valid: true,
     });
     assert!(!pins_match(&locked, RUST_CRYPTO));
     let expected: BTreeMap<_, _> = DUPLICATES.iter().map(|(n, v)| (*n, v.to_vec())).collect();
     assert_ne!(inventory(&locked), expected);
 }
 #[test]
-fn transport_features_keep_the_explicit_ring_tls13_graph_and_test_only_features() {
+fn transport_features_and_workspace_inputs_keep_exact_tls_and_mobile_boundaries() {
     let manifest = include_str!("../Cargo.toml");
     for pin in [
         "hkdf = { version = \"=0.13.0\", default-features = false }",
@@ -337,11 +596,19 @@ fn transport_features_keep_the_explicit_ring_tls13_graph_and_test_only_features(
     assert!(policy.contains("multiple-versions = \"deny\""));
     assert!(policy.contains("multiple-versions-include-dev = true"));
     assert!(!policy.contains("skip-tree") && !policy.contains("multiple-versions = \"allow\""));
+    // This checks locked input, not mobile target/features or genuine graph origin.
+    // The complete graph/route guard still precedes any isolated deny-row removal.
+    assert!(
+        reqwest_lock_parent_matches(&packages(lock)),
+        "the sole recorded mobile HTTP input changed"
+    );
     for banned in BANNED {
-        assert!(
-            !lock.contains(&format!("name = \"{banned}\"")),
-            "forbidden transport dependency in lock"
-        );
+        if *banned != "reqwest" {
+            assert!(
+                !lock.contains(&format!("name = \"{banned}\"")),
+                "forbidden transport dependency in lock"
+            );
+        }
         assert!(
             policy.contains(&format!("{{ name = \"{banned}\" }}")),
             "forbidden transport dependency lacks deny policy"
@@ -368,6 +635,10 @@ fn policy_skips_are_only_exact_reasoned_inventory_entries_and_isc_is_scoped() {
         );
     }
     assert!(exact_denies(policy), "the deny list changed");
+    assert!(
+        exact_global_license_allow(policy),
+        "global licence permissions changed"
+    );
     let openssl = "    { name = \"openssl\" },\n";
     for invalid in [
         policy.replacen(openssl, "    # { name = \"openssl\" },\n", 1),
@@ -399,19 +670,130 @@ fn policy_skips_are_only_exact_reasoned_inventory_entries_and_isc_is_scoped() {
         !global.contains("\"ISC\""),
         "ISC is never a global permission"
     );
-    let exceptions = licenses.split_once("exceptions = [").unwrap().1;
-    assert_eq!(
-        exceptions
-            .lines()
-            .filter(|line| line.trim().starts_with('{'))
-            .count(),
-        3
+    assert!(
+        exact_license_exceptions(policy),
+        "an exact scoped licence exception changed"
     );
-    for row in [
-        "{ name = \"ring\", version = \"=0.17.14\", allow = [\"Apache-2.0\", \"ISC\"] }",
-        "{ name = \"untrusted\", version = \"=0.9.0\", allow = [\"ISC\"] }",
-        "{ name = \"rustls-webpki\", version = \"=0.103.16\", allow = [\"ISC\"] }",
+}
+
+#[test]
+fn finite_workspace_skip_and_licence_tables_reject_unrecorded_rows() {
+    let policy = include_str!("../../deny.toml");
+    let skip = bans_array(policy, "skip")
+        .into_iter()
+        .find(|row| row.starts_with("{ name = \"aes\", version = \"=0.8.4\""))
+        .unwrap();
+    for invalid in [
+        policy.replacen(skip, "", 1),
+        policy.replacen(skip, &format!("{skip}\n{skip}"), 1),
+        policy.replacen(skip, &skip.replace("=0.8.4", "=0.8.5"), 1),
     ] {
-        assert!(exceptions.contains(row), "ISC exception widened or changed");
+        assert!(!exact_skips(&invalid));
+    }
+    let licence = LICENSE_EXCEPTIONS[3];
+    for invalid in [
+        policy.replacen(licence, "", 1),
+        policy.replacen(licence, &format!("{licence}\n{licence}"), 1),
+        policy.replacen(licence, &format!("# {licence}"), 1),
+        policy.replacen(licence, &licence.replace("=0.37.0", "=0.37.1"), 1),
+        policy.replacen(licence, &licence.replace("cssparser", "unrecorded"), 1),
+    ] {
+        assert!(!exact_license_exceptions(&invalid));
+    }
+    for licence in ["ISC", "MPL-2.0", "Zlib", "Apache-2.0 WITH LLVM-exception"] {
+        let invalid = policy.replacen(
+            "    \"MIT\",",
+            &format!("    \"MIT\",\n    \"{licence}\","),
+            1,
+        );
+        assert_ne!(invalid, policy);
+        assert!(!exact_global_license_allow(&invalid));
+    }
+}
+
+const REQWEST_LOCK_FIXTURE: &str = r#"
+version = 4
+
+[[package]]
+name = "tauri"
+version = "2.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "reqwest",
+]
+
+[[package]]
+name = "reqwest"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+"#;
+#[test]
+fn reqwest_lock_parent_refuses_an_unknown_scalar_field_in_a_valid_package() {
+    assert!(reqwest_lock_parent_matches(&packages(REQWEST_LOCK_FIXTURE)));
+    let unknown_scalar = format!("{REQWEST_LOCK_FIXTURE}\nunreviewed = true\n");
+    assert!(!reqwest_lock_parent_matches(&packages(&unknown_scalar)));
+}
+#[test]
+fn reqwest_lock_parent_accepts_only_exact_unversioned_or_versioned_reference() {
+    let parsed = packages(REQWEST_LOCK_FIXTURE);
+    assert_eq!(parsed[0].source.as_deref(), Some(LOCK_REGISTRY));
+    assert_eq!(parsed[0].dependencies, ["reqwest"]);
+    assert!(reqwest_lock_parent_matches(&parsed));
+    let explicit = REQWEST_LOCK_FIXTURE.replace("\"reqwest\",", "\"reqwest 0.13.5\",");
+    assert_eq!(packages(&explicit)[0].dependencies, ["reqwest 0.13.5"]);
+    assert!(reqwest_lock_parent_matches(&packages(&explicit)));
+}
+#[test]
+fn reqwest_lock_parent_refuses_changed_generation_source_parent_and_repeated_edges() {
+    let reqwest_row =
+        format!("name = \"reqwest\"\nversion = \"0.13.5\"\nsource = \"{LOCK_REGISTRY}\"");
+    for invalid in [
+        REQWEST_LOCK_FIXTURE.replace("version = \"0.13.5\"", "version = \"0.13.4\""),
+        REQWEST_LOCK_FIXTURE.replace("version = \"2.12.4\"", "version = \"2.12.3\""),
+        REQWEST_LOCK_FIXTURE.replace("name = \"tauri\"", "name = \"other-parent\""),
+        REQWEST_LOCK_FIXTURE.replacen(LOCK_REGISTRY, "git+https://example.invalid/tauri", 1),
+        REQWEST_LOCK_FIXTURE.replace(
+            &reqwest_row,
+            &reqwest_row.replace(LOCK_REGISTRY, "git+https://example.invalid/reqwest"),
+        ),
+        REQWEST_LOCK_FIXTURE.replace(" \"reqwest\",", " \"reqwest\",\n \"reqwest 0.13.5\","),
+        format!(
+            "{REQWEST_LOCK_FIXTURE}\n[[package]]\nname = \"other-parent\"\nversion = \"1.0.0\"\ndependencies = [\n \"reqwest\",\n]\n"
+        ),
+        format!("{REQWEST_LOCK_FIXTURE}\n[[package]]\n{reqwest_row}\n"),
+        REQWEST_LOCK_FIXTURE.replace(" \"reqwest\",\n", ""),
+    ] {
+        assert!(!reqwest_lock_parent_matches(&packages(&invalid)));
+    }
+}
+#[test]
+fn reqwest_lock_parent_refuses_unknown_ambiguous_and_qualified_dependency_references() {
+    let helper_rows = "\n[[package]]\nname = \"helper\"\nversion = \"1.0.0\"\n\n[[package]]\nname = \"helper\"\nversion = \"2.0.0\"\n";
+    let ambiguous = format!(
+        "{}{helper_rows}",
+        REQWEST_LOCK_FIXTURE.replace(" \"reqwest\",", " \"reqwest\",\n \"helper\",")
+    );
+    assert!(!reqwest_lock_parent_matches(&packages(&ambiguous)));
+    assert!(reqwest_lock_parent_matches(&packages(
+        &ambiguous.replace("\"helper\",", "\"helper 1.0.0\",")
+    )));
+    for reference in [
+        "unknown",
+        "reqwest 0.13.4",
+        "reqwest 0.13.5 (registry+https://github.com/rust-lang/crates.io-index)",
+        "reqwest 0.13.5 extra",
+    ] {
+        let invalid = REQWEST_LOCK_FIXTURE.replace("\"reqwest\",", &format!("\"{reference}\","));
+        assert!(!reqwest_lock_parent_matches(&packages(&invalid)));
+    }
+    let hidden = format!(
+        "{REQWEST_LOCK_FIXTURE}\n[[package]]\nname = \"other-parent\"\nversion = \"1.0.0\"\n\"dependencies\" = [\n \"reqwest\",\n]\n"
+    );
+    assert!(!reqwest_lock_parent_matches(&packages(&hidden)));
+    for invalid in [
+        REQWEST_LOCK_FIXTURE.replace("dependencies = [", "\"dependencies\" = ["),
+        REQWEST_LOCK_FIXTURE.replace("dependencies = [", "unexpected = ["),
+    ] {
+        assert!(!reqwest_lock_parent_matches(&packages(&invalid)));
     }
 }

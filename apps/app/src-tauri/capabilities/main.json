@@ -1,0 +1,7 @@
+{
+  "identifier": "main",
+  "description": "The bundled main document may read and select the local shell mode.",
+  "local": true,
+  "windows": ["main"],
+  "permissions": ["shell-mode"]
+}
