@@ -186,6 +186,19 @@ describe("draft body acknowledgement flags", () => {
 		expectFlags(body(text), [invisible, link("tail.invalid")]);
 	});
 
+	it("bounds CPU when a maximum-length URL holds closing punctuation before a non-punctuation tail", () => {
+		const prefix = "https://example.invalid/";
+		const text = `${prefix}${"]".repeat(100_000 - prefix.length - 1)}x`;
+		expect(text.length).toBe(100_000);
+		expect(EmailDraftContent.shape.body.safeParse(text).success).toBe(true);
+		const input = body(text);
+		const started = process.cpuUsage();
+		const result = classifyBodyLinkAndInvisibleFlags(input);
+		const elapsed = process.cpuUsage(started);
+		expect(result).toEqual({ status: "classified", flags: [link("example.invalid")] });
+		expect(elapsed.user + elapsed.system).toBeLessThan(500_000);
+	});
+
 	it.each([
 		["email", 100_000, EmailDraftContent.shape.body],
 		["chat", 40_000, ChatDraftContent.shape.body],

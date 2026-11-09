@@ -56,7 +56,10 @@ export function classifyBodyLinkAndInvisibleFlags(
 		for (const match of scan.matchAll(URI)) {
 			const value = match[0];
 			if (!/^https?:/i.test(value)) continue;
-			let tail = value.match(/[),.;!?\]}]+$/)?.[0] ?? "";
+			// Walk once instead of repeatedly searching a long near-matching suffix.
+			let tailStart = value.length;
+			while (tailStart > 0 && "),.;!?]}".includes(value.charAt(tailStart - 1))) tailStart--;
+			let tail = value.slice(tailStart);
 			// A bare IPv6 authority's first trailing bracket belongs to the hostname.
 			const authority = value.slice(0, value.length - tail.length + 1);
 			if (tail.startsWith("]") && /^https?:\/\/(?:[^/?#]*@)?\[[^\]]+\]$/i.test(authority))
