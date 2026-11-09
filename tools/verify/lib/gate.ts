@@ -100,7 +100,7 @@ const COUNTED: Readonly<Record<GateCheck, string>> = {
 	"scan-verify": `step or profile file(s) verify would load aren't regular, listed files in real folders; ${UNREAD}`,
 	"scan-prefetch": `spike folder(s) or prefetch script(s) pnpm m0:prefetch would run aren't regular, listed files in real folders; ${UNREAD}`,
 	npmrc: `.npmrc path(s) in the root or a package folder; pnpm takes settings from them, node-options among them, before anything it starts; ${UNREAD}`,
-	"command-shadows": `entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH, or are a package.json whose script starts a command by a path, which cmd.exe looks up there too, or holds a %, which cmd.exe expands before it splits the line; ${UNREAD}`,
+	"command-shadows": `entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH, or are a package.json whose script starts a command by a path, which cmd.exe looks up there too, or holds a %, which cmd.exe expands before it splits the line, or a ^ outside double quotes, which cmd.exe uses up before it parses each side of a pipe again; ${UNREAD}`,
 	"workspace-file":
 		"workspace file(s) aren't a listed regular file in the approved form; pnpm takes settings from it, nodeOptions and scriptShell among them, before anything it starts",
 };
@@ -137,15 +137,8 @@ const BARE_REDIRECTION = /^\d?(?:>>?|<)$/;
 // redirection's < or > aside. cmd.exe runs nothing after a line feed; here one ends the command and
 // any quote, which gives more commands.
 function cmdCommands(script: string, strip: boolean): string[] {
-	let text = script.replaceAll("\r", "");
-	const first = text.indexOf('"');
-	const last = text.lastIndexOf('"');
-	if (strip && first !== -1) {
-		text =
-			last > first
-				? `${text.slice(0, first)}${text.slice(first + 1, last)}${text.slice(last + 1)}`
-				: `${text.slice(0, first)}${text.slice(first + 1)}`;
-	}
+	const dropped = script.replaceAll("\r", "");
+	const text = strip ? slashS(dropped) : dropped;
 	const commands: string[] = [];
 	let command = "";
 	let quoted = false;
@@ -177,6 +170,16 @@ function cmdCommands(script: string, strip: boolean): string[] {
 	}
 	commands.push(command);
 	return commands;
+}
+
+// A script as /s leaves it: without its first " and its last, or its only one.
+function slashS(text: string): string {
+	const first = text.indexOf('"');
+	const last = text.lastIndexOf('"');
+	if (first === -1) return text;
+	return last > first
+		? `${text.slice(0, first)}${text.slice(first + 1, last)}${text.slice(last + 1)}`
+		: `${text.slice(0, first)}${text.slice(first + 1)}`;
 }
 
 // Whether cmd.exe's /s could drop a script's first " and its last: only blanks, line ends and other
@@ -302,6 +305,24 @@ export function scriptCommands(text: string, quoting = false): string[] {
 // from the environment pnpm gives a script, the manifest's config among it.
 export function scriptsExpand(text: string): boolean {
 	return scriptsOf(text).some((script) => script.includes("%"));
+}
+
+// Whether a package.json's script holds a caret outside double quotes, as cmd.exe reads it (a line
+// feed ends any quote) or as /s leaves it. The first parse uses the caret up, and cmd.exe parses
+// each side of a pipe again, where the & or | it took ends a command.
+export function scriptsEscape(text: string): boolean {
+	const outside = (reading: string): boolean => {
+		let quoted = false;
+		for (const char of reading) {
+			if (char === "\n") quoted = false;
+			else if (char === '"') quoted = !quoted;
+			else if (char === "^" && !quoted) return true;
+		}
+		return false;
+	};
+	return scriptsOf(text).some(
+		(script) => outside(script) || (leadingQuote(script) && outside(slashS(script))),
+	);
 }
 
 // The entry names cmd.exe would run for a command word from its current folder: the word with each
@@ -455,7 +476,8 @@ export async function gateWith(
 	// only each folder's own package.json is read, for its scripts' first words. A package.json
 	// whose script starts a command by a path, as cmd.exe splits it, is refused as unsupported:
 	// cmd.exe looks that up from the folder too, in ways no name here covers. So is one whose script
-	// holds a %, which cmd.exe expands before it splits the line.
+	// holds a %, which cmd.exe expands before it splits the line, or a caret outside double quotes,
+	// which its first parse uses up before it parses each side of a pipe again.
 	if (enabled.has("command-shadows")) {
 		const found: Refusal[] = [];
 		for (const dir of new Set(["", ...packagesOf().dirs])) {
@@ -464,7 +486,7 @@ export async function gateWith(
 			const words = own === null ? [] : scriptCommands(own);
 			const byPath = (word: string): boolean => PATH_WORD.test(word);
 			const started = own === null ? [] : scriptCommands(own, true);
-			if (started.some(byPath) || (own !== null && scriptsExpand(own))) {
+			if (started.some(byPath) || (own !== null && (scriptsExpand(own) || scriptsEscape(own)))) {
 				found.push({ rel: manifest, kind: "unsupported" });
 			}
 			const names = new Set(

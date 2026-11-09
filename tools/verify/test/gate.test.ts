@@ -191,7 +191,7 @@ const LINE: Readonly<Record<string, string>> = {
 	npmrc:
 		"reserved tripwire: .npmrc path(s) in the root or a package folder; pnpm takes settings from them, node-options among them, before anything it starts; none of them was read",
 	"command-shadows":
-		"reserved tripwire: entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH, or are a package.json whose script starts a command by a path, which cmd.exe looks up there too, or holds a %, which cmd.exe expands before it splits the line; none of them was read",
+		"reserved tripwire: entry(ies) in the root or a package folder are named for a command started there (node, pnpm, npm, git or a script's first word) with an extension cmd.exe runs, which it would run from that folder in place of the tool on PATH, or are a package.json whose script starts a command by a path, which cmd.exe looks up there too, or holds a %, which cmd.exe expands before it splits the line, or a ^ outside double quotes, which cmd.exe uses up before it parses each side of a pipe again; none of them was read",
 	"workspace-file":
 		"reserved tripwire: workspace file(s) aren't a listed regular file in the approved form; pnpm takes settings from it, nodeOptions and scriptShell among them, before anything it starts",
 };
@@ -795,7 +795,11 @@ describe("refusals before any read or child start", () => {
 			expect([test, uncounted(shown(run))]).toEqual([test, [LINE["command-shadows"]]]);
 			refusedWith(run, [LINE["command-shadows"] ?? ""]);
 			const line = shown(await gate(repo, { names: true, forbidden: shadow }))[0] ?? "";
-			expect([test, line.endsWith(": packages/a/vitest.cmd (file)")]).toEqual([test, true]);
+			// A caret outside double quotes refuses the manifest too.
+			const named = test.includes("^")
+				? ": packages/a/package.json (unsupported), packages/a/vitest.cmd (file)"
+				: ": packages/a/vitest.cmd (file)";
+			expect([test, line.endsWith(named)]).toEqual([test, true]);
 		}
 	});
 
@@ -868,13 +872,20 @@ describe("refusals before any read or child start", () => {
 		refusedWith(outside, [LINE["command-shadows"] ?? ""]);
 	});
 
-	it("refuses a package.json whose script starts a command by a path that cmd.exe reads outside double quotes, or that holds a %, never reading what cmd.exe would find there", async () => {
+	it("refuses a package.json whose script starts a command by a path that cmd.exe reads outside double quotes, or that holds a % or a caret outside them, never reading what cmd.exe would find there", async () => {
 		const manifest = (test: string, config?: Readonly<Record<string, string>>): string =>
 			`${JSON.stringify({ name: "a", private: true, ...(config === undefined ? {} : { config }), scripts: { test } })}\n`;
 		const runnable = (rel: string): boolean => /\.(?:cmd|exe)$/i.test(rel);
 		const evil = ".\\zzevil";
 		const cases: readonly (readonly [string, string, Readonly<Record<string, string>>?])[] = [
 			["a caret's quote, which toggles nothing", `echo ^" & ${evil} & echo "`],
+			// cmd.exe parses each side of a pipe again, after the first parse has used the carets up.
+			["a caret's & on a pipe's left side", `echo a ^& ${evil} | sort`],
+			["a caret's & on a pipe's right side", `echo a | echo b ^& ${evil}`],
+			["a caret's & in a block before a pipe", `(echo a ^& ${evil}) | sort`],
+			["a caret's & with no pipe", `echo a ^& ${evil}`],
+			["a caret's caret before a quote", `echo ^^" & ${evil} & echo "`],
+			["a caret's & that /s leaves outside the quotes", `"(echo" "a ^& ${evil}) | sort"`],
 			["a script in double quotes, which /s drops", `"echo & ${evil} & echo"`],
 			["a script in double quotes after a blank", ` "echo & ${evil} & echo"`],
 			["a script whose first and last quotes /s drops", `"echo" "a & ${evil}"`],
@@ -907,8 +918,8 @@ describe("refusals before any read or child start", () => {
 				true,
 			]);
 		}
-		// Truly quoted, and quoted after a caret's caret: one echo command each.
-		for (const test of [`echo " & ${evil} & echo "`, `echo ^^" & ${evil} & echo "`]) {
+		// Truly quoted, a caret inside the quotes included: one echo command each.
+		for (const test of [`echo " & ${evil} & echo "`, `echo " ^& ${evil} | sort"`]) {
 			passed(await gate(fixture({ files: { "packages/a/package.json": manifest(test) } })));
 		}
 	});
@@ -917,21 +928,22 @@ describe("refusals before any read or child start", () => {
 		const manifest = (test: string): string =>
 			`${JSON.stringify({ name: "a", private: true, scripts: { test } })}\n`;
 		const shadow = (rel: string): boolean => /\.cmd$/i.test(rel);
-		const cases: readonly (readonly [string, string])[] = [
+		// The third element marks a caret outside double quotes, which refuses the manifest too.
+		const cases: readonly (readonly [string, string, true?])[] = [
 			['tsc -v & vi"test" run', "vitest.cmd"],
 			['"vi"test run', "vitest.cmd"],
 			["tsc -v & 'vitest' run", "'vitest'.cmd"],
 			["tsc -v & 'vitest' run", "vitest.cmd"],
 			['tsc -v & "vi test" run', "vi test.cmd"],
 			['tsc -v & "vi&test" run', "vi&test.cmd"],
-			["tsc -v & vi^&test run", "vi&test.cmd"],
+			["tsc -v & vi^&test run", "vi&test.cmd", true],
 			['tsc -v & "a,b" run', "a,b.cmd"],
 			['tsc -v & "vi^test" run', "vi^test.cmd"],
-			["tsc -v & vi^ test run", "vi.cmd"],
-			["tsc -v & vitest^", "vitest.cmd"],
+			["tsc -v & vi^ test run", "vi.cmd", true],
+			["tsc -v & vitest^", "vitest.cmd", true],
 			["tsc -v & vi\rtest run", "vitest.cmd"],
 		];
-		for (const [test, planted] of cases) {
+		for (const [test, planted, caret] of cases) {
 			const repo = fixture({
 				files: { "packages/a/package.json": manifest(test) },
 				ignored: { [`packages/a/${planted}`]: "@echo off\r\n" },
@@ -940,7 +952,8 @@ describe("refusals before any read or child start", () => {
 			expect([test, uncounted(shown(run))]).toEqual([test, [LINE["command-shadows"]]]);
 			refusedWith(run, [LINE["command-shadows"] ?? ""]);
 			const line = shown(await gate(repo, { names: true, forbidden: shadow }))[0] ?? "";
-			expect([test, line.endsWith(`: packages/a/${planted} (file)`)]).toEqual([test, true]);
+			const named = `${caret ? ": packages/a/package.json (unsupported)," : ":"} packages/a/${planted} (file)`;
+			expect([test, line.endsWith(named)]).toEqual([test, true]);
 		}
 	});
 
