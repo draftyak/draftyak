@@ -23,13 +23,13 @@ import {
 	word,
 } from "./temp-repo.ts";
 
-// The second checkout of the native workflows, followed step by step in each real workflow's order
-// on synthetic checkouts. The trusted checkout runs the real gate and pre-install check, first on
-// itself and then with --root on the source checked out at source/. The steps that need the hosted
-// service or a macOS runner are fakes that record that they ran: the install runs each source
-// manifest's install hooks, as pnpm would, and the native command reads its target file. A failed
-// step ends the route as it ends the job, so a refused source never reaches pnpm, a hook or the
-// target.
+// The second checkout of the native workflows and of the nightly approval binding run, followed
+// step by step in each real workflow's order on synthetic checkouts. The trusted checkout runs the
+// real gate and pre-install check, first on itself and then with --root on the source checked out
+// at source/. The steps that need the hosted service or a macOS runner are fakes that record that
+// they ran: the install runs each source manifest's install hooks, as pnpm would, and the native
+// command and the binding check read their target file. A failed step ends the route as it ends
+// the job, so a refused source never reaches pnpm, a hook or the target.
 const workflows = [
 	".github/workflows/native-store.yml",
 	".github/workflows/native-supervisor.yml",
@@ -41,6 +41,9 @@ const sourceCheck = `${preinstall} --root source`;
 const install = "pnpm install --frozen-lockfile";
 const native =
 	/^node tools\/ci-checks\/src\/native-(?:store|supervisor)\.ts (admit|verify-source|run)$/;
+const build = "pnpm build --filter=@draftyak/hub...";
+const binding = 'node "$GITHUB_WORKSPACE/source/node_modules/vitest/vitest.mjs" run ';
+const BINDING = "test/model/send-approval-binding.test.ts";
 const ENTRY = [
 	...new Set([
 		"tools/verify/gate.ts",
@@ -61,8 +64,9 @@ interface Step {
 	readonly directory: string | undefined;
 }
 
-// The steps of a workflow's one job whose commands each fit on one line, as these exact contracts'
-// do; a block command stops the test rather than being read wrong.
+// The steps of a workflow's one job whose commands each fit on one line, or in a | block that
+// bash's line continuations make one command, as these exact contracts' do; any other block
+// command stops the test rather than being read wrong.
 function stepsOf(file: string): Step[] {
 	const text = readFileSync(path.join(ownRepo, file), "utf8").replaceAll("\r\n", "\n");
 	const marker = "\n    steps:\n";
@@ -74,8 +78,17 @@ function stepsOf(file: string): Step[] {
 		.map((chunk) => {
 			const key = (name: string, indent: number): string | undefined =>
 				new RegExp(`^(?: {${indent - 2}}- | {${indent}})${name}: (.*)$`, "m").exec(chunk)?.[1];
-			const run = key("run", 8);
-			if (run === "|" || run === ">") throw new Error(`${file}: a block command`);
+			let run = key("run", 8);
+			if (run === "|") {
+				const body = chunk.slice(chunk.indexOf("run: |\n") + "run: |\n".length).split("\n");
+				const end = body.findIndex((line) => !line.startsWith(" ".repeat(10)));
+				const lines = end < 0 ? body : body.slice(0, end);
+				run = lines
+					.map((line) => line.trim())
+					.join("\n")
+					.replaceAll(" \\\n", " ");
+			}
+			if (run === ">" || run?.includes("\n")) throw new Error(`${file}: a block command`);
 			return {
 				uses: key("uses", 8)?.split("@")[0],
 				run,
@@ -119,6 +132,10 @@ const HOOKED = {
 		postinstall: "node hook.mjs",
 	}),
 };
+// Each with the Hub package whose binding test the nightly run checks.
+const HUB = { "apps/hub/package.json": manifest("hub"), [`apps/hub/${BINDING}`]: "export {};\n" };
+const NIGHTLY = { ...SOURCE, ...HUB };
+const NIGHTLY_HOOKED = { ...HOOKED, ...HUB };
 
 interface Route {
 	readonly ran: readonly string[];
@@ -198,6 +215,11 @@ async function follow(
 		} else if (step.run === install && step.directory === "source") {
 			hooks();
 			ran.push("install");
+		} else if (step.run === build && step.directory === "source") ran.push("build");
+		else if (step.run?.startsWith(binding) && step.directory === "source/apps/hub") {
+			readFileSync(path.join(source, "apps", "hub", BINDING), "utf8");
+			target = true;
+			ran.push("binding");
 		} else {
 			const command = native.exec(step.run ?? "")?.[1];
 			if (command === undefined) throw new Error(`no fake for the step ${JSON.stringify(step)}`);
@@ -283,6 +305,63 @@ describe.each(workflows)("the admitted source route of %s", (file) => {
 			"run",
 			"upload",
 		]);
+		expect([route.hooked, route.target]).toEqual([true, true]);
+	});
+});
+
+// m2 holds no gate of its own, so the nightly run gates it from its own commit: m2 is checked out
+// at source/ after that commit's gate, and checked there before pnpm starts.
+describe("the m2 route of .github/workflows/nightly.yml", () => {
+	const steps = stepsOf(".github/workflows/nightly.yml");
+	const start = ["checkout", "setup-node", "gate 0", "source checkout"];
+	const finish = ["pnpm", "install", "build", "binding"];
+
+	it("reaches the binding check on a clean m2, after the trusted gate and both checks of m2", async () => {
+		const route = await follow(steps, committed(NIGHTLY));
+		expect(route.ran).toEqual([...start, "source gate 0", "source check 0", ...finish]);
+		expect([route.hooked, route.target]).toEqual([false, true]);
+	});
+
+	it("stops at m2's pre-install check, before pnpm, any install hook or the binding check", async () => {
+		const route = await follow(steps, committed(NIGHTLY_HOOKED));
+		expect(route.ran).toEqual([...start, "source gate 0", "source check 1"]);
+		expect(route.lines).toEqual([HOOK_LINE, INSTALL_STOP_LINE]);
+		expect([route.hooked, route.target]).toEqual([false, false]);
+	});
+
+	it.each([
+		[
+			"a reserved-named path outside the allowed roots",
+			() => committed({ ...NIGHTLY_HOOKED, [`tools/hooked/${word()}-notes.md`]: "notes\n" }),
+			() => {},
+		],
+		[
+			"a file tsc would read that git's listing leaves out",
+			() => committed(NIGHTLY_HOOKED),
+			(source: string) => {
+				mkdirSync(path.join(source, ".git", "info"), { recursive: true });
+				appendFileSync(path.join(source, ".git", "info", "exclude"), "tools/hooked/stray.ts\n");
+				writeFileSync(path.join(source, "tools", "hooked", "stray.ts"), "export {};\n");
+			},
+		],
+	])(
+		"stops at m2's gate on %s, before the pre-install check reads a manifest",
+		async (_, origin, plant) => {
+			const route = await follow(steps, origin(), plant);
+			expect(route.ran).toEqual([...start, "source gate 1"]);
+			expect(route.lines.at(-1)).toBe(STOP_LINE);
+			expect(route.lines.every((line) => line.startsWith("reserved tripwire: "))).toBe(true);
+			expect(neutral(route.lines)).toBe(true);
+			expect([route.hooked, route.target]).toEqual([false, false]);
+		},
+	);
+
+	// Mutation: the same workflow without the two checks of m2 runs the hook and the binding check.
+	it("runs m2's hook and reaches the binding check once the two checks of m2 are left out", async () => {
+		const unchecked = steps.filter((step) => step.run !== sourceGate && step.run !== sourceCheck);
+		expect(steps.length - unchecked.length).toBe(2);
+		const route = await follow(unchecked, committed(NIGHTLY_HOOKED));
+		expect(route.ran).toEqual([...start, ...finish]);
 		expect([route.hooked, route.target]).toEqual([true, true]);
 	});
 });
