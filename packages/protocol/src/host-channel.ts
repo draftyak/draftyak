@@ -11,6 +11,7 @@ export const HOST_MAX_WS_DATA_LENGTH: number = HOST_MAX_FRAME_BYTES - 80;
 export const HOST_MAX_HEADER_BYTES = 16_384;
 export const HOST_MAX_ACTIVE_REQUESTS = 16;
 export const HOST_REQUEST_TIMEOUT_MS = 30_000;
+export const PLUGIN_BOOTSTRAP_MAX_BYTES: number = 65_536;
 export const HOST_MAX_STREAM_BYTES = 33_554_432;
 export const HOST_JSON_MEMBER_MAX_ENTITY_BYTES = 50_331_648;
 export const HOST_JSON_MEMBER_MAX_DECODED_BYTES = 33_554_432;
@@ -243,6 +244,36 @@ export const HostNotification: z.ZodType<HostNotification> = z.union([
 		params: z.strictObject({ socketId: Id, data: WsData }),
 	}),
 ]);
+/** First parent-to-child frame only; intentionally absent from normal HostMessage. */
+export interface PluginBootstrap {
+	readonly jsonrpc: "2.0";
+	readonly method: "host/bootstrap";
+	readonly params: {
+		readonly instance: {
+			readonly id: string;
+			readonly config: Readonly<Record<string, unknown>>;
+		};
+	};
+}
+/** Validate already-decoded JSON; object callers must capture inert DATA before validation. */
+export const PluginBootstrap: z.ZodType<PluginBootstrap> = z
+	.strictObject({
+		jsonrpc: z.literal("2.0"),
+		method: z.literal("host/bootstrap"),
+		params: z.strictObject({
+			instance: z.strictObject({
+				id: z.string().regex(/^[!-~]{1,256}(?![\s\S])/),
+				config: z.custom<Readonly<Record<string, unknown>>>(
+					(value) => value !== null && typeof value === "object" && !Array.isArray(value),
+				),
+			}),
+		}),
+	})
+	.refine(
+		(value) =>
+			Object.keys(value.params.instance.config).length <= 4096 &&
+			Buffer.byteLength(canonicalize(value.params.instance)) <= PLUGIN_BOOTSTRAP_MAX_BYTES,
+	);
 /** Child-to-parent cancellation of one original host request; never an RPC or authority grant. */
 export interface HostCancel {
 	readonly jsonrpc: "2.0";
