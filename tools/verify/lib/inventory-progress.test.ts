@@ -541,3 +541,95 @@ describe("actual inventory host observations under synthetic IO", () => {
 		}
 	});
 });
+
+describe("same-host cancellation after original filesystem settlement", () => {
+	it("drains a stopped pending read without consuming its returned listing", async () => {
+		const originalRead = Promise.withResolvers<readonly ReturnType<typeof file>[]>();
+		let reads = 0,
+			examined = 0;
+		const returned = Array.from({ length: 4000 }, (_, index) => ({
+			get name() {
+				examined++;
+				return `DYTEST_ENTRY_${index}`;
+			},
+			isDirectory: () => false,
+			isSymbolicLink: () => false,
+		}));
+		const io = fakeIo({
+			readDirectory: async () => {
+				reads++;
+				return originalRead.promise;
+			},
+		});
+		const host = createInventoryHost(ROOT, io.ports);
+		const running = runWorktreeInventory(ROOT, host),
+			state = outcome(running);
+		void running.catch(() => {});
+		try {
+			const discovery = io.children[0];
+			if (!discovery) throw new Error("DYTEST missing discovery");
+			discovery.stdout.send(path.join(ROOT, ".git") + "\n");
+			discovery.close(0);
+			await turn();
+			const listing = io.children[1];
+			if (!listing) throw new Error("DYTEST missing listing");
+			const other = path.resolve("DYTEST-inventory-cancelled-root");
+			listing.stdout.send(
+				`worktree ${ROOT}\0HEAD ${"a".repeat(40)}\0\0worktree ${other}\0HEAD ${"b".repeat(40)}\0\0`,
+			);
+			listing.close(0);
+			await turn();
+			expect(reads).toBe(1);
+			expect(host.snapshot().pendingFs).toBe(1);
+			host.stop();
+			const drained = host.drain(),
+				drainState = outcome(drained);
+			await turn();
+			expect([state(), drainState()]).toEqual(["pending", "pending"]);
+			expect(examined).toBe(0);
+			originalRead.resolve(returned);
+			await expect(running).rejects.toThrow("file-name inventory failed");
+			await drained;
+			expect(examined).toBe(0);
+			expect(host.snapshot().pendingFs).toBe(0);
+			expect(io.stdout).toEqual([]);
+		} finally {
+			host.stop();
+			originalRead.resolve([]);
+			for (const child of io.children) child.close(1);
+			for (const ack of io.acks) ack();
+			await host.drain();
+			await running.catch(() => {});
+		}
+	});
+
+	it("keeps original stat ownership until settlement and refuses its late result after stop", async () => {
+		const originalStat = Promise.withResolvers<typeof directory>();
+		const io = fakeIo({ statPath: () => originalStat.promise });
+		const host = createInventoryHost(ROOT, io.ports);
+		let consumed = 0;
+		const stated = host.statPath("DYTEST-stat-target").then((value) => {
+			consumed++;
+			return value;
+		});
+		const state = outcome(stated);
+		host.stop();
+		const drained = host.drain(),
+			drainState = outcome(drained);
+		try {
+			await turn();
+			expect([state(), drainState()]).toEqual(["pending", "pending"]);
+			expect(host.snapshot().pendingFs).toBe(1);
+			originalStat.resolve(directory);
+			await expect(stated).rejects.toThrow("file-name inventory failed");
+			await drained;
+			expect(consumed).toBe(0);
+			expect(host.snapshot().pendingFs).toBe(0);
+			expect(io.stdout).toEqual([]);
+		} finally {
+			originalStat.resolve(directory);
+			await host.drain();
+			await stated.catch(() => {});
+		}
+	});
+});
