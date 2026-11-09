@@ -9,24 +9,35 @@ import { parseYaml } from "./yaml.ts";
 
 const repository = path.resolve(import.meta.dirname, "..", "..", "..");
 interface Step {
+	readonly id?: string;
 	readonly name?: string;
 	readonly run?: string;
 	readonly if?: string;
 	readonly env?: Record<string, unknown>;
 }
+interface Job {
+	readonly if?: string;
+	readonly env?: Record<string, unknown>;
+	readonly steps: Step[];
+}
 const workflow = parseYaml(readFileSync(path.join(repository, ".github/workflows/ci.yml"), "utf8"))
-	.value as unknown as { jobs: { full: { steps: Step[] } } };
-const steps = workflow.jobs.full.steps;
-const step = steps.find((entry) => entry.name?.startsWith("test:heavy for"));
-if (!step?.run || !step.env) throw new Error("missing selected-heavy workflow step");
-const run = step.run;
-const environment = step.env;
+	.value as unknown as { jobs: Record<"heavy" | "spike-run", Job> };
+const ordinary = workflow.jobs.heavy;
+const shard = workflow.jobs["spike-run"];
+const step = ordinary.steps.find((entry) => entry.id === "heavy-test");
+const shardStep = shard.steps.find((entry) => entry.id === "heavy-test");
+if (!step?.run || !step.env || !shardStep?.run)
+	throw new Error("missing selected-heavy workflow step");
+const environment = { ...ordinary.env, ...step.env };
+const readySelection =
+	"needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && ";
 const bash = process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "/bin/bash";
 
 function exercise(
 	files: string[],
 	fail = false,
 	overlay: Partial<Record<"spikes" | "heavy" | "rust", readonly string[]>> = {},
+	sharded = false,
 ): { status: number | null; calls: unknown[] } {
 	const root = mkdtempSync(path.join(tmpdir(), "draftyak-app-heavy-shell-"));
 	try {
@@ -55,23 +66,32 @@ function exercise(
 		const split = nativeTransportSelection(selected.heavy.join("\n"), selected.rust.join("\n"));
 		const outputs: Record<string, string> = {
 			spikes: selected.spikes.join("\n"),
+			"spike-count": String(selected.spikes.length),
 			heavy: selected.heavy.join("\n"),
 			"ordinary-heavy": split.ordinaryHeavy,
 		};
-		const clauses = String(step?.if)
-			.split(" || ")
-			.map((clause) => {
-				const field = /^needs\.changes\.outputs\.([a-z-]+) != ''$/.exec(clause)?.[1];
-				if (field === undefined || !Object.hasOwn(outputs, field))
-					throw new Error("unknown heavy condition");
-				return outputs[field] !== "";
-			});
-		if (!clauses.some(Boolean)) return { status: 0, calls: [] };
-		const heavyField = /^\$\{\{ needs\.changes\.outputs\.([a-z-]+) \}\}$/.exec(
-			String(environment.HEAVY),
-		)?.[1];
-		if (heavyField === undefined || !Object.hasOwn(outputs, heavyField))
-			throw new Error("unknown heavy binding");
+		const job = sharded ? shard : ordinary;
+		const commandStep = sharded ? shardStep : step;
+		const effective = { ...job.env, ...commandStep?.env };
+		const condition = String(job.if);
+		if (!condition.startsWith(readySelection)) throw new Error("unknown heavy admission");
+		const guard = /^needs\.changes\.outputs\.([a-z-]+) != '([^']*)'$/.exec(
+			condition.slice(readySelection.length),
+		);
+		if (!guard || !Object.hasOwn(outputs, guard[1] ?? ""))
+			throw new Error("unknown heavy condition");
+		if (outputs[guard[1] ?? ""] === guard[2]) return { status: 0, calls: [] };
+		let heavy = "";
+		if (!sharded) {
+			const field = /^\$\{\{ needs\.changes\.outputs\.([a-z-]+) \}\}$/.exec(
+				String(effective.HEAVY),
+			)?.[1];
+			if (field === undefined || !Object.hasOwn(outputs, field))
+				throw new Error("unknown heavy binding");
+			heavy = outputs[field] ?? "";
+		} else if (effective.SPIKE !== "${{ matrix.spike }}" || selected.spikes.length !== 1) {
+			throw new Error("expected one selected shard importer");
+		}
 		const browserPath = path.join(root, "browsers");
 		const capture = path.join(root, "capture.mjs");
 		const output = path.join(root, "calls.jsonl");
@@ -86,7 +106,7 @@ function exercise(
 		);
 		// Absolute executable and script, no PATH interception or fallback. Only fixed argv metadata
 		// reaches this stand-in: neither Turbo nor an application/heavy/live command is executed.
-		const command = `node() { "$CAPTURE_NODE" "$CAPTURE_SCRIPT" "$@"; }\nreadonly -f node\n${run}`;
+		const command = `node() { "$CAPTURE_NODE" "$CAPTURE_SCRIPT" "$@"; }\nreadonly -f node\n${commandStep?.run}`;
 		const result = spawnSync(
 			bash,
 			["--noprofile", "--norc", "-e", "-o", "pipefail", "-c", command],
@@ -104,13 +124,14 @@ function exercise(
 					CAPTURE_FAIL: fail ? "1" : "0",
 					CAPTURE_BROWSER_EXPECTED: browserPath,
 					SPIKES: selected.spikes.join("\n"),
-					HEAVY: outputs[heavyField],
+					SPIKE: selected.spikes[0] ?? "",
+					HEAVY: heavy,
 					PLAYWRIGHT_BROWSERS_PATH:
-						environment.PLAYWRIGHT_BROWSERS_PATH === "${{ steps.browser-setup.outputs.path }}"
+						effective.PLAYWRIGHT_BROWSERS_PATH === "${{ steps.browser-setup.outputs.path }}"
 							? browserPath
-							: String(environment.PLAYWRIGHT_BROWSERS_PATH ?? ""),
+							: String(effective.PLAYWRIGHT_BROWSERS_PATH ?? ""),
 					SMOKE: String(selected.templateSmoke),
-					DRAFTYAK_STRICT_SKIPS: String(environment.DRAFTYAK_STRICT_SKIPS ?? ""),
+					DRAFTYAK_STRICT_SKIPS: String(effective.DRAFTYAK_STRICT_SKIPS ?? ""),
 				},
 			},
 		);
@@ -130,16 +151,24 @@ function exercise(
 
 describe("actual selected-heavy workflow application arguments", () => {
 	it("keeps the existing condition, build prerequisite and explicit strict skips", () => {
-		expect(step.if).toBe(
-			"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
-		);
+		expect(ordinary.if).toBe(`${readySelection}needs.changes.outputs.ordinary-heavy != ''`);
+		expect(shard.if).toBe(`${readySelection}needs.changes.outputs.spike-count != '0'`);
+		expect(step.if).toBeUndefined();
+		expect(shardStep.if).toBeUndefined();
 		expect(environment.HEAVY).toBe("${{ needs.changes.outputs.ordinary-heavy }}");
 		expect(environment.PLAYWRIGHT_BROWSERS_PATH).toBe("${{ steps.browser-setup.outputs.path }}");
 		expect(environment.DRAFTYAK_STRICT_SKIPS).toBe("1");
-		expect(steps.findIndex((entry) => entry.run === "pnpm build")).toBeGreaterThan(-1);
-		expect(steps.findIndex((entry) => entry.run === "pnpm build")).toBeLessThan(
-			steps.indexOf(step),
-		);
+		expect(shard.env?.SPIKE).toBe("${{ matrix.spike }}");
+		for (const [job, commandStep] of [
+			[ordinary, step],
+			[shard, shardStep],
+		] as const) {
+			expect(job.env?.DRAFTYAK_STRICT_SKIPS).toBe("1");
+			expect(commandStep.env?.DRAFTYAK_STRICT_SKIPS).toBeUndefined();
+			const build = job.steps.findIndex((entry) => entry.run === "pnpm build");
+			expect(build).toBeGreaterThan(-1);
+			expect(build).toBeLessThan(job.steps.indexOf(commandStep));
+		}
 	});
 	it.each(["cli", "hub"])("passes the dependent %s filter as one literal argument", (app) => {
 		expect(exercise([`apps/${app}/src/main.ts`])).toEqual({
@@ -217,7 +246,9 @@ describe("actual selected-heavy workflow application arguments", () => {
 		});
 	});
 	it("retains the actual spike-only shell execution with empty ordinary selection", () => {
-		expect(exercise([], false, { spikes: ["spikes/kit"], heavy: [] })).toEqual({
+		const selected = { spikes: ["spikes/kit"], heavy: [] };
+		expect(exercise([], false, selected)).toEqual({ status: 0, calls: [] });
+		expect(exercise([], false, selected, true)).toEqual({
 			status: 0,
 			calls: [
 				{
@@ -229,12 +260,14 @@ describe("actual selected-heavy workflow application arguments", () => {
 						"--log-order=stream",
 						"--log-prefix=task",
 						"--filter=./spikes/kit",
-						"--filter=!./packages/create-plugin",
 					],
 					strict: "1",
 				},
 			],
 		});
+		const failure = exercise([], true, selected, true);
+		expect(failure.status).toBe(23);
+		expect(failure.calls).toHaveLength(1);
 	});
 	it("invalidates the CI test cache when either reviewed app manifest changes", () => {
 		const config = JSON.parse(

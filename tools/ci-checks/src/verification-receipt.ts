@@ -1,10 +1,20 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
+import { planHeavyShards } from "./heavy-shards.ts";
 import { appendSummary, git, runCli, setOutputs, UsageError } from "./lib.ts";
 import { nativeTransportSelection } from "./native-transport.ts";
 
-export const jobNames = ["changes", "cheap", "full", "windows", "macos"] as const;
+export const jobNames = [
+	"changes",
+	"cheap",
+	"full",
+	"spikes",
+	"heavy",
+	"windows",
+	"macos",
+] as const;
 type JobName = (typeof jobNames)[number];
 type JobResult = "success" | "failure" | "cancelled" | "skipped";
 type Event = "pull_request" | "push" | "workflow_dispatch";
@@ -178,10 +188,20 @@ function parseSelection(outputs: Record<string, unknown>): Selection {
 		text(outputs["native-transport"], /^(true|false)$/, "native-transport output") === "true";
 	if (native.selected !== nativeTransport || native.ordinaryHeavy !== ordinaryHeavy.join("\n"))
 		throw new UsageError("native transport and ordinary-heavy selections disagree");
+	const spikes = selectionList(outputs.spikes, "spikes", pathPattern);
+	const plan = planHeavyShards(spikes.join("\n"));
+	if (
+		outputs["spike-count"] !== String(plan.count) ||
+		typeof outputs["spike-matrix"] !== "string" ||
+		outputs["spike-matrix"].length > 32 * 1024 ||
+		!isDeepStrictEqual(parseJson(outputs["spike-matrix"], "spike matrix"), plan.matrix)
+	) {
+		throw new UsageError("spike matrix does not preserve the selected suites");
+	}
 	return {
 		areas,
 		rust,
-		spikes: selectionList(outputs.spikes, "spikes", pathPattern),
+		spikes,
 		heavy,
 		ordinaryHeavy,
 		nativeTransport,
@@ -227,6 +247,8 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 		changes: true,
 		cheap: true,
 		full,
+		spikes: full && (selection?.spikes.length ?? 0) > 0,
+		heavy: full && (selection?.ordinaryHeavy.length ?? 0) > 0,
 		windows,
 		macos: native,
 	};
@@ -240,6 +262,26 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 		) as JobResult;
 		const outputs = object(job.outputs ?? {});
 		const source = parseSource(outputs.source);
+		if (name === "spikes" || name === "heavy") {
+			const expected =
+				name === "spikes"
+					? planHeavyShards(selection?.spikes.join("\n") ?? "").shards
+					: (selection?.ordinaryHeavy ?? []);
+			if (required[name]) {
+				if (
+					typeof outputs.completed !== "string" ||
+					outputs.completed.length > 32 * 1024 ||
+					!isDeepStrictEqual(parseJson(outputs.completed, `${name} completion`), expected)
+				) {
+					problems.push(`${name}: missing or mismatched selected-suite completion`);
+				}
+			} else if (
+				result !== "skipped" ||
+				(outputs.completed !== undefined && outputs.completed !== "")
+			) {
+				problems.push(`${name}: unexpected execution or completion without selected suites`);
+			}
+		}
 		const nativeJob = name === "full" || name === "windows" || name === "macos";
 		const nativeRequired = native && nativeJob;
 		const completion = nativeJob ? outputs["native-transport"] : undefined;
@@ -348,7 +390,7 @@ export function renderSummary(receipt: Receipt): string {
 					`| Template-smoke output | ${selection.templateSmoke ? "yes" : "no"} |`,
 				]),
 		"",
-		"Selection is classifier output, not proof of execution. Compare GitHub's full-job step conclusions with the item's acceptance commands and run checks CI did not select.",
+		"Selection is classifier output, not proof of execution. Compare GitHub's job and step conclusions with the item's acceptance commands and run checks CI did not select.",
 		"GitHub job records are authoritative; this receipt cannot establish its own trustworthiness.",
 		"",
 		"This receipt covers these CI jobs. A successful job does not establish that every test ran. Other workflows, live/device checks and owner acceptance remain separate.",
