@@ -9,6 +9,11 @@ import {
 	ownedProcess,
 } from "./inventory-process.ts";
 import {
+	createInventoryProgress,
+	type InventoryProgress,
+	type InventoryProgressCounters,
+} from "./inventory-progress.ts";
+import {
 	listedWorktrees,
 	namedWorktreeFiles,
 	type ReadDirectory,
@@ -38,6 +43,10 @@ export interface InventoryHost {
 	write(bytes: string, ack: (error?: Error | null) => void): void;
 }
 
+export interface ObservedInventoryHost extends InventoryHost {
+	snapshot(): InventoryProgressCounters;
+}
+
 const failed = (): Error => new Error("file-name inventory failed");
 const GIT_PIPE_MAX = 4 * 1024 * 1024;
 const io: InventoryIo = {
@@ -58,14 +67,25 @@ const io: InventoryIo = {
 	},
 };
 
-export function createInventoryHost(root: string, ports: InventoryIo = io): InventoryHost {
+export function createInventoryHost(
+	root: string,
+	ports: InventoryIo = io,
+	onStop?: () => void,
+): ObservedInventoryHost {
 	let stopped = false;
 	let activeFs = 0;
+	let directoryVisits = 0;
+	let entries = 0;
 	const fsWaiters = new Set<() => void>();
 	const children = new Map<OwnedProcess, Promise<void>>();
 	const stop = (): void => {
 		if (stopped) return;
 		stopped = true;
+		try {
+			onStop?.();
+		} catch {
+			/* Observation cannot prevent stopping the original children. */
+		}
 		for (const child of children.keys()) {
 			try {
 				child.kill();
@@ -88,8 +108,15 @@ export function createInventoryHost(root: string, ports: InventoryIo = io): Inve
 		}
 	};
 	return {
-		readDirectory: (directory) => track(() => ports.readDirectory(directory)),
+		readDirectory: (directory) =>
+			track(async () => {
+				directoryVisits += 1;
+				const found = await ports.readDirectory(directory);
+				entries += found.length;
+				return found;
+			}),
 		statPath: (target) => track(() => ports.statPath(target)),
+		snapshot: () => ({ pendingGit: children.size, pendingFs: activeFs, directoryVisits, entries }),
 		stopped: () => stopped,
 		stop,
 		drained: () => activeFs === 0 && children.size === 0,
@@ -156,8 +183,13 @@ export function createInventoryHost(root: string, ports: InventoryIo = io): Inve
 	};
 }
 
-export async function inventoryWorktrees(root: string, host: InventoryHost): Promise<void> {
+export async function inventoryWorktrees(
+	root: string,
+	host: InventoryHost,
+	progress?: InventoryProgress,
+): Promise<void> {
 	try {
+		progress?.phase(1);
 		if (!path.isAbsolute(root)) throw failed();
 		const common = await host.git(["rev-parse", "--path-format=absolute", "--git-common-dir"]);
 		if (common.code !== 0) throw failed();
@@ -181,6 +213,8 @@ export async function inventoryWorktrees(root: string, host: InventoryHost): Pro
 		const roots = (await refreshWorktrees())
 			.map(({ directory }) => directory)
 			.filter((directory) => key(directory) !== main);
+		progress?.roots(roots.length);
+		progress?.phase(2);
 		let next = 0;
 		let refused = false;
 		const worker = async (): Promise<void> => {
@@ -203,18 +237,24 @@ export async function inventoryWorktrees(root: string, host: InventoryHost): Pro
 				}
 			}
 		};
+		progress?.phase(3);
 		await Promise.allSettled(Array.from({ length: 16 }, worker));
 		if (refused || host.stopped() || next !== roots.length) throw failed();
 	} catch {
+		progress?.phase(5);
 		host.stop();
 		await host.drain();
 		throw failed();
 	}
 }
 
-export async function completeInventory(host: InventoryHost): Promise<void> {
+export async function completeInventory(
+	host: InventoryHost,
+	progress?: InventoryProgress,
+): Promise<void> {
 	await host.drain();
 	if (host.stopped() || !host.drained()) throw failed();
+	progress?.phase(4);
 	await new Promise<void>((resolve, reject) => {
 		try {
 			host.write(INVENTORY_SENTINEL, (error) => {
@@ -228,11 +268,17 @@ export async function completeInventory(host: InventoryHost): Promise<void> {
 	if (host.stopped() || !host.drained()) throw failed();
 }
 
-export async function runWorktreeInventory(root: string, host: InventoryHost): Promise<void> {
+export async function runWorktreeInventory(
+	root: string,
+	host: InventoryHost,
+	progress?: InventoryProgress,
+): Promise<void> {
 	try {
-		await inventoryWorktrees(root, host);
-		await completeInventory(host);
+		progress?.phase(0);
+		await inventoryWorktrees(root, host, progress);
+		await completeInventory(host, progress);
 	} catch {
+		progress?.phase(5);
 		host.stop();
 		await host.drain();
 		throw failed();
@@ -244,18 +290,30 @@ if (import.meta.main) {
 		process.stderr.write("file-name inventory failed\n");
 		process.exitCode = 1;
 	} else {
-		const host = createInventoryHost(path.resolve(import.meta.dirname, "..", "..", ".."));
+		let progress: InventoryProgress | undefined;
+		const host = createInventoryHost(path.resolve(import.meta.dirname, "..", "..", ".."), io, () =>
+			progress?.phase(5),
+		);
 		process.stdout.on("error", () => host.stop());
 		process.stderr.on("error", () => host.stop());
 		process.on("message", () => host.stop());
 		process.on("disconnect", () => host.stop());
 		try {
-			await runWorktreeInventory(path.resolve(import.meta.dirname, "..", "..", ".."), host);
+			progress = createInventoryProgress(
+				() => host.snapshot(),
+				() => host.stop(),
+			);
+			await runWorktreeInventory(
+				path.resolve(import.meta.dirname, "..", "..", ".."),
+				host,
+				progress,
+			);
 			process.exitCode = 0;
 		} catch {
 			process.stderr.write("file-name inventory failed\n");
 			process.exitCode = 1;
 		} finally {
+			if (progress !== undefined && !(await progress.finish())) process.exitCode = 1;
 			if (process.connected) process.disconnect?.();
 		}
 	}
