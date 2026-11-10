@@ -117,6 +117,11 @@ export class JobQueue {
 		this.#events = events;
 		this.#clock = clock;
 	}
+	/** Compares the original database identity; issues no scope, lease or operation permission. */
+	assertDatabase(expected: WorkDatabase): void {
+		if (this.#database !== expected) throw new WorkError("scope");
+	}
+
 	#time(): { wall: number; monotonic: number } {
 		const wall = integer(this.#clock.wallMs());
 		const monotonic = this.#clock.monotonicMs();

@@ -13,7 +13,7 @@ export function captureResponsesMetadataBinding(
 		["profile", "endpoint"],
 	);
 	if (
-		configuration.profile !== "responses-api-v1" ||
+		!["responses-api-v1", "responses-plan-v1"].includes(configuration.profile as string) ||
 		configuration.endpoint !== "https://api.openai.com/v1"
 	)
 		refuse();
@@ -30,7 +30,7 @@ export function captureResponsesMetadataBinding(
 	const binding: ResponsesMetadataBindingWithoutNetwork = Object.freeze({
 		operation: value.operation,
 		configuration: Object.freeze({
-			profile: "responses-api-v1",
+			profile: configuration.profile as "responses-api-v1" | "responses-plan-v1",
 			endpoint: "https://api.openai.com/v1",
 			...(Object.hasOwn(configuration, "model") ? { model: configuration.model as string } : {}),
 		}),

@@ -15,7 +15,7 @@ import {
 	presetRefusal,
 } from "../authz/decide.ts";
 import { AuthzError, type AuthzErrorCode } from "../authz/errors.ts";
-import { cliConfirmPinScope, pairConfirmPinScope } from "../authz/scopes.ts";
+import { bootstrapPinScope, cliConfirmPinScope, pairConfirmPinScope } from "../authz/scopes.ts";
 import type { Clock } from "../kernel/clock.ts";
 import { newId } from "../kernel/ids.ts";
 import { readStamp } from "../store/read-stamp.ts";
@@ -37,12 +37,26 @@ import {
 import type { HubIdentity } from "./hub-key.ts";
 import { PinError, type PinInitialization, type PinProof, PinService } from "./pin.ts";
 
-export interface PreparedBootstrap {
-	readonly deviceId: string;
-	readonly owner: string;
-	readonly pin: PinInitialization;
-	readonly mono: number;
-}
+export type PreparedBootstrap =
+	| {
+			readonly deviceId: string;
+			readonly owner: string;
+			readonly pin: PinInitialization;
+			readonly mono: number;
+			readonly restored?: never;
+	  }
+	| {
+			readonly deviceId: string;
+			readonly owner: string;
+			readonly pin: PinProof;
+			readonly mono: number;
+			readonly restored: {
+				readonly epoch: number;
+				readonly userId: string | null;
+				readonly spkiSha256: string;
+				readonly approvalKey: string;
+			};
+	  };
 /** The registry's private state; only DeviceRegistry builds one. */
 export interface RegistryContext {
 	readonly store: HubStore;
@@ -61,6 +75,7 @@ export const writeStore: HubStore["write"] = HubStore.prototype.write;
 const appendAudit = AuditChain.prototype.append;
 const prepareInitialization = PinService.prototype.prepareInitialization;
 const installPin = PinService.prototype.install;
+const verifyPin = PinService.prototype.verify;
 export const consumePin: PinService["consume"] = PinService.prototype.consume;
 export const discardPin: PinService["discard"] = PinService.prototype.discard;
 const PREPARED_TTL = 30_000;
@@ -184,6 +199,48 @@ export async function prepareBootstrap(
 	});
 	const owner = guard(() => target.authority.ownerUserId ?? newId(now(context)));
 	sweep(context);
+	const restored =
+		target.authority.ownerUserId !== null &&
+		guard(
+			() =>
+				readStore.call(context.store, (db: SqlReader) =>
+					db.get("SELECT 1 FROM main.approval_pins WHERE user_id=?", [owner]),
+				) !== undefined,
+		);
+	if (restored) {
+		let proof: PinProof | undefined;
+		let retained = false;
+		try {
+			proof = await verifyPin.call(
+				context.pins,
+				owner,
+				pin as string,
+				bootstrapPinScope(target.facts.deviceId),
+			);
+			if (context.locked()) refuse("UNAVAILABLE");
+			const handle = Object.freeze(Object.create(null)) as BootstrapPreparation;
+			context.prepared.set(handle, {
+				deviceId: target.facts.deviceId,
+				owner,
+				pin: proof,
+				mono: performance.now(),
+				restored: Object.freeze({
+					epoch: target.authority.epoch,
+					userId: target.facts.userId,
+					spkiSha256: target.facts.spkiSha256,
+					approvalKey: target.facts.approvalKey,
+				}),
+			});
+			retained = true;
+			return handle;
+		} catch (error) {
+			throw error instanceof PinError || error instanceof AuthzError
+				? error
+				: new AuthzError("UNAVAILABLE");
+		} finally {
+			if (!retained && proof) discardPin.call(context.pins, proof);
+		}
+	}
 	let initialization: PinInitialization | undefined;
 	try {
 		initialization = await prepareInitialization.call(context.pins, owner, pin as string);
@@ -221,8 +278,26 @@ export function completeBootstrap(
 			if (authority.ownerUserId !== null && authority.ownerUserId !== record.owner)
 				refuse("BOOTSTRAP_REFUSED");
 			const at = now(context);
-			if (authority.ownerUserId === null) createOwner(context.store, tx, record.owner, at);
-			installPin.call(context.pins, tx, record.pin, record.owner);
+			if (record.restored) {
+				if (
+					authority.ownerUserId !== record.owner ||
+					authority.epoch !== record.restored.epoch ||
+					facts.userId !== record.restored.userId ||
+					facts.spkiSha256 !== record.restored.spkiSha256 ||
+					facts.approvalKey !== record.restored.approvalKey
+				)
+					refuse("BOOTSTRAP_REFUSED");
+				consumePin.call(
+					context.pins,
+					tx,
+					record.pin,
+					record.owner,
+					bootstrapPinScope(record.deviceId),
+				);
+			} else {
+				if (authority.ownerUserId === null) createOwner(context.store, tx, record.owner, at);
+				installPin.call(context.pins, tx, record.pin, record.owner);
+			}
 			confirmDevice(context.store, tx, {
 				id: facts.deviceId,
 				userId: record.owner,

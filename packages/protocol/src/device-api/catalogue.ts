@@ -4,9 +4,12 @@ import { canConfirm, DeviceCapability } from "../entities/device.ts";
 import { canonicalize, parseStrict } from "../jcs.ts";
 import { ADMIN_KINDS, AgentSessionReviewSubject } from "../statements.ts";
 import {
+	AdminAccountConnectSubject,
 	AdminAccountSubject,
 	AdminDataBackupSubject,
 	AdminDeviceCapabilitiesSubject,
+	AdminPluginInstallSubject,
+	AdminPluginUpgradeSubject,
 } from "./admin.ts";
 import { copyByteView } from "./bytes.ts";
 import { Challenge, ChallengeRequest } from "./challenge.ts";
@@ -308,9 +311,12 @@ export const DEVICE_API_SCHEMAS: Readonly<Record<string, z.ZodType>> = Object.fr
 	PairConfirmSubject,
 	OperationReview,
 	AgentSessionReviewSubject,
+	AdminAccountConnectSubject,
 	AdminAccountSubject,
 	AdminDeviceCapabilitiesSubject,
 	AdminDataBackupSubject,
+	AdminPluginInstallSubject,
+	AdminPluginUpgradeSubject,
 	ChallengeRequest,
 	Challenge,
 	SignedEnvelope,

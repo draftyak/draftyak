@@ -20,9 +20,11 @@ import {
 	openPluginInstaller,
 	PluginInstallError,
 } from "../../src/plugins/installer/index.ts";
+import { INSTALLER_MUTEX_FILE } from "../../src/plugins/installer/mutex.ts";
 import {
 	bundle,
 	EXECUTED,
+	expectInstallerMutex,
 	finalName,
 	fixture,
 	manifest,
@@ -43,6 +45,8 @@ function snapshot(root: string): unknown[] {
 	const rows: unknown[] = [];
 	const visit = (name: string): void => {
 		const stat = lstatSync(name, { bigint: true });
+		const control = name === path.join(root, INSTALLER_MUTEX_FILE);
+		if (control) expectInstallerMutex(root);
 		rows.push([
 			path.relative(root, name),
 			stat.dev,
@@ -52,7 +56,7 @@ function snapshot(root: string): unknown[] {
 			stat.size,
 			stat.mtimeNs,
 			stat.ctimeNs,
-			stat.isFile() ? readFileSync(name) : null,
+			stat.isFile() && !control ? readFileSync(name) : null,
 		]);
 		if (stat.isDirectory() && !stat.isSymbolicLink())
 			for (const child of readdirSync(name).sort()) visit(path.join(name, child));
@@ -185,7 +189,7 @@ describe("read-only pinned plugin inspection", () => {
 				chmodSync(file, 0o400);
 			} else if (alteration === "extra") {
 				chmodSync(target, 0o700);
-				const extra = path.join(target, "extra.mjs");
+				const extra = path.join(target, INSTALLER_MUTEX_FILE);
 				writeFileSync(extra, "export {};", { mode: 0o400 });
 				if (process.platform !== "win32") chmodSync(target, 0o500);
 			} else if (alteration === "missing") {
@@ -244,8 +248,10 @@ describe("read-only pinned plugin inspection", () => {
 	it("refuses a replacement private root even when a new factory installs the same valid pin there", async () => {
 		const f = fixture();
 		const item = bundle();
+		const writer = await f.open([item]);
+		await writer.install(item.id, item.lock.version, item.archive);
 		const installer = await f.open([item]);
-		await installer.install(item.id, item.lock.version, item.archive);
+		await writer.close();
 		renameSync(f.root, path.join(f.dir, "previous-root"));
 		mkdirSync(f.root, { mode: 0o700 });
 		const next = await f.open([item]);

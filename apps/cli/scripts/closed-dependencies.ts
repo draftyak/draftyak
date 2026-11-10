@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	lstatSync,
 	mkdirSync,
@@ -7,22 +8,39 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { isBuiltin } from "node:module";
+import { createRequire, isBuiltin } from "node:module";
 import path from "node:path";
 import type { Plugin } from "rolldown";
 import { API } from "typescript/unstable/sync";
+import {
+	type BuildCompilerHelper,
+	type BuildComponent,
+	type BuildProvenance,
+	type BuildSource,
+	createBuildProvenance,
+} from "./build-provenance.ts";
 import { assertSourceAdmission } from "./source-admission.ts";
 
 interface Package {
 	readonly root: string;
 	readonly name: string;
 	readonly manifest: Record<string, unknown>;
+	readonly manifestBytes: Buffer;
+	readonly kind: "workspace" | "dependency";
 	readonly cli: boolean;
 }
 interface Source {
 	readonly filename: string;
 	readonly owner: Package;
 	readonly code: string;
+	readonly bytes: Buffer;
+}
+
+interface EmittedOutput {
+	readonly type: string;
+	readonly fileName: string;
+	readonly code?: string;
+	readonly modules?: Record<string, unknown>;
 }
 
 function refuse(): never {
@@ -48,9 +66,35 @@ function regular(root: string, filename: string): void {
 	if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 2 * 1024 * 1024) refuse();
 	if (realpathSync(filename) !== path.resolve(filename)) refuse();
 }
-function json(root: string, filename: string): Record<string, unknown> {
+function json(
+	root: string,
+	filename: string,
+): {
+	readonly manifest: Record<string, unknown>;
+	readonly manifestBytes: Buffer;
+} {
 	regular(root, filename);
-	return object(JSON.parse(readFileSync(filename, "utf8")));
+	const manifestBytes = readFileSync(filename);
+	return { manifest: object(JSON.parse(manifestBytes.toString("utf8"))), manifestBytes };
+}
+function digest(bytes: string | Buffer): string {
+	return createHash("sha256").update(bytes).digest("hex");
+}
+function relativePath(root: string, filename: string): string {
+	const value = path.relative(root, filename).replaceAll(path.sep, "/");
+	if (
+		!value ||
+		!value.isWellFormed() ||
+		value.includes("\\") ||
+		value.includes(":") ||
+		Array.from(value).some((character) => {
+			const code = character.codePointAt(0);
+			return code !== undefined && (code <= 0x1f || (code >= 0x7f && code <= 0x9f));
+		}) ||
+		value.split("/").some((part) => !part || part === "." || part === "..")
+	)
+		return refuse();
+	return value;
 }
 function exportTarget(value: unknown): string {
 	if (typeof value === "string") return value;
@@ -74,6 +118,12 @@ export class ClosedDependencies {
 	#batch = 0;
 	#bytes = 0;
 	#lock: string | undefined;
+	#proofLock: Buffer | undefined;
+	#proofRequested = false;
+	#closed = false;
+	#compiler:
+		| { readonly root: string; readonly filename: string; readonly manifestBytes: Buffer }
+		| undefined;
 
 	constructor(root: string) {
 		this.#root = realpathSync(root);
@@ -81,9 +131,16 @@ export class ClosedDependencies {
 		root = this.#root;
 		this.#workspace = path.resolve(root, "../..");
 		this.#source = path.join(root, "src");
-		const manifest = json(root, path.join(root, "package.json"));
+		const { manifest, manifestBytes } = json(root, path.join(root, "package.json"));
 		if (manifest.name !== "@draftyak/cli") refuse();
-		this.#cli = { root, name: manifest.name, manifest, cli: true };
+		this.#cli = {
+			root,
+			name: manifest.name,
+			manifest,
+			manifestBytes,
+			kind: "workspace",
+			cli: true,
+		};
 		this.#cache = path.join(root, ".cache");
 		mkdirSync(this.#cache, { recursive: true });
 		if (realpathSync(this.#cache) !== this.#cache || lstatSync(this.#cache).isSymbolicLink())
@@ -92,6 +149,7 @@ export class ClosedDependencies {
 	}
 
 	close(): void {
+		this.#closed = true;
 		try {
 			this.#api.close();
 		} finally {
@@ -116,10 +174,11 @@ export class ClosedDependencies {
 		)
 			refuse();
 		regular(owner.cli ? this.#source : owner.root, filename);
-		const code = readFileSync(filename, "utf8");
+		const bytes = readFileSync(filename);
+		const code = bytes.toString("utf8");
 		this.#bytes += Buffer.byteLength(code);
 		if (this.#bytes > 32 * 1024 * 1024) refuse();
-		this.#sources.set(filename, { filename, owner, code });
+		this.#sources.set(filename, { filename, owner, code, bytes });
 	}
 
 	#locked(name: string, version: string): void {
@@ -185,12 +244,19 @@ export class ClosedDependencies {
 			this.#locked(name, declared);
 		}
 		const previous = this.#packages.get(root);
-		const manifest = previous?.manifest ?? json(root, path.join(root, "package.json"));
+		const { manifest, manifestBytes } = previous ?? json(root, path.join(root, "package.json"));
 		if (manifest.name !== name) refuse();
 		if (declared !== "workspace:*" && manifest.version !== declared) refuse();
 		if (previous) return previous;
 		if (this.#packages.size >= 64) refuse();
-		const dependency = { root, name, manifest, cli: false };
+		const dependency: Package = {
+			root,
+			name,
+			manifest,
+			manifestBytes,
+			kind: declared === "workspace:*" ? "workspace" : "dependency",
+			cli: false,
+		};
 		this.#packages.set(root, dependency);
 		return dependency;
 	}
@@ -266,6 +332,7 @@ export class ClosedDependencies {
 	}
 
 	admit(files: readonly string[]): void {
+		if (this.#proofRequested || this.#closed) refuse();
 		for (const file of files) this.#add(path.join(this.#source, file), this.#cli);
 		const visited = new Set<string>();
 		for (;;) {
@@ -289,13 +356,165 @@ export class ClosedDependencies {
 	}
 
 	verifySources(): void {
+		if (this.#compiler) {
+			regular(this.#compiler.root, this.#compiler.filename);
+			if (!readFileSync(this.#compiler.filename).equals(this.#compiler.manifestBytes)) refuse();
+		}
+		for (const owner of [this.#cli, ...this.#packages.values()]) {
+			const filename = path.join(owner.root, "package.json");
+			regular(owner.root, filename);
+			if (!readFileSync(filename).equals(owner.manifestBytes)) refuse();
+		}
 		for (const source of this.#sources.values()) {
 			regular(source.owner.cli ? this.#source : source.owner.root, source.filename);
-			if (readFileSync(source.filename, "utf8") !== source.code) refuse();
+			const bytes = readFileSync(source.filename);
+			if (bytes.toString("utf8") !== source.code || !bytes.equals(source.bytes)) refuse();
+		}
+		if (this.#proofLock) {
+			const filename = path.join(this.#workspace, "pnpm-lock.yaml");
+			regular(this.#workspace, filename);
+			if (!readFileSync(filename).equals(this.#proofLock)) refuse();
 		}
 	}
 
+	/** Binds the admitted graph to the bundler's actual emitted module membership and bytes. */
+	buildProvenance(output: readonly EmittedOutput[]): BuildProvenance {
+		try {
+			return this.#captureProvenance(output);
+		} catch {
+			return refuse();
+		}
+	}
+
+	#captureProvenance(output: readonly EmittedOutput[]): BuildProvenance {
+		if (this.#closed || this.#proofRequested) refuse();
+		this.#proofRequested = true;
+		this.verifySources();
+		const lockfile = path.join(this.#workspace, "pnpm-lock.yaml");
+		regular(this.#workspace, lockfile);
+		const lock = readFileSync(lockfile);
+		const lockText = lock.toString("utf8");
+		if (
+			!Buffer.from(lockText, "utf8").equals(lock) ||
+			(this.#lock !== undefined && lockText.replaceAll("\r\n", "\n") !== this.#lock)
+		)
+			refuse();
+		this.#proofLock = lock;
+		const components: BuildComponent[] = [];
+		const componentIds = new Map<Package, string>();
+		for (const owner of [this.#cli, ...this.#packages.values()]) {
+			const manifestSha256 = digest(owner.manifestBytes);
+			const id = digest(
+				JSON.stringify([
+					"draftyak.cli.component.v1",
+					relativePath(this.#workspace, owner.root),
+					manifestSha256,
+				]),
+			);
+			componentIds.set(owner, id);
+			const version = owner.manifest.version;
+			const license = owner.manifest.license;
+			components.push({
+				id,
+				name: owner.name,
+				kind: owner.kind,
+				manifestSha256,
+				...(typeof version === "string" && /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.+-]+)?$/.test(version)
+					? { version }
+					: {}),
+				...(typeof license === "string" && /^[A-Za-z0-9][A-Za-z0-9.+ ()-]{0,255}$/.test(license)
+					? { declaredLicense: license }
+					: {}),
+			});
+		}
+		const sourceIds = new Map<string, string>();
+		for (const source of this.#sources.values()) {
+			if (!Buffer.from(source.code, "utf8").equals(source.bytes)) refuse();
+			const component = componentIds.get(source.owner) ?? refuse();
+			sourceIds.set(
+				source.filename,
+				digest(
+					JSON.stringify([
+						"draftyak.cli.source.v1",
+						component,
+						relativePath(source.owner.root, source.filename),
+						digest(source.bytes),
+					]),
+				),
+			);
+		}
+		const sources: BuildSource[] = [...this.#sources.values()].map((source) => ({
+			id: sourceIds.get(source.filename) ?? refuse(),
+			component: componentIds.get(source.owner) ?? refuse(),
+			path: relativePath(source.owner.root, source.filename),
+			sha256: digest(source.bytes),
+			size: source.bytes.length,
+			imports: [
+				...(source.filename.endsWith(".json")
+					? []
+					: (this.#edges.get(source.filename) ?? refuse())),
+			].map(([specifier, target]) =>
+				isBuiltin(target)
+					? { specifier, builtin: target }
+					: { specifier, source: sourceIds.get(target) ?? refuse() },
+			),
+		}));
+		const destination = path.join(this.#root, "dist");
+		const seen = new Set<string>();
+		const chunks = output.flatMap((chunk) => {
+			if (chunk.type !== "chunk" || typeof chunk.code !== "string") return refuse();
+			const filename = path.resolve(destination, chunk.fileName);
+			const name = relativePath(destination, filename);
+			if (name !== chunk.fileName || seen.has(name)) return refuse();
+			seen.add(name);
+			regular(destination, filename);
+			const bytes = Buffer.from(chunk.code, "utf8");
+			if (!chunk.code.isWellFormed() || !readFileSync(filename).equals(bytes)) return refuse();
+			const members: string[] = [];
+			const compilerHelpers: BuildCompilerHelper[] = [];
+			for (const module of Object.keys(object(chunk.modules))) {
+				if (module === "\0rolldown/runtime.js") {
+					if (!this.#compiler) return refuse();
+					compilerHelpers.push({
+						name: "rolldown/runtime.js",
+						compilerName: "rolldown",
+						compilerVersion: "1.2.14",
+						compilerManifestSha256: digest(this.#compiler.manifestBytes),
+					});
+					continue;
+				}
+				if (!path.isAbsolute(module)) return refuse();
+				members.push(sourceIds.get(path.resolve(module)) ?? refuse());
+			}
+			if (new Set(members).size !== members.length) return refuse();
+			return name === "catalog.js"
+				? []
+				: [
+						{
+							path: name,
+							sha256: digest(bytes),
+							size: bytes.length,
+							sources: members,
+							compilerHelpers,
+						},
+					];
+		});
+		this.verifySources();
+		return createBuildProvenance({ lockfileSha256: digest(lock), components, sources, chunks });
+	}
+
 	plugin(): Plugin {
+		if (this.#closed || this.#proofRequested) refuse();
+		const filename = createRequire(import.meta.url).resolve("rolldown/package.json");
+		const root = path.dirname(filename);
+		const { manifest, manifestBytes } = json(root, filename);
+		if (manifest.name !== "rolldown" || manifest.version !== "1.2.14") refuse();
+		if (
+			this.#compiler &&
+			(this.#compiler.filename !== filename || !manifestBytes.equals(this.#compiler.manifestBytes))
+		)
+			refuse();
+		this.#compiler ??= { root, filename, manifestBytes };
 		return {
 			name: "closed-cli-dependencies",
 			resolveId: (value, importer) => {

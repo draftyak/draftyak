@@ -11,7 +11,13 @@ import { addressFacts, canonicalAddress, networkRefused } from "./address-facts.
 
 export { canonicalAddress, networkRefused, publicAddress } from "./address-facts.ts";
 
-import { networkTestHooks } from "./test-context.ts";
+import {
+	beginNetworkAttempt,
+	copyNetworkAttempt,
+	type NetworkAttempt,
+	networkTestHooks,
+	rememberNetworkAttempt,
+} from "./test-context.ts";
 
 export interface PinnedAddress {
 	readonly address: string;
@@ -146,6 +152,7 @@ function checkedEgressAnswers(
 	answers: readonly PinnedAddress[],
 	policy: EgressPolicy,
 ): readonly PinnedAddress[] {
+	const original = answers;
 	answers = capturedAnswers(answers);
 	policy = captureEgressPolicy(policy);
 	if (answers.length < 1 || answers.length > 32) throw networkRefused();
@@ -173,9 +180,11 @@ function checkedEgressAnswers(
 	}
 	if (classes.size !== 1) throw networkRefused();
 	return Object.freeze(
-		answers.map(({ address, family }) =>
-			Object.freeze({ address: canonicalAddress(address), family }),
-		),
+		answers.map(({ address, family }, index) => {
+			const copy = Object.freeze({ address: canonicalAddress(address), family });
+			copyNetworkAttempt(original[index] as PinnedAddress, copy);
+			return copy;
+		}),
 	);
 }
 export function validateEgressAnswers(
@@ -192,16 +201,29 @@ export async function resolveEgressAnswers(
 	signal: AbortSignal,
 ): Promise<readonly PinnedAddress[]> {
 	let resolver: Resolver | undefined;
+	let attempt: NetworkAttempt | undefined;
+	let policyAccepted = false;
+	let effectiveSignal = signal;
 	const cancel = () => resolver?.cancel();
-	signal.addEventListener("abort", cancel, { once: true });
 	try {
+		attempt = beginNetworkAttempt(host, port);
+		if (attempt) {
+			const observed = attempt;
+			const aborted = () => observed.failed();
+			signal.addEventListener("abort", aborted, { once: true });
+			void observed.settled.then(() => signal.removeEventListener("abort", aborted));
+			effectiveSignal = AbortSignal.any([signal, observed.signal]);
+		}
+		effectiveSignal.addEventListener("abort", cancel, { once: true });
 		policy = captureEgressPolicy(policy);
 		egressHost(host, policy.allowLocal);
 		egressPort(port, policy);
-		signal.throwIfAborted();
+		policyAccepted = true;
+		effectiveSignal.throwIfAborted();
+		attempt?.policyAllowed();
 		const hook = networkTestHooks()?.resolve;
 		let values: readonly PinnedAddress[];
-		if (hook) values = await hook(host, signal);
+		if (hook) values = await hook(host, effectiveSignal);
 		else if (isIP(host)) values = [{ address: host, family: isIP(host) as 4 | 6 }];
 		else {
 			resolver = new Resolver({ tries: 1, timeout: 2000 });
@@ -215,12 +237,23 @@ export async function resolveEgressAnswers(
 					: [],
 			);
 		}
-		signal.throwIfAborted();
-		return checkedEgressAnswers(values, policy);
+		effectiveSignal.throwIfAborted();
+		const answers = checkedEgressAnswers(values, policy);
+		attempt?.resolved();
+		rememberNetworkAttempt(answers, host, port, attempt);
+		return answers;
 	} catch {
+		if (attempt) {
+			try {
+				if (policyAccepted) attempt.failed();
+				else attempt.policyRefused();
+			} catch {
+				attempt.failed();
+			}
+		}
 		throw networkRefused();
 	} finally {
-		signal.removeEventListener("abort", cancel);
+		effectiveSignal.removeEventListener("abort", cancel);
 		resolver?.cancel();
 	}
 }

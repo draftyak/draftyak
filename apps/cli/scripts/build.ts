@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { rolldown } from "rolldown";
 import type { PayloadCatalog } from "../src/catalog.ts";
 import { moduleName } from "../src/layout.ts";
+import { CLI_BUILD_INPUTS_FILE } from "./build-provenance.ts";
 import { ClosedDependencies } from "./closed-dependencies.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -90,14 +91,16 @@ try {
 			if (warning.code !== "EMPTY_BUNDLE") throw new Error("CLI build refused.");
 		},
 	});
+	let emitted: Parameters<ClosedDependencies["buildProvenance"]>[0] | undefined;
 	try {
-		await bundled.write({
+		const output = await bundled.write({
 			dir: destination,
 			format: "esm",
 			entryFileNames: "[name].js",
 			chunkFileNames: "chunks/[name]-[hash].js",
 			polyfillRequire: false,
 		});
+		emitted = output.output;
 	} finally {
 		await bundled.close();
 	}
@@ -113,6 +116,11 @@ try {
 	writeFileSync(
 		path.join(destination, "payload-contract.d.mts"),
 		'export * from "./payload-contract.js";\n',
+	);
+	if (emitted === undefined) throw new Error("CLI build refused.");
+	writeFileSync(
+		path.join(destination, CLI_BUILD_INPUTS_FILE),
+		`${JSON.stringify(dependencies.buildProvenance(emitted))}\n`,
 	);
 	const tree = filesIn(destination);
 	dependencies.verifyOutput(tree.files);
@@ -139,6 +147,7 @@ try {
 		path.join(destination, "catalog.js"),
 		`export const installedCatalog = ${JSON.stringify(catalog)};\n`,
 	);
+	dependencies.verifySources();
 	console.log("CLI payload built.");
 } catch (error) {
 	clean();

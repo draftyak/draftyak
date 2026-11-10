@@ -3,7 +3,9 @@ import Database from "better-sqlite3-multiple-ciphers";
 import { auditHeadTag } from "../audit/head.ts";
 import { MasterKey } from "../kernel/master-key.ts";
 import {
+	captureMigrationPlan,
 	MigrationError,
+	type MigrationPlan,
 	migrate,
 	namesPragmaFunction,
 	REFUSED_STATEMENTS,
@@ -16,9 +18,20 @@ import {
 	destroyEncryptedKeyIdentity,
 	type OpenOptions,
 	openEncrypted,
+	releaseFailedOpen,
 	type SqliteDatabase,
 } from "./open.ts";
 import { bindReadStamp, releaseReadStamp } from "./read-stamp.ts";
+import { SCHEMA_REFUSED, StoreSchema } from "./schema.ts";
+import {
+	expirePreMigrationSnapshots,
+	removePreMigrationSnapshots,
+	SnapshotError,
+	type SnapshotOptions,
+	type SnapshotSettings,
+	snapshotSettings,
+	takePreMigrationSnapshot,
+} from "./snapshots.ts";
 
 export type SqlValue = string | number | bigint | Uint8Array | null;
 export interface SqlReader {
@@ -33,7 +46,13 @@ export interface SqlTransaction extends SqlReader {
 }
 export interface StoreOptions extends OpenOptions {
 	readonly masterKey: MasterKey;
+	/**
+	 * Trusted migration folders by namespace. Reopening a file needs the folder of each namespace
+	 * it applied, unless that namespace is one of the hub's delivered schemas.
+	 */
 	readonly migrations?: Readonly<Record<string, string>>;
+	/** migrate() copies the file here before a namespace's pending files run on an existing schema. */
+	readonly snapshots?: SnapshotOptions;
 }
 const promiseThen = Promise.prototype.then;
 const isThenable = (value: unknown): boolean => {
@@ -75,9 +94,11 @@ export function assertStoreTransaction(store: HubStore, transaction: SqlTransact
 export class HubStore {
 	readonly #keyIdentity = createEncryptedKeyIdentity();
 	readonly #db: SqliteDatabase;
+	readonly #schema: StoreSchema;
 	readonly #genesisTag: string;
 	readonly #readOwner: object = Object.freeze(Object.create(null));
 	readonly #migrations: ReadonlyMap<string, string>;
+	readonly #snapshots: SnapshotSettings | undefined;
 	#revision = 0;
 	#newAuditStorage = false;
 	#busy = false;
@@ -85,18 +106,39 @@ export class HubStore {
 	#nativeClosed = false;
 	constructor(options: StoreOptions) {
 		this.#migrations = new Map(Object.entries(options.migrations ?? {}));
+		const snapshots = options.snapshots;
+		this.#snapshots = snapshots === undefined ? undefined : snapshotSettings(snapshots);
 		const masterKey = options.masterKey;
-		let auditKey: Buffer | undefined;
+		let auditKey: Buffer | undefined, db: SqliteDatabase | undefined;
 		try {
 			auditKey = derive.call(masterKey, "audit");
 			this.#genesisTag = auditHeadTag(auditKey, 0, "");
-			this.#db = openEncrypted(options, masterKey, "db", this.#keyIdentity);
+			const opening: OpenOptions = {
+				filename: options.filename,
+				nativeBinding: options.nativeBinding,
+				create: options.create,
+			};
+			db = openEncrypted(opening, masterKey, "db", this.#keyIdentity);
 			this.#newAuditStorage = consumeCreatedEncryptedFile(this.#keyIdentity);
+			// No read, write or migration can reach the file before its schema is accepted.
+			this.#schema = StoreSchema.accept(db, opening.nativeBinding, this.#migrations);
+			this.#db = db;
 		} catch (error) {
 			destroyEncryptedKeyIdentity(this.#keyIdentity);
+			if (db) releaseFailedOpen(db);
 			throw error;
 		} finally {
 			auditKey?.fill(0);
+		}
+	}
+	// A schema refusal after construction leaves only close() usable.
+	#checked(check: () => void): void {
+		try {
+			check();
+		} catch {
+			this.#closed = true;
+			destroyEncryptedKeyIdentity(this.#keyIdentity);
+			throw new Error(SCHEMA_REFUSED);
 		}
 	}
 	#scope<T>(write: boolean, work: (db: SqlTransaction) => T): T {
@@ -178,11 +220,21 @@ export class HubStore {
 		if (this.#closed || this.#busy) throw new Error("Database is unavailable or already in use");
 		const dir = this.#migrations.get(namespace);
 		if (dir === undefined) throw new Error("Migration namespace is not registered");
+		const snapshots = this.#snapshots;
+		const snapshot =
+			snapshots === undefined
+				? undefined
+				: () => takePreMigrationSnapshot(this.#db, namespace, snapshots);
 		this.#busy = true;
 		this.#revision++;
-		let initializing = false;
+		let initializing = false,
+			started: MigrationPlan | undefined;
 		try {
-			return await migrate(this.#db, namespace, dir, undefined, (name) => {
+			// The migrator runs the same captured SQL that the schema checks replay.
+			const plan = captureMigrationPlan(dir);
+			this.#checked(() => this.#schema.beforeMigration(this.#db, namespace, plan));
+			started = plan;
+			return await migrate(this.#db, namespace, plan, snapshot, (name) => {
 				if (namespace !== "audit" || name !== "0001_chain.sql") return;
 				if (
 					!this.#newAuditStorage ||
@@ -220,13 +272,37 @@ export class HubStore {
 			}
 			throw error;
 		} finally {
-			this.#busy = false;
+			try {
+				const plan = started;
+				if (plan) this.#checked(() => this.#schema.afterMigration(this.#db, namespace, plan));
+			} finally {
+				this.#busy = false;
+			}
 		}
 	}
 	checkpoint(): void {
 		if (this.#closed || this.#busy) throw new Error("Database is unavailable or already in use");
 		const [result] = this.#db.pragma("wal_checkpoint(TRUNCATE)") as { busy: number }[];
 		if (result?.busy !== 0) throw new Error("Database checkpoint is busy");
+	}
+	/** Removes pre-migration snapshots older than the retention period; returns the count. */
+	expireSnapshots(): number {
+		return this.#snapshotFiles(expirePreMigrationSnapshots);
+	}
+	/** Removes every pre-migration snapshot, for purges; returns the count. */
+	removeSnapshots(): number {
+		return this.#snapshotFiles(removePreMigrationSnapshots);
+	}
+	#snapshotFiles(remove: (settings: SnapshotSettings) => number): number {
+		if (this.#closed || this.#busy) throw new Error("Database is unavailable or already in use");
+		const snapshots = this.#snapshots;
+		if (snapshots === undefined) throw new SnapshotError("options");
+		this.#busy = true;
+		try {
+			return remove(snapshots);
+		} finally {
+			this.#busy = false;
+		}
 	}
 	close(): void {
 		if (this.#busy) throw new Error("Database is in use");
