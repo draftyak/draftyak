@@ -148,6 +148,7 @@ const freeze = Object.freeze({
 	freezeInTransaction: NativeDraftFreeze.prototype.freezeInTransaction,
 	proofInTransaction: NativeDraftFreeze.prototype.proofInTransaction,
 	releaseInTransaction: NativeDraftFreeze.prototype.releaseInTransaction,
+	releaseForRestoreInTransaction: NativeDraftFreeze.prototype.releaseForRestoreInTransaction,
 });
 const authorizer = Object.freeze({
 	requirePeerDevice: Authorizer.prototype.requirePeerDevice,
@@ -487,7 +488,7 @@ export class NativeOutboxProposals {
 		)
 			refused();
 		const latest = tx.get<{ seq: number }>(
-			"SELECT seq FROM main.audit_events WHERE refs=? AND action IN ('outbox.proposed','outbox.superseded','outbox.approved','outbox.missed') ORDER BY seq DESC LIMIT 1",
+			"SELECT seq FROM main.audit_events WHERE refs=? AND action IN ('outbox.proposed','outbox.superseded','outbox.approved','outbox.missed','outbox.restored') ORDER BY seq DESC LIMIT 1",
 			[canonicalize({ outbox: value.id })],
 		);
 		if (latest?.seq !== row.audit_seq) refused();
@@ -602,20 +603,25 @@ export class NativeOutboxProposals {
 	#save(
 		scope: WorkScope,
 		raw: NativeProposalRecord,
-		action: "outbox.proposed" | "outbox.superseded" | "outbox.approved" | "outbox.missed",
+		action:
+			| "outbox.proposed"
+			| "outbox.superseded"
+			| "outbox.approved"
+			| "outbox.missed"
+			| "outbox.restored",
 		insert = false,
 		expected?: Loaded,
 	): Loaded {
 		const tx = workSql.call(this.#database, scope),
 			value = record(raw),
 			payload = canonicalize(value);
-		if (action === "outbox.missed") {
+		if (action === "outbox.missed" || action === "outbox.restored") {
 			if (
 				insert ||
 				!expected ||
 				!["APPROVED", "SCHEDULED"].includes(expected.record.state) ||
 				value.state !== "NEEDS_REAPPROVAL" ||
-				value.stateReason !== "missed" ||
+				value.stateReason !== (action === "outbox.restored" ? "restored" : "missed") ||
 				value.updatedAt < expected.record.updatedAt ||
 				canonicalize({
 					...value,
@@ -667,7 +673,7 @@ export class NativeOutboxProposals {
 				"INSERT INTO main.outbox(id,user_id,account_id,draft_id,state,schedule_kind,payload,audit_seq,mac) VALUES(?,?,?,?,?,?,?,?,?)",
 				Object.values({ ...signed, mac }),
 			);
-		else if (action === "outbox.missed") {
+		else if (action === "outbox.missed" || action === "outbox.restored") {
 			if (!expected) refused();
 			const before = expected.record;
 			const prior = {
@@ -1071,6 +1077,76 @@ export class NativeOutboxProposals {
 			return item.snapshot.schedule.kind === "at" ? "scheduled" : "approved";
 		});
 	}
+	/** Restore only: real missed reconciliation precedes remaining restored restrictions. */
+	resetForRestoreInTransaction(tx: SqlTransaction, scope: WorkScope): number {
+		return this.#mutate(scope, (actualTx) => {
+			if (actualTx !== tx) refused();
+			let changed = 0;
+			// This order is fixed inside the original owner; no caller phase or clock is accepted.
+			for (const pass of ["missed", "remaining"] as const) {
+				let after = "";
+				for (;;) {
+					this.#reader(tx);
+					const rows = tx.all<{ id: unknown }>(
+						`SELECT CASE WHEN typeof(id)='text' AND length(CAST(id AS BLOB))=26 THEN id ELSE NULL END AS id
+ FROM main.outbox
+ WHERE state IN ('APPROVED','SCHEDULED') AND id COLLATE BINARY>?
+ ORDER BY id COLLATE BINARY LIMIT 100`,
+						[after],
+					);
+					if (rows.length > 100) refused();
+					for (const candidate of rows) {
+						const outboxId = id(candidate.id);
+						if (outboxId <= after) refused();
+						const loaded = this.#load(tx, outboxId);
+						if (!loaded || !["APPROVED", "SCHEDULED"].includes(loaded.record.state)) refused();
+						const item = loaded.record;
+						if (item.notBefore === null || item.deliverBy === null) refused();
+						const at = this.#now();
+						this.#reader(tx);
+						const missed = at > item.deliverBy;
+						if (pass === "missed" && !missed) {
+							after = outboxId;
+							continue;
+						}
+						freeze.releaseForRestoreInTransaction.call(
+							this.#freeze,
+							tx,
+							item.binding,
+							item.id,
+							item.lockId,
+						);
+						// A deadline crossed during this pass is still genuinely missed. The same
+						// strict original signer/full-prior CAS handles both legal restrictions.
+						const saved = this.#save(
+							scope,
+							{
+								...item,
+								state: "NEEDS_REAPPROVAL",
+								stateReason: missed ? "missed" : "restored",
+								updatedAt: Math.max(at, item.updatedAt),
+							},
+							missed ? "outbox.missed" : "outbox.restored",
+							false,
+							loaded,
+						);
+						const stored = this.#load(tx, outboxId);
+						if (
+							!stored ||
+							stored.version !== saved.version ||
+							canonicalize(stored.record) !== canonicalize(saved.record)
+						)
+							refused();
+						changed = integer(changed + 1, 1);
+						after = outboxId;
+					}
+					if (rows.length < 100) break;
+				}
+			}
+			this.#reader(tx);
+			return changed;
+		});
+	}
 	/** Restriction only: the original receiver supplies clock, authentication and transaction. */
 	expireMissed(outboxId: string): boolean {
 		try {
@@ -1126,6 +1202,7 @@ const original = Object.freeze({
 	item: NativeOutboxProposals.prototype.item,
 	apply: NativeOutboxProposals.prototype.apply,
 	expireMissed: NativeOutboxProposals.prototype.expireMissed,
+	resetForRestoreInTransaction: NativeOutboxProposals.prototype.resetForRestoreInTransaction,
 	draftLocked: NativeOutboxProposals.prototype.draftLocked,
 	scheduledCount: NativeOutboxProposals.prototype.scheduledCount,
 	assertScope: NativeOutboxProposals.prototype.assertScope,
@@ -1188,6 +1265,23 @@ export function applyNativeOutboxTarget(
 /** Tightens one native target; the identifier conveys no approval or clock authority. */
 export function expireNativeOutboxMissed(target: unknown, outboxId: string): boolean {
 	return original.expireMissed.call(actual(target), outboxId);
+}
+/** Offline restore only: no write, approval, scope or send authority is created. */
+export function resetNativeOutboxForRestore(
+	target: unknown,
+	tx: SqlTransaction,
+	scope: WorkScope,
+): number {
+	try {
+		return original.resetForRestoreInTransaction.call(actual(target), tx, scope);
+	} catch (error) {
+		try {
+			original.abortScope.call(target as NativeOutboxProposals, scope);
+		} catch {
+			/* No foreign scope authority. */
+		}
+		throw error instanceof ProposalError ? error : new ProposalError();
+	}
 }
 export function isNativeOutboxDraftLocked(
 	target: unknown,
