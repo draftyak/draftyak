@@ -217,6 +217,9 @@ importers:
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@draftyak/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
     devDependencies:
       '@draftyak/hub':
         specifier: workspace:*
