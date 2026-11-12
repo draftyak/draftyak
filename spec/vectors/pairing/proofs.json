@@ -1,6 +1,6 @@
 {
   "format": "draftyak.vectors.pairing.v1",
-  "description": "The proof, the SAS, the hub ID display and the sidecar window. \"ekm\" gives the exporter's parameters: its label, a context of the 16 raw pid bytes, and its length; the EKMs below are synthetic, since only a live TLS connection gives a real one. A proof case's \"messageHex\" is the ASCII of draftyak/pair/v1 followed by \"ekmHex\" and \"pubsHex\"; \"valid\" says whether the presented \"proofHex\" equals HMAC-SHA-256 keyed with \"secHex\" over that message (lengths first, then in constant time). A SAS case's \"sha256\" is the SHA-256 of the ASCII of draftyak/sas/v1 followed by \"ekmHex\", and \"sas\" is the big-endian u32 of its first 4 bytes mod 1,000,000, as six digits with leading zeros. A hub ID's \"display\" is DYK- and the first 16 hex digits of \"hid\" in upper case, in groups of four. A sidecar case's \"pid\" and \"sec\" are base64url of 16 bytes of HKDF-SHA-256 over \"bootstrapSecretHex\" with an empty salt and the info draftyak/pair/v1/sidecar-pid or draftyak/pair/v1/sidecar-sec. Ids starting with skeleton are the S10 transport skeleton's own numbers (ADR 0012's kept test).",
+  "description": "The proof, the commitment, the SAS, the hub ID display and the sidecar window. \"ekm\" gives the exporter's parameters: its label, a context of the 16 raw pid bytes, and its length; the EKMs below are synthetic, since only a live TLS connection gives a real one. A proof case's \"messageHex\" is the ASCII of draftyak/pair/v1 followed by \"ekmHex\", \"pubsHex\" and, in a claim's case, the 32 bytes of the commitment \"cHex\"; \"valid\" says whether the presented \"proofHex\" equals HMAC-SHA-256 keyed with \"secHex\" over that message (lengths first, then in constant time). A commitment case's \"c\" is the SHA-256 of its \"messageHex\", the ASCII of draftyak/sas-commit/v1 followed by \"ndHex\". A SAS case's \"sha256\" is the SHA-256 of its \"messageHex\", the ASCII of draftyak/sas/v1 followed by \"ekmHex\", \"ndHex\" and \"nhHex\", and \"sas\" is the big-endian u32 of its first 4 bytes mod 1,000,000, as six digits with leading zeros. A hub ID's \"display\" is DYK- and the first 16 hex digits of \"hid\" in upper case, in groups of four. A sidecar case's \"pid\" and \"sec\" are base64url of 16 bytes of HKDF-SHA-256 over \"bootstrapSecretHex\" with an empty salt and the info draftyak/pair/v1/sidecar-pid or draftyak/pair/v1/sidecar-sec. Ids starting with skeleton are the S10 transport skeleton's own numbers (ADR 0012's kept test).",
   "ekm": {
     "label": "EXPERIMENTAL-draftyak-pair-v1",
     "contextBytes": 16,
@@ -57,29 +57,88 @@
       "secHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
       "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
       "pubsHex": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa",
-      "messageHex": "647261667479616b2f706169722f7631404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5fd5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa",
-      "proofHex": "955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da",
+      "cHex": "477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e",
+      "messageHex": "647261667479616b2f706169722f7631404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5fd5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e",
+      "proofHex": "2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09",
       "valid": true
+    },
+    {
+      "id": "device-claim-other-commitment",
+      "secHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "pubsHex": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa",
+      "cHex": "9957b6bfcd68b3fccfe264bdeb36dcb3ad766e1f1ae97b8ad730c056973e29ae",
+      "messageHex": "647261667479616b2f706169722f7631404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5fd5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa9957b6bfcd68b3fccfe264bdeb36dcb3ad766e1f1ae97b8ad730c056973e29ae",
+      "proofHex": "2af17d26852764a447bab8ba61d75077aba74b9b353335b39fde8f90c216ee09",
+      "valid": false
+    },
+    {
+      "id": "device-claim-proof-without-commitment",
+      "secHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "pubsHex": "d5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa",
+      "cHex": "477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e",
+      "messageHex": "647261667479616b2f706169722f7631404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5fd5c2e710c1ada3747530453ebd020bc4c362f75b144a5c38bfeb7672c4ad8533041ee9c7a92d332a7a1109eef4d98b6cd73a5474b959c303daeb92f796e011770109d7bee64d37227d323e37788b9087e8f2bef155864f4b3542ea7ecb9cfae1fa477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e",
+      "proofHex": "955b943ae523578bad7ea1266cd4e06a7f93cc99cde897a9d5911707aa0826da",
+      "valid": false
+    }
+  ],
+  "commitments": [
+    {
+      "id": "zeros",
+      "ndHex": "00000000000000000000000000000000",
+      "messageHex": "647261667479616b2f7361732d636f6d6d69742f763100000000000000000000000000000000",
+      "c": "3c33e0111b45fa91aa4d95027978165b4aa2e8e32e865a79392035dfb37a93a3"
+    },
+    {
+      "id": "ones",
+      "ndHex": "ffffffffffffffffffffffffffffffff",
+      "messageHex": "647261667479616b2f7361732d636f6d6d69742f7631ffffffffffffffffffffffffffffffff",
+      "c": "4fbf67c03ee29113e6ad31df4b8a36c02845533b74494876fdc50f3cb6fce790"
+    },
+    {
+      "id": "device-claim",
+      "ndHex": "606162636465666768696a6b6c6d6e6f",
+      "messageHex": "647261667479616b2f7361732d636f6d6d69742f7631606162636465666768696a6b6c6d6e6f",
+      "c": "477a0a9d7bf0bd80d6c73e3bb8be01e929089c54d3172eb4b33368f52122031e"
     }
   ],
   "sas": [
     {
-      "id": "skeleton-zeros",
+      "id": "zeros",
       "ekmHex": "0000000000000000000000000000000000000000000000000000000000000000",
-      "sha256": "e0c49f1627e5efb88b376c80a032c988c891c42e0a49cbf340c94e752dda35b6",
-      "sas": "982166"
+      "ndHex": "00000000000000000000000000000000",
+      "nhHex": "00000000000000000000000000000000",
+      "messageHex": "647261667479616b2f7361732f763100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "a300dd60d97757909291d4332ba847c7a68b8e0893b6327d70f02045ab5cd965",
+      "sas": "742880"
     },
     {
-      "id": "skeleton-ones",
+      "id": "ones",
       "ekmHex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-      "sha256": "09a805f87da2f61ed99cc689a5ca6193824facab6c5c5e24aafbe6b3311e8d2b",
-      "sas": "006520"
+      "ndHex": "ffffffffffffffffffffffffffffffff",
+      "nhHex": "ffffffffffffffffffffffffffffffff",
+      "messageHex": "647261667479616b2f7361732f7631ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "sha256": "acd8b7bb24ffa82b5b3ca1ce6f48f11d19df81491fd1f1ade1789ba1f53568b8",
+      "sas": "883963"
     },
     {
       "id": "device-claim",
       "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
-      "sha256": "6751ad657213c99d9f81f07acbbed2cacfab30e5f975d89fd69d9d8d81eae520",
-      "sas": "406053"
+      "ndHex": "606162636465666768696a6b6c6d6e6f",
+      "nhHex": "707172737475767778797a7b7c7d7e7f",
+      "messageHex": "647261667479616b2f7361732f7631404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+      "sha256": "2c6d5b0de166940b5827c3295a99e3629d20f438ab90d94d879c8afc9b355880",
+      "sas": "364237"
+    },
+    {
+      "id": "leading-zeros",
+      "ekmHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "ndHex": "606162636465666768696a6b6c6d6e6f",
+      "nhHex": "0000000000000000000000000000004c",
+      "messageHex": "647261667479616b2f7361732f7631404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f0000000000000000000000000000004c",
+      "sha256": "61a1eded00ab41d52ebbcbf214cbfab87eefd59e520b2093b6b81409058098fc",
+      "sas": "002157"
     }
   ],
   "hubIds": [

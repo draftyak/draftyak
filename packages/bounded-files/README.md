@@ -1,6 +1,6 @@
 # Bounded files
 
-`@draftyak/bounded-files` is a private, dependency-free file snapshot and portable
+`@draftyak/bounded-files` is a private, dependency-free file-reading and portable
 metadata component. It performs no discovery, parsing, writing or authorization.
 
 `readBoundedRegularFile(path, {maximum, minimum?, expectedSize?})` synchronously
@@ -10,8 +10,14 @@ the drive prefix refuse before I/O, including alternate/default-stream aliases;
 POSIX native colon filenames remain ordinary files. The reader checks native
 identity, one link, size and timestamps before/open/after the read and against the
 current name. Reads use positional chunks of at most 64 KiB and an actual EOF
-probe. Each operation closes its own descriptor exactly once in `finally`; a
-failed close refuses that operation without disabling later independent reads.
+probe, followed by a matching second pass. On Windows the descriptor uses exclusive
+file sharing: an existing reader or writer makes the operation refuse, and the
+exclusive handle remains open through all checks. Other platforms keep their
+ordinary sharing behavior. Metadata and matching passes are consistency checks,
+not a universal atomic-filesystem-snapshot guarantee; callers needing authenticated
+content must compare a trusted digest. Each operation closes its own descriptor
+exactly once in `finally`; a failed close refuses that operation without disabling
+later independent reads.
 
 `maximum` is required and ranges from 1 byte through 512 MiB. `minimum` defaults
 to zero. An explicit `expectedSize` must fit those bounds and match before reading.

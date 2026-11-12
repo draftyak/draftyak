@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/schemas/hub-runtime-v1.schema.json",
+  "$ref": "#/$defs/draftyak.hub-runtime.SchedulingStatus",
+  "$defs": {
+    "draftyak.hub-runtime.SchedulingStatus": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "sidecar",
+            "service"
+          ]
+        },
+        "scheduler": {
+          "type": "string",
+          "enum": [
+            "running",
+            "unavailable"
+          ]
+        },
+        "syncPaused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "scheduler",
+        "syncPaused"
+      ],
+      "additionalProperties": false,
+      "description": "The hub's mode, its scheduler state and its own Pause sync state, which the hub keeps across restarts."
+    }
+  }
+}
