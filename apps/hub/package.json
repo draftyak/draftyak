@@ -15,6 +15,7 @@
   "dependencies": {
     "@draftyak/bounded-files": "workspace:*",
     "@draftyak/extensions": "workspace:*",
+    "@draftyak/mime": "workspace:*",
     "@draftyak/protocol": "workspace:*",
     "@peculiar/x509": "2.2.0",
     "better-sqlite3-multiple-ciphers": "13.0.3",
@@ -22,6 +23,7 @@
     "reflect-metadata": "0.2.2"
   },
   "devDependencies": {
+    "@draftyak/egress-recorder": "workspace:*",
     "@draftyak/fake-commercial": "workspace:*",
     "@draftyak/sdk": "workspace:*",
     "fast-check": "4.10.2",

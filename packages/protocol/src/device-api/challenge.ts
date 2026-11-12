@@ -110,6 +110,8 @@ export function checkChallenge(
 				statement.op === r.data.id &&
 				statement.kind === parsed.data.kind &&
 				statement.digest === parsed.data.digest &&
+				((parsed.data.kind !== "plugin.install" && parsed.data.kind !== "plugin.upgrade") ||
+					parsed.data.subject.epoch === statement.epoch) &&
 				(parsed.data.kind !== "security.device-capabilities" ||
 					parsed.data.subject.device !== statement.device)
 			);

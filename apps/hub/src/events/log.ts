@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { types } from "node:util";
 import { DataClass } from "@draftyak/protocol/data-class";
-import type { WorkDatabase, WorkScope } from "../jobs/database.ts";
+import { WorkDatabase, type WorkScope } from "../jobs/database.ts";
 import { fields, id, integer, WorkError } from "../jobs/values.ts";
 import type { SqlTransaction } from "../store/store.ts";
 
@@ -26,12 +26,18 @@ export const EVENT_KINDS = [
 Object.freeze(EVENT_KINDS);
 export type EventKind = (typeof EVENT_KINDS)[number];
 const kinds = new Set<string>(EVENT_KINDS);
+const assertNativeTransaction = WorkDatabase.prototype.assertTransaction;
 export interface EventInput {
 	readonly userId: string;
 	readonly accountId: string | null;
 	readonly dataClass: DataClass;
 	readonly kind: EventKind;
 	readonly ids: readonly string[];
+}
+interface AccountRestoreChangedInput {
+	readonly userId: string;
+	readonly accountId: string;
+	readonly channel: "email" | "chat";
 }
 export interface EventRecord extends EventInput {
 	readonly seq: number;
@@ -178,6 +184,10 @@ export class EventLog {
 		const data = input(raw);
 		const at = integer(this.#now());
 		const sql = this.#database.sql(scope);
+		return this.#appendCaptured(sql, data, at);
+	}
+
+	#appendCaptured(sql: SqlTransaction, data: EventInput, at: number): EventRecord {
 		const { lastSeq } = head(sql);
 		if (lastSeq === Number.MAX_SAFE_INTEGER) throw new WorkError("data");
 		const seq = lastSeq + 1;
@@ -193,6 +203,26 @@ export class EventLog {
 			[seq, data.userId, data.accountId, data.dataClass, data.kind, JSON.stringify(data.ids), at],
 		);
 		return Object.freeze({ ...data, seq, at });
+	}
+
+	/** Fixed account-restore invalidation; no scope or transaction is created. */
+	appendAccountRestoreChangedInTransaction(
+		sql: SqlTransaction,
+		raw: AccountRestoreChangedInput,
+	): EventRecord {
+		assertNativeTransaction.call(this.#database, sql);
+		const captured = fields(raw, ["userId", "accountId", "channel"]);
+		if (captured.channel !== "email" && captured.channel !== "chat") throw new WorkError("input");
+		const data = input({
+			userId: captured.userId,
+			accountId: captured.accountId,
+			dataClass: captured.channel === "email" ? "gmail.metadata" : "slack.metadata",
+			kind: "accounts.changed",
+			ids: [captured.accountId],
+		});
+		const at = integer(this.#now());
+		assertNativeTransaction.call(this.#database, sql);
+		return this.#appendCaptured(sql, data, at);
 	}
 
 	page(scope: WorkScope, raw: EventPageInput): EventPage {
@@ -268,5 +298,21 @@ export class EventLog {
 			deleted: rows.length,
 			more: sql.get("SELECT 1 FROM main.events WHERE seq<=? LIMIT 1", [target]) !== undefined,
 		});
+	}
+}
+
+const originalAccountRestoreAppend = EventLog.prototype.appendAccountRestoreChangedInTransaction;
+
+/** Deep native DATA entry only; the fixed offline receiver owns its transaction. */
+export function appendAccountRestoreChangedInTransaction(
+	log: unknown,
+	tx: SqlTransaction,
+	raw: AccountRestoreChangedInput,
+): EventRecord {
+	try {
+		if (typeof log !== "object" || log === null || types.isProxy(log)) throw new WorkError("scope");
+		return originalAccountRestoreAppend.call(log as EventLog, tx, raw);
+	} catch {
+		throw new WorkError("scope");
 	}
 }

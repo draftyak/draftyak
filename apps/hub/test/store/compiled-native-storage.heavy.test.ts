@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	copyFileSync,
 	existsSync,
@@ -48,6 +49,43 @@ const assets = [
 	],
 	["outbox/migrations/0001_send_attempts.sql", "outbox/migrations/0001_send_attempts.sql"],
 	["accounts/migrations/0001_accounts.sql", "accounts/migrations/0001_accounts.sql"],
+	[
+		"plugins/registry/migrations/0001_registry.sql",
+		"plugins/registry/migrations/0001_registry.sql",
+	],
+	[
+		"plugins/registry/migrations/0002_candidates.sql",
+		"plugins/registry/migrations/0002_candidates.sql",
+	],
+	["outbox/propose-migrations/0001_proposals.sql", "outbox/propose-migrations/0001_proposals.sql"],
+	[
+		"identity/challenges-migrations/0001_challenges.sql",
+		"identity/challenges-migrations/0001_challenges.sql",
+	],
+	[
+		"outbox/verifier-migrations/0001_approvals.sql",
+		"outbox/verifier-migrations/0001_approvals.sql",
+	],
+	[
+		"identity/admin-migrations/0001_operations.sql",
+		"identity/admin-migrations/0001_operations.sql",
+	],
+	[
+		"identity/admin-challenge-migrations/0001_admin_challenges.sql",
+		"identity/admin-challenge-migrations/0001_admin_challenges.sql",
+	],
+	[
+		"recovery/backup-migrations/0001_backup_recovery.sql",
+		"recovery/backup-migrations/0001_backup_recovery.sql",
+	],
+	[
+		"identity/backup-migrations/0001_backup_operations.sql",
+		"identity/backup-migrations/0001_backup_operations.sql",
+	],
+	[
+		"identity/backup-challenge-migrations/0001_backup_challenges.sql",
+		"identity/backup-challenge-migrations/0001_backup_challenges.sql",
+	],
 ] as const;
 
 function checkRuntimeNames(directory: string): void {
@@ -67,9 +105,20 @@ function checkRuntimeNames(directory: string): void {
 	visit(directory);
 }
 
+function copyPinnedRuntimeFile(source: string, target: string): void {
+	const entry = lstatSync(source);
+	expect(entry.isFile()).toBe(true);
+	expect(entry.isSymbolicLink()).toBe(false);
+	const digest = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+	const pin = digest(readFileSync(source));
+	copyFileSync(source, target);
+	expect(digest(readFileSync(target))).toBe(pin);
+	expect(digest(readFileSync(source))).toBe(pin);
+}
+
 function stageRuntimePackage(
 	stage: string,
-	name: "protocol" | "bounded-files" | "extensions",
+	name: "protocol" | "bounded-files" | "extensions" | "mime",
 ): void {
 	const runtimePackage = path.resolve(hub, "../../packages", name);
 	const manifest = JSON.parse(readFileSync(path.join(runtimePackage, "package.json"), "utf8"));
@@ -80,7 +129,9 @@ function stageRuntimePackage(
 			? { zod: "4.6.7" }
 			: name === "extensions"
 				? { "@draftyak/protocol": "workspace:*", hono: "4.13.13" }
-				: undefined,
+				: name === "mime"
+					? { "@draftyak/protocol": "workspace:*", nodemailer: "10.1.4" }
+					: undefined,
 	);
 	const target = path.join(stage, "node_modules/@draftyak", name);
 	mkdirSync(target, { recursive: true });
@@ -97,7 +148,7 @@ function stageRuntimePackage(
 			else {
 				expect(entry.isFile()).toBe(true);
 				expect(++files).toBeLessThanOrEqual(1000);
-				copyFileSync(from, to);
+				copyPinnedRuntimeFile(from, to);
 			}
 		}
 	};
@@ -127,6 +178,20 @@ function stageRuntimePackage(
 			path.join(stage, "node_modules/hono"),
 			"junction",
 		);
+	if (name === "mime") {
+		const dependencyFile = realpathSync(
+			createRequire(path.join(runtimePackage, "package.json")).resolve("nodemailer/package.json"),
+		);
+		const dependency = JSON.parse(readFileSync(dependencyFile, "utf8"));
+		expect(dependency.name).toBe("nodemailer");
+		expect(dependency.version).toBe("10.1.4");
+		expect(dependency.main).toBe("./dist/cjs/nodemailer.js");
+		expect(dependency.dependencies ?? {}).toEqual({});
+		const destination = path.join(stage, "node_modules/nodemailer");
+		mkdirSync(destination);
+		copyPinnedRuntimeFile(dependencyFile, path.join(destination, "package.json"));
+		copy(path.join(path.dirname(dependencyFile), "dist"), path.join(destination, "dist"));
+	}
 }
 
 function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-schema"): void {
@@ -146,7 +211,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 	try {
 		// Admit every staged runtime filename before copying any runtime bytes.
 		checkRuntimeNames(path.join(hub, "dist"));
-		for (const name of ["protocol", "bounded-files", "extensions"])
+		for (const name of ["protocol", "bounded-files", "extensions", "mime"])
 			checkRuntimeNames(path.resolve(hub, "../../packages", name, "dist"));
 		for (const entry of readdirSync(path.join(hub, "dist"), { withFileTypes: true })) {
 			if (!entry.name.endsWith(".mjs")) continue;
@@ -159,11 +224,15 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 			path.join(import.meta.dirname, "fixtures/compiled-native-storage.mjs"),
 			path.join(stage, "fixture.mjs"),
 		);
+		expect(assets).toHaveLength(21);
 		for (const [source, built] of assets) {
 			const file = path.join(hub, "dist", built);
+			const original = path.join(hub, "src", source);
 			expect(lstatSync(file).isFile()).toBe(true);
 			expect(lstatSync(file).isSymbolicLink()).toBe(false);
-			expect(readFileSync(file)).toEqual(readFileSync(path.join(hub, "src", source)));
+			expect(lstatSync(original).isFile()).toBe(true);
+			expect(lstatSync(original).isSymbolicLink()).toBe(false);
+			expect(readFileSync(file)).toEqual(readFileSync(original));
 			const target = path.join(stage, built);
 			mkdirSync(path.dirname(target), { recursive: true });
 			copyFileSync(file, target);
@@ -171,6 +240,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 		stageRuntimePackage(stage, "protocol");
 		stageRuntimePackage(stage, "bounded-files");
 		stageRuntimePackage(stage, "extensions");
+		stageRuntimePackage(stage, "mime");
 		const child = spawnSync(
 			process.execPath,
 			[
@@ -187,6 +257,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 				path.resolve(hub, "../../packages/protocol/src"),
 				path.resolve(hub, "../../packages/bounded-files/src"),
 				path.resolve(hub, "../../packages/extensions/src"),
+				path.resolve(hub, "../../packages/mime/src"),
 			],
 			{
 				cwd: stage,
@@ -232,7 +303,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 				receipt.mode === mode &&
 				receipt.networkAllowed === false &&
 				receipt.nativeAddonPermission === true &&
-				receipt.schemas === 9,
+				receipt.schemas === 18,
 			"Native fixture success receipt",
 		).toBe(true);
 		// Stderr stays opaque. Allowing native addons does not establish OS isolation.

@@ -31,6 +31,10 @@ function classify(profile: ChannelProfile, method: ChannelMethod, href: string) 
 const READ: ChannelClassification = { class: "read" };
 const ORGANIZE: ChannelClassification = { class: "organize" };
 const SEND: ChannelClassification = { class: "send" };
+const GMAIL_PROFILE_READS = [
+	`${GMAIL}/profile`,
+	"https://www.googleapis.com/gmail/v1/users/me/profile",
+];
 
 const GMAIL_READS = [
 	`${GMAIL}/messages`,
@@ -86,7 +90,6 @@ const GMAIL_OFF_PROFILE: readonly (readonly [ChannelMethod, string])[] = [
 	["GET", `${GMAIL}/settings/filters`],
 	["POST", `${GMAIL}/settings/forwardingAddresses`],
 	["PUT", `${GMAIL}/settings/autoForwarding`],
-	["GET", `${GMAIL}/profile`],
 	["POST", `${GMAIL}/watch`],
 	["POST", `${GMAIL}/stop`],
 	["POST", `${GMAIL}/labels`],
@@ -184,6 +187,46 @@ const SLACK_OFF_PROFILE: readonly (readonly [ChannelMethod, string])[] = [
 ];
 
 describe("gmail-v1 and gmail-readonly-v1 classification", () => {
+	it("classifies exact Gmail me profile GETs as read on both approved hosts", () => {
+		for (const profile of GMAIL_PROFILES)
+			for (const href of GMAIL_PROFILE_READS) expect(classify(profile, "GET", href)).toEqual(READ);
+	});
+
+	it("refuses nonempty query strings on the exact Gmail profile endpoint", () => {
+		for (const profile of GMAIL_PROFILES)
+			for (const href of GMAIL_PROFILE_READS)
+				for (const query of ["?fields=emailAddress", "?fields=", "?&"]) {
+					if (query === "?&") expect(url(`${href}${query}`).queryNames).toEqual([]);
+					expect(classify(profile, "GET", `${href}${query}`)).toEqual({
+						denied: "off_profile",
+					});
+				}
+	});
+
+	it("keeps profile reads within the literal user path and existing hosts", () => {
+		for (const href of [
+			"https://gmail.googleapis.com/gmail/v1/users/other/profile",
+			`${GMAIL}/Profile`,
+			`${GMAIL}/profile/more`,
+			`${UPLOAD}/profile`,
+			"https://gmail.googleapis.com/gmail/v2/users/me/profile",
+			"https://gmail.googleapis.com.example.com/gmail/v1/users/me/profile",
+			"https://mail.google.com/gmail/v1/users/me/profile",
+			"https://googleapis.com/gmail/v1/users/me/profile",
+		])
+			for (const profile of GMAIL_PROFILES)
+				expect(classify(profile, "GET", href)).toEqual({ denied: "off_profile" });
+		for (const href of GMAIL_PROFILE_READS)
+			expect(classify("slack-v1", "GET", href)).toEqual({ denied: "off_profile" });
+	});
+
+	it("does not classify profile requests under other methods as reads", () => {
+		for (const method of CHANNEL_METHODS.filter((method) => method !== "GET"))
+			for (const profile of GMAIL_PROFILES)
+				for (const href of GMAIL_PROFILE_READS)
+					expect(classify(profile, method, href)).toEqual({ denied: "off_profile" });
+	});
+
 	it.each(GMAIL_PROFILES)("classifies GET reads for %s", (profile) => {
 		for (const href of GMAIL_READS) expect(classify(profile, "GET", href)).toEqual(READ);
 	});

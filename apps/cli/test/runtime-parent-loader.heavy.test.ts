@@ -79,6 +79,7 @@ function fixture(imports: string, body: string) {
 		path.join(workspace, "tsconfig.base.json"),
 		path.join(root, "workspace/tsconfig.base.json"),
 	);
+	cpSync(path.join(workspace, "pnpm-lock.yaml"), path.join(root, "workspace/pnpm-lock.yaml"));
 	for (const name of ["typescript", "@types/node", "rolldown"]) {
 		const target = realpathSync(path.dirname(require.resolve(`${name}/package.json`)));
 		const link = path.join(source, "node_modules", name);

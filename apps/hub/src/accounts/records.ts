@@ -1,7 +1,7 @@
 import { types } from "node:util";
 import { Account } from "@draftyak/protocol/entities/account";
 import { AuditChain } from "../audit/chain.ts";
-import { EventLog } from "../events/log.ts";
+import { appendAccountRestoreChangedInTransaction, EventLog } from "../events/log.ts";
 import { WorkDatabase, type WorkScope } from "../jobs/database.ts";
 import { fields, id, integer } from "../jobs/values.ts";
 import { newId } from "../kernel/ids.ts";
@@ -24,6 +24,7 @@ export class AccountError extends Error {
 }
 const unavailable = (): AccountError => new AccountError();
 const sqlFor = WorkDatabase.prototype.sql;
+const assertTransaction = WorkDatabase.prototype.assertTransaction;
 const abort = WorkDatabase.prototype.abort;
 const appendEvent = EventLog.prototype.append;
 const appendAudit = AuditChain.prototype.append;
@@ -128,7 +129,7 @@ export class NativeAccounts {
 			throw unavailable();
 		}
 	}
-	#changed(scope: WorkScope, sql: SqlTransaction, value: Account, action: string): void {
+	#auditChanged(sql: SqlTransaction, value: Account, action: string): void {
 		const at = integer(this.#now());
 		appendAudit.call(this.#audit, sql, {
 			id: newId(),
@@ -137,6 +138,9 @@ export class NativeAccounts {
 			actor: { kind: "hub", id: null },
 			refs: { account: value.id, user: value.userId, pluginInstance: value.pluginInstanceId },
 		});
+	}
+	#changed(scope: WorkScope, sql: SqlTransaction, value: Account, action: string): void {
+		this.#auditChanged(sql, value, action);
 		appendEvent.call(this.#events, scope, {
 			userId: value.userId,
 			accountId: value.id,
@@ -159,6 +163,20 @@ export class NativeAccounts {
 	get(scope: WorkScope, userId: string, accountId: string): AccountRecord | undefined {
 		try {
 			const row = read(sqlFor.call(this.#database, scope), userId, accountId);
+			return !row || row.json === null ? undefined : snapshot(row);
+		} catch {
+			throw unavailable();
+		}
+	}
+	/** Current native metadata only; neither adopts a scope nor grants account/send rights. */
+	getInTransaction(
+		sql: SqlTransaction,
+		userId: string,
+		accountId: string,
+	): AccountRecord | undefined {
+		try {
+			assertTransaction.call(this.#database, sql);
+			const row = read(sql, userId, accountId);
 			return !row || row.json === null ? undefined : snapshot(row);
 		} catch {
 			throw unavailable();
@@ -232,6 +250,70 @@ export class NativeAccounts {
 			return Object.freeze({ account: value, generation: next });
 		});
 	}
+	/** Restriction only; original native fields and the same transaction remain owned here. */
+	restrictForRestoreInTransaction(tx: SqlTransaction): number {
+		try {
+			assertTransaction.call(this.#database, tx);
+			verifyAudit.call(this.#audit, tx);
+			let after = "";
+			let changed = 0;
+			for (;;) {
+				assertTransaction.call(this.#database, tx);
+				verifyAudit.call(this.#audit, tx);
+				const rows = tx.all<Row>(
+					`${ROW} WHERE id COLLATE BINARY>? AND account_json IS NOT NULL ORDER BY id COLLATE BINARY LIMIT ?`,
+					[after, PAGE_SIZE],
+				);
+				if (rows.length > PAGE_SIZE) throw unavailable();
+				for (const row of rows) {
+					const current = snapshot(row);
+					const previous = current.account;
+					if (previous.id <= after) throw unavailable();
+					if (previous.mode === "full") {
+						const value = account({ ...previous, mode: "read_only" });
+						const next = integer(current.generation + 1, 1);
+						if (
+							tx.run(
+								"UPDATE main.accounts SET generation=?,account_json=? WHERE id=? AND user_id=? AND plugin_instance_id=? AND generation=? AND account_json=?",
+								[
+									next,
+									JSON.stringify(value),
+									value.id,
+									value.userId,
+									value.pluginInstanceId,
+									current.generation,
+									row.json,
+								],
+							).changes !== 1
+						)
+							throw unavailable();
+						this.#auditChanged(tx, value, "account.changed");
+						appendAccountRestoreChangedInTransaction(this.#events, tx, {
+							userId: value.userId,
+							accountId: value.id,
+							channel: value.channel,
+						});
+						assertTransaction.call(this.#database, tx);
+						const saved = read(tx, value.userId, value.id);
+						if (
+							!saved ||
+							saved.generation !== next ||
+							JSON.stringify(snapshot(saved).account) !== JSON.stringify(value)
+						)
+							throw unavailable();
+						changed = integer(changed + 1, 1);
+					}
+					after = previous.id;
+				}
+				if (rows.length < PAGE_SIZE) break;
+			}
+			assertTransaction.call(this.#database, tx);
+			verifyAudit.call(this.#audit, tx);
+			return changed;
+		} catch {
+			throw unavailable();
+		}
+	}
 	/** The owning purge transaction removes credentials/content first; IDs remain to fence stale creates. */
 	retire(scope: WorkScope, userId: string, accountId: string, generation: number): void {
 		this.#mutate(scope, (sql) => {
@@ -249,5 +331,21 @@ export class NativeAccounts {
 				throw unavailable();
 			this.#changed(scope, sql, value, "account.retired");
 		});
+	}
+}
+
+const originalAccountRestoreRestriction = NativeAccounts.prototype.restrictForRestoreInTransaction;
+
+/** Offline restore restriction only; no account permission, scope or transaction is issued. */
+export function restrictNativeAccountsForRestoreInTransaction(
+	accounts: unknown,
+	tx: SqlTransaction,
+): number {
+	try {
+		if (typeof accounts !== "object" || accounts === null || types.isProxy(accounts))
+			throw unavailable();
+		return originalAccountRestoreRestriction.call(accounts as NativeAccounts, tx);
+	} catch {
+		throw unavailable();
 	}
 }
