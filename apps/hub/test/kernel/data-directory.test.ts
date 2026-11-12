@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
+import { isKnownSyncedPath as canonical } from "@draftyak/bounded-files";
 import { test } from "vitest";
 import { isKnownSyncedPath } from "../../src/kernel/data-directory.ts";
+
+test("keeps the Hub shim bound to the one canonical predicate", () => {
+	assert.equal(isKnownSyncedPath, canonical, "Hub shim must share the canonical implementation");
+});
 
 const known = [
 	"OneDrive",

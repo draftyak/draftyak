@@ -51,6 +51,7 @@ const publicModules = [
 	"flags",
 	"hash",
 	"host-channel",
+	"hub-runtime",
 	"index",
 	"jcs",
 	"json-template",
@@ -60,6 +61,7 @@ const publicModules = [
 	"manifest/auth-fields",
 	"manifest/egress",
 	"manifest/json",
+	"manifest/responses-http",
 	"manifest/runtime",
 	"manifest/text",
 	"manifest/tool",
@@ -74,9 +76,11 @@ const publicModules = [
 	"mcp/tools",
 	"mcp/views",
 	"normalized-change",
+	"oauth-relay",
 	"pairing",
 	"scalars",
 	"schedule",
+	"scheduled-summary",
 	"send-ticket",
 	"sign",
 	"snapshot",
@@ -145,6 +149,38 @@ describe("the package", () => {
 	});
 });
 
+// JSON Schema 2020-12's formats (Validation, section 7.3); a strict validator refuses any other.
+const STANDARD_FORMATS: ReadonlySet<string> = new Set([
+	"date-time",
+	"date",
+	"time",
+	"duration",
+	"email",
+	"idn-email",
+	"hostname",
+	"idn-hostname",
+	"ipv4",
+	"ipv6",
+	"uri",
+	"uri-reference",
+	"iri",
+	"iri-reference",
+	"uuid",
+	"uri-template",
+	"json-pointer",
+	"relative-json-pointer",
+	"regex",
+]);
+
+// Every `format` value anywhere in a JSON Schema, so none can hide in a nested schema.
+function formats(schema: unknown): string[] {
+	if (Array.isArray(schema)) return schema.flatMap(formats);
+	if (schema === null || typeof schema !== "object") return [];
+	return Object.entries(schema).flatMap(([key, value]) =>
+		key === "format" && typeof value === "string" ? [value] : formats(value),
+	);
+}
+
 describe("spec/", () => {
 	it("holds every exported schema as generated", async () => {
 		expect(await syncSpec(true)).toEqual([]);
@@ -155,6 +191,15 @@ describe("spec/", () => {
 			expect(schema.$id).toBe(`https://draftyak.com/spec/${file}`);
 			for (const pattern of patterns(schema)) expect(pattern, file).not.toMatch(ENGINE_DEPENDENT);
 		}
+	});
+
+	it("uses only the formats JSON Schema 2020-12 defines", async () => {
+		for (const { path: file, text } of await exportSpec()) {
+			const others = formats(JSON.parse(text)).filter((format) => !STANDARD_FORMATS.has(format));
+			expect(others, file).toEqual([]);
+		}
+		const nested = { $defs: { A: { properties: { format: { format: "starts_with" } } } } };
+		expect(formats(nested)).toEqual(["starts_with"]);
 	});
 
 	it("keeps registered definition IDs owned and identical across schema files", async () => {

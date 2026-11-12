@@ -1,5 +1,5 @@
 import { aiProviderV1, ModelId } from "@draftyak/protocol/ai-provider-v1";
-import { fields } from "./boundary.ts";
+import { fields, modelPathSegment } from "./boundary.ts";
 import { type ResponsesMetadataBindingWithoutNetwork, refuse } from "./types.ts";
 
 export function captureResponsesMetadataBinding(
@@ -45,8 +45,5 @@ export function responsesMetadataEndpoint(binding: ResponsesMetadataBindingWitho
 	if (binding.operation === "ai_models_list") return root;
 	const model = binding.input.model;
 	if (model === undefined) return root;
-	const endpoint = `${root}/${encodeURIComponent(model)}`;
-	// Dot segments have no canonical single-segment representation in a URL.
-	if (new URL(endpoint).href !== endpoint) refuse();
-	return endpoint;
+	return `${root}/${modelPathSegment(model)}`;
 }

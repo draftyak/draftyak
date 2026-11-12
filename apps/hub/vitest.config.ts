@@ -1,4 +1,5 @@
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, statfsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import type { ConfigEnv, ViteUserConfig } from "vitest/config";
 import { heavyVitestConfig } from "../../vitest.shared.ts";
@@ -13,6 +14,17 @@ export default function config(env: ConfigEnv): ViteUserConfig {
 				try {
 					accessSync("/proc/self/fd", constants.R_OK | constants.X_OK);
 					return true;
+				} catch {
+					return false;
+				}
+			},
+		},
+		ext4: {
+			description: "an ext4 temporary folder (statfs type 0xEF53, which ext2 and ext3 share)",
+			detect: () => {
+				if (process.platform !== "linux") return false;
+				try {
+					return statfsSync(tmpdir()).type === 0xef53;
 				} catch {
 					return false;
 				}

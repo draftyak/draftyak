@@ -38,7 +38,12 @@ function exercise(files: string[], fail = false): { status: number | null; calls
 		}
 		mkdirSync(path.join(root, "packages", "create-plugin"), { recursive: true });
 		writeFileSync(path.join(root, "packages", "create-plugin", "package.json"), "{}");
-		const selected = classify(files, root, () => []);
+		const selected = classify(
+			files,
+			root,
+			() => [],
+			() => [],
+		);
 		const capture = path.join(root, "capture.mjs");
 		const output = path.join(root, "calls.jsonl");
 		writeFileSync(
@@ -90,8 +95,11 @@ function exercise(files: string[], fail = false): { status: number | null; calls
 
 describe("actual selected-heavy workflow application arguments", () => {
 	it("keeps the existing condition, build prerequisite and explicit strict skips", () => {
-		expect(step.if).toBe("needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''");
+		expect(step.if).toBe(
+			"needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+		);
 		expect(environment.DRAFTYAK_STRICT_SKIPS).toBe("1");
+		expect(environment.HEAVY).toBe("${{ needs.changes.outputs.ordinary-heavy }}");
 		expect(steps.findIndex((entry) => entry.run === "pnpm build")).toBeGreaterThan(-1);
 		expect(steps.findIndex((entry) => entry.run === "pnpm build")).toBeLessThan(
 			steps.indexOf(step),
@@ -106,6 +114,9 @@ describe("actual selected-heavy workflow application arguments", () => {
 						"tools/verify/turbo.ts",
 						"run",
 						"test:heavy",
+						"--concurrency=1",
+						"--log-order=stream",
+						"--log-prefix=task",
 						`--filter=...{./apps/${app}}`,
 						"--filter=!./packages/create-plugin",
 					],
@@ -123,6 +134,9 @@ describe("actual selected-heavy workflow application arguments", () => {
 						"tools/verify/turbo.ts",
 						"run",
 						"test:heavy",
+						"--concurrency=1",
+						"--log-order=stream",
+						"--log-prefix=task",
 						"--filter=./apps/cli",
 						"--filter=./apps/hub",
 					],

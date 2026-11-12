@@ -1,0 +1,45 @@
+{
+  "name": "@draftyak/content",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "./*": {
+        "types": "./dist/*.d.mts",
+        "default": "./dist/*.mjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:heavy": "vitest run --mode heavy",
+    "build": "tsdown"
+  },
+  "dependencies": {
+    "@draftyak/protocol": "workspace:*",
+    "css-select": "7.0.0",
+    "css-tree": "3.2.1",
+    "domhandler": "6.0.1",
+    "parse5": "8.0.0",
+    "postal-mime": "4.0.8"
+  },
+  "devDependencies": {
+    "@types/css-tree": "3.2.0",
+    "fast-check": "4.10.2",
+    "tsdown": "0.23.1",
+    "yaml": "2.9.1"
+  }
+}

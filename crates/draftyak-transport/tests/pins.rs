@@ -20,6 +20,10 @@ const OWNED_PINS: &[(&str, &str)] = &[
     ("tokio", "1.53.3"),
     ("tokio-rustls", "0.26.6"),
     ("zeroize", "1.9.1"),
+    ("keyring-core", "1.0.1"),
+    ("windows-native-keyring-store", "1.1.0"),
+    ("apple-native-keyring-store", "1.0.2"),
+    ("zbus-secret-service-keyring-store", "1.0.1"),
     ("jiff", "0.2.38"),
     ("jiff-tzdb", "0.1.9"),
     ("ring", "0.17.14"),
@@ -61,7 +65,13 @@ const DUPLICATES: &[(&str, &[&str])] = &[
     ("syn", &["2.0.119", "3.0.9"]),
     ("windows-sys", &["0.52.0", "0.61.2"]),
 ];
-const SKIPS: &[(&str, &str)] = &[("getrandom", "0.2.17"), ("windows-sys", "0.52.0")];
+const SKIPS: &[(&str, &str)] = &[
+    ("getrandom", "0.2.17"),
+    ("windows-sys", "0.52.0"),
+    ("syn", "2.0.119"),
+];
+const P256: &str =
+    "p256 = { version = \"=0.14.0\", default-features = false, features = [\"ecdsa\", \"pkcs8\"] }";
 const BANNED: &[&str] = &[
     "reqwest",
     "native-tls",
@@ -124,6 +134,60 @@ fn inventory(packages: &[Locked]) -> BTreeMap<&str, Vec<&str>> {
         v.sort_unstable();
     }
     all
+}
+fn outside_dev_dependencies<'a>(manifest: &'a str, needle: &str) -> Vec<&'a str> {
+    let mut dev = false;
+    manifest
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            if line.starts_with('[') {
+                dev = line.ends_with("dev-dependencies]");
+            }
+            !dev && line.contains(needle)
+        })
+        .collect()
+}
+fn test_only_features_stay_in_dev_dependencies(manifest: &str) -> bool {
+    ["pem\"", "macros\""]
+        .iter()
+        .all(|feature| outside_dev_dependencies(manifest, feature).is_empty())
+}
+fn bans_array<'a>(policy: &'a str, key: &str) -> Vec<&'a str> {
+    let lines: Vec<_> = policy
+        .lines()
+        .map(str::trim)
+        .skip_while(|line| *line != "[bans]")
+        .skip(1)
+        .take_while(|line| !line.starts_with('['))
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect();
+    let open = format!("{key} = [");
+    let start = lines
+        .iter()
+        .position(|line| *line == open)
+        .map_or(lines.len(), |index| index + 1);
+    lines[start..]
+        .iter()
+        .copied()
+        .take_while(|line| *line != "]")
+        .collect()
+}
+fn exact_skips(policy: &str) -> bool {
+    let rows = bans_array(policy, "skip");
+    rows.len() == SKIPS.len()
+        && SKIPS.iter().zip(&rows).all(|((name, version), row)| {
+            row.strip_prefix(&format!(
+                "{{ name = \"{name}\", version = \"={version}\", reason = \""
+            ))
+            .and_then(|rest| rest.strip_suffix("\" },"))
+            .is_some_and(|reason| reason.len() > 20 && !reason.contains('"'))
+        })
+}
+fn exact_denies(policy: &str) -> bool {
+    bans_array(policy, "deny").into_iter().eq(BANNED
+        .iter()
+        .map(|name| format!("{{ name = \"{name}\" }},")))
 }
 fn pins_match(packages: &[Locked], pins: &[(&str, &str)]) -> bool {
     pins.iter()
@@ -214,6 +278,27 @@ fn pin_predicates_reject_widening_changed_versions_and_added_generations() {
         "http-body-util = \"=0.1.3\"",
         "http-body-util = \"*\" # path = \"hidden\""
     )));
+    assert_ne!(
+        outside_dev_dependencies(
+            &format!("{manifest}\n[target.'cfg(unix)'.dependencies]\n{P256}\n"),
+            "p256"
+        ),
+        [P256]
+    );
+    for widened in [
+        format!(
+            "{manifest}\n[target.'cfg(unix)'.dependencies]\ntokio = {{ version = \"=1.53.3\", default-features = false, features = [\"rt\", \"macros\"] }}\n"
+        ),
+        format!(
+            "{manifest}\n[target.'cfg(windows)'.dependencies]\nrcgen = {{ version = \"=0.14.10\", default-features = false, features = [\"crypto\", \"ring\", \"pem\"] }}\n"
+        ),
+        manifest.replace(
+            "mock-store = []",
+            "mock-store = []\nmacros = [\"tokio/macros\"]",
+        ),
+    ] {
+        assert!(!test_only_features_stay_in_dev_dependencies(&widened));
+    }
     let mut locked = packages(include_str!("../../Cargo.lock"));
     locked.push(Locked {
         name: "sha2".into(),
@@ -237,9 +322,14 @@ fn transport_features_keep_the_explicit_ring_tls13_graph_and_test_only_features(
             "required transport features changed"
         );
     }
-    let normal = manifest.split("[dev-dependencies]").next().unwrap();
     assert!(
-        !normal.contains("\"pem\"") && !normal.contains("\"macros\"") && !normal.contains("p256 =")
+        test_only_features_stay_in_dev_dependencies(manifest),
+        "pem and macros stay test-only"
+    );
+    assert_eq!(
+        outside_dev_dependencies(manifest, "p256"),
+        [P256],
+        "p256 stays the protocol's exact signing generation"
     );
     assert!(!manifest.contains("\"tls12\"") && !manifest.contains("\"aws_lc_rs\""));
     let lock = include_str!("../../Cargo.lock");
@@ -261,27 +351,35 @@ fn transport_features_keep_the_explicit_ring_tls13_graph_and_test_only_features(
 #[test]
 fn policy_skips_are_only_exact_reasoned_inventory_entries_and_isc_is_scoped() {
     let policy = include_str!("../../deny.toml");
-    let skips = policy
-        .split_once("skip = [")
-        .unwrap()
-        .1
-        .split_once(']')
-        .unwrap()
-        .0;
-    let entries: Vec<_> = skips
-        .lines()
-        .map(str::trim)
-        .filter(|s| s.starts_with('{'))
-        .collect();
-    assert_eq!(entries.len(), SKIPS.len());
-    for (name, version) in SKIPS {
-        let prefix = format!("{{ name = \"{name}\", version = \"={version}\", reason = \"");
+    assert!(
+        exact_skips(policy),
+        "skip must name the exact version and explain its parents"
+    );
+    let syn = "    { name = \"syn\", version = \"=2.0.119\"";
+    for invalid in [
+        policy.replacen(syn, &format!("    \"syn\",\n{syn}"), 1),
+        policy.replacen(syn, &format!("    \"zvariant@5.15.1\",\n{syn}"), 1),
+        policy.replacen(syn, "    { name = \"syn\", version = \"2.0.119\"", 1),
+    ] {
+        assert_ne!(invalid, policy);
         assert!(
-            entries
-                .iter()
-                .any(|line| line.starts_with(&prefix) && line.len() > prefix.len() + 20),
-            "skip must name the exact version and explain its parents"
+            !exact_skips(&invalid),
+            "a skip row that is not an exact reasoned version is refused"
         );
+    }
+    assert!(exact_denies(policy), "the deny list changed");
+    let openssl = "    { name = \"openssl\" },\n";
+    for invalid in [
+        policy.replacen(openssl, "    # { name = \"openssl\" },\n", 1),
+        policy.replacen(openssl, "    \"openssl\",\n", 1),
+        policy.replacen(
+            openssl,
+            "    { name = \"openssl\", wrappers = [\"draftyak-transport\"] },\n",
+            1,
+        ),
+    ] {
+        assert_ne!(invalid, policy);
+        assert!(!exact_denies(&invalid), "the deny list changed");
     }
     let licenses = policy
         .split_once("[licenses]")
