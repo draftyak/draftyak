@@ -475,3 +475,105 @@ export function fetchGmailBody(
 		});
 	});
 }
+
+export interface GmailMessagePageData {
+	readonly messages: readonly { readonly providerId: string; readonly threadId: string }[];
+	readonly nextPageToken?: string;
+	readonly resultSizeEstimate?: number;
+	readonly bytesRead: number;
+}
+
+function messagePageToken(value: unknown): string {
+	if (typeof value !== "string" || value.length > 2048 || !/^[!-~]+$/.test(value))
+		throw new Error();
+	return value;
+}
+
+/** One default-scope provider page, not a mailbox snapshot, checkpoint or completed rescan. */
+export function fetchGmailMessagePageData(
+	context: PluginContext,
+	options: {
+		readonly maxResults?: number;
+		readonly pageToken?: string;
+		readonly maxBytes?: number;
+	} = {},
+): Promise<GmailMessagePageData> {
+	let maxResults: number, maximum: number, pageToken: string | undefined;
+	try {
+		const settings = historyRecord(copyHistoryData(options), [
+			"maxResults",
+			"pageToken",
+			"maxBytes",
+		]);
+		const requested = Object.hasOwn(settings, "maxResults") ? settings.maxResults : 500;
+		const bytes = Object.hasOwn(settings, "maxBytes") ? settings.maxBytes : MAX_METADATA_BYTES;
+		if (
+			typeof requested !== "number" ||
+			!Number.isSafeInteger(requested) ||
+			requested < 1 ||
+			requested > 500
+		)
+			throw new Error();
+		if (
+			typeof bytes !== "number" ||
+			!Number.isSafeInteger(bytes) ||
+			bytes < 0 ||
+			bytes > MAX_METADATA_BYTES
+		)
+			throw new Error();
+		maxResults = requested;
+		maximum = bytes;
+		if (Object.hasOwn(settings, "pageToken")) pageToken = messagePageToken(settings.pageToken);
+	} catch {
+		return Promise.reject(new PluginError("INVALID_INPUT"));
+	}
+	if (maximum === 0) return Promise.reject(new PluginError("QUOTA_EXCEEDED"));
+	const url = new URL(`${GMAIL_API_BASE}/messages`);
+	url.searchParams.set("maxResults", String(maxResults));
+	if (pageToken !== undefined) url.searchParams.set("pageToken", pageToken);
+	return operation(context, async (signal) => {
+		const response = await fetchResponse(context, url, signal);
+		await checked(response, signal);
+		const document = await jsonDocument(response, signal, maximum);
+		let data: Record<string, unknown>;
+		try {
+			data = historyRecord(document.data);
+		} catch {
+			throw new PluginError("TRANSIENT");
+		}
+		const values = Object.hasOwn(data, "messages") ? data.messages : [];
+		if (!Array.isArray(values)) throw new PluginError("TRANSIENT");
+		if (values.length > maxResults) throw new PluginError("QUOTA_EXCEEDED");
+		try {
+			data = historyRecord(copyHistoryData(data));
+			const detached = Object.hasOwn(data, "messages") ? data.messages : [];
+			if (!Array.isArray(detached)) throw new Error();
+			const seen = new Set<string>();
+			const messages = detached.map((item) => {
+				const row = historyRecord(item);
+				const providerId = gmailPathId(row.id),
+					threadId = gmailPathId(row.threadId);
+				if (seen.has(providerId)) throw new Error();
+				seen.add(providerId);
+				return Object.freeze({ providerId, threadId });
+			});
+			const nextPageToken = Object.hasOwn(data, "nextPageToken")
+				? messagePageToken(data.nextPageToken)
+				: undefined;
+			const estimate = data.resultSizeEstimate;
+			if (
+				Object.hasOwn(data, "resultSizeEstimate") &&
+				(typeof estimate !== "number" || !Number.isSafeInteger(estimate) || estimate < 0)
+			)
+				throw new Error();
+			return Object.freeze({
+				messages: Object.freeze(messages),
+				...(nextPageToken === undefined ? {} : { nextPageToken }),
+				...(estimate === undefined ? {} : { resultSizeEstimate: estimate as number }),
+				bytesRead: document.bytesRead,
+			});
+		} catch {
+			throw new PluginError("TRANSIENT");
+		}
+	});
+}
