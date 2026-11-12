@@ -1,5 +1,8 @@
 import { ModelId } from "@draftyak/protocol/ai-provider-v1";
 import { data, fail, keys, string } from "./boundary.ts";
+import { presetEndpoint } from "./presets.ts";
+
+export { LOCAL_PRESETS } from "./presets.ts";
 
 export type CompatibleFormat = "json_schema" | "json_object" | "ollama";
 export type CompatibleDestination = "local" | "local-network" | "cloud";
@@ -11,27 +14,20 @@ export interface CompatibleConfig {
 	readonly destination: CompatibleDestination;
 }
 
-export const LOCAL_PRESETS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-	ollama: Object.freeze(["http://127.0.0.1:11434/v1/chat/completions"]),
-	lmStudio: Object.freeze(["http://127.0.0.1:1234/v1/chat/completions"]),
-	llamaCpp: Object.freeze([
-		"http://127.0.0.1:8080/v1/chat/completions",
-		"http://127.0.0.1:9931/v1/chat/completions",
-	]),
-	vllm: Object.freeze(["http://127.0.0.1:8000/v1/chat/completions"]),
-});
-
 export function compatibleConfig(input: unknown, trustedResolution: unknown): CompatibleConfig {
 	try {
 		const value = data(input);
-		keys(value, ["endpoint", "model", "format", "allowPlaintextLan"]);
+		keys(value, ["endpoint", "preset", "model", "format", "allowPlaintextLan"]);
 		const resolution = data(trustedResolution);
 		keys(resolution, ["hostname", "destination"]);
-		const endpoint = string(value.endpoint, 2048);
-		const url = new URL(endpoint);
 		const format = value.format;
 		if (format !== "json_schema" && format !== "json_object" && format !== "ollama") fail();
 		const path = format === "ollama" ? "/api/chat" : "/v1/chat/completions";
+		const hasEndpoint = Object.hasOwn(value, "endpoint");
+		const hasPreset = Object.hasOwn(value, "preset");
+		if (hasEndpoint === hasPreset) fail();
+		const endpoint = hasPreset ? presetEndpoint(value.preset, path) : string(value.endpoint, 2048);
+		const url = new URL(endpoint);
 		if (
 			url.href !== endpoint ||
 			endpoint !== `${url.origin}${path}` ||

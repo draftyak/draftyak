@@ -11,6 +11,7 @@ import {
 } from "@draftyak/sdk";
 import { bytes, CompatibleError, data, keys, transportError } from "./boundary.ts";
 import { createCompatibleCore } from "./core.ts";
+import type { CompatiblePreset } from "./presets.ts";
 import type { CompatibleRequest } from "./request.ts";
 import { type CompatibleResponse, MAX_RESPONSE_BYTES } from "./response.ts";
 
@@ -41,8 +42,7 @@ function freeze(value: unknown): void {
 freeze(manifest);
 
 /** Bootstrap classification data; every fetch remains subject to independent host policy. */
-export interface CompatiblePluginConfig {
-	readonly endpoint: string;
+interface CompatiblePluginConfigBase {
 	readonly model: string;
 	readonly format: "json_schema" | "json_object" | "ollama";
 	readonly allowPlaintextLan?: boolean;
@@ -51,6 +51,11 @@ export interface CompatiblePluginConfig {
 		readonly destination: "local" | "local-network" | "cloud";
 	};
 }
+export type CompatiblePluginConfig = CompatiblePluginConfigBase &
+	(
+		| { readonly endpoint: string; readonly preset?: never }
+		| { readonly preset: CompatiblePreset; readonly endpoint?: never }
+	);
 interface Invocation {
 	readonly signal: AbortSignal;
 	readonly ended: Promise<never>;
@@ -164,7 +169,7 @@ export function createPlugin(instance: PluginInstance): PluginEntry {
 		if (typeof supplied.id !== "string" || !/^[!-~]{1,256}$/.test(supplied.id))
 			throw new CompatibleError("INVALID_CONFIG");
 		const config = data(supplied.config);
-		keys(config, ["endpoint", "model", "format", "allowPlaintextLan", "resolution"]);
+		keys(config, ["endpoint", "preset", "model", "format", "allowPlaintextLan", "resolution"]);
 		const { resolution, ...input } = config;
 		core = createCompatibleCore(input, resolution);
 	} catch {
