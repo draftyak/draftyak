@@ -1,7 +1,11 @@
 import { existsSync, globSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { joinInventoryExecution, startInventoryAfter } from "../lib/inventory-process.ts";
+import {
+	joinInventoryExecution,
+	observeInventoryFailure,
+	startInventoryAfter,
+} from "../lib/inventory-process.ts";
 import { capture } from "../lib/spawn.ts";
 import { approvedWorkspace } from "../lib/workspace-policy.ts";
 
@@ -206,6 +210,7 @@ describe("workspace policy", () => {
 				.filter((line) => !/^[A-Z][A-Z0-9_]*=$/.test(line));
 			expect(values).toEqual([]);
 		});
+		observeInventoryFailure(execution, (diagnostic) => console.error(diagnostic));
 		await joinInventoryExecution(execution);
 	}, 300_000);
 });
