@@ -517,6 +517,7 @@ const m1Tree: Record<string, string> = {
 	"crates/Cargo.toml": "[workspace]\nmembers = ['draftyak-protocol']\n",
 	"crates/draftyak-protocol/Cargo.toml": "[package]\nname = 'draftyak-protocol'\n",
 	"crates/draftyak-protocol/src/lib.rs": "",
+	"crates/draftyak-transport/Cargo.toml": "[package]\nname = 'draftyak-transport'\n",
 	"packages/protocol/package.json": heavy("@draftyak/protocol"),
 	"packages/sdk/package.json": heavy("@draftyak/sdk"),
 	"packages/fakes/package.json": JSON.stringify({ name: "@draftyak/fakes" }),
@@ -526,6 +527,7 @@ const m1Tree: Record<string, string> = {
 	"spikes/s05/rust/Cargo.toml": "[workspace]\n",
 	"tools/verify/package.json": heavy("@draftyak/verify"),
 	"tools/fetch-node/package.json": heavy("@draftyak/fetch-node"),
+	"tools/transport-tests/package.json": heavy("@draftyak/transport-tests"),
 };
 m1Tree["pnpm-lock.yaml"] = `lockfileVersion: '9.0'\nimporters:\n${Object.keys(m1Tree)
 	.filter((file) => file.endsWith("/package.json"))
@@ -543,8 +545,68 @@ const everyHeavy = [
 	"./packages/protocol",
 	"./packages/sdk",
 	"./plugins/channel-hello",
+	"./tools/transport-tests",
 	"./tools/verify",
 ];
+
+describe("native-store wrapper routing", () => {
+	const select = (files: string[]) => classify(files, m1Root, () => m1Manifests);
+	it.each([
+		"crates/draftyak-transport/src/key_store/mod.rs",
+		"crates/draftyak-transport/tests/key_store.rs",
+		"tools/transport-tests/src/suite.ts",
+		"tools/transport-tests/test/native.heavy.test.ts",
+		"crates/Cargo.toml",
+		"crates/Cargo.lock",
+		"rust-toolchain.toml",
+	])("selects the required wrapper and Rust toolchain for %s", (file) => {
+		const areas = select([file]);
+		expect(areas.rust).toContain("crates");
+		expect(areas.heavy).toContain("./tools/transport-tests");
+	});
+	it("does not select native effects for documentation or similarly named packages", () => {
+		expect(select(["crates/draftyak-transport/README.md"]).docsOnly).toBe(true);
+		expect(select(["tools/transport-tests/README.md"]).heavy).toEqual([]);
+		expect(select(["tools/transport-tests-lookalike/src/run.ts"]).heavy).toEqual([]);
+	});
+	it("refuses a missing package, script or workspace rather than dropping selected acceptance", () => {
+		const fixture = mkdtempSync(path.join(tmpdir(), "draftyak-transport-route-"));
+		try {
+			const cargo = "crates/Cargo.toml",
+				pkg = "tools/transport-tests/package.json";
+			for (const [file, value] of [
+				[cargo, "[workspace]\n"],
+				[pkg, heavy("@draftyak/transport-tests")],
+			] as const) {
+				mkdirSync(path.dirname(path.join(fixture, file)), { recursive: true });
+				writeFileSync(path.join(fixture, file), value);
+			}
+			const check = () =>
+				classify(
+					["tools/transport-tests/src/run.ts"],
+					fixture,
+					() => [cargo],
+					() => [],
+				);
+			expect(check().heavy).toContain("./tools/transport-tests");
+			for (const value of [
+				"{}",
+				'{"scripts":{"test:heavy":""}}',
+				'{"scripts":{"test:heavy":"echo passed"}}',
+			]) {
+				writeFileSync(path.join(fixture, pkg), value);
+				expect(check).toThrow("Required native-store heavy test command");
+			}
+			rmSync(path.join(fixture, pkg));
+			expect(check).toThrow("Required native-store test package");
+			writeFileSync(path.join(fixture, pkg), heavy("@draftyak/transport-tests"));
+			rmSync(path.join(fixture, cargo));
+			expect(check).toThrow("Required native-store test package or Rust workspace");
+		} finally {
+			rmSync(fixture, { recursive: true, force: true });
+		}
+	});
+});
 
 describe("heavy selection for full", () => {
 	const select = (files: string[]) => classify(files, m1Root, () => m1Manifests);
@@ -590,7 +652,7 @@ describe("heavy selection for full", () => {
 		expect(select(["rust-toolchain.toml"])).toMatchObject({
 			rust: ["crates", "spikes/s05/rust"],
 			spikes: ["spikes/s05"],
-			heavy: ["./packages/protocol"],
+			heavy: ["./packages/protocol", "./tools/transport-tests"],
 			templateSmoke: false,
 		});
 	});
