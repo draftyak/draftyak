@@ -217,10 +217,19 @@ importers:
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@draftyak/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
     devDependencies:
+      '@draftyak/fakes':
+        specifier: workspace:*
+        version: link:../../packages/fakes
       '@draftyak/hub':
         specifier: workspace:*
         version: link:../../apps/hub
+      '@draftyak/plugin-testkit':
+        specifier: workspace:*
+        version: link:../../packages/plugin-testkit
       fast-check:
         specifier: 4.10.2
         version: 4.10.2
