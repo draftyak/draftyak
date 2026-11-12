@@ -11,6 +11,7 @@ import { type CredentialBinding, CredentialVault } from "../credentials/vault.ts
 import { type Clock, systemClock } from "../kernel/clock.ts";
 import type { MasterKey } from "../kernel/master-key.ts";
 import type { HubStore, SqlTransaction } from "../store/store.ts";
+import type { NativeGmailSendReceiptData } from "./gmail-receipt.ts";
 import {
 	attemptView,
 	copyBody,
@@ -68,6 +69,18 @@ interface Coordinator {
 }
 const coordinators = new WeakMap<HubStore, Coordinator>();
 const stateFromStorage = SendTicketStorage.prototype.find;
+const receiptApply = Reflect.apply;
+const receiptStorage = Object.freeze({
+	write: SendTicketStorage.prototype.write,
+	find: SendTicketStorage.prototype.find,
+	payload: SendTicketStorage.prototype.payload,
+	receipt: SendTicketStorage.prototype.gmailReceipt,
+	complete: SendTicketStorage.prototype.completeGmailSendInTransaction,
+});
+export interface CompletedNativeGmailSend {
+	readonly attempt: SendAttempt;
+	readonly receipt: NativeGmailSendReceiptData;
+}
 function presented(input: unknown): { id?: string; ticket?: unknown; request?: TicketedRequest } {
 	// Obtain only a plain own data id before inspecting hostile fields, so a found ticket is
 	// durably burned even when another field cannot be captured. No caller getter is invoked.
@@ -384,7 +397,12 @@ export class SendTicketLedger {
 	recordOutcome(dispatch: SendDispatch, outcome: "SENT" | "FAILED" | "UNKNOWN"): SendAttempt {
 		const lease = this.#coordinator.dispatches.get(dispatch);
 		this.#coordinator.dispatches.delete(dispatch);
-		if (!lease || !["SENT", "FAILED", "UNKNOWN"].includes(outcome)) throw unavailable();
+		if (
+			!lease ||
+			!["SENT", "FAILED", "UNKNOWN"].includes(outcome) ||
+			(outcome === "SENT" && lease.credential.binding.kind === "gmail-oauth")
+		)
+			throw unavailable();
 		try {
 			return this.#storage.write((tx) => {
 				const row = this.#storage.find(tx, "id", lease.id);
@@ -393,6 +411,42 @@ export class SendTicketLedger {
 				// erase the observation of IO which already happened. It never creates another ticket.
 				return attemptView(this.#storage.transition(tx, row, outcome));
 			});
+		} catch {
+			throw unavailable();
+		}
+	}
+	/** Internal native completion; the genuine IO lease selects the account and durable attempt. */
+	completeGmailSend(
+		dispatch: SendDispatch,
+		receipt: NativeGmailSendReceiptData,
+	): CompletedNativeGmailSend {
+		const lease = this.#coordinator.dispatches.get(dispatch);
+		this.#coordinator.dispatches.delete(dispatch);
+		if (
+			!lease ||
+			lease.credential.binding.kind !== "gmail-oauth" ||
+			!this.#coordinator.writes.has(dispatch)
+		)
+			throw unavailable();
+		try {
+			return receiptApply(receiptStorage.write, this.#storage, [
+				(tx: SqlTransaction) => {
+					const row = receiptApply(receiptStorage.find, this.#storage, [tx, "id", lease.id]);
+					if (row?.state !== "SENDING") throw unavailable();
+					const payload = receiptApply(receiptStorage.payload, this.#storage, [row]);
+					if (
+						payload.accountId !== lease.credential.binding.ownerId ||
+						payload.credentialKind !== "gmail-oauth" ||
+						payload.credentialReference !== lease.credential.reference ||
+						payload.credentialGeneration !== lease.credential.generation
+					)
+						throw unavailable();
+					const actual = receiptApply(receiptStorage.complete, this.#storage, [tx, row, receipt]);
+					const saved = receiptApply(receiptStorage.receipt, this.#storage, [tx, actual]);
+					if (!saved) throw unavailable();
+					return Object.freeze({ attempt: attemptView(actual), receipt: saved });
+				},
+			]);
 		} catch {
 			throw unavailable();
 		}

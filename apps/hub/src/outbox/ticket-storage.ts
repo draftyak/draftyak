@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { types } from "node:util";
 import { type HeaderList, headersSha256, sha256Hex } from "@draftyak/protocol/hash";
-import { canonicalize } from "@draftyak/protocol/jcs";
+import { canonicalize, parseStrict } from "@draftyak/protocol/jcs";
 import { Sha256Hex, Ulid, UtcMs } from "@draftyak/protocol/scalars";
 import { SendTicket, sendTicketExp } from "@draftyak/protocol/send-ticket";
 import { AuditChain } from "../audit/chain.ts";
@@ -15,6 +15,11 @@ import {
 	type SqlReader,
 	type SqlTransaction,
 } from "../store/store.ts";
+import {
+	captureNativeGmailSendReceiptData,
+	MAX_GMAIL_RECEIPT_BLOB_BYTES,
+	type NativeGmailSendReceiptData,
+} from "./gmail-receipt.ts";
 
 export const MAX_SEND_BODY_BYTES = 33_554_432;
 export type SendAttemptState =
@@ -93,6 +98,7 @@ const appendAudit = AuditChain.prototype.append,
 const describeCredential = CredentialVault.prototype.describeInTransaction;
 const derive = MasterKey.prototype.derive;
 const restoreApply = Reflect.apply;
+const receiptFill = Uint8Array.prototype.fill;
 const restoreResets = new WeakMap<object, (tx: SqlTransaction) => number>();
 const states: readonly string[] = [
 	"ISSUED",
@@ -259,7 +265,31 @@ export class SendTicketStorage {
 		assertStoreTransaction(this.#store, tx);
 		restoreApply(verifyAudit, this.#audit, [tx]);
 	}
-	#restoreValid(tx: SqlReader, row: StoredAttempt): void {
+	#receiptBytes(tx: SqlReader, id: string): Buffer | undefined {
+		const saved = tx.get<{ receipt: Uint8Array }>(
+			`SELECT CASE WHEN typeof(receipt)='blob' AND length(receipt) BETWEEN 1 AND ${MAX_GMAIL_RECEIPT_BLOB_BYTES} THEN receipt ELSE NULL END AS receipt FROM main.native_gmail_send_receipts WHERE attempt_id=?`,
+			[id],
+		);
+		if (!saved) return;
+		if (!types.isUint8Array(saved.receipt)) throw unavailable();
+		try {
+			return Buffer.from(saved.receipt);
+		} finally {
+			restoreApply(receiptFill, saved.receipt, [0]);
+		}
+	}
+	#receiptData(bytes: Buffer): NativeGmailSendReceiptData {
+		const data = captureNativeGmailSendReceiptData(parseStrict(bytes));
+		const encoded = Buffer.from(canonicalize(data));
+		try {
+			if (encoded.byteLength !== bytes.byteLength || !timingSafeEqual(encoded, bytes))
+				throw unavailable();
+			return data;
+		} finally {
+			restoreApply(receiptFill, encoded, [0]);
+		}
+	}
+	#restoreValid(tx: SqlReader, row: StoredAttempt): NativeGmailSendReceiptData | undefined {
 		if (
 			!Ulid.safeParse(row.id).success ||
 			!Ulid.safeParse(row.outbox_id).success ||
@@ -273,20 +303,34 @@ export class SendTicketStorage {
 			!Sha256Hex.safeParse(row.mac).success
 		)
 			throw unavailable();
-		const { mac, ...rest } = row;
-		if (!timingSafeEqual(Buffer.from(mac, "hex"), Buffer.from(this.#mac(rest), "hex")))
-			throw unavailable();
-		const latest = tx.get<{ seq: number; action: string }>(
-			"SELECT seq,action FROM main.audit_events WHERE refs=? ORDER BY seq DESC LIMIT 1",
-			[this.#refs(row)],
-		);
-		if (
-			!latest ||
-			latest.seq !== row.audit_seq ||
-			latest.action !== `send.${row.state.toLowerCase()}`
-		)
-			throw unavailable();
-		restoreApply(restoreOriginal.payload, this, [row]);
+		const receipt = this.#receiptBytes(tx, row.id);
+		try {
+			const { mac, ...rest } = row;
+			if (
+				!timingSafeEqual(
+					Buffer.from(mac, "hex"),
+					Buffer.from(this.#mac(rest, receipt ? sha256Hex(receipt) : undefined), "hex"),
+				)
+			)
+				throw unavailable();
+			const latest = tx.get<{ seq: number; action: string }>(
+				"SELECT seq,action FROM main.audit_events WHERE refs=? ORDER BY seq DESC LIMIT 1",
+				[this.#refs(row)],
+			);
+			if (
+				!latest ||
+				latest.seq !== row.audit_seq ||
+				latest.action !== `send.${row.state.toLowerCase()}`
+			)
+				throw unavailable();
+			const payload = restoreApply(restoreOriginal.payload, this, [row]);
+			if (receipt) {
+				if (row.state !== "SENT" || payload.credentialKind !== "gmail-oauth") throw unavailable();
+				return this.#receiptData(receipt);
+			}
+		} finally {
+			if (receipt) restoreApply(receiptFill, receipt, [0]);
+		}
 	}
 	#restoreReduce(
 		tx: SqlTransaction,
@@ -402,45 +446,26 @@ export class SendTicketStorage {
 		if (this.#destroyed || !Number.isFinite(now) || now < 0) throw unavailable();
 		return now;
 	}
-	#mac(row: Omit<StoredAttempt, "mac">): string {
+	#mac(row: Omit<StoredAttempt, "mac">, receiptSha256?: string): string {
 		if (this.#destroyed) throw unavailable();
 		const { body, ...rest } = row;
+		const envelope = { ...rest, bodySha256: sha256Hex(body) };
 		return createHmac("sha256", this.#key)
 			.update("draftyak/send-ticket/v1\n")
-			.update(canonicalize({ ...rest, bodySha256: sha256Hex(body) }))
+			.update(
+				canonicalize(
+					receiptSha256 === undefined
+						? envelope
+						: { ...envelope, gmailReceiptSha256: receiptSha256 },
+				),
+			)
 			.digest("hex");
 	}
 	#refs(row: Pick<StoredAttempt, "id" | "outbox_id" | "ticket_id">): string {
 		return canonicalize({ attempt: row.id, outbox: row.outbox_id, ticket: row.ticket_id });
 	}
 	#valid(tx: SqlReader, row: StoredAttempt): void {
-		if (
-			!Ulid.safeParse(row.id).success ||
-			!Ulid.safeParse(row.outbox_id).success ||
-			!Ulid.safeParse(row.ticket_id).success ||
-			typeof row.payload !== "string" ||
-			!types.isUint8Array(row.body) ||
-			!states.includes(row.state) ||
-			!UtcMs.safeParse(row.updated_at).success ||
-			!Number.isSafeInteger(row.audit_seq) ||
-			row.audit_seq < 1 ||
-			!Sha256Hex.safeParse(row.mac).success
-		)
-			throw unavailable();
-		const { mac, ...rest } = row;
-		if (!timingSafeEqual(Buffer.from(mac, "hex"), Buffer.from(this.#mac(rest), "hex")))
-			throw unavailable();
-		const latest = tx.get<{ seq: number; action: string }>(
-			"SELECT seq,action FROM main.audit_events WHERE refs=? ORDER BY seq DESC LIMIT 1",
-			[this.#refs(row)],
-		);
-		if (
-			!latest ||
-			latest.seq !== row.audit_seq ||
-			latest.action !== `send.${row.state.toLowerCase()}`
-		)
-			throw unavailable();
-		this.payload(row);
+		this.#restoreValid(tx, row);
 	}
 	payload(row: StoredAttempt): Payload {
 		const parsed = dataRecord(JSON.parse(row.payload), [
@@ -474,6 +499,120 @@ export class SendTicketStorage {
 			issuedAt: Number(parsed.issuedAt),
 			issuedMonotonic: Number(parsed.issuedMonotonic),
 		};
+	}
+	/** Authenticated historical DATA only; this does not acquire a credential or dispatch right. */
+	gmailReceipt(tx: SqlReader, row: StoredAttempt): NativeGmailSendReceiptData | undefined {
+		return this.#restoreValid(tx, row);
+	}
+	/** Record one native Gmail observation in the same authenticated current-attempt write. */
+	completeGmailSendInTransaction(
+		tx: SqlTransaction,
+		prior: StoredAttempt,
+		input: NativeGmailSendReceiptData,
+	): StoredAttempt {
+		this.#restoreTransaction(tx);
+		this.#restoreValid(tx, prior);
+		const payload = restoreApply(restoreOriginal.payload, this, [prior]);
+		if (prior.state !== "SENDING" || payload.credentialKind !== "gmail-oauth") throw unavailable();
+		const receipt = Buffer.from(canonicalize(captureNativeGmailSendReceiptData(input)));
+		try {
+			const updatedAt = restoreApply(restoreOriginal.now, this, []);
+			if (updatedAt < prior.updated_at || receipt.byteLength > MAX_GMAIL_RECEIPT_BLOB_BYTES)
+				throw unavailable();
+			if (
+				tx.run("INSERT INTO main.native_gmail_send_receipts(attempt_id,receipt) VALUES(?,?)", [
+					prior.id,
+					receipt,
+				]).changes !== 1
+			)
+				throw unavailable();
+			const inserted = this.#receiptBytes(tx, prior.id);
+			let receiptSha256: string;
+			try {
+				if (
+					!inserted ||
+					inserted.byteLength !== receipt.byteLength ||
+					!timingSafeEqual(inserted, receipt)
+				)
+					throw unavailable();
+				receiptSha256 = sha256Hex(inserted);
+			} finally {
+				if (inserted) restoreApply(receiptFill, inserted, [0]);
+			}
+			restoreApply(appendAudit, this.#audit, [
+				tx,
+				{
+					id: newId(updatedAt),
+					at: updatedAt,
+					action: "send.sent",
+					actor: { kind: "hub", id: null },
+					refs: JSON.parse(this.#refs(prior)),
+				},
+			]);
+			const seq = tx.get<{ audit_seq: number }>(
+				"SELECT audit_seq FROM main.audit_meta WHERE singleton=1",
+			)?.audit_seq;
+			if (!seq || !Number.isSafeInteger(seq)) throw unavailable();
+			const base = {
+				id: prior.id,
+				outbox_id: prior.outbox_id,
+				ticket_id: prior.ticket_id,
+				payload: prior.payload,
+				body: prior.body,
+				state: "SENT" as const,
+				updated_at: updatedAt,
+				audit_seq: seq,
+			};
+			const saved = { ...base, mac: this.#mac(base, receiptSha256) };
+			if (
+				tx.run(
+					"UPDATE main.native_send_attempts SET state=?,updated_at=?,audit_seq=?,mac=? WHERE id=? AND outbox_id=? AND ticket_id=? AND payload=? AND body=? AND state=? AND updated_at=? AND audit_seq=? AND mac=?",
+					[
+						saved.state,
+						saved.updated_at,
+						saved.audit_seq,
+						saved.mac,
+						prior.id,
+						prior.outbox_id,
+						prior.ticket_id,
+						prior.payload,
+						prior.body,
+						prior.state,
+						prior.updated_at,
+						prior.audit_seq,
+						prior.mac,
+					],
+				).changes !== 1
+			)
+				throw unavailable();
+			const actual = tx.get<StoredAttempt>(`${SELECT} WHERE id=?`, [prior.id]);
+			if (!actual) throw unavailable();
+			this.#restoreValid(tx, actual);
+			const actualReceipt = this.#receiptBytes(tx, prior.id);
+			try {
+				if (
+					actual.id !== saved.id ||
+					actual.outbox_id !== saved.outbox_id ||
+					actual.ticket_id !== saved.ticket_id ||
+					actual.payload !== saved.payload ||
+					actual.state !== saved.state ||
+					actual.updated_at !== saved.updated_at ||
+					actual.audit_seq !== saved.audit_seq ||
+					actual.mac !== saved.mac ||
+					actual.body.byteLength !== saved.body.byteLength ||
+					!timingSafeEqual(actual.body, saved.body) ||
+					!actualReceipt ||
+					actualReceipt.byteLength !== receipt.byteLength ||
+					!timingSafeEqual(actualReceipt, receipt)
+				)
+					throw unavailable();
+				return actual;
+			} finally {
+				if (actualReceipt) restoreApply(receiptFill, actualReceipt, [0]);
+			}
+		} finally {
+			restoreApply(receiptFill, receipt, [0]);
+		}
 	}
 	assertCredential(tx: SqlTransaction, payload: StoredSendBinding): void {
 		if (
