@@ -14,6 +14,7 @@ const identities = new WeakMap<
 	EncryptedKeyIdentity,
 	{ fingerprint?: Buffer; purpose?: DatabasePurpose; created?: boolean }
 >();
+const apply = Reflect.apply;
 const derive = MasterKey.prototype.derive;
 const closeDatabase = Database.prototype.close;
 // Failed initialization retains only its original native connection, never caller key authority.
@@ -141,7 +142,7 @@ export function assertEncryptedKeyIdentity(identity: EncryptedKeyIdentity, key: 
 	try {
 		const state = identities.get(identity);
 		if (!state?.fingerprint || !state.purpose || types.isProxy(key)) throw new Error();
-		bytes = derive.call(key, state.purpose);
+		bytes = apply(derive, key, [state.purpose]);
 		fingerprint = createHash("sha256").update(bytes).digest();
 		if (!timingSafeEqual(fingerprint, state.fingerprint)) throw new Error();
 	} catch {
@@ -203,7 +204,7 @@ export function openEncrypted(
 	)
 		throw new Error("Unknown database key purpose");
 	if (types.isProxy(masterKey)) throw new Error("Database key unavailable");
-	const key = derive.call(masterKey, purpose);
+	const key = apply(derive, masterKey, [purpose]);
 	let db: SqliteDatabase | undefined;
 	try {
 		// Retry only the retained native resource before any requested-file lookup or allocation.
