@@ -26,6 +26,11 @@ export interface GmailMetadataResult {
 	readonly message: EmailMessageChange;
 	readonly bytesRead: number;
 }
+export interface GmailSendReceiptData {
+	readonly message: EmailMessageChange;
+	readonly messageIdHeader: string;
+	readonly bytesRead: number;
+}
 interface JsonDocument {
 	readonly data: unknown;
 	readonly bytesRead: number;
@@ -345,12 +350,13 @@ function metadataData(data: unknown, id: string): ReturnType<typeof decodeGmailM
 	return metadata;
 }
 
-/** One metadata-only SDK GET with actual wire-byte accounting, never a body fetch or grant. */
-export function fetchGmailMetadata(
+/** One shared bounded metadata read; projections never grant dispatch or persistence. */
+function metadataReadData<T>(
 	context: PluginContext,
 	message: MessageRef,
-	options: { readonly maxBytes?: number } = {},
-): Promise<GmailMetadataResult> {
+	options: { readonly maxBytes?: number },
+	project: (data: unknown, message: EmailMessageChange, bytesRead: number) => T,
+): Promise<T> {
 	let id: string;
 	let maximum: number;
 	try {
@@ -383,8 +389,48 @@ export function fetchGmailMetadata(
 		});
 		if (!result.success) throw new PluginError("TRANSIENT");
 		Object.freeze(result.data.labelIds);
-		return Object.freeze({ message: Object.freeze(result.data), bytesRead: document.bytesRead });
+		return project(document.data, Object.freeze(result.data), document.bytesRead);
 	});
+}
+
+function receiptMessageIdHeader(data: unknown): string {
+	const payload = historyRecord(historyRecord(copyHistoryData(data)).payload);
+	if (!Array.isArray(payload.headers)) throw new PluginError("TRANSIENT");
+	let messageIdHeader: string | undefined;
+	for (const item of payload.headers) {
+		const header = historyRecord(item);
+		if (typeof header.name !== "string" || typeof header.value !== "string")
+			throw new PluginError("TRANSIENT");
+		if (/^[Mm][Ee][Ss][Ss][Aa][Gg][Ee]-[Ii][Dd]$/.test(header.name)) {
+			if (messageIdHeader !== undefined || header.value.length === 0)
+				throw new PluginError("TRANSIENT");
+			messageIdHeader = header.value;
+		}
+	}
+	if (messageIdHeader === undefined) throw new PluginError("TRANSIENT");
+	return messageIdHeader;
+}
+
+/** One metadata-only SDK GET with actual wire-byte accounting, never a body fetch or grant. */
+export function fetchGmailMetadata(
+	context: PluginContext,
+	message: MessageRef,
+	options: { readonly maxBytes?: number } = {},
+): Promise<GmailMetadataResult> {
+	return metadataReadData(context, message, options, (_data, message, bytesRead) =>
+		Object.freeze({ message, bytesRead }),
+	);
+}
+
+/** Literal provider metadata DATA; neither delivery proof nor an approved Message-ID. */
+export function fetchGmailSendReceiptData(
+	context: PluginContext,
+	message: MessageRef,
+	options: { readonly maxBytes?: number } = {},
+): Promise<GmailSendReceiptData> {
+	return metadataReadData(context, message, options, (data, message, bytesRead) =>
+		Object.freeze({ message, messageIdHeader: receiptMessageIdHeader(data), bytesRead }),
+	);
 }
 
 /** Fixed read-only SDK requests; the host owns extraction, storage and source admission. */
