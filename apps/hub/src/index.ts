@@ -5,6 +5,12 @@ export {
 	NativeAccounts,
 } from "./accounts/records.ts";
 export {
+	AccountReadError,
+	type AccountReadErrorCode,
+	createNativeAccountReads,
+	type NativeAccountReads,
+} from "./api/accounts.ts";
+export {
 	AUDIT_EXPORT_MAX_BYTES,
 	AUDIT_EXPORT_MAX_EVENTS,
 	AUDIT_VERIFY_BATCH_SIZE,
