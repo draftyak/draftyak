@@ -17,6 +17,7 @@ export {
 	resolveEgressAnswers,
 	validateEgressAnswers,
 } from "./addresses.ts";
+export { classifyEndpoint, type EndpointClassification } from "./endpoint.ts";
 export {
 	createPinnedHttpsConnection,
 	type PinnedHttpsConnection,
