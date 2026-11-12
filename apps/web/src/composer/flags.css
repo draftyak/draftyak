@@ -1,0 +1,34 @@
+.flag-list ul {
+	padding-inline-start: 1.5rem;
+}
+
+.flag-list li {
+	border-inline-start: 0.25rem solid;
+	margin-block: 0.75rem;
+	padding: 0.75rem;
+}
+
+.flag-list [data-severity="ack"] {
+	background: #fee2e2;
+	color: #7f1d1d;
+}
+
+.flag-list [data-severity="advisory"] {
+	background: #fef3c7;
+	color: #713f12;
+}
+
+.flag-list [data-severity="info"] {
+	background: #dbeafe;
+	color: #1e3a8a;
+}
+
+.flag-list__severity,
+.flag-list__detail {
+	display: block;
+}
+
+.flag-list__detail {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
