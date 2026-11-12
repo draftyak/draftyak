@@ -1,0 +1,52 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: approval-binding-nightly-m2
+  cancel-in-progress: false
+
+env:
+  CI: 'true'
+  DO_NOT_TRACK: '1'
+  TURBO_TELEMETRY_DISABLED: '1'
+  DRAFTYAK_STRICT_SKIPS: '1'
+  DRAFTYAK_APPROVAL_BINDING_RUNS: "10000"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  approval-binding:
+    name: Approval statement binding (10000 runs per channel)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: m2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build --filter=@draftyak/hub...
+      - name: Check approval statement binding
+        working-directory: apps/hub
+        run: |
+          node "$GITHUB_WORKSPACE/node_modules/vitest/vitest.mjs" run \
+            test/model/send-approval-binding.test.ts \
+            --mode test --config vitest.config.ts --no-file-parallelism \
+            --maxWorkers=1 --reporter=default \
+            --exclude '**/*siwc*/**' --exclude '**/*siwc*' \
+            --exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'

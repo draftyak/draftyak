@@ -15,16 +15,20 @@ import { contentHash, SendSnapshotV1 } from "../snapshot.ts";
 import { AdminKind, AgentSessionReviewSubject, SigningKey } from "../statements.ts";
 import {
 	ADMIN_REVIEW_KINDS,
+	AdminAccountConnectSubject,
 	AdminAccountSubject,
 	AdminDataBackupSubject,
 	AdminDeviceCapabilitiesSubject,
 	type AdminOperationReview,
+	AdminPluginInstallSubject,
+	AdminPluginUpgradeSubject,
 	type AdminReviewKind,
 } from "./admin.ts";
 import { presetFitsRole } from "./common.ts";
 
 export type OperationRequest =
-	| { readonly kind: AdminKind; readonly ids: readonly string[] }
+	| { readonly kind: Exclude<AdminKind, "account.connect">; readonly ids: readonly string[] }
+	| { readonly kind: "account.connect"; readonly ids: readonly [string] }
 	| {
 			readonly kind: "pair-confirm";
 			readonly ids: readonly [string];
@@ -36,9 +40,15 @@ export const OperationRequest: z.ZodType<OperationRequest> = z
 			kind: AdminKind.exclude(ADMIN_REVIEW_KINDS),
 			ids: uniqueItems(z.array(Ulid).max(100)),
 		}),
+		// Plugin requests name the stable registry and exact candidate version, in that order.
+		z.strictObject({
+			kind: AdminKind.extract(["plugin.install", "plugin.upgrade"]),
+			ids: uniqueItems(z.array(Ulid).length(2)),
+		}),
 		// A reviewed kind names the account or device its subject describes, or nothing to back up.
 		z.strictObject({
 			kind: AdminKind.extract([
+				"account.connect",
 				"account.disconnect",
 				"account.mode-full",
 				"security.device-capabilities",
@@ -164,6 +174,9 @@ export const OperationReview: z.ZodType<OperationReview> = z
 	.discriminatedUnion("kind", [
 		pairReview,
 		agentSessionReview,
+		adminReview("plugin.install", AdminPluginInstallSubject),
+		adminReview("plugin.upgrade", AdminPluginUpgradeSubject),
+		adminReview("account.connect", AdminAccountConnectSubject),
 		adminReview("account.disconnect", AdminAccountSubject),
 		adminReview("account.mode-full", AdminAccountSubject),
 		adminReview("security.device-capabilities", AdminDeviceCapabilitiesSubject),

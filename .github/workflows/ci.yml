@@ -31,6 +31,8 @@ jobs:
       docs-only: ${{ steps.areas.outputs.docs-only }}
       rust: ${{ steps.areas.outputs.rust }}
       spikes: ${{ steps.areas.outputs.spikes }}
+      spike-matrix: ${{ steps.shards.outputs.matrix }}
+      spike-count: ${{ steps.shards.outputs.count }}
       heavy: ${{ steps.areas.outputs.heavy }}
       native-transport: ${{ steps.native.outputs.native-transport }}
       ordinary-heavy: ${{ steps.native.outputs.ordinary-heavy }}
@@ -57,6 +59,10 @@ jobs:
           HEAVY: ${{ steps.areas.outputs.heavy }}
           RUST: ${{ steps.areas.outputs.rust }}
         run: node tools/ci-checks/src/native-transport.ts select
+      - id: shards
+        env:
+          SPIKES: ${{ steps.areas.outputs.spikes }}
+        run: node tools/ci-checks/src/heavy-shards.ts plan
 
   cheap:
     needs: changes
@@ -153,6 +159,194 @@ jobs:
       - name: Rust checks for crates/ (fmt, cargo-deny, clippy, tests)
         if: contains(fromJSON(needs.changes.outputs.areas), 'rust:crates')
         run: DRAFTYAK_CARGO_DENY="$RUNNER_TEMP/cargo-deny/cargo-deny" node tools/verify/verify.ts --profile rust
+      - name: Run native transport checks
+        id: native
+        if: needs.changes.outputs.native-transport == 'true'
+        env:
+          NATIVE_PLATFORM: linux
+          NATIVE_ARCHITECTURE: x64
+        run: pnpm exec node tools/ci-checks/src/native-transport.ts run
+
+  spike-run:
+    name: Spike heavy (${{ matrix.id }})
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.spike-count != '0'
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.changes.outputs.spike-matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DRAFTYAK_STRICT_SKIPS: '1'
+      SHARD_ID: ${{ matrix.id }}
+      SPIKE: ${{ matrix.spike }}
+      SPIKES: ${{ needs.changes.outputs.spikes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: node tools/ci-checks/src/heavy-shards.ts validate
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.job }}-${{ matrix.id }}-${{ hashFiles('pnpm-lock.yaml', '.github/workflows/**', '**/*.ts', '**/*.json', '!**/node_modules/**') }}
+          restore-keys: turbo-${{ runner.os }}-${{ github.job }}-${{ matrix.id }}-
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master on 2026-10-16
+        if: needs.changes.outputs.rust != ''
+        with:
+          toolchain: 1.95.0
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: needs.changes.outputs.rust != ''
+        with:
+          workspaces: ${{ needs.changes.outputs.rust }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Prepare authenticated offline Node fixture
+        id: offline-node
+        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''
+        env:
+          DRAFTYAK_CACHE_DIR: ${{ runner.temp }}/draftyak-node-input
+        run: |
+          pnpm fetch-node --version bundled --platform linux --arch x64
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import path from 'node:path';
+          const { bundled } = JSON.parse(readFileSync('tools/fetch-node/versions.json', 'utf8'));
+          const cache = path.join(process.env.DRAFTYAK_CACHE_DIR, 'node', bundled);
+          appendFileSync(process.env.GITHUB_OUTPUT, `cache=${cache}\n`);
+          NODE
+      - name: Plan browser prerequisites
+        id: browser-setup
+        env:
+          SPIKES: ${{ matrix.spike }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/draftyak-playwright
+        run: node tools/ci-checks/src/browser-setup.ts plan
+      - name: Cache Playwright browsers
+        id: browser-cache
+        if: steps.browser-setup.outputs.required == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.browser-setup.outputs.path }}
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install browser prerequisites
+        if: steps.browser-setup.outputs.required == 'true'
+        env:
+          SPIKES: ${{ matrix.spike }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ steps.browser-setup.outputs.path }}
+        run: node tools/ci-checks/src/browser-setup.ts install
+      - name: test:heavy for the touched spikes
+        id: heavy-test
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ steps.browser-setup.outputs.path }}
+          DRAFTYAK_TEST_NODE_CACHE: ${{ steps.offline-node.outputs.cache }}
+          DRAFTYAK_CACHE_DIR: ${{ runner.temp }}/draftyak-node-scratch
+        run: |
+          node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "--filter=./$SPIKE"
+      - id: receipt
+        env:
+          SHARD_COMMAND_RESULT: ${{ steps.heavy-test.outcome }}
+        run: node tools/ci-checks/src/heavy-shards.ts receipt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-spike-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.id }}
+          path: ${{ steps.receipt.outputs.path }}
+          if-no-files-found: error
+          retention-days: 1
+
+  spikes:
+    needs: [changes, spike-run]
+    if: always() && needs.changes.result == 'success' && needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.spike-count != '0'
+    outputs:
+      source: ${{ steps.source.outputs.source }}
+      completed: ${{ steps.collect.outputs.completed }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - id: source
+        run: node tools/ci-checks/src/verification-receipt.ts capture
+      - name: Require every shard to succeed
+        env:
+          SHARD_RESULT: ${{ needs.spike-run.result }}
+        run: node --input-type=module -e 'if (process.env.SHARD_RESULT !== "success") process.exit(1)'
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: ci-spike-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/spike-receipts
+          merge-multiple: true
+      - id: collect
+        env:
+          SPIKES: ${{ needs.changes.outputs.spikes }}
+          SHARD_RECEIPTS: ${{ runner.temp }}/spike-receipts
+        run: node tools/ci-checks/src/heavy-shards.ts collect
+
+  heavy:
+    needs: changes
+    outputs:
+      source: ${{ steps.source.outputs.source }}
+      completed: ${{ steps.complete.outputs.completed }}
+    if: needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.ordinary-heavy != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DRAFTYAK_STRICT_SKIPS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - id: source
+        run: node tools/ci-checks/src/verification-receipt.ts capture
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.job }}-${{ hashFiles('pnpm-lock.yaml', '.github/workflows/**', '**/*.ts', '**/*.json', '!**/node_modules/**') }}
+          restore-keys: turbo-${{ runner.os }}-${{ github.job }}-
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master on 2026-10-16
+        if: needs.changes.outputs.rust != ''
+        with:
+          toolchain: 1.95.0
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: needs.changes.outputs.rust != ''
+        with:
+          workspaces: ${{ needs.changes.outputs.rust }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Prepare authenticated offline Node fixture
+        id: offline-node
+        env:
+          DRAFTYAK_CACHE_DIR: ${{ runner.temp }}/draftyak-node-input
+        run: |
+          pnpm fetch-node --version bundled --platform linux --arch x64
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import path from 'node:path';
+          const { bundled } = JSON.parse(readFileSync('tools/fetch-node/versions.json', 'utf8'));
+          const cache = path.join(process.env.DRAFTYAK_CACHE_DIR, 'node', bundled);
+          appendFileSync(process.env.GITHUB_OUTPUT, `cache=${cache}\n`);
+          NODE
       - name: Plan browser prerequisites
         id: browser-setup
         env:
@@ -172,33 +366,33 @@ jobs:
           SPIKES: ${{ needs.changes.outputs.spikes }}
           PLAYWRIGHT_BROWSERS_PATH: ${{ steps.browser-setup.outputs.path }}
         run: node tools/ci-checks/src/browser-setup.ts install
-      - name: test:heavy for the touched spikes and the selected packages
-        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''
+      - name: test:heavy for ordinary product suites
+        id: heavy-test
         env:
-          SPIKES: ${{ needs.changes.outputs.spikes }}
           HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}
-          PLAYWRIGHT_BROWSERS_PATH: ${{ steps.browser-setup.outputs.path }}
           SMOKE: ${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}
-          DRAFTYAK_STRICT_SKIPS: '1'
+          PLAYWRIGHT_BROWSERS_PATH: ${{ steps.browser-setup.outputs.path }}
+          DRAFTYAK_TEST_NODE_CACHE: ${{ steps.offline-node.outputs.cache }}
+          DRAFTYAK_CACHE_DIR: ${{ runner.temp }}/draftyak-node-scratch
         run: |
           filters=()
-          for dir in $SPIKES; do filters+=("--filter=./$dir"); done
           while IFS= read -r filter; do
             if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi
           done <<< "$HEAVY"
-          # The template smoke packs and installs, so it runs only for its own packages and global
-          # changes, on main and on PRs into main.
           if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then
             filters+=("--filter=!./packages/create-plugin")
           fi
           node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "${filters[@]}"
-      - name: Run native transport checks
-        id: native
-        if: needs.changes.outputs.native-transport == 'true'
+      - id: complete
         env:
-          NATIVE_PLATFORM: linux
-          NATIVE_ARCHITECTURE: x64
-        run: pnpm exec node tools/ci-checks/src/native-transport.ts run
+          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}
+          HEAVY_COMMAND_RESULT: ${{ steps.heavy-test.outcome }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          if (process.env.HEAVY_COMMAND_RESULT !== 'success') process.exit(1);
+          appendFileSync(process.env.GITHUB_OUTPUT, `completed=${JSON.stringify(process.env.HEAVY.split('\n'))}\n`);
+          NODE
 
   windows:
     needs: changes
@@ -309,7 +503,7 @@ jobs:
   required:
     # The merge rule requires `required`, so a draft run's cheap-only result reports under another name.
     name: ${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}
-    needs: [changes, cheap, full, windows, macos]
+    needs: [changes, cheap, full, spikes, heavy, windows, macos]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
