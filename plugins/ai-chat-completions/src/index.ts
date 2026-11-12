@@ -14,5 +14,6 @@ export {
 	createPlugin,
 	manifest,
 } from "./plugin.ts";
+export type { CompatiblePreset } from "./presets.ts";
 export { type CompatibleRequest, MAX_REQUEST_BYTES } from "./request.ts";
 export { type CompatibleResponse, MAX_CONTENT_BYTES, MAX_RESPONSE_BYTES } from "./response.ts";
