@@ -466,30 +466,30 @@ describe("the existing plugin Node floor", () => {
 		const versions = JSON.parse(
 			readFileSync(new URL("../../../tools/fetch-node/versions.json", import.meta.url), "utf8"),
 		);
-		expect(PLUGIN_NODE_MINIMUM_VERSION).toBe("26.5.1");
+		expect(PLUGIN_NODE_MINIMUM_VERSION).toBe("26.13.1");
 		expect(PLUGIN_NODE_MINIMUM_VERSION).toBe(versions.minimum);
 		expect(isPluginNodeVersionSupported(versions.bundled)).toBe(true);
 	});
 
-	it.each(["26.5.1", "26.5.2", "26.10.0", "26.12.0", "27.0.0", "v26.5.1"])(
+	it.each(["26.13.1", "26.13.2", "26.14.0", "26.15.0", "27.0.0", "v26.13.1"])(
 		"accepts a stable version at or above the floor: %s",
 		(version) => expect(isPluginNodeVersionSupported(version)).toBe(true),
 	);
 
 	it.each([
-		"26.5.0",
-		"26.4.99",
+		"26.13.0",
+		"26.12.99",
 		"25.99.99",
-		"26.5",
+		"26.13",
 		"26",
-		"26.5.1-rc.1",
-		"26.5.1+build",
-		"26.05.1",
-		" 26.5.1",
-		"26.5.1 ",
-		"26.5.1\n",
-		"26.5.1.0",
-		"Infinity.5.1",
+		"26.13.1-rc.1",
+		"26.13.1+build",
+		"26.013.1",
+		" 26.13.1",
+		"26.13.1 ",
+		"26.13.1\n",
+		"26.13.1.0",
+		"Infinity.13.1",
 		"9007199254740992.0.0",
 		"",
 	])("refuses a version below the floor or outside the stable grammar: %s", (version) => {
