@@ -86,6 +86,7 @@ const assets = [
 		"identity/backup-challenge-migrations/0001_backup_challenges.sql",
 		"identity/backup-challenge-migrations/0001_backup_challenges.sql",
 	],
+	["api/migrations/0001_owner_settings.sql", "api/migrations/0001_owner_settings.sql"],
 ] as const;
 
 function checkRuntimeNames(directory: string): void {
@@ -224,7 +225,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 			path.join(import.meta.dirname, "fixtures/compiled-native-storage.mjs"),
 			path.join(stage, "fixture.mjs"),
 		);
-		expect(assets).toHaveLength(21);
+		expect(assets).toHaveLength(22);
 		for (const [source, built] of assets) {
 			const file = path.join(hub, "dist", built);
 			const original = path.join(hub, "src", source);

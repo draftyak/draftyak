@@ -17,6 +17,7 @@ const tables: readonly Table[] = [
 	table("audit_events", "seq,id,at,action,actor_kind,actor_id,refs,previous,mac", "seq"),
 	table("hub_meta", "singleton,identity_wrapped,statement_wrapped,identity_cert", "singleton"),
 	table("users", "id,created_at"),
+	table("owner_settings", "user_id,settings_json", "user_id"),
 	table("approval_pins", "user_id,salt,hash,version,failures,locked_until", "user_id"),
 	table("device_authority", "singleton,epoch,bootstrap_done,owner_user_id", "singleton"),
 	table(
@@ -69,7 +70,7 @@ const tables: readonly Table[] = [
 		"id,kind,owner_user_id,epoch,state,payload,audit_seq,audit_mac,mac",
 	),
 	table("native_backup_challenges", challengeColumns),
-	..."audit,core,devices,jobs,events,revisions,credentials,tickets,accounts,pluginregistry,outbox,challenges,verifier,admin,adminchallenges,backup,backupops,backupchallenges"
+	..."audit,core,ownersettings,devices,jobs,events,revisions,credentials,tickets,accounts,pluginregistry,outbox,challenges,verifier,admin,adminchallenges,backup,backupops,backupchallenges"
 		.split(",")
 		.flatMap((name) => [
 			table(`_migrations_${name}`, "name,timestamp", "name"),
