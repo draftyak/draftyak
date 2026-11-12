@@ -19,7 +19,7 @@ const URI =
 	/\b(?:https?:(?=[^\s<>"'])|(?:javascript|vbscript):(?=[^\s<>"'])|file:(?=\/)|data:(?=(?:[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+|,)))[^\s<>"']*/gi;
 
 function object(value: unknown): object {
-	if (!value || typeof value !== "object" || types.isProxy(value))
+	if (!value || typeof value !== "object" || types.isProxy(value) || Array.isArray(value))
 		throw new ContentError("INVALID_INPUT");
 	const prototype = Object.getPrototypeOf(value);
 	if (prototype !== null && prototype !== Object.prototype) throw new ContentError("INVALID_INPUT");
