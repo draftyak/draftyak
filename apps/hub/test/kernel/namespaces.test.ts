@@ -14,6 +14,7 @@ const requiredCredentialAsset = path.join(
 	HUB_NAMESPACES.credentials,
 	"0002_sealed_credentials.sql",
 );
+const requiredReceiptAsset = path.join(HUB_NAMESPACES.tickets, "0002_gmail_receipts.sql");
 const requiredAccountAsset = path.join(HUB_NAMESPACES.accounts, "0001_accounts.sql");
 const requiredRegistryAsset = path.join(HUB_NAMESPACES.pluginregistry, "0001_registry.sql");
 const requiredBackupAsset = path.join(HUB_NAMESPACES.backup, "0001_backup_recovery.sql");
@@ -50,6 +51,7 @@ const requiredAssets = [
 	"credentials/migrations/0001_credentials.sql",
 	"credentials/migrations/0002_sealed_credentials.sql",
 	"outbox/migrations/0001_send_attempts.sql",
+	"outbox/migrations/0002_gmail_receipts.sql",
 	"accounts/migrations/0001_accounts.sql",
 	"plugins/registry/migrations/0001_registry.sql",
 	"plugins/registry/migrations/0002_candidates.sql",
@@ -87,7 +89,7 @@ function recorder(): { store: HubStore; calls: string[] } {
 	return { store, calls };
 }
 
-it("checks all twenty-one required assets and migrates all eighteen namespaces exactly once", async () => {
+it("checks all twenty-two required assets and migrates all eighteen namespaces exactly once", async () => {
 	const { store, calls } = recorder();
 	await migrateHubSchemas(store);
 	expect(Object.keys(HUB_NAMESPACES)).toEqual(namespaces);
@@ -136,6 +138,21 @@ it("refuses a missing credential sealing asset before tickets can migrate", asyn
 	expect(access).toHaveBeenCalledWith(requiredCredentialAsset, constants.R_OK);
 	expect(calls.filter((namespace) => namespace === "credentials")).toHaveLength(1);
 	expect(calls).not.toContain("tickets");
+	expect(calls).not.toContain("accounts");
+});
+
+it("refuses a missing Gmail receipt asset before later namespaces migrate", async () => {
+	const { store, calls } = recorder();
+	const missing = Object.assign(new Error("Required Gmail receipt asset missing"), {
+		code: "ENOENT",
+	});
+	access.mockImplementation((filename) => {
+		if (filename === requiredReceiptAsset) throw missing;
+	});
+	await expect(migrateHubSchemas(store)).rejects.toBe(missing);
+	expect(access).toHaveBeenCalledWith(requiredReceiptAsset, constants.R_OK);
+	expect(calls.filter((namespace) => namespace === "credentials")).toHaveLength(1);
+	expect(calls.filter((namespace) => namespace === "tickets")).toHaveLength(1);
 	expect(calls).not.toContain("accounts");
 });
 
