@@ -48,6 +48,11 @@ export class WorkDatabase {
 		guard(this.#store, sql);
 	}
 
+	/** Check a live native write facade without changing its read stamp or issuing a scope. */
+	assertReadTransaction(sql: SqlTransaction): void {
+		assertStoreTransaction(this.#store, sql);
+	}
+
 	sql(scope: WorkScope): SqlTransaction {
 		const state = scopes.get(scope);
 		if (!state || state.owner !== this || state.failed) throw new WorkError("scope");

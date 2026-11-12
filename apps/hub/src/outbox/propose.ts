@@ -9,6 +9,7 @@ import { canonicalize } from "@draftyak/protocol/jcs";
 import { Sha256Hex } from "@draftyak/protocol/scalars";
 import { renderLocalWallTime } from "@draftyak/protocol/schedule";
 import { CurrentSendSnapshotV1, contentHash, sendWindow } from "@draftyak/protocol/snapshot";
+import { type AccountRecord, NativeAccounts } from "../accounts/records.ts";
 import { AuditChain } from "../audit/chain.ts";
 import { Authorizer, assertAuthorizerStore } from "../authz/authorizer.ts";
 import type { NativeDevicePeer } from "../authz/native-peer.ts";
@@ -135,6 +136,8 @@ const terminal = new Set<OutboxState>([
 	"EXPIRED",
 ]);
 const owners = new WeakMap<object, HubStore>();
+const apply = Reflect.apply;
+const accountGet = NativeAccounts.prototype.getInTransaction;
 const storeRead = HubStore.prototype.read;
 const assertMasterKey = HubStore.prototype.assertMasterKey;
 const derive = MasterKey.prototype.derive;
@@ -349,6 +352,7 @@ export class NativeOutboxProposals {
 	readonly #clock: Clock;
 	readonly #database: WorkDatabase;
 	readonly #events: EventLog;
+	readonly #accounts: NativeAccounts;
 	readonly #owner: object;
 	readonly #settings: Required<NativeOutboxSettings>;
 	readonly #providers: NativeProposalProviders;
@@ -436,6 +440,7 @@ export class NativeOutboxProposals {
 		this.#clock = clock;
 		this.#database = new WorkDatabase(store);
 		this.#events = new EventLog(this.#database, () => this.#now());
+		this.#accounts = new NativeAccounts(this.#database, this.#events, audit, () => this.#now());
 		owners.set(this, store);
 	}
 	assertActive(): void {
@@ -523,7 +528,7 @@ export class NativeOutboxProposals {
 				current.lockId !== item.lockId
 			)
 				refused();
-			this.#nativeData(tx, item.binding, current, item.snapshot, item.dataClass);
+			this.#nativeData(tx, item.userId, item.binding, current, item.snapshot, item.dataClass);
 			freeze.proofInTransaction.call(this.#freeze, tx, item.binding, item.id);
 			const after = this.#load(tx, item.id),
 				authorityAfter = registry.state.call(this.#registry, tx);
@@ -535,6 +540,7 @@ export class NativeOutboxProposals {
 				authorityAfter.epoch !== item.snapshot.epoch
 			)
 				refused();
+			this.#account(tx, item.userId, item.binding, item.snapshot);
 			return projection(item, loaded.version);
 		});
 	}
@@ -747,13 +753,44 @@ export class NativeOutboxProposals {
 			);
 		}
 	}
+	#account(
+		tx: SqlTransaction,
+		ownerUserId: string,
+		bound: DraftBinding,
+		snapshot: CurrentSendSnapshotV1,
+	): void {
+		const record: AccountRecord | undefined = apply(accountGet, this.#accounts, [
+			tx,
+			ownerUserId,
+			bound.accountId,
+		]);
+		const account = record?.account;
+		if (
+			!account ||
+			account.id !== bound.accountId ||
+			account.userId !== ownerUserId ||
+			account.mode !== "full" ||
+			account.status !== "active" ||
+			account.channel !== bound.channel ||
+			snapshot.kind !== bound.channel ||
+			snapshot.account !== account.id
+		)
+			refused("POLICY_DENIED");
+		if (
+			snapshot.kind === "email" &&
+			(account.channel !== "email" || account.address !== snapshot.email.from)
+		)
+			refused("POLICY_DENIED");
+	}
 	#nativeData(
 		tx: SqlTransaction,
+		ownerUserId: string,
 		bound: DraftBinding,
 		current: NativeRevision,
 		snapshot: CurrentSendSnapshotV1,
 		dataClass: string,
 	): void {
+		this.#account(tx, ownerUserId, bound, snapshot);
 		const rawFacts = this.#providers.facts(tx, bound, current);
 		if (rawFacts === undefined) refused("NATIVE_FACTS_UNAVAILABLE");
 		const facts = fields(
@@ -789,10 +826,12 @@ export class NativeOutboxProposals {
 						chat: snapshot.chat,
 					};
 		if (canonicalize(facts) !== canonicalize(expected)) refused("POLICY_DENIED");
+		this.#account(tx, ownerUserId, bound, snapshot);
 		const recomputed = this.#providers.flags(tx, bound, current, snapshot);
 		if (recomputed === undefined) refused("NATIVE_FLAGS_UNAVAILABLE");
 		if (flagsHash(Flags.parse(captureDraftData(recomputed))) !== current.flagsHash)
 			refused("PROPOSAL_STALE");
+		this.#account(tx, ownerUserId, bound, snapshot);
 	}
 	propose(peer: NativeDevicePeer, input: NativeProposalInput): SendTargetRecord {
 		return this.write((_tx, scope) => this.proposeInTransaction(scope, peer, input));
@@ -842,7 +881,7 @@ export class NativeOutboxProposals {
 			)
 				refused();
 			if (this.draftLocked(tx, bound.draftId)) refused("DRAFT_LOCKED");
-			this.#nativeData(tx, bound, current, snapshot, dataClass);
+			this.#nativeData(tx, grant.ownerUserId, bound, current, snapshot, dataClass);
 			const latestGrant = authorizer.requirePeerDevice.call(this.#authorizer, tx, peer, "draft");
 			if (
 				latestGrant.userId !== grant.userId ||
@@ -922,6 +961,7 @@ export class NativeOutboxProposals {
 				"outbox.proposed",
 				true,
 			);
+			this.#account(tx, grant.ownerUserId, bound, snapshot);
 			return projection(saved.record, saved.version);
 		});
 	}
@@ -986,7 +1026,7 @@ export class NativeOutboxProposals {
 				current.revision.contentSha256 !== item.revisionContentHash
 			)
 				refused();
-			this.#nativeData(tx, item.binding, current, item.snapshot, item.dataClass);
+			this.#nativeData(tx, item.userId, item.binding, current, item.snapshot, item.dataClass);
 			const freshAt = this.#now(),
 				after = this.#load(tx, item.id),
 				authorityAfter = registry.state.call(this.#registry, tx),
@@ -1050,8 +1090,10 @@ export class NativeOutboxProposals {
 					},
 					[...voters],
 				)
-			)
+			) {
+				this.#account(tx, item.userId, item.binding, item.snapshot);
 				return "pending";
+			}
 			const window = intersectWindows(item.snapshot, stored, freshUndoEnd);
 			if (
 				item.snapshot.schedule.kind === "at" &&
@@ -1068,6 +1110,7 @@ export class NativeOutboxProposals {
 				},
 				"outbox.approved",
 			);
+			this.#account(tx, item.userId, item.binding, item.snapshot);
 			return item.snapshot.schedule.kind === "at" ? "scheduled" : "approved";
 		});
 	}
