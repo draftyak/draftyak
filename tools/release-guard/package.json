@@ -1,0 +1,16 @@
+{
+  "name": "@draftyak/release-guard",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@draftyak/bounded-files": "workspace:*",
+    "@draftyak/bundle-hub": "workspace:*",
+    "@draftyak/protocol": "workspace:*"
+  },
+  "scripts": {
+    "guard:release": "node src/cli.ts",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:heavy": "vitest run --mode heavy"
+  }
+}

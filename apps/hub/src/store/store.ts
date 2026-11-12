@@ -63,6 +63,14 @@ const noAsync = (work: unknown): void => {
 const closeDatabase = Database.prototype.close;
 const derive = MasterKey.prototype.derive;
 const SCHEMA_STATEMENTS = new Set(["CREATE", "DROP", "ALTER", "ANALYZE", "REINDEX"]);
+const transactionOwners = new WeakMap<SqlTransaction, { store: HubStore; live: () => boolean }>();
+
+/** Internal native composition only; structural or retired facades are not authority. */
+export function assertStoreTransaction(store: HubStore, transaction: SqlTransaction): void {
+	const owner = transactionOwners.get(transaction);
+	if (!owner || owner.store !== store || !owner.live())
+		throw new Error("Database transaction unavailable");
+}
 
 export class HubStore {
 	readonly #keyIdentity = createEncryptedKeyIdentity();
@@ -131,6 +139,11 @@ export class HubStore {
 			schemaVersion: this.#db.pragma("schema_version", { simple: true }) as number,
 		}));
 		this.#busy = true;
+		if (write)
+			transactionOwners.set(handle, {
+				store: this,
+				live: () => active && !this.#closed && this.#db.inTransaction,
+			});
 		try {
 			if (!write) this.#db.pragma("query_only = ON");
 			const invoke = () => {
@@ -143,6 +156,7 @@ export class HubStore {
 			try {
 				if (!write) this.#db.pragma("query_only = OFF");
 			} finally {
+				transactionOwners.delete(handle);
 				releaseReadStamp(handle);
 				active = false;
 				this.#busy = false;

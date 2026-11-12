@@ -1,12 +1,17 @@
 # M7 backlog: Sign in with ChatGPT (clean-room)
 
 > **Status:** draft of 2026-10-19, written before the M0 gate. Backlog only: each item starts when its **Starts** line holds.
+> **Pilot status (2026-10-21):**
+> - Sign in with ChatGPT stays in the pilot but is optional and never holds the launch. It merges on its own. If it isn't ready when the rest is, or OpenAI blocks it, v0.1.0 ships without it, and it follows in a later release.
+> - M7.S4, M7.S9b and M7.S9c are postponed. M7.S4's transfer serves only a hub that runs as a service, and every pilot hub is the desktop app's sidecar. M7.S9b waits with M7b, and M7.S9c with SMS, agent tokens and MCP.
+> - Every other item is kept, with the same name and size. **Changed since the plan** records the whole recut.
+>
 > **Source of truth:** the approved implementation plan, kept outside the repo; § numbers refer to it. Where this backlog and the plan differ, the plan wins, except for the owner decisions and verified facts under **Changed since the plan** and in ADR 0009.
 > **Owner of this file:** the integration owner. M7's main backlog (`docs/roadmap/m7.md`) covers the API-key providers, routing and auto-draft; its Sign in with ChatGPT (SIWC) rows will point here. Apart from this backlog's items and M1.20 and M1.29, no item writes SIWC code, fakes or stubs.
 > **Done when** the SIWC clauses of §12's M7 row pass their acceptance below:
 > - registration and the per-hub host ID;
 > - the port 1455 check;
-> - the documented transfer;
+> - the documented transfer (postponed with M7.S4 in the pilot);
 > - serialized refresh;
 > - streaming through host chunks;
 > - the full error set;
@@ -23,7 +28,7 @@
   - ChatGPT's private backend API (guardrail 4).
 - Code from spike S7 (`spikes/s07-siwc/`) may be ported into product files but never imported (m0.md: spikes are never imported).
   - ADR 0009's kept test is `spikes/s07-siwc/test/rehearsal.test.ts` (the spike's `notes/session.md`; destination M7, `plugins/ai-responses-api/`). It guards the session procedure, the evidence's shape and the transfer, forget and revocation paths. M7.S4 replaces the transfer and forget paths with `apps/hub/test/ai/siwc/transfer.test.ts` and `apps/app/src-tauri/tests/siwc_handoff.rs`, and M7.S3 replaces the revocation paths with `apps/hub/test/ai/siwc/credential.test.ts`. The session procedure and the evidence serve only the live session, so they go with the spike. ADR 0009's follow-up records those three files as the kept test's destination.
-  - Every item that absorbs a kept test merges before M7.S4 or M7.S9. Whichever of those two merges last deletes `spikes/s07-siwc/` in its PR, with the spike's `pnpm-lock.yaml` importer; if M7.S4 is dropped (a "no" to OpenAI's question 1a), M7.S9 deletes it. Only `notes/sources.md` stays: it is the clean-room record, and vendor-guard treats it as data.
+  - Every item that absorbs a kept test merges before M7.S4 or M7.S9. Whichever of those two merges last deletes `spikes/s07-siwc/` in its PR, with the spike's `pnpm-lock.yaml` importer; if M7.S4 is dropped (a "no" to OpenAI's question 1a), M7.S9 deletes it. While M7.S4 is postponed in the pilot, M7.S9 deletes the spike, as it would if M7.S4 were dropped, and M7.S4's own transfer and forget tests come with M7.S4 when it returns. Only `notes/sources.md` stays: it is the clean-room record, and vendor-guard treats it as data.
   - A "no" to question 1a that arrives after M7.S4 or M7.S9 has merged is recorded in Open items by a PR on `m7`. That PR deletes M7.S4's code and tests with its lines in H10, H11 and H27, and the `transfer` flow in M7.S2b's subject builder. If the spike is still there, it also deletes `spikes/s07-siwc/` (except `notes/sources.md`) with its importer. M1.29 removes its transfer parts in a contract PR (`docs/roadmap/m1.md`).
 - SIWC test tokens live only in the local `.env.live`, never in CI secrets. CI runs on M7.S8's and M7.S8b's fakes.
 - The SIWC Terms allow automated or background requests only with express consent, and another user's activity may not trigger them.
@@ -40,7 +45,7 @@
 | M7.S3 | SIWC credentials: storage, serialized refresh, revocation on disconnect | M | M7.S2, M2.3, M2.4, M2.11, M2.12, M2.17, M2.23, M2.26 | m7 |
 | M7.S3b | Disconnect from the desktop approval window | S | M7.S3, M7.S2b, M4.13, M1.29 | m7 |
 | M7.S3c | Revocation before an instance or the plugin is removed | S | M7.S3, M7.3 | m7 |
-| M7.S4 | The documented transfer for a headless hub | M | M7.S3, M7.S2b, M4.7, M4.13, M4.14, M1.29 | m7 |
+| M7.S4 | The documented transfer for a headless hub (postponed in the pilot) | M | M7.S3, M7.S2b, M4.7, M4.13, M4.14, M1.29 | m7 |
 | M7.S5 | The broker's SIWC verifier and the shared hostile-request table | S | M2.19, M1.20 | m2 |
 | M7.S5b | The siwc drafting mode: request builder, streaming, broker refusals | L | M7.S3, M7.S5, M7.S8b, M7.4, M7.9, M2.26, M1.12, M1.13, M1.25's record | m7 |
 | M7.S5c | The `cloud-consumer-plan` destination class | S | M7.S5b, M7.5, M7.7 | m7 |
@@ -49,12 +54,12 @@
 | M7.S8 | The siwc-auth fake | M | M1.20 | m7 |
 | M7.S8b | The responses-siwc fake and its scripted models | M | M7.S5, M7.S8, M7.11 | m7 |
 | M7.S9 | SIWC rows of M7's corpus and policy matrix | S | M7.S5c, M7.S6, M7.S8b, M7.4, M7.5, M7.6, M7.7, M7.11, M2.17b | m7 |
-| M7.S9b | The SIWC row of M7b's obedient-model suite | S | M7.S9, M7b.10 | m7b |
-| M7.S9c | The SIWC cross-stream cells: SMS, agent tokens, MCP | S | M7.S9, M8.2; on an S12 go, M1.23 and M6b's FakeSmsHost | whichever of m7, m8 and m6b lands last |
+| M7.S9b | The SIWC row of M7b's obedient-model suite (postponed in the pilot) | S | M7.S9, M7b.10 | m7b |
+| M7.S9c | The SIWC cross-stream cells: SMS, agent tokens, MCP (postponed in the pilot) | S | M7.S9, M8.2; on an S12 go, M1.23 and M6b's FakeSmsHost | whichever of m7, m8 and m6b lands last |
 
 Every item also needs ADR 0009 merged into `m0`. If ADR 0009 records Not run, the items wait for the owner's M0-gate decision, and M7 ships the API-key modes alone.
 
-The L2 calls that M7.S2b, M7.S3b and M7.S4 use are M1.29 in `docs/roadmap/m1.md`: the three routes and the capability each needs, byte caps, closed error codes, the transferred credential's form (M0.27's `transferText`), the authorization URL's fixed issuer origin and path, and the review subjects of the connect and disconnect kinds, one line each in M1.26's review subject union. Plan §12 lets only contract PRs into `m1` define these shapes, so M1.29 lands on `m1` and names M1.26, M1.20 and ADR 0009, and those three items start once it is on `m7`. Its files carry `siwc` in their names, and it stays in this backlog's clean-room stream, as M1.20 does. M1.29 fixes the subjects' shapes; M7.S2b and M7.S3b build them when M4.13 creates the pending record (H25), and M7.S2b renders them in the approval window (H26).
+The L2 calls that M7.S2b, M7.S3b and M7.S4 use are M1.29 in `docs/roadmap/m1.md`: the three routes and the capability each needs, byte caps, closed error codes, the transferred credential's form (M0.27's `transferText`), the authorization URL's fixed issuer origin and path, and the review subjects of the connect and disconnect kinds, one line each in M1.26's review subject union. Plan §12 lets only contract PRs into `m1` define these shapes, so M1.29 lands on `m1` and names M1.26, M1.20 and ADR 0009, and those three items start once it is on `m7`. Its files carry `siwc` in their names, and it stays in this backlog's clean-room stream, as M1.20 does. M1.29 fixes the subjects' shapes; M7.S2b and M7.S3b build them when M4.13 creates the pending record (H25), and M7.S2b renders them in the approval window (H26). In the pilot, M1.29 keeps the authorization route and the connect and disconnect review subjects, with their codes, caps and vectors, and leaves out its two transfer routes and the transferred credential's form, which return with M7.S4. M1.20 is split (Changed since the plan): it holds only the sign-in's contract parts, and `consent.v1` and the access kinds move to M1.20p, which is postponed and isn't part of this backlog.
 
 A dependency from another branch counts only once its work has reached the branch the dependent item lands on; ADR 0009 counts once it merges into `m0`. So an item on `m7` that needs M1, M2 or M4 work, or M7.S5, starts once that work is on `m7`. M4's work gets there after M4 merges into `main` and `m7` is brought up to date with it (§12: device UI lands after M4). pr-meta takes an item branch `mN-<nn>-<slug>` only into `mN`. So M7.S5 lands from an `m2-<nn>-<slug>` branch, M7.S9b from an `m7b-<nn>-<slug>` branch, and M7.S9c from an item branch of the stream it lands on.
 
@@ -66,7 +71,7 @@ Paths and commands below are the intended ones; packages that don't exist yet ta
 - `cargo test` names its integration-test targets with `--test`, and a missing target fails.
 
 ### Hooks in other items
-These are the lines and calls this backlog needs in other items' files. Each is a request until its owner agrees, except H2 and H3, which M1.20 already lists. An item that adds a line to a hook owns only that line. M1.29's lines in M1.26's review subject union follow M1.26's Shared files rule, so they aren't listed here.
+These are the lines and calls this backlog needs in other items' files. Each is a request until its owner agrees, except H2 and H3, which M1.20 already lists. An item that adds a line to a hook owns only that line. M1.29's lines in M1.26's review subject union follow M1.26's Shared files rule, so they aren't listed here. While M7.S4, M7.S9b and M7.S9c are postponed in the pilot, their hook lines wait with them: H10's two transfer lines, with M7.S4's line in H27 and its modules' lines in H11; M7.S9b's line in H19; and the cross-stream rows that M7.S9c would add through H18.
 
 | # | Owner | File and export | Shape | Used by |
 |---|---|---|---|---|
@@ -164,6 +169,7 @@ These are the lines and calls this backlog needs in other items' files. Each is 
 - **Starts** after M7.S1, M2.3, M2.4, M2.11, M2.17 and M2.23 are on `m7`, and the owner's M0-gate answers.
 
 ### M7.S2b Sign-in from the desktop approval window
+- **In the pilot (2026-10-21).** Every pilot hub is the desktop app's sidecar, so only `flow: hub` occurs. An approver on a second computer connected through "Connect to a hub" (A2) isn't the sidecar's own app, so its sign-in is refused with `FORBIDDEN`, with no record, and M7.S7's slot tells it to sign in from the DraftYak app on the hub's computer.
 - **Inputs.** M7.S2's handler (H1, H2); M1.29's authorization route, error codes, fixed values and both review subjects; M4.13's admin pending operations and approval window, with its subject hook (H25), its call into the handler (H9) and its continuation hook (H27); M4.12's native subject rendering (H26); M4.7's route snapshot (H10); M4.14's system-browser opener (H12), which never opens a URL from JS; M4's command registration (H11); M1.27's `mode`; §7 Sidecar auto-pairing; §9.3 admin ops.
 - **Outputs.**
   - **The connect subject.** `apps/hub/src/ai/siwc/connect-subject.ts` builds M1.29's connect subject when M4.13 creates the pending record (one line in H25), from the instance and the device that asked:
@@ -260,6 +266,7 @@ These are the lines and calls this backlog needs in other items' files. Each is 
 - **Starts** after M7.S3 and M7.3 are on `m7`.
 
 ### M7.S4 The documented transfer for a headless hub
+- **Postponed in the pilot (2026-10-21).** This transfer serves only a hub that runs as a service, and every pilot hub is the desktop app's sidecar. M7.S2b gives `flow: hub` only to the sidecar's own app and refuses any other approver with `FORBIDDEN`, so the pilot needs no transfer. The item returns when the npm and Docker server installs do, with M1.29's transfer routes and the transferred credential's form. If M7.S9 merges meanwhile, M7.S9 deletes the spike (Clean-room rules), and this item deletes nothing when it returns.
 - **Inputs.**
   - §4 Credential flow 2 (headless hub) and 3 (scope checks).
   - ADR 0009's transfer result and M0.27's transfer handoff (order and failure rules).
@@ -269,7 +276,7 @@ These are the lines and calls this backlog needs in other items' files. Each is 
   - M7.S2's checks on a sign-in (the ID token, `sub` and the scope check), which the hub applies on receipt, and M7.S1's rule for what a decline keeps.
   - M5.20's native boundary for `gmail_*`: no code, verifier or token in webview JS or logs.
   - The SIWC Terms' transfer clause.
-  - OpenAI's answer to question 1a, on this transfer. A "no" means the transfer doesn't ship, and the owner settles this before launch.
+  - OpenAI's answer to question 1a, on this transfer. A "no" means the transfer doesn't ship, and the owner settles this before launch, or, while this item is postponed in the pilot, before it returns.
 - **Outputs.**
   - A hub that runs as a service (M1.27's `mode`), the headless hub of §4 Credential flow 2, signs in from the approval window through this transfer; a sidecar hub never does (M7.S2b). Its connect op (M7.S2's handler) carries M1.29's connect subject with `flow: transfer`, which M7.S2b's builder sets, and a confirmed desktop approver approves it in the approval window with the PIN. The handler opens the transfer window only for the device that asked (H9); an approval from another device opens nothing.
   - **The transfer window.** When that `admin.v1` is accepted, the handler opens a window: SIWC's own hub state, kept in memory and bound to the op, the approving device and the approval time (H9). It stays open for 10 minutes after the approval unless a credential consumes it first, and a hub restart closes it. The pending record keeps M1.26's 120 s review cap; the window never extends it.
@@ -289,7 +296,7 @@ These are the lines and calls this backlog needs in other items' files. Each is 
     The desktop revokes its copy on `unconfirmed`, on an error or no answer, and on any answer other than these four; a `registered` answer to a credential that carried tokens counts as an error.
   - **A lost handoff:** if the desktop closes or crashes after the wipe and before the hub answers, nobody holds the tokens. The window closes 10 minutes after the approval. If the approving desktop had read the transfer start, a sign-in may have finished, so the hub tells the owner that if they finished signing in, they should remove DraftYak in ChatGPT's Sign in with ChatGPT settings. If it never had, the hub says only that the sign-in expired. The hub records either notice in the `siwc` namespace, and M7.S7 shows it.
   - The `siwc_*` native modules in `apps/app` use M4's hooks (H11, H12), as M5.20 adds `gmail_*` modules, and M1.29's Rust codec for every L2 body.
-- **Owns.** The `siwc_*` modules in `apps/app/src-tauri/src/` other than M7.S2b's `siwc_signin` and `siwc_review` and M7.S7's `siwc_links`, with their integration tests `apps/app/src-tauri/tests/siwc_{listener,exchange,handoff,acl}.rs`; `apps/hub/src/ai/siwc/transfer.ts` and `apps/hub/test/ai/siwc/transfer.test.ts`; two lines in H10, one in H27 and its modules' lines in H11. If it merges after M7.S9, also the deletion of `spikes/s07-siwc/` (except `notes/sources.md`) and the spike's `pnpm-lock.yaml` importer.
+- **Owns.** The `siwc_*` modules in `apps/app/src-tauri/src/` other than M7.S2b's `siwc_signin` and `siwc_review` and M7.S7's `siwc_links`, with their integration tests `apps/app/src-tauri/tests/siwc_{listener,exchange,handoff,acl}.rs`; `apps/hub/src/ai/siwc/transfer.ts` and `apps/hub/test/ai/siwc/transfer.test.ts`; two lines in H10, one in H27 and its modules' lines in H11. If it merges after M7.S9 while the spike is still there, also the deletion of `spikes/s07-siwc/` (except `notes/sources.md`) and the spike's `pnpm-lock.yaml` importer.
 - **Acceptance.**
   - `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/transfer.test.ts`, on the siwc-auth fake with FakeDevice as the desktop:
     - FakeDevice reads the transfer start over the `GET` route, and its authorization request to the fake carries the host ID, the issued client and the nonce; the `GET` refuses any other device and a window that isn't open;
@@ -320,7 +327,7 @@ These are the lines and calls this backlog needs in other items' files. Each is 
     - **`siwc_exchange`:** the authorization request carries the start answer's host ID and nonce and an S256 `code_challenge` of the verifier the exchange sends, and `prompt=consent` exactly when the start answer's `consent` is true; `redirect_uri` is identical in the request and the exchange; `error=access_denied` or a wrong `state` exchanges nothing and sends nothing to the hub; a code exchange refused with `invalid_client` sends nothing to the hub and starts one new authorization request inside the window, naming `dynamic_agent_client` and `agent_name_hint: "DraftYak"` with the start answer's host ID and nonce, a new `state` and a fresh verifier, opened through H12, whose credential carries the newly issued client; a second refusal ends the transfer with nothing sent; discovery and the code exchange reach only the issuer's https endpoints, a redirect is not followed, and a URL from JS is refused; the URL opened through H12 is the issuer's authorization endpoint;
     - **`siwc_handoff`:** the desktop store is already empty when the send starts; nothing is written to the keyring or to a file from the code exchange to the end of the transfer; each failure path (refused, no answer, `unconfirmed`, an answer outside M1.29's four outcomes, or `registered` for a credential that carried tokens) ends with the desktop's copy revoked; afterwards the process, its store and its logs hold no copy; a token and code canary never reaches webview JS or the logs; every body and answer goes through M1.29's Rust codec;
     - **`siwc_acl`, on Tauri's mock runtime:** each `siwc_*` command is refused from the main window and from a foreign origin, and takes and returns ids only; the transfer's continuation runs only after an accepted approval, never before, after a refused one or from JS, and ignores a `flow: hub` subject.
-- **Starts** after ADR 0009 records the transfer, and M7.S3, M7.S2b, M4.7, M4.13, M4.14 and M1.29 are on `m7`.
+- **Starts** after ADR 0009 records the transfer, and M7.S3, M7.S2b, M4.7, M4.13, M4.14 and M1.29 are on `m7`. In the pilot it also waits for the npm and Docker server installs and for M1.29's transfer routes and the transferred credential's form.
 
 ### M7.S5 The broker's SIWC verifier and the shared hostile-request table
 - **Inputs.**
@@ -547,7 +554,7 @@ These are the lines and calls this backlog needs in other items' files. Each is 
     - Auto-draft is excluded by class, and never starts a SIWC request.
   - **Fields rows:** no non-allowlisted field leaves in any captured SIWC request.
   - This item merges with these M7 cells only. The SMS cells, and the cells for agent tokens and MCP, are M7.S9c's.
-- **Owns.** `apps/hub/test/ai-providers/rows/siwc.ts`, `apps/hub/test/ai/siwc/{rows.test,egress.heavy.test}.ts` and one line in H18. If it merges after M7.S4, or M7.S4 is dropped (a "no" to OpenAI's question 1a), also the deletion of `spikes/s07-siwc/` (except `notes/sources.md`) and the spike's `pnpm-lock.yaml` importer.
+- **Owns.** `apps/hub/test/ai-providers/rows/siwc.ts`, `apps/hub/test/ai/siwc/{rows.test,egress.heavy.test}.ts` and one line in H18. If it merges after M7.S4, or M7.S4 is dropped (a "no" to OpenAI's question 1a) or postponed (as in the pilot), also the deletion of `spikes/s07-siwc/` (except `notes/sources.md`) and the spike's `pnpm-lock.yaml` importer.
 - **Acceptance.**
   - `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/rows.test.ts`, then the same command for `test/ai-providers/corpus.test.ts`, `test/ai-providers/policy-matrix.test.ts` and `test/ai-providers/fields.test.ts`, one file each, pass with the SIWC rows:
     - `rows.test.ts` asserts that `PROVIDER_ROWS` lists the SIWC row file, so a missing line fails;
@@ -556,6 +563,7 @@ These are the lines and calls this backlog needs in other items' files. Each is 
 - **Starts** after M7.S5c, M7.S6, M7.S8b, M7.4, M7.5, M7.6, M7.7, M7.11 and M2.17b are on `m7`.
 
 ### M7.S9b The SIWC row of M7b's obedient-model suite
+- **Postponed in the pilot (2026-10-21).** M7b, with its context lookups and M7b.10's obedient-model suite, is postponed, so this row has no suite to join. It returns when M7b does.
 - **Inputs.** §13's obedient-model suite (every provider; provider requests carry no new tools); M7b.10's provider-row registry (H19); ADR 0009's `submit_draft` placement.
 - **Outputs.** The siwc mode's row in M7b.10's obedient-model suite, landing on `m7b`.
 - **Owns.** `apps/hub/test/security/context-lookups/siwc.ts`, `apps/hub/test/ai/siwc/obedient-row.test.ts` and one line in H19.
@@ -565,6 +573,7 @@ These are the lines and calls this backlog needs in other items' files. Each is 
 - **Starts** after M7.S9 and M7b.10 are on `m7b`. Its branch is `m7b-<nn>-<slug>`.
 
 ### M7.S9c The SIWC cross-stream cells: SMS, agent tokens, MCP
+- **Postponed in the pilot (2026-10-21).** SMS (S12, M6b), agent tokens and MCP (M8) are all postponed, so these cells wait with them. The item returns with M8 and, on an S12 go, waits for SMS as well, under its **Starts** line.
 - **Inputs.** §12's rule for cross-stream checks: they run in whichever stream lands last, and on a no-go they are dropped, not failed. M7.S9's rows; M8.2's MCP tools and agent tokens; on the owner's S12 go, M1.23's SMS contracts and M6b's FakeSmsHost.
 - **Outputs.**
   - **SMS cells:** SMS × `cloud-consumer-plan` × consent state in the policy matrix, with the SMS disclosure and Gmail's three rows and outcomes from M7.S9's table, since SMS follows Gmail's rules.
@@ -576,16 +585,18 @@ These are the lines and calls this backlog needs in other items' files. Each is 
 
 ## Plan coverage
 
+In the pilot (2026-10-21), the rows marked postponed wait with their items (Changed since the plan).
+
 | Plan clause (§12 M7 row and the sections it cites) | Item | Acceptance command (intended) |
 |---|---|---|
 | Registration, per-hub `ext_agent_host_id`; calls to OpenAI (§9.2 SSRF and OAuth mix-up; guardrail 8) | M7.S1 | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/discovery.test.ts`; `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/registration.test.ts` |
 | Port 1455 check, `prompt=consent`, scope check, sign-in as an admin op from the CLI | M7.S2 | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/signin.test.ts`; `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/listener.test.ts`; `pnpm --filter draftyak --fail-if-no-match exec vitest run test/commands/siwc-sign-in.test.ts`; with `DRAFTYAK_STRICT_SKIPS=1`, `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run --mode heavy --no-passWithNoTests test/ai/siwc/listener.heavy.test.ts` |
-| The L2 calls of the approval-window sign-in, disconnect and transfer, as a contract PR into `m1` (§12 Contracts) | M1.29 | M1.29's acceptance in `docs/roadmap/m1.md` |
+| The L2 calls of the approval-window sign-in, disconnect and transfer, as a contract PR into `m1` (§12 Contracts) | M1.29 (transfer parts postponed with M7.S4 in the pilot) | M1.29's acceptance in `docs/roadmap/m1.md` |
 | Sign-in from the approval window (§9.3), over M1.29's authorization route, with the connect subject and the review of both kinds | M7.S2b | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/signin-window.test.ts`; `cargo test --locked --manifest-path crates/Cargo.toml -p draftyak-desktop --features desktop-tests,native-hub-integration --test siwc_signin --test siwc_review` |
 | Serialized refresh; tokens revoked at OpenAI on disconnect; no tokens in backups or logs | M7.S3 | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/credential.test.ts`; `pnpm --filter draftyak --fail-if-no-match exec vitest run test/commands/siwc-disconnect.test.ts` |
 | Disconnect from the approval window (§9.3), with M1.29's disconnect subject | M7.S3b | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/disconnect-window.test.ts` |
 | Revocation before an instance or the plugin is removed (§3 Data lifecycle; §4 Credential flow 5) | M7.S3c | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/removal.test.ts` |
-| Documented transfer for a headless hub, over M1.29's transfer routes, with the ID-token, client and scope checks on receipt (§9.2 OAuth mix-up; §4 Credential flow 3) | M7.S4 | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/transfer.test.ts`; `cargo test --locked --manifest-path crates/Cargo.toml -p draftyak-desktop --features desktop-tests,native-hub-integration --test siwc_listener --test siwc_exchange --test siwc_handoff --test siwc_acl` |
+| Documented transfer for a headless hub, over M1.29's transfer routes, with the ID-token, client and scope checks on receipt (§9.2 OAuth mix-up; §4 Credential flow 3) | M7.S4 (postponed in the pilot) | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/transfer.test.ts`; `cargo test --locked --manifest-path crates/Cargo.toml -p draftyak-desktop --features desktop-tests,native-hub-integration --test siwc_listener --test siwc_exchange --test siwc_handoff --test siwc_acl` |
 | SIWC allowlist verifier (§4) and the models route (Changed since the plan); guardrail 4 | M7.S5 | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/verifier.test.ts`; M2.19's own suite, with the ChatGPT-plan line registered |
 | Streaming via host chunks; `submit_draft` never executed (§5); the captured request passes the verifier; the models list | M7.S5b | `pnpm --filter @draftyak/ai-responses-api --fail-if-no-match exec vitest run test/siwc/request.test.ts`; `pnpm --filter @draftyak/ai-responses-api --fail-if-no-match exec vitest run test/siwc/stream.test.ts`; `pnpm --filter @draftyak/ai-responses-api --fail-if-no-match exec vitest run test/siwc/broker-refused.test.ts`; `pnpm --filter @draftyak/ai-responses-api --fail-if-no-match exec vitest run test/siwc/models.test.ts`; with `DRAFTYAK_STRICT_SKIPS=1`, `pnpm --filter @draftyak/ai-responses-api --fail-if-no-match exec vitest run --mode heavy --no-passWithNoTests test/siwc/contract.heavy.test.ts`; `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/drafting.test.ts` |
 | Destination class `cloud-consumer-plan` (§5) | M7.S5c | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/destination.test.ts` |
@@ -594,24 +605,32 @@ These are the lines and calls this backlog needs in other items' files. Each is 
 | `siwc-auth` fake (§13) | M7.S8 | `pnpm --filter @draftyak/fakes --fail-if-no-match exec vitest run test/siwc-auth.test.ts` |
 | The responses-api fake's SIWC allowlist, errors, scripted models, models list and scripted redirects (§13) | M7.S8b | `pnpm --filter @draftyak/fakes --fail-if-no-match exec vitest run test/responses-siwc.test.ts` |
 | Corpus (at least 60), policy matrix, no non-allowlisted field, auto-draft never for SIWC; the egress scenario for M11's PRIVACY check | M7.S9 | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/rows.test.ts`; `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai-providers/corpus.test.ts`; `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai-providers/policy-matrix.test.ts`; `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai-providers/fields.test.ts`; with `DRAFTYAK_STRICT_SKIPS=1`, `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run --mode heavy --no-passWithNoTests test/ai/siwc/egress.heavy.test.ts` |
-| Obedient-model suite (every provider) | M7.S9b | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/obedient-row.test.ts`; with `DRAFTYAK_STRICT_SKIPS=1`, `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run --mode heavy --no-passWithNoTests test/security/context-lookups.heavy.test.ts` |
-| Cross-stream cells: SMS, agent tokens and MCP (§12) | M7.S9c | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/cross-stream-rows.test.ts`; `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai-providers/policy-matrix.test.ts` |
+| Obedient-model suite (every provider) | M7.S9b (postponed in the pilot) | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/obedient-row.test.ts`; with `DRAFTYAK_STRICT_SKIPS=1`, `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run --mode heavy --no-passWithNoTests test/security/context-lookups.heavy.test.ts` |
+| Cross-stream cells: SMS, agent tokens and MCP (§12) | M7.S9c (postponed in the pilot) | `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai/siwc/cross-stream-rows.test.ts`; `pnpm --filter @draftyak/hub --fail-if-no-match exec vitest run test/ai-providers/policy-matrix.test.ts` |
 
 ## Changed since the plan
 - **Sign-in, transfer and disconnect are admin ops** (owner decision D19 in `docs/roadmap/m1.md`, pending the owner's confirmation at the M0 gate, or before M1.20 merges if that is earlier). Plan §9.3 makes account connect and disconnect and API-key entry admin ops, but doesn't name SIWC. Without this rule, any paired device that the L2 snapshot admits could install tokens for an account of its choice. M1.20 adds the admin-op kind if no existing kind fits (H2).
 - **SIWC tokens stay out of backups** (pending the owner's confirmation at the M0 gate). Plan §3 Backup includes credentials. The SIWC Terms keep persistent token storage local and under the user's control, and allow no transfer except as they permit. A backup file can leave the machine, and a restore onto another machine would move the tokens. So a backup skips SIWC tokens and the ID-token hint the vault keeps with them, a restore drops any it finds, and the owner signs in again (M7.S3). A per-kind filter in M2.12's backup tells them apart (H8); a separate data class would be an M1 contract change. If the owner declines, M7.S3 adds no H8 line, and SIWC tokens and the hint are backed up like other credentials.
 - **A models list from the plan's API** (pending the owner's confirmation at the M0 gate). Guardrail 4 says Responses API only, and §4's SIWC allowlist names only `POST /v1/responses`. OpenAI's plan-usage docs list the models through `GET /v1/models`, whose answer is `{models: [{slug, display_name, visibility}]}` (spike S7's `notes/sources.md`), and the model picker needs it. So M7.S5's verifier also allows a bodiless `GET /v1/models` with no query, M7.S5b's `ai_models_list` maps each `visibility: "list"` entry to ai-provider-v1's `{id, name}` in the server's order, its `ai_probe` sends the same single request, and M7.S8b serves the list. If the owner declines, `ai_models_list` returns the hub's pinned model, `ai_probe` sends nothing upstream, and no `GET` leaves.
+- **The pilot recut** (the owner's pilot decisions of 2026-10-21, and the maintainer's split of M1.20 that day):
+  - Sign in with ChatGPT stays in the pilot but is optional and never holds the launch. It merges on its own. If it isn't ready when the rest is, or OpenAI blocks it, v0.1.0 ships without it, and it follows in a later release.
+  - Installs are desktop-only. The npm and Docker server installs, whose hub runs as a service (the headless hub of §4 Credential flow 2), are postponed, so every pilot hub is the desktop app's sidecar. M7.S4 is postponed with them, since it serves only such a hub. M7.S2b already gives `flow: hub` only to the sidecar's own app and refuses any other approver, so the pilot needs no transfer.
+  - Browser access to the hub (A1) is postponed, and "Connect to a hub" from a second computer (A2) is kept. An approver on such a computer is refused with `FORBIDDEN` and no record (M7.S2b), and M7.S7's slot tells it to sign in from the DraftYak app on the hub's computer.
+  - One initial `m1` merge happens now, and the reserved M1.20 and M1.29 may follow in a second merge. Items that need them start once that merge reaches their branch.
+  - M1.20 is split; the matching `docs/roadmap/m1.md` rows follow in their own PR. It keeps only the sign-in's contract parts: the `oauth2-dynamic-agent` auth descriptor, D19's AI-credential connect and disconnect `admin.v1` kinds in a new `ai` group of `ADMIN_GROUPS`, and the ChatGPT-plan profile id in `AI_HTTP_PROFILES`. It starts after ADR 0009 merges into `m0` and no longer waits for ADR 0006. `consent.v1` and the access kinds move to a new M1.20p, which is postponed with spike S4 and ADR 0006 and isn't part of this backlog. M1.29 keeps the authorization route and the connect and disconnect review subjects, with their codes, caps and vectors; its transfer routes and the transferred credential's form leave the pilot with M7.S4 and return with it.
+  - M7.S9b is postponed with M7b (context lookups and its obedient-model suite), and M7.S9c with SMS (S12, M6b), agent tokens and MCP (M8).
+  - Every other item is kept, with the same name and size. The postponed items keep their rows and sections, marked postponed in the pilot.
 
 ### Open items
 Each is recorded here when it settles:
 - the owner's M0-gate answers on `prompt=consent` and on what declining plan usage keeps;
-- the owner's confirmation of the three changes above;
+- the owner's confirmation of the three pending changes above;
 - ADR 0009's `submit_draft` placement and the host-ID format;
 - how one `ai-responses-api` manifest declares both its api-key and siwc modes, when a manifest has one `auth` kind and one AI egress profile: ADR 0009's follow-up, which M1.25 records (M1.20);
 - the fixed port 1455, and the broker's 1455 block as a plan change;
 - each request under **Hooks in other items**, until its owner agrees;
 - OpenAI's answers to these questions:
-  - 1a, the headless transfer: a "no" means M7.S4's transfer doesn't ship and M1.29 leaves out its transfer parts. If neither M7.S4 nor M7.S9 has merged, M7.S9 deletes the spike. If either has, a PR on `m7` removes the transfer and, if it is still there, the spike, and a contract PR removes M1.29's transfer parts (Clean-room rules). The answer may come any time before launch;
+  - 1a, the headless transfer: a "no" means M7.S4's transfer doesn't ship and M1.29 leaves out its transfer parts. If neither M7.S4 nor M7.S9 has merged, M7.S9 deletes the spike. If either has, a PR on `m7` removes the transfer and, if it is still there, the spike, and a contract PR removes M1.29's transfer parts (Clean-room rules). The answer may come any time before launch, or, while M7.S4 is postponed in the pilot, before M7.S4 returns;
   - 1b, whether a hub on a VPS or another remote machine may keep tokens at all, since the Terms bar persistent token storage "in a remote or managed environment": a "no" keeps SIWC off any hub that isn't on the owner's own computer, however the tokens would arrive, and points those hubs to the API-key alternative;
   - 2b, the licence link;
   - 5, whether plan usage follows the training setting: a "no" removes Slack content from SIWC and changes the Gmail and SMS acknowledgement text;

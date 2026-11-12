@@ -1,0 +1,266 @@
+{
+  "format": "draftyak.vectors.host-channel.v1",
+  "description": "Lookup permit structural validation; membership requires native parent admission.",
+  "scalars": [
+    {
+      "id": "zero-bytes",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "valid": true
+    },
+    {
+      "id": "all-bits",
+      "value": "__________________________________________8",
+      "valid": true
+    },
+    {
+      "id": "length-0",
+      "value": "",
+      "valid": false
+    },
+    {
+      "id": "length-1",
+      "value": "A",
+      "valid": false
+    },
+    {
+      "id": "length-41",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "valid": false
+    },
+    {
+      "id": "length-42",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "valid": false
+    },
+    {
+      "id": "length-44",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "valid": false
+    },
+    {
+      "id": "length-45",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "valid": false
+    },
+    {
+      "id": "length-86",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "valid": false
+    },
+    {
+      "id": "encoding-0",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB",
+      "valid": false
+    },
+    {
+      "id": "encoding-1",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "valid": false
+    },
+    {
+      "id": "encoding-2",
+      "value": "+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "valid": false
+    },
+    {
+      "id": "encoding-3",
+      "value": "/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "valid": false
+    },
+    {
+      "id": "encoding-4",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n",
+      "valid": false
+    },
+    {
+      "id": "encoding-5",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\r",
+      "valid": false
+    },
+    {
+      "id": "encoding-6",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA ",
+      "valid": false
+    },
+    {
+      "id": "encoding-7",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA ",
+      "valid": false
+    },
+    {
+      "id": "encoding-8",
+      "value": " AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "valid": false
+    },
+    {
+      "id": "encoding-9",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA ",
+      "valid": false
+    },
+    {
+      "id": "encoding-10",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\u0000",
+      "valid": false
+    },
+    {
+      "id": "type-0",
+      "value": null,
+      "valid": false
+    },
+    {
+      "id": "type-1",
+      "value": 0,
+      "valid": false
+    },
+    {
+      "id": "type-2",
+      "value": false,
+      "valid": false
+    },
+    {
+      "id": "type-3",
+      "value": {},
+      "valid": false
+    },
+    {
+      "id": "type-4",
+      "value": [],
+      "valid": false
+    }
+  ],
+  "requests": [
+    {
+      "id": "ordinary-unbound",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": []
+      },
+      "valid": true
+    },
+    {
+      "id": "bound-get",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "lookupPermit": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "valid": true
+    },
+    {
+      "id": "bound-head",
+      "params": {
+        "method": "HEAD",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "lookupPermit": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "valid": true
+    },
+    {
+      "id": "decoded-unbound-unchanged",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "raw"
+        }
+      },
+      "valid": true
+    },
+    {
+      "id": "decoded-bound-structural-only",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "raw"
+        },
+        "lookupPermit": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "valid": true
+    },
+    {
+      "id": "stream-bound-structural-only",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "stream": true,
+        "lookupPermit": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "valid": true
+    },
+    {
+      "id": "null-permit",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "lookupPermit": null
+      },
+      "valid": false
+    },
+    {
+      "id": "empty-permit",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "lookupPermit": ""
+      },
+      "valid": false
+    },
+    {
+      "id": "nonzero-unused-bits",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "lookupPermit": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB"
+      },
+      "valid": false
+    },
+    {
+      "id": "terminal-line-feed",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "lookupPermit": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+      },
+      "valid": false
+    },
+    {
+      "id": "decoded-malformed-permit",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "saveAs": {
+          "kind": "base64url-json-member",
+          "member": "raw"
+        },
+        "lookupPermit": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB"
+      },
+      "valid": false
+    },
+    {
+      "id": "unknown-control",
+      "params": {
+        "method": "GET",
+        "url": "https://mail.example.invalid/message",
+        "headers": [],
+        "lookupPermit": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "lookupAccount": "test"
+      },
+      "valid": false
+    }
+  ],
+  "authority": "A valid scalar or schema grants no egress. Only an active matching parent ledger entry can authorize a tool fetch; other extension kinds cannot present a permit."
+}

@@ -11,6 +11,96 @@ import { ENGINE_DEPENDENT, patterns, utf8 } from "./vectors.ts";
 
 const modules = ["data-class", "errors", "hash", "jcs", "scalars", "sign"];
 
+const publicModules = [
+	"ai-provider-v1",
+	"channel-v1",
+	"data-class",
+	"date-pattern",
+	"device-api",
+	"digests",
+	"draft-output",
+	"draft-output-text",
+	"entities",
+	"entities/account",
+	"entities/account/channels",
+	"entities/account/chat",
+	"entities/account/email",
+	"entities/audit",
+	"entities/common",
+	"entities/contact",
+	"entities/conversation",
+	"entities/conversation/channels",
+	"entities/conversation/chat",
+	"entities/conversation/email",
+	"entities/device",
+	"entities/draft",
+	"entities/draft/channels",
+	"entities/draft/chat",
+	"entities/draft/email",
+	"entities/fields",
+	"entities/message",
+	"entities/message/channels",
+	"entities/message/chat",
+	"entities/message/email",
+	"entities/outbox",
+	"entities/routing",
+	"entities/settings",
+	"entities/tool",
+	"errors",
+	"extension",
+	"flags",
+	"hash",
+	"host-channel",
+	"hub-runtime",
+	"index",
+	"jcs",
+	"json-template",
+	"manifest",
+	"manifest/ai-http",
+	"manifest/auth",
+	"manifest/auth-fields",
+	"manifest/egress",
+	"manifest/json",
+	"manifest/responses-http",
+	"manifest/runtime",
+	"manifest/text",
+	"manifest/tool",
+	"mcp",
+	"mcp/completion",
+	"mcp/errors",
+	"mcp/prompts",
+	"mcp/request-state",
+	"mcp/resources",
+	"mcp/results",
+	"mcp/scopes",
+	"mcp/tools",
+	"mcp/views",
+	"normalized-change",
+	"oauth-relay",
+	"pairing",
+	"scalars",
+	"schedule",
+	"scheduled-summary",
+	"send-ticket",
+	"sign",
+	"snapshot",
+	"statements",
+	"statements/admin",
+	"statements/agent-session",
+	"statements/common",
+	"statements/hub-key-rotate",
+	"statements/login",
+	"statements/pair-confirm",
+	"statements/registry",
+	"statements/send",
+	"tool-v1",
+	"tool-v1/bindings",
+	"tool-v1/declaration",
+	"tool-v1/egress",
+	"tool-v1/kinds",
+	"tool-v1/results",
+];
+
 describe("the package", () => {
 	it("re-exports exactly its modules from the index", async () => {
 		const names = new Set<string>();
@@ -24,15 +114,72 @@ describe("the package", () => {
 		const file = path.resolve(import.meta.dirname, "../package.json");
 		const manifest = JSON.parse(readFileSync(file, "utf8"));
 		expect(manifest.private).toBe(true);
-		expect(manifest.exports).toEqual({ ".": "./src/index.ts", "./*": "./src/*.ts" });
+		expect(manifest.exports).toEqual({
+			".": "./src/index.ts",
+			...Object.fromEntries(publicModules.map((name) => [`./${name}`, `./src/${name}.ts`])),
+			"./plugin-argv": { node: "./src/plugin-argv.ts" },
+			"./plugin-stdio": { node: "./src/plugin-stdio.ts" },
+		});
 		expect(manifest.publishConfig.exports).toEqual({
 			".": { types: "./dist/index.d.mts", default: "./dist/index.mjs" },
-			"./*": { types: "./dist/*.d.mts", default: "./dist/*.mjs" },
+			...Object.fromEntries(
+				publicModules.map((name) => [
+					`./${name}`,
+					{
+						types: `./dist/${name}.d.mts`,
+						default: `./dist/${name}.mjs`,
+					},
+				]),
+			),
+			"./plugin-argv": {
+				node: { types: "./dist/plugin-argv.d.mts", default: "./dist/plugin-argv.mjs" },
+			},
+			"./plugin-stdio": {
+				node: { types: "./dist/plugin-stdio.d.mts", default: "./dist/plugin-stdio.mjs" },
+			},
 		});
+		const keys = [
+			".",
+			...[...publicModules, "plugin-argv", "plugin-stdio"].sort().map((name) => `./${name}`),
+		];
+		expect(Object.keys(manifest.exports)).toEqual(keys);
+		expect(Object.keys(manifest.publishConfig.exports)).toEqual(keys);
 		expect(manifest.files).toEqual(["dist"]);
 		expect(manifest.scripts).toMatchObject({ build: "tsdown", prepack: "tsdown" });
 	});
 });
+
+// JSON Schema 2020-12's formats (Validation, section 7.3); a strict validator refuses any other.
+const STANDARD_FORMATS: ReadonlySet<string> = new Set([
+	"date-time",
+	"date",
+	"time",
+	"duration",
+	"email",
+	"idn-email",
+	"hostname",
+	"idn-hostname",
+	"ipv4",
+	"ipv6",
+	"uri",
+	"uri-reference",
+	"iri",
+	"iri-reference",
+	"uuid",
+	"uri-template",
+	"json-pointer",
+	"relative-json-pointer",
+	"regex",
+]);
+
+// Every `format` value anywhere in a JSON Schema, so none can hide in a nested schema.
+function formats(schema: unknown): string[] {
+	if (Array.isArray(schema)) return schema.flatMap(formats);
+	if (schema === null || typeof schema !== "object") return [];
+	return Object.entries(schema).flatMap(([key, value]) =>
+		key === "format" && typeof value === "string" ? [value] : formats(value),
+	);
+}
 
 describe("spec/", () => {
 	it("holds every exported schema as generated", async () => {
@@ -44,6 +191,15 @@ describe("spec/", () => {
 			expect(schema.$id).toBe(`https://draftyak.com/spec/${file}`);
 			for (const pattern of patterns(schema)) expect(pattern, file).not.toMatch(ENGINE_DEPENDENT);
 		}
+	});
+
+	it("uses only the formats JSON Schema 2020-12 defines", async () => {
+		for (const { path: file, text } of await exportSpec()) {
+			const others = formats(JSON.parse(text)).filter((format) => !STANDARD_FORMATS.has(format));
+			expect(others, file).toEqual([]);
+		}
+		const nested = { $defs: { A: { properties: { format: { format: "starts_with" } } } } };
+		expect(formats(nested)).toEqual(["starts_with"]);
 	});
 
 	it("keeps registered definition IDs owned and identical across schema files", async () => {

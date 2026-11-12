@@ -140,4 +140,49 @@ describe("required native transport workflow controls", () => {
 			).toBeGreaterThan(0);
 		}
 	});
+	it("requires ordinary product-heavy filters and the nonempty ordinary guard", () => {
+		expect(check(source)).toEqual([]);
+		for (const [before, after] of [
+			[" && needs.changes.outputs.ordinary-heavy != ''", ""],
+			["needs.changes.outputs.ordinary-heavy != ''", "needs.changes.outputs.spikes != ''"],
+			[
+				"        id: heavy-test\n        env:\n          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+				"        id: heavy-test\n        env:\n          HEAVY: ${{ needs.changes.outputs.heavy }}",
+			],
+			[
+				'if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
+				'if false; then filters+=("--filter=$filter"); fi',
+			],
+		] as const) {
+			const changed = job("heavy", (body) => {
+				expect(body.split(before)).toHaveLength(2);
+				return body.replace(before, after);
+			});
+			expect(check(changed).join("\n")).toContain("must preserve");
+		}
+	});
+	it("refuses an extra heavy execution outside the split jobs", () => {
+		expect(check(source)).toEqual([]);
+		const changed = job(
+			"full",
+			(body) =>
+				body +
+				[
+					"      - name: Unexpected additional heavy execution",
+					"        if: needs.changes.outputs.ordinary-heavy != ''",
+					"        env:",
+					"          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+					"        run: |",
+					"          filters=()",
+					"          while IFS= read -r filter; do",
+					'            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
+					'          done <<< "$HEAVY"',
+					'          node tools/verify/turbo.ts run test:heavy --concurrency=1 "${filters[@]}"',
+					"",
+				].join("\n"),
+		);
+		expect(check(changed).join("\n")).toContain(
+			"test:heavy must preserve the selected shard or ordinary-heavy command",
+		);
+	});
 });

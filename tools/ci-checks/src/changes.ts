@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { changedApplication, heavyApplications } from "./app-heavy.ts";
 import { appendSummary, cliArgs, git, revision, runCli, setOutputs } from "./lib.ts";
 import { parseYaml, type Yaml } from "./yaml.ts";
 
@@ -224,12 +225,15 @@ export function classify(
 	let ts = false;
 	let workflows = false;
 	let global = false;
+	let globalApplications = false;
 	let templateSmoke = false;
 	const rust = new Set<string>();
 	const spikes = new Set<string>();
 	const alone = new Set<string>();
 	const strayRust = new Set<string>();
 	const withDependents = new Set<string>();
+	let applications: readonly string[] | undefined;
+	const eligibleApplications = (): readonly string[] => (applications ??= heavyApplications(root));
 	const changedPackages = new Set<string>();
 	let packages: readonly WorkspacePackage[] | undefined;
 	const graph = (): readonly WorkspacePackage[] => {
@@ -279,6 +283,11 @@ export function classify(
 			if (strayRustFile(root, file, inWorkspace)) strayRust.add(file);
 		}
 		if (globalFiles.has(file) || (file === "pnpm-lock.yaml" && noPackageJson)) global = true;
+		// App dependency changes can share a lockfile update with an unrelated package manifest.
+		// Keep existing package selection, while never losing the bounded app suites in that case.
+		if (globalFiles.has(file) || file === "pnpm-lock.yaml") globalApplications = true;
+		const app = changedApplication(file);
+		if (app !== undefined && eligibleApplications().includes(app)) withDependents.add(app);
 		const pkg = /^(?:packages|plugins)\/[^/]+(?=\/)/.exec(file)?.[0];
 		if (pkg !== undefined && isPackage(root, pkg)) withDependents.add(pkg);
 		if (pkg !== undefined && smokePackages.has(pkg)) templateSmoke = true;
@@ -303,6 +312,9 @@ export function classify(
 	if (global) {
 		templateSmoke = true;
 		for (const dir of heavyPackages(root)) alone.add(dir);
+	}
+	if (globalApplications) {
+		for (const dir of eligibleApplications()) alone.add(dir);
 	}
 	const heavy = [
 		...[...withDependents].map((dir) => `...{./${dir}}`),

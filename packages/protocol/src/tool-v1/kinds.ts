@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { canonicalize, JcsError } from "../jcs.ts";
 import { boundedText } from "../scalars.ts";
+import { guardExportedPatterns } from "../schema-patterns.ts";
 import { DNS_NAME } from "./egress.ts";
 
 export const TOOL_EXTENSION_ID = "io.github.draftyak/tool";
@@ -52,13 +53,13 @@ const text = (maxLength: number): JsonObject => ({ type: "string", maxLength });
 // Every property required and nothing else allowed.
 function closed(properties: { readonly [name: string]: JsonObject }, description?: string) {
 	const required = Object.keys(properties);
-	return {
+	return guardExportedPatterns({
 		type: "object",
 		...(description === undefined ? {} : { description }),
 		properties,
 		...(required.length === 0 ? {} : { required }),
 		additionalProperties: false,
-	} satisfies JsonObject;
+	}) satisfies JsonObject;
 }
 
 const textItems = (maxLength: number): JsonObject => ({

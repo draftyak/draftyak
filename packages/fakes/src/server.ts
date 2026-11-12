@@ -48,6 +48,18 @@ export interface Fake {
 	listen(): Promise<Listening>;
 }
 
+export interface ResolvedFakeTransport {
+	readonly host: string;
+	readonly fetch: Fake["fetch"];
+}
+
+const fakeTransports = new WeakMap<object, ResolvedFakeTransport>();
+
+/** The original transport of a createFake result, without reading the supplied object. */
+export function resolveFakeTransport(value: unknown): ResolvedFakeTransport | undefined {
+	return typeof value === "object" && value !== null ? fakeTransports.get(value) : undefined;
+}
+
 const failed = (cause: unknown): TypeError => new TypeError("fetch failed", { cause });
 
 async function limitedRequest(
@@ -268,7 +280,7 @@ export function createFake(app: FetchApp, options: FakeOptions): Fake {
 		};
 	};
 
-	return {
+	const fake: Fake = {
 		host,
 		recorder,
 		faults,
@@ -300,4 +312,6 @@ export function createFake(app: FetchApp, options: FakeOptions): Fake {
 			throw new Error("listen: the OS offered only reserved ports");
 		},
 	};
+	fakeTransports.set(fake, Object.freeze({ host, fetch: fake.fetch.bind(fake) }));
+	return fake;
 }

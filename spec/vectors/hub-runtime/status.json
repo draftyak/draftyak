@@ -1,0 +1,264 @@
+{
+  "format": "draftyak.vectors.hub-runtime.v1",
+  "description": "Strict SchedulingStatus values: each is valid or not.",
+  "cases": [
+    {
+      "id": "status-sidecar-running-syncing",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": false
+      },
+      "valid": true
+    },
+    {
+      "id": "status-sidecar-running-paused",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": true
+      },
+      "valid": true
+    },
+    {
+      "id": "status-sidecar-unavailable-syncing",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "unavailable",
+        "syncPaused": false
+      },
+      "valid": true
+    },
+    {
+      "id": "status-sidecar-unavailable-paused",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "unavailable",
+        "syncPaused": true
+      },
+      "valid": true
+    },
+    {
+      "id": "status-service-running-syncing",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "service",
+        "scheduler": "running",
+        "syncPaused": false
+      },
+      "valid": true
+    },
+    {
+      "id": "status-service-running-paused",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "service",
+        "scheduler": "running",
+        "syncPaused": true
+      },
+      "valid": true
+    },
+    {
+      "id": "status-service-unavailable-syncing",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "service",
+        "scheduler": "unavailable",
+        "syncPaused": false
+      },
+      "valid": true
+    },
+    {
+      "id": "status-service-unavailable-paused",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "service",
+        "scheduler": "unavailable",
+        "syncPaused": true
+      },
+      "valid": true
+    },
+    {
+      "id": "status-mode-tray",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "tray",
+        "scheduler": "running",
+        "syncPaused": false
+      },
+      "valid": false
+    },
+    {
+      "id": "status-mode-Sidecar",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "Sidecar",
+        "scheduler": "running",
+        "syncPaused": false
+      },
+      "valid": false
+    },
+    {
+      "id": "status-mode-empty",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "",
+        "scheduler": "running",
+        "syncPaused": false
+      },
+      "valid": false
+    },
+    {
+      "id": "status-scheduler-stopped",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "stopped",
+        "syncPaused": false
+      },
+      "valid": false
+    },
+    {
+      "id": "status-scheduler-Running",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "Running",
+        "syncPaused": false
+      },
+      "valid": false
+    },
+    {
+      "id": "status-sync-paused-string",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": "false"
+      },
+      "valid": false
+    },
+    {
+      "id": "status-sync-paused-number",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": 0
+      },
+      "valid": false
+    },
+    {
+      "id": "status-sync-paused-null",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": null
+      },
+      "valid": false
+    },
+    {
+      "id": "status-missing-mode",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "scheduler": "running",
+        "syncPaused": false
+      },
+      "valid": false
+    },
+    {
+      "id": "status-missing-scheduler",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "syncPaused": false
+      },
+      "valid": false
+    },
+    {
+      "id": "status-missing-syncPaused",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running"
+      },
+      "valid": false
+    },
+    {
+      "id": "status-sidecar-notice",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": false,
+        "sidecarNotice": {
+          "version": 1,
+          "acknowledged": false
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "status-acknowledged",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": {
+        "mode": "sidecar",
+        "scheduler": "running",
+        "syncPaused": false,
+        "acknowledged": true
+      },
+      "valid": false
+    },
+    {
+      "id": "status-null",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": null,
+      "valid": false
+    },
+    {
+      "id": "status-array",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": [
+        "sidecar",
+        "running",
+        false
+      ],
+      "valid": false
+    },
+    {
+      "id": "status-string",
+      "action": "schema",
+      "schema": "SchedulingStatus",
+      "value": "sidecar",
+      "valid": false
+    }
+  ]
+}

@@ -17,11 +17,35 @@ const workflow = () =>
 			.value,
 	);
 
+const windowsRustUnion =
+	"hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'";
+
+function windowsRustSelected(hasCrates: boolean, native: boolean): boolean {
+	const windows = object(object(workflow().jobs).windows);
+	const steps = (windows.steps as Yaml[]).map(object);
+	const rust = steps.filter((step) => String(step.uses).startsWith("dtolnay/rust-toolchain@"));
+	expect(rust).toHaveLength(1);
+	const [left, operator, right] = String(rust[0]?.if).split(/\s+(\|\||&&)\s+/);
+	const terms = new Map([
+		["hashFiles('crates/Cargo.toml') != ''", hasCrates],
+		["needs.changes.outputs.native-transport == 'true'", native],
+	]);
+	if (!terms.has(left ?? "") || !terms.has(right ?? ""))
+		throw new Error("unrecognized Windows Rust condition");
+	if (operator === "||") return Boolean(terms.get(left ?? "") || terms.get(right ?? ""));
+	if (operator === "&&") return Boolean(terms.get(left ?? "") && terms.get(right ?? ""));
+	throw new Error("unrecognized Windows Rust operator");
+}
+
 const shardCommand =
 	'node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "--filter=./$SPIKE"\n';
 const ordinaryCommand = [
 	"filters=()",
-	'while IFS= read -r filter; do filters+=("--filter=$filter"); done <<< "$HEAVY"',
+	"while IFS= read -r filter; do",
+	'  if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
+	'done <<< "$HEAVY"',
+	"# The template smoke packs and installs, so it runs only for its own packages and global",
+	"# changes, on main and on PRs into main.",
 	'if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then',
 	'  filters+=("--filter=!./packages/create-plugin")',
 	"fi",
@@ -152,6 +176,10 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 		expect(job["timeout-minutes"], "heavy timeout").toBe(30);
 		expect(object(job.env).DRAFTYAK_STRICT_SKIPS, "strict skips required").toBe("1");
 		const heavy = stepById(job, "heavy-test");
+		expect(
+			object(heavy.env).DRAFTYAK_STRICT_SKIPS,
+			"heavy command inherits strict skips",
+		).toBeUndefined();
 		expect(heavy.if, "heavy command has no extra skip").toBeUndefined();
 		expect(heavy.run, "serial selected heavy command").toBe(command);
 		provisions(job, browserSelection);
@@ -251,6 +279,23 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 			"heavy execution stays in selected jobs",
 		).toHaveLength(0);
 	}
+	for (const env of [workflow.env, object(jobs.full).env]) {
+		if (env !== undefined) expect(object(env).DRAFTYAK_STRICT_SKIPS).toBeUndefined();
+	}
+	const windows = object(object(workflow.jobs).windows);
+	const windowsSteps = (windows.steps as Yaml[]).map(object);
+	const windowsRust = windowsSteps.filter((step) =>
+		String(step.uses).startsWith("dtolnay/rust-toolchain@"),
+	);
+	expect(windowsRust).toHaveLength(1);
+	expect(windowsRust[0]?.if).toBe(windowsRustUnion);
+	const windowsCache = windowsSteps.find((step) =>
+		String(step.uses).startsWith("Swatinem/rust-cache@"),
+	);
+	expect(windowsCache).toBeDefined();
+	expect(windowsSteps.indexOf(windowsRust[0] ?? {})).toBeLessThan(
+		windowsSteps.indexOf(windowsCache ?? {}),
+	);
 }
 
 describe("heavy selection contract", () => {
@@ -263,7 +308,12 @@ describe("heavy selection contract", () => {
 			if (variant === "product loop")
 				heavy.run = replaceOnce(
 					heavy.run,
-					'while IFS= read -r filter; do filters+=("--filter=$filter"); done <<< "$HEAVY"\n',
+					[
+						"while IFS= read -r filter; do",
+						'  if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
+						'done <<< "$HEAVY"',
+						"",
+					].join("\n"),
 					"",
 				);
 			if (variant === "smoke source") object(heavy.env).SMOKE = "true";
@@ -300,6 +350,14 @@ describe("heavy selection contract", () => {
 	it("passes every selected importer to one strict serial shard and keeps ordinary heavy separate", () => {
 		selectionContract(workflow());
 	});
+	it.each([
+		[false, false, false],
+		[true, false, true],
+		[false, true, true],
+		[true, true, true],
+	])("selects Windows Rust for crates=%s/native=%s as %s", (crates, native, selected) => {
+		expect(windowsRustSelected(crates, native)).toBe(selected);
+	});
 
 	for (const jobName of ["spike-run", "heavy"] as const) {
 		it.each([
@@ -312,6 +370,7 @@ describe("heavy selection contract", () => {
 			["missing Rust setup", "Rust setup pair"],
 			["wrong Rust cache", "Rust workspace selection"],
 			["missing strict skips", "strict skips required"],
+			["step disables strict skips", "heavy command inherits strict skips"],
 			["wrong condition", "selection condition"],
 			["missing serial execution", "serial selected heavy command"],
 			["concurrent heavy packages", "serial selected heavy command"],
@@ -343,6 +402,7 @@ describe("heavy selection contract", () => {
 				object(object(cache).with).workspaces = "one-workspace";
 			}
 			if (attack === "missing strict skips") delete object(job.env).DRAFTYAK_STRICT_SKIPS;
+			if (attack === "step disables strict skips") object(heavy.env).DRAFTYAK_STRICT_SKIPS = "0";
 			if (attack === "wrong condition") job.if = "true";
 			if (attack === "missing serial execution")
 				heavy.run = replaceOnce(heavy.run, " --concurrency=1", "");

@@ -2,6 +2,7 @@ import * as z from "zod";
 import { PluginErrorResult } from "./errors.ts";
 import { jcsSha256 } from "./hash.ts";
 import { boundedText, Sha256Hex } from "./scalars.ts";
+import { guardExportedPatterns } from "./schema-patterns.ts";
 
 // MCP Apps' extension; plugins never declare it, and no tool of theirs carries `_meta.ui` (§4).
 export const UI_EXTENSION = "io.modelcontextprotocol/ui";
@@ -74,7 +75,9 @@ export function extensionSchema(contract: ExtensionContract): z.ZodType {
 
 // What `pnpm --filter @draftyak/protocol spec` writes for `schema` at spec/<path>.
 export function exportedSchema(path: string, schema: z.ZodType): Record<string, unknown> {
-	const json = z.toJSONSchema(schema, { target: "draft-2020-12", io: "input" });
+	const json = guardExportedPatterns(
+		z.toJSONSchema(schema, { target: "draft-2020-12", io: "input" }),
+	);
 	return { ...json, $id: `https://draftyak.com/spec/${path}` };
 }
 

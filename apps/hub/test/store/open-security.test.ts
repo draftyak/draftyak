@@ -81,40 +81,70 @@ it.each(["success", "wrong-key failure"])(
 	},
 );
 
-it("refuses a real native settings mismatch and closes the unverified connection", () => {
-	let connection: SqliteDatabase | undefined, opened: SqliteDatabase | undefined, actual: unknown;
+it.each(["secure_delete", "fullfsync", "checkpoint_fullfsync"])(
+	"refuses a real native %s mismatch and closes the unverified connection",
+	(setting) => {
+		let connection: SqliteDatabase | undefined, opened: SqliteDatabase | undefined, actual: unknown;
+		const spy = vi.spyOn(Database.prototype, "pragma").mockImplementation(function (
+			this: SqliteDatabase,
+			source,
+			options,
+		) {
+			connection = this;
+			if (source === `${setting} = ON`) {
+				const result = nativePragma.call(this, `${setting} = OFF`, options);
+				actual = nativePragma.call(this, setting, { simple: true });
+				return result;
+			}
+			return nativePragma.call(this, source, options);
+		});
+		try {
+			expect(() => {
+				opened = openEncrypted({ filename: f.filename, nativeBinding }, f.key);
+			}).toThrow("Database settings were not confirmed");
+			expect(actual).toBe(0);
+			expect(connection?.open).toBe(false);
+		} finally {
+			if (opened?.open) opened.close();
+			if (connection?.open) connection.close();
+			spy.mockRestore();
+		}
+		const reopened = openEncrypted({ filename: f.filename, nativeBinding }, f.key);
+		try {
+			expect(reopened.pragma(setting, { simple: true })).toBe(1);
+			expect(reopened.prepare("SELECT id FROM test_rows").get()).toEqual({
+				id: "DYTEST-OPEN-GUARDS",
+			});
+		} finally {
+			reopened.close();
+		}
+	},
+);
+
+it("sets both native full-sync flags before opening-time database configuration", () => {
+	const checked: string[] = [];
 	const spy = vi.spyOn(Database.prototype, "pragma").mockImplementation(function (
 		this: SqliteDatabase,
 		source,
 		options,
 	) {
-		connection = this;
-		if (source === "secure_delete = ON") {
-			const result = nativePragma.call(this, "secure_delete = OFF", options);
-			actual = nativePragma.call(this, "secure_delete", { simple: true });
-			return result;
+		if (source === "auto_vacuum = INCREMENTAL" || source === "journal_mode = WAL") {
+			expect(nativePragma.call(this, "fullfsync", { simple: true })).toBe(1);
+			expect(nativePragma.call(this, "checkpoint_fullfsync", { simple: true })).toBe(1);
+			checked.push(source);
 		}
 		return nativePragma.call(this, source, options);
 	});
+	let opened: SqliteDatabase | undefined;
 	try {
-		expect(() => {
-			opened = openEncrypted({ filename: f.filename, nativeBinding }, f.key);
-		}).toThrow("Database settings were not confirmed");
-		expect(actual).toBe(0);
-		expect(connection?.open).toBe(false);
+		opened = openEncrypted(
+			{ filename: path.join(f.dir, "opening-order.db"), nativeBinding, create: true },
+			f.key,
+		);
+		expect(checked).toEqual(["auto_vacuum = INCREMENTAL", "journal_mode = WAL"]);
 	} finally {
 		if (opened?.open) opened.close();
-		if (connection?.open) connection.close();
 		spy.mockRestore();
-	}
-	const reopened = openEncrypted({ filename: f.filename, nativeBinding }, f.key);
-	try {
-		expect(reopened.pragma("secure_delete", { simple: true })).toBe(1);
-		expect(reopened.prepare("SELECT id FROM test_rows").get()).toEqual({
-			id: "DYTEST-OPEN-GUARDS",
-		});
-	} finally {
-		reopened.close();
 	}
 });
 

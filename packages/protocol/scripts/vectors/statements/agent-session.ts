@@ -69,6 +69,12 @@ async function extra(
 	);
 	await signed("send-class", { ...base, toolClass: "send" }, false);
 	for (const [id, changed] of [
+		["positional-principal", { principal: ["grant", AGENT_SESSION_IDS.principal] }],
+		["object-form-tool-class", { toolClass: { read: null } }],
+		["positional-authorization", { authorization: ["session", 900000] }],
+	] as const)
+		await signed(id, { ...base, ...changed }, false);
+	for (const [id, changed] of [
 		["changed-principal", { principal: { kind: "token", id: AGENT_SESSION_IDS.principal } }],
 		["changed-account", { account: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }],
 		["changed-tool-class", { toolClass: "organize" }],

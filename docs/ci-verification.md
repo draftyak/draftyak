@@ -26,6 +26,23 @@ checks not selected by it, live/device checks, platform acceptance and owner
 sign-off keep their existing requirements. DCO remains a separate check with
 the repository's milestone sign-off rule.
 
+On M1, native application discovery is limited to physical `apps/cli` and
+`apps/hub` manifests with their matching package identities and a nonempty actual
+`test:heavy` script. Source/config changes retain the existing with-dependents
+Turbo filter form; global runtime/configuration and lockfile changes select all
+eligible reviewed apps. A missing package or heavy script is not an executable
+suite. Receipts retain the existing generic bounded path vocabulary and record
+selection; they do not independently establish application eligibility or execution.
+
+The entire selected-heavy step sets `DRAFTYAK_STRICT_SKIPS='1'`, including selected
+packages, spikes and transitive dependents. Existing strict-skip semantics remain:
+unintended skips fail, while explicit `requires:` capability routing still applies.
+Assess those routed cases separately against required native acceptance; a successful
+step alone does not establish that a capability ran. The full-stage build remains before heavy execution.
+Actual application acceptance still requires the appropriate Node26 native
+binding/package builds, strict heavy logs and matching source/run identity;
+synthetic classifier, receipt and command-capture tests do not supply that evidence.
+
 ## Compact receipt
 
 When reporting can run, it publishes one JSON receipt and an Actions summary.

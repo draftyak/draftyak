@@ -124,6 +124,7 @@ export interface ChatConversationChange {
 	readonly name?: string;
 	readonly type: ChatChannelType;
 	readonly external: boolean;
+	readonly shared: boolean;
 	readonly memberCount: number;
 	readonly archived: boolean;
 	readonly member: boolean;
@@ -171,6 +172,7 @@ const chatConversation = z.strictObject({
 	name: wellFormedText(256).optional(),
 	type: ChatChannelType,
 	external: z.boolean(),
+	shared: z.boolean(),
 	memberCount: z.int().min(0),
 	archived: z.boolean(),
 	member: z.boolean(),

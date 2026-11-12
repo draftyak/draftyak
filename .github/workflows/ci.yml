@@ -376,7 +376,11 @@ jobs:
           DRAFTYAK_CACHE_DIR: ${{ runner.temp }}/draftyak-node-scratch
         run: |
           filters=()
-          while IFS= read -r filter; do filters+=("--filter=$filter"); done <<< "$HEAVY"
+          while IFS= read -r filter; do
+            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi
+          done <<< "$HEAVY"
+          # The template smoke packs and installs, so it runs only for its own packages and global
+          # changes, on main and on PRs into main.
           if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then
             filters+=("--filter=!./packages/create-plugin")
           fi
@@ -417,7 +421,7 @@ jobs:
           NATIVE_ARCHITECTURE: x64
         run: node tools/ci-checks/src/native-transport.ts platform
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master on 2026-10-16
-        if: hashFiles('crates/Cargo.toml') != ''
+        if: hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'
         with:
           toolchain: 1.95.0
           components: clippy, rustfmt

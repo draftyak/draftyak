@@ -4,7 +4,12 @@ import path from "node:path";
 import Database from "better-sqlite3-multiple-ciphers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MasterKey } from "../../src/kernel/master-key.ts";
-import { HubStore, type SqlReader, type SqlTransaction } from "../../src/store/store.ts";
+import {
+	assertStoreTransaction,
+	HubStore,
+	type SqlReader,
+	type SqlTransaction,
+} from "../../src/store/store.ts";
 import { fixture, migrations, nativeBinding } from "./helpers.ts";
 
 describe("encrypted production store", () => {
@@ -17,6 +22,70 @@ describe("encrypted production store", () => {
 		f.store.close();
 		f.key.destroy();
 		rmSync(f.dir, { recursive: true, force: true });
+	});
+	it("accepts only the issuing Store's live native write authority", () => {
+		let retired: SqlTransaction | undefined;
+		let hooks = 0;
+		const fake = new Proxy(Object.create(null), {
+			get() {
+				hooks++;
+				throw new Error("DYTEST-HOOK");
+			},
+		});
+		expect(() => assertStoreTransaction(f.store, fake)).toThrow("Database transaction unavailable");
+		expect(() => assertStoreTransaction(undefined as unknown as HubStore, fake)).toThrow(
+			"Database transaction unavailable",
+		);
+		f.store.read((reader) => {
+			expect(() => assertStoreTransaction(f.store, reader as SqlTransaction)).toThrow(
+				"Database transaction unavailable",
+			);
+		});
+		f.store.write((tx) => {
+			assertStoreTransaction(f.store, tx);
+			retired = tx;
+			expect(() => assertStoreTransaction(f.store, { ...tx })).toThrow(
+				"Database transaction unavailable",
+			);
+			expect(() => assertStoreTransaction(f.store, new Proxy(tx, {}))).toThrow(
+				"Database transaction unavailable",
+			);
+		});
+		if (!retired) throw new Error("Missing native test transaction");
+		const ended = retired;
+		expect(() => assertStoreTransaction(f.store, ended)).toThrow(
+			"Database transaction unavailable",
+		);
+		expect(hooks).toBe(0);
+	});
+	it("revokes write authority after caught SQLite transaction-wide rollback but preserves an aborted statement", () => {
+		f.store.write((tx) => tx.run("INSERT INTO test_rows VALUES('existing',1)"));
+		let refusal: unknown;
+		try {
+			f.store.write((tx) => {
+				try {
+					tx.run("INSERT OR ROLLBACK INTO test_rows VALUES('existing',2)");
+				} catch {
+					/* Native constraint intentionally aborts the transaction. */
+				}
+				try {
+					assertStoreTransaction(f.store, tx);
+				} catch (error) {
+					refusal = error;
+				}
+			});
+		} catch {
+			/* The native transaction wrapper may also refuse its final commit. */
+		}
+		expect(refusal).toMatchObject({ message: "Database transaction unavailable" });
+		f.store.write((tx) => {
+			expect(() => tx.run("INSERT OR ABORT INTO test_rows VALUES('existing',2)")).toThrow();
+			assertStoreTransaction(f.store, tx);
+			tx.run("INSERT INTO test_rows VALUES('after-abort',3)");
+		});
+		expect(f.store.read((db) => db.get("SELECT id FROM test_rows WHERE id='after-abort'"))).toEqual(
+			{ id: "after-abort" },
+		);
 	});
 	it("persists encrypted pages, verifies the key and refuses overwrite", () => {
 		const canary = "DYTEST-PRIVATE-CONTENT-8cf169c0";

@@ -31,7 +31,7 @@
         "tz": {
           "type": "string",
           "maxLength": 64,
-          "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)*$",
+          "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)*$(?![\\s\\S])",
           "description": "The owner's IANA time zone, for floating times."
         }
       },
@@ -73,7 +73,7 @@
             "tz": {
               "type": "string",
               "maxLength": 64,
-              "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)*$",
+              "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)*$(?![\\s\\S])",
               "description": "The owner's IANA time zone, for floating times."
             }
           },
@@ -175,7 +175,7 @@
         "participant": {
           "type": "string",
           "maxLength": 254,
-          "pattern": "^(?:[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?|[UW][A-Z0-9]{2,20})$",
+          "pattern": "^(?:[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?|[UW][A-Z0-9]{2,20})$(?![\\s\\S])",
           "description": "A verified email address or Slack user id that the hub binds, never a display name or a phone number."
         }
       },
@@ -195,7 +195,7 @@
             "participant": {
               "type": "string",
               "maxLength": 254,
-              "pattern": "^(?:[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?|[UW][A-Z0-9]{2,20})$",
+              "pattern": "^(?:[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?|[UW][A-Z0-9]{2,20})$(?![\\s\\S])",
               "description": "A verified email address or Slack user id that the hub binds, never a display name or a phone number."
             }
           },
@@ -273,7 +273,7 @@
       "properties": {
         "topic": {
           "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$(?![\\s\\S])",
           "description": "An owner-defined topic id."
         }
       },
@@ -292,7 +292,7 @@
           "properties": {
             "topic": {
               "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$(?![\\s\\S])",
               "description": "An owner-defined topic id."
             }
           },
@@ -388,7 +388,7 @@
               "items": {
                 "type": "string",
                 "maxLength": 64,
-                "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$(?![\\s\\S])"
               },
               "minItems": 1,
               "maxItems": 16,
@@ -410,7 +410,7 @@
           "items": {
             "type": "string",
             "maxLength": 64,
-            "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+            "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$(?![\\s\\S])"
           },
           "minItems": 1,
           "maxItems": 16,

@@ -29,9 +29,11 @@
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",
-    "hono": "4.13.13"
+    "hono": "4.13.13",
+    "ws": "8.22.0"
   },
   "devDependencies": {
-    "tsdown": "0.23.1"
+    "tsdown": "0.23.1",
+    "@types/ws": "8.18.2"
   }
 }

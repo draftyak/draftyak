@@ -307,7 +307,7 @@ console.log("absolute paths rejected without manifest probes");
 			"spikes/s05/rust/ekm/src/lib.rs",
 			"tools/gone/src/lib.rs",
 		];
-		expect(classify(changed, root, () => manifests).strayRust).toEqual([
+		expect(fixtureClassify(changed).strayRust).toEqual([
 			"spikes/s05/rust/ekm/extra.toml",
 			"tools/y/Cargo.lock",
 			"tools/y/oracle.toml",
@@ -354,6 +354,10 @@ const m1Tree: Record<string, string> = {
 	"tools/verify/package.json": heavy("@draftyak/verify"),
 	"tools/fetch-node/package.json": heavy("@draftyak/fetch-node"),
 };
+m1Tree["pnpm-lock.yaml"] = `lockfileVersion: '9.0'\nimporters:\n${Object.keys(m1Tree)
+	.filter((file) => file.endsWith("/package.json"))
+	.map((file) => `  ${path.posix.dirname(file)}: {}\n`)
+	.join("")}`;
 const m1Root = mkdtempSync(path.join(tmpdir(), "draftyak-changes-m1-"));
 afterAll(() => rmSync(m1Root, { recursive: true, force: true }));
 for (const [file, content] of Object.entries(m1Tree)) {
@@ -426,6 +430,7 @@ describe("heavy selection for full", () => {
 	it("treats pnpm-lock.yaml as global only when no package.json changed", () => {
 		expect(select(["pnpm-lock.yaml", "packages/fakes/package.json"])).toMatchObject({
 			rust: ["spikes/s05/rust"],
+			spikes: ["spikes/s05"],
 			heavy: ["...{./packages/fakes}"],
 			templateSmoke: false,
 		});
@@ -469,11 +474,16 @@ describe("heavy selection for full", () => {
 				writeFileSync(path.join(other, file), content);
 			}
 			const cargo = ["crates/Cargo.toml", "crates/b/Cargo.toml"];
-			const areas = classify(["crates/b/src/lib.rs"], other, () => cargo);
+			const areas = classify(
+				["crates/b/src/lib.rs"],
+				other,
+				() => cargo,
+				() => [],
+			);
 			expect(areaNames(areas)).toEqual(["rust:crates", "heavy:./packages/protocol"]);
 			expect(untestedRust(areas)).toEqual([]);
 			// Without a Cargo.toml under crates/, there's nothing for the rust profile to check.
-			expect(areaNames(classify(["crates/notes.txt"], root, () => manifests))).toEqual(["ts"]);
+			expect(areaNames(fixtureClassify(["crates/notes.txt"]))).toEqual(["ts"]);
 		} finally {
 			rmSync(other, { recursive: true, force: true });
 		}

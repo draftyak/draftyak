@@ -6,6 +6,7 @@ import {
 	aiProviderV1,
 	checkDraftOutcome,
 	DraftOutcome,
+	ModelId,
 } from "../src/ai-provider-v1.ts";
 import { validateDraftOutput } from "../src/draft-output.ts";
 import { checkToolCall, checkToolResult } from "../src/extension.ts";
@@ -95,6 +96,34 @@ const schema = committed("schemas/ai-provider-v1.schema.json");
 const document = new Validator(schema, "2020-12", false);
 
 describe("ai-provider-v1", () => {
+	it("keeps visible ASCII model boundaries and refuses terminators at every model entry point", () => {
+		const accepted = ["!", "~", "x".repeat(256), "model-2026-10-20", "llama3.1:8b"];
+		const refused = [
+			"",
+			"x".repeat(257),
+			"space model",
+			...["\n", "\r", "\r\n", "\u2028", "\u2029"].map((end) => `model${end}`),
+		];
+		for (const model of [...accepted, ...refused]) {
+			const expected = accepted.includes(model);
+			expect(ModelId.safeParse(model).success).toBe(expected);
+			for (const name of ["ai_probe", "ai_draft_generate"] as const) {
+				expect(
+					checkToolCall(aiProviderV1, { name, arguments: { ...calls[name].input, model } }).ok,
+				).toBe(expected);
+			}
+			expect(
+				checkToolResult(aiProviderV1, "ai_models_list", {
+					structuredContent: { models: [{ id: model }] },
+				}).ok,
+			).toBe(expected);
+			for (const value of Object.values(outcomes))
+				expect(DraftOutcome.safeParse({ ...value, model }).success).toBe(expected);
+			expect(DraftOutcome.safeParse({ ...outcomes.refusal, recommendedModel: model }).success).toBe(
+				expected,
+			);
+		}
+	});
 	it("is io.github.draftyak/ai-provider version 1 with §4's four tools, none optional", () => {
 		expect(aiProviderV1.id).toBe(AI_PROVIDER_V1);
 		expect(aiProviderV1.id).toBe("io.github.draftyak/ai-provider");

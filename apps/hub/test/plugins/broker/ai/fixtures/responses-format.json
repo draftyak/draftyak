@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "description": "A model's draft: the reply body and notes for the owner.",
+  "properties": {
+    "body": {
+      "maxLength": 8000,
+      "type": "string"
+    },
+    "contextRefs": {
+      "items": {
+        "enum": [
+          "c1",
+          "c2",
+          "c3"
+        ],
+        "type": "string"
+      },
+      "maxItems": 3,
+      "type": "array"
+    },
+    "needsOwnerInput": {
+      "items": {
+        "maxLength": 300,
+        "type": "string"
+      },
+      "maxItems": 5,
+      "type": "array"
+    },
+    "ownerNotes": {
+      "maxLength": 1000,
+      "type": "string"
+    },
+    "suspectedInstructions": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "body",
+    "ownerNotes",
+    "needsOwnerInput",
+    "suspectedInstructions",
+    "contextRefs"
+  ],
+  "title": "DraftOutputV1",
+  "type": "object"
+}

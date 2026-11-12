@@ -98,6 +98,10 @@ export const EmailAddress: z.ZodString = patterned(
 		"quotes or invisible characters, and a lower-case DNS domain with IDN labels as A-labels.",
 });
 
+// A send snapshot holds at most this many of each email list, so a draft does too, and the hub
+// keeps as many of each list in mail it parses.
+export const MAX_EMAIL_LIST_ITEMS = 100;
+
 export const Mailbox: z.ZodObject<
 	{ address: Untrusted<typeof EmailAddress>; name: z.ZodNullable<UntrustedTextSchema> },
 	z.core.$strict

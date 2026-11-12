@@ -320,7 +320,11 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 			},
 			run: [
 				"filters=()",
-				'while IFS= read -r filter; do filters+=("--filter=$filter"); done <<< "$HEAVY"',
+				"while IFS= read -r filter; do",
+				'  if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
+				'done <<< "$HEAVY"',
+				"# The template smoke packs and installs, so it runs only for its own packages and global",
+				"# changes, on main and on PRs into main.",
 				'if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then',
 				'  filters+=("--filter=!./packages/create-plugin")',
 				"fi",
@@ -772,12 +776,32 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 					...(job === "full"
 						? { if: "needs.changes.outputs.rust != ''" }
 						: job === "windows"
-							? { if: "hashFiles('crates/Cargo.toml') != ''" }
+							? { if: `hashFiles('crates/Cargo.toml') != '' || ${nativeSelected}` }
 							: {}),
 					with: { toolchain: rustToolchain, components: "clippy, rustfmt" },
 				};
 				if (rustSteps.length !== 1 || !isDeepStrictEqual(rustSteps[0], expectedRust))
 					report(["jobs", job, "steps"], "must preserve the pinned native Rust setup");
+				if (job === "windows") {
+					const nativeSteps = asList(definition.steps).map(asMap);
+					const rustCaches = nativeSteps.filter((step) =>
+						String(step.uses).startsWith("Swatinem/rust-cache@"),
+					);
+					const expectedRustCache: YamlMap = {
+						uses: `Swatinem/rust-cache@${actionPins["Swatinem/rust-cache"]?.[0]}`,
+						if: nativeSelected,
+						with: { workspaces: "crates" },
+					};
+					if (
+						rustCaches.length !== 1 ||
+						!isDeepStrictEqual(rustCaches[0], expectedRustCache) ||
+						nativeSteps.indexOf(rustSteps[0] ?? {}) >= nativeSteps.indexOf(rustCaches[0] ?? {})
+					)
+						report(
+							["jobs", job, "steps"],
+							"must preserve the pinned native Rust cache after setup",
+						);
+				}
 				for (const step of asList(definition.steps).map(asMap)) {
 					const ordinaryCondition = Object.hasOwn(asMap(step.env), "SPIKES")
 						? "needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''"

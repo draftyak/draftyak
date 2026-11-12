@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { Flag, FlagCode, FlagsError, flagsHash } from "../flags.ts";
 import { Sha256Hex, Ulid, UtcMs } from "../scalars.ts";
-import { type SendSnapshotV1, sendWindow } from "../snapshot.ts";
+import { CurrentSendSnapshotV1, type SendSnapshotV1, sendWindow } from "../snapshot.ts";
 import { baseFields, type DeviceStatementBase, withLifetime } from "./common.ts";
 export interface SendStatement extends DeviceStatementBase {
 	readonly outbox: string;
@@ -64,8 +64,9 @@ export function checkFlagsAcked(statement: SendStatement, flags: readonly Flag[]
 export function checkSendWindow(statement: SendStatement, snapshot: SendSnapshotV1): boolean {
 	try {
 		const parsed = SendStatement.safeParse(statement);
-		if (!parsed.success) return false;
-		const window = sendWindow(snapshot, parsed.data.iat);
+		const current = CurrentSendSnapshotV1.safeParse(snapshot);
+		if (!parsed.success || !current.success) return false;
+		const window = sendWindow(current.data, parsed.data.iat);
 		return (
 			parsed.data.notBefore === (window.notBefore ?? null) &&
 			parsed.data.deliverBy === window.deliverBy

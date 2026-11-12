@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "noCheck": true,
+    "noResolve": true,
+    "types": [],
+    "rootDir": ".",
+    "outDir": "dist",
+    "tsBuildInfoFile": ".cache/declarations.tsbuildinfo"
+  },
+  "include": ["doctor.ts", "diagnostics.ts", "node-version.ts", "probe.ts", "synced-folders.ts"]
+}

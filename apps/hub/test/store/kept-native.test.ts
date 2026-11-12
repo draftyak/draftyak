@@ -21,11 +21,13 @@ afterEach(() => {
 const reported = (db: Database.Database) => ({
 	journalMode: db.pragma("journal_mode", { simple: true }),
 	synchronous: db.pragma("synchronous", { simple: true }),
+	fullfsync: db.pragma("fullfsync", { simple: true }),
+	checkpointFullfsync: db.pragma("checkpoint_fullfsync", { simple: true }),
 	recursiveTriggers: db.pragma("recursive_triggers", { simple: true }),
 	tempStore: db.pragma("temp_store", { simple: true }),
 });
 
-it("overrides the native build's synchronous, temp_store and recursive_triggers defaults", () => {
+it("overrides the native build's sync, temp_store and recursive_triggers defaults", () => {
 	// ADR 0002's keyed-only control uses the same file, key and pinned binding,
 	// without the production opener's connection settings.
 	const keyedOnly = new Database(f.filename, { nativeBinding, fileMustExist: true });
@@ -43,6 +45,8 @@ it("overrides the native build's synchronous, temp_store and recursive_triggers 
 		expect(reported(keyedOnly)).toEqual({
 			journalMode: "wal",
 			synchronous: 1,
+			fullfsync: 0,
+			checkpointFullfsync: 0,
 			recursiveTriggers: 0,
 			tempStore: 0,
 		});
@@ -56,6 +60,8 @@ it("overrides the native build's synchronous, temp_store and recursive_triggers 
 		expect(reported(opened)).toEqual({
 			journalMode: "wal",
 			synchronous: 2,
+			fullfsync: 1,
+			checkpointFullfsync: 1,
 			recursiveTriggers: 1,
 			tempStore: 2,
 		});

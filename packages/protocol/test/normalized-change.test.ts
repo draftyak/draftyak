@@ -16,6 +16,27 @@ const schema = committed("schemas/normalized-change-v1.schema.json");
 const loneSurrogate = "DYTEST \ud83d";
 
 describe("NormalizedChange", () => {
+	it("requires explicit sharing independently from the external conversation fact", () => {
+		const { shared: _, ...legacy } = changes.conversation;
+		const refused = [
+			legacy,
+			...[null, "false", 0, [], {}].map((shared) => ({ ...changes.conversation, shared })),
+		];
+		agree(
+			NormalizedChange,
+			schema,
+			[
+				{ ...changes.conversation, external: false, shared: true },
+				{ ...changes.conversation, external: true, shared: false },
+			],
+			refused,
+		);
+		for (const value of [...refused, { ...changes.conversation, shared: undefined }]) {
+			expect(NormalizedChange.safeParse(value).success).toBe(false);
+			expect(PluginChange.safeParse(value).success).toBe(false);
+		}
+	});
+
 	it("accepts the email and chat changes of §3 in zod and the exported schema", () => {
 		const types = CHAT_CHANNEL_TYPES.map((type) => withMember(changes.conversation, "type", type));
 		agree(NormalizedChange, schema, [...accepted, ...types], []);

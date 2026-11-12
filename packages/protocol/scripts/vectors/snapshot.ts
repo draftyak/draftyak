@@ -172,6 +172,14 @@ export function snapshotVectors(): SnapshotVector[] {
 			...chat,
 			chat: { ...(chat.chat as object), threadTs: "1792000000.000001", broadcast: true },
 		}),
+		accepted("chat-shared-false", {
+			...chat,
+			chat: { ...(chat.chat as object), shared: false },
+		}),
+		accepted("chat-shared-true", {
+			...chat,
+			chat: { ...(chat.chat as object), shared: true },
+		}),
 		accepted("idn-a-label", changed(["email", "to"], ["User@xn--bcher-kva.example"])),
 		accepted("mixed-script-a-label", changed(["email", "to"], ["User@xn--pple-43d.example"])),
 		accepted("unicode-local-part", changed(["email", "to"], ["Grüße@example.test"])),
@@ -239,8 +247,14 @@ export function snapshotVectors(): SnapshotVector[] {
 		["wrong-channel-field", ["chat"], null],
 		["unknown-kind", ["kind"], "sms"],
 		["empty-authors", ["source", "authors"], []],
+		["positional-body", ["body"], Object.values(base.body)],
+		["object-form-kind", ["kind"], { email: null }],
+		["positional-schedule", ["schedule"], ["now"]],
+		["positional-author", ["source", "authors", "0"], ["owner", SNAPSHOT_IDS.author]],
+		["object-form-author-kind", ["source", "authors", "0", "kind"], { owner: null }],
 	];
 	for (const [id, path, value] of bad) result.push(rejected(id, changed(path, value)));
+	result.push(rejected("positional", Object.values(base)));
 	const scheduled = scheduleAt(SNAPSHOT_IAT);
 	result.push(
 		accepted("shared-zone-alias", { ...base, schedule: scheduleAt(SNAPSHOT_IAT, "EST") }),
@@ -511,6 +525,16 @@ export function snapshotVectors(): SnapshotVector[] {
 			chat: { ...(chat.chat as object), channelName: "x".repeat(256) },
 		}),
 	);
+	for (const [id, shared] of [
+		["null", null],
+		["string", "false"],
+		["number", 0],
+		["array", []],
+		["object", {}],
+	] as const)
+		result.push(
+			rejected(`chat-shared-${id}`, { ...chat, chat: { ...(chat.chat as object), shared } }),
+		);
 	return result;
 }
 export function generate(): VectorFile[] {

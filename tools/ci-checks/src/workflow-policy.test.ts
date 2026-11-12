@@ -48,7 +48,8 @@ describe("merged crates verification", () => {
 
 	it("keeps Windows Rust available to the default verification beyond native selection", () => {
 		const source = read(file).replaceAll("\r\n", "\n");
-		const condition = "        if: hashFiles('crates/Cargo.toml') != ''\n";
+		const condition =
+			"        if: hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'\n";
 		expect(source.split(condition)).toHaveLength(2);
 		const changed = source.replace(
 			condition,
@@ -1581,6 +1582,49 @@ describe("workflow policy", () => {
 	});
 });
 
+describe("combined Windows Rust setup contract", () => {
+	const file = ".github/workflows/ci.yml";
+	const condition =
+		"hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'";
+	it.each([
+		"hashFiles('crates/Cargo.toml') != '' && needs.changes.outputs.native-transport == 'true'",
+		"hashFiles('crates/Cargo.toml') != ''",
+		"needs.changes.outputs.native-transport == 'true'",
+		"true",
+		"false",
+	])("refuses a narrowed or arbitrary Windows Rust condition: %s", (replacement) => {
+		const source = read(file).replaceAll("\r\n", "\n");
+		const mutated = source.replace(condition, replacement);
+		expect(mutated).not.toBe(source);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"pinned native Rust setup",
+		);
+	});
+	it("refuses omitting the Windows Rust condition", () => {
+		const source = read(file).replaceAll("\r\n", "\n");
+		const mutated = source.replace(`        if: ${condition}\n`, "");
+		expect(mutated).not.toBe(source);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"pinned native Rust setup",
+		);
+	});
+	it("refuses putting the native Rust cache before its pinned setup", () => {
+		const source = read(file).replaceAll("\r\n", "\n");
+		const windows = source.slice(source.indexOf("\n  windows:\n"), source.indexOf("\n  macos:\n"));
+		const setup = windows.match(
+			/ {6}- uses: dtolnay\/rust-toolchain@[^\n]*\n[\s\S]*?(?= {6}- )/,
+		)?.[0];
+		const cache = windows.match(/ {6}- uses: Swatinem\/rust-cache@[^\n]*\n[\s\S]*?(?= {6}- )/)?.[0];
+		if (!setup || !cache) throw new Error("missing native Rust setup/cache fixture");
+		expect(windows).toContain(setup + cache);
+		const mutated = source.replace(setup + cache, cache + setup);
+		expect(mutated).not.toBe(source);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"pinned native Rust cache after setup",
+		);
+	});
+});
+
 describe("selected browser provisioning contract", () => {
 	const file = ".github/workflows/ci.yml";
 	it.each([
@@ -1920,7 +1964,7 @@ describe("one-task CI heavy shards", () => {
 		],
 		[
 			"filter loss",
-			'          while IFS= read -r filter; do filters+=("--filter=$filter"); done <<< "$HEAVY"\n',
+			'          while IFS= read -r filter; do\n            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi\n          done <<< "$HEAVY"\n',
 			"",
 		],
 		["parallel execution", "test:heavy --concurrency=1", "test:heavy --concurrency=2"],
@@ -2015,5 +2059,67 @@ describe("one-task CI heavy shards", () => {
 		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
 			"must preserve required job execution controls",
 		);
+	});
+});
+
+describe("ordinary heavy execution contract", () => {
+	const file = ".github/workflows/ci.yml";
+	it.each([
+		["nonempty selection guard", " && needs.changes.outputs.ordinary-heavy != ''", ""],
+		[
+			"ordinary package binding",
+			"        id: heavy-test\n        env:\n          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+			"        id: heavy-test\n        env:\n          HEAVY: ${{ needs.changes.outputs.heavy }}",
+		],
+		[
+			"ordinary package binding removal",
+			"        id: heavy-test\n        env:\n          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}\n",
+			"        id: heavy-test\n        env:\n",
+		],
+		[
+			"template smoke selection",
+			"SMOKE: ${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}",
+			"SMOKE: 'true'",
+		],
+		["strict skip value", "      DRAFTYAK_STRICT_SKIPS: '1'", "      DRAFTYAK_STRICT_SKIPS: '0'"],
+		["strict skip removal", "    env:\n      DRAFTYAK_STRICT_SKIPS: '1'\n", ""],
+		[
+			"package filter loop removal",
+			'          while IFS= read -r filter; do\n            if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi\n          done <<< "$HEAVY"\n',
+			"",
+		],
+		[
+			"blank package filter guard",
+			'if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
+			'if false; then filters+=("--filter=$filter"); fi',
+		],
+		[
+			"template smoke exclusion removal",
+			'          if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then\n            filters+=("--filter=!./packages/create-plugin")\n          fi\n',
+			"",
+		],
+		["template smoke exclusion inversion", 'if [ "$SMOKE" != true ]', 'if [ "$SMOKE" == true ]'],
+		[
+			"execution shell",
+			"        id: heavy-test\n",
+			"        id: heavy-test\n        shell: echo {0}\n",
+		],
+		[
+			"working directory",
+			"        id: heavy-test\n",
+			"        id: heavy-test\n        working-directory: elsewhere\n",
+		],
+		[
+			"soft failure",
+			"        id: heavy-test\n",
+			"        id: heavy-test\n        continue-on-error: true\n",
+		],
+	])("refuses changed %s", (_, before, after) => {
+		const source = read(file).replaceAll("\r\n", "\n");
+		expect(checkWorkflow(file, source, toolchain)).toEqual([]);
+		const block = ciJobSource(source, "heavy");
+		expect(block.split(before)).toHaveLength(2);
+		const changed = ciJobChange(source, "heavy", before, after);
+		expect(checkWorkflow(file, changed, toolchain).join("\n")).toContain("must preserve");
 	});
 });

@@ -66,6 +66,7 @@ describe("heavyVitestConfig", () => {
 		here: { description: "always", detect: () => true },
 	};
 	const heavyConfig = (mode: string, strict = "", ci?: string) => {
+		vi.stubEnv("CI", "");
 		vi.stubEnv("DRAFTYAK_STRICT_SKIPS", strict);
 		if (ci !== undefined) vi.stubEnv("CI", ci);
 		try {

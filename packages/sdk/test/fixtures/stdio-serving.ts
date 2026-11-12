@@ -1,3 +1,4 @@
+import { markStdioFixtureReady } from "../stdio-readiness.ts";
 import {
 	canonicalToolsV1,
 	TOOL_EXTENSION_ID,
@@ -29,3 +30,5 @@ serve({
 		},
 	],
 });
+
+markStdioFixtureReady();
