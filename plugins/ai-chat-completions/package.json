@@ -20,7 +20,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "draftyak.plugin.json"
   ],
   "scripts": {
     "typecheck": "tsc -b",
@@ -30,10 +31,13 @@
     "prepack": "tsdown"
   },
   "dependencies": {
-    "@draftyak/protocol": "workspace:*"
+    "@draftyak/protocol": "workspace:*",
+    "@draftyak/sdk": "workspace:*"
   },
   "devDependencies": {
+    "@draftyak/fakes": "workspace:*",
     "@draftyak/hub": "workspace:*",
+    "@draftyak/plugin-testkit": "workspace:*",
     "fast-check": "4.10.2",
     "tsdown": "0.23.1"
   }
