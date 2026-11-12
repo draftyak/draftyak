@@ -304,7 +304,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 				receipt.mode === mode &&
 				receipt.networkAllowed === false &&
 				receipt.nativeAddonPermission === true &&
-				receipt.schemas === 18,
+				receipt.schemas === 19,
 			"Native fixture success receipt",
 		).toBe(true);
 		// Stderr stays opaque. Allowing native addons does not establish OS isolation.
