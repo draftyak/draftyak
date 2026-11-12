@@ -65,6 +65,12 @@ import {
 	type MessagesHttpBinding,
 	type MessagesHttpBindingInput,
 } from "./messages-http.ts";
+import {
+	copyMockSocketUpstreams,
+	createMockSocketManager,
+	type MockSocketManager,
+	type MockSocketUpstream,
+} from "./mock-socket-upstream.ts";
 import { matchRequest } from "./policy.ts";
 import {
 	copyCompatibleHttpInputs,
@@ -184,6 +190,7 @@ export function createMockHost(
 		readonly account?: MockAccount;
 		readonly instance: string;
 		readonly upstreams: readonly Fake[];
+		readonly socketUpstreams?: readonly MockSocketUpstream[];
 		readonly secrets?: Readonly<Record<string, string>>;
 		readonly responsesHttp?: readonly ResponsesHttpBindingInput[];
 		readonly compatibleHttp?: readonly CompatibleHttpBindingInput[];
@@ -192,6 +199,7 @@ export function createMockHost(
 	controls: { readonly entropy?: () => Uint8Array } = {},
 ): {
 	readonly host: MockHost;
+	settled(): Promise<void>;
 	lookup<T>(
 		action: (signal: AbortSignal, permit?: string) => Promise<T>,
 		kind?: ToolKind,
@@ -250,6 +258,19 @@ export function createMockHost(
 		responsesBindings.push(issued.binding);
 	}
 	Object.freeze(responsesBindings);
+	const socketSlot = Object.getOwnPropertyDescriptor(options, "socketUpstreams");
+	if (socketSlot && (!socketSlot.enumerable || !Object.hasOwn(socketSlot, "value")))
+		throw new MockHubError("INVALID_SOCKET_UPSTREAM");
+	const socketInputs =
+		socketSlot?.value === undefined ? undefined : copyMockSocketUpstreams(socketSlot.value);
+	if (
+		socketInputs !== undefined &&
+		socketInputs.length > 0 &&
+		(manifest.kind !== "channel" ||
+			!("profile" in manifest.egress) ||
+			manifest.egress.profile !== "slack-v1")
+	)
+		throw new MockHubError("INVALID_SOCKET_PROFILE");
 	const generation = Symbol();
 	const account = options.account ? Object.freeze({ ...options.account }) : undefined;
 	if (!Ulid.safeParse(options.instance).success) throw new MockHubError("INVALID_INSTANCE");
@@ -907,6 +928,7 @@ export function createMockHost(
 			}
 		}
 	};
+	let socketManager: MockSocketManager | undefined;
 	const base = memoryHost(async (method, params, signal) => {
 		if (closed) return deny("HOST_CLOSED");
 		if (disabled) return deny("PLUGIN_DISABLED");
@@ -916,6 +938,21 @@ export function createMockHost(
 		)
 			return deny("TOOL_METHOD_FORBIDDEN");
 		switch (method) {
+			case "host/ws.open":
+				if (!socketManager) return deny("METHOD_UNSUPPORTED", "UNSUPPORTED");
+				return socketManager.open(
+					(params as { url: string }).url,
+					signal,
+					attempts.getStore()?.signal,
+				);
+			case "host/ws.send": {
+				if (!socketManager) return deny("METHOD_UNSUPPORTED", "UNSUPPORTED");
+				const request = params as { socketId: string; envelopeId: string };
+				return socketManager.ack(request.socketId, request.envelopeId, signal);
+			}
+			case "host/ws.close":
+				if (!socketManager) return deny("METHOD_UNSUPPORTED", "UNSUPPORTED");
+				return socketManager.closeSocket((params as { socketId: string }).socketId);
 			case "host/fetch": {
 				const request = params as HostFetchParams;
 				const scope =
@@ -969,6 +1006,14 @@ export function createMockHost(
 				return deny("METHOD_UNSUPPORTED", "UNSUPPORTED");
 		}
 	});
+	try {
+		socketManager = createMockSocketManager(socketInputs, upstreams, (message) =>
+			base.notify(message),
+		);
+	} catch (error) {
+		base.close();
+		throw error;
+	}
 	const host: MockHost = {
 		async request<M extends HostMethod>(
 			method: M,
@@ -1064,6 +1109,7 @@ export function createMockHost(
 			for (const scope of retained) retire(scope, new HostError("DENIED"));
 			for (const cancel of streams) cancel();
 			streams.clear();
+			socketManager?.abort();
 			base.close();
 			kv.clear();
 			tickets.clear();
@@ -1075,6 +1121,7 @@ export function createMockHost(
 	};
 	return {
 		host,
+		settled: () => socketManager?.settled() ?? Promise.resolve(),
 		async lookup<T>(
 			action: (signal: AbortSignal, permit?: string) => Promise<T>,
 			kind?: ToolKind,

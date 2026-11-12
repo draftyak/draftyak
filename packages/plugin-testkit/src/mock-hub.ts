@@ -9,6 +9,7 @@ import {
 import type { PluginInstance } from "@draftyak/sdk";
 import { createMockHost } from "./host.ts";
 import { createInMemory } from "./in-memory.ts";
+import { copyMockSocketUpstreams } from "./mock-socket-upstream.ts";
 import { createProcess } from "./process.ts";
 import {
 	copyCompatibleHttpInputs,
@@ -30,7 +31,7 @@ function freeze<T>(value: T): T {
 
 function ownOption(
 	options: MockHubOptions,
-	name: "instance" | "responsesHttp" | "compatibleHttp" | "messagesHttp",
+	name: "instance" | "responsesHttp" | "compatibleHttp" | "messagesHttp" | "socketUpstreams",
 	code: string,
 ): unknown {
 	const slot = Object.getOwnPropertyDescriptor(options, name);
@@ -84,6 +85,9 @@ export function createMockHub(options: MockHubOptions): MockHub {
 		![Object.prototype, null].includes(Object.getPrototypeOf(options))
 	)
 		throw new MockHubError("INVALID_OPTIONS");
+	const socketSupplied = ownOption(options, "socketUpstreams", "INVALID_SOCKET_UPSTREAM");
+	const socketBindings =
+		socketSupplied === undefined ? undefined : copyMockSocketUpstreams(socketSupplied);
 	const messagesSupplied = ownOption(options, "messagesHttp", "INVALID_MESSAGES_BINDINGS");
 	const messagesBindings =
 		messagesSupplied === undefined ? undefined : copyMessagesHttpInputs(messagesSupplied);
@@ -129,6 +133,7 @@ export function createMockHub(options: MockHubOptions): MockHub {
 		...(account ? { account } : {}),
 		instance: instance.id,
 		upstreams: options.upstreams,
+		...(socketBindings === undefined ? {} : { socketUpstreams: socketBindings }),
 		...(options.secrets ? { secrets: options.secrets } : {}),
 		...(bindings ? { responsesHttp: bindings } : {}),
 		...(compatibleBindings === undefined ? {} : { compatibleHttp: compatibleBindings }),
@@ -206,7 +211,13 @@ export function createMockHub(options: MockHubOptions): MockHub {
 			closed = true;
 			void (async () => {
 				bridge.host.close();
-				if ("close" in memory && typeof memory.close === "function") await memory.close();
+				const outcomes = await Promise.allSettled([
+					bridge.settled(),
+					(async () => {
+						if ("close" in memory && typeof memory.close === "function") await memory.close();
+					})(),
+				]);
+				for (const result of outcomes) if (result.status === "rejected") throw result.reason;
 			})().then(outcome.resolve, outcome.reject);
 			return closing;
 		},
