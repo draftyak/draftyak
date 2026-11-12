@@ -104,6 +104,11 @@ function expectComponentSchemas(store: HubStore): void {
 			for (const table of tables)
 				expect(db.get(`SELECT count(*) AS n FROM main.${table}`)).toEqual({ n: 0 });
 		}
+		expect(db.all("SELECT name FROM main._migrations_tickets ORDER BY name")).toEqual([
+			{ name: "0001_send_attempts" },
+			{ name: "0002_gmail_receipts" },
+		]);
+		expect(db.get("SELECT count(*) AS n FROM main.native_gmail_send_receipts")).toEqual({ n: 0 });
 	});
 }
 /** Another holder of the database key, working on the closed file directly. */
