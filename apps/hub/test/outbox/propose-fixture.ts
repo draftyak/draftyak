@@ -1,13 +1,16 @@
 import path from "node:path";
+import type { Account } from "@draftyak/protocol/entities/account";
 import type { DraftContent } from "@draftyak/protocol/entities/draft";
 import type { Flag } from "@draftyak/protocol/flags";
 import type { CurrentSendSnapshotV1, Schedule } from "@draftyak/protocol/snapshot";
+import { type AccountRecord, NativeAccounts } from "../../src/accounts/records.ts";
 import {
 	type DraftBinding,
 	NativeDraftRevisions,
 	type NativeRevision,
 } from "../../src/drafts/revisions.ts";
-import { EVENT_MIGRATIONS } from "../../src/events/log.ts";
+import { EVENT_MIGRATIONS, EventLog } from "../../src/events/log.ts";
+import { WorkDatabase } from "../../src/jobs/database.ts";
 import { JOB_MIGRATIONS } from "../../src/jobs/queue.ts";
 import type { TimerClock } from "../../src/kernel/clock.ts";
 import { newId } from "../../src/kernel/ids.ts";
@@ -25,6 +28,7 @@ import * as native from "../authz/native-fixture.ts";
 export { native };
 export interface Candidate {
 	readonly id: string;
+	readonly account: Account;
 	readonly binding: DraftBinding;
 	readonly current: NativeRevision;
 	readonly input: NativeProposalInput;
@@ -40,6 +44,15 @@ export interface Fixture {
 	readonly revisions: NativeDraftRevisions;
 	readonly providers: NativeProposalProviders | undefined;
 	readonly target: NativeOutboxProposals;
+	readonly accounts: NativeAccounts;
+	readonly accountDatabase: WorkDatabase;
+	readAccount(accountId: string, userId?: string): AccountRecord | undefined;
+	seedAccount(value: Account): AccountRecord;
+	replaceAccount(
+		accountId: string,
+		change: (value: Account) => Account,
+		userId?: string,
+	): AccountRecord;
 	candidate(input?: CandidateOptions): Candidate;
 	proposal(input?: CandidateOptions): ProposalCandidate;
 	replaceTarget(dataProviders?: NativeProposalProviders | null): NativeOutboxProposals;
@@ -52,6 +65,8 @@ export interface ProposalFixtureOptions {
 	readonly providers?: NativeProposalProviders | null;
 }
 export interface CandidateOptions {
+	/** A real account seed transform; null leaves this candidate's account absent. */
+	readonly account?: ((value: Account) => Account) | null;
 	readonly flags?: readonly Flag[];
 	readonly channel?: "email" | "chat";
 	readonly schedule?: Schedule;
@@ -64,14 +79,16 @@ export interface CandidateOptions {
 
 /** Real native authority/storage; the explicitly labelled providers below supply synthetic DATA only. */
 export async function fixture(options: ProposalFixtureOptions = {}): Promise<Fixture> {
-	const migrations = {
+	const migrations: Record<string, string> = {
 		jobs: JOB_MIGRATIONS,
 		events: EVENT_MIGRATIONS,
 		revisions: path.resolve(import.meta.dirname, "../../src/drafts/migrations"),
 		outbox: OUTBOX_MIGRATIONS,
+		accounts: path.resolve(import.meta.dirname, "../../src/accounts/migrations"),
 	};
-	for (const key of Object.keys(options.extraMigrations ?? {}))
-		if (Object.hasOwn(migrations, key)) throw new Error("DYTEST migration collision");
+	for (const [key, directory] of Object.entries(options.extraMigrations ?? {}))
+		if (Object.hasOwn(migrations, key) && migrations[key] !== directory)
+			throw new Error("DYTEST migration collision");
 	const f = await native.fixture({ ...migrations, ...options.extraMigrations });
 	const time = { wall: Date.now(), mono: 0 };
 	const clock: TimerClock = {
@@ -94,6 +111,23 @@ export async function fixture(options: ProposalFixtureOptions = {}): Promise<Fix
 	let target: NativeOutboxProposals | undefined;
 	try {
 		const device = await native.bootstrap(f);
+		const accountDatabase = new WorkDatabase(f.store),
+			accountEvents = new EventLog(accountDatabase, () => time.wall),
+			accounts = new NativeAccounts(accountDatabase, accountEvents, f.audit, () => time.wall);
+		const readAccount = (accountId: string, userId = native.owner(f)) =>
+			accountDatabase.write((scope) => accounts.get(scope, userId, accountId));
+		const seedAccount = (value: Account) =>
+			accountDatabase.write((scope) => accounts.create(scope, value));
+		const replaceAccount = (
+			accountId: string,
+			change: (value: Account) => Account,
+			userId = native.owner(f),
+		) =>
+			accountDatabase.write((scope) => {
+				const previous = accounts.get(scope, userId, accountId);
+				if (!previous) throw new Error("DYTEST current account required");
+				return accounts.replace(scope, change(previous.account), previous.generation);
+			});
 		revisions = new NativeDraftRevisions(f.store, f.audit, f.key, clock);
 		const storedRevisions = revisions;
 		const TEST_ONLY_NATIVE_FACTS = new Map<string, NativeProposalFacts>();
@@ -131,6 +165,24 @@ export async function fixture(options: ProposalFixtureOptions = {}): Promise<Fix
 					conversationId: channel === "email" ? null : newId(time.wall),
 					channel,
 				};
+			const common = {
+				id: accountId,
+				userId: native.owner(f),
+				alias: "dytest-account",
+				mode: "full" as const,
+				status: "active" as const,
+				deletionDeadline: null,
+				historyLimitDays: 30,
+				disclosureVersion: 1,
+				createdAt: time.wall,
+				pluginInstanceId: newId(time.wall),
+			};
+			const defaultAccount: Account =
+				channel === "email"
+					? { ...common, channel, address: "dytest-owner@example.invalid" }
+					: { ...common, channel, teamId: "DYTEST-team", selfUserId: "DYTEST-owner" };
+			const account = input.account?.(defaultAccount) ?? defaultAccount;
+			if (input.account !== null) seedAccount(account);
 			const content: DraftContent =
 				channel === "email"
 					? {
@@ -205,6 +257,7 @@ export async function fixture(options: ProposalFixtureOptions = {}): Promise<Fix
 			}
 			return {
 				id,
+				account,
 				binding,
 				current,
 				input: {
@@ -226,6 +279,11 @@ export async function fixture(options: ProposalFixtureOptions = {}): Promise<Fix
 			clock,
 			revisions: storedRevisions,
 			providers,
+			accounts,
+			accountDatabase,
+			readAccount,
+			seedAccount,
+			replaceAccount,
 			get target() {
 				return currentTarget;
 			},

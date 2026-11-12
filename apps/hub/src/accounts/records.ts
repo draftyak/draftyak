@@ -25,6 +25,8 @@ export class AccountError extends Error {
 const unavailable = (): AccountError => new AccountError();
 const sqlFor = WorkDatabase.prototype.sql;
 const assertTransaction = WorkDatabase.prototype.assertTransaction;
+const assertReadTransaction = WorkDatabase.prototype.assertReadTransaction;
+const apply = Reflect.apply;
 const abort = WorkDatabase.prototype.abort;
 const appendEvent = EventLog.prototype.append;
 const appendAudit = AuditChain.prototype.append;
@@ -175,7 +177,7 @@ export class NativeAccounts {
 		accountId: string,
 	): AccountRecord | undefined {
 		try {
-			assertTransaction.call(this.#database, sql);
+			apply(assertReadTransaction, this.#database, [sql]);
 			const row = read(sql, userId, accountId);
 			return !row || row.json === null ? undefined : snapshot(row);
 		} catch {
