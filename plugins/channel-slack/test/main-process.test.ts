@@ -1,5 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { buildSlackMain, type MainProcess, startMain } from "./helpers/main-process.ts";
+import { productionPollCases } from "./helpers/production-poll-cases.ts";
+import { productionSocketCases } from "./helpers/production-socket-cases.ts";
 
 let entry: string;
 const children: MainProcess[] = [];
@@ -49,3 +51,6 @@ describe("built Slack main process", () => {
 		expect(child.errors).toEqual([]);
 	});
 });
+
+productionSocketCases(() => entry);
+productionPollCases(() => entry);
