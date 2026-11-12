@@ -26,6 +26,8 @@ export interface ParsedMail {
 	readonly cc: readonly ParsedMailbox[];
 	readonly bcc: readonly ParsedMailbox[];
 	readonly replyTo: readonly ParsedMailbox[];
+	/** Original Reply-To field count, including empty or unreadable values. */
+	readonly replyToHeaderCount?: number;
 	readonly subject: string;
 	readonly messageId?: string;
 	readonly inReplyTo?: string;

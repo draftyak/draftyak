@@ -103,6 +103,15 @@ export function abandonNativeSendClassification(handle: PendingNativeSendClassif
 export interface NativeHttpSendTransport {
 	send(redemption: SendRedemption, signal: AbortSignal): Promise<NativeSendObservation>;
 	close(): void;
+	/** Closes admission and joins only this transport's owned work and cleanup. */
+	drain(): Promise<void>;
+}
+interface OwnedSendWork {
+	readonly done: Promise<void>;
+	cleanup: () => boolean;
+	track<T>(task: Promise<T>): Promise<T>;
+	seal(): void;
+	retryCleanup(): boolean;
 }
 const useCredential = CredentialVault.prototype.withCredential,
 	describeCredential = CredentialVault.prototype.describe;
@@ -148,21 +157,24 @@ function route(render: NativeDispatchRequest): URL {
 		kind = render.credential.binding.kind;
 	if (
 		render.method !== "POST" ||
-		render.contentType !== "application/json" ||
 		render.headers.length !== 1 ||
 		render.headers[0]?.[0] !== "content-type" ||
 		render.headers[0]?.[1] !== render.contentType ||
 		render.credential.binding.ownerKind !== "account" ||
 		url.protocol !== "https:" ||
+		url.href !== render.url ||
 		url.port ||
-		url.search ||
 		url.hash ||
 		url.username ||
 		url.password ||
 		!(
-			(kind === "slack-token" && url.href === "https://slack.com/api/chat.postMessage") ||
+			(kind === "slack-token" &&
+				url.href === "https://slack.com/api/chat.postMessage" &&
+				render.contentType === "application/json") ||
 			(kind === "gmail-oauth" &&
-				url.href === "https://gmail.googleapis.com/gmail/v1/users/me/messages/send")
+				url.href ===
+					"https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart" &&
+				/^multipart\/related; boundary="[A-Za-z0-9_-]{16,64}"(?![\s\S])/.test(render.contentType))
 		)
 	)
 		throw refused();
@@ -200,203 +212,295 @@ export function createNativeHttpSendTransport(options: {
 	}
 	if (policy.allowLocal) throw refused();
 	const active = new Set<{ cancel: () => void }>();
+	const owned = new Set<OwnedSendWork>();
 	let closed = false;
-	return Object.freeze({
-		async send(
-			redemption: SendRedemption,
-			inputSignal: AbortSignal,
-		): Promise<NativeSendObservation> {
-			if (closed || active.size >= HOST_MAX_ACTIVE_REQUESTS) throw refused();
-			const signal = captureSignal(inputSignal),
-				controller = new AbortController(),
-				timer = new AbortController(),
-				classificationStop = new AbortController();
-			let dispatch: SendDispatch | undefined,
-				attempted = false,
-				settled = false,
-				pending = false,
-				response: ActualResponse | undefined,
-				observation: NativeSendObservation | undefined;
-			let external: Disposable | undefined;
-			const context = {
-				cancel: () => {
-					controller.abort();
-					if (pending) finishPending();
-				},
-			};
-			const finishOutcome = (outcome: "FAILED" | "UNKNOWN"): SendAttempt => {
-				if (!dispatch || settled) throw refused();
-				settled = true;
-				return recordOutcome.call(ledger, dispatch, outcome);
-			};
-			const cleanup = () => {
-				external?.[Symbol.dispose]();
-				timer.abort();
-				classificationStop.abort();
-				active.delete(context);
-			};
-			function finishPending(): void {
-				if (!pending || settled) return;
-				pending = false;
+	let finalizationFailed = false;
+	let draining: Promise<void> | undefined;
+	function ownSend(): OwnedSendWork {
+		const done = Promise.withResolvers<void>();
+		const tasks = new Set<Promise<unknown>>();
+		let sealed = false;
+		let ended = false;
+		const finish = (): void => {
+			if (!sealed || tasks.size !== 0 || ended) return;
+			ended = true;
+			work.retryCleanup();
+			done.resolve();
+		};
+		const work: OwnedSendWork = {
+			done: done.promise,
+			cleanup: () => true,
+			track<T>(task: Promise<T>): Promise<T> {
+				if (ended) throw refused();
+				tasks.add(task);
+				const settled = (): void => {
+					tasks.delete(task);
+					finish();
+				};
+				void task.then(settled, settled);
+				return task;
+			},
+			seal(): void {
+				sealed = true;
+				finish();
+			},
+			retryCleanup(): boolean {
+				if (!ended) return false;
 				try {
-					finishOutcome("UNKNOWN");
+					if (!work.cleanup()) return false;
+					owned.delete(work);
+					return true;
 				} catch {
-					/* A failed durable record stays unavailable/SENDING for recovery. */
+					return false;
 				}
-				if (observation) observations.delete(observation);
-				response?.body.fill(0);
-				cleanup();
+			},
+		};
+		owned.add(work);
+		return work;
+	}
+	async function runSend(
+		work: OwnedSendWork,
+		redemption: SendRedemption,
+		inputSignal: AbortSignal,
+	): Promise<NativeSendObservation> {
+		const signal = captureSignal(inputSignal),
+			controller = new AbortController(),
+			timer = new AbortController(),
+			classificationStop = new AbortController();
+		let dispatch: SendDispatch | undefined,
+			attempted = false,
+			settled = false,
+			pending = false,
+			response: ActualResponse | undefined,
+			observation: NativeSendObservation | undefined;
+		let external: Disposable | undefined;
+		const context = {
+			cancel: () => {
+				controller.abort();
+				if (pending) finishPending();
+			},
+		};
+		const finishOutcome = (outcome: "FAILED" | "UNKNOWN"): SendAttempt => {
+			if (!dispatch || settled) throw refused();
+			settled = true;
+			try {
+				return recordOutcome.call(ledger, dispatch, outcome);
+			} catch {
+				finalizationFailed = true;
+				throw refused();
 			}
-			active.add(context);
-			external = addAbortListener(signal, context.cancel);
-			if (aborted?.call(signal)) controller.abort();
-			const wall = clock.wallMs(),
-				mono = clock.monotonicMs();
-			const expired = (): boolean => {
-				const currentWall = clock.wallMs(),
-					currentMono = clock.monotonicMs();
-				return (
-					controller.signal.aborted ||
-					!Number.isFinite(currentWall) ||
-					!Number.isFinite(currentMono) ||
-					currentWall >= wall + timeoutMs ||
-					currentMono >= mono + timeoutMs
-				);
-			};
-			const watch = (async () => {
+		};
+		const cleanup = (): boolean => {
+			let clean = true;
+			try {
+				external?.[Symbol.dispose]();
+				external = undefined;
+			} catch {
+				clean = false;
+			}
+			for (const stop of [timer, classificationStop, controller])
 				try {
-					for (;;) {
-						const remaining = Math.min(
-							wall + timeoutMs - clock.wallMs(),
-							mono + timeoutMs - clock.monotonicMs(),
-						);
-						if (!Number.isFinite(remaining) || remaining <= 0) {
-							context.cancel();
-							return;
-						}
-						await clock.after(Math.min(MAX_WAIT_MS, Math.ceil(remaining)), timer.signal);
-					}
+					stop.abort();
 				} catch {
-					if (!timer.signal.aborted) context.cancel();
+					clean = false;
+				}
+			try {
+				response?.body.fill(0);
+			} catch {
+				clean = false;
+			}
+			if (clean) active.delete(context);
+			return clean;
+		};
+		work.cleanup = cleanup;
+		function finishPending(): void {
+			if (!pending || settled) return;
+			pending = false;
+			try {
+				finishOutcome("UNKNOWN");
+			} catch {
+				/* A failed durable record stays unavailable/SENDING for recovery. */
+			}
+			if (observation) observations.delete(observation);
+			cleanup();
+		}
+		active.add(context);
+		external = addAbortListener(signal, context.cancel);
+		if (aborted?.call(signal)) controller.abort();
+		const wall = clock.wallMs(),
+			mono = clock.monotonicMs();
+		const expired = (): boolean => {
+			const currentWall = clock.wallMs(),
+				currentMono = clock.monotonicMs();
+			return (
+				controller.signal.aborted ||
+				!Number.isFinite(currentWall) ||
+				!Number.isFinite(currentMono) ||
+				currentWall >= wall + timeoutMs ||
+				currentMono >= mono + timeoutMs
+			);
+		};
+		const watch = (async () => {
+			try {
+				for (;;) {
+					const remaining = Math.min(
+						wall + timeoutMs - clock.wallMs(),
+						mono + timeoutMs - clock.monotonicMs(),
+					);
+					if (!Number.isFinite(remaining) || remaining <= 0) {
+						context.cancel();
+						return;
+					}
+					await clock.after(Math.min(MAX_WAIT_MS, Math.ceil(remaining)), timer.signal);
+				}
+			} catch {
+				if (!timer.signal.aborted) context.cancel();
+			}
+		})();
+		work.track(watch);
+		try {
+			const rendered = beginDispatch.call(ledger, redemption);
+			dispatch = rendered.dispatch;
+			const url = route(rendered);
+			controller.signal.throwIfAborted();
+			const answers = await untilAbort(
+					work.track(resolveEgressAnswers(url.hostname, 443, policy, controller.signal)),
+					controller.signal,
+				),
+				pin = validateEgressAnswers(answers, policy);
+			controller.signal.throwIfAborted();
+			try {
+				await useCredential.call(
+					vault,
+					rendered.credential.reference,
+					rendered.credential.binding,
+					{ requestClass: "send", signal: controller.signal },
+					(value, use) =>
+						work.track(
+							(async () => {
+								if (
+									value.kind !== rendered.credential.binding.kind ||
+									value.kind === "provider-key" ||
+									use.reference !== rendered.credential.reference ||
+									use.generation !== rendered.credential.generation ||
+									use.binding.ownerKind !== "account"
+								)
+									throw refused();
+								const key = value.accessToken;
+								if (!key || key.length > 8192 || !/^[!-~]+$/.test(key)) throw refused();
+								const leaseAbort = addAbortListener(use.signal, () => controller.abort());
+								try {
+									response = await fetchPinnedSend(
+										rendered,
+										url,
+										pin,
+										policy,
+										key,
+										controller.signal,
+										expired,
+										() => {
+											const fresh = prepareWrite.call(ledger, rendered.dispatch);
+											route(fresh);
+											if (
+												fresh.credential.generation !== use.generation ||
+												fresh.credential.reference !== use.reference ||
+												use.signal.aborted ||
+												describeCredential.call(vault, use.reference, use.binding).generation !==
+													use.generation
+											)
+												throw refused();
+											return fresh;
+										},
+										() => {
+											attempted = true;
+										},
+										() => assertWriteCurrent.call(ledger, rendered.dispatch),
+									);
+								} finally {
+									leaseAbort[Symbol.dispose]();
+								}
+							})(),
+						),
+				);
+			} catch {
+				if (!response) throw refused();
+			}
+			// A complete authentic response survives later credential change and ticket expiry.
+			if (!response || closed) throw refused();
+			timer.abort();
+			external[Symbol.dispose]();
+			external = undefined;
+			pending = true;
+			const state: PendingState = {
+				response,
+				finish: finishPending,
+				live: () => pending && !settled,
+			};
+			observation = Object.freeze(Object.create(null)) as NativeSendObservation;
+			observations.set(observation, { pending: state });
+			const classificationTimer = (async () => {
+				try {
+					await clock.after(classificationMs, classificationStop.signal);
+					finishPending();
+				} catch {
+					if (!classificationStop.signal.aborted) finishPending();
 				}
 			})();
-			void watch.catch(() => undefined);
+			work.track(classificationTimer);
+			return observation;
+		} catch {
 			try {
-				const rendered = beginDispatch.call(ledger, redemption);
-				dispatch = rendered.dispatch;
-				const url = route(rendered);
-				controller.signal.throwIfAborted();
-				const answers = await untilAbort(
-						resolveEgressAnswers(url.hostname, 443, policy, controller.signal),
-						controller.signal,
-					),
-					pin = validateEgressAnswers(answers, policy);
-				controller.signal.throwIfAborted();
-				try {
-					await useCredential.call(
-						vault,
-						rendered.credential.reference,
-						rendered.credential.binding,
-						{ requestClass: "send", signal: controller.signal },
-						async (value, use) => {
-							if (
-								value.kind !== rendered.credential.binding.kind ||
-								value.kind === "provider-key" ||
-								use.reference !== rendered.credential.reference ||
-								use.generation !== rendered.credential.generation ||
-								use.binding.ownerKind !== "account"
-							)
-								throw refused();
-							const key = value.accessToken;
-							if (!key || key.length > 8192 || !/^[!-~]+$/.test(key)) throw refused();
-							const leaseAbort = addAbortListener(use.signal, () => controller.abort());
-							try {
-								response = await fetchPinnedSend(
-									rendered,
-									url,
-									pin,
-									policy,
-									key,
-									controller.signal,
-									expired,
-									() => {
-										const fresh = prepareWrite.call(ledger, rendered.dispatch);
-										route(fresh);
-										if (
-											fresh.credential.generation !== use.generation ||
-											fresh.credential.reference !== use.reference ||
-											use.signal.aborted ||
-											describeCredential.call(vault, use.reference, use.binding).generation !==
-												use.generation
-										)
-											throw refused();
-										return fresh;
-									},
-									() => {
-										attempted = true;
-									},
-									() => assertWriteCurrent.call(ledger, rendered.dispatch),
-								);
-							} finally {
-								leaseAbort[Symbol.dispose]();
-							}
-						},
-					);
-				} catch {
-					if (!response) throw refused();
-				}
-				// A complete authentic response survives later credential change and ticket expiry.
-				if (!response || closed) throw refused();
-				timer.abort();
-				external[Symbol.dispose]();
-				external = undefined;
-				pending = true;
-				const state: PendingState = {
-					response,
-					finish: finishPending,
-					live: () => pending && !settled,
-				};
-				observation = Object.freeze(Object.create(null)) as NativeSendObservation;
-				observations.set(observation, { pending: state });
-				const classificationTimer = (async () => {
-					try {
-						await clock.after(classificationMs, classificationStop.signal);
-						finishPending();
-					} catch {
-						if (!classificationStop.signal.aborted) finishPending();
-					}
-				})();
-				void classificationTimer.catch(() => undefined);
-				return observation;
+				const attempt = finishOutcome(attempted ? "UNKNOWN" : "FAILED"),
+					handle = Object.freeze(Object.create(null)) as NativeSendObservation;
+				observations.set(handle, {
+					failure: Object.freeze({
+						kind: "transport",
+						written: attempted ? "maybe" : "none",
+						error: "SEND_HTTP_UNAVAILABLE",
+						attempt,
+					}),
+				});
+				return handle;
 			} catch {
-				try {
-					const attempt = finishOutcome(attempted ? "UNKNOWN" : "FAILED"),
-						handle = Object.freeze(Object.create(null)) as NativeSendObservation;
-					observations.set(handle, {
-						failure: Object.freeze({
-							kind: "transport",
-							written: attempted ? "maybe" : "none",
-							error: "SEND_HTTP_UNAVAILABLE",
-							attempt,
-						}),
-					});
-					return handle;
-				} catch {
-					throw refused();
-				}
-			} finally {
-				if (!pending) {
-					response?.body.fill(0);
-					cleanup();
-					controller.abort();
-				}
+				throw refused();
 			}
+		} finally {
+			if (!pending) cleanup();
+		}
+	}
+	const close = (): void => {
+		if (closed) return;
+		closed = true;
+		for (const context of [...active]) context.cancel();
+	};
+	const drain = (): Promise<void> => {
+		close();
+		if (draining) return draining;
+		const result = (async (): Promise<void> => {
+			await Promise.all([...owned].map((work) => work.done));
+			let clean = true;
+			for (const work of [...owned]) if (!work.retryCleanup()) clean = false;
+			if (!clean || finalizationFailed) throw refused();
+		})();
+		draining = result;
+		void result.catch(() => {
+			if (draining === result) draining = undefined;
+		});
+		return result;
+	};
+	return Object.freeze({
+		send(redemption: SendRedemption, signal: AbortSignal): Promise<NativeSendObservation> {
+			if (closed || owned.size >= HOST_MAX_ACTIVE_REQUESTS) return Promise.reject(refused());
+			const work = ownSend();
+			const operation = runSend(work, redemption, signal).catch(() => {
+				throw refused();
+			});
+			work.track(operation);
+			work.seal();
+			return operation;
 		},
-		close() {
-			if (closed) return;
-			closed = true;
-			for (const context of [...active]) context.cancel();
-		},
+		close,
+		drain,
 	});
 }
 
@@ -442,7 +546,7 @@ function fetchPinnedSend(
 			req = request({
 				...connection.options,
 				method: "POST",
-				path: url.pathname,
+				path: url.pathname + url.search,
 				headers: { ...connection.options.headers },
 			});
 			req.once("error", fail);

@@ -210,8 +210,11 @@ it("denies undeclared storage objects and never dispatches them as ordinary raw 
 	).rejects.toThrow("BAD_REQUEST");
 	expect(fake.recorder.takeRequests()).toEqual([]);
 });
-function profiled(profile: "gmail-v1" | "gmail-readonly-v1" | "slack-v1"): MockPlugin {
-	const plugin = channelFixture();
+function profiled(
+	profile: "gmail-v1" | "gmail-readonly-v1" | "slack-v1",
+	account?: string,
+): MockPlugin {
+	const plugin = channelFixture(undefined, account);
 	const value = plugin.manifest as Record<string, unknown>;
 	value.egress = { profile };
 	value.dataClasses = [profile.startsWith("gmail") ? "gmail.content" : "slack.content"];
@@ -261,3 +264,61 @@ it.each([
 		expect(fake.recorder.takeRequests()).toHaveLength(1);
 	},
 );
+
+it.each([
+	["gmail-v1", "gmail.googleapis.com"],
+	["gmail-v1", "www.googleapis.com"],
+	["gmail-readonly-v1", "gmail.googleapis.com"],
+	["gmail-readonly-v1", "www.googleapis.com"],
+] as const)("admits the fixed Gmail profile GET for %s at %s", async (profile, host) => {
+	const fake = createFake({ fetch: () => Response.json({ historyId: "1001" }) }, { host });
+	const account = "00000000000000000000000002";
+	const hub = track(
+		createMockHub({
+			mode: "in-memory",
+			plugin: profiled(profile, account),
+			account: { id: account, mode: "read_only" },
+			upstreams: [fake],
+		}),
+	);
+	const url = `https://${host}/gmail/v1/users/me/profile`;
+	await expect(
+		hub.host.request("host/fetch", { method: "GET", url, headers: [] }),
+	).resolves.toMatchObject({ status: 200 });
+	expect(hub.host.denials).toEqual([]);
+	expect(
+		fake.recorder.takeRequests().map((request) => ({
+			method: request.method,
+			host: request.host,
+			target: request.target,
+			query: request.query,
+		})),
+	).toEqual([{ method: "GET", host, target: "/gmail/v1/users/me/profile", query: "" }]);
+});
+
+it.each([
+	["POST", "https://gmail.googleapis.com/gmail/v1/users/me/profile"],
+	["HEAD", "https://gmail.googleapis.com/gmail/v1/users/me/profile"],
+	["GET", "https://other.example/gmail/v1/users/me/profile"],
+	["GET", "https://gmail.googleapis.com/gmail/v1/users/me/profile/extra"],
+	["GET", "https://gmail.googleapis.com/gmail/v1/users/me/profileExtra"],
+	["GET", "https://gmail.googleapis.com/gmail/v1/users/me/profile?access_token=DYTEST"],
+	["GET", "https://gmail.googleapis.com/gmail/v1/users/me/profile?key=DYTEST"],
+	["GET", "https://gmail.googleapis.com/gmail/v1/users/me/profile?$alt=1"],
+	["GET", "https://gmail.googleapis.com/gmail/v1/users/me/profile?fields=historyId"],
+] as const)("keeps the Gmail profile boundary closed for %s %s", async (method, url) => {
+	const fake = createFake(
+		{ fetch: () => Response.json({ historyId: "1001" }) },
+		{
+			host: "gmail.googleapis.com",
+		},
+	);
+	const hub = track(
+		createMockHub({ mode: "in-memory", plugin: profiled("gmail-v1"), upstreams: [fake] }),
+	);
+	await expect(hub.host.request("host/fetch", { method, url, headers: [] })).rejects.toThrow(
+		"DENIED",
+	);
+	expect(hub.host.denials.at(-1)?.reason).toBe("OFF_RULE");
+	expect(fake.recorder.takeRequests()).toEqual([]);
+});

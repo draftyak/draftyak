@@ -225,7 +225,7 @@ function outboundHeaders(verified: AiRequestSnapshot, key: string): Record<strin
 	if (verified.profile === "messages-api-v1") {
 		if (headers["x-api-key"] !== "brokered" || headers.authorization !== undefined) throw refused();
 		headers["x-api-key"] = key;
-	} else if (verified.profile === "responses-api-v1") {
+	} else if (verified.profile === "responses-api-v1" || verified.profile === "responses-plan-v1") {
 		if (headers.authorization !== "Bearer brokered" || headers["x-api-key"] !== undefined)
 			throw refused();
 		headers.authorization = `Bearer ${key}`;
