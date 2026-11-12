@@ -5,6 +5,14 @@ export {
 	NativeAccounts,
 } from "./accounts/records.ts";
 export {
+	MAX_PROVIDER_STREAM_EVENTS,
+	openBoundedProviderStream,
+	type ProviderStreamArguments,
+	ProviderStreamBoundaryError,
+	type ProviderStreamOptions,
+	type ProviderStreamProgress,
+} from "./ai/providers/streaming.ts";
+export {
 	AUDIT_EXPORT_MAX_BYTES,
 	AUDIT_EXPORT_MAX_EVENTS,
 	AUDIT_VERIFY_BATCH_SIZE,
