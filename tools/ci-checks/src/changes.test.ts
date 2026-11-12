@@ -8,6 +8,7 @@ import {
 	classify,
 	consumingSpikes,
 	rustWorkspace,
+	type SelectionOrigin,
 	untestedRust,
 	type WorkspacePackage,
 	workspacePackages,
@@ -176,6 +177,182 @@ describe("lockfile workspace metadata", () => {
 	])("refuses %s", (_, before, after) => {
 		expect(() => workspacePackages(lock.replace(before, after))).toThrow();
 	});
+});
+
+describe("pilot S12 heavy selection", () => {
+	const pilotRoot = path.join(root, "pilot-selection");
+	const retainedRust = "spikes/s05-desktop/rust/Cargo.toml";
+	mkdirSync(path.dirname(path.join(pilotRoot, retainedRust)), { recursive: true });
+	writeFileSync(path.join(pilotRoot, retainedRust), "[workspace]\n");
+	// Importer and changed-path metadata only: no postponed implementation is read or created.
+	const graph: readonly WorkspacePackage[] = [
+		{ folder: "spikes/kit", dependencies: [] },
+		{ folder: "spikes/s02-plugin-sandbox", dependencies: ["spikes/kit"] },
+		{ folder: "spikes/s05-desktop", dependencies: ["spikes/s02-plugin-sandbox"] },
+		{ folder: "spikes/s11-python-runtime", dependencies: ["spikes/s02-plugin-sandbox"] },
+		{ folder: "spikes/s12-sms", dependencies: ["spikes/kit"] },
+		{ folder: "tools/bridge", dependencies: ["spikes/s12-sms"] },
+		{ folder: "spikes/retained-downstream", dependencies: ["tools/bridge"] },
+		{ folder: "spikes/s12-sms-neighbor", dependencies: ["spikes/kit"] },
+		{ folder: "spikes/unrelated", dependencies: [] },
+	];
+	const retained = [
+		"spikes/kit",
+		"spikes/retained-downstream",
+		"spikes/s02-plugin-sandbox",
+		"spikes/s05-desktop",
+		"spikes/s11-python-runtime",
+		"spikes/s12-sms-neighbor",
+		"spikes/unrelated",
+	];
+	const select = (files: readonly string[], origin: SelectionOrigin = "diff") =>
+		classify(
+			files,
+			pilotRoot,
+			() => [retainedRust],
+			() => graph,
+			origin,
+		);
+
+	it.each(["pnpm-lock.yaml", ".github/workflows/ci.yml", "vitest.shared.ts"])(
+		"omits only S12 heavy for a shared %s change",
+		(file) => {
+			const selected = select([file]);
+			expect(selected.spikes).toEqual(retained);
+			expect(selected.rust).toEqual(["spikes/s05-desktop/rust"]);
+			expect(selected.docsOnly).toBe(false);
+			expect(selected.workflows).toBe(file === ".github/workflows/ci.yml");
+			expect(areaNames(selected)).not.toContain("spikes/s12-sms");
+		},
+	);
+
+	it("retains consumers reached through S12 without making S12 heavy eligible", () => {
+		const selected = select(["spikes/kit/run.ts"]);
+		expect(selected.spikes).toEqual(retained.filter((folder) => folder !== "spikes/unrelated"));
+		expect(selected.rust).toEqual(["spikes/s05-desktop/rust"]);
+		// The underlying dependency traversal remains generic and preserves the postponed node.
+		expect(consumingSpikes(["spikes/kit"], graph)).toContain("spikes/s12-sms");
+		expect(consumingSpikes(["spikes/kit"], graph)).toContain("spikes/retained-downstream");
+	});
+
+	it("retains conservative unknown-package fallback and malformed-metadata refusal", () => {
+		expect(select(["spikes/deleted/src/synthetic.ts"]).spikes).toEqual(retained);
+		expect(() =>
+			classify(
+				["pnpm-lock.yaml"],
+				pilotRoot,
+				() => [],
+				() => [...graph, { folder: "spikes/kit", dependencies: [] }],
+			),
+		).toThrow("invalid or ambiguous workspace selection metadata");
+	});
+
+	it.each([
+		"spikes/s12-sms/src/synthetic.ts",
+		"spikes/s12-sms/test/synthetic.heavy.test.ts",
+		"spikes/s12-sms/package.json",
+		"spikes/s12-sms/vitest.config.ts",
+	])("refuses a direct postponed implementation change %#", (file) => {
+		expect(() => select([file])).toThrow(
+			"postponed spike implementation requires a separate disposition: spikes/s12-sms",
+		);
+	});
+
+	it.each(["spikes/s12-sms/README.md", "spikes/s12-sms/evidence/synthetic.json"])(
+		"keeps documentation and evidence disposition unchanged %#",
+		(file) => {
+			const selected = select([file]);
+			expect(selected.docsOnly).toBe(true);
+			expect(areaNames(selected)).toEqual(["docs-only"]);
+			expect(selected.spikes).toEqual([]);
+		},
+	);
+
+	it("classifies preserved tracked implementation as metadata without granting a heavy pass", () => {
+		const selected = select(
+			["pnpm-lock.yaml", "spikes/s12-sms/src/synthetic.ts", retainedRust],
+			"tracked-fallback",
+		);
+		expect(selected.spikes).toEqual(retained);
+		expect(selected.rust).toEqual(["spikes/s05-desktop/rust"]);
+		expect(selected.ts).toBe(true);
+		expect(selected.docsOnly).toBe(false);
+		expect(untestedRust(selected)).toEqual([]);
+	});
+
+	it("refuses an unknown classification origin at runtime", () => {
+		expect(() => select(["pnpm-lock.yaml"], "unrecognized" as SelectionOrigin)).toThrow();
+	});
+
+	it.each(["no-base", "diff-failure"] as const)(
+		"the actual CLI preserves postponed files during %s fallback",
+		(mode) => {
+			const cliRoot = path.join(pilotRoot, `cli-${mode}`);
+			mkdirSync(cliRoot, { recursive: true });
+			writeFileSync(
+				path.join(cliRoot, "pnpm-lock.yaml"),
+				"lockfileVersion: '9.0'\nimporters:\n  .: {}\n  spikes/kit: {}\n  spikes/retained: {}\n  spikes/s12-sms: {}\n",
+			);
+			const tracked = [
+				"README.md",
+				"pnpm-lock.yaml",
+				"apps/hub/src/synthetic.ts",
+				"spikes/s12-sms/src/preserved.ts",
+			];
+			const bootstrap = `
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+childProcess.spawnSync = (command, args) => {
+	if (command !== "git") throw new Error("Unexpected external command");
+	let stdout = "", stderr = "", status = 0;
+	if (args[0] === "rev-parse") stdout = ${JSON.stringify(cliRoot)} + "\\n";
+	else if (args[0] === "ls-files") stdout = ${JSON.stringify(tracked.join("\0"))};
+	else if (args[0] === "diff") { status = 1; stderr = "Synthetic diff unavailable"; }
+	else throw new Error("Unexpected git operation");
+	return { stdout, stderr, status, signal: null };
+};
+syncBuiltinESMExports();
+`;
+			const output = path.join(cliRoot, "outputs");
+			const summary = path.join(cliRoot, "summary");
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--import",
+					`data:text/javascript;base64,${Buffer.from(bootstrap).toString("base64")}`,
+					path.join(import.meta.dirname, "changes.ts"),
+				],
+				{
+					cwd: cliRoot,
+					encoding: "utf8",
+					windowsHide: true,
+					timeout: 10_000,
+					maxBuffer: 1024 * 1024,
+					env: {
+						...process.env,
+						BASE_SHA: mode === "no-base" ? "" : "synthetic-base",
+						HEAD_SHA: "HEAD",
+						GITHUB_OUTPUT: output,
+						GITHUB_STEP_SUMMARY: summary,
+					},
+				},
+			);
+			expect(result.error).toBeUndefined();
+			expect(result.signal).toBeNull();
+			expect(result.status, result.stderr).toBe(0);
+			expect(result.stdout).toContain("so every retained area");
+			const disposition =
+				"spikes/s12-sms test:heavy is postponed and not run for the desktop pilot.";
+			expect(result.stdout).toContain(disposition);
+			const text = readFileSync(output, "utf8");
+			expect(text).toContain("docs-only=false");
+			expect(text).toContain("spikes/kit\nspikes/retained\n");
+			expect(text).not.toContain("spikes/s12-sms");
+			const reported = readFileSync(summary, "utf8");
+			expect(reported).toContain(disposition);
+			expect(reported).not.toContain("- spikes/s12-sms");
+		},
+	);
 });
 
 describe("changed areas", () => {
