@@ -27,7 +27,7 @@ import { describe, expect, it, vi } from "vitest";
 import { decodeGmailMetadata } from "../src/decode.ts";
 import { GmailHistoryError } from "../src/history/page.ts";
 import { readHistoryPage } from "../src/history/read.ts";
-import { fetchGmailBody, probeGmail } from "../src/read.ts";
+import { fetchGmailBody, fetchGmailSendReceiptData, probeGmail } from "../src/read.ts";
 
 const ID = "DYTEST-message-1";
 const DATE = 1_710_000_000_123;
@@ -498,7 +498,7 @@ describe("Gmail fixed read DATA through the real SDK wire", () => {
 	});
 });
 
-function fakeFixture(): {
+function fakeFixture(raw = "Subject: DYTEST read data\r\n\r\nSynthetic.\r\n"): {
 	context: PluginContext;
 	hub: MockHub;
 	requests(): number;
@@ -511,7 +511,7 @@ function fakeFixture(): {
 	backend.addMessage({
 		id: ID,
 		threadId: "DYTEST-thread-1",
-		raw: new TextEncoder().encode("Subject: DYTEST read data\r\n\r\nSynthetic.\r\n"),
+		raw: new TextEncoder().encode(raw),
 		internalDate: DATE,
 		labelIds: ["INBOX"],
 	});
@@ -654,5 +654,326 @@ describe("shared detached Gmail metadata DATA", () => {
 			expect(invalid).toBe(true);
 		}
 		expect(calls).toBe(0);
+	});
+});
+
+const RECEIPT_MESSAGE_ID = "<DYTEST-provider-result@draftyak.example>";
+const receiptDocument = (
+	headers: unknown = [{ name: "Message-ID", value: RECEIPT_MESSAGE_ID }],
+) => ({
+	...metadata(),
+	payload: { headers },
+});
+
+function receipt(f: Wire, options: { readonly maxBytes?: number } = {}) {
+	return fetchGmailSendReceiptData(f.context, { kind: "email", providerId: ID }, options);
+}
+
+describe("Gmail send receipt literal provider DATA", () => {
+	it("reads the current FakeGmail metadata through the real SDK without raw extraction", async () => {
+		const f = fakeFixture(
+			`Message-ID: ${RECEIPT_MESSAGE_ID}\r\nSubject: DYTEST receipt\r\n\r\nSynthetic.\r\n`,
+		);
+		try {
+			const result = await fetchGmailSendReceiptData(f.context, { kind: "email", providerId: ID });
+			expect(result.message).toMatchObject({
+				providerId: ID,
+				threadId: "DYTEST-thread-1",
+				labelIds: ["INBOX"],
+				internalDate: DATE,
+			});
+			expect(result.messageIdHeader).toBe(RECEIPT_MESSAGE_ID);
+			expect(result.bytesRead).toBeGreaterThan(0);
+			expect(f.requests()).toBe(1);
+			expect(f.hub.host.denials).toEqual([]);
+			expect(f.hub.host.logs).toEqual([]);
+		} finally {
+			await f.close();
+		}
+	});
+
+	it("performs one unchanged metadata GET with no send, ticket, raw, saveAs or retry", async () => {
+		const document = receiptDocument();
+		const f = wire(() => jsonReply(document));
+		try {
+			const result = await receipt(f);
+			expect(result.bytesRead).toBe(Buffer.byteLength(JSON.stringify(document), "utf8"));
+			expect(Object.keys(result).sort()).toEqual(["bytesRead", "message", "messageIdHeader"]);
+			expect(f.requests).toHaveLength(1);
+			expect(f.requests[0]).toMatchObject({
+				method: "GET",
+				url: `${BASE}/messages/${ID}?format=metadata`,
+				headers: [["accept", "application/json"]],
+				stream: true,
+			});
+			expect(f.requests[0]).not.toHaveProperty("saveAs");
+			expect(f.requests[0]).not.toHaveProperty("sendTicket");
+			expect(f.requests[0]).not.toHaveProperty("body");
+		} finally {
+			f.close();
+		}
+	});
+
+	it.each([
+		"<DYTEST-different@draftyak.example>",
+		" \t<not-canonical\r\n continued>  ",
+		"not an RFC Message-ID \u2603",
+		" \t\r\n",
+	])("preserves the entire provider Message-ID value %j", async (value) => {
+		const f = wire(() => jsonReply(receiptDocument([{ name: "mEsSaGe-Id", value }])));
+		try {
+			expect((await receipt(f)).messageIdHeader).toBe(value);
+		} finally {
+			f.close();
+		}
+	});
+
+	it.each([
+		["missing", []],
+		["empty", [{ name: "Message-ID", value: "" }]],
+		[
+			"duplicate equal",
+			[
+				{ name: "Message-ID", value: RECEIPT_MESSAGE_ID },
+				{ name: "Message-ID", value: RECEIPT_MESSAGE_ID },
+			],
+		],
+		[
+			"case duplicate",
+			[
+				{ name: "Message-ID", value: RECEIPT_MESSAGE_ID },
+				{ name: "message-id", value: "different" },
+			],
+		],
+		["nonstring target", [{ name: "Message-ID", value: 7 }]],
+		[
+			"nonstring other",
+			[
+				{ name: "Subject", value: 7 },
+				{ name: "Message-ID", value: RECEIPT_MESSAGE_ID },
+			],
+		],
+		["nonstring name", [{ name: 7, value: RECEIPT_MESSAGE_ID }]],
+		["nonrecord", [null]],
+		["not an array", {}],
+		["non-ASCII lookalike", [{ name: "Message-\u0131D", value: RECEIPT_MESSAGE_ID }]],
+	] as const)("refuses %s headers without inventing a receipt or retry", async (_name, headers) => {
+		const f = wire(() => jsonReply(receiptDocument(headers)));
+		try {
+			expect(await refuses(() => receipt(f), "TRANSIENT")).toBe(true);
+			expect(f.requests).toHaveLength(1);
+		} finally {
+			f.close();
+		}
+	});
+
+	it.each([
+		{ ...receiptDocument(), id: "DYTEST-other" },
+		{ ...receiptDocument(), threadId: "" },
+		{ ...receiptDocument(), internalDate: "01" },
+		{ ...receiptDocument(), labelIds: ["INBOX", "INBOX"] },
+		{ ...receiptDocument(), payload: null },
+		{ ...receiptDocument(), payload: { headers: null } },
+	])("retains the shared metadata and provider-envelope refusal %j", async (document) => {
+		const f = wire(() => jsonReply(document));
+		try {
+			expect(await refuses(() => receipt(f), "TRANSIENT")).toBe(true);
+			expect(f.requests).toHaveLength(1);
+		} finally {
+			f.close();
+		}
+	});
+
+	it("returns detached frozen metadata and an exact literal value without authority fields", async () => {
+		const document = receiptDocument();
+		const f = wire(() => jsonReply(document));
+		try {
+			const result = await receipt(f);
+			document.labelIds[0] = "TRASH";
+			expect(result.message.labelIds).toEqual(["INBOX"]);
+			expect(result.messageIdHeader).toBe(RECEIPT_MESSAGE_ID);
+			expect(
+				Object.isFrozen(result) &&
+					Object.isFrozen(result.message) &&
+					Object.isFrozen(result.message.labelIds),
+			).toBe(true);
+			expect(result).not.toHaveProperty("sent");
+			expect(result).not.toHaveProperty("approvedMessageId");
+		} finally {
+			f.close();
+		}
+	});
+
+	it.each([MAX_METADATA, MAX_METADATA + 1])(
+		"enforces the shared metadata byte boundary %s",
+		async (size) => {
+			const f = streaming(pad(receiptDocument(), size), false);
+			try {
+				if (size === MAX_METADATA) expect((await receipt(f)).bytesRead).toBe(size);
+				else expect(await refuses(() => receipt(f), "QUOTA_EXCEEDED")).toBe(true);
+				expect(f.requests).toHaveLength(1);
+			} finally {
+				f.close();
+			}
+		},
+	);
+
+	it("uses the caller byte budget including exact wire bytes", async () => {
+		const document = receiptDocument(),
+			size = Buffer.byteLength(JSON.stringify(document), "utf8");
+		const f = wire(() => jsonReply(document));
+		try {
+			expect((await receipt(f, { maxBytes: size })).bytesRead).toBe(size);
+		} finally {
+			f.close();
+		}
+		const short = wire(() => jsonReply(document));
+		try {
+			expect(await refuses(() => receipt(short, { maxBytes: size - 1 }), "QUOTA_EXCEEDED")).toBe(
+				true,
+			);
+		} finally {
+			short.close();
+		}
+	});
+
+	it.each([-1, MAX_METADATA + 1, Number.NaN])(
+		"refuses invalid maxBytes %s without a request",
+		async (maxBytes) => {
+			const f = wire(() => jsonReply(receiptDocument()));
+			try {
+				expect(await refuses(() => receipt(f, { maxBytes }), "INVALID_INPUT")).toBe(true);
+				expect(f.requests).toHaveLength(0);
+			} finally {
+				f.close();
+			}
+		},
+	);
+
+	it("retains the shared thirty-second deadline and consumes a late response", async () => {
+		vi.useFakeTimers();
+		const delayed = Promise.withResolvers<HostFetchResult>(),
+			f = wire(() => delayed.promise);
+		try {
+			const result = refuses(() => receipt(f), "TRANSIENT");
+			await vi.advanceTimersByTimeAsync(HOST_REQUEST_TIMEOUT_MS);
+			expect(await result).toBe(true);
+			expect(f.requests).toHaveLength(1);
+		} finally {
+			delayed.resolve(jsonReply(receiptDocument()));
+			f.close();
+			vi.useRealTimers();
+		}
+	});
+
+	it("aborts the pending metadata stream without a second request", async () => {
+		const entered = Promise.withResolvers<void>();
+		const f = wire(() => {
+			entered.resolve();
+			return { status: 200, headers: [], streamId: "DYTEST-receipt-pending" };
+		});
+		try {
+			const result = refuses(() => receipt(f), "TRANSIENT");
+			let settled = false;
+			void result.then(() => {
+				settled = true;
+			});
+			await entered.promise;
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(settled).toBe(false);
+			f.abort();
+			expect(await result).toBe(true);
+			expect(f.requests).toHaveLength(1);
+		} finally {
+			f.close();
+		}
+	});
+
+	it.each([
+		[401, "AUTH_EXPIRED"],
+		[404, "NOT_FOUND"],
+		[429, "RATE_LIMITED"],
+	] as const)("preserves read status %s as %s with no retry", async (status, code) => {
+		const f = wire(() => jsonReply({}, status));
+		try {
+			expect(await refuses(() => receipt(f), code)).toBe(true);
+			expect(f.requests).toHaveLength(1);
+		} finally {
+			f.close();
+		}
+	});
+
+	it("refuses invalid references and accessor/proxy inputs before acquiring fetch", async () => {
+		let calls = 0;
+		const f = wire(() => jsonReply(receiptDocument()));
+		try {
+			for (const providerId of [".", "..", "", "x".repeat(257)]) {
+				expect(
+					await refuses(
+						() => fetchGmailSendReceiptData(f.context, { kind: "email", providerId }),
+						"INVALID_INPUT",
+					),
+				).toBe(true);
+			}
+			const accessor = {
+				get kind() {
+					calls++;
+					return "email";
+				},
+				providerId: ID,
+			};
+			expect(
+				await refuses(
+					() => fetchGmailSendReceiptData(f.context, accessor as never),
+					"INVALID_INPUT",
+				),
+			).toBe(true);
+			const proxy = new Proxy(
+				{ kind: "email", providerId: ID },
+				{
+					get() {
+						calls++;
+						throw new Error("DYTEST proxy");
+					},
+				},
+			);
+			expect(
+				await refuses(() => fetchGmailSendReceiptData(f.context, proxy as never), "INVALID_INPUT"),
+			).toBe(true);
+			const options = {
+				get maxBytes() {
+					calls++;
+					return MAX_METADATA;
+				},
+			};
+			expect(await refuses(() => receipt(f, options), "INVALID_INPUT")).toBe(true);
+			expect(calls).toBe(0);
+			expect(f.requests).toHaveLength(0);
+		} finally {
+			f.close();
+		}
+	});
+
+	it("does not acquire fetch with a zero byte budget or already-aborted invocation", async () => {
+		const f = wire(() => jsonReply(receiptDocument()));
+		try {
+			expect(await refuses(() => receipt(f, { maxBytes: 0 }), "QUOTA_EXCEEDED")).toBe(true);
+			f.abort();
+			expect(await refuses(() => receipt(f), "TRANSIENT")).toBe(true);
+			expect(f.requests).toHaveLength(0);
+		} finally {
+			f.close();
+		}
+	});
+
+	it.each([8_192, 8_193])("retains the shared metadata chunk boundary %s", async (chunks) => {
+		const f = streaming(pad(receiptDocument(), chunks), false, 1);
+		try {
+			if (chunks === 8_192) expect((await receipt(f)).bytesRead).toBe(chunks);
+			else expect(await refuses(() => receipt(f), "QUOTA_EXCEEDED")).toBe(true);
+			expect(f.requests).toHaveLength(1);
+		} finally {
+			f.close();
+		}
 	});
 });
