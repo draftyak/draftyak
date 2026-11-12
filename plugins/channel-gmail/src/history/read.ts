@@ -118,10 +118,30 @@ export async function readHistoryPage(
 			throw new PluginError("TRANSIENT");
 		}
 		if (response.status !== 200) {
+			if (response.status === 403) {
+				let rateLimited = false;
+				try {
+					const value = historyRecord(copyHistoryData(await jsonBody(response, signal, budget)));
+					const error = historyRecord(value.error);
+					rateLimited =
+						Array.isArray(error.errors) &&
+						error.errors.some((item) => {
+							const reason = historyRecord(item).reason;
+							return reason === "rateLimitExceeded" || reason === "userRateLimitExceeded";
+						});
+				} catch (error) {
+					if (signal.aborted) throw new PluginError("TRANSIENT");
+					if (error instanceof PluginError && error.result.code === "QUOTA_EXCEEDED")
+						throw new PluginError("QUOTA_EXCEEDED");
+				} finally {
+					cancel(response.body);
+				}
+				live(signal);
+				throw new PluginError(rateLimited ? "RATE_LIMITED" : "PERMISSION_DENIED");
+			}
 			cancel(response.body);
 			if (response.status === 404 && history) throw new PluginError("CURSOR_EXPIRED");
 			if (response.status === 401) throw new PluginError("AUTH_EXPIRED");
-			if (response.status === 403) throw new PluginError("PERMISSION_DENIED");
 			if (response.status === 429) throw new PluginError("RATE_LIMITED");
 			throw new PluginError("TRANSIENT");
 		}

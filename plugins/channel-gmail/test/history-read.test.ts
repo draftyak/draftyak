@@ -23,8 +23,11 @@ const PLUGIN = "@example/gmail-history-read";
 const HISTORY = "/gmail/v1/users/me/history";
 const MESSAGES = "/gmail/v1/users/me/messages/";
 
-function json(value: unknown): Response {
-	return new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
+function json(value: unknown, status = 200): Response {
+	return new Response(JSON.stringify(value), {
+		status,
+		headers: { "content-type": "application/json" },
+	});
 }
 function addedPage(count = 1) {
 	return {
@@ -39,10 +42,11 @@ function addedPage(count = 1) {
 function metadata(id = "m0") {
 	return { id, threadId: `t${id.slice(1)}`, internalDate: String(DATE), labelIds: ["INBOX"] };
 }
-function padded(value: unknown, bytes: number): Response {
+function padded(value: unknown, bytes: number, status = 200): Response {
 	const text = JSON.stringify(value);
 	if (text.length > bytes) throw new Error("Synthetic padding fixture unavailable");
 	return new Response(text + " ".repeat(bytes - text.length), {
+		status,
 		headers: { "content-type": "application/json", "content-length": "1" },
 	});
 }
@@ -397,6 +401,158 @@ describe("Gmail history transport", () => {
 			}
 		},
 	);
+
+	it.each([
+		["history", "rateLimitExceeded"],
+		["history", "userRateLimitExceeded"],
+		["hydration", "rateLimitExceeded"],
+		["hydration", "userRateLimitExceeded"],
+	] as const)(
+		"maps %s HTTP 403 reason %s without retry or a partial page",
+		async (where, reason) => {
+			const f = fixture({
+				reply: (request) => {
+					const pathname = new URL(request.url).pathname;
+					if (
+						(where === "history" && pathname === HISTORY) ||
+						(where === "hydration" && pathname === `${MESSAGES}m1`)
+					)
+						return json(
+							{ error: { message: "DYTEST-provider-private-text", errors: [{ reason }] } },
+							403,
+						);
+					return pathname === HISTORY
+						? json(addedPage(3))
+						: json(metadata(pathname.slice(MESSAGES.length)));
+				},
+			});
+			try {
+				expect(await refused(() => direct(f), "RATE_LIMITED")).toBe(true);
+				expect(f.requests().map((request) => request.path)).toEqual(
+					where === "history" ? [HISTORY] : [HISTORY, `${MESSAGES}m0`, `${MESSAGES}m1`],
+				);
+				expect(f.count()).toBe(where === "history" ? 1 : 3);
+			} finally {
+				await f.close();
+			}
+		},
+	);
+
+	it.each([
+		["unknown reason", '{"error":{"errors":[{"reason":"forbidden"}]}}'],
+		["message only", '{"error":{"message":"rateLimitExceeded"}}'],
+		["non-array errors", '{"error":{"errors":{"reason":"rateLimitExceeded"}}}'],
+		["non-string reason", '{"error":{"errors":[{"reason":["rateLimitExceeded"]}]}}'],
+		["malformed JSON", "{"],
+		[
+			"duplicate reason",
+			'{"error":{"errors":[{"reason":"rateLimitExceeded","reason":"userRateLimitExceeded"}]}}',
+		],
+	] as const)("keeps %s HTTP 403 bodies a fixed permission refusal", async (_name, body) => {
+		const f = fixture({ reply: () => new Response(body, { status: 403 }) });
+		try {
+			expect(await refused(() => direct(f), "PERMISSION_DENIED")).toBe(true);
+			expect(f.count()).toBe(1);
+		} finally {
+			await f.close();
+		}
+	});
+
+	it.each([MAX_BYTES, MAX_BYTES + 1])(
+		"charges HTTP 403 reason bytes to the shared aggregate budget at %i bytes",
+		async (total) => {
+			const error = { error: { errors: [{ reason: "rateLimitExceeded" }] } },
+				errorBytes = new TextEncoder().encode(JSON.stringify(error)).byteLength;
+			const f = fixture({
+				reply: (request) =>
+					new URL(request.url).pathname === HISTORY
+						? padded(addedPage(), total - errorBytes)
+						: json(error, 403),
+			});
+			try {
+				expect(
+					await refused(() => direct(f), total === MAX_BYTES ? "RATE_LIMITED" : "QUOTA_EXCEEDED"),
+				).toBe(true);
+				expect(f.count()).toBe(2);
+			} finally {
+				await f.close();
+			}
+		},
+	);
+
+	it.each([8_192, 8_193])("bounds one-byte HTTP 403 reason chunks at %i", async (length) => {
+		const text = JSON.stringify({ error: { errors: [{ reason: "rateLimitExceeded" }] } }),
+			bytes = new TextEncoder().encode(text + " ".repeat(length - text.length));
+		let offset = 0;
+		const f = fixture({
+			reply: () =>
+				new Response(
+					new ReadableStream<Uint8Array>(
+						{
+							pull(controller) {
+								if (offset === bytes.length) controller.close();
+								else controller.enqueue(bytes.subarray(offset, ++offset));
+							},
+						},
+						{ highWaterMark: 0 },
+					),
+					{ status: 403 },
+				),
+		});
+		try {
+			expect(
+				await refused(() => direct(f), length === 8_192 ? "RATE_LIMITED" : "QUOTA_EXCEEDED"),
+			).toBe(true);
+			expect(offset).toBe(length);
+			expect(f.count()).toBe(1);
+		} finally {
+			await f.close();
+		}
+	});
+
+	it("aborts an adopted HTTP 403 body read before interpreting a reason or hydrating", async () => {
+		const started = Promise.withResolvers<void>(),
+			cancelled = Promise.withResolvers<void>();
+		const f = fixture({
+			reply: () =>
+				new Response(
+					new ReadableStream<Uint8Array>(
+						{
+							pull() {
+								started.resolve();
+								return new Promise<void>(() => {});
+							},
+							cancel() {
+								cancelled.resolve();
+							},
+						},
+						{ highWaterMark: 0 },
+					),
+					{ status: 403 },
+				),
+		});
+		let pending: Promise<boolean> | undefined;
+		try {
+			pending = refused(() => direct(f), "TRANSIENT");
+			await Promise.race([
+				started.promise,
+				pending.then(() => {
+					throw new Error("403 reader settled before adopting its body");
+				}),
+			]);
+			f.abort();
+			expect(await pending).toBe(true);
+			await cancelled.promise;
+			expect(f.count()).toBe(1);
+		} finally {
+			f.abort();
+			try {
+				if (pending) await pending;
+			} finally {
+				await f.close();
+			}
+		}
+	});
 
 	it.each(["history", "hydration"] as const)(
 		"refuses valid JSON206 in the %s response as partial DATA",
