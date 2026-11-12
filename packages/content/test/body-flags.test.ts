@@ -274,6 +274,31 @@ describe("draft body acknowledgement flags", () => {
 		expectFlags(input, [link("example.invalid"), invisible]);
 	});
 
+	it.each([
+		["ordinary prototype", Object.prototype],
+		["null prototype", null],
+	] as const)("refuses reset-prototype array body records: %s", (_label, prototype) => {
+		let reads = 0;
+		const canonical = ChatDraftContent.parse({
+			channel: "chat",
+			threadTs: null,
+			broadcast: false,
+			body: "https://example.invalid/\u200b",
+		});
+		const input = Object.assign([], { channel: canonical.channel, body: canonical.body });
+		Object.setPrototypeOf(input, prototype);
+		Object.defineProperty(input, "unused", {
+			get() {
+				reads++;
+				throw new Error("Unused body field was read");
+			},
+		});
+		expect(Array.isArray(input) && Object.getPrototypeOf(input) === prototype).toBe(true);
+		const result = classifyBodyLinkAndInvisibleFlags(input);
+		expect(reads).toBe(0);
+		expect(result.status === "refused" && result.code === "INVALID_INPUT").toBe(true);
+	});
+
 	it("refuses inherited fields and exotic records without reading getters", () => {
 		let reads = 0;
 		const inherited = {
