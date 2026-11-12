@@ -29,22 +29,37 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out trusted controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: m2
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
+      - name: Check out m2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: m2
+          path: source
+      - name: Reserved paths and execution inputs of m2
+        run: node tools/verify/gate.ts --root source
+      - name: Pre-install script check of m2
+        run: node tools/verify/preinstall.ts --root source
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           cache: true
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build --filter=@draftyak/hub...
+      - working-directory: source
+        run: pnpm install --frozen-lockfile
+      - working-directory: source
+        run: pnpm build --filter=@draftyak/hub...
       - name: Check approval statement binding
-        working-directory: apps/hub
+        working-directory: source/apps/hub
         run: |
-          node "$GITHUB_WORKSPACE/node_modules/vitest/vitest.mjs" run \
+          node "$GITHUB_WORKSPACE/source/node_modules/vitest/vitest.mjs" run \
             test/model/send-approval-binding.test.ts \
             --mode test --config vitest.config.ts --no-file-parallelism \
             --maxWorkers=1 --reporter=default \

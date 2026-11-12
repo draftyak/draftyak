@@ -1,8 +1,9 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it, vi } from "vitest";
-import { loadSteps, type StepContext } from "../lib/registry.ts";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { RESERVED_TESTS } from "../../../reserved-tests.ts";
+import { loadSteps, type Step, type StepContext } from "../lib/registry.ts";
 import { type Captured, capture } from "../lib/spawn.ts";
 import {
 	bounded,
@@ -11,9 +12,13 @@ import {
 	label,
 	type NodeTarget,
 	nodeTargets,
+	pinnedImages,
 	prefetch,
+	spikesWithPrefetch,
+	workspacePackages,
 } from "../prefetch.ts";
-import { browsersDir, checkPrerequisites, profile } from "../profiles/m0.ts";
+import { browsersDir, checkPrerequisites, heavyFilters, profile } from "../profiles/m0.ts";
+import { scrub, word } from "./temp-repo.ts";
 
 const here = path.resolve(import.meta.dirname, "..");
 const tmp = mkdtempSync(path.join(tmpdir(), "draftyak-m0-"));
@@ -96,9 +101,12 @@ const versions: Record<string, string> = {
 };
 
 describe("verify:m0", () => {
-	it("checks prerequisites first, then the default steps, heavy tests after build, then adr", async () => {
+	it("checks prerequisites first, then the default steps, heavy tests after build, the reserved step, then adr", async () => {
 		const steps = profile.select(await loadSteps(path.join(here, "steps")));
-		const known = ["prerequisites", "lint", "typecheck", "test", "build", "test:heavy", "adr"];
+		const known = [
+			...["prerequisites", "lint", "typecheck", "test", "build"],
+			...["test:heavy", "reserved", "adr"],
+		];
 		expect(steps.map((step) => step.name).filter((name) => known.includes(name))).toEqual(known);
 		expect(steps[0]?.name).toBe("prerequisites");
 	});
@@ -146,8 +154,105 @@ describe("verify:m0", () => {
 		expect(await heavyStep?.run(ctx)).toEqual({ status: "passed" });
 		const filters = "--filter=./spikes/* --filter=./tools/*";
 		const args = `run test:heavy ${filters} --concurrency=1 --continue=dependencies-successful`;
-		const options = { env: { DRAFTYAK_STRICT_SKIPS: "1" } };
-		expect(turbo).toEqual([{ args: args.split(" "), options }]);
+		// Without DRAFTYAK_RESERVED_TESTS: verify's reserved step runs those suites.
+		const options = { env: { DRAFTYAK_STRICT_SKIPS: "1", [RESERVED_TESTS]: undefined } };
+		expect(turbo).toStrictEqual([{ args: args.split(" "), options }]);
+	});
+
+	// verify sets ctx.heavyFilters from the profile, for the heavy step and the reserved step.
+	it("filters the heavy tier to the folders that exist, through ctx.heavyFilters, without the flag", async () => {
+		expect(profile.heavyFilters).toBe(heavyFilters);
+		const both = fakeRoot({
+			"spikes/s01-sqlite3mc/package.json": "{}",
+			"tools/x/package.json": "{}",
+		});
+		expect(heavyFilters(both)).toEqual(["./spikes/*", "./tools/*"]);
+		expect(heavyFilters(fakeRoot({ "tools/x/package.json": "{}" }))).toEqual(["./tools/*"]);
+		expect(heavyFilters(fakeRoot())).toEqual([]);
+		const [prerequisites, heavyStep] = profile.select([]);
+		const runs: { args: readonly string[]; env?: NodeJS.ProcessEnv }[] = [];
+		const env = { PATH: fakeBin("bin-filters"), [RESERVED_TESTS]: "1" };
+		const ctx: StepContext = {
+			...context(both, env, readyExec().exec),
+			heavyFilters: ["./tools/*"],
+			turbo: async (args, options) => {
+				runs.push({ args, env: options?.env });
+				return 0;
+			},
+		};
+		const { result } = await quietly(async () => [
+			await prerequisites?.run(ctx),
+			await heavyStep?.run(ctx),
+		]);
+		expect(result).toEqual([{ status: "passed" }, { status: "passed" }]);
+		expect(runs).toStrictEqual([
+			{
+				args: [
+					"run",
+					"test:heavy",
+					"--filter=./tools/*",
+					"--concurrency=1",
+					"--continue=dependencies-successful",
+				],
+				env: { DRAFTYAK_STRICT_SKIPS: "1", [RESERVED_TESTS]: undefined },
+			},
+		]);
+	});
+
+	it("selects the reserved step, which is incomplete without the flag", async () => {
+		const steps = profile.select(await loadSteps(path.join(here, "steps")));
+		const reserved = steps.find((step) => step.name === "reserved");
+		const root = fakeRoot({
+			"spikes/s01-sqlite3mc/package.json": "{}",
+			"tools/x/package.json": "{}",
+		});
+		const ctx: StepContext = {
+			...context(root, { PATH: fakeBin("bin-reserved") }, readyExec().exec),
+			heavyFilters: heavyFilters(root),
+		};
+		const { result } = await quietly(async () => [
+			await steps[0]?.run(ctx),
+			await reserved?.run(ctx),
+		]);
+		expect(result).toEqual([
+			{ status: "passed" },
+			{
+				status: "incomplete",
+				reason: `the gate needs the reserved files' maintainer's run with ${RESERVED_TESTS}=1`,
+			},
+		]);
+	});
+
+	it("proves the reserved suites with the flag set on each proof call, the heavy one with --complete", async () => {
+		const steps = await loadSteps(path.join(here, "steps"));
+		const reserved = steps.find((step) => step.name === "reserved") as Step;
+		const calls: { args: readonly string[]; env?: NodeJS.ProcessEnv }[] = [];
+		const ctx: StepContext = {
+			...context(fakeRoot(), { [RESERVED_TESTS]: "1" }, fakeExec().exec),
+			heavyFilters: ["./spikes/*", "./tools/*"],
+			node: async (args, options) => {
+				calls.push({ args, env: options?.env });
+				return 0;
+			},
+		};
+		expect(await reserved.run(ctx)).toEqual({ status: "passed" });
+		const proof = "tools/verify/reserved-proof.ts";
+		expect(calls).toStrictEqual([
+			{ args: [proof, "--tier", "unit"], env: { [RESERVED_TESTS]: "1" } },
+			{
+				args: [
+					proof,
+					"--tier",
+					"heavy",
+					"--filter",
+					"./spikes/*",
+					"--filter",
+					"./tools/*",
+					"--complete",
+				],
+				env: { [RESERVED_TESTS]: "1", DRAFTYAK_STRICT_SKIPS: "1" },
+			},
+		]);
 	});
 
 	it("turns a probe that throws into its own row, and takes only files from overrides", async () => {
@@ -255,6 +360,11 @@ describe("verify:m0", () => {
 	});
 });
 
+// Docker, uv and gpgv all answer, so the prerequisites pass.
+function readyExec(): { exec: Exec } {
+	return fakeExec((name) => ({ code: 0, stdout: versions[name] ?? "" }));
+}
+
 describe("m0:prefetch", () => {
 	it("skips, with a note, whatever isn't in the tree yet", async () => {
 		const { exec, calls } = fakeExec();
@@ -309,8 +419,8 @@ describe("m0:prefetch", () => {
 		expect(output).toContain(`present: ${present}`);
 	});
 
-	it("refuses an unknown argument on stderr", async () => {
-		const args = [path.join(here, "prefetch.ts"), "--", "--bogus"];
+	it("refuses an unknown argument on stderr, before its start check", async () => {
+		const args = [path.join(here, "m0-prefetch.ts"), "--", "--bogus"];
 		const { code, stderr } = await capture({ command: process.execPath, args });
 		expect(code).toBe(2);
 		expect(stderr).toMatch(/^m0:prefetch: unknown argument --bogus\nusage: pnpm m0:prefetch /);
@@ -321,5 +431,101 @@ describe("m0:prefetch", () => {
 		const imports = source.matchAll(/\b(?:from|import)\s*\(?\s*["']([^"']+)/g);
 		const bare = [...imports].map((m) => m[1] ?? "").filter((id) => !/^(?:node:|\.\.?\/)/.test(id));
 		expect(bare).toEqual([]);
+	});
+});
+
+// Unless DRAFTYAK_RESERVED_TESTS=1, prefetch and verify:m0's checks never read a reserved
+// file or package manifest, and never run a reserved spike's prefetch.ts. The flag is set only
+// through vi.stubEnv, and the reserved names are built here.
+describe("m0:prefetch and verify:m0's checks without the reserved files", () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+	const digest = `sha256:${"0123456789abcdef".repeat(4)}`;
+	const ordinary = `docker.io/library/node:26-alpine@${digest}`;
+	const reserved = `debian:bookworm-slim@${digest}`;
+	const spike = `spikes/s98-${word()}`;
+	const off = () => vi.stubEnv(RESERVED_TESTS, undefined);
+	const on = () => vi.stubEnv(RESERVED_TESTS, "1");
+
+	it("reads pinned images from reserved files only with the flag", async () => {
+		const root = fakeRoot({
+			"tools/x/images.ts": `const image = "${ordinary}";`,
+			[`${spike}/images.ts`]: `const image = "${reserved}";`,
+		});
+		const listing = `tools/x/images.ts\0${spike}/images.ts\0`;
+		const { exec } = fakeExec((name) => (name === "git" ? { stdout: listing } : {}));
+		off();
+		expect(await pinnedImages(root, exec)).toEqual([ordinary]);
+		on();
+		expect(await pinnedImages(root, exec)).toEqual([reserved, ordinary]);
+	});
+
+	it("never opens a reserved file without the flag", async () => {
+		// A folder where the listing names a file: reading it would throw.
+		const root = fakeRoot({ "tools/x/images.ts": `const image = "${ordinary}";` });
+		mkdirSync(path.join(root, spike, "images.ts"), { recursive: true });
+		const listing = `tools/x/images.ts\0${spike}/images.ts\0`;
+		const { exec } = fakeExec((name) => (name === "git" ? { stdout: listing } : {}));
+		off();
+		expect(await pinnedImages(root, exec)).toEqual([ordinary]);
+		on();
+		await expect(pinnedImages(root, exec)).rejects.toThrow("EISDIR");
+	});
+
+	it("runs a reserved spike's prefetch.ts only with the flag", async () => {
+		const root = fakeRoot({
+			"spikes/s99-probe/prefetch.ts": "",
+			[`${spike}/prefetch.ts`]: "",
+		});
+		const runs = async (): Promise<string[]> => {
+			const { exec, calls } = fakeExec();
+			expect((await quietly(() => prefetch(root, exec, process.env))).result).toBe(0);
+			return calls.map(scrub);
+		};
+		const probe = `${node} prefetch.ts @${path.join(root, "spikes", "s99-probe")}`;
+		off();
+		expect(spikesWithPrefetch(root).map(scrub)).toEqual(["s99-probe"]);
+		expect(await runs()).toEqual([scrub(probe)]);
+		on();
+		expect(spikesWithPrefetch(root).map(scrub)).toEqual([scrub(path.basename(spike)), "s99-probe"]);
+		const reservedRun = `${node} prefetch.ts @${path.join(root, spike)}`;
+		expect(await runs()).toEqual([scrub(reservedRun), scrub(probe)]);
+	});
+
+	it("reads a reserved package's manifest only with the flag", () => {
+		const heavy = JSON.stringify({ scripts: { "test:heavy": "vitest run --mode heavy" } });
+		const root = fakeRoot({ "tools/x/package.json": heavy });
+		// A folder where the package's manifest would be: reading it would throw.
+		mkdirSync(path.join(root, spike, "package.json"), { recursive: true });
+		off();
+		expect(workspacePackages(root).map(({ dir }) => dir)).toEqual(["tools/x"]);
+		expect(workspacePackages(root, {}).map(({ dir }) => dir)).toEqual(["tools/x"]);
+		on();
+		expect(() => workspacePackages(root)).toThrow("EISDIR");
+	});
+});
+
+// m0:prefetch reads the packages: list with the shared workspace parser, which fails closed.
+describe("m0:prefetch's workspace packages", () => {
+	it.each([
+		["no packages: list", "engineStrict: true\n"],
+		["an empty packages: list", "packages:\n\nengineStrict: true\n"],
+		["a quoted entry", "packages:\n  - 'spikes/*'\n"],
+		["a flow-style list", "packages: [spikes/*, tools/*]\n"],
+		["an entry at the wrong indent", "packages:\n- spikes/*\n"],
+	])("refuses a pnpm-workspace.yaml with %s", (_, text) => {
+		const root = fakeRoot({ "pnpm-workspace.yaml": text, "spikes/a/package.json": "{}" });
+		expect(() => workspacePackages(root, {})).toThrow(
+			"pnpm-workspace.yaml has no readable packages: list",
+		);
+	});
+
+	it("refuses a checkout without pnpm-workspace.yaml", () => {
+		const root = fakeRoot();
+		rmSync(path.join(root, "pnpm-workspace.yaml"));
+		expect(() => workspacePackages(root, {})).toThrow(
+			"pnpm-workspace.yaml has no readable packages: list",
+		);
 	});
 });

@@ -7,8 +7,8 @@
     "node": ">=26.13.1"
   },
   "scripts": {
-    "lint": "biome ci .",
-    "format": "biome check --write .",
+    "lint": "node tools/verify/gate.ts && biome ci .",
+    "format": "node tools/verify/gate.ts && biome check --write .",
     "typecheck": "node tools/verify/turbo.ts run typecheck",
     "test": "node tools/verify/turbo.ts run test",
     "build": "node tools/verify/turbo.ts run build",

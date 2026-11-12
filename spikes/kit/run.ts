@@ -1,104 +1,229 @@
-import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import path from "node:path";
-import { findPackageDir, kitDir } from "./repo.ts";
+import type { StartProblem } from "../../tools/verify/lib/bootstrap.ts";
 
-const usage = [
-	"usage: node ../kit/run.ts [--heavy | --live | --device] [--strict] [--] [vitest args]",
-	"       node ../kit/run.ts --typecheck   (tsc -b, with no other argument)",
-].join("\n");
+// Every script of a spike starts here: its test tiers, and its typecheck as --typecheck. This
+// file imports only node: built-ins up front. Before the rest of the kit loads (runner.ts and its
+// imports), kitMain checks its own helper files, refuses a working folder reached through an alias,
+// and stops a reserved folder's run at the off notice unless DRAFTYAK_RESERVED_TESTS=1 (off.ts), so a
+// fault elsewhere in the kit can't fail such a folder's scripts. Then the input gate: trusted from a
+// gated launcher (turbo.ts, verify.ts, reserved-proof.ts), which sets DRAFTYAK_GATE_ROOT to this
+// checkout's real root, and otherwise run here as node tools/verify/gate.ts.
 
-export interface RunPlan {
-	readonly tier: "unit" | "heavy" | "live" | "device";
-	readonly strict: boolean;
-	readonly args: readonly string[];
-	// --typecheck: args are tsc's, not Vitest's.
-	readonly typecheck?: boolean;
+export const CWD_REFUSED =
+	"reserved tripwire: the working folder is reached through a link, junction or other alias; nothing was run";
+
+const fold = (file: string): string => (process.platform === "win32" ? file.toLowerCase() : file);
+
+function below(file: string, root: string): string | null {
+	const rel = path.relative(root, file);
+	if (path.isAbsolute(rel) || rel === ".." || rel.startsWith(`..${path.sep}`)) return null;
+	return rel;
 }
 
-// Kit flags first, read across any `--`: from bash and cmd, `pnpm test:heavy -- --strict` passes
-// one; PowerShell's pnpm.ps1 drops it. The first other argument starts Vitest's.
-export function parseRunArgs(argv: readonly string[]): RunPlan {
-	let tier: RunPlan["tier"] = "unit";
-	let strict = false;
-	let typecheck = false;
-	let index = 0;
-	for (; index < argv.length; index++) {
-		const arg = argv[index] ?? "";
-		if (arg === "--strict") {
-			strict = true;
-		} else if (arg === "--typecheck") {
-			typecheck = true;
-		} else if (arg === "--heavy" || arg === "--live" || arg === "--device") {
-			if (tier !== "unit") throw new Error(`one tier at a time\n${usage}`);
-			tier = arg.slice(2) as RunPlan["tier"];
-		} else if (arg !== "--") {
-			break;
-		}
+// Whether a working folder, given as a path below the checkout at `root`, really is another folder:
+// a link, a junction or an 8.3 alias below the root makes its real path differ from the same path
+// below the real root. The off decision reads only the given path below the root (reservedPath), so
+// such a folder could hide a reserved name. A folder whose given path isn't below the root is judged
+// by its real path there, and one that can't be resolved counts as aliased.
+export function aliasedCwd(root: string, cwd: string): boolean {
+	const rel = below(path.resolve(cwd), root);
+	if (rel === null) return false;
+	try {
+		const expected = path.join(realpathSync.native(root), rel);
+		return fold(realpathSync.native(cwd)) !== fold(expected);
+	} catch {
+		return true;
 	}
-	const rest = argv.slice(index);
-	if (typecheck || rest.some((arg) => /^--typecheck(?:=|$)/.test(arg))) {
-		if (tier !== "unit" || strict || rest.length > 0) {
-			throw new Error(`--typecheck runs tsc -b alone: no tier, --strict or Vitest args\n${usage}`);
-		}
-		return { tier, strict, args: ["-b"], typecheck: true };
-	}
-	if (rest.some((arg) => /^--mode(?:=|$)/.test(arg))) {
-		throw new Error(`pick the tier with --heavy, --live or --device, not --mode\n${usage}`);
-	}
-	return { tier, strict, args: ["run", ...(tier === "unit" ? [] : ["--mode", tier]), ...rest] };
 }
 
-// A bin from the package's own install, else the workspace root's; run with process.execPath.
-function resolveBin(name: string, bin: string, fallback: string, from: string): string {
-	const dir = findPackageDir(name, from) ?? findPackageDir(name, kitDir);
-	if (dir === null) throw new Error(`${name} isn't installed: run pnpm install`);
-	const json = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8")) as {
-		bin?: Record<string, string>;
+// Whether a gated launcher already ran the input gate on this checkout: its marker (lib/bootstrap.ts's
+// GATE_ROOT_ENV) names the real root. The threat model is accidental reach, not a hostile local user,
+// who can set it by hand.
+export function gatedLauncher(root: string, marker: string | undefined): boolean {
+	if (marker === undefined || marker === "") return false;
+	try {
+		return fold(path.resolve(marker)) === fold(realpathSync.native(root));
+	} catch {
+		return false;
+	}
+}
+
+export interface KitDeps {
+	// The checkout's root, and the folder the script runs in.
+	readonly root: string;
+	readonly cwd: string;
+	readonly print: (line: string) => void;
+	readonly error: (line: string) => void;
+	// checkStart on this entry and one of its HELPERS sets, after the inline start check has passed.
+	readonly startCheck: (set: "kitOff" | "kitGate" | "kitRun") => readonly StartProblem[];
+	// node tools/verify/gate.ts on this checkout: its lines are printed and its exit code returned.
+	readonly gate: () => Promise<number>;
+	readonly runner: () => Promise<{
+		main: (argv: readonly string[], env?: NodeJS.ProcessEnv) => void;
+	}>;
+}
+
+// The kit up to the runner. It returns the exit code of a run it stopped, and undefined once
+// runner.main has the run.
+export async function kitMain(
+	argv: readonly string[],
+	env: NodeJS.ProcessEnv,
+	deps: KitDeps,
+): Promise<number | undefined> {
+	const { GATE_ROOT_ENV, START_STOP_LINE, startLines } = await import(
+		"../../tools/verify/lib/bootstrap.ts"
+	);
+	const refused = (problems: readonly StartProblem[]): boolean => {
+		for (const line of startLines(problems)) deps.error(line);
+		return problems.length > 0;
 	};
-	return path.join(dir, json.bin?.[bin] ?? fallback);
-}
-
-export function resolveVitest(from: string = process.cwd()): string {
-	return resolveBin("vitest", "vitest", "vitest.mjs", from);
-}
-
-export function resolveTsc(from: string = process.cwd()): string {
-	return resolveBin("typescript", "tsc", "bin/tsc", from);
-}
-
-// Without its own config Vitest would run every test file below the folder, in no tier.
-export function assertVitestConfig(dir: string = process.cwd()): void {
-	const names = ["ts", "mts", "cts", "js", "mjs", "cjs"].map((ext) => `vitest.config.${ext}`);
-	if (!names.some((name) => existsSync(path.join(dir, name)))) {
-		throw new Error(`no vitest.config.ts in ${dir}: run it from a package that has one\n${usage}`);
+	if (refused(deps.startCheck("kitOff"))) return 2;
+	if (aliasedCwd(deps.root, deps.cwd)) {
+		deps.error(CWD_REFUSED);
+		deps.error(START_STOP_LINE);
+		return 2;
 	}
+	const [{ reservedSpikeOff }, { OFF_NOTICE }] = await Promise.all([
+		import("./off.ts"),
+		import("../../reserved-tests.ts"),
+	]);
+	if (reservedSpikeOff(deps.cwd, env)) {
+		deps.print(OFF_NOTICE);
+		return 0;
+	}
+	if (!gatedLauncher(deps.root, env[GATE_ROOT_ENV])) {
+		if (refused(deps.startCheck("kitGate"))) return 2;
+		const code = await deps.gate();
+		if (code !== 0) return code;
+	}
+	// Under a gated launcher too: runner.ts and its imports are checked before they load.
+	if (refused(deps.startCheck("kitRun"))) return 2;
+	const runner = await deps.runner();
+	runner.main(argv, { ...env, [GATE_ROOT_ENV]: realpathSync.native(deps.root) });
+	return undefined;
 }
 
-// A folder without one is a usage error, not a failed check.
-export function assertTsconfig(dir: string = process.cwd()): void {
-	if (!existsSync(path.join(dir, "tsconfig.json"))) {
-		throw new Error(`no tsconfig.json in ${dir}: run it from a package that has one\n${usage}`);
+// start check
+function startCheckLines(
+	root: string,
+	node: { readonly execArgv: readonly string[]; readonly options: string | undefined },
+): string[] {
+	const nodeFs = process.getBuiltinModule("node:fs");
+	const nodePath = process.getBuiltinModule("node:path");
+	const fold = (file: string): string => {
+		const slashed = file.split(nodePath.sep).join("/");
+		if (process.platform === "win32") return slashed.toLowerCase();
+		return process.platform === "darwin" ? slashed.normalize("NFC").toLowerCase() : slashed;
+	};
+	const stop =
+		"reserved tripwire: stopped before anything was built or tested. Reserved code may sit only in the allowed reserved roots, and no Rust or Cargo may use a reserved name or feature, until that code has its own reviewed gating design; every listed file, every file one of them names and every file a tool would pick up from a folder it scans must be a regular, listed file of this checkout, inside real folders. Don't open the files or follow the links: send this log's path to the reserved files' maintainer.";
+	// Node runs these before an entry's first line: a module to preload, a loader, a startup
+	// snapshot, or a config file that may name them. No check after that code can tell what it
+	// reached, so the entry stops. NODE_OPTIONS splits as Node splits it: at spaces outside double
+	// quotes, which it drops, and a backslash inside quotes takes the next character as it is. One
+	// string, so no scan for import specifiers reads an option's name as one.
+	const preloads = [
+		"--require -r --import --loader --experimental-loader --snapshot-blob --config-file",
+		"--experimental-config-file --experimental-default-config-file",
+	]
+		.join(" ")
+		.split(" ");
+	const words: string[] = [];
+	const options = node.options ?? "";
+	let quoted = false;
+	let fresh = true;
+	for (let index = 0; index < options.length; index++) {
+		let char = options.charAt(index);
+		if (char === String.fromCharCode(92) && quoted) char = options.charAt(++index);
+		else if (char === " " && !quoted) {
+			fresh = true;
+			continue;
+		} else if (char === '"') {
+			quoted = !quoted;
+			continue;
+		}
+		if (fresh) words.push(char);
+		else words[words.length - 1] += char;
+		fresh = false;
 	}
+	const loads = (arg: string): boolean =>
+		preloads.includes((arg.split("=")[0] ?? "").replaceAll("_", "-"));
+	if ([...node.execArgv, ...words].some(loads)) {
+		return [
+			"reserved tripwire: Node loaded code or options before this entry's first line (--require, --import, --loader, a startup snapshot or a config file, on its command line or in NODE_OPTIONS); nothing was checked",
+			stop,
+		];
+	}
+	const stopped = [
+		"reserved tripwire: 1 start file(s) or folder(s) failed their kind check; nothing was loaded",
+		stop,
+	];
+	// From the root's real path down: a link or 8.3 alias above the root changes nothing below it.
+	let folder: string;
+	try {
+		folder = nodeFs.realpathSync.native(root);
+	} catch {
+		return stopped;
+	}
+	for (const [index, name] of ["tools", "verify", "lib", "bootstrap.ts"].entries()) {
+		const at = nodePath.join(folder, name);
+		let plain = false;
+		try {
+			const entry = nodeFs
+				.readdirSync(folder, { withFileTypes: true })
+				.find((item) => fold(item.name) === fold(name));
+			const stat = nodeFs.lstatSync(at, { bigint: true });
+			const kind = index === 3 ? stat.isFile() && stat.nlink === 1n : stat.isDirectory();
+			plain =
+				entry !== undefined &&
+				!entry.isSymbolicLink() &&
+				!stat.isSymbolicLink() &&
+				kind &&
+				fold(nodeFs.realpathSync.native(at)) === fold(at);
+		} catch {
+			plain = false;
+		}
+		if (!plain) return stopped;
+		folder = at;
+	}
+	return [];
 }
+// end start check
 
 if (import.meta.main) {
 	try {
-		const plan = parseRunArgs(process.argv.slice(2));
-		if (plan.typecheck) assertTsconfig();
-		else assertVitestConfig();
-		const env = plan.strict ? { ...process.env, DRAFTYAK_STRICT_SKIPS: "1" } : process.env;
-		const bin = plan.typecheck ? resolveTsc() : resolveVitest();
-		// Vitest and tsc get Ctrl+C from the console themselves; stay alive until they have shut down.
-		process.on("SIGINT", () => {});
-		spawn(process.execPath, [bin, ...plan.args], { env, stdio: "inherit" })
-			.once("error", (error) => {
-				console.error(`run: ${error.message}`);
-				process.exitCode = 2;
-			})
-			.once("close", (code) => {
-				process.exitCode ??= code ?? 1;
+		const lexical = path.resolve(import.meta.dirname, "..", "..");
+		const early = startCheckLines(lexical, {
+			execArgv: process.execArgv,
+			options: process.env.NODE_OPTIONS,
+		});
+		if (early.length > 0) {
+			for (const line of early) console.error(line);
+			process.exitCode = 2;
+		} else {
+			const { checkStart, HELPERS, realRoot } = await import("../../tools/verify/lib/bootstrap.ts");
+			const root = realRoot(import.meta.dirname, 2);
+			const code = await kitMain(process.argv.slice(2), process.env, {
+				root: lexical,
+				cwd: process.cwd(),
+				print: (line) => console.log(line),
+				error: (line) => console.error(line),
+				startCheck: (set) => checkStart(root, process.argv[1] ?? "", HELPERS[set]),
+				gate: async () => {
+					const { spawnSync } = await import("node:child_process");
+					const gate = path.join(root, "tools", "verify", "gate.ts");
+					const result = spawnSync(process.execPath, [gate], {
+						cwd: root,
+						stdio: ["ignore", "inherit", "inherit"],
+						windowsHide: true,
+					});
+					return result.error === undefined ? (result.status ?? 1) : 2;
+				},
+				runner: () => import("./runner.ts"),
 			});
+			if (code !== undefined) process.exitCode = code;
+		}
 	} catch (error) {
 		console.error(`run: ${error instanceof Error ? error.message : String(error)}`);
 		process.exitCode = 2;

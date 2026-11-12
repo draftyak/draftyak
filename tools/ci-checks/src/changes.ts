@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { reservedWord } from "../../../reserved-tests.ts";
 import { appendSummary, cliArgs, git, revision, runCli, setOutputs } from "./lib.ts";
 import { parseYaml, type Yaml } from "./yaml.ts";
 
@@ -29,6 +30,29 @@ const sharedSpikeFiles = new Set([
 	"vitest.config.ts",
 	"vitest.shared.ts",
 	"tools/verify/turbo.ts",
+	// The reserved controls, the input gate and its start check, the pre-install check, the
+	// opted-in proof and the launchers' spawn helpers, which the heavy step of every selected spike
+	// runs through.
+	"reserved-tests.ts",
+	"tools/verify/gate.ts",
+	"tools/verify/lib/gate.ts",
+	"tools/verify/lib/bootstrap.ts",
+	"tools/verify/lib/listing.ts",
+	"tools/verify/lib/references.ts",
+	"tools/verify/lib/discovery.ts",
+	"tools/verify/lib/safe-fs.ts",
+	"tools/verify/lib/rust-source.ts",
+	"tools/verify/lib/imports.ts",
+	"tools/verify/lib/allowed.ts",
+	"tools/verify/reserved-tripwire.ts",
+	"tools/verify/preinstall.ts",
+	"tools/verify/lib/hooks.ts",
+	"tools/verify/lib/workspace-policy.ts",
+	"tools/verify/reserved-proof.ts",
+	"tools/verify/lib/proof.ts",
+	"tools/verify/lib/spawn.ts",
+	"tools/verify/lib/tools.ts",
+	"tools/verify/reserved-inventory.json",
 	"tools/ci-checks/src/changes.ts",
 	"tools/ci-checks/src/yaml.ts",
 	".github/workflows/ci.yml",
@@ -135,9 +159,13 @@ export function consumingSpikes(
 		.sort();
 }
 
-// Markdown, the community files without an extension, and spike evidence.
+// Markdown, the community files without an extension, and a spike's evidence JSON directly in its
+// evidence/ folder. A reserved path counts only as Markdown, so any other change to one runs the
+// full CI, the reserved job included.
 export function isDocs(file: string): boolean {
-	return /\.md$/i.test(file) || communityFiles.has(file) || /^spikes\/[^/]+\/evidence\//.test(file);
+	if (/\.md$/i.test(file)) return true;
+	if (reservedWord.test(file)) return false;
+	return communityFiles.has(file) || /^spikes\/[^/]+\/evidence\/[^/]+\.json$/i.test(file);
 }
 
 // The Cargo workspace holding a file: the nearest [workspace] manifest above it, else the nearest

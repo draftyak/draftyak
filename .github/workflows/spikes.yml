@@ -53,6 +53,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      # Each job runs the reserved gate on its own checkout before any repository code.
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
       - name: Validate spikes/run.json and each spike's ci.json
         id: plan
         env:
@@ -101,6 +104,13 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      # After the item's commit is checked out and its evidence cleared, so the gate checks the
+      # tree this job tests.
+      - name: Reserved paths and execution inputs
+        run: node tools/verify/gate.ts
+      # pnpm/action-setup starts pnpm in this checkout, so the pre-install check runs before it too.
+      - name: Pre-install script check before pnpm starts
+        run: node tools/verify/preinstall.ts
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         if: runner.os != 'macOS' || runner.arch != 'X64'
         with:
@@ -173,6 +183,8 @@ jobs:
         if: matrix.docker
         run: |
           docker info --format 'Docker {{.ServerVersion}}, {{.OSType}}/{{.Architecture}}'
+      - name: Pre-install script check
+        run: node tools/verify/preinstall.ts
       - run: pnpm install --frozen-lockfile
       - name: fetch-node
         run: |
@@ -189,6 +201,8 @@ jobs:
           key: ${{ steps.nodes.outputs.cache-primary-key }}
       # TESTS lists a partial run's test files, which plan checked; spikes/kit/run.ts hands them to
       # Vitest as file filters. Without them, the command runs the spike's whole heavy tier.
+      # A spike whose own folder is reserved runs its heavy tier opted in, on this command only;
+      # every other spike, and every other step, runs without the flag.
       - name: test:heavy
         id: heavy
         env:
@@ -200,6 +214,13 @@ jobs:
           read -r -a tests <<< "$TESTS"
           if [ "${#tests[@]}" -gt 0 ]; then heavy+=(-- "${tests[@]}"); fi
           if [ "$XVFB" = true ]; then heavy=(xvfb-run --auto-servernum "${heavy[@]}"); fi
+          reserved=0
+          node reserved-tests.ts --reserved "spikes/$SPIKE" || reserved=$?
+          if [ "$reserved" = 0 ]; then
+            heavy=(env DRAFTYAK_RESERVED_TESTS=1 "${heavy[@]}")
+          elif [ "$reserved" != 1 ]; then
+            exit "$reserved"
+          fi
           "${heavy[@]}"
       - name: Save Pyodide wheels
         if: github.ref == 'refs/heads/main' && steps.pyodide.outcome == 'success' && steps.pyodide.outputs.cache-hit != 'true'

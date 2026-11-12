@@ -6,6 +6,6 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:heavy": "vitest run --mode heavy",
-    "m0:prefetch": "node prefetch.ts"
+    "m0:prefetch": "node m0-prefetch.ts"
   }
 }

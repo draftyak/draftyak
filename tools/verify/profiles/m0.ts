@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { withoutReservedTests } from "../../../reserved-tests.ts";
 import { cacheDir } from "../../../spikes/kit/repo.ts";
 import { fromExitCode, type Profile, type Step, stepsFor } from "../lib/registry.ts";
 import {
@@ -65,7 +66,7 @@ function missingBrowsers(
 function browserCheck(root: string, env: NodeJS.ProcessEnv): Check {
 	const name = "browsers";
 	const uses = (deps: object | undefined): boolean => !!deps && "@playwright/test" in deps;
-	const users = workspacePackages(root).filter(
+	const users = workspacePackages(root, env).filter(
 		({ manifest }) => uses(manifest.dependencies) || uses(manifest.devDependencies),
 	);
 	if (users.length === 0) return { name, state: "n/a", detail: "no package uses Playwright yet" };
@@ -91,14 +92,19 @@ function browserCheck(root: string, env: NodeJS.ProcessEnv): Check {
 
 // Node binaries through fetch-node's offline lookup and pinned images in Docker; cold ones download
 // during the run unless pnpm m0:prefetch fetched them first.
-async function cacheCheck(root: string, exec: Exec, docker: string | undefined): Promise<Check> {
+async function cacheCheck(
+	root: string,
+	exec: Exec,
+	docker: string | undefined,
+	env: NodeJS.ProcessEnv,
+): Promise<Check> {
 	const targets = nodeTargets(root);
 	const cold: string[] = [];
 	for (const target of targets ?? []) {
 		const args = fetchNodeArgs(root, target, "--offline", "--print-path");
 		if ((await exec.capture(process.execPath, args)).code !== 0) cold.push(`Node ${label(target)}`);
 	}
-	const images = docker === undefined ? [] : await pinnedImages(root, exec);
+	const images = docker === undefined ? [] : await pinnedImages(root, exec, env);
 	for (const image of images) {
 		if ((await inspectImage(exec, docker ?? "docker", image)).code !== 0) cold.push(image);
 	}
@@ -146,14 +152,16 @@ export async function checkPrerequisites(
 		await guarded("uv", "missing", () => toolCheck("uv", exec, env)),
 		await guarded("gpgv", "missing", () => toolCheck("gpgv", exec, env)),
 		await guarded("browsers", "missing", () => browserCheck(root, env)),
-		await guarded("caches", "warn", () => cacheCheck(root, exec, docker)),
+		await guarded("caches", "warn", () => cacheCheck(root, exec, docker, env)),
 	];
 }
 
 // The heavy step runs one suite at a time, so the minutes add up.
-function estimate(root: string, checks: readonly Check[]): string {
+function estimate(root: string, checks: readonly Check[], env: NodeJS.ProcessEnv): string {
 	const downloads = checks.reduce((sum, check) => sum + (check.minutes ?? 0), 0);
-	const heavy = workspacePackages(root).filter(({ manifest }) => manifest.scripts?.["test:heavy"]);
+	const heavy = workspacePackages(root, env).filter(
+		({ manifest }) => manifest.scripts?.["test:heavy"],
+	);
 	const count = (folder: string): number =>
 		heavy.filter(({ dir }) => dir.startsWith(`${folder}/`)).length;
 	const spikeSuites = count("spikes");
@@ -181,7 +189,7 @@ const prerequisites: Step = {
 		for (const { state, name, detail } of checks) {
 			console.log(`  ${state.padEnd(7)}  ${name.padEnd(width)}  ${detail}`);
 		}
-		console.log(`verify:m0: expected duration ${estimate(ctx.root, checks)}`);
+		console.log(`verify:m0: expected duration ${estimate(ctx.root, checks, ctx.env)}`);
 		const missing = checks.filter((check) => check.state === "missing").map((check) => check.name);
 		progress.ready = missing.length === 0;
 		if (progress.ready) return { status: "passed" };
@@ -190,15 +198,23 @@ const prerequisites: Step = {
 	},
 };
 
+// The heavy tier's turbo filters (without --filter=) for the folders that exist: turbo refuses a path
+// filter whose folder doesn't exist (no spikes/ before M0.6a lands). verify hands them to every step
+// as ctx.heavyFilters, so the reserved step proves the reserved suites of the same selection.
+export function heavyFilters(root: string): string[] {
+	return ["spikes", "tools"]
+		.filter((dir) => existsSync(path.join(root, dir)))
+		.map((dir) => `./${dir}/*`);
+}
+
 const heavy: Step = {
 	name: "test:heavy",
 	order: 45,
 	profiles: [],
 	async run(ctx) {
-		// turbo refuses a path filter whose folder doesn't exist (no spikes/ before M0.6a lands).
-		const filters = ["spikes", "tools"]
-			.filter((dir) => existsSync(path.join(ctx.root, dir)))
-			.map((dir) => `--filter=./${dir}/*`);
+		const filters = (ctx.heavyFilters ?? heavyFilters(ctx.root)).map(
+			(filter) => `--filter=${filter}`,
+		);
 		const args = [
 			"run",
 			"test:heavy",
@@ -207,7 +223,9 @@ const heavy: Step = {
 			"--concurrency=1",
 			"--continue=dependencies-successful",
 		];
-		return fromExitCode(await ctx.turbo(args, { env: { DRAFTYAK_STRICT_SKIPS: "1" } }));
+		// Without DRAFTYAK_RESERVED_TESTS: the reserved step runs those suites on its own.
+		const env = { DRAFTYAK_STRICT_SKIPS: "1", ...withoutReservedTests(ctx.env) };
+		return fromExitCode(await ctx.turbo(args, { env }));
 	},
 };
 
@@ -222,10 +240,11 @@ const gated = (step: Step): Step => ({
 export const profile: Profile = {
 	name: "m0",
 	description:
-		"pnpm verify:m0: prerequisites and estimate, the default steps, heavy tests with strict skips, pnpm adr",
+		"pnpm verify:m0: prerequisites and estimate, the default steps, heavy tests with strict skips, the reserved step, pnpm adr",
 	select(steps) {
 		const chosen = [...new Set([...stepsFor("default", steps), ...stepsFor("m0", steps), heavy])];
 		const ordered = chosen.toSorted((a, b) => a.order - b.order || a.name.localeCompare(b.name));
 		return [prerequisites, ...ordered.map(gated)];
 	},
+	heavyFilters,
 };

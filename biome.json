@@ -13,7 +13,10 @@
       "!**/evidence",
       "!**/vectors",
       "!**/*.lock.json",
-      "!spikes/sched-clock/grit-check"
+      "!spikes/sched-clock/grit-check",
+      "!**/*siwc*",
+      "!**/*dynamic-agent*",
+      "!**/*dynamic_agent*"
     ]
   },
   "formatter": {

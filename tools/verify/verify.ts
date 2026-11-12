@@ -1,15 +1,13 @@
 import path from "node:path";
 import { parseArgs } from "node:util";
-import {
-	loadProfiles,
-	loadSteps,
-	type Profile,
-	type Step,
-	type StepContext,
-	type StepOutcome,
-} from "./lib/registry.ts";
-import { capture, type Invocation, type RunOptions, run } from "./lib/spawn.ts";
-import { resolveBiome, resolvePnpm, resolveTurbo, telemetryOff } from "./lib/tools.ts";
+import type { StartProblem } from "./lib/bootstrap.ts";
+import type { GateResult } from "./lib/gate.ts";
+import type { Profile, Step, StepContext, StepOutcome } from "./lib/registry.ts";
+
+// Static imports are node: built-ins and types only. main() parses its arguments, then runs the
+// start check, the flag check and the input gate on this checkout, in that order, and only then
+// loads the registry, which imports every step and profile, and the steps' context; every child of a
+// step gets DRAFTYAK_GATE_ROOT.
 
 const here = import.meta.dirname;
 const root = path.resolve(here, "..", "..");
@@ -37,41 +35,6 @@ function duration(ms: number): string {
 	return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
-function lazy<T>(resolve: () => T): () => T {
-	let value: T | undefined;
-	return () => {
-		value ??= resolve();
-		return value;
-	};
-}
-
-function context(profile: Profile): StepContext {
-	const env = process.env;
-	const at = (options?: RunOptions): RunOptions => ({
-		cwd: root,
-		...options,
-		env: { ...env, ...options?.env },
-	});
-	const pnpm = lazy(() => resolvePnpm(env));
-	const turbo = lazy(() => resolveTurbo(root));
-	const biome = lazy(() => resolveBiome(root));
-	const withArgs = (base: Invocation, args: readonly string[]): Invocation => ({
-		command: base.command,
-		args: [...base.args, ...args],
-	});
-	return {
-		root,
-		profile: profile.name,
-		env,
-		run: (command, args, options) => run({ command, args }, at(options)),
-		capture: (command, args, options) => capture({ command, args }, at(options)),
-		node: (args, options) => run({ command: process.execPath, args }, at(options)),
-		pnpm: (args, options) => run(withArgs(pnpm(), args), at(options)),
-		turbo: (args, options) => run({ command: turbo(), args }, at(options)),
-		biome: (args, options) => run({ command: biome(), args }, at(options)),
-	};
-}
-
 async function runStep(step: Step, ctx: StepContext, label: string): Promise<Result> {
 	console.log(`\nverify: ${label}`);
 	const started = performance.now();
@@ -95,9 +58,17 @@ function list(profiles: readonly Profile[], steps: readonly Step[]): void {
 	}
 }
 
+export interface VerifyDeps {
+	// checkStart on this entry and HELPERS.verify; by default the inline start check, then that.
+	readonly startCheck?: () => readonly StartProblem[];
+	// The input gate on this checkout; by default lib/gate.ts's runGate.
+	readonly gate?: () => Promise<GateResult>;
+}
+
 export async function main(
 	argv: readonly string[],
 	dirs: Dirs = { steps: path.join(here, "steps"), profiles: path.join(here, "profiles") },
+	deps: VerifyDeps = {},
 ): Promise<number> {
 	let options: { profile: string; list: boolean; help: boolean };
 	try {
@@ -118,6 +89,63 @@ export async function main(
 		console.log(usage);
 		return 0;
 	}
+	// The start check before any helper loads, a refused flag value before any step, and the
+	// input gate before the registry loads the steps and profiles.
+	if (deps.startCheck === undefined) {
+		const early = startCheckLines(root, {
+			execArgv: process.execArgv,
+			options: process.env.NODE_OPTIONS,
+		});
+		if (early.length > 0) {
+			for (const line of early) console.error(line);
+			return 1;
+		}
+	}
+	const bootstrap = await import("./lib/bootstrap.ts");
+	const startCheck =
+		deps.startCheck ??
+		(() =>
+			bootstrap.checkStart(
+				bootstrap.realRoot(here, 2),
+				process.argv[1] ?? "",
+				bootstrap.HELPERS.verify,
+			));
+	const problems = startCheck();
+	if (problems.length > 0) {
+		for (const line of bootstrap.startLines(problems)) console.error(line);
+		return 1;
+	}
+	const { reservedTestsOn } = await import("../../reserved-tests.ts");
+	try {
+		reservedTestsOn(process.env);
+	} catch (error) {
+		console.error(`verify: ${message(error)}`);
+		return 2;
+	}
+	const gate =
+		deps.gate ??
+		(async () => (await import("./lib/gate.ts")).runGate({ root: bootstrap.realRoot(here, 2) }));
+	let result: GateResult | null;
+	try {
+		result = await gate();
+	} catch {
+		result = null;
+	}
+	const listing = result?.ok === true ? result.listing : null;
+	if (listing === null) {
+		for (const line of result?.lines ?? [bootstrap.GATE_FAILED, bootstrap.START_STOP_LINE]) {
+			console.error(line);
+		}
+		return 1;
+	}
+	for (const line of result?.lines ?? []) console.log(line);
+
+	const [{ loadProfiles, loadSteps }, { context }, { run }, { telemetryOff }] = await Promise.all([
+		import("./lib/registry.ts"),
+		import("./lib/context.ts"),
+		import("./lib/spawn.ts"),
+		import("./lib/tools.ts"),
+	]);
 	Object.assign(process.env, telemetryOff);
 
 	let steps: Step[];
@@ -143,29 +171,122 @@ export async function main(
 	console.log(
 		`verify: profile ${profile.name}: ${selected.map((s) => s.name).join(", ") || "no steps"}`,
 	);
-	const ctx = context(profile);
+	// The steps' children, and turbo's tasks through them, get the launcher marker.
+	const ctx = context(profile, run, { ...process.env, [bootstrap.GATE_ROOT_ENV]: listing.root });
 	const results: Result[] = [];
 	for (const [index, step] of selected.entries()) {
 		results.push(await runStep(step, ctx, `[${index + 1}/${selected.length}] ${step.name}`));
 	}
 
 	const width = Math.max(0, ...results.map((result) => result.step.name.length));
+	const statusWidth = Math.max(7, ...results.map((result) => result.outcome.status.length));
 	console.log(`\nverify: summary (profile ${profile.name})`);
 	for (const { step, outcome, ms } of results) {
 		const reason = outcome.status === "passed" ? "" : `  ${outcome.reason}`;
-		console.log(
-			`  ${outcome.status.padEnd(7)}  ${step.name.padEnd(width)}  ${duration(ms)}${reason}`,
-		);
+		const status = outcome.status.padEnd(statusWidth);
+		console.log(`  ${status}  ${step.name.padEnd(width)}  ${duration(ms)}${reason}`);
 	}
 	const count = (status: StepOutcome["status"]): number =>
 		results.filter((result) => result.outcome.status === status).length;
 	const [passed, failed, skipped] = [count("passed"), count("failed"), count("skipped")];
+	const incomplete = count("incomplete");
 	const total = results.reduce((sum, result) => sum + result.ms, 0);
 	console.log(`verify: total ${duration(total)}`);
-	console.log(
-		`verify: ${passed}/${passed + failed} steps passed${skipped > 0 ? `, ${skipped} skipped` : ""}`,
-	);
-	return failed > 0 ? 1 : 0;
+	const notes = [
+		...(incomplete > 0 ? [`, ${incomplete} incomplete`] : []),
+		...(skipped > 0 ? [`, ${skipped} skipped`] : []),
+	];
+	console.log(`verify: ${passed}/${passed + failed + incomplete} steps passed${notes.join("")}`);
+	// An incomplete step is never a pass (the reserved files' maintainer's run is missing), and
+	// 3 tells it apart from a failure.
+	return failed > 0 ? 1 : incomplete > 0 ? 3 : 0;
 }
+
+// start check
+function startCheckLines(
+	root: string,
+	node: { readonly execArgv: readonly string[]; readonly options: string | undefined },
+): string[] {
+	const nodeFs = process.getBuiltinModule("node:fs");
+	const nodePath = process.getBuiltinModule("node:path");
+	const fold = (file: string): string => {
+		const slashed = file.split(nodePath.sep).join("/");
+		if (process.platform === "win32") return slashed.toLowerCase();
+		return process.platform === "darwin" ? slashed.normalize("NFC").toLowerCase() : slashed;
+	};
+	const stop =
+		"reserved tripwire: stopped before anything was built or tested. Reserved code may sit only in the allowed reserved roots, and no Rust or Cargo may use a reserved name or feature, until that code has its own reviewed gating design; every listed file, every file one of them names and every file a tool would pick up from a folder it scans must be a regular, listed file of this checkout, inside real folders. Don't open the files or follow the links: send this log's path to the reserved files' maintainer.";
+	// Node runs these before an entry's first line: a module to preload, a loader, a startup
+	// snapshot, or a config file that may name them. No check after that code can tell what it
+	// reached, so the entry stops. NODE_OPTIONS splits as Node splits it: at spaces outside double
+	// quotes, which it drops, and a backslash inside quotes takes the next character as it is. One
+	// string, so no scan for import specifiers reads an option's name as one.
+	const preloads = [
+		"--require -r --import --loader --experimental-loader --snapshot-blob --config-file",
+		"--experimental-config-file --experimental-default-config-file",
+	]
+		.join(" ")
+		.split(" ");
+	const words: string[] = [];
+	const options = node.options ?? "";
+	let quoted = false;
+	let fresh = true;
+	for (let index = 0; index < options.length; index++) {
+		let char = options.charAt(index);
+		if (char === String.fromCharCode(92) && quoted) char = options.charAt(++index);
+		else if (char === " " && !quoted) {
+			fresh = true;
+			continue;
+		} else if (char === '"') {
+			quoted = !quoted;
+			continue;
+		}
+		if (fresh) words.push(char);
+		else words[words.length - 1] += char;
+		fresh = false;
+	}
+	const loads = (arg: string): boolean =>
+		preloads.includes((arg.split("=")[0] ?? "").replaceAll("_", "-"));
+	if ([...node.execArgv, ...words].some(loads)) {
+		return [
+			"reserved tripwire: Node loaded code or options before this entry's first line (--require, --import, --loader, a startup snapshot or a config file, on its command line or in NODE_OPTIONS); nothing was checked",
+			stop,
+		];
+	}
+	const stopped = [
+		"reserved tripwire: 1 start file(s) or folder(s) failed their kind check; nothing was loaded",
+		stop,
+	];
+	// From the root's real path down: a link or 8.3 alias above the root changes nothing below it.
+	let folder: string;
+	try {
+		folder = nodeFs.realpathSync.native(root);
+	} catch {
+		return stopped;
+	}
+	for (const [index, name] of ["tools", "verify", "lib", "bootstrap.ts"].entries()) {
+		const at = nodePath.join(folder, name);
+		let plain = false;
+		try {
+			const entry = nodeFs
+				.readdirSync(folder, { withFileTypes: true })
+				.find((item) => fold(item.name) === fold(name));
+			const stat = nodeFs.lstatSync(at, { bigint: true });
+			const kind = index === 3 ? stat.isFile() && stat.nlink === 1n : stat.isDirectory();
+			plain =
+				entry !== undefined &&
+				!entry.isSymbolicLink() &&
+				!stat.isSymbolicLink() &&
+				kind &&
+				fold(nodeFs.realpathSync.native(at)) === fold(at);
+		} catch {
+			plain = false;
+		}
+		if (!plain) return stopped;
+		folder = at;
+	}
+	return [];
+}
+// end start check
 
 if (import.meta.main) process.exitCode = await main(process.argv.slice(2));

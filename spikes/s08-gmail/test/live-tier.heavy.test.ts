@@ -30,6 +30,8 @@ function liveTier(
 		...(step === undefined ? {} : { DRAFTYAK_S8_STEP: step }),
 		DO_NOT_TRACK: "1",
 		NO_COLOR: "1",
+		// As a gated launcher starts the kit: the input gate has run on this checkout.
+		DRAFTYAK_GATE_ROOT: realpathSync.native(path.resolve(spikeDir, "..", "..")),
 	};
 	const result = spawnSync(process.execPath, ["../kit/run.ts", "--live", "--reporter=verbose"], {
 		cwd: spikeDir,

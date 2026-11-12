@@ -29,10 +29,43 @@ const isMap = (value: Yaml | undefined): value is YamlMap =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 const asMap = (value: Yaml | undefined): YamlMap => (isMap(value) ? value : {});
 const asList = (value: Yaml | undefined): readonly Yaml[] => (Array.isArray(value) ? value : []);
+const unnamed = (step: YamlMap): YamlMap =>
+	Object.fromEntries(Object.entries(step).filter(([key]) => key !== "name"));
+const only = (step: YamlMap, keys: readonly string[]): boolean =>
+	Object.keys(step).every((key) => keys.includes(key));
+// The owner/repo of a `uses:` step, sub-path actions included; "" for a `run:` step.
+const actionOf = (step: YamlMap | undefined): string =>
+	/^[\w.-]+\/[\w.-]+/.exec(String(step?.uses ?? ""))?.[0] ?? "";
+const isAction = (step: YamlMap | undefined): boolean =>
+	step?.uses !== undefined && step.run === undefined;
 
 const pushBranches = new Set(["main", "spikes-run/**"]);
 const forbiddenEvents = ["pull_request_target", "workflow_run"];
 const telemetryOff = ["DO_NOT_TRACK", "TURBO_TELEMETRY_DISABLED"];
+// Names that make Node or bash load a file before a step's own command, in any case.
+const preloadEnv = ["NODE_OPTIONS", "NODE_PATH", "BASH_ENV", "ENV"];
+// The only env names a job that runs the reserved gate may set, since its gate step inherits
+// them; every other such job sets none.
+const reviewedJobEnv: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
+	".github/workflows/ci.yml": {
+		"spike-run": ["DRAFTYAK_STRICT_SKIPS", "SHARD_ID", "SPIKE", "SPIKES"],
+		heavy: ["DRAFTYAK_STRICT_SKIPS"],
+	},
+	".github/workflows/spikes.yml": {
+		run: ["DRAFTYAK_STRICT_SKIPS", "DRAFTYAK_NODES", "DRAFTYAK_CACHE_DIR"],
+	},
+};
+// The env names, besides the telemetry switches, that a workflow whose jobs run the reserved gate
+// may set, since each of its gate steps inherits them: the approval binding workflows' run
+// settings, none of which makes Node or bash load a file.
+const bindingEnv = ["CI", "DRAFTYAK_STRICT_SKIPS", "DRAFTYAK_APPROVAL_BINDING_RUNS"];
+const reviewedWorkflowEnv: Readonly<Record<string, readonly string[]>> = {
+	".github/workflows/nightly.yml": bindingEnv,
+	".github/workflows/security.yml": bindingEnv,
+};
+// Names in a sentence: a, b and c.
+const inWords = (names: readonly string[]): string =>
+	names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 const pinnedUses = /^([\w.-]+\/[\w.-]+)(?:\/[^@]*)?@([0-9a-f]{40})$/;
 const expressions = /\$\{\{([\s\S]*?)\}\}/g;
 // github.event, github.head_ref, github[...], the whole github context and inputs, in any case.
@@ -54,6 +87,7 @@ const requiredPrTypes: Readonly<Record<string, readonly string[]>> = {
 const nonDocs = "needs.changes.outputs.docs-only != 'true'";
 const nativeSelected = "needs.changes.outputs.native-transport == 'true'";
 const readyRun = "(github.event_name != 'pull_request' || !github.event.pull_request.draft)";
+const windowsIf = `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ${nativeSelected}))`;
 const ciControls: Readonly<Record<string, YamlMap>> = {
 	changes: {},
 	cheap: { needs: "changes" },
@@ -86,13 +120,24 @@ const ciControls: Readonly<Record<string, YamlMap>> = {
 		if: `${nonDocs} && ${readyRun} && needs.changes.outputs.ordinary-heavy != ''`,
 		env: { DRAFTYAK_STRICT_SKIPS: "1" },
 	},
-	windows: {
-		needs: "changes",
-		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ${nativeSelected}))`,
-	},
+	windows: { needs: "changes", if: windowsIf },
 	macos: { needs: "changes", if: `${nonDocs} && ${readyRun} && ${nativeSelected}` },
+	// The reserved suites' opted-in proofs, each in a log of its own; reserved-windows wherever
+	// windows runs.
+	reserved: { needs: "changes", if: nonDocs },
+	"reserved-windows": { needs: "changes", if: windowsIf },
 	required: {
-		needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"],
+		needs: [
+			"changes",
+			"cheap",
+			"full",
+			"spikes",
+			"heavy",
+			"windows",
+			"macos",
+			"reserved",
+			"reserved-windows",
+		],
 		if: "always()",
 	},
 };
@@ -163,6 +208,228 @@ const spikeUpload: YamlMap = {
 	},
 };
 
+// In every workflow, each job that runs a command runs the reserved gate on its own checkout
+// before any repository code or other action, since another job's gate proves nothing about this
+// checkout, and the pre-install check is the last command before each install.
+const gate = "node tools/verify/gate.ts";
+const preinstall = "node tools/verify/preinstall.ts";
+const install = "pnpm install --frozen-lockfile";
+// The second checkout of native-store.yml, native-supervisor.yml and nightly.yml, at source/, which
+// the trusted checkout's gate and pre-install check read with --root before pnpm starts there.
+const sourceGate = `${gate} --root source`;
+const sourcePreinstall = `${preinstall} --root source`;
+const beforeGate = new Set(["actions/checkout", "actions/setup-node"]);
+// Before the gate, setup-node reads only the pinned Node version (a cache input starts a package
+// manager in the unchecked checkout), and neither action sets an env, which its Node would read.
+const pinnedNode = { "node-version-file": ".node-version" };
+const plainBeforeGate = (step: YamlMap): boolean =>
+	only(step, ["name", "uses", "with"]) &&
+	(actionOf(step) === "actions/checkout" || isDeepStrictEqual(step.with, pinnedNode));
+// The actions that run no tool in the checkout, whatever their inputs: checkout, cache, the artifact
+// upload and zizmor's.
+const inertActions = new Set([
+	"actions/checkout",
+	"actions/cache",
+	"actions/upload-artifact",
+	"zizmorcore/zizmor-action",
+]);
+// A step that runs a command or may start one in the checkout: a command, and any action but the
+// inert ones and setup-node with the pinned Node version alone. Swatinem/rust-cache, say, runs
+// rustc and cargo metadata there, through rustup, which reads the checkout's toolchain file.
+const startsCommand = (step: YamlMap): boolean =>
+	step.run !== undefined ||
+	(step.uses !== undefined &&
+		!inertActions.has(actionOf(step)) &&
+		!(actionOf(step) === "actions/setup-node" && plainBeforeGate(step)));
+// A package manager's command, Windows' .cmd, .exe and .ps1 spellings included, and yarnpkg, the
+// second name yarn installs, and a yarn release that node runs from its path (yarn-4.9.1.cjs).
+const yarnRelease = String.raw`yarn-\d[\w.-]*\.c?js`;
+const packageManager = new RegExp(
+	String.raw`(?<![\w.-])(?:(?:pnpm|pnpx|npm|npx|yarn(?:pkg)?|corepack|bunx?|deno)(?:\.(?:cmd|exe|ps1))?|${yarnRelease})(?![\w.-])`,
+	"i",
+);
+// A git command, after git's own options, that rewrites the working tree, moves or removes files in
+// it, or adds files to it: after the gate, it would leave a tree the gate never saw. git may be
+// started by a path, in quotes or as git.exe, and git-lfs as a command of its own; the check reads
+// a step's command with its line continuations joined.
+const treeCommands = [
+	"checkout",
+	"switch",
+	"reset",
+	"restore",
+	"stash",
+	"pull",
+	"merge",
+	"rebase",
+	"cherry-pick",
+	"revert",
+	"am",
+	"apply",
+	"read-tree",
+	"checkout-index",
+	"worktree",
+	"sparse-checkout",
+	"submodule",
+	"bisect",
+	"clone",
+	"lfs",
+	"clean",
+	"mv",
+	"rm",
+];
+const treeChange = new RegExp(
+	String.raw`(?<![\w.-])(?:[^\s'"\x60;|&()]*[\\/])?["']?git(?:-lfs)?(?:\.exe)?["']?(?:\s+(?:-[Cc]\s+\S+|--(?:git-dir|work-tree|namespace|exec-path|config-env)\s+\S+|-{1,2}[\w-]+(?:=\S+)?))*\s+(?:${treeCommands.join("|")})(?![\w.-])`,
+	"i",
+);
+// The line continuations of a step's shell: a backslash's, and in PowerShell a backtick's or in cmd
+// a caret's too, where a line that ends in one goes on to the next.
+const continuations: Readonly<Record<string, RegExp>> = {
+	pwsh: /[\\`]\r?\n/g,
+	powershell: /[\\`]\r?\n/g,
+	cmd: /[\\^]\r?\n/g,
+};
+// Whether a job may run on Windows: its runs-on names a Windows label or is computed, or isn't a
+// label or a list of labels at all.
+const mayRunOnWindows = (runsOn: Yaml | undefined): boolean => {
+	const labels: readonly (Yaml | undefined)[] = Array.isArray(runsOn) ? runsOn : [runsOn];
+	return labels.some((label) => typeof label !== "string" || /windows|\$\{\{/i.test(label));
+};
+// The shell a step of `job` in `workflow` runs with: its own, else its job's or its workflow's
+// defaults.run.shell, else GitHub's default for its runner, pwsh on Windows and bash elsewhere.
+const shellOf = (step: YamlMap, job: YamlMap, workflow: YamlMap): string => {
+	const preset = (holder: YamlMap): Yaml | undefined => asMap(asMap(holder.defaults).run).shell;
+	const given = [step.shell, preset(job), preset(workflow)].find((shell) => shell !== undefined);
+	if (given === undefined) return mayRunOnWindows(job["runs-on"]) ? "pwsh" : "bash";
+	return /^\s*([\w.-]+)/.exec(String(given))?.[1]?.toLowerCase() ?? "";
+};
+// A step's command with its shell's continuations joined, so a command split over lines reads as
+// one; "" for a step with no command.
+const joined = (step: YamlMap, shell: string): string => {
+	if (typeof step.run !== "string") return "";
+	return step.run.replace(continuations[shell] ?? /\\\r?\n/g, " ");
+};
+// What a step that may start a package manager in the checkout is, for the rules that must come
+// first: pnpm/action-setup, setup-node with more than the pinned version (a cache input runs one),
+// or a command that names one, in its run or in the shell it runs with (shell: bun {0}); null for
+// any other step.
+const packageManagerStart = (step: YamlMap): string | null => {
+	if (actionOf(step) === "pnpm/action-setup") return "pnpm/action-setup";
+	if (actionOf(step) === "actions/setup-node" && !isDeepStrictEqual(step.with, pinnedNode)) {
+		return "setup-node with more than the pinned Node version";
+	}
+	const names = (text: Yaml | undefined): boolean =>
+		typeof text === "string" && packageManager.test(text);
+	if (names(step.run) || names(step.shell)) return "a command that names a package manager";
+	return null;
+};
+// The status functions: a condition that calls one, success() included, no longer gets the success()
+// GitHub otherwise puts first, so it may run after an earlier step failed or was cancelled.
+const statusFunction = /(?<![\w.])(?:always|failure|cancelled|success)\s*\(/i;
+// Whether `expression` has an || outside parentheses, brackets and string literals ('' escapes a
+// quote), or unbalanced ones.
+const topLevelOr = (expression: string): boolean => {
+	let depth = 0;
+	for (let at = 0; at < expression.length; at++) {
+		const char = expression[at];
+		if (char === "'") {
+			at++;
+			while (at < expression.length && (expression[at] !== "'" || expression[at + 1] === "'")) {
+				at += expression[at] === "'" ? 2 : 1;
+			}
+			if (at >= expression.length) return true;
+		} else if (char === "(" || char === "[") depth++;
+		else if (char === ")" || char === "]") depth--;
+		else if (char === "|" && expression[at + 1] === "|" && depth === 0) return true;
+		if (depth < 0) return true;
+	}
+	return depth !== 0;
+};
+// A condition that runs only after every earlier step passed: one that calls no status function, or
+// success() alone or as the leading conjunct of the whole condition, with no status call after it.
+const onSuccessOnly = (condition: Yaml | undefined): boolean => {
+	const text = String(condition ?? "").trim();
+	if (!statusFunction.test(text)) return true;
+	const inner = /^\$\{\{([\s\S]*)\}\}$/.exec(text)?.[1];
+	const expression = inner !== undefined && !/\$\{\{|\}\}/.test(inner) ? inner.trim() : text;
+	const rest = /^success\s*\(\s*\)\s*(?:&&([\s\S]*))?$/i.exec(expression);
+	if (rest === null) return false;
+	return !statusFunction.test(rest[1] ?? "") && !topLevelOr(rest[1] ?? "");
+};
+const uploadPin = `actions/upload-artifact@${actionPins["actions/upload-artifact"]?.[0]}`;
+// After the gate, the only steps that may run when an earlier one failed: the CI receipt's upload,
+// which reports refused trees too, and spikes.yml's evidence check and upload, which need its heavy
+// step to have run, and its shell-only elapsed-time line.
+const afterFailure: Readonly<Record<string, Readonly<Record<string, readonly YamlMap[]>>>> = {
+	".github/workflows/ci.yml": {
+		required: [
+			{
+				if: "always()",
+				uses: uploadPin,
+				with: {
+					name: `ci-verification-\${{ github.run_id }}-\${{ github.run_attempt }}`,
+					path: `\${{ runner.temp }}/ci-verification.json`,
+					"if-no-files-found": "error",
+					"retention-days": 7,
+				},
+			},
+		],
+	},
+	".github/workflows/spikes.yml": {
+		run: [
+			{
+				id: "evidence",
+				if: "always() && (steps.heavy.outcome == 'success' || steps.heavy.outcome == 'failure')",
+				run: "node tools/ci-checks/src/spikes-run.ts --check-evidence",
+			},
+			{
+				uses: uploadPin,
+				if: "always() && steps.evidence.outcome == 'success'",
+				with: {
+					name: `evidence_\${{ matrix.spike }}_\${{ matrix.os }}`,
+					path: "spikes/*/evidence/",
+					"if-no-files-found": "warn",
+					overwrite: true,
+					"retention-days": 7,
+				},
+			},
+			{
+				if: "always()",
+				env: { STARTED: `\${{ steps.start.outputs.at }}`, RUNNER: `\${{ matrix.os }}` },
+				run: [
+					"minutes=$(( ($(date +%s) - STARTED + 59) / 60 ))",
+					'line="about $minutes min of elapsed runner time on $RUNNER, counted from the first step"',
+					'echo "$line"',
+					`printf '### Elapsed runner time\\n\\n%s\\n' "$line" >> "$GITHUB_STEP_SUMMARY"`,
+					"",
+				].join("\n"),
+			},
+		],
+	},
+};
+// The gate step inherits these, so nothing may set another shell or a working folder.
+const bashDefaults = { run: { shell: "bash" } };
+// An install by any package manager, in any case and with Windows' .cmd, .exe and .ps1 spellings,
+// by yarnpkg or a yarn release run from its path, also after options (pnpm --dir x i); line
+// continuations are joined first.
+const installCommand = new RegExp(
+	String.raw`\b(?:(?:pnpm|npm|yarn(?:pkg)?|corepack|bun|deno)(?:\.(?:cmd|exe|ps1))?|${yarnRelease})(?:\s+-\S+(?:\s+[^\s-]\S*)?)*\s+(?:i|install|ci|add)\b`,
+	"i",
+);
+// The one step of each reserved job that carries the flag, and nothing else in it.
+const flag = { DRAFTYAK_RESERVED_TESTS: "1" };
+const unitProof = { env: flag, run: "node tools/verify/reserved-proof.ts --tier unit" };
+// Whether a value names the opt-in flag, in any case, as a key or in any string inside it.
+const flagName = /DRAFTYAK_RESERVED_TESTS/i;
+const namesFlag = (value: Yaml | undefined): boolean =>
+	typeof value === "string"
+		? flagName.test(value)
+		: Array.isArray(value)
+			? value.some(namesFlag)
+			: isMap(value) &&
+				Object.entries(value).some(([key, inner]) => flagName.test(key) || namesFlag(inner));
+// Each ci.yml job's own commands, after the gate and, in every job but required, the source
+// capture, which the check puts first; the shard, collector and ordinary-heavy jobs list their
+// own checkout and setup-node, and the gate right after them.
 const ciCommands: Record<string, readonly YamlMap[]> = {
 	changes: [
 		{
@@ -192,14 +459,17 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 			if: "needs.changes.outputs.docs-only == 'true'",
 			run: "node tools/verify/verify.ts --profile docs",
 		},
-		{ if: nonDocs, run: "pnpm install --frozen-lockfile" },
+		{ if: nonDocs, run: preinstall },
+		{ if: nonDocs, run: install },
 		{ if: nonDocs, run: "pnpm verify --profile cheap" },
 	],
-	full: [{ run: "pnpm install --frozen-lockfile" }, { run: "pnpm build" }],
+	full: [{ run: preinstall }, { run: install }, { run: "pnpm build" }],
 	"spike-run": [
 		ciCheckout,
 		ciNode,
+		{ run: gate },
 		{ run: "node tools/ci-checks/src/heavy-shards.ts validate" },
+		{ run: preinstall },
 		ciPnpm,
 		{
 			uses: `actions/cache@${actionPins["actions/cache"]?.[0]}`,
@@ -229,6 +499,12 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 			},
 			run: "node tools/ci-checks/src/browser-setup.ts install",
 		},
+		// The opted-in heavy proof comes before the ordinary heavy suites: a heavy suite may stage
+		// files that listed files name, and the proof's gate would refuse them.
+		{
+			env: flag,
+			run: ['node tools/verify/reserved-proof.ts --tier heavy "--filter=./$SPIKE"', ""].join("\n"),
+		},
 		{
 			id: "heavy-test",
 			env: {
@@ -251,6 +527,7 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 	spikes: [
 		ciCheckout,
 		ciNode,
+		{ run: gate },
 		sourceCapture,
 		{
 			env: { SHARD_RESULT: `\${{ needs.spike-run.result }}` },
@@ -276,7 +553,9 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 	heavy: [
 		ciCheckout,
 		ciNode,
+		{ run: gate },
 		sourceCapture,
+		{ run: preinstall },
 		ciPnpm,
 		{ run: "pnpm install --frozen-lockfile" },
 		{ run: "pnpm build" },
@@ -338,8 +617,125 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 		},
 	],
 	windows: [
-		{ run: "pnpm install --frozen-lockfile" },
+		{ run: preinstall },
+		{ run: install },
 		{ run: "pnpm verify", env: { TURBO_CONCURRENCY: "1" } },
+	],
+	reserved: [
+		{
+			if: "github.event_name == 'pull_request'",
+			env: {
+				BASE_SHA: `\${{ github.event.pull_request.base.sha || github.event.before }}`,
+				BASE_REPO: `\${{ github.repository }}`,
+				HEAD_REPO: `\${{ github.event.pull_request.head.repo.full_name }}`,
+				HEAD_REF: `\${{ github.event.pull_request.head.ref }}`,
+			},
+			run: "node tools/ci-checks/src/reserved-inventory.ts",
+		},
+		{ run: preinstall },
+		{ run: install },
+		unitProof,
+	],
+	"reserved-windows": [{ run: preinstall }, { run: install }, unitProof],
+	required: [
+		{
+			env: {
+				CI_NEEDS: `\${{ toJSON(needs) }}`,
+				CI_HEAD_SHA: `\${{ github.event.pull_request.head.sha || github.sha }}`,
+				CI_BASE_SHA: `\${{ github.event.pull_request.base.sha || github.event.before }}`,
+				CI_PR_DRAFT: `\${{ github.event.pull_request.draft == true }}`,
+			},
+			run: "node tools/ci-checks/src/verification-receipt.ts report",
+		},
+	],
+};
+// spikes.yml's run job may start its clock, test the item's commit, clear its evidence and turn
+// off Spotlight before the gate, with exactly these steps; the gate then checks the tested tree.
+const spikesStart: readonly YamlMap[] = [
+	{ id: "start", run: 'echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"' },
+	{
+		if: "github.event_name == 'push'",
+		run: [
+			'if [ "$(git diff --name-only HEAD^ HEAD)" != spikes/run.json ]; then',
+			'  echo "::error::a spikes-run branch holds HEAD plus spikes/run.json: start runs with pnpm spikes:run"',
+			"  exit 1",
+			"fi",
+			"git checkout --quiet --detach HEAD^",
+			"",
+		].join("\n"),
+	},
+	{
+		run: [
+			"git ls-files -z -- 'spikes/*/evidence/*' | git update-index -z --skip-worktree --stdin",
+			"rm -rf spikes/*/evidence",
+			"",
+		].join("\n"),
+	},
+	{
+		if: "runner.os == 'macOS'",
+		run: `sudo mdutil -a -i off || echo "::warning::mdutil couldn't turn off Spotlight indexing"`,
+	},
+];
+// The one install that isn't pnpm's own: the JavaScript pnpm for Intel macOS, without its scripts.
+const intelMacPnpm = [
+	'dest="$RUNNER_TEMP/pnpm-js"',
+	'mkdir -p "$dest"',
+	'cp .github/pnpm-js/package.json .github/pnpm-js/package-lock.json "$dest/"',
+	'npm ci --prefix "$dest" --ignore-scripts --no-audit --no-fund',
+	`want="$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '').split('+')[0]")"`,
+	'got="$("$dest/node_modules/.bin/pnpm" --version)"',
+	'if [ "$got" != "$want" ]; then',
+	'  echo "::error::.github/pnpm-js installs pnpm $got, but packageManager pins $want"',
+	"  exit 1",
+	"fi",
+	'echo "$dest/node_modules/.bin" >> "$GITHUB_PATH"',
+	"",
+].join("\n");
+const spikesCommands: Readonly<Record<string, readonly YamlMap[]>> = {
+	plan: [
+		{ run: gate },
+		{
+			id: "plan",
+			env: {
+				RUN_SPIKES: `\${{ inputs.spikes }}`,
+				RUN_OS: `\${{ inputs.os }}`,
+				RUN_NODE: `\${{ inputs.node }}`,
+				RUN_TESTS: `\${{ inputs.tests }}`,
+			},
+			run: "node tools/ci-checks/src/spikes-run.ts --plan",
+		},
+	],
+	run: [
+		{ run: gate },
+		// Before pnpm/action-setup starts pnpm, and again as the last command before the install.
+		{ run: preinstall },
+		{ if: "runner.os == 'macOS' && runner.arch == 'X64'", run: intelMacPnpm },
+		{ run: preinstall },
+		{ run: install },
+		{
+			id: "heavy",
+			env: {
+				SPIKE: `\${{ matrix.spike }}`,
+				XVFB: `\${{ matrix.tauriLinux }}`,
+				TESTS: `\${{ matrix.tests }}`,
+			},
+			// Only a spike whose own folder is reserved runs its heavy command opted in.
+			run: [
+				'heavy=(pnpm --filter "./spikes/$SPIKE" --fail-if-no-match run test:heavy)',
+				'read -r -a tests <<< "$TESTS"',
+				`if [ "\${#tests[@]}" -gt 0 ]; then heavy+=(-- "\${tests[@]}"); fi`,
+				`if [ "$XVFB" = true ]; then heavy=(xvfb-run --auto-servernum "\${heavy[@]}"); fi`,
+				"reserved=0",
+				'node reserved-tests.ts --reserved "spikes/$SPIKE" || reserved=$?',
+				'if [ "$reserved" = 0 ]; then',
+				`  heavy=(env DRAFTYAK_RESERVED_TESTS=1 "\${heavy[@]}")`,
+				'elif [ "$reserved" != 1 ]; then',
+				'  exit "$reserved"',
+				"fi",
+				`"\${heavy[@]}"`,
+				"",
+			].join("\n"),
+		},
 	],
 };
 
@@ -364,10 +760,11 @@ for (const [job, platform] of Object.entries(nativePlatforms)) {
 	};
 	ciCommands[job] =
 		job === "macos"
-			? [platformCheck, { run: "pnpm install --frozen-lockfile" }, execute]
+			? [platformCheck, { run: preinstall }, { run: install }, execute]
 			: [platformCheck, ...(ciCommands[job] ?? []), execute];
 }
 const prTitleCommands: readonly YamlMap[] = [
+	{ run: gate },
 	{
 		env: {
 			PR_TITLE: `\${{ github.event.pull_request.title }}`,
@@ -426,6 +823,7 @@ const nativeStoreContract: Yaml = {
 					uses: `actions/setup-node@${actionPins["actions/setup-node"]?.[0]}`,
 					with: { "node-version-file": ".node-version" },
 				},
+				{ name: "Reserved paths and execution inputs", run: gate },
 				{
 					name: "Admit the exact owner PR head",
 					id: "source",
@@ -450,6 +848,9 @@ const nativeStoreContract: Yaml = {
 					},
 					run: "node tools/ci-checks/src/native-store.ts verify-source",
 				},
+				// The trusted gate and pre-install check on the admitted source, from this checkout.
+				{ name: "Reserved paths and execution inputs of the source", run: sourceGate },
+				{ name: "Pre-install script check of the source", run: sourcePreinstall },
 				{
 					name: "Set up pnpm",
 					uses: `pnpm/action-setup@${actionPins["pnpm/action-setup"]?.[0]}`,
@@ -484,6 +885,59 @@ const nativeStoreContract: Yaml = {
 	},
 };
 
+const nightlyFile = ".github/workflows/nightly.yml";
+// The nightly approval binding run checks m2 out at source/ after the gate on its own commit, and
+// checks it there with that commit's gate and pre-install check before pnpm starts.
+const nightlyContract: Yaml = {
+	name: "nightly",
+	on: { schedule: [{ cron: "0 3 * * *" }], workflow_dispatch: null },
+	permissions: { contents: "read" },
+	concurrency: { group: "approval-binding-nightly-m2", "cancel-in-progress": false },
+	env: {
+		CI: "true",
+		DO_NOT_TRACK: "1",
+		TURBO_TELEMETRY_DISABLED: "1",
+		DRAFTYAK_STRICT_SKIPS: "1",
+		DRAFTYAK_APPROVAL_BINDING_RUNS: "10000",
+	},
+	defaults: { run: { shell: "bash" } },
+	jobs: {
+		"approval-binding": {
+			name: "Approval statement binding (10000 runs per channel)",
+			"runs-on": "ubuntu-24.04",
+			"timeout-minutes": 30,
+			steps: [
+				{ name: "Check out trusted controls", ...ciCheckout },
+				ciNode,
+				{ name: "Reserved paths and execution inputs", run: gate },
+				{
+					name: "Check out m2",
+					uses: `actions/checkout@${actionPins["actions/checkout"]?.[0]}`,
+					with: { "persist-credentials": false, ref: "m2", path: "source" },
+				},
+				{ name: "Reserved paths and execution inputs of m2", run: sourceGate },
+				{ name: "Pre-install script check of m2", run: sourcePreinstall },
+				ciPnpm,
+				{ "working-directory": "source", run: install },
+				{ "working-directory": "source", run: "pnpm build --filter=@draftyak/hub..." },
+				{
+					name: "Check approval statement binding",
+					"working-directory": "source/apps/hub",
+					run: [
+						'node "$GITHUB_WORKSPACE/source/node_modules/vitest/vitest.mjs" run \\',
+						"  test/model/send-approval-binding.test.ts \\",
+						"  --mode test --config vitest.config.ts --no-file-parallelism \\",
+						"  --maxWorkers=1 --reporter=default \\",
+						"  --exclude '**/*siwc*/**' --exclude '**/*siwc*' \\",
+						"  --exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'",
+						"",
+					].join("\n"),
+				},
+			],
+		},
+	},
+};
+
 const labelsFile = ".github/workflows/labels.yml";
 // The sole write-permission exception pins the whole execution context, including every step.
 // A one-line condition retains the parser's refusal of folded and multiline scalars.
@@ -504,13 +958,15 @@ const labelsContract: Yaml = {
 					with: { ref: `\${{ github.sha }}`, "persist-credentials": false },
 				},
 				{
-					name: "Set up pnpm",
-					uses: `pnpm/action-setup@${actionPins["pnpm/action-setup"]?.[0]}`,
-				},
-				{
 					name: "Set up Node",
 					uses: `actions/setup-node@${actionPins["actions/setup-node"]?.[0]}`,
 					with: { "node-version-file": ".node-version" },
+				},
+				{ name: "Reserved paths and execution inputs", run: gate },
+				{ name: "Pre-install script check", run: preinstall },
+				{
+					name: "Set up pnpm",
+					uses: `pnpm/action-setup@${actionPins["pnpm/action-setup"]?.[0]}`,
 				},
 				{ name: "Install locked dependencies", run: "pnpm install --frozen-lockfile" },
 				{
@@ -548,20 +1004,24 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	const checkCommands = (job: string, definition: YamlMap, commands: readonly YamlMap[]): void => {
 		const steps = asList(definition.steps).map(asMap);
 		let previous = -1;
+		// A command listed more than once must appear exactly that often, its nth listing matching its
+		// nth step; an action is listed by its uses and its id.
+		const listed: YamlMap[] = [];
 		for (const expected of commands) {
 			const kind = typeof expected.run === "string" ? "run" : "uses";
-			const matches = steps.flatMap((step, index) =>
-				step[kind] === expected[kind] && (kind === "run" || step.id === expected.id) ? [index] : [],
-			);
-			const index = matches[0] ?? -1;
-			const step = Object.fromEntries(
-				Object.entries(steps[index] ?? {}).filter(([key]) => key !== "name"),
-			);
+			const same = (other: YamlMap): boolean =>
+				other[kind] === expected[kind] && (kind === "run" || other.id === expected.id);
+			const nth = listed.filter(same).length;
+			listed.push(expected);
+			const wanted = commands.filter(same).length;
+			const matches = steps.flatMap((step, index) => (same(step) ? [index] : []));
+			const index = matches[nth] ?? -1;
+			const step = unnamed(steps[index] ?? {});
 			const duplicateId =
 				typeof expected.id === "string" &&
 				steps.filter((step) => step.id === expected.id).length !== 1;
 			if (
-				matches.length !== 1 ||
+				matches.length !== wanted ||
 				index <= previous ||
 				duplicateId ||
 				!isDeepStrictEqual(step, expected)
@@ -572,6 +1032,88 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				);
 			}
 			previous = index;
+		}
+	};
+	// Before the gate, only checkout, setup-node and the given reviewed steps; the gate step itself
+	// bare, and no checkout after it, except the one source checkout of an exact native or nightly
+	// contract, which its own gate and pre-install check read with --root, and no git command that
+	// changes the working tree.
+	const gateFirst = (
+		job: string,
+		definition: YamlMap,
+		start: readonly YamlMap[],
+		sourceCheckout = false,
+	): void => {
+		const steps = asList(definition.steps).map(asMap);
+		const at = steps.findIndex((step) =>
+			isAction(step)
+				? !beforeGate.has(actionOf(step))
+				: !start.some((reviewed) => isDeepStrictEqual(unnamed(step), reviewed)),
+		);
+		const first = steps[at];
+		if (first?.run !== gate) {
+			const allowed =
+				start.length === 0
+					? "checkout and setup-node"
+					: "checkout, setup-node and its reviewed start steps";
+			report(
+				["jobs", job, "steps"],
+				`${job} must run the reserved gate (${gate}) first; only ${allowed} may come before it`,
+			);
+			return;
+		}
+		if (!only(first, ["name", "run"])) {
+			report(
+				["jobs", job, "steps", at],
+				`${job}'s reserved gate step may set only its name and run, with no if, env or continue-on-error`,
+			);
+		}
+		for (const [index, step] of steps.slice(0, at).entries()) {
+			if (isAction(step) && !plainBeforeGate(step)) {
+				report(
+					["jobs", job, "steps", index],
+					`${job}'s checkout and setup-node before the reserved gate may set only their name, uses and with, and setup-node only node-version-file: .node-version`,
+				);
+			}
+		}
+		// The gate lists the one checkout at the root: another, say into an ignored folder, it never sees.
+		const early = steps.slice(0, at).filter((step) => actionOf(step) === "actions/checkout");
+		const elsewhere = (step: YamlMap): boolean =>
+			Object.keys(asMap(step.with)).some((key) =>
+				["path", "repository"].includes(key.toLowerCase()),
+			);
+		if (early.length > 1 || early.some(elsewhere)) {
+			report(
+				["jobs", job, "steps"],
+				`${job} may check out only once before the reserved gate, at the root and with no path or repository`,
+			);
+		}
+		const later = steps.slice(at + 1).filter((step) => actionOf(step) === "actions/checkout");
+		const reviewed =
+			sourceCheckout && later.length === 1 && asMap(later[0]?.with).path === "source";
+		if (later.length > 0 && !reviewed) {
+			report(["jobs", job, "steps"], `${job} must not check out again after the reserved gate`);
+		}
+		for (const [offset, step] of steps.slice(at + 1).entries()) {
+			if (treeChange.test(joined(step, shellOf(step, definition, asMap(doc.value))))) {
+				report(
+					["jobs", job, "steps", at + 1 + offset],
+					`${job} must not change its working tree with git after the reserved gate`,
+				);
+			}
+		}
+		// A later step that runs after a failure would run after a refused gate or check too.
+		const late = afterFailure[file]?.[job] ?? [];
+		for (const [offset, step] of steps.slice(at + 1).entries()) {
+			if (
+				!onSuccessOnly(step.if) &&
+				!late.some((allowed) => isDeepStrictEqual(unnamed(step), allowed))
+			) {
+				report(
+					["jobs", job, "steps", at + 1 + offset],
+					`${job}'s steps after the reserved gate may not use always(), failure() or cancelled(), or success() other than first before &&, except its reviewed ones`,
+				);
+			}
 		}
 	};
 	const workflow = asMap(doc.value);
@@ -590,7 +1132,20 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 	if (file === nativeSupervisorWorkflowFile && !reviewedNativeSupervisor) {
 		report([], "native-supervisor.yml must exactly match the trusted native supervisor contract");
 	}
-	if (file === ".github/workflows/ci.yml") {
+	const reviewedNightly = file === nightlyFile && isDeepStrictEqual(doc.value, nightlyContract);
+	if (file === nightlyFile && !reviewedNightly) {
+		report([], "nightly.yml must exactly match the reviewed nightly approval binding contract");
+	}
+	// The one job of each exact native contract, which checks out the admitted source at source/
+	// after its gate and checks it there with --root before pnpm starts, and the nightly run's,
+	// which checks out m2 there.
+	const admittedSource = (job: string): boolean =>
+		(reviewedNativeStore && job === "native-store") ||
+		(reviewedNativeSupervisor && job === "native-supervisor") ||
+		(reviewedNightly && job === "approval-binding");
+	const ci = file === ".github/workflows/ci.yml";
+	const spikes = file === ".github/workflows/spikes.yml";
+	if (ci) {
 		const checkFailurePolicy = (value: Yaml, at: YamlPath): void => {
 			if (Array.isArray(value)) {
 				for (const [index, entry] of value.entries()) checkFailurePolicy(entry, [...at, index]);
@@ -661,7 +1216,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 			);
 		}
 	}
-	if (file === ".github/workflows/ci.yml") {
+	if (ci) {
 		if (!isDeepStrictEqual(workflow.defaults, { run: { shell: "bash" } })) {
 			report(["defaults"], "must preserve the CI execution shell");
 		}
@@ -708,7 +1263,11 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				if (!isDeepStrictEqual(definition.outputs, expectedOutputs))
 					report(["jobs", job, "outputs"], "must preserve source and native completion outputs");
 			}
+			// Every job starts with the gate, required too, since it runs after every other job even
+			// when another job's gate refused the tree; every other job then captures its source. The
+			// shard, collector and ordinary-heavy jobs list the gate after their checkout and setup-node.
 			checkCommands(job, definition, [
+				...(["spike-run", "spikes", "heavy"].includes(job) ? [] : [{ run: gate }]),
 				...(["required", "spike-run", "spikes", "heavy"].includes(job) ? [] : [sourceCapture]),
 				...(ciCommands[job] ?? []),
 			]);
@@ -813,11 +1372,117 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 			}
 		}
 	}
+	if (spikes) {
+		// A shell that isn't bash would skip the gate as surely as removing it.
+		if (!isDeepStrictEqual(workflow.defaults, bashDefaults)) {
+			report(["defaults"], "must preserve the spikes execution shell");
+		}
+		for (const [job, commands] of Object.entries(spikesCommands)) {
+			checkCommands(job, asMap(asMap(workflow.jobs)[job]), commands);
+		}
+	}
 	if (file === ".github/workflows/pr-title.yml") {
 		if (workflow.defaults !== undefined) {
 			report(["defaults"], "pr-title.yml must not define workflow execution defaults");
 		}
 		checkCommands("pr-title", asMap(asMap(workflow.jobs)["pr-title"]), prTitleCommands);
+	}
+	// Every job that runs a command, or an action that may run a tool in the checkout, starts with the
+	// gate, in any workflow; a job of inert actions alone, such as zizmor's, runs no repository code.
+	const gated = Object.entries(asMap(workflow.jobs))
+		.map(([job, definition]) => [job, asMap(definition)] as const)
+		.filter(([, definition]) =>
+			asList(definition.steps).some((step) => startsCommand(asMap(step))),
+		);
+	if (
+		gated.length > 0 &&
+		Object.hasOwn(workflow, "defaults") &&
+		!isDeepStrictEqual(workflow.defaults, bashDefaults)
+	) {
+		report(
+			["defaults"],
+			"workflow defaults may set only the bash shell, since each reserved gate step inherits them",
+		);
+	}
+	for (const [job, definition] of gated) {
+		if (Object.hasOwn(definition, "defaults")) {
+			report(
+				["jobs", job, "defaults"],
+				`${job} must not set defaults, since its reserved gate step inherits them`,
+			);
+		}
+		gateFirst(job, definition, spikes && job === "run" ? spikesStart : [], admittedSource(job));
+	}
+	// Each gate step inherits its workflow's env, its job's env and its job container's. Where a job
+	// runs the gate, the workflow env holds only the telemetry switches and the workflow's reviewed
+	// names, and that job's env only its reviewed names, with no container; elsewhere neither env may
+	// make Node or bash load a file.
+	const preloads = (value: Yaml | undefined): boolean =>
+		Object.keys(asMap(value)).some((name) => preloadEnv.includes(name.toUpperCase()));
+	const workflowEnv = [...telemetryOff, ...(reviewedWorkflowEnv[file] ?? [])];
+	const noPreload =
+		"may not set NODE_OPTIONS, NODE_PATH, BASH_ENV or ENV, which make Node or bash load a file before a step's command";
+	if (gated.length === 0) {
+		if (preloads(workflow.env)) report(["env"], `env ${noPreload}`);
+	} else if (
+		Object.hasOwn(workflow, "env") &&
+		(!isMap(workflow.env) ||
+			Object.keys(asMap(workflow.env)).some((name) => !workflowEnv.includes(name)))
+	) {
+		report(
+			["env"],
+			`env may hold only ${inWords(workflowEnv)}, since each reserved gate step inherits it`,
+		);
+	}
+	const gatedIds = new Set(gated.map(([job]) => job));
+	for (const [job, definition] of Object.entries(asMap(workflow.jobs))) {
+		const jobMap = asMap(definition);
+		if (!gatedIds.has(job)) {
+			if (preloads(jobMap.env)) report(["jobs", job, "env"], `${job}'s env ${noPreload}`);
+			continue;
+		}
+		const reviewed = reviewedJobEnv[file]?.[job] ?? [];
+		if (
+			Object.hasOwn(jobMap, "env") &&
+			(!isMap(jobMap.env) ||
+				Object.keys(asMap(jobMap.env)).some((name) => !reviewed.includes(name)))
+		) {
+			report(
+				["jobs", job, "env"],
+				reviewed.length === 0
+					? `${job} must not set env, since its reserved gate step inherits it`
+					: `${job}'s env may hold only ${inWords(reviewed)}, since its reserved gate step inherits it`,
+			);
+		}
+		if (Object.hasOwn(jobMap, "container")) {
+			report(
+				["jobs", job, "container"],
+				`${job} must not run in a container, whose env and options its reserved gate step would inherit`,
+			);
+		}
+	}
+	// The opt-in flag only on the reviewed proof steps, each unchanged in its own job: in no other
+	// step, job setting or workflow setting, as a name or in any text.
+	const flagOnly =
+		"DRAFTYAK_RESERVED_TESTS may appear only on the reviewed reserved proof steps, unchanged";
+	const without = (map: YamlMap, key: string): YamlMap =>
+		Object.fromEntries(Object.entries(map).filter(([name]) => name !== key));
+	if (namesFlag(without(workflow, "jobs"))) report([], flagOnly);
+	const reviewedCommands: Readonly<Record<string, readonly YamlMap[]>> = ci
+		? ciCommands
+		: spikes
+			? spikesCommands
+			: {};
+	for (const [job, definition] of Object.entries(asMap(workflow.jobs))) {
+		const jobMap = asMap(definition);
+		if (namesFlag(without(jobMap, "steps"))) report(["jobs", job], flagOnly);
+		const flagged = (reviewedCommands[job] ?? []).filter(namesFlag);
+		for (const [index, step] of asList(jobMap.steps).map(asMap).entries()) {
+			const own = unnamed(step);
+			if (namesFlag(own) && !flagged.some((reviewed) => isDeepStrictEqual(own, reviewed))) {
+				report(["jobs", job, "steps", index], flagOnly);
+			}
+		}
 	}
 
 	for (const scalar of doc.scalars) {
@@ -859,9 +1524,10 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 		) {
 			report(["jobs", job, "permissions"], "job permissions may only be `contents: read`");
 		}
-		for (const [index, value] of asList(jobMap.steps).entries()) {
+		const steps = asList(jobMap.steps).map(asMap);
+		const gateAt = steps.findIndex((step) => step.run === gate);
+		for (const [index, step] of steps.entries()) {
 			const at = ["jobs", job, "steps", index];
-			const step = asMap(value);
 			if (file === ".github/workflows/ci.yml" && String(step.run).includes("test:heavy")) {
 				const selected = (ciCommands[job] ?? []).find((command) =>
 					String(command.run).includes("test:heavy"),
@@ -889,7 +1555,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				.map((line) => line.trim())
 				.filter(Boolean);
 			const receipt =
-				file === ".github/workflows/ci.yml" &&
+				ci &&
 				job === "required" &&
 				uploads.length === 1 &&
 				uploads[0] === `\${{ runner.temp }}/ci-verification.json` &&
@@ -921,6 +1587,78 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				if (untrusted.test(body)) {
 					report(at, `run must not expand ${expression}; pass it through env`);
 				}
+			}
+			// The pre-install check is the last command before each install and runs whenever it does;
+			// in every workflow the gate and the check, with no condition or the step's own, also come
+			// before each step that may start a package manager in the checkout. Only the exact native
+			// and nightly contracts set up pnpm for their source checkout, checked there with --root,
+			// and only native-store's and the nightly run's install in it.
+			const nativeSource = admittedSource(job);
+			if (step.run === install) {
+				let before = index - 1;
+				while (before >= 0 && isAction(steps[before])) before--;
+				const check = steps[before];
+				const wanted = nativeSource ? sourcePreinstall : preinstall;
+				if (check?.run !== wanted) {
+					report(at, `${job} must run ${wanted} as the last command before ${install}`);
+				} else if (
+					!only(check, ["name", "if", "run"]) ||
+					(check.if !== undefined && !isDeepStrictEqual(check.if, step.if))
+				) {
+					report(
+						["jobs", job, "steps", before],
+						`${job}'s pre-install check may set only its name, run and its install's if`,
+					);
+				}
+				const source = nativeSource && step["working-directory"] === "source";
+				if (
+					!only(step, source ? ["name", "if", "run", "working-directory"] : ["name", "if", "run"])
+				) {
+					report(at, `${job}'s ${install} step may set only its name, if and run`);
+				}
+			}
+			// A command before the gate is a reviewed start step, or refused as any other would be.
+			const starts = step.run !== undefined && index < gateAt ? null : packageManagerStart(step);
+			if (starts !== null) {
+				const earlier = steps.slice(0, index);
+				const wanted = nativeSource ? [preinstall, sourcePreinstall] : [preinstall];
+				const checks = earlier.filter((other) => wanted.includes(String(other.run)));
+				// As before an install, only a check that sets nothing but its name, if and run counts:
+				// one marked continue-on-error, say, can't stop what follows it.
+				const plain = checks.filter((check) => only(check, ["name", "if", "run"]));
+				if (checks.length === 0) {
+					report(at, `${job} must run ${preinstall} before ${starts}`);
+				} else if (plain.length === 0) {
+					report(
+						at,
+						`${job}'s pre-install check before ${starts} may set only its name, if and run`,
+					);
+				} else if (
+					!plain.some((check) => check.if === undefined || isDeepStrictEqual(check.if, step.if))
+				) {
+					report(
+						at,
+						`${job}'s pre-install check before ${starts} must run whenever it does, with no if or the same if`,
+					);
+				}
+				if (!earlier.some((other) => other.run === gate)) {
+					report(at, `${job} must run ${gate} before ${starts}`);
+				}
+			}
+			// Input names are case-insensitive.
+			if (
+				actionOf(step) === "pnpm/action-setup" &&
+				Object.keys(inputs).some((key) => key.toUpperCase() === "RUN_INSTALL")
+			) {
+				report([...at, "with"], "pnpm/action-setup must not set run_install");
+			}
+			// Every install is exactly the checked one, or Intel macOS's scriptless pnpm.
+			const command = joined(step, shellOf(step, jobMap, workflow));
+			if (installCommand.test(command) && step.run !== install && step.run !== intelMacPnpm) {
+				report(
+					at,
+					`install commands must be exactly ${install}, or the reviewed Intel macOS pnpm step`,
+				);
 			}
 		}
 	}
