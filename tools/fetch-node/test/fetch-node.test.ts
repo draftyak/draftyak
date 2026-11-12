@@ -269,10 +269,11 @@ describe("command line", () => {
 	});
 
 	it.each([
-		["--version minimum", "26.5.1"],
-		["--version bundled", "26.12.0"],
-		["", "26.12.0"],
+		["--version minimum", "26.13.1"],
+		["--version bundled", "26.13.1"],
+		["", "26.13.1"],
 		["--version v26.5.1", "26.5.1"],
+		["--version v26.13.1", "26.13.1"],
 	])("%j selects v%s", async (args, version) => {
 		const root = cache();
 		const flags = `${args} --platform linux --arch x64 --offline`.trim().split(" ");
@@ -286,6 +287,7 @@ describe("release keys and pins", () => {
 	const nodejs = path.join(fixtures, "vendor", "nodejs");
 	const signers: Record<string, string> = {
 		"v26.12.0": "C82FA3AE1CBEDC6BE46B9360C43CEC45C17AB93C",
+		"v26.13.1": "5BE8A3F6C8A5C01D106C0AD820B1A390B168D356",
 		"v26.5.1": "890C08DB8579162FEE0DF9DB8BEAB4DFCF555EF4",
 	};
 	const rafael = signers["v26.5.1"] ?? "";
@@ -299,11 +301,22 @@ describe("release keys and pins", () => {
 		expect(signer).toBe(signers[version]);
 	});
 
-	it("has nodejs.org's signed SHASUMS256.txt, a signer and a musl image per pin", () => {
+	it("aligns repository development Node and engine floor with the selected pins", () => {
+		const versions: Record<string, string> = json(here, "..", "versions.json");
+		const repository = path.resolve(here, "..", "..", "..");
+		expect(readFileSync(path.join(repository, ".node-version"), "utf8").trim()).toBe(
+			versions.bundled,
+		);
+		expect(json(repository, "package.json").engines.node).toBe(`>=${versions.minimum}`);
+	});
+
+	it("keeps the exact retained signed-release catalogue and complete active-pin inputs", () => {
 		const versions: Record<string, string> = json(here, "..", "versions.json");
 		const images = json(here, "..", "images.json");
 		const pinned = [...new Set(Object.values(versions))].sort();
-		const tags = pinned.map((pin) => `v${pin}`);
+		const retained = ["26.5.1", "26.12.0"];
+		const signed = [...new Set([...retained, ...pinned])].sort();
+		const tags = signed.map((pin) => `v${pin}`);
 		expect(readdirSync(nodejs).sort()).toEqual(tags);
 		for (const tag of tags) {
 			const files = ["SHASUMS256.txt", "SHASUMS256.txt.sig"];
@@ -353,10 +366,12 @@ describe("release keys and pins", () => {
 		expect(() => signerOf({ code, stdout, stderr: "keyring unreadable" }, [rafael])).toThrow(error);
 	});
 
-	it("parses SHASUMS256.txt strictly", () => {
-		const text = readFileSync(path.join(nodejs, "v26.12.0", "SHASUMS256.txt"), "utf8");
-		const zipSum = "50efaf01a08c520b4bbe499c09a8c5a5c370002c419c0d9da2c6815d3066a453";
-		expect(parseChecksums(text).get("node-v26.12.0-win-x64.zip")).toBe(zipSum);
+	it.each([
+		["26.12.0", "50efaf01a08c520b4bbe499c09a8c5a5c370002c419c0d9da2c6815d3066a453"],
+		["26.13.1", "e2edda75bfb089654705cf65a13b58933bfd5f57148e8ebda916f58a2474f1f7"],
+	])("parses v%s SHASUMS256.txt strictly", (version, zipSum) => {
+		const text = readFileSync(path.join(nodejs, `v${version}`, "SHASUMS256.txt"), "utf8");
+		expect(parseChecksums(text).get(`node-v${version}-win-x64.zip`)).toBe(zipSum);
 		expect(() => parseChecksums(`${text}${text.split("\n")[0]}\n`)).toThrow(/lists .+ twice/);
 		expect(() => parseChecksums("not a checksum\n")).toThrow(fetchNode.VerificationError);
 	});
