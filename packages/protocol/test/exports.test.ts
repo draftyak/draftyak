@@ -49,6 +49,7 @@ const publicModules = [
 	"errors",
 	"extension",
 	"flags",
+	"flags-schema",
 	"hash",
 	"host-channel",
 	"hub-runtime",
