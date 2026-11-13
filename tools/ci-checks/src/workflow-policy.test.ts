@@ -2005,3 +2005,88 @@ describe("one-task CI heavy shards", () => {
 		);
 	});
 });
+
+describe("Windows native event-page execution", () => {
+	const file = ".github/workflows/ci.yml";
+	const command = [
+		'node "$GITHUB_WORKSPACE/node_modules/vitest/vitest.mjs"',
+		"run test/api/events-native-page.heavy.test.ts",
+		"--mode heavy --reporter=default --passWithNoTests=false",
+		"--exclude '**/*siwc*/**' --exclude '**/*siwc*'",
+		"--exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'",
+	].join(" ");
+	const step = [
+		"      - name: Native event pages on Windows",
+		"        working-directory: apps/hub",
+		"        env:",
+		"          DRAFTYAK_STRICT_SKIPS: '1'",
+		`        run: ${command}`,
+		"",
+	].join("\n");
+	const source = (): string => read(file).replaceAll("\r\n", "\n");
+
+	it("runs the whole event leaf in Hub heavy mode before the separate native transport step", () => {
+		const current = source();
+		expect(checkWorkflow(file, current, toolchain)).toEqual([]);
+		const document = parseYaml(current).value as {
+			jobs: { windows: { steps: Record<string, unknown>[] } };
+		};
+		const steps = document.jobs.windows.steps;
+		const selected = steps.filter((entry) => entry.run === command);
+		expect(selected).toHaveLength(1);
+		expect(
+			Object.fromEntries(Object.entries(selected[0] ?? {}).filter(([key]) => key !== "name")),
+		).toEqual({
+			"working-directory": "apps/hub",
+			env: { DRAFTYAK_STRICT_SKIPS: "1" },
+			run: command,
+		});
+		const eventAt = steps.findIndex((entry) => entry.run === command);
+		expect(eventAt).toBeGreaterThan(steps.findIndex((entry) => entry.run === "pnpm verify"));
+		expect(eventAt).toBeLessThan(steps.findIndex((entry) => entry.id === "native"));
+	});
+
+	const changes: readonly [string, (text: string) => string][] = [
+		["removed step", () => ""],
+		[
+			"conditional bypass",
+			(text) =>
+				text.replace("        working-directory:", "        if: false\n        working-directory:"),
+		],
+		[
+			"wrong package cwd",
+			(text) => text.replace("working-directory: apps/hub", "working-directory: ."),
+		],
+		[
+			"non-strict skips",
+			(text) => text.replace("DRAFTYAK_STRICT_SKIPS: '1'", "DRAFTYAK_STRICT_SKIPS: '0'"),
+		],
+		[
+			"empty collection allowed",
+			(text) => text.replace("--passWithNoTests=false", "--passWithNoTests=true"),
+		],
+		["wrong tier", (text) => text.replace("--mode heavy", "--mode test")],
+		[
+			"another leaf",
+			(text) => text.replace("events-native-page.heavy.test.ts", "unrelated.heavy.test.ts"),
+		],
+		["another reporter", (text) => text.replace("--reporter=default", "--reporter=json")],
+		["directory exclusion", (text) => text.replace("'**/*siwc*/**'", "'**/ignored-directory/**'")],
+		["filename exclusion", (text) => text.replace("'**/*siwc*'", "'**/ignored-file*'")],
+		["hyphen exclusion", (text) => text.replace("'**/*dynamic-agent*'", "'**/ignored-hyphen*'")],
+		[
+			"underscore exclusion",
+			(text) => text.replace("'**/*dynamic_agent*'", "'**/ignored-underscore*'"),
+		],
+	];
+	it.each(changes)("refuses Windows event-page %s", (_name, change) => {
+		const current = source();
+		expect(current).toContain(step);
+		const changed = change(step);
+		expect(changed).not.toBe(step);
+		const mutated = current.replace(step, changed);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"must preserve windows command and its execution controls",
+		);
+	});
+});
