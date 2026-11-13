@@ -34,6 +34,10 @@ const nativeBinding = realpathSync(
 const assets = [
 	["store/migrations/audit/0001_chain.sql", "store/migrations/audit/0001_chain.sql"],
 	["store/migrations/core/0001_identity.sql", "store/migrations/core/0001_identity.sql"],
+	[
+		"store/migrations/core/0002_native_runtime_state.sql",
+		"store/migrations/core/0002_native_runtime_state.sql",
+	],
 	["identity/devices-migrations/0001_devices.sql", "devices-migrations/0001_devices.sql"],
 	["jobs/jobs-migrations/0001_jobs.sql", "jobs-migrations/0001_jobs.sql"],
 	["events/events-migrations/0001_events.sql", "events-migrations/0001_events.sql"],
@@ -265,10 +269,10 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 		}
 		expect(existsSync(path.join(stage, "index.mjs"))).toBe(true);
 		copyFileSync(
-			path.join(import.meta.dirname, "fixtures/compiled-native-storage.mjs"),
+			path.join(import.meta.dirname, "fixtures/compiled-native-storage-core2.mjs"),
 			path.join(stage, "fixture.mjs"),
 		);
-		expect(assets).toHaveLength(21);
+		expect(assets).toHaveLength(22);
 		for (const [source, built] of assets) {
 			const file = path.join(hub, "dist", built);
 			const original = path.join(hub, "src", source);

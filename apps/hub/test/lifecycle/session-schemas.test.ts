@@ -5,7 +5,7 @@ import { expectErased, refusal, type SessionFixture, sessionFixture } from "./se
 
 const EXPECTED = [
 	["audit", ["0001_chain"]],
-	["core", ["0001_identity"]],
+	["core", ["0001_identity", "0002_native_runtime_state"]],
 	["devices", ["0001_devices"]],
 	["jobs", ["0001_jobs"]],
 	["events", ["0001_events"]],
@@ -46,6 +46,7 @@ const DOMAIN_TABLES = [
 	"native_draft_locks",
 	"native_draft_revisions",
 	"native_drafts",
+	"native_runtime_settings",
 	"native_send_attempts",
 	"outbox",
 	"pair_confirm_operations",
@@ -90,6 +91,10 @@ function expectSchemas(store: HubStore): void {
 			singleton: 1,
 			last_seq: 0,
 			floor_seq: 0,
+		});
+		expect(db.get("SELECT singleton, sync_paused FROM main.native_runtime_settings")).toEqual({
+			singleton: 1,
+			sync_paused: 0,
 		});
 		for (const table of [
 			"credentials",

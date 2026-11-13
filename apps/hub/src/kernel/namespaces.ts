@@ -56,6 +56,7 @@ export const HUB_NAMESPACES: Readonly<Record<HubNamespace, string>> = Object.fre
 const SCHEMAS = Object.freeze([
 	["audit", "0001_chain.sql"],
 	["core", "0001_identity.sql"],
+	["core", "0002_native_runtime_state.sql"],
 	["devices", "0001_devices.sql"],
 	["jobs", "0001_jobs.sql"],
 	["events", "0001_events.sql"],
