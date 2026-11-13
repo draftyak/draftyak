@@ -182,6 +182,7 @@ it.each(compiledSessionModes)(
 					"identity/backup-challenge-migrations/0001_backup_challenges.sql",
 					"identity/backup-challenge-migrations/0001_backup_challenges.sql",
 				],
+				["api/migrations/0001_owner_settings.sql", "api/migrations/0001_owner_settings.sql"],
 			] as const) {
 				const built = path.join(hub, "dist", relative);
 				expect(readFileSync(built)).toEqual(readFileSync(path.join(hub, "src", source)));
