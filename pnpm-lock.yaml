@@ -81,6 +81,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@draftyak/content':
+        specifier: workspace:*
+        version: link:../../packages/content
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
