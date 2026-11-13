@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { types } from "node:util";
 import { Cursor } from "@draftyak/protocol/channel-v1";
+import type { Provenance } from "@draftyak/protocol/entities/common";
 import { MAX_CHANGES, NormalizedChange } from "@draftyak/protocol/normalized-change";
 import { type AccountRecord, NativeAccounts } from "../accounts/records.ts";
 import { EVENT_PAGE_SIZE, EventLog } from "../events/log.ts";
@@ -12,6 +13,7 @@ import { fields, id, integer } from "../jobs/values.ts";
 import type { Clock } from "../kernel/clock.ts";
 import { newId } from "../kernel/ids.ts";
 import type { SqlTransaction } from "../store/store.ts";
+import { firstMetadataReceipt, readMetadataReceipt } from "./receipt.ts";
 
 export const CONTENT_MIGRATIONS: string = fileURLToPath(
 	new URL(
@@ -45,6 +47,8 @@ export interface NativeMessageMetadata {
 	readonly id: string;
 	readonly providerId: string;
 	readonly threadId: string;
+	readonly conversationId: string;
+	readonly provenance: Readonly<Provenance> | null;
 	readonly internalDate: number;
 	readonly labelIds: readonly string[];
 	readonly sizeBytes: number | null;
@@ -244,6 +248,8 @@ interface MessageRow {
 	providerId: string;
 	threadId: string;
 	conversationId: string;
+	ingressSourceId: string | null;
+	receivedAt: number | null;
 	internalDate: number;
 	labelJson: string;
 	sizeBytes: number | null;
@@ -256,11 +262,14 @@ const MESSAGES = `SELECT
   AND typeof(m.internal_date)='integer' AND m.internal_date BETWEEN 0 AND 9007199254740991
   AND typeof(m.label_json)='text' AND length(CAST(m.label_json AS BLOB)) BETWEEN 2 AND ${MAX_LABEL_JSON_BYTES}
   AND (m.size_bytes IS NULL OR (typeof(m.size_bytes)='integer' AND m.size_bytes BETWEEN 0 AND 9007199254740991))
+  AND ((m.ingress_source_id IS NULL AND m.received_at IS NULL) OR
+   (length(CAST(m.ingress_source_id AS BLOB))=26 AND typeof(m.received_at)='integer' AND m.received_at BETWEEN 0 AND 9007199254740991))
   AND m.state='unparsed' AND m.direction='inbound' THEN 1 ELSE 0 END AS valid,
  CASE WHEN length(CAST(m.id AS BLOB))=26 THEN m.id END AS id,
  CASE WHEN length(CAST(m.provider_id AS BLOB)) BETWEEN 1 AND 256 THEN m.provider_id END AS providerId,
  CASE WHEN length(CAST(c.provider_id AS BLOB)) BETWEEN 1 AND 256 THEN c.provider_id END AS threadId,
  CASE WHEN length(CAST(m.conversation_id AS BLOB))=26 THEN m.conversation_id END AS conversationId,
+ m.ingress_source_id AS ingressSourceId,m.received_at AS receivedAt,
  CASE WHEN typeof(m.internal_date)='integer' AND m.internal_date BETWEEN 0 AND 9007199254740991 THEN m.internal_date END AS internalDate,
  CASE WHEN typeof(m.label_json)='text' AND length(CAST(m.label_json AS BLOB)) BETWEEN 2 AND ${MAX_LABEL_JSON_BYTES} THEN m.label_json END AS labelJson,
  CASE WHEN m.size_bytes IS NULL OR (typeof(m.size_bytes)='integer' AND m.size_bytes BETWEEN 0 AND 9007199254740991) THEN m.size_bytes END AS sizeBytes,
@@ -268,7 +277,7 @@ const MESSAGES = `SELECT
  CASE WHEN m.direction='inbound' THEN m.direction END AS direction
  FROM main.content_messages m LEFT JOIN main.content_conversations c
  ON c.id=m.conversation_id AND c.account_id=m.account_id AND c.generation=m.generation AND c.user_id=m.user_id`;
-function message(raw: MessageRow): NativeMessageMetadata {
+function message(raw: MessageRow, pluginInstanceId: string): NativeMessageMetadata {
 	if (raw.valid !== 1 || raw.state !== "unparsed" || raw.direction !== "inbound") refuse();
 	const value: unknown = JSON.parse(raw.labelJson);
 	if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) refuse();
@@ -276,6 +285,8 @@ function message(raw: MessageRow): NativeMessageMetadata {
 		id: id(raw.id),
 		providerId: visible(raw.providerId, 256),
 		threadId: visible(raw.threadId, 256),
+		conversationId: id(raw.conversationId),
+		provenance: readMetadataReceipt(raw, pluginInstanceId),
 		internalDate: integer(raw.internalDate),
 		labelIds: labels(value),
 		sizeBytes: raw.sizeBytes === null ? null : integer(raw.sizeBytes),
@@ -520,7 +531,7 @@ export class NativeMetadataStore {
 						`${MESSAGES} WHERE m.user_id=? AND m.account_id=? AND m.generation=? AND m.id>? ORDER BY m.id LIMIT ?`,
 						[record.account.userId, ref.accountId, ref.generation, after, integer(limit, 1, 100)],
 					)
-					.map(message),
+					.map((row) => message(row, ref.pluginInstanceId)),
 			);
 		});
 	}
@@ -551,7 +562,7 @@ export class NativeMetadataStore {
 					`${MESSAGES} WHERE m.user_id=? AND m.account_id=? AND m.generation=? AND m.provider_id=?`,
 					[owner, value.accountId, value.generation, change.providerId],
 				);
-				const before = previous ? message(previous) : undefined;
+				const before = previous ? message(previous, record.account.pluginInstanceId) : undefined;
 				if (change.kind === "email.deleted") {
 					if (before && previous) {
 						sql.run(
@@ -581,6 +592,14 @@ export class NativeMetadataStore {
 					id: before?.id ?? newId(),
 					providerId: change.providerId,
 					threadId: change.threadId,
+					conversationId: conversation.id,
+					// First native metadata admission, independent of provider dates.
+					// Existing rows retain an unknown legacy receipt or their original receipt.
+					provenance: firstMetadataReceipt(
+						before?.provenance,
+						record.account.pluginInstanceId,
+						() => this.#clock.wallMs(),
+					),
 					internalDate:
 						change.kind === "email.message"
 							? change.internalDate
@@ -593,7 +612,7 @@ export class NativeMetadataStore {
 				});
 				if (before && JSON.stringify(before) === JSON.stringify(next)) continue;
 				sql.run(
-					`INSERT INTO main.content_messages(id,user_id,account_id,generation,provider_id,conversation_id,internal_date,label_json,size_bytes,state,direction) VALUES(?,?,?,?,?,?,?,?,?,'unparsed','inbound')
+					`INSERT INTO main.content_messages(id,user_id,account_id,generation,provider_id,conversation_id,internal_date,label_json,size_bytes,ingress_source_id,received_at,state,direction) VALUES(?,?,?,?,?,?,?,?,?,?,?,'unparsed','inbound')
  ON CONFLICT(account_id,generation,provider_id) DO UPDATE SET conversation_id=excluded.conversation_id,internal_date=excluded.internal_date,label_json=excluded.label_json,size_bytes=excluded.size_bytes`,
 					[
 						next.id,
@@ -605,6 +624,8 @@ export class NativeMetadataStore {
 						next.internalDate,
 						JSON.stringify(next.labelIds),
 						next.sizeBytes,
+						next.provenance?.sourceId ?? null,
+						next.provenance?.receivedAt ?? null,
 					],
 				);
 				changed.add(next.id);

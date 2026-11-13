@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { createHash, type Hash } from "node:crypto";
 import { types } from "node:util";
 import { checkedParsedMail, contentErrorCode, type ParsedMail } from "@draftyak/content";
-import { EmailAddress } from "@draftyak/protocol/entities/common";
+import { EmailAddress, type Provenance } from "@draftyak/protocol/entities/common";
 import type { BlobRef } from "@draftyak/protocol/normalized-change";
 import { NativeAccounts } from "../accounts/records.ts";
 import { DeviceRegistry } from "../identity/devices.ts";
@@ -17,6 +17,7 @@ import {
 	RAW_CONTENT_MAX_BYTES,
 	type RawContentSlice,
 } from "./raw-store.ts";
+import { messageMetadataDigest, readMetadataReceipt } from "./receipt.ts";
 
 export const MAX_PARSED_JSON_BYTES = 4_194_304;
 export const MAX_PARSED_ACCOUNT_BYTES = 67_108_864;
@@ -35,6 +36,8 @@ export interface NativeParsedRecord {
 	readonly messageId: string;
 	readonly providerId: string;
 	readonly threadId: string;
+	readonly conversationId: string;
+	readonly provenance: Readonly<Provenance> | null;
 	readonly raw: BlobRef;
 	readonly rawSha256: string;
 	readonly rawBytes: number;
@@ -297,6 +300,8 @@ interface Message {
 	internalDate: number;
 	labelJson: string;
 	sizeBytes: number | null;
+	ingressSourceId: string | null;
+	receivedAt: number | null;
 }
 interface Context {
 	checkpoint: MetadataCheckpoint;
@@ -349,7 +354,7 @@ const sources = new WeakMap<object, SourceState>();
 const MESSAGE = `SELECT m.id AS messageId,m.provider_id AS providerId,c.provider_id AS threadId,
  m.conversation_id AS conversationId,m.internal_date AS internalDate,
  CASE WHEN typeof(m.label_json)='text' AND length(CAST(m.label_json AS BLOB))<=131841 THEN m.label_json END AS labelJson,
- m.size_bytes AS sizeBytes
+ m.size_bytes AS sizeBytes,m.ingress_source_id AS ingressSourceId,m.received_at AS receivedAt
  FROM main.content_messages m JOIN main.content_conversations c
  ON c.id=m.conversation_id AND c.account_id=m.account_id AND c.generation=m.generation AND c.user_id=m.user_id
  WHERE m.id=? AND m.account_id=? AND m.generation=? AND m.user_id=? AND m.state='unparsed' AND m.direction='inbound'`;
@@ -463,6 +468,7 @@ export class NativeParsedStore {
 		text(row.labelJson, 131_841, 2);
 		const labels: unknown = JSON.parse(row.labelJson);
 		for (const item of array(labels, 256)) visible(item);
+		readMetadataReceipt(row, input.pluginInstanceId);
 		return row;
 	}
 	#rawMeta(
@@ -508,7 +514,7 @@ export class NativeParsedStore {
 			context.checkpoint.cursor !== state.context.checkpoint.cursor ||
 			context.checkpoint.revision !== state.context.checkpoint.revision ||
 			!message ||
-			digest(JSON.stringify(message)) !== state.metadataDigest ||
+			messageMetadataDigest(message) !== state.metadataDigest ||
 			currentRaw.rawBytes !== state.rawBytes ||
 			currentRaw.rawSha256 !== state.rawSha256
 		)
@@ -544,7 +550,7 @@ export class NativeParsedStore {
 				owner: this,
 				ref: account,
 				message,
-				metadataDigest: digest(JSON.stringify(message)),
+				metadataDigest: messageMetadataDigest(message),
 				context,
 				raw: object,
 				...rawMeta,
@@ -677,6 +683,8 @@ export class NativeParsedStore {
 					messageId: state.message.messageId,
 					providerId: state.message.providerId,
 					threadId: state.message.threadId,
+					conversationId: state.message.conversationId,
+					provenance: readMetadataReceipt(state.message, state.ref.pluginInstanceId),
 					raw: { ref: state.raw.ref },
 					rawSha256: state.rawSha256,
 					rawBytes: state.rawBytes,
@@ -712,7 +720,7 @@ export class NativeParsedStore {
 		if (
 			!message ||
 			row.accountDigest !== context.accountDigest ||
-			row.metadataDigest !== digest(JSON.stringify(message))
+			row.metadataDigest !== messageMetadataDigest(message)
 		)
 			return undefined;
 		integer(row.revision, 1);
@@ -742,6 +750,8 @@ export class NativeParsedStore {
 			messageId: row.messageId,
 			providerId: row.providerId,
 			threadId: row.threadId,
+			conversationId: message.conversationId,
+			provenance: readMetadataReceipt(message, input.pluginInstanceId),
 			raw,
 			rawSha256: sha(row.rawSha256),
 			rawBytes: integer(row.rawBytes, 1, RAW_CONTENT_MAX_BYTES),
@@ -966,7 +976,7 @@ export class NativeParsedStore {
 					!message ||
 					row.rawValid !== 1 ||
 					row.accountDigest !== context.accountDigest ||
-					row.metadataDigest !== digest(JSON.stringify(message))
+					row.metadataDigest !== messageMetadataDigest(message)
 				)
 					deleted += sql.run(
 						"DELETE FROM main.content_parsed_messages WHERE message_id=? AND account_id=? AND generation=? AND user_id=?",
