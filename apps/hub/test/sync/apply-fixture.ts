@@ -45,6 +45,7 @@ type Page = import("../../src/sync/apply.ts").ApplyMetadataPage;
 
 interface NativeServices {
 	store: NativeFixture["store"];
+	nativeClock: import("../../src/kernel/clock.ts").Clock;
 	database: import("../../src/jobs/database.ts").WorkDatabase;
 	accounts: import("../../src/accounts/records.ts").NativeAccounts;
 	devices: NativeFixture["registry"];
@@ -79,6 +80,7 @@ function services(
 	const jobs = new JobQueue(database, events, clockApi);
 	return {
 		store: native.store,
+		nativeClock: clockApi,
 		database,
 		accounts,
 		devices: native.registry,
@@ -101,7 +103,7 @@ export type NativeApplyFixture = NativeServices & {
 	cleanup(): Promise<void>;
 };
 
-export async function fixture(): Promise<NativeApplyFixture> {
+export async function fixture(rawMigrations?: string): Promise<NativeApplyFixture> {
 	const extraMigrations = {
 		...Object.fromEntries(
 			Object.entries(HUB_NAMESPACES).filter(
@@ -109,6 +111,7 @@ export async function fixture(): Promise<NativeApplyFixture> {
 			),
 		),
 		content: CONTENT_MIGRATIONS,
+		...(rawMigrations === undefined ? {} : { rawcontent: rawMigrations }),
 	};
 	const native = await nativeFixture(extraMigrations);
 	try {
@@ -184,9 +187,11 @@ export async function fixture(): Promise<NativeApplyFixture> {
 					filename: native.filename,
 					nativeBinding,
 					masterKey: native.key,
-					migrations: registerContent
-						? { ...HUB_NAMESPACES, content: CONTENT_MIGRATIONS }
-						: HUB_NAMESPACES,
+					migrations: {
+						...HUB_NAMESPACES,
+						...(registerContent ? { content: CONTENT_MIGRATIONS } : {}),
+						...(rawMigrations === undefined ? {} : { rawcontent: rawMigrations }),
+					},
 				});
 				native.identity = await HubIdentity.loadOrCreate(native.store, native.key);
 				native.pins = new PinService(native.store, native.audit);

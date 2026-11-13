@@ -40,7 +40,10 @@ it("registers rawcontent on the original Session without applying it until expli
 	const session = await files.open();
 	expect(rawTables(session.store)).toEqual([]);
 	expect(Object.hasOwn(HUB_NAMESPACES, "rawcontent")).toBe(false);
-	await expect(session.store.migrate("rawcontent")).resolves.toEqual(["0001_raw"]);
+	await expect(session.store.migrate("rawcontent")).resolves.toEqual([
+		"0001_raw",
+		"0002_account_purge",
+	]);
 	expect(rawTables(session.store)).toEqual([
 		"_migrations_rawcontent",
 		"rawcontent_chunks",

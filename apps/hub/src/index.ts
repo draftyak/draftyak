@@ -50,6 +50,7 @@ export {
 export { AuthzError, type AuthzErrorCode, deviceApiError } from "./authz/errors.ts";
 export { type NativeDevicePeer, NativeDeviceTls } from "./authz/native-peer.ts";
 export { cliConfirmPinScope, pairConfirmPinScope, revokePinScope } from "./authz/scopes.ts";
+export * from "./content/ingest.ts";
 export {
 	type CredentialBinding,
 	type CredentialDescriptor,
@@ -348,4 +349,9 @@ export {
 } from "./plugins/registry/index.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";
 export * from "./sync/apply.ts";
+export * from "./sync/cursors.ts";
+export * from "./sync/engine.ts";
+export * from "./sync/pages.ts";
+export * from "./sync/parsed.ts";
 export * from "./sync/raw-store.ts";
+export * from "./sync/thread.ts";

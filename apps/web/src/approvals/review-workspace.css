@@ -1,0 +1,117 @@
+.review-workspace {
+	display: grid;
+	gap: 1.5rem;
+	min-inline-size: 0;
+	max-inline-size: 90rem;
+	margin-inline: auto;
+	padding: clamp(0.75rem, 2vw, 2rem);
+	color: inherit;
+}
+
+.review-workspace-header,
+.review-workspace-account {
+	display: grid;
+	gap: 0.5rem;
+	min-inline-size: 0;
+}
+
+.review-workspace-header h1,
+.review-workspace-header p,
+.review-workspace-account p {
+	margin: 0;
+}
+
+.review-workspace-account {
+	padding: 1rem;
+	border-inline-start: 0.25rem solid currentColor;
+	overflow-wrap: anywhere;
+}
+
+.review-workspace-panels {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1.5rem;
+	align-items: start;
+}
+
+.review-workspace-panel {
+	min-inline-size: 0;
+	padding: clamp(0.75rem, 1.5vw, 1.25rem);
+	border: 1px solid currentColor;
+	border-radius: 0.5rem;
+}
+
+.review-workspace-panel h2 {
+	margin-block-start: 0;
+}
+
+.review-workspace-panel :is(p, dd, li, code, th, td, caption),
+.review-workspace-account code {
+	overflow-wrap: anywhere;
+}
+
+.review-workspace-panel pre {
+	max-inline-size: 100%;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.review-workspace-panel dl {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 0.25rem;
+}
+
+.review-workspace-panel dd {
+	margin-inline-start: 0;
+	margin-block-end: 0.75rem;
+}
+
+.review-workspace-panel .scheduled-view-account {
+	max-inline-size: 100%;
+}
+
+.review-workspace-panel table {
+	inline-size: 100%;
+	table-layout: fixed;
+	border-collapse: collapse;
+}
+
+.review-workspace-panel :is(th, td) {
+	padding: 0.5rem;
+	text-align: start;
+	vertical-align: top;
+	border-block-end: 1px solid currentColor;
+}
+
+.review-workspace-panel button {
+	min-block-size: 2.75rem;
+	max-inline-size: 100%;
+	padding: 0.5rem 0.75rem;
+	font: inherit;
+	white-space: normal;
+}
+
+.review-workspace-panel button:focus-visible {
+	outline: 0.2rem solid currentColor;
+	outline-offset: 0.2rem;
+}
+
+.review-workspace-error {
+	display: grid;
+	justify-items: start;
+	gap: 0.75rem;
+}
+
+@media (min-width: 75rem) {
+	.review-workspace-panels {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+	}
+}
+
+@media (forced-colors: active) {
+	.review-workspace-panel,
+	.review-workspace-account {
+		border-color: CanvasText;
+	}
+}
