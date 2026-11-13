@@ -43,7 +43,7 @@ function bindingFromOwnInstall(): string {
 		throw new Error("Own SQLite test package unavailable");
 	const selected = path.join(root, "prebuilds", `${process.platform}-${process.arch}.node`);
 	const stat = fs.lstatSync(selected);
-	if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)
+	if (!stat.isFile() || stat.isSymbolicLink())
 		throw new Error("Own SQLite test binding unavailable");
 	if (fs.realpathSync.native(selected) !== selected)
 		throw new Error("Test binding is not canonical");
