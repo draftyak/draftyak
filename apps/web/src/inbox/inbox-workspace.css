@@ -1,0 +1,141 @@
+.inbox-workspace {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	align-items: start;
+	gap: 1rem;
+	min-inline-size: 0;
+	max-inline-size: 100%;
+	overflow-wrap: anywhere;
+}
+
+.inbox-workspace__accounts,
+.inbox-workspace__list,
+.inbox-workspace__detail,
+.inbox-workspace__composer {
+	box-sizing: border-box;
+	min-inline-size: 0;
+	max-inline-size: 100%;
+	padding: 1rem;
+	border: 1px solid #d3dae4;
+	border-radius: 0.5rem;
+	background: #fff;
+	color: #102a43;
+}
+
+.inbox-workspace__account-list {
+	display: grid;
+	gap: 0.5rem;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.inbox-workspace__account {
+	display: grid;
+	gap: 0.25rem;
+	box-sizing: border-box;
+	inline-size: 100%;
+	min-inline-size: 0;
+	min-block-size: 2.75rem;
+	padding: 0.75rem;
+	border: 1px solid currentColor;
+	border-radius: 0.25rem;
+	font: inherit;
+	text-align: start;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.inbox-workspace__account[aria-current="true"] {
+	border-width: 0.2rem;
+	background: #e7f1ff;
+	color: #102a43;
+}
+
+.inbox-workspace__status {
+	grid-column: 1 / -1;
+	margin: 0;
+}
+
+.inbox-workspace button,
+.inbox-workspace input,
+.inbox-workspace select,
+.inbox-workspace textarea {
+	box-sizing: border-box;
+	min-inline-size: 0;
+	max-inline-size: 100%;
+}
+
+.inbox-workspace button:focus-visible,
+.inbox-workspace input:focus-visible,
+.inbox-workspace select:focus-visible,
+.inbox-workspace textarea:focus-visible,
+.inbox-workspace a[href]:focus-visible {
+	outline: 0.2rem solid currentColor;
+	outline-offset: 0.2rem;
+}
+
+.inbox-workspace__composer textarea {
+	display: block;
+	inline-size: 100%;
+	min-block-size: 8rem;
+	margin-block: 0.5rem;
+	resize: vertical;
+	font: inherit;
+}
+
+.inbox-workspace__composer pre {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+@media (min-width: 48rem) {
+	.inbox-workspace {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+	}
+
+	.inbox-workspace__accounts {
+		grid-column: 1 / -1;
+	}
+
+	.inbox-workspace__list {
+		grid-column: 1;
+		grid-row: 2 / span 2;
+	}
+
+	.inbox-workspace__detail {
+		grid-column: 2;
+		grid-row: 2;
+	}
+
+	.inbox-workspace__composer {
+		grid-column: 2;
+		grid-row: 3;
+	}
+}
+
+@media (min-width: 75rem) {
+	.inbox-workspace {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 3fr);
+	}
+
+	.inbox-workspace__accounts {
+		grid-column: 1;
+		grid-row: 1 / span 2;
+	}
+
+	.inbox-workspace__list {
+		grid-column: 2;
+		grid-row: 1 / span 2;
+	}
+
+	.inbox-workspace__detail {
+		grid-column: 3;
+		grid-row: 1;
+	}
+
+	.inbox-workspace__composer {
+		grid-column: 3;
+		grid-row: 2;
+	}
+}
