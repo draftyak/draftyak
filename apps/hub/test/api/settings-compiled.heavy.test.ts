@@ -11,7 +11,30 @@ import { nativeBinding } from "../store/helpers.ts";
 requireLoopbackNetworkGuard();
 const hub = path.resolve(import.meta.dirname, "../..");
 
-async function child(directory: string) {
+function compiledBuildRoot(): string | undefined {
+	const supplied = process.env.DRAFTYAK_TEST_HUB_BUILD_DIR;
+	if (supplied === undefined) return undefined;
+	if (typeof supplied !== "string" || supplied.length === 0 || !path.isAbsolute(supplied))
+		throw new Error("Compiled settings build directory refused");
+	const parent = realpathSync(path.join(hub, "node_modules"));
+	const selected = path.resolve(supplied);
+	const info = lstatSync(selected);
+	if (
+		path.dirname(selected) !== parent ||
+		!path.basename(selected).startsWith(".m37-fresh-hub-build-") ||
+		!info.isDirectory() ||
+		info.isSymbolicLink() ||
+		realpathSync(selected) !== selected
+	)
+		throw new Error("Compiled settings build directory refused");
+	const entry = path.join(selected, "index.mjs");
+	const entryInfo = lstatSync(entry);
+	if (!entryInfo.isFile() || entryInfo.isSymbolicLink() || realpathSync(entry) !== entry)
+		throw new Error("Compiled settings build entry refused");
+	return selected;
+}
+
+async function child(directory: string, buildRoot: string | undefined) {
 	const env: NodeJS.ProcessEnv = {
 		NODE_ENV: "test",
 		VITEST: "true",
@@ -29,6 +52,7 @@ async function child(directory: string) {
 			path.join(import.meta.dirname, "fixtures/compiled-settings.mjs"),
 			nativeBinding,
 			directory,
+			...(buildRoot === undefined ? [] : [buildRoot]),
 		],
 		{ cwd: hub, env, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
 	);
@@ -157,6 +181,7 @@ function cleanupOwnedDirectory(directory: string, safe: () => boolean): void {
 	expect(existsSync(directory)).toBe(false);
 }
 it("reopens compiled owner settings through the delivered catalog and fresh native authority", async () => {
+	const buildRoot = compiledBuildRoot();
 	const parent = realpathSync.native(tmpdir());
 	const directory = realpathSync.native(
 		mkdtempSync(path.join(parent, "draftyak-compiled-settings-")),
@@ -176,7 +201,7 @@ it("reopens compiled owner settings through the delivered catalog and fresh nati
 	};
 	try {
 		if (!safe()) throw new Error("Compiled settings temporary directory refused");
-		const actual = await child(directory);
+		const actual = await child(directory, buildRoot);
 		expect(Number.isSafeInteger(actual.pid) && Number(actual.pid) > 0).toBe(true);
 		expect(actual.spawnError || actual.streamError || actual.timedOut || actual.oversized).toBe(
 			false,
@@ -189,7 +214,9 @@ it("reopens compiled owner settings through the delivered catalog and fresh nati
 		expect(actual.stdoutEof && actual.stderrEof).toBe(true);
 		expect(actual.stderr.length).toBe(0);
 		const source = readFileSync(path.join(hub, "src/api/migrations/0001_owner_settings.sql"));
-		const delivered = readFileSync(path.join(hub, "dist/api/migrations/0001_owner_settings.sql"));
+		const delivered = readFileSync(
+			path.join(buildRoot ?? path.join(hub, "dist"), "api/migrations/0001_owner_settings.sql"),
+		);
 		expect(delivered.equals(source)).toBe(true);
 		expect(response(actual.stdout)).toEqual({
 			version: 1,

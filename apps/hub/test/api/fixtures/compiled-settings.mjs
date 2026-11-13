@@ -1,16 +1,27 @@
 import assert from "node:assert/strict";
 import { createHash, createPublicKey, generateKeyPairSync, randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { connect } from "node:tls";
 import { pathToFileURL } from "node:url";
 
+function freshBuildRoot(hub, supplied) {
+	assert.ok(typeof supplied === "string" && supplied.length > 0 && path.isAbsolute(supplied));
+	const parent = realpathSync(path.join(hub, "node_modules"));
+	const selected = path.resolve(supplied), info = lstatSync(selected);
+	assert.ok(path.dirname(selected) === parent && path.basename(selected).startsWith(".m37-fresh-hub-build-"));
+	assert.ok(info.isDirectory() && !info.isSymbolicLink() && realpathSync(selected) === selected);
+	const entry = path.join(selected, "index.mjs"), entryInfo = lstatSync(entry);
+	assert.ok(entryInfo.isFile() && !entryInfo.isSymbolicLink() && realpathSync(entry) === entry);
+	return selected;
+}
+
 async function verify() {
-	const [nativeBinding, directory] = process.argv.slice(2);
-	assert.equal(process.argv.length, 4);
+	const [nativeBinding, directory, buildRoot] = process.argv.slice(2);
+	assert.equal(process.argv.length, buildRoot === undefined ? 4 : 5);
 	assert.ok(nativeBinding && directory && path.isAbsolute(nativeBinding) && path.isAbsolute(directory));
-	const hub = process.cwd(), dist = path.join(hub, "dist");
+	const hub = process.cwd(), dist = buildRoot === undefined ? path.join(hub, "dist") : freshBuildRoot(hub, buildRoot);
 	createRequire(import.meta.url)(path.join(hub, "test/helpers/loopback-preload.cjs")).assertActive();
 	await import("reflect-metadata");
 	const [compiled, { X509CertificateGenerator }, pairing, { exportSpki }] = await Promise.all([
