@@ -342,6 +342,17 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 	windows: [
 		{ run: "pnpm install --frozen-lockfile" },
 		{ run: "pnpm verify", env: { TURBO_CONCURRENCY: "1" } },
+		{
+			"working-directory": "apps/hub",
+			env: { DRAFTYAK_STRICT_SKIPS: "1" },
+			run: [
+				'node "$GITHUB_WORKSPACE/node_modules/vitest/vitest.mjs"',
+				"run test/api/events-native-page.heavy.test.ts",
+				"--mode heavy --reporter=default --passWithNoTests=false",
+				"--exclude '**/*siwc*/**' --exclude '**/*siwc*'",
+				"--exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'",
+			].join(" "),
+		},
 	],
 };
 
