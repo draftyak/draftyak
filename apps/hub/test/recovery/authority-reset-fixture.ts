@@ -157,7 +157,7 @@ export class AuthorityResetFixture {
 	readonly root: string;
 	readonly destination: string;
 	readonly artifactFile: string;
-	readonly recoveryCode = generateRecoveryCode();
+	readonly recoveryCode: Buffer = generateRecoveryCode();
 	readonly nativeBinding: string;
 	readonly #rawKey = randomBytes(32);
 	readonly #key = new MasterKey(this.#rawKey);

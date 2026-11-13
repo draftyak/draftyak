@@ -218,11 +218,11 @@ describe("prepared native backup authority reset", () => {
 	);
 
 	it.each([
-		["null", () => null],
-		["plain object", () => ({})],
-		["null prototype", () => Object.create(null)],
-		["clone", () => Object.freeze({})],
-		["proxy", () => new Proxy({}, {})],
+		["null", (): unknown => null],
+		["plain object", (): unknown => ({})],
+		["null prototype", (): unknown => Object.create(null)],
+		["clone", (): unknown => Object.freeze({})],
+		["proxy", (): unknown => new Proxy({}, {})],
 	] as const)(
 		"refuses foreign preparation DATA: %s",
 		retained(async (_label: string, make: () => unknown) => {
