@@ -92,14 +92,37 @@ const compiledSessionModes = [
 	"missing-backup",
 	"missing-backupops",
 	"missing-backupchallenges",
+	"missing-owner-settings",
 ] as const;
+function compiledBuildRoot(hub: string, parent: string): string {
+	const supplied = process.env.DRAFTYAK_TEST_HUB_BUILD_DIR;
+	if (supplied === undefined) return path.join(hub, "dist");
+	if (typeof supplied !== "string" || supplied.length === 0 || !path.isAbsolute(supplied))
+		throw new Error("Compiled session build directory refused");
+	const selected = path.resolve(supplied);
+	const info = lstatSync(selected);
+	if (
+		path.dirname(selected) !== parent ||
+		!path.basename(selected).startsWith(".m37-fresh-hub-build-") ||
+		!info.isDirectory() ||
+		info.isSymbolicLink() ||
+		realpathSync(selected) !== selected
+	)
+		throw new Error("Compiled session build directory refused");
+	const entry = path.join(selected, "index.mjs");
+	const entryInfo = lstatSync(entry);
+	if (!entryInfo.isFile() || entryInfo.isSymbolicLink() || realpathSync(entry) !== entry)
+		throw new Error("Compiled session build entry refused");
+	return selected;
+}
 it.each(compiledSessionModes)(
-	"opens and reopens a compiled session using all eighteen staged schemas (%s)",
+	"opens and reopens a compiled session using all nineteen staged schemas (%s)",
 	(mode) => {
 		const hub = path.resolve(import.meta.dirname, "../.."),
 			workspace = path.resolve(hub, "../..");
 		// Below the package's real node_modules so native external dependencies resolve without links.
 		const parent = realpathSync(path.join(hub, "node_modules"));
+		const buildRoot = compiledBuildRoot(hub, parent);
 		const stage = realpathSync(mkdtempSync(path.join(parent, ".session-compiled-test-")));
 		const cleanup = (): void => {
 			if (
@@ -113,9 +136,9 @@ it.each(compiledSessionModes)(
 			expect(existsSync(stage)).toBe(false);
 		};
 		try {
-			copyFileSync(path.join(hub, "dist/index.mjs"), path.join(stage, "index.mjs"));
+			copyFileSync(path.join(buildRoot, "index.mjs"), path.join(stage, "index.mjs"));
 			copyFileSync(
-				path.join(import.meta.dirname, "fixtures/compiled-session.mjs"),
+				path.join(import.meta.dirname, "fixtures/compiled-session-current.mjs"),
 				path.join(stage, "smoke.mjs"),
 			);
 			for (const [source, relative] of [
@@ -184,7 +207,7 @@ it.each(compiledSessionModes)(
 				],
 				["api/migrations/0001_owner_settings.sql", "api/migrations/0001_owner_settings.sql"],
 			] as const) {
-				const built = path.join(hub, "dist", relative);
+				const built = path.join(buildRoot, relative);
 				expect(readFileSync(built)).toEqual(readFileSync(path.join(hub, "src", source)));
 				const target = path.join(stage, relative);
 				mkdirSync(path.dirname(target), { recursive: true });
@@ -217,9 +240,9 @@ it.each(compiledSessionModes)(
 			expect(JSON.parse(run.stdout)).toEqual({
 				ok: true,
 				mode,
-				schemas: 18,
-				businessTables: 30,
-				bookkeepingTables: 36,
+				schemas: 19,
+				businessTables: 31,
+				bookkeepingTables: 38,
 				recoveryCapsule: mode === "positive",
 				beforeIdentity: true,
 				refused: mode === "positive" ? null : "STORE_UNAVAILABLE",
