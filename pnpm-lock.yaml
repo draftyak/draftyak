@@ -577,6 +577,8 @@ importers:
 
   tools/native-dependency-policy: {}
 
+  tools/transport-tests: {}
+
   tools/vendor-guard: {}
 
   tools/verify: {}
