@@ -319,4 +319,12 @@ export {
 	type PluginRegistryErrorCode,
 	type PluginRegistryOptions,
 } from "./plugins/registry/index.ts";
+export {
+	closeNativeBackupPreparation,
+	type NativeBackupPreparation,
+	type NativeBackupPreparationInput,
+	NativeBackupRestoreError,
+	prepareNativeBackup,
+	resetNativeBackupAuthority,
+} from "./recovery/backup-restore.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";
