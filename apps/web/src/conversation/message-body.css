@@ -1,0 +1,33 @@
+.message-body {
+	min-inline-size: 0;
+	overflow-wrap: anywhere;
+}
+
+.message-body__text {
+	margin-block: 1rem;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	unicode-bidi: plaintext;
+	font: inherit;
+	tab-size: 4;
+}
+
+.message-body aside,
+.message-body details {
+	margin-block: 0.75rem;
+	padding: 0.75rem;
+	border: 1px solid #d3dae4;
+	border-radius: 0.5rem;
+	background: #fff;
+}
+
+.message-body dl > div {
+	display: flex;
+	justify-content: space-between;
+	gap: 1rem;
+}
+
+.message-body dd {
+	margin-inline-start: 0;
+	font-variant-numeric: tabular-nums;
+}
