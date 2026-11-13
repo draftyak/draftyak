@@ -13,6 +13,7 @@
     "build": "tsdown"
   },
   "dependencies": {
+    "@draftyak/content": "workspace:*",
     "@draftyak/bounded-files": "workspace:*",
     "@draftyak/extensions": "workspace:*",
     "@draftyak/mime": "workspace:*",

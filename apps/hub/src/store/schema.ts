@@ -135,7 +135,7 @@ function reference(binding: string): SqliteDatabase {
 	const db = new Database(":memory:", { nativeBinding: binding });
 	// The settings that shape what migrate() creates: foreign keys stay off for its run.
 	db.exec(
-		"PRAGMA foreign_keys = OFF; PRAGMA recursive_triggers = ON; PRAGMA trusted_schema = OFF; PRAGMA temp_store = MEMORY;",
+		"PRAGMA foreign_keys = OFF; PRAGMA recursive_triggers = ON; PRAGMA trusted_schema = OFF; PRAGMA temp_store = MEMORY; PRAGMA secure_delete = ON;",
 	);
 	references.set(binding, db);
 	return db;
