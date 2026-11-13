@@ -23,6 +23,16 @@ export {
 } from "./inbox/ConversationList.tsx";
 export type { ConversationTitle, DisplayTime } from "./inbox/presentation.ts";
 export {
+	createEventSession,
+	type EventSession,
+	type EventSessionOptions,
+	type EventSessionState,
+} from "./platform/event-session.ts";
+export {
+	createUnavailableSpaPlatform,
+	type SpaPlatform,
+} from "./platform/spa-platform.ts";
+export {
 	ScheduleTimeField,
 	type ScheduleTimeFieldProps,
 	type ScheduleTimeSelection,
