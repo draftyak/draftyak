@@ -8,6 +8,7 @@ import type { SendTicket, TicketMismatch } from "@draftyak/protocol/send-ticket"
 import type { HostChannel, PluginEntry } from "@draftyak/sdk";
 import { type CompatibleHttpBindingInput, snapshotCompatibleHttpInput } from "./compatible-http.ts";
 import { type MessagesHttpBindingInput, snapshotMessagesHttpInput } from "./messages-http.ts";
+import type { MockSocketUpstream } from "./mock-socket-upstream.ts";
 
 export interface MockPlugin {
 	readonly manifest: unknown;
@@ -25,6 +26,8 @@ export interface MockHubOptions {
 		| string
 		| { readonly id: string; readonly config?: Readonly<Record<string, unknown>> };
 	readonly upstreams: readonly Fake[];
+	/** Optional constructor-issued synthetic socket backends; never native network authority. */
+	readonly socketUpstreams?: readonly MockSocketUpstream[];
 	readonly secrets?: Readonly<Record<string, string>>;
 	/** Trusted constructor inputs for the Responses fixture comparison; never call metadata. */
 	readonly responsesHttp?: readonly ResponsesHttpBindingInput[];
