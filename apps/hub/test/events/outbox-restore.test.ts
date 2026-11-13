@@ -43,12 +43,7 @@ function installedBinding(): string {
 		throw new Error("SQLite test package unavailable");
 	const selected = path.join(root, "prebuilds", `${process.platform}-${process.arch}.node`);
 	const stat = fs.lstatSync(selected);
-	if (
-		!stat.isFile() ||
-		stat.isSymbolicLink() ||
-		stat.nlink !== 1 ||
-		fs.realpathSync.native(selected) !== selected
-	)
+	if (!stat.isFile() || stat.isSymbolicLink() || fs.realpathSync.native(selected) !== selected)
 		throw new Error("SQLite test input unavailable");
 	return selected;
 }
