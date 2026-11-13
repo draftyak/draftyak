@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./build/verify-app-build": "./build/verify-app-build.ts",
+    "./build/react-plugins": "./config/react-plugins.mjs"
   },
   "sideEffects": [
     "**/*.css"
