@@ -20,12 +20,14 @@
     "@peculiar/x509": "2.2.0",
     "better-sqlite3-multiple-ciphers": "13.0.3",
     "kysely": "0.29.6",
-    "reflect-metadata": "0.2.2"
+    "reflect-metadata": "0.2.2",
+    "ws": "8.22.0"
   },
   "devDependencies": {
     "@draftyak/egress-recorder": "workspace:*",
     "@draftyak/fake-commercial": "workspace:*",
     "@draftyak/sdk": "workspace:*",
+    "@types/ws": "8.18.2",
     "fast-check": "4.10.2",
     "tsdown": "0.23.1"
   }
