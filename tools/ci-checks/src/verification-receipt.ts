@@ -13,6 +13,7 @@ export const jobNames = [
 	"spikes",
 	"heavy",
 	"windows",
+	"windows-tests",
 	"macos",
 ] as const;
 type JobName = (typeof jobNames)[number];
@@ -250,6 +251,7 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 		spikes: full && (selection?.spikes.length ?? 0) > 0,
 		heavy: full && (selection?.ordinaryHeavy.length ?? 0) > 0,
 		windows,
+		"windows-tests": windows,
 		macos: native,
 	};
 	const problems: string[] = [];
@@ -305,7 +307,12 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 			if (source.checkoutSha !== testedSha)
 				problems.push(`${name}: checkout differs from tested SHA`);
 			if (source.nodeVersion !== nodeVersion) problems.push(`${name}: Node differs from the pin`);
-			const platform = name === "macos" ? "darwin" : name === "windows" ? "win32" : "linux";
+			const platform =
+				name === "macos"
+					? "darwin"
+					: name === "windows" || name === "windows-tests"
+						? "win32"
+						: "linux";
 			if (source.platform !== platform) problems.push(`${name}: unexpected runner platform`);
 			const architecture = name === "macos" ? "arm64" : "x64";
 			if (source.architecture !== architecture)

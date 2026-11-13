@@ -90,9 +90,13 @@ const ciControls: Readonly<Record<string, YamlMap>> = {
 		needs: "changes",
 		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ${nativeSelected}))`,
 	},
+	"windows-tests": {
+		needs: "changes",
+		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ${nativeSelected}))`,
+	},
 	macos: { needs: "changes", if: `${nonDocs} && ${readyRun} && ${nativeSelected}` },
 	required: {
-		needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"],
+		needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "windows-tests", "macos"],
 		if: "always()",
 	},
 };
@@ -161,6 +165,20 @@ const spikeUpload: YamlMap = {
 		"if-no-files-found": "error",
 		"retention-days": 1,
 	},
+};
+
+const windowsDockerWarmup: YamlMap = {
+	shell: "pwsh",
+	"timeout-minutes": 2,
+	run: [
+		"Start-Service -Name docker -ErrorAction Stop",
+		"(Get-Service -Name docker).WaitForStatus('Running', [TimeSpan]::FromSeconds(60))",
+		"$dockerOs = docker version --format '{{.Server.Os}}'",
+		"if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+		"if ($dockerOs -notin @('windows', 'linux')) { throw 'Docker engine did not report its platform' }",
+		'Write-Output "Docker engine platform: $dockerOs"',
+		"",
+	].join("\n"),
 };
 
 const ciCommands: Record<string, readonly YamlMap[]> = {
@@ -339,9 +357,15 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 			].join("\n"),
 		},
 	],
+	"windows-tests": [
+		{ run: "pnpm install --frozen-lockfile" },
+		windowsDockerWarmup,
+		{ run: "pnpm verify --profile windows-tests", env: { TURBO_CONCURRENCY: "1" } },
+	],
 	windows: [
 		{ run: "pnpm install --frozen-lockfile" },
-		{ run: "pnpm verify", env: { TURBO_CONCURRENCY: "1" } },
+		windowsDockerWarmup,
+		{ run: "pnpm verify --profile windows-core", env: { TURBO_CONCURRENCY: "1" } },
 		{
 			"working-directory": "apps/hub",
 			env: { DRAFTYAK_STRICT_SKIPS: "1" },
@@ -766,8 +790,11 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 						"must preserve selected Rust setup and cache before install",
 					);
 			}
-			if (job in nativePlatforms) {
-				const platform = nativePlatforms[job as keyof typeof nativePlatforms];
+			if (job in nativePlatforms || job === "windows-tests") {
+				const platform =
+					job === "windows-tests"
+						? nativePlatforms.windows
+						: nativePlatforms[job as keyof typeof nativePlatforms];
 				if (definition["runs-on"] !== platform.runner || definition["timeout-minutes"] !== 30)
 					report(["jobs", job], "must preserve the native runner and time budget");
 				const rustSteps = asList(definition.steps)
@@ -777,7 +804,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 					uses: `dtolnay/rust-toolchain@${actionPins["dtolnay/rust-toolchain"]?.[0]}`,
 					...(job === "full"
 						? { if: "needs.changes.outputs.rust != ''" }
-						: job === "windows"
+						: job === "windows" || job === "windows-tests"
 							? {
 									if: "hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'",
 								}
@@ -786,6 +813,17 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				};
 				if (rustSteps.length !== 1 || !isDeepStrictEqual(rustSteps[0], expectedRust))
 					report(["jobs", job, "steps"], "must preserve the pinned native Rust setup");
+				if (job === "windows-tests") {
+					const steps = asList(definition.steps).map(asMap);
+					const rustAt = steps.findIndex((step) =>
+						String(step.uses).startsWith("dtolnay/rust-toolchain@"),
+					);
+					const installAt = steps.findIndex(
+						(step) => step.run === "pnpm install --frozen-lockfile",
+					);
+					if (rustAt < 0 || installAt < 0 || rustAt >= installAt)
+						report(["jobs", job, "steps"], "must preserve Windows test Rust setup before install");
+				}
 				for (const step of asList(definition.steps).map(asMap)) {
 					const ordinaryCondition = Object.hasOwn(asMap(step.env), "SPIKES")
 						? "needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''"
