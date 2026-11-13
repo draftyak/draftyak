@@ -118,7 +118,7 @@ function copyPinnedRuntimeFile(source: string, target: string): void {
 
 function stageRuntimePackage(
 	stage: string,
-	name: "protocol" | "bounded-files" | "extensions" | "mime",
+	name: "protocol" | "bounded-files" | "extensions" | "mime" | "content",
 ): void {
 	const runtimePackage = path.resolve(hub, "../../packages", name);
 	const manifest = JSON.parse(readFileSync(path.join(runtimePackage, "package.json"), "utf8"));
@@ -131,7 +131,16 @@ function stageRuntimePackage(
 				? { "@draftyak/protocol": "workspace:*", hono: "4.13.13" }
 				: name === "mime"
 					? { "@draftyak/protocol": "workspace:*", nodemailer: "10.1.4" }
-					: undefined,
+					: name === "content"
+						? {
+								"@draftyak/protocol": "workspace:*",
+								"css-select": "7.0.0",
+								"css-tree": "3.2.1",
+								domhandler: "6.0.1",
+								parse5: "8.0.0",
+								"postal-mime": "4.0.8",
+							}
+						: undefined,
 	);
 	const target = path.join(stage, "node_modules/@draftyak", name);
 	mkdirSync(target, { recursive: true });
@@ -192,6 +201,41 @@ function stageRuntimePackage(
 		copyPinnedRuntimeFile(dependencyFile, path.join(destination, "package.json"));
 		copy(path.join(path.dirname(dependencyFile), "dist"), path.join(destination, "dist"));
 	}
+	if (name === "content") {
+		const expectedRoot = path.resolve(hub, "../../node_modules/.pnpm");
+		const rootStat = lstatSync(expectedRoot);
+		expect(rootStat.isDirectory()).toBe(true);
+		expect(rootStat.isSymbolicLink()).toBe(false);
+		const physicalRoot = realpathSync(expectedRoot);
+		expect(path.relative(expectedRoot, physicalRoot)).toBe("");
+		for (const [dependencyName, version] of [
+			["css-select", "7.0.0"],
+			["css-tree", "3.2.1"],
+			["domhandler", "6.0.1"],
+			["parse5", "8.0.0"],
+			["postal-mime", "4.0.8"],
+		] as const) {
+			const dependencyRoot = realpathSync(
+				path.join(runtimePackage, "node_modules", dependencyName),
+			);
+			const relative = path.relative(physicalRoot, dependencyRoot);
+			expect(
+				relative !== "" &&
+					relative !== ".." &&
+					!relative.startsWith(".." + path.sep) &&
+					!path.isAbsolute(relative),
+			).toBe(true);
+			const dependencyStat = lstatSync(dependencyRoot);
+			expect(dependencyStat.isDirectory()).toBe(true);
+			expect(dependencyStat.isSymbolicLink()).toBe(false);
+			const dependencyFile = path.join(dependencyRoot, "package.json");
+			expect(realpathSync(dependencyFile)).toBe(dependencyFile);
+			const dependency = JSON.parse(readFileSync(dependencyFile, "utf8"));
+			expect(dependency.name).toBe(dependencyName);
+			expect(dependency.version).toBe(version);
+			symlinkSync(dependencyRoot, path.join(stage, "node_modules", dependencyName), "junction");
+		}
+	}
 }
 
 function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-schema"): void {
@@ -211,7 +255,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 	try {
 		// Admit every staged runtime filename before copying any runtime bytes.
 		checkRuntimeNames(path.join(hub, "dist"));
-		for (const name of ["protocol", "bounded-files", "extensions", "mime"])
+		for (const name of ["protocol", "bounded-files", "extensions", "mime", "content"])
 			checkRuntimeNames(path.resolve(hub, "../../packages", name, "dist"));
 		for (const entry of readdirSync(path.join(hub, "dist"), { withFileTypes: true })) {
 			if (!entry.name.endsWith(".mjs")) continue;
@@ -241,6 +285,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 		stageRuntimePackage(stage, "bounded-files");
 		stageRuntimePackage(stage, "extensions");
 		stageRuntimePackage(stage, "mime");
+		stageRuntimePackage(stage, "content");
 		const child = spawnSync(
 			process.execPath,
 			[
