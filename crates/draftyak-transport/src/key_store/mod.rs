@@ -21,8 +21,11 @@ use crate::{
 mod linux_environment;
 #[cfg(feature = "native-store")]
 mod platform;
+mod profile_scope;
 #[cfg(any(test, feature = "mock-store"))]
 pub mod testing;
+
+pub use profile_scope::NativeProfileScope;
 
 const SERVICE: &str = "com.draftyak.transport.device.v1";
 const MAX_RECORD_BYTES: usize = 2048;
@@ -221,6 +224,22 @@ impl NativeStore {
         #[cfg(not(feature = "native-store"))]
         {
             let _ = SERVICE;
+            Err(StoreError::Unavailable)
+        }
+    }
+    /// Opens the native identity record for an explicitly selected profile scope.
+    /// The scope identifies a record only; it supplies no admission or pairing authority.
+    pub fn open_profile(scope: &NativeProfileScope) -> Result<Self, StoreError> {
+        let account = scope.backend_record_name();
+        #[cfg(feature = "native-store")]
+        {
+            Ok(Self {
+                record: platform::open(SERVICE, account)?,
+            })
+        }
+        #[cfg(not(feature = "native-store"))]
+        {
+            let _ = (SERVICE, account);
             Err(StoreError::Unavailable)
         }
     }
