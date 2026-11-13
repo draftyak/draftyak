@@ -83,13 +83,17 @@ interface DirectoryNames {
 }
 interface DirectoryContext {
 	readonly entries: Map<string, DirectoryNames>;
+	readonly selectedRoot?: string;
 	names: number;
 	characters: number;
 }
 const directoryContexts = new AsyncLocalStorage<DirectoryContext>();
 const DIRECTORY_CACHE_LIMITS = { directories: 128, names: 32_768, characters: 1_048_576 } as const;
-function withPathChecks<T>(operation: () => Promise<T>): Promise<T> {
-	return directoryContexts.run({ entries: new Map(), names: 0, characters: 0 }, operation);
+function withPathChecks<T>(operation: () => Promise<T>, selectedRoot?: string): Promise<T> {
+	return directoryContexts.run(
+		{ entries: new Map(), selectedRoot, names: 0, characters: 0 },
+		operation,
+	);
 }
 function forgetDirectory(context: DirectoryContext, directory: string): void {
 	const entry = context.entries.get(directory);
@@ -153,6 +157,114 @@ async function directoryNames(directory: string): Promise<readonly string[]> {
 	return refuse("DATABASE_SOURCE_CHANGED");
 }
 
+function ancestorIdentity(stat: BigIntStats): string {
+	identity(stat, false);
+	return JSON.stringify([String(stat.dev), String(stat.ino), String(stat.mode)]);
+}
+
+// Only the route into the selected database has mutable ancestor namespaces. Database contents,
+// tools, scratch paths and the generic checkedPaths interface keep their strict listing checks.
+function withinDirectory(directory: string, filename: string): boolean {
+	const relative = path.relative(directory, filename);
+	return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+function selectedAncestor(directory: string, filename: string, root: string): boolean {
+	return (
+		path.relative(directory, root) !== "" &&
+		withinDirectory(directory, root) &&
+		withinDirectory(root, filename)
+	);
+}
+
+async function ancestorNames(
+	directory: string,
+): Promise<{ readonly binding: string; readonly names: readonly string[] }> {
+	const context = directoryContexts.getStore();
+	const beforeStat = await fs.lstat(directory, { bigint: true });
+	const before = identity(beforeStat, false);
+	let entry = context?.entries.get(directory);
+	if (entry && entry.identity !== before) {
+		if (context) forgetDirectory(context, directory);
+		entry = undefined;
+	}
+	let names = entry?.names ?? Object.freeze(await fs.readdir(directory));
+	if (names.length > 50_000) return refuse();
+	const afterStat = await fs.lstat(directory, { bigint: true });
+	const after = identity(afterStat, false);
+	const binding = ancestorIdentity(afterStat);
+	if (ancestorIdentity(beforeStat) !== binding) return refuse("DATABASE_SOURCE_CHANGED");
+	if (context) {
+		// A sibling may change size, nlink or timestamps without changing this directory's binding.
+		// Such a listing is usable only for the selected component checks below, never as a cache.
+		if (before !== after) {
+			forgetDirectory(context, directory);
+			if (entry) {
+				// Never use a cached name projection after its full stamp changes.
+				names = Object.freeze(await fs.readdir(directory));
+				if (names.length > 50_000) return refuse();
+				if (ancestorIdentity(await fs.lstat(directory, { bigint: true })) !== binding)
+					return refuse("DATABASE_SOURCE_CHANGED");
+			}
+		} else if (entry) {
+			context.entries.delete(directory);
+			context.entries.set(directory, entry);
+		} else {
+			const characters = names.reduce((total, name) => total + name.length, 0);
+			if (
+				names.length <= DIRECTORY_CACHE_LIMITS.names &&
+				characters <= DIRECTORY_CACHE_LIMITS.characters
+			) {
+				while (
+					context.entries.size >= DIRECTORY_CACHE_LIMITS.directories ||
+					context.names + names.length > DIRECTORY_CACHE_LIMITS.names ||
+					context.characters + characters > DIRECTORY_CACHE_LIMITS.characters
+				) {
+					const oldest = context.entries.keys().next().value;
+					if (oldest === undefined) break;
+					forgetDirectory(context, oldest);
+				}
+				context.entries.set(directory, { identity: before, names, characters });
+				context.names += names.length;
+				context.characters += characters;
+			}
+		}
+	}
+	return { binding, names };
+}
+
+async function checkedAncestor(
+	directory: string,
+	segment: string,
+	root: string,
+	expectedParent: BigIntStats,
+): Promise<BigIntStats> {
+	const parent = ancestorIdentity(expectedParent);
+	if (ancestorIdentity(await fs.lstat(directory, { bigint: true })) !== parent)
+		return refuse("DATABASE_SOURCE_CHANGED");
+	const filename = path.join(directory, segment);
+	const component = (stat: BigIntStats): string =>
+		path.relative(filename, root) === "" ? identity(stat, false) : ancestorIdentity(stat);
+	const before = component(await fs.lstat(filename, { bigint: true }));
+	if ((await fs.realpath(filename)) !== filename) return refuse();
+	// Two fixed observations, not retries: both must identify the same exact, unaliased name.
+	const first = await ancestorNames(directory);
+	const second = await ancestorNames(directory);
+	for (const { names } of [first, second]) {
+		if (
+			names.filter((name) => name.toLowerCase() === segment.toLowerCase()).length !== 1 ||
+			!names.includes(segment)
+		)
+			return refuse();
+	}
+	const after = await fs.lstat(filename, { bigint: true });
+	if (first.binding !== parent || second.binding !== parent || component(after) !== before)
+		return refuse("DATABASE_SOURCE_CHANGED");
+	if ((await fs.realpath(filename)) !== filename) return refuse();
+	if (ancestorIdentity(await fs.lstat(directory, { bigint: true })) !== parent)
+		return refuse("DATABASE_SOURCE_CHANGED");
+	return after;
+}
+
 function clock(value: number): number {
 	if (!Number.isSafeInteger(value) || value < 0) return refuse("DATABASE_SOURCE_CLOCK");
 	return value;
@@ -202,9 +314,26 @@ async function absent(filename: string): Promise<boolean> {
 }
 async function checked(filename: string, file: boolean, executable = false): Promise<BigIntStats> {
 	const full = absolute(filename);
+	const selectedRoot = directoryContexts.getStore()?.selectedRoot;
+	let selectedComponent: BigIntStats | undefined;
 	let current = path.parse(full).root;
-	identity(await fs.lstat(current, { bigint: true }), false);
+	let currentStat = await fs.lstat(current, { bigint: true });
+	identity(currentStat, false);
 	for (const segment of full.slice(current.length).split(path.sep).filter(Boolean)) {
+		if (selectedRoot && selectedAncestor(current, full, selectedRoot)) {
+			selectedComponent = await checkedAncestor(current, segment, selectedRoot, currentStat);
+			current = path.join(current, segment);
+			currentStat = selectedComponent;
+			continue;
+		}
+		if (
+			selectedRoot &&
+			withinDirectory(selectedRoot, current) &&
+			withinDirectory(selectedRoot, full) &&
+			identity(await fs.lstat(current, { bigint: true }), false) !== identity(currentStat, false)
+		)
+			return refuse("DATABASE_SOURCE_CHANGED");
+		selectedComponent = undefined;
 		const names = await directoryNames(current);
 		if (
 			names.length > 50_000 ||
@@ -216,9 +345,12 @@ async function checked(filename: string, file: boolean, executable = false): Pro
 		const stat = await fs.lstat(current, { bigint: true });
 		identity(stat, stat.isFile(), executable && current === full);
 		if ((await fs.realpath(current)) !== current) return refuse();
+		currentStat = stat;
 	}
 	const stat = await fs.lstat(full, { bigint: true });
 	identity(stat, file, executable);
+	if (selectedComponent && identity(stat, file, executable) !== identity(selectedComponent, file))
+		return refuse("DATABASE_SOURCE_CHANGED");
 	return stat;
 }
 async function bytes(
@@ -771,10 +903,10 @@ function source(root: string, services: Services): DatabaseSource {
 		return value;
 	};
 	const result: DatabaseSource = Object.freeze({
-		observe: async () => issue(await withPathChecks(() => collect(root, services, result))),
+		observe: async () => issue(await withPathChecks(() => collect(root, services, result), root)),
 		revalidate: async (previous: DatabaseObservation) => {
 			const before = saved(previous),
-				after = await withPathChecks(() => collect(root, services, result));
+				after = await withPathChecks(() => collect(root, services, result), root);
 			if (
 				before.commit !== after.commit ||
 				before.revision !== after.revision ||
