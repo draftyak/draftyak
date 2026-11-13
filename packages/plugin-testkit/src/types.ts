@@ -4,6 +4,7 @@ import type { HeaderList } from "@draftyak/protocol/hash";
 import { HOST_MAX_ACTIVE_REQUESTS, type HostMethod } from "@draftyak/protocol/host-channel";
 import type { PluginManifestV1 } from "@draftyak/protocol/manifest";
 import type { ResponsesHttpBindingInput } from "@draftyak/protocol/manifest/responses-http";
+import { isPluginNodeVersionSupported } from "@draftyak/protocol/plugin-argv";
 import type { PluginStdioResult } from "@draftyak/protocol/plugin-stdio";
 import type { SendTicket, TicketMismatch } from "@draftyak/protocol/send-ticket";
 import type { HostChannel, PluginEntry } from "@draftyak/sdk";
@@ -190,98 +191,102 @@ function prototypeChain(value: object): readonly NativePrototype[] {
 }
 
 // Discover native DATA roles from private fresh examples, without reading Node internals.
-const callerSignalPolicy = (() => {
-	const reason = Object.freeze(Object.create(null));
-	const ended = AbortSignal.abort(reason);
-	const reasonKey = Reflect.ownKeys(ended).find(
-		(key) => Object.getOwnPropertyDescriptor(ended, key)?.value === reason,
-	);
-	const source = new AbortController().signal;
-	const composite = nativeSignalAny([source]);
-	const linkedSetKey = (signal: AbortSignal, target: AbortSignal): PropertyKey => {
-		const found = Reflect.ownKeys(signal).filter((key) => {
-			const value: unknown = Object.getOwnPropertyDescriptor(signal, key)?.value;
-			try {
-				if (Reflect.apply(nativeSetSize!, value, []) !== 1) return false;
-				const iterator = Reflect.apply(nativeSetValues, value, []);
-				const first = Reflect.apply(nativeSetNext, iterator, []);
-				return !first.done && Reflect.apply(nativeWeakDeref, first.value, []) === target;
-			} catch {
-				return false;
-			}
-		});
-		if (found.length !== 1) throw new MockHubError("PROCESS_SIGNAL_INVALID");
-		return found[0]!;
-	};
-	const sourceSetKey = linkedSetKey(composite, source);
-	const dependantSetKey = linkedSetKey(source, composite);
-	if (sourceSetKey === dependantSetKey) throw new MockHubError("PROCESS_SIGNAL_INVALID");
-	const events = new AbortController().signal;
-	events.addEventListener("abort", () => {});
-	events.onabort = () => {};
-	const timeout = AbortSignal.timeout(0);
-	const examples = [source, composite, events, ended, timeout];
-	const rules = new Map<PropertyKey, { slot: PropertyDescriptor; kinds: Set<string> }>();
-	const containers = new Map<
-		object,
-		{
-			kind: SignalContainer;
-			chain: readonly NativePrototype[];
-			iteratorChain: readonly NativePrototype[];
-		}
-	>();
-	for (const signal of examples)
-		for (const key of Reflect.ownKeys(signal)) {
-			const slot = Object.getOwnPropertyDescriptor(signal, key)!;
-			const rule = rules.get(key) ?? { slot, kinds: new Set<string>() };
-			if (slot.value !== null && typeof slot.value === "object" && key !== reasonKey) {
-				let kind: SignalContainer;
-				try {
-					Reflect.apply(nativeSetSize!, slot.value, []);
-					kind = "set";
-				} catch {
+const callerSignalPolicy = isPluginNodeVersionSupported(process.versions.node)
+	? (() => {
+			const reason = Object.freeze(Object.create(null));
+			const ended = AbortSignal.abort(reason);
+			const reasonKey = Reflect.ownKeys(ended).find(
+				(key) => Object.getOwnPropertyDescriptor(ended, key)?.value === reason,
+			);
+			const source = new AbortController().signal;
+			const composite = nativeSignalAny([source]);
+			const linkedSetKey = (signal: AbortSignal, target: AbortSignal): PropertyKey => {
+				const found = Reflect.ownKeys(signal).filter((key) => {
+					const value: unknown = Object.getOwnPropertyDescriptor(signal, key)?.value;
 					try {
-						Reflect.apply(nativeMapSize!, slot.value, []);
-						kind = "map";
+						if (Reflect.apply(nativeSetSize!, value, []) !== 1) return false;
+						const iterator = Reflect.apply(nativeSetValues, value, []);
+						const first = Reflect.apply(nativeSetNext, iterator, []);
+						return !first.done && Reflect.apply(nativeWeakDeref, first.value, []) === target;
 					} catch {
-						Reflect.apply(nativeWeakDeref, slot.value, []);
-						kind = "weakref";
+						return false;
 					}
-				}
-				const prototype = Object.getPrototypeOf(slot.value);
-				const iterator =
-					kind === "weakref"
-						? undefined
-						: Reflect.apply(
-								Object.getOwnPropertyDescriptor(prototype, Symbol.iterator)!.value,
-								slot.value,
-								[],
-							);
-				if (iterator !== undefined && (iterator === null || typeof iterator !== "object"))
-					throw new MockHubError("PROCESS_SIGNAL_INVALID");
-				containers.set(prototype, {
-					kind,
-					chain: prototypeChain(slot.value),
-					iteratorChain: iterator === undefined ? [] : prototypeChain(iterator),
 				});
-				rule.kinds.add(kind);
-			} else rule.kinds.add(typeof slot.value);
-			rules.set(key, rule);
-		}
-	const fresh = new AbortController().signal;
-	return {
-		reasonKey,
-		sourceSetKey,
-		dependantSetKey,
-		rules,
-		containers,
-		required: Reflect.ownKeys(fresh),
-		chain: prototypeChain(fresh),
-	};
-})();
+				if (found.length !== 1) throw new MockHubError("PROCESS_SIGNAL_INVALID");
+				return found[0]!;
+			};
+			const sourceSetKey = linkedSetKey(composite, source);
+			const dependantSetKey = linkedSetKey(source, composite);
+			if (sourceSetKey === dependantSetKey) throw new MockHubError("PROCESS_SIGNAL_INVALID");
+			const events = new AbortController().signal;
+			events.addEventListener("abort", () => {});
+			events.onabort = () => {};
+			const timeout = AbortSignal.timeout(0);
+			const examples = [source, composite, events, ended, timeout];
+			const rules = new Map<PropertyKey, { slot: PropertyDescriptor; kinds: Set<string> }>();
+			const containers = new Map<
+				object,
+				{
+					kind: SignalContainer;
+					chain: readonly NativePrototype[];
+					iteratorChain: readonly NativePrototype[];
+				}
+			>();
+			for (const signal of examples)
+				for (const key of Reflect.ownKeys(signal)) {
+					const slot = Object.getOwnPropertyDescriptor(signal, key)!;
+					const rule = rules.get(key) ?? { slot, kinds: new Set<string>() };
+					if (slot.value !== null && typeof slot.value === "object" && key !== reasonKey) {
+						let kind: SignalContainer;
+						try {
+							Reflect.apply(nativeSetSize!, slot.value, []);
+							kind = "set";
+						} catch {
+							try {
+								Reflect.apply(nativeMapSize!, slot.value, []);
+								kind = "map";
+							} catch {
+								Reflect.apply(nativeWeakDeref, slot.value, []);
+								kind = "weakref";
+							}
+						}
+						const prototype = Object.getPrototypeOf(slot.value);
+						const iterator =
+							kind === "weakref"
+								? undefined
+								: Reflect.apply(
+										Object.getOwnPropertyDescriptor(prototype, Symbol.iterator)!.value,
+										slot.value,
+										[],
+									);
+						if (iterator !== undefined && (iterator === null || typeof iterator !== "object"))
+							throw new MockHubError("PROCESS_SIGNAL_INVALID");
+						containers.set(prototype, {
+							kind,
+							chain: prototypeChain(slot.value),
+							iteratorChain: iterator === undefined ? [] : prototypeChain(iterator),
+						});
+						rule.kinds.add(kind);
+					} else rule.kinds.add(typeof slot.value);
+					rules.set(key, rule);
+				}
+			const fresh = new AbortController().signal;
+			return {
+				reasonKey,
+				sourceSetKey,
+				dependantSetKey,
+				rules,
+				containers,
+				required: Reflect.ownKeys(fresh),
+				chain: prototypeChain(fresh),
+			};
+		})()
+	: undefined;
 
 /** Validate the bounded native signal graph before either native getter or any(). */
 function validateCallerSignal(raw: unknown): void {
+	const policy = callerSignalPolicy;
+	if (policy === undefined) throw new MockHubError("PROCESS_NODE_UNSUPPORTED");
 	const invalid: () => never = () => {
 		throw new MockHubError("PROCESS_SIGNAL_INVALID");
 	};
@@ -303,7 +308,7 @@ function validateCallerSignal(raw: unknown): void {
 	};
 	const weakTarget = (value: object, sourceReference = true): unknown => {
 		if (isProxy(value)) invalid();
-		const template = callerSignalPolicy.containers.get(Object.getPrototypeOf(value));
+		const template = policy.containers.get(Object.getPrototypeOf(value));
 		if (!template || template.kind !== "weakref" || Reflect.ownKeys(value).length) invalid();
 		checkChain(template.chain);
 		if (sourceReference ? ++references > 256 : ++dependantReferences > 4096) invalid();
@@ -320,13 +325,12 @@ function validateCallerSignal(raw: unknown): void {
 		if (visited.has(value)) return;
 		if (visited.size >= 64) invalid();
 		visited.add(value);
-		checkChain(callerSignalPolicy.chain);
+		checkChain(policy.chain);
 		const keys = Reflect.ownKeys(value);
-		if (keys.length > 32 || callerSignalPolicy.required.some((key) => !Object.hasOwn(value, key)))
-			invalid();
+		if (keys.length > 32 || policy.required.some((key) => !Object.hasOwn(value, key))) invalid();
 		for (const key of keys) {
 			const slot = Object.getOwnPropertyDescriptor(value, key);
-			const rule = callerSignalPolicy.rules.get(key);
+			const rule = policy.rules.get(key);
 			if (
 				!slot ||
 				!Object.hasOwn(slot, "value") ||
@@ -337,14 +341,14 @@ function validateCallerSignal(raw: unknown): void {
 			)
 				invalid();
 			// Abort reasons are opaque DATA; copying must never classify or traverse them.
-			if (key === callerSignalPolicy.reasonKey) continue;
+			if (key === policy.reasonKey) continue;
 			const item: unknown = slot.value;
 			if (item === null || typeof item !== "object") {
 				if (!rule.kinds.has(typeof item)) invalid();
 				continue;
 			}
 			if (isProxy(item) || Reflect.ownKeys(item).length) invalid();
-			const template = callerSignalPolicy.containers.get(Object.getPrototypeOf(item));
+			const template = policy.containers.get(Object.getPrototypeOf(item));
 			if (!template || !rule.kinds.has(template.kind)) invalid();
 			checkChain(template.chain);
 			checkChain(template.iteratorChain);
@@ -352,8 +356,8 @@ function validateCallerSignal(raw: unknown): void {
 				const target = weakTarget(item);
 				if (target !== undefined) visit(target);
 			} else if (template.kind === "set") {
-				const sourceSet = key === callerSignalPolicy.sourceSetKey;
-				if (!sourceSet && key !== callerSignalPolicy.dependantSetKey) invalid();
+				const sourceSet = key === policy.sourceSetKey;
+				if (!sourceSet && key !== policy.dependantSetKey) invalid();
 				// Historical dependants are not native getter/any() traversal sources.
 				// Check their container/WeakRef brands, with a separate finite fixture cap.
 				if (Reflect.apply(nativeSetSize!, item, []) > (sourceSet ? 64 : 4096)) invalid();
@@ -374,6 +378,7 @@ function validateCallerSignal(raw: unknown): void {
 
 function copyCallerSignal(raw: unknown): AbortSignal | undefined {
 	if (raw === undefined) return undefined;
+	if (callerSignalPolicy === undefined) throw new MockHubError("PROCESS_NODE_UNSUPPORTED");
 	const invalid = (): never => {
 		throw new MockHubError("PROCESS_SIGNAL_INVALID");
 	};
