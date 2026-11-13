@@ -20,6 +20,7 @@ const publicModules = [
 	"digests",
 	"draft-output",
 	"draft-output-text",
+	"draft-read",
 	"entities",
 	"entities/account",
 	"entities/account/channels",
