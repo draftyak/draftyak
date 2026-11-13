@@ -13,6 +13,7 @@
     "./digests": "./src/digests.ts",
     "./draft-output": "./src/draft-output.ts",
     "./draft-output-text": "./src/draft-output-text.ts",
+    "./draft-read": "./src/draft-read.ts",
     "./entities": "./src/entities.ts",
     "./entities/account": "./src/entities/account.ts",
     "./entities/account/channels": "./src/entities/account/channels.ts",
@@ -137,6 +138,10 @@
       "./draft-output-text": {
         "types": "./dist/draft-output-text.d.mts",
         "default": "./dist/draft-output-text.mjs"
+      },
+      "./draft-read": {
+        "types": "./dist/draft-read.d.mts",
+        "default": "./dist/draft-read.mjs"
       },
       "./entities": {
         "types": "./dist/entities.d.mts",
