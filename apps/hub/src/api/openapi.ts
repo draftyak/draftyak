@@ -26,6 +26,12 @@ export interface NativeApiOpenApiOperation {
 	operationId: string;
 	"x-draftyak-native-only": true;
 	"x-draftyak-capability": "read" | "admin";
+	parameters?: ReadonlyArray<{
+		name: "accountId" | "afterId";
+		in: "path" | "query";
+		required: boolean;
+		schema: Record<string, unknown>;
+	}>;
 	requestBody?: {
 		required: true;
 		content: { "application/json": NativeApiOpenApiMediaType };
@@ -40,8 +46,18 @@ export interface NativeApiOpenApiDocument {
 	components: { schemas: Record<string, Record<string, unknown>> };
 }
 
+export type NativeApiOpenApiSchemas = Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+
 const SCHEMA_ID = "draftyak.entities.OwnerSettings";
 const COMPONENT_REF = `#/components/schemas/${SCHEMA_ID}`;
+const ACCOUNT_ID = "draftyak.entities.Account";
+const RECORD_ID = "draftyak.native.AccountRecord";
+const PAGE_ID = "draftyak.native.AccountPage";
+const ACCOUNT_REF = `#/components/schemas/${ACCOUNT_ID}`;
+const ACCOUNT_PATH = "/api/v1/accounts/{accountId}";
+const PAGE_PATH = "/api/v1/accounts";
+// Only this API's encoded JSON response is capped; the M1 Account contract is unchanged.
+const ACCOUNT_RESPONSE_BYTES = 1_048_576;
 const DIALECT = "https://json-schema.org/draft/2020-12/schema";
 const ERRORS = {
 	INVALID_REQUEST: { status: 400, description: "Invalid request" },
@@ -107,7 +123,7 @@ function bound(value: unknown): void {
 	if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) refuse();
 }
 
-function descriptor(value: unknown): NativeApiOpenApiDescriptor {
+function descriptor(value: unknown, accountsAvailable = false): NativeApiOpenApiDescriptor {
 	const route = record(value);
 	keys(route, ["operationId", "method", "path", "request", "response", "errors", "security"]);
 	if (
@@ -115,7 +131,7 @@ function descriptor(value: unknown): NativeApiOpenApiDescriptor {
 		!/^[A-Za-z_][A-Za-z0-9_]*$/.test(route.operationId) ||
 		(route.method !== "GET" && route.method !== "PUT") ||
 		typeof route.path !== "string" ||
-		!/^\/api\/v1\/[A-Za-z0-9/_-]+$/.test(route.path)
+		(!/^\/api\/v1\/[A-Za-z0-9/_-]+$/.test(route.path) && route.path !== ACCOUNT_PATH)
 	)
 		return refuse();
 	const request = record(route.request);
@@ -124,8 +140,22 @@ function descriptor(value: unknown): NativeApiOpenApiDescriptor {
 	keys(request, ["schemaRef", "maxBytes"]);
 	keys(response, ["schemaRef", "maxBytes"]);
 	keys(security, ["nativeOnly", "capability"]);
+	const settings = response.schemaRef === SCHEMA_ID;
 	if (
-		response.schemaRef !== SCHEMA_ID ||
+		(!settings &&
+			(!accountsAvailable ||
+				route.method !== "GET" ||
+				response.maxBytes !== ACCOUNT_RESPONSE_BYTES ||
+				!(
+					(response.schemaRef === RECORD_ID &&
+						route.path === ACCOUNT_PATH &&
+						route.operationId === "getAccount") ||
+					(response.schemaRef === PAGE_ID &&
+						route.path === PAGE_PATH &&
+						route.operationId === "pageAccounts")
+				))) ||
+		(settings &&
+			(route.path === ACCOUNT_PATH || (accountsAvailable && route.path === PAGE_PATH))) ||
 		security.nativeOnly !== true ||
 		security.capability !== (route.method === "GET" ? "read" : "admin")
 	)
@@ -147,6 +177,12 @@ function descriptor(value: unknown): NativeApiOpenApiDescriptor {
 		if (error.status !== definition.status || statuses.has(definition.status)) return refuse();
 		statuses.add(definition.status);
 	}
+	if (!settings) {
+		const expected = response.schemaRef === RECORD_ID ? [400, 403, 404, 503] : [400, 403, 503];
+		if (statuses.size !== expected.length || expected.some((status) => !statuses.has(status))) {
+			return refuse();
+		}
+	}
 	return route as unknown as NativeApiOpenApiDescriptor;
 }
 
@@ -167,8 +203,8 @@ const SCHEMA_MEMBERS = [
 	"else",
 ];
 
-function resolveReference(root: Record<string, unknown>, reference: string): void {
-	if (reference === "#") return;
+function resolveReference(root: Record<string, unknown>, reference: string): unknown {
+	if (reference === "#") return root;
 	if (!reference.startsWith("#/")) refuse();
 	let target: unknown = root;
 	for (const token of reference.slice(2).split("/")) {
@@ -179,9 +215,15 @@ function resolveReference(root: Record<string, unknown>, reference: string): voi
 		target = object[key];
 	}
 	if (typeof target !== "boolean") record(target);
+	return target;
 }
 
-function relocateSchema(value: unknown, root: Record<string, unknown>, top = false): unknown {
+function relocateSchema(
+	value: unknown,
+	root: Record<string, unknown>,
+	top = false,
+	componentRef = COMPONENT_REF,
+): unknown {
 	if (typeof value === "boolean") return value;
 	const schema = record(value);
 	if (
@@ -194,20 +236,24 @@ function relocateSchema(value: unknown, root: Record<string, unknown>, top = fal
 	if (Object.hasOwn(schema, "$ref")) {
 		if (typeof schema.$ref !== "string") return refuse();
 		resolveReference(root, schema.$ref);
-		schema.$ref = `${COMPONENT_REF}${schema.$ref.slice(1)}`;
+		schema.$ref = `${componentRef}${schema.$ref.slice(1)}`;
 	}
 	for (const key of SCHEMA_MAPS) {
 		if (!Object.hasOwn(schema, key)) continue;
 		const children = record(schema[key]);
-		for (const name of Object.keys(children)) children[name] = relocateSchema(children[name], root);
+		for (const name of Object.keys(children))
+			children[name] = relocateSchema(children[name], root, false, componentRef);
 	}
 	for (const key of SCHEMA_ARRAYS) {
 		if (!Object.hasOwn(schema, key)) continue;
 		if (!Array.isArray(schema[key])) return refuse();
-		schema[key] = schema[key].map((child: unknown) => relocateSchema(child, root));
+		schema[key] = schema[key].map((child: unknown) =>
+			relocateSchema(child, root, false, componentRef),
+		);
 	}
 	for (const key of SCHEMA_MEMBERS) {
-		if (Object.hasOwn(schema, key)) schema[key] = relocateSchema(schema[key], root);
+		if (Object.hasOwn(schema, key))
+			schema[key] = relocateSchema(schema[key], root, false, componentRef);
 	}
 	if (top) {
 		delete schema.$schema;
@@ -216,9 +262,67 @@ function relocateSchema(value: unknown, root: Record<string, unknown>, top = fal
 	return schema;
 }
 
-function media(maxBytes: number): { "application/json": NativeApiOpenApiMediaType } {
+function accountSchemas(input: Record<string, unknown>): {
+	schemas: Record<string, Record<string, unknown>>;
+	idSchema: Record<string, unknown>;
+} {
+	keys(input, [ACCOUNT_ID, RECORD_ID, PAGE_ID]);
+	const schema = record(input[ACCOUNT_ID]);
+	const original = record(copyJson(schema));
+	const union =
+		typeof schema.$ref === "string" ? record(resolveReference(original, schema.$ref)) : schema;
+	const variants = new Set([
+		"#/$defs/draftyak.entities.ChatAccount",
+		"#/$defs/draftyak.entities.EmailAccount",
+	]);
+	if (!Array.isArray(union.oneOf) || union.oneOf.length !== variants.size) return refuse();
+	let idSchema: Record<string, unknown> | undefined;
+	for (const value of union.oneOf) {
+		const variant = record(value);
+		if (typeof variant.$ref !== "string" || !variants.delete(variant.$ref)) return refuse();
+		const account = record(resolveReference(original, variant.$ref));
+		if (!Array.isArray(account.required) || !account.required.includes("id")) return refuse();
+		const id = record(record(account.properties).id);
+		if (
+			id.type !== "string" ||
+			id.minLength !== 26 ||
+			id.maxLength !== 26 ||
+			typeof id.pattern !== "string"
+		)
+			return refuse();
+		if (idSchema !== undefined && JSON.stringify(idSchema) !== JSON.stringify(id)) return refuse();
+		idSchema = id;
+	}
+	if (idSchema === undefined) return refuse();
+	// Reuse the actual supplied M1 id schema, including its exported pattern guards.
+	const projectedId = record(relocateSchema(copyJson(idSchema), original, false, ACCOUNT_REF));
 	return {
-		"application/json": { schema: { $ref: COMPONENT_REF }, "x-draftyak-max-bytes": maxBytes },
+		idSchema: projectedId,
+		schemas: Object.fromEntries(
+			Object.entries(input).map(([id, value]) => {
+				const document = record(value);
+				if (id !== ACCOUNT_ID && document.type !== "object" && typeof document.$ref !== "string") {
+					return refuse();
+				}
+				const documentRoot = record(copyJson(document));
+				return [
+					id,
+					record(relocateSchema(document, documentRoot, true, `#/components/schemas/${id}`)),
+				] as const;
+			}),
+		),
+	};
+}
+
+function media(
+	maxBytes: number,
+	schemaRef = SCHEMA_ID,
+): { "application/json": NativeApiOpenApiMediaType } {
+	return {
+		"application/json": {
+			schema: { $ref: `#/components/schemas/${schemaRef}` },
+			"x-draftyak-max-bytes": maxBytes,
+		},
 	};
 }
 
@@ -226,10 +330,13 @@ function media(maxBytes: number): { "application/json": NativeApiOpenApiMediaTyp
 export function buildNativeApiOpenApi(
 	actualDescriptors: readonly NativeApiOpenApiDescriptor[],
 	ownerSettingsJsonSchema: Readonly<Record<string, unknown>>,
+	additionalJsonSchemas: NativeApiOpenApiSchemas = {},
 ): NativeApiOpenApiDocument {
 	const input = copyJson(actualDescriptors);
 	if (!Array.isArray(input) || input.length === 0) return refuse();
-	const routes = input.map(descriptor);
+	const additional = record(copyJson(additionalJsonSchemas));
+	const accounts = Object.keys(additional).length === 0 ? undefined : accountSchemas(additional);
+	const routes = input.map((value) => descriptor(value, accounts !== undefined));
 	routes.sort((left, right) => {
 		const a = `${left.path}\0${left.method}\0${left.operationId}`;
 		const b = `${right.path}\0${right.method}\0${right.operationId}`;
@@ -248,7 +355,15 @@ export function buildNativeApiOpenApi(
 		if (Object.hasOwn(path, method) || operationIds.has(route.operationId)) return refuse();
 		operationIds.add(route.operationId);
 		const responses: NativeApiOpenApiOperation["responses"] = {
-			"200": { description: "Owner settings", content: media(route.response.maxBytes) },
+			"200": {
+				description:
+					route.response.schemaRef === RECORD_ID
+						? "Account snapshot"
+						: route.response.schemaRef === PAGE_ID
+							? "Account page"
+							: "Owner settings",
+				content: media(route.response.maxBytes, route.response.schemaRef),
+			},
 		};
 		for (const error of [...route.errors].sort((left, right) => left.status - right.status)) {
 			responses[String(error.status)] = {
@@ -275,6 +390,18 @@ export function buildNativeApiOpenApi(
 		if (route.request.schemaRef !== null) {
 			operation.requestBody = { required: true, content: media(route.request.maxBytes) };
 		}
+		if (route.response.schemaRef === RECORD_ID || route.response.schemaRef === PAGE_ID) {
+			if (accounts === undefined) return refuse();
+			const point = route.response.schemaRef === RECORD_ID;
+			operation.parameters = [
+				{
+					name: point ? "accountId" : "afterId",
+					in: point ? "path" : "query",
+					required: point,
+					schema: record(copyJson(accounts.idSchema)),
+				},
+			];
+		}
 		path[method] = operation;
 		paths[route.path] = path;
 	}
@@ -283,6 +410,12 @@ export function buildNativeApiOpenApi(
 		jsonSchemaDialect: DIALECT,
 		info: { title: "DraftYak native API", version: "1" },
 		paths,
-		components: { schemas: { [SCHEMA_ID]: projected } },
+		components: {
+			schemas: Object.fromEntries(
+				Object.entries({ [SCHEMA_ID]: projected, ...accounts?.schemas }).sort(([a], [b]) =>
+					a < b ? -1 : a > b ? 1 : 0,
+				),
+			),
+		},
 	};
 }

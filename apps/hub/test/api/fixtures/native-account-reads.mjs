@@ -43,6 +43,7 @@ for (const name of [
 	"DevicePairingAuthority",
 	"MasterKey",
 	"createNativeAccountReads",
+	"createNativeApiRouter",
 	"AccountReadError",
 	"WorkDatabase",
 	"EventLog",
@@ -204,6 +205,24 @@ try {
 			assert.ok(Object.isFrozen(item) && Object.isFrozen(item.account));
 		}
 	}
+	const router = hub.createNativeApiRouter(session);
+	const decoded = (response) => {
+		assert.equal(response.status, 200);
+		assert.ok(response.body instanceof Uint8Array);
+		return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(response.body));
+	};
+	assert.deepEqual(
+		decoded(router.dispatch(peer, "GET", `/api/v1/accounts/${ownerIds[0]}`, undefined)),
+		record,
+	);
+	assert.deepEqual(
+		decoded(router.dispatch(peer, "GET", "/api/v1/accounts", undefined)),
+		first,
+	);
+	assert.deepEqual(
+		decoded(router.dispatch(peer, "GET", `/api/v1/accounts?afterId=${first.nextId}`, undefined)),
+		second,
+	);
 	session.store.write((sql) => {
 		assert.equal(sql.run("UPDATE main.devices SET capabilities=1 WHERE id=?", [grant.deviceId]).changes, 1);
 	});

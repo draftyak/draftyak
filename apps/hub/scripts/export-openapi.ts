@@ -9,6 +9,17 @@ const DEPENDENCIES = [
 	"draftyak.entities.WorkingHours",
 	"draftyak.entities.Weekday",
 ] as const;
+const ACCOUNT = "draftyak.entities.Account";
+const ACCOUNT_RECORD = "draftyak.native.AccountRecord";
+const ACCOUNT_PAGE = "draftyak.native.AccountPage";
+const ACCOUNT_DEPENDENCIES = [
+	"draftyak.entities.ChatAccount",
+	"draftyak.entities.AccountMode",
+	"draftyak.entities.AccountStatus",
+	"draftyak.normalized-change.ProviderId",
+	"draftyak.entities.EmailAccount",
+	"draftyak.entities.EmailAddress",
+] as const;
 
 function object(value: unknown): Record<string, unknown> {
 	if (value === null || typeof value !== "object" || Array.isArray(value))
@@ -24,12 +35,55 @@ function ownerSettingsSchema(): Readonly<Record<string, unknown>> {
 	};
 }
 
+function accountSchemas(): Readonly<Record<string, Readonly<Record<string, unknown>>>> {
+	const definitions = object(object(parseStrict(readFileSync(entities))).$defs);
+	const account = object(definitions[ACCOUNT]);
+	const dependencies = Object.fromEntries(
+		ACCOUNT_DEPENDENCIES.map((id) => [id, object(definitions[id])]),
+	);
+	const id = object(object(object(definitions["draftyak.entities.ChatAccount"]).properties).id);
+	const record = {
+		type: "object",
+		properties: {
+			account: { $ref: "#/$defs/draftyak.entities.Account" },
+			generation: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+		},
+		required: ["account", "generation"],
+		additionalProperties: false,
+	};
+	const page = {
+		type: "object",
+		properties: {
+			accounts: {
+				type: "array",
+				maxItems: 100,
+				items: { $ref: "#/$defs/draftyak.native.AccountRecord" },
+			},
+			nextId: { anyOf: [id, { type: "null" }] },
+		},
+		required: ["accounts", "nextId"],
+		additionalProperties: false,
+	};
+	return {
+		[ACCOUNT]: { ...account, $defs: dependencies },
+		[ACCOUNT_RECORD]: { ...record, $defs: { [ACCOUNT]: account, ...dependencies } },
+		[ACCOUNT_PAGE]: {
+			...page,
+			$defs: { [ACCOUNT_RECORD]: record, [ACCOUNT]: account, ...dependencies },
+		},
+	};
+}
+
 export async function nativeApiOpenApiBytes(): Promise<Uint8Array> {
 	const [{ buildNativeApiOpenApi }, { NATIVE_API_ROUTE_DESCRIPTORS }] = await Promise.all([
 		import("../src/api/openapi.ts"),
 		import("../src/api/router.ts"),
 	]);
-	const document = buildNativeApiOpenApi(NATIVE_API_ROUTE_DESCRIPTORS, ownerSettingsSchema());
+	const document = buildNativeApiOpenApi(
+		NATIVE_API_ROUTE_DESCRIPTORS,
+		ownerSettingsSchema(),
+		accountSchemas(),
+	);
 	const sorted = JSON.parse(canonicalize(document));
 	return Buffer.from(`${JSON.stringify(sorted, null, 2)}\n`, "utf8");
 }
