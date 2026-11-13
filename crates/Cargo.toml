@@ -1,3 +1,3 @@
 [workspace]
-members = ["draftyak-protocol", "draftyak-transport", "draftyak-desktop-pairing"]
+members = ["draftyak-protocol", "draftyak-transport", "draftyak-desktop-pairing", "../apps/app/src-tauri"]
 resolver = "3"

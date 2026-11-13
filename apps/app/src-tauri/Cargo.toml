@@ -1,0 +1,27 @@
+[package]
+name = "draftyak-desktop"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+license = "Apache-2.0"
+publish = false
+workspace = "../../../crates"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = []
+
+[dependencies]
+draftyak-protocol = { path = "../../../crates/draftyak-protocol", default-features = false }
+draftyak-transport = { path = "../../../crates/draftyak-transport", default-features = false }
+http-body-util = "=0.1.3"
+hyper = { version = "=1.12.0", default-features = false, features = ["client", "http1"] }
+hyper-util = { version = "=0.1.21", default-features = false, features = ["tokio"] }
+tokio = { version = "=1.53.3", default-features = false, features = ["rt", "net", "io-util", "time"] }
+
+[dev-dependencies]
+rcgen = { version = "=0.14.10", default-features = false, features = ["crypto", "ring"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["std", "ring"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring"] }
