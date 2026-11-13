@@ -326,8 +326,10 @@ export function createProcess(
 	const attached = Promise.withResolvers<void>();
 	const observedClose = Promise.withResolvers<MockProcessObservation>();
 	const processJoined = Promise.withResolvers<void>();
+	const cleanupClosed = Promise.withResolvers<void>();
 	// Observation failure remains visible to consumers without an unhandled rejection.
 	void observedClose.promise.catch(() => {});
+	void cleanupClosed.promise.catch(() => {});
 	function observation(result: PluginStdioResult | null): MockProcessObservation {
 		return frozenReceipt({
 			started: child !== undefined,
@@ -347,17 +349,16 @@ export function createProcess(
 			if (!io) fail("PROCESS_OBSERVATION_FAILED");
 			const result = await io.completion;
 			processJoined.resolve();
-			await Promise.all(
-				result.drains.map((drain, index) =>
-					drain.result === "eof" ? outputEvents[index]!.promise : Promise.resolve(),
-				),
-			);
+			await Promise.all(outputEvents.map((event) => event.promise));
+			// Fulfilled completion joins descriptors even when its error DATA reports forced cleanup.
+			cleanupClosed.resolve();
 			if (observationFailure) fail(observationFailure);
 			if (observationSettled) return;
 			observationSettled = true;
 			observedClose.resolve(observation(result));
 		} catch {
 			observationSettled = true;
+			cleanupClosed.reject(new MockHubError("PROCESS_CLEANUP_FAILED"));
 			observedClose.reject(new MockHubError("PROCESS_OBSERVATION_FAILED"));
 		}
 	}
@@ -369,11 +370,13 @@ export function createProcess(
 				await startup?.catch(() => {});
 				if (child || observationSettled || (!closed && !inputEnding)) return;
 				await stdio?.destroy();
+				cleanupClosed.resolve();
 				observationSettled = true;
 				observedClose.resolve(observation(null));
 			})
 			.catch(() => {
 				observationSettled = true;
+				cleanupClosed.reject(new MockHubError("PROCESS_CLEANUP_FAILED"));
 				observedClose.reject(new MockHubError("PROCESS_OBSERVATION_FAILED"));
 			});
 	}
@@ -875,11 +878,11 @@ export function createProcess(
 					...(source.data ? { dataDir: data } : {}),
 				});
 				const opened = await openPluginStdio();
+				stdio = opened;
 				if (closed || inputEnding) {
 					await opened.destroy();
 					fail("PROCESS_CLOSED");
 				}
-				stdio = opened;
 				const env: NodeJS.ProcessEnv = {
 					DRAFTYAK_PLUGIN_ID: identity.plugin,
 					DRAFTYAK_INSTANCE_ID: identity.instance,
@@ -1238,7 +1241,7 @@ export function createProcess(
 			await startup?.catch(() => {});
 			await tail;
 			await client?.close();
-			await observedClose.promise;
+			await cleanupClosed.promise;
 		},
 	};
 }
