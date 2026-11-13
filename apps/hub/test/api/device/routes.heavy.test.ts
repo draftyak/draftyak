@@ -1401,3 +1401,259 @@ it("rejects invalid scheduling summary and sync-pause requests", async () => {
 		apiError(reply, entry.status, entry.code);
 	}
 });
+
+const [
+	{ createHash: savedReviewHash },
+	{ NativeAccounts: SavedReviewAccounts },
+	{ NativeDraftRevisions: SavedReviewDrafts },
+	{ EventLog: SavedReviewEventLog },
+	{ WorkDatabase: SavedReviewDatabase },
+	{ NativeOutboxProposals: SavedReviewProposals, destroyNativeOutboxProposals: destroySavedReview },
+	{ systemClock: savedReviewClock },
+	{ newId: savedReviewId },
+	{
+		admit: savedReviewAdmit,
+		bootstrap: savedReviewBootstrap,
+		device: savedReviewDevice,
+		idOf: savedReviewDeviceId,
+		owner: savedReviewOwner,
+	},
+	{ revokePinScope: savedReviewRevokeScope },
+	{ SendReview: SavedReviewCodec },
+] = await Promise.all([
+	import("node:crypto"),
+	import("../../../src/accounts/records.ts"),
+	import("../../../src/drafts/revisions.ts"),
+	import("../../../src/events/log.ts"),
+	import("../../../src/jobs/database.ts"),
+	import("../../../src/outbox/propose.ts"),
+	import("../../../src/kernel/clock.ts"),
+	import("../../../src/kernel/ids.ts"),
+	import("../../authz/native-fixture.ts"),
+	import("../../../src/authz/scopes.ts"),
+	import("@draftyak/protocol/device-api"),
+]);
+type SavedReviewSession = import("../../../src/lifecycle/session.ts").HubSession;
+type SavedReviewFacts = import("../../../src/outbox/propose.ts").NativeProposalFacts;
+type SavedReviewProviders = import("../../../src/outbox/propose.ts").NativeProposalProviders;
+type SavedReviewInput = import("../../../src/outbox/propose.ts").NativeProposalInput;
+
+function savedReviewRows(session: SavedReviewSession) {
+	return session.store.read((db) => {
+		const tables = ["outbox", "native_draft_locks", "audit_events", "events", "jobs_meta"] as const;
+		return Object.fromEntries(
+			tables.map((table) => {
+				const rows = db
+					.all<Record<string, unknown>>(`SELECT * FROM main.${table}`)
+					.map((row) => JSON.stringify(row))
+					.sort();
+				return [
+					table,
+					{
+						count: rows.length,
+						sha256: savedReviewHash("sha256").update(rows.join("\n")).digest("hex"),
+					},
+				];
+			}),
+		);
+	});
+}
+
+async function prepareSavedHttpReview(fixture: SessionFixture) {
+	const key = fixture.key();
+	const session = await fixture.open({ masterKey: key });
+	let native: NativeFixture | undefined;
+	let revisions: InstanceType<typeof SavedReviewDrafts> | undefined;
+	let proposals: InstanceType<typeof SavedReviewProposals> | undefined;
+	const cleanup = async (): Promise<void> => {
+		if (proposals) {
+			destroySavedReview(proposals);
+			proposals = undefined;
+		}
+		if (revisions) {
+			revisions.destroy();
+			revisions = undefined;
+		}
+		if (native) {
+			await Promise.all(native.devices.map((client) => destroySocket(client.socket)));
+			await closeSessionTransport(native);
+			native = undefined;
+		}
+		await session.close();
+	};
+	failedOpenings.push(cleanup);
+	try {
+		native = await sessionTransport(session, key, fixture.folder);
+		const original = native;
+		const pending = await savedReviewDevice(original);
+		savedReviewAdmit(original, pending);
+		const revoked = await savedReviewDevice(original);
+		const revokedId = savedReviewAdmit(original, revoked);
+		const confirmed = await savedReviewBootstrap(original);
+		const user = savedReviewOwner(original);
+		const revokeProof = await original.pins.verify(user, PIN, savedReviewRevokeScope(revokedId));
+		expect(
+			original.store.write((tx) =>
+				original.registry.revoke(tx, revokedId, {
+					kind: "device",
+					id: savedReviewDeviceId(confirmed),
+					proof: revokeProof,
+				}),
+			),
+		).toBe(true);
+		const database = new SavedReviewDatabase(session.store);
+		const accounts = new SavedReviewAccounts(
+			database,
+			new SavedReviewEventLog(database, savedReviewClock.wallMs),
+			session.audit,
+			savedReviewClock.wallMs,
+		);
+		revisions = new SavedReviewDrafts(session.store, session.audit, key, savedReviewClock);
+		const originalRevisions = revisions;
+		// The existing proposal fixture supplies synthetic domain DATA, never production authority.
+		const TEST_ONLY_FACTS = new Map<string, SavedReviewFacts>();
+		const TEST_ONLY_PROVIDERS = Object.freeze<SavedReviewProviders>({
+			facts: (_tx, binding) => TEST_ONLY_FACTS.get(binding.draftId),
+			flags: (_tx, _binding, current) => current.revision.flags,
+		});
+		proposals = new SavedReviewProposals(
+			session.store,
+			session.audit,
+			key,
+			originalRevisions,
+			session.devices,
+			original.authorizer,
+			session.identity,
+			savedReviewClock,
+			{},
+			TEST_ONLY_PROVIDERS,
+		);
+		const target = proposals;
+		const now = Date.now();
+		const binding = {
+			draftId: savedReviewId(now),
+			accountId: savedReviewId(now),
+			conversationId: null,
+			channel: "email" as const,
+		};
+		const account = {
+			id: binding.accountId,
+			userId: user,
+			alias: "dytest-saved-http",
+			mode: "full" as const,
+			status: "active" as const,
+			deletionDeadline: null,
+			historyLimitDays: 30,
+			disclosureVersion: 1,
+			createdAt: now,
+			pluginInstanceId: savedReviewId(now),
+			channel: "email" as const,
+			address: "dytest-saved-http@example.invalid",
+		};
+		database.write((scope) => accounts.create(scope, account));
+		const content = {
+			channel: "email" as const,
+			to: ["dytest-recipient@example.invalid"],
+			cc: [],
+			bcc: [],
+			subject: "DYTEST saved HTTP review",
+			body: "DYTEST persisted review body",
+			attachments: [],
+		};
+		const current = session.store.write((tx) =>
+			originalRevisions.createInTransaction(tx, {
+				...binding,
+				content,
+				flags: [],
+				author: { kind: "owner", id: user },
+			}),
+		);
+		const footer = "DYTEST saved HTTP footer";
+		TEST_ONLY_FACTS.set(binding.draftId, {
+			kind: "email",
+			accountId: account.id,
+			conversationId: null,
+			dataClass: "gmail.content",
+			footer,
+			email: { from: account.address, references: [] },
+		});
+		const input: SavedReviewInput = {
+			binding,
+			expectedRev: current.revision.rev,
+			snapshot: {
+				v: 1,
+				hub: session.identity.hid,
+				epoch: session.devices.currentState().epoch,
+				outbox: savedReviewId(now),
+				account: account.id,
+				conversation: null,
+				body: { text: content.body, footer },
+				attachments: [],
+				schedule: { kind: "now" },
+				source: { draft: binding.draftId, rev: current.revision.rev, authors: current.authors },
+				kind: "email",
+				email: {
+					from: account.address,
+					to: content.to,
+					cc: content.cc,
+					bcc: content.bcc,
+					subject: content.subject,
+					references: [],
+				},
+			},
+			dataClass: "gmail.content",
+			requiredApprovals: 1,
+			requiredUsers: [user],
+			undoWindowMs: 10_000,
+			expiresAt: now + 86_400_000,
+		};
+		const proposed = target.propose(confirmed.peer, input);
+		const record = target.write((tx) => target.get(tx, proposed.id));
+		if (record === undefined) throw new Error("Genuine saved HTTP proposal missing");
+		expect(record.state).toBe("PENDING_APPROVAL");
+		return { confirmed, pending, revoked, record, persisted: savedReviewRows(session) };
+	} finally {
+		await cleanup();
+	}
+}
+
+it("serves the exact persisted send-review snapshot over real TLS without rewriting domain rows", async () => {
+	const fixture = folder();
+	const prepared = await prepareSavedHttpReview(fixture);
+	const foreign = await prepareRouteDevices(folder());
+	const { context } = await start(fixture, false);
+	const port = context.endpoint.port;
+	const target = `/device/v1/outbox/${prepared.record.id}/snapshot`;
+	const expected = {
+		id: prepared.record.id,
+		snapshot: prepared.record.snapshot,
+		contentHash: prepared.record.contentHash,
+		flags: prepared.record.flags,
+		flagsHash: prepared.record.flagsHash,
+		state: prepared.record.state,
+		stateReason: prepared.record.stateReason,
+		requiredUsers: prepared.record.requiredUsers,
+		expiresAt: prepared.record.expiresAt,
+	};
+	const review = (reply: HttpReply): void => {
+		expect(reply.status).toBe(200);
+		expect(reply.closed).toBe(true);
+		expect(checkRouteResponseBytes("send-review", reply.body)).toBe(true);
+		const actual = SavedReviewCodec.parse(JSON.parse(reply.body.toString("utf8")));
+		expect(actual).toEqual(expected);
+		expect(canonicalize(actual.snapshot)).toBe(canonicalize(prepared.record.snapshot));
+	};
+	review(await send(context, prepared.confirmed, request(port, "GET", target)));
+	for (const identity of [prepared.pending, prepared.revoked, foreign.confirmed])
+		apiError(await send(context, identity, request(port, "GET", target)), 403, "FORBIDDEN");
+	review(await send(context, prepared.confirmed, request(port, "GET", target)));
+	await context.close();
+	const reopened = await fixture.open();
+	failedOpenings.push(() => reopened.close());
+	try {
+		// Scope guards may advance an in-memory read revision; these persisted domain rows must not change.
+		expect(savedReviewRows(reopened)).toEqual(prepared.persisted);
+	} finally {
+		await reopened.close();
+	}
+});
