@@ -697,3 +697,35 @@ it("selects genuine pending and approved-at records by saved time with the actua
 	// This single-owner native fixture has no second same-store owner to manufacture or hide.
 	expectUsable(f.key);
 });
+it("returns the exact saved proposal only to the actual confirmed APPROVE peer without changing stored rows", async () => {
+	const f = await setup();
+	const foreign = await setup();
+	const record = domainProposals(f).propose("email", { kind: "now" });
+	expect(record.state).toBe("PENDING_APPROVAL");
+	const savedSnapshot = canonicalize(record.snapshot);
+	const before = persisted(f.session);
+	const actual = f.context.get(f.confirmed.peer, record.id);
+	if (actual === undefined) throw new Error("Genuine saved proposal read missing");
+	expect(actual).toEqual(record);
+	expect(canonicalize(actual.snapshot)).toBe(savedSnapshot);
+	expect(actual.contentHash).toBe(record.contentHash);
+	expect(actual.flags).toEqual(record.flags);
+	expect(actual.flagsHash).toBe(record.flagsHash);
+	expect(actual.state).toBe(record.state);
+	expect(actual.stateReason).toBe(record.stateReason);
+	expect(actual.requiredUsers).toEqual(record.requiredUsers);
+	expect(actual.expiresAt).toBe(record.expiresAt);
+	expect(persisted(f.session)).toEqual(before);
+	for (const [peer, code] of [
+		[f.pending.peer, "DEVICE_PENDING"],
+		[f.revoked.peer, "DEVICE_REVOKED"],
+		[f.limited.peer, "CAPABILITY_MISSING"],
+		[foreign.confirmed.peer, "PEER_REFUSED"],
+	] as const) {
+		authorizationRefusal(() => f.context.get(peer, record.id), code);
+		expect(persisted(f.session)).toEqual(before);
+	}
+	expect(f.context.get(f.confirmed.peer, record.id)).toEqual(record);
+	expect(persisted(f.session)).toEqual(before);
+	expectUsable(f.key);
+});
