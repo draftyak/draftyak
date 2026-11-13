@@ -42,6 +42,7 @@
     "./errors": "./src/errors.ts",
     "./extension": "./src/extension.ts",
     "./flags": "./src/flags.ts",
+    "./flags-schema": "./src/flags-schema.ts",
     "./hash": "./src/hash.ts",
     "./host-channel": "./src/host-channel.ts",
     "./hub-runtime": "./src/hub-runtime.ts",
@@ -252,6 +253,10 @@
       "./flags": {
         "types": "./dist/flags.d.mts",
         "default": "./dist/flags.mjs"
+      },
+      "./flags-schema": {
+        "types": "./dist/flags-schema.d.mts",
+        "default": "./dist/flags-schema.mjs"
       },
       "./hash": {
         "types": "./dist/hash.d.mts",
