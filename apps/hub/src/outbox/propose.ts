@@ -23,12 +23,13 @@ import {
 	NativeDraftRevisions,
 	type NativeRevision,
 } from "../drafts/revisions.ts";
-import { EventLog } from "../events/log.ts";
+import { appendOutboxRestoreChangedInTransaction, EventLog } from "../events/log.ts";
 import { DeviceRegistry } from "../identity/devices.ts";
 import type { HubIdentity } from "../identity/hub-key.ts";
 import { WorkDatabase, type WorkScope } from "../jobs/database.ts";
 import { fields, id, integer } from "../jobs/values.ts";
 import { type Clock, systemClock } from "../kernel/clock.ts";
+import { newId } from "../kernel/ids.ts";
 import { MasterKey } from "../kernel/master-key.ts";
 import { readStamp } from "../store/read-stamp.ts";
 import {
@@ -163,6 +164,8 @@ const registry = Object.freeze({
 	state: DeviceRegistry.prototype.state,
 });
 const auditVerify = AuditChain.prototype.verify;
+const auditAppend = AuditChain.prototype.append;
+const workAssertTransaction = WorkDatabase.prototype.assertTransaction;
 const workWrite = WorkDatabase.prototype.write;
 const workSql = WorkDatabase.prototype.sql;
 const workAbort = WorkDatabase.prototype.abort;
@@ -470,8 +473,10 @@ export class NativeOutboxProposals {
 			.digest("hex");
 	}
 	#load(db: SqlReader, outboxId: string): Loaded | undefined {
-		const tx = this.#reader(db),
-			row = tx.get<Row>(`${ROW} WHERE id=?`, [id(outboxId)]);
+		return this.#authenticatedLoad(this.#reader(db), outboxId);
+	}
+	#authenticatedLoad(tx: SqlTransaction, outboxId: string): Loaded | undefined {
+		const row = tx.get<Row>(`${ROW} WHERE id=?`, [id(outboxId)]);
 		if (!row) return undefined;
 		const { mac, ...signed } = row;
 		if (
@@ -492,11 +497,184 @@ export class NativeOutboxProposals {
 		)
 			refused();
 		const latest = tx.get<{ seq: number }>(
-			"SELECT seq FROM main.audit_events WHERE refs=? AND action IN ('outbox.proposed','outbox.superseded','outbox.approved','outbox.missed') ORDER BY seq DESC LIMIT 1",
+			"SELECT seq FROM main.audit_events WHERE refs=? AND action IN ('outbox.proposed','outbox.superseded','outbox.approved','outbox.missed','outbox.restored','outbox.expired') ORDER BY seq DESC LIMIT 1",
 			[canonicalize({ outbox: value.id })],
 		);
 		if (latest?.seq !== row.audit_seq) refused();
 		return { record: value, version: integer(row.audit_seq, 1) };
+	}
+	#restoreReader(tx: SqlTransaction): void {
+		this.#active();
+		apply(workAssertTransaction, this.#database, [tx]);
+		if (readStamp(tx)?.owner !== this.#owner) refused();
+		apply(auditVerify, this.#audit, [tx]);
+	}
+	#restoreOne(tx: SqlTransaction, loaded: Loaded, expiredAt?: number): void {
+		this.#restoreReader(tx);
+		const before = loaded.record;
+		const expiring = expiredAt !== undefined;
+		if (expiredAt !== undefined) {
+			if (
+				before.state !== "PENDING_APPROVAL" ||
+				!Number.isSafeInteger(expiredAt) ||
+				expiredAt < before.expiresAt
+			)
+				refused();
+		} else if (before.state !== "APPROVED" && before.state !== "SCHEDULED") {
+			refused();
+		}
+		const current = apply(revision.currentInTransaction, this.#revisions, [tx, before.binding]);
+		if (
+			current.lockId !== before.lockId ||
+			current.revision.rev !== before.rev ||
+			current.flagsHash !== before.flagsHash ||
+			current.revision.contentSha256 !== before.revisionContentHash
+		)
+			refused();
+		const at = Math.max(expiredAt ?? this.#now(), before.updatedAt);
+		this.#restoreReader(tx);
+		apply(freeze.releaseInTransaction, this.#freeze, [tx, before.binding, before.id]);
+		const value = record({
+			...before,
+			state: expiring ? "EXPIRED" : "NEEDS_REAPPROVAL",
+			stateReason: expiring ? null : "restored",
+			updatedAt: at,
+		});
+		apply(auditAppend, this.#audit, [
+			tx,
+			{
+				id: newId(at),
+				at,
+				action: expiring ? "outbox.expired" : "outbox.restored",
+				actor: { kind: "hub", id: null },
+				refs: { outbox: value.id },
+			},
+		]);
+		const receipt = tx.get<{ seq: number }>(
+			"SELECT audit_seq AS seq FROM main.audit_meta WHERE singleton=1",
+		);
+		const signed = {
+			id: value.id,
+			user_id: value.userId,
+			account_id: value.accountId,
+			draft_id: value.draftId,
+			state: value.state,
+			schedule_kind: value.snapshot.schedule.kind,
+			payload: canonicalize(value),
+			audit_seq: integer(receipt?.seq, 1),
+		};
+		const prior = {
+			id: before.id,
+			user_id: before.userId,
+			account_id: before.accountId,
+			draft_id: before.draftId,
+			state: before.state,
+			schedule_kind: before.snapshot.schedule.kind,
+			payload: canonicalize(before),
+			audit_seq: loaded.version,
+		};
+		this.#restoreReader(tx);
+		if (
+			tx.run(
+				"UPDATE main.outbox SET state=?,payload=?,audit_seq=?,mac=? WHERE id=? AND user_id=? AND account_id=? AND draft_id=? AND state=? AND schedule_kind=? AND payload=? AND audit_seq=? AND mac=?",
+				[
+					signed.state,
+					signed.payload,
+					signed.audit_seq,
+					this.#mac(signed),
+					...Object.values(prior),
+					this.#mac(prior),
+				],
+			).changes !== 1
+		)
+			refused();
+		appendOutboxRestoreChangedInTransaction(this.#events, tx, {
+			userId: value.userId,
+			accountId: value.accountId,
+			dataClass: value.dataClass,
+			outboxId: value.id,
+		});
+		this.#restoreReader(tx);
+		const saved = this.#authenticatedLoad(tx, value.id);
+		const finalCurrent = apply(revision.currentInTransaction, this.#revisions, [tx, value.binding]);
+		if (
+			!saved ||
+			saved.version !== signed.audit_seq ||
+			canonicalize(saved.record) !== signed.payload ||
+			finalCurrent.lockId !== null ||
+			finalCurrent.revision.rev !== before.rev ||
+			finalCurrent.flagsHash !== before.flagsHash ||
+			finalCurrent.revision.contentSha256 !== before.revisionContentHash
+		)
+			refused();
+	}
+	/** Restriction only; the fixed offline receiver owns this original native transaction. */
+	resetForRestoreInTransaction(tx: SqlTransaction): number {
+		try {
+			this.#restoreReader(tx);
+			let after = "";
+			let changed = 0;
+			for (;;) {
+				this.#restoreReader(tx);
+				const rows = tx.all<{ id: string | null }>(
+					"SELECT CASE WHEN typeof(id)='text' AND length(CAST(id AS BLOB))=26 THEN id ELSE NULL END AS id FROM main.outbox WHERE id COLLATE BINARY>? ORDER BY id COLLATE BINARY LIMIT 128",
+					[after],
+				);
+				if (rows.length > 128) refused();
+				for (const row of rows) {
+					const outboxId = id(row.id);
+					if (outboxId <= after) refused();
+					const loaded = this.#authenticatedLoad(tx, outboxId) ?? refused();
+					if (loaded.record.state === "APPROVED" || loaded.record.state === "SCHEDULED") {
+						this.#restoreOne(tx, loaded);
+						changed = integer(changed + 1, 1);
+					}
+					after = outboxId;
+				}
+				if (rows.length < 128) break;
+			}
+			this.#restoreReader(tx);
+			return changed;
+		} catch (error) {
+			this.#abortTransaction(tx);
+			this.#abortCurrent();
+			throw error instanceof ProposalError ? error : new ProposalError();
+		}
+	}
+	/** Expire only pending proposals whose stored TTL has elapsed at this operation's clock snapshot. */
+	expirePendingForRestoreInTransaction(tx: SqlTransaction): number {
+		try {
+			this.#restoreReader(tx);
+			const at = this.#now();
+			this.#restoreReader(tx);
+			let after = "";
+			let changed = 0;
+			for (;;) {
+				this.#restoreReader(tx);
+				const rows = tx.all<{ id: string | null }>(
+					"SELECT CASE WHEN typeof(id)='text' AND length(CAST(id AS BLOB))=26 THEN id ELSE NULL END AS id FROM main.outbox WHERE id COLLATE BINARY>? ORDER BY id COLLATE BINARY LIMIT 128",
+					[after],
+				);
+				if (rows.length > 128) refused();
+				for (const row of rows) {
+					const outboxId = id(row.id);
+					if (outboxId <= after) refused();
+					const loaded = this.#authenticatedLoad(tx, outboxId) ?? refused();
+					if (loaded.record.state === "PENDING_APPROVAL" && at >= loaded.record.expiresAt) {
+						this.#restoreOne(tx, loaded, at);
+						changed = integer(changed + 1, 1);
+					}
+					after = outboxId;
+				}
+				if (rows.length < 128) break;
+			}
+			this.#restoreReader(tx);
+			return changed;
+		} catch (error) {
+			this.#abortTransaction(tx);
+			this.#abortCurrent();
+			throw error instanceof ProposalError ? error : new ProposalError();
+		}
 	}
 	#reading<T>(db: SqlReader, work: () => T): T {
 		try {
@@ -1169,6 +1347,9 @@ const original = Object.freeze({
 	item: NativeOutboxProposals.prototype.item,
 	apply: NativeOutboxProposals.prototype.apply,
 	expireMissed: NativeOutboxProposals.prototype.expireMissed,
+	resetForRestoreInTransaction: NativeOutboxProposals.prototype.resetForRestoreInTransaction,
+	expirePendingForRestoreInTransaction:
+		NativeOutboxProposals.prototype.expirePendingForRestoreInTransaction,
 	draftLocked: NativeOutboxProposals.prototype.draftLocked,
 	scheduledCount: NativeOutboxProposals.prototype.scheduledCount,
 	assertScope: NativeOutboxProposals.prototype.assertScope,
@@ -1231,6 +1412,20 @@ export function applyNativeOutboxTarget(
 /** Tightens one native target; the identifier conveys no approval or clock authority. */
 export function expireNativeOutboxMissed(target: unknown, outboxId: string): boolean {
 	return original.expireMissed.call(actual(target), outboxId);
+}
+/** Fixed restore reduction only; this entry creates no scope, transaction or approval authority. */
+export function resetNativeOutboxProposalsForRestoreInTransaction(
+	target: unknown,
+	tx: SqlTransaction,
+): number {
+	return apply(original.resetForRestoreInTransaction, actual(target), [tx]);
+}
+/** Pending TTL reduction only; the fixed receiver supplies the genuine original transaction. */
+export function expireNativeOutboxPendingForRestoreInTransaction(
+	target: unknown,
+	tx: SqlTransaction,
+): number {
+	return apply(original.expirePendingForRestoreInTransaction, actual(target), [tx]);
 }
 export function isNativeOutboxDraftLocked(
 	target: unknown,
