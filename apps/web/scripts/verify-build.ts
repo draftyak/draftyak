@@ -1,4 +1,4 @@
-const allowedImports = new Set(["react/compiler-runtime", "react/jsx-runtime"]);
+const allowedImports = new Set(["react", "react/compiler-runtime", "react/jsx-runtime"]);
 
 export function verifyBrowserBundle(
 	source: string,
@@ -14,7 +14,11 @@ export function verifyBrowserBundle(
 			throw new Error("Browser bundle contains an unexpected external import");
 		}
 	}
-	if (!imports.has("react/compiler-runtime") || !imports.has("react/jsx-runtime")) {
-		throw new Error("Browser bundle is missing the React compiler or JSX runtime");
+	if (
+		!imports.has("react") ||
+		!imports.has("react/compiler-runtime") ||
+		!imports.has("react/jsx-runtime")
+	) {
+		throw new Error("Browser bundle is missing the React, compiler or JSX runtime");
 	}
 }
