@@ -33,6 +33,7 @@ import { admitManifest } from "../../src/plugins/installer/policy.ts";
 import { trusted, unchanged } from "../../src/plugins/installer/tree.ts";
 import { makePinnedPackage, packageEntries } from "../artifacts/fixtures.ts";
 import {
+	artifactNames,
 	type Bundle,
 	bundle,
 	EXECUTED,
@@ -175,7 +176,7 @@ describe("bundled plugin installation", () => {
 				expect(lstatSync(path.join(installed.bundle.directory, "lib")).mode & 0o222).toBe(0);
 			}
 		}
-		expect(readdirSync(f.root).sort()).toEqual(packages.map(finalName).sort());
+		expect(artifactNames(f.root).sort()).toEqual(packages.map(finalName).sort());
 		expect(globals[EXECUTED]).toBeUndefined();
 	});
 
@@ -207,7 +208,7 @@ describe("bundled plugin installation", () => {
 		await expect(installer.install(first.id, first.lock.version, first.archive)).rejects.toEqual(
 			refusal,
 		);
-		expect(readdirSync(f.root)).toHaveLength(2);
+		expect(artifactNames(f.root)).toHaveLength(2);
 	});
 
 	it("snapshots native release pins and archive bytes instead of trusting later mutation", async () => {
@@ -218,6 +219,7 @@ describe("bundled plugin installation", () => {
 		f.installers.push(installer);
 		Object.assign(item.lock, { integrity: `sha512-${Buffer.alloc(64).toString("base64")}` });
 		options.bundles.splice(0);
+		options.nativeBinding = path.join(f.dir, "changed-native-binding.node");
 		const pending = installer.install(item.id, "1.0.0", item.archive);
 		item.archive.fill(0);
 		const installed = await pending;
@@ -280,7 +282,7 @@ describe("bundled plugin installation", () => {
 		// POSIX first makes each folder writable again.
 		const passes = process.platform === "win32" ? 1 : 2;
 		expect(turns.count() - atFailure).toBeGreaterThanOrEqual(files + passes * folders - 2);
-		expect(readdirSync(f.root)).toEqual([]);
+		expect(artifactNames(f.root)).toEqual([]);
 	});
 });
 
@@ -582,8 +584,8 @@ describe("release pins and options", () => {
 					entry: "index.mjs",
 				},
 			}));
-		f.installers.push(await openPluginInstaller({ directory: f.root, bundles: pins(64) }));
-		await expect(openPluginInstaller({ directory: f.root, bundles: pins(65) })).rejects.toEqual(
+		f.installers.push(await openPluginInstaller({ ...f.options([]), bundles: pins(64) }));
+		await expect(openPluginInstaller({ ...f.options([]), bundles: pins(65) })).rejects.toEqual(
 			refusal,
 		);
 	});
@@ -681,7 +683,7 @@ describe("native installation boundaries", () => {
 			refusal,
 		);
 		expect(readFileSync(extra, "utf8")).toBe("DYTEST unlisted");
-		expect(readdirSync(f.root).filter(unfinished)).toEqual([]);
+		expect(artifactNames(f.root).filter(unfinished)).toEqual([]);
 	});
 
 	it("normalizes verification errors and removes only its own staged files", async () => {
@@ -692,7 +694,7 @@ describe("native installation boundaries", () => {
 		await expect(installer.install(item.id, item.lock.version, item.archive)).rejects.toEqual(
 			refusal,
 		);
-		expect(readdirSync(f.root)).toEqual([]);
+		expect(artifactNames(f.root)).toEqual([]);
 	});
 
 	it("does not chmod or remove a substituted hard link while cleaning up", async () => {
@@ -730,7 +732,7 @@ describe("native installation boundaries", () => {
 		await expect(installer.install(item.id, item.lock.version, item.archive)).rejects.toEqual(
 			refusal,
 		);
-		expect(readdirSync(f.root)).toEqual([]);
+		expect(artifactNames(f.root)).toEqual([]);
 	});
 
 	it.each([
@@ -757,7 +759,7 @@ describe("native installation boundaries", () => {
 				refusal,
 			);
 			expect(seen).toEqual({ body, mode: 0 });
-			expect(readdirSync(f.root)).toEqual([]);
+			expect(artifactNames(f.root)).toEqual([]);
 		},
 	);
 
@@ -783,7 +785,7 @@ describe("native installation boundaries", () => {
 		);
 		const sealed = process.platform === "win32" ? 0o666 : 0o500;
 		expect(seen).toEqual({ names: ["helper.mjs"], modes: [sealed, sealed] });
-		expect(readdirSync(f.root)).toEqual([]);
+		expect(artifactNames(f.root)).toEqual([]);
 	});
 
 	it("refuses a same-content file renamed in after verification, keeps it and still installs the pin later", async () => {
@@ -810,10 +812,10 @@ describe("native installation boundaries", () => {
 		expect(lstatSync(member, { bigint: true }).ino).toBe(substitute);
 		expect(readFileSync(member, "utf8")).toBe(helperBody);
 		expect(lstatSync(member).mode & 0o222).toBe(0);
-		expect(readdirSync(f.root).filter(unfinished)).toEqual([]);
+		expect(artifactNames(f.root).filter(unfinished)).toEqual([]);
 		vi.restoreAllMocks();
 		const installed = await installer.install(item.id, item.lock.version, item.archive);
-		expect(readdirSync(f.root).filter(unfinished)).toEqual([finalName(item)]);
+		expect(artifactNames(f.root).filter(unfinished)).toEqual([finalName(item)]);
 		await expect(artifacts.verifyBundle(installed.bundle)).resolves.toBe(
 			path.join(installed.bundle.directory, "index.mjs"),
 		);
@@ -832,7 +834,7 @@ describe("native installation boundaries", () => {
 		);
 		expect(lstatSync(outside).nlink).toBe(2);
 		expect(lstatSync(outside).mode & 0o222).toBe(0);
-		expect(readdirSync(f.root).filter(unfinished)).toEqual([]);
+		expect(artifactNames(f.root).filter(unfinished)).toEqual([]);
 	});
 
 	it("refuses a staged directory replaced after verification, even holding the original file", async () => {
@@ -854,7 +856,7 @@ describe("native installation boundaries", () => {
 		await expect(installer.install(item.id, item.lock.version, item.archive)).rejects.toEqual(
 			refusal,
 		);
-		expect(readdirSync(f.root).filter(unfinished)).toEqual([]);
+		expect(artifactNames(f.root).filter(unfinished)).toEqual([]);
 	});
 
 	it("never follows a replaced folder to remove a member moved out of the tree", async () => {
@@ -875,7 +877,7 @@ describe("native installation boundaries", () => {
 			refusal,
 		);
 		expect(readFileSync(path.join(outside, "helper.mjs"), "utf8")).toBe(helperBody);
-		expect(readdirSync(f.root).filter(unfinished)).toEqual([]);
+		expect(artifactNames(f.root).filter(unfinished)).toEqual([]);
 	});
 
 	it.each([
@@ -941,7 +943,7 @@ describe("native installation boundaries", () => {
 		await expect(installer.install(item.id, item.lock.version, item.archive)).rejects.toEqual(
 			refusal,
 		);
-		expect(readdirSync(f.root)).toEqual([]);
+		expect(artifactNames(f.root)).toEqual([]);
 	});
 
 	it.each([
@@ -959,7 +961,7 @@ describe("native installation boundaries", () => {
 			refusal,
 		);
 		expect(verify).not.toHaveBeenCalled();
-		expect(readdirSync(f.root)).toEqual([finalName(item)]);
+		expect(artifactNames(f.root)).toEqual([finalName(item)]);
 		expect(lstatSync(destination, { bigint: true }).ino).toBe(birth);
 	});
 
@@ -975,7 +977,7 @@ describe("native installation boundaries", () => {
 		await expect(installer.install(item.id, item.lock.version, item.archive)).rejects.toEqual(
 			refusal,
 		);
-		expect(readdirSync(f.root)).toEqual([finalName(item)]);
+		expect(artifactNames(f.root)).toEqual([finalName(item)]);
 		expect(lstatSync(destination).isFile()).toBe(kind === "file");
 		if (kind === "folder") expect(readdirSync(destination)).toEqual([]);
 	});
@@ -996,7 +998,7 @@ describe("native installation boundaries", () => {
 		});
 		try {
 			const installed = await installer.install(item.id, item.lock.version, item.archive);
-			expect(readdirSync(f.root)).toEqual([finalName(item)]);
+			expect(artifactNames(f.root)).toEqual([finalName(item)]);
 			vi.restoreAllMocks();
 			await expect(artifacts.verifyBundle(installed.bundle)).resolves.toBe(
 				path.join(installed.bundle.directory, "index.mjs"),
@@ -1033,7 +1035,7 @@ describe("native installation boundaries", () => {
 			refusal,
 		);
 		expect(await rewritten).toBe(true);
-		expect(readdirSync(f.root)).toEqual([]);
+		expect(artifactNames(f.root)).toEqual([]);
 	});
 
 	it("installs one of two concurrent installs of a pin and cleans up the other", async () => {
@@ -1061,7 +1063,7 @@ describe("native installation boundaries", () => {
 		);
 		expect(installed).toHaveLength(1);
 		expect(refused).toEqual([refusal]);
-		expect(readdirSync(f.root)).toEqual([finalName(item)]);
+		expect(artifactNames(f.root)).toEqual([finalName(item)]);
 		expect(readFileSync(path.join(f.root, finalName(item), "index.mjs"), "utf8")).toBe(entryBody);
 	});
 
@@ -1164,7 +1166,7 @@ describe("closing", () => {
 		await installer.close();
 		await expect(pending).rejects.toEqual(refusal);
 		expect(verify).not.toHaveBeenCalled();
-		expect(readdirSync(f.root)).toEqual([]);
+		expect(artifactNames(f.root)).toEqual([]);
 	});
 
 	it("waits for an in-flight install, which then refuses and removes its staged tree", async () => {
@@ -1191,7 +1193,7 @@ describe("closing", () => {
 		await expect(pending).rejects.toEqual(refusal);
 		await closing;
 		expect(closed).toBe(true);
-		expect(readdirSync(f.root)).toEqual([]);
+		expect(artifactNames(f.root)).toEqual([]);
 	});
 
 	it("keeps a closing installer's in-flight cleanup away from a newer installer's tree", async () => {
@@ -1214,11 +1216,14 @@ describe("closing", () => {
 		await reached.open;
 		const closing = stale.close();
 		const current = await f.open([item]);
-		const installed = await current.install(item.id, item.lock.version, item.archive);
+		await expect(current.install(item.id, item.lock.version, item.archive)).rejects.toEqual(
+			refusal,
+		);
 		held.release();
 		await expect(pending).rejects.toEqual(refusal);
 		await closing;
-		expect(readdirSync(f.root)).toEqual([finalName(item)]);
+		const installed = await current.install(item.id, item.lock.version, item.archive);
+		expect(artifactNames(f.root)).toEqual([finalName(item)]);
 		await expect(verify(installed.bundle)).resolves.toBe(
 			path.join(installed.bundle.directory, "index.mjs"),
 		);
@@ -1235,9 +1240,9 @@ describe("closing", () => {
 		await expect(installer.install(item.id, item.lock.version, item.archive)).rejects.toEqual(
 			refusal,
 		);
-		expect(readdirSync(f.root)).toEqual([]);
+		expect(artifactNames(f.root)).toEqual([]);
 		const installed = await installer.install(item.id, item.lock.version, item.archive);
-		expect(readdirSync(f.root)).toEqual([finalName(item)]);
+		expect(artifactNames(f.root)).toEqual([finalName(item)]);
 		expect(installed.bundle.directory).toBe(path.join(f.root, finalName(item)));
 	});
 });

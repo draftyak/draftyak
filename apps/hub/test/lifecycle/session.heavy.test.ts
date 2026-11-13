@@ -57,6 +57,8 @@ it("refuses every later open after a hard kill between file creation and audit g
 			holder.once("error", reject);
 			holder.once("exit", (code) => reject(new Error(`holder exited (${code}): ${errors}`)));
 		});
+		expect(attempt(f.folder)).toEqual({ refused: "SESSION_ACTIVE" });
+		expect(attempt(f.scratch())).toEqual({ opened: expect.any(String) });
 	} finally {
 		if (holder.exitCode === null && holder.signalCode === null) {
 			const exited = new Promise((resolve) => holder.once("exit", resolve));
@@ -81,9 +83,18 @@ const compiledSessionModes = [
 	"missing-devices",
 	"invalid-devices",
 	"missing-accounts",
+	"missing-pluginregistry",
+	"missing-outbox",
+	"missing-challenges",
+	"missing-verifier",
+	"missing-admin",
+	"missing-adminchallenges",
+	"missing-backup",
+	"missing-backupops",
+	"missing-backupchallenges",
 ] as const;
 it.each(compiledSessionModes)(
-	"opens and reopens a compiled session using all nine staged schemas (%s)",
+	"opens and reopens a compiled session using all eighteen staged schemas (%s)",
 	(mode) => {
 		const hub = path.resolve(import.meta.dirname, "../.."),
 			workspace = path.resolve(hub, "../..");
@@ -131,6 +142,46 @@ it.each(compiledSessionModes)(
 				],
 				["outbox/migrations/0001_send_attempts.sql", "outbox/migrations/0001_send_attempts.sql"],
 				["accounts/migrations/0001_accounts.sql", "accounts/migrations/0001_accounts.sql"],
+				[
+					"plugins/registry/migrations/0001_registry.sql",
+					"plugins/registry/migrations/0001_registry.sql",
+				],
+				[
+					"plugins/registry/migrations/0002_candidates.sql",
+					"plugins/registry/migrations/0002_candidates.sql",
+				],
+				[
+					"outbox/propose-migrations/0001_proposals.sql",
+					"outbox/propose-migrations/0001_proposals.sql",
+				],
+				[
+					"identity/challenges-migrations/0001_challenges.sql",
+					"identity/challenges-migrations/0001_challenges.sql",
+				],
+				[
+					"outbox/verifier-migrations/0001_approvals.sql",
+					"outbox/verifier-migrations/0001_approvals.sql",
+				],
+				[
+					"identity/admin-migrations/0001_operations.sql",
+					"identity/admin-migrations/0001_operations.sql",
+				],
+				[
+					"identity/admin-challenge-migrations/0001_admin_challenges.sql",
+					"identity/admin-challenge-migrations/0001_admin_challenges.sql",
+				],
+				[
+					"recovery/backup-migrations/0001_backup_recovery.sql",
+					"recovery/backup-migrations/0001_backup_recovery.sql",
+				],
+				[
+					"identity/backup-migrations/0001_backup_operations.sql",
+					"identity/backup-migrations/0001_backup_operations.sql",
+				],
+				[
+					"identity/backup-challenge-migrations/0001_backup_challenges.sql",
+					"identity/backup-challenge-migrations/0001_backup_challenges.sql",
+				],
 			] as const) {
 				const built = path.join(hub, "dist", relative);
 				expect(readFileSync(built)).toEqual(readFileSync(path.join(hub, "src", source)));
@@ -165,9 +216,10 @@ it.each(compiledSessionModes)(
 			expect(JSON.parse(run.stdout)).toEqual({
 				ok: true,
 				mode,
-				schemas: 9,
-				businessTables: 17,
-				bookkeepingTables: 18,
+				schemas: 18,
+				businessTables: 30,
+				bookkeepingTables: 36,
+				recoveryCapsule: mode === "positive",
 				beforeIdentity: true,
 				refused: mode === "positive" ? null : "STORE_UNAVAILABLE",
 				failedOpenClosed: mode !== "positive",

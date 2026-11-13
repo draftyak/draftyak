@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { inspect } from "node:util";
 import Database from "better-sqlite3-multiple-ciphers";
@@ -22,7 +22,6 @@ import {
 	listing,
 	nativeBinding,
 	refusal,
-	refusalNow,
 	type SessionFixture,
 	sessionFixture,
 } from "./session-helpers.ts";
@@ -222,17 +221,17 @@ describe("first run", () => {
 		const key = f.key();
 		expect((await refusal(f.open({ masterKey: key }))).code).toBe("HUB_STATE_INCOMPLETE");
 		expectErased(key);
-		expect(listing(f.folder)).toEqual([name]);
+		expect(listing(f.folder)).toEqual([name, "run"]);
 	});
 
 	it("creates a hub beside configuration, the wrapped key and the run folder", async () => {
 		writeFileSync(path.join(f.folder, "config.json"), JSON.stringify({ modules: [] }));
 		writeFileSync(path.join(f.folder, "mk.wrapped"), "");
 		writeFileSync(path.join(f.folder, "draftyak.db.bak"), "");
-		mkdirSync(path.join(f.folder, "run"));
+		mkdirSync(path.join(f.folder, "run"), { mode: 0o700 });
 		const session = await f.open();
 		expect(session.extensions.modules).toEqual([]);
-		session.close();
+		await session.close();
 		expect(listing(f.folder)).toEqual([
 			"config.json",
 			"draftyak.db",
@@ -242,30 +241,29 @@ describe("first run", () => {
 		]);
 	});
 
-	it("refuses a lost database whose module database remains", async () => {
+	it.each(["ext-probe.db", "plugins"])("refuses a lost database whose %s remains", async (name) => {
 		const first = await f.open();
-		first.close();
-		writeFileSync(path.join(f.folder, "ext-probe.db"), "");
+		await first.close();
+		if (name === "plugins") mkdirSync(path.join(f.folder, name));
+		else writeFileSync(path.join(f.folder, name), "");
 		rmSync(f.database);
 		const key = f.key();
 		expect((await refusal(f.open({ masterKey: key }))).code).toBe("HUB_STATE_INCOMPLETE");
 		expectErased(key);
-		expect(listing(f.folder)).toEqual(["ext-probe.db"]);
+		expect(listing(f.folder)).toEqual([name, "run"]);
 	});
 
-	it("never creates over the empty file a failed first run of this process left", async () => {
+	it("refuses an invalid native addon before creating a database and admits a repaired binding", async () => {
 		const garbage = path.join(f.scratch(), "garbage.node");
 		writeFileSync(garbage, "DYTEST not a native module");
 		const first = f.key();
 		const failed = await refusal(f.open({ masterKey: first, nativeBinding: garbage }));
 		expect(failed.code).toBe("STORE_UNAVAILABLE");
 		expectErased(first);
-		expect(listing(f.folder)).toEqual(["draftyak.db"]);
-		const second = f.key();
-		expect((await refusal(f.open({ masterKey: second }))).code).toBe("FIRST_RUN_INTERRUPTED");
-		expectErased(second);
-		expect(listing(f.folder)).toEqual(["draftyak.db"]);
-		expect(statSync(f.database).size).toBe(0);
+		expect(listing(f.folder)).toEqual([]);
+		const second = await f.open();
+		second.store.read((sql) => second.audit.verify(sql));
+		expect(listing(f.folder)).toContain("draftyak.db");
 	});
 
 	it("opens on the next try after a first run whose core migration failed", async () => {
@@ -281,7 +279,7 @@ describe("first run", () => {
 			const key = f.key();
 			expect((await refusal(f.open({ masterKey: key }))).code).toBe("STORE_UNAVAILABLE");
 			expectErased(key);
-			expect(listing(f.folder)).toEqual(["draftyak.db"]);
+			expect(listing(f.folder)).toEqual(["draftyak.db", "run"]);
 			const session = await f.open();
 			session.store.read((db) => session.audit.verify(db));
 			expect(spy.mock.calls).toEqual([
@@ -296,6 +294,15 @@ describe("first run", () => {
 				["credentials"],
 				["tickets"],
 				["accounts"],
+				["pluginregistry"],
+				["outbox"],
+				["challenges"],
+				["verifier"],
+				["admin"],
+				["adminchallenges"],
+				["backup"],
+				["backupops"],
+				["backupchallenges"],
 			]);
 		} finally {
 			spy.mockRestore();
@@ -320,11 +327,13 @@ describe("existing database", () => {
 		const plain = new Database(f.database, { nativeBinding });
 		plain.exec("CREATE TABLE notes(body TEXT); INSERT INTO notes VALUES('DYTEST plaintext');");
 		plain.close();
-		const before = { files: listing(f.folder), hash: digest(f.database) };
+		expect(listing(f.folder)).toEqual(["draftyak.db"]);
+		const before = digest(f.database);
 		const key = f.key();
 		expect((await refusal(f.open({ masterKey: key }))).code).toBe("UNLOCK_REFUSED");
 		expectErased(key);
-		expect({ files: listing(f.folder), hash: digest(f.database) }).toEqual(before);
+		expect(digest(f.database)).toBe(before);
+		expect(listing(f.folder)).toEqual(["draftyak.db", "run"]);
 	});
 
 	it("refuses a database path that is not a regular file", async () => {
@@ -332,7 +341,7 @@ describe("existing database", () => {
 		const key = f.key();
 		expect((await refusal(f.open({ masterKey: key }))).code).toBe("STORE_UNAVAILABLE");
 		expectErased(key);
-		expect(listing(f.folder)).toEqual(["draftyak.db"]);
+		expect(listing(f.folder)).toEqual(["draftyak.db", "run"]);
 		expect(listing(f.database)).toEqual([]);
 	});
 
@@ -356,7 +365,12 @@ describe("existing database", () => {
 		const key = f.key();
 		expect((await refusal(f.open({ masterKey: key }))).code).toBe("STORE_UNAVAILABLE");
 		expectErased(key);
-		const check = new HubStore({ filename: f.database, nativeBinding, masterKey: creator });
+		const check = new HubStore({
+			filename: f.database,
+			nativeBinding,
+			masterKey: creator,
+			migrations: { audit: HUB_NAMESPACES.audit, rogue },
+		});
 		try {
 			expect(
 				check.read((db) =>
@@ -370,7 +384,7 @@ describe("existing database", () => {
 
 	it("refuses an incomplete identity record instead of creating another identity", async () => {
 		const first = await f.open();
-		first.close();
+		await first.close();
 		const editor = new HubStore({ filename: f.database, nativeBinding, masterKey: f.key() });
 		try {
 			editor.write((tx) => tx.run("UPDATE main.hub_meta SET statement_wrapped=NULL"));
@@ -398,19 +412,24 @@ describe("a store that cannot close", () => {
 		const config = path.join(f.folder, "config.json");
 		writeFileSync(config, "{ not json");
 		const control = blockNativeClose();
+		let blocking = true;
+		// Admission first closes its binding probe; only the later owned store close is refused.
+		Object.defineProperty(control, "blocked", {
+			get: () => blocking && control.attempts > 1,
+		});
 		try {
 			const first = f.key();
 			expect((await refusal(f.open({ masterKey: first }))).code).toBe("EXTENSIONS_UNAVAILABLE");
 			expectErased(first);
-			expect(control.attempts).toBe(1);
+			expect(control.attempts).toBe(2);
 			rmSync(config);
 			const second = f.key();
 			expect((await refusal(f.open({ masterKey: second }))).code).toBe("STORE_UNAVAILABLE");
 			expectErased(second);
-			expect(control.attempts).toBe(2);
-			control.blocked = false;
-			const session = await f.open();
 			expect(control.attempts).toBe(3);
+			blocking = false;
+			const session = await f.open();
+			expect(control.attempts).toBe(6);
 			session.store.read((db) => session.audit.verify(db));
 		} finally {
 			control.restore();
@@ -422,17 +441,17 @@ describe("a store that cannot close", () => {
 		const session = await f.open({ masterKey: key });
 		const control = blockNativeClose();
 		try {
-			expect(refusalNow(() => session.close()).code).toBe("CLOSE_INCOMPLETE");
+			expect((await refusal(session.close())).code).toBe("CLOSE_INCOMPLETE");
 			expectErased(key);
 			await expectLocked(session);
 			const waiting = f.key();
 			expect((await refusal(f.open({ masterKey: waiting }))).code).toBe("SESSION_ACTIVE");
 			expectErased(waiting);
-			expect(refusalNow(() => session.close()).code).toBe("CLOSE_INCOMPLETE");
+			expect((await refusal(session.close())).code).toBe("CLOSE_INCOMPLETE");
 			control.blocked = false;
-			session.close();
-			session.close();
-			expect(control.attempts).toBe(3);
+			await session.close();
+			await session.close();
+			expect(control.attempts).toBe(4);
 		} finally {
 			control.restore();
 		}
@@ -450,13 +469,13 @@ describe("a module database that cannot close", () => {
 		// Only the first native close fails: the module database's, which the extensions close first.
 		Object.defineProperty(control, "blocked", { get: () => control.attempts === 1 });
 		try {
-			expect(refusalNow(() => session.close()).code).toBe("CLOSE_INCOMPLETE");
-			expect(control.attempts).toBe(2);
+			expect((await refusal(session.close())).code).toBe("CLOSE_INCOMPLETE");
+			expect(control.attempts).toBe(3);
 			expectErased(key);
 			await expectLocked(session);
 			expect(session.extensions.providers("auditSink")).toEqual([]);
-			session.close();
-			expect(control.attempts).toBe(2);
+			await session.close();
+			expect(control.attempts).toBe(3);
 		} finally {
 			control.restore();
 		}
@@ -479,6 +498,8 @@ describe("redaction", () => {
 			"devices",
 			"identityProvider",
 			"extensions",
+			"plugins",
+			"accountApprovals",
 			"close",
 		]);
 		expect(Object.isFrozen(session)).toBe(true);
@@ -487,7 +508,7 @@ describe("redaction", () => {
 	it("carries no path, key byte or cause in a refusal", async () => {
 		const canary = sessionFixture("draftyak-session-CANARYPATH-");
 		try {
-			(await canary.open()).close();
+			await (await canary.open()).close();
 			const bytes = Buffer.alloc(32, 0x5a);
 			const hex = bytes.toString("hex").slice(0, 16);
 			const refusals = [await refusal(canary.open({ masterKey: new MasterKey(bytes) }))];
@@ -510,7 +531,7 @@ describe("redaction", () => {
 				expect(Object.hasOwn(error, "cause")).toBe(false);
 			}
 		} finally {
-			canary.remove();
+			await canary.remove();
 		}
 	});
 });

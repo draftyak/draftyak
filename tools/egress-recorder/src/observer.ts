@@ -26,7 +26,17 @@ export interface ObservationSteps<T, R> {
 export type Observed<R> =
 	| { readonly outcome: "succeeded"; readonly stage: "connect"; readonly value: R }
 	| { readonly outcome: "refused" | "failed"; readonly stage: Stage };
+export interface ObservationAttempt {
+	readonly signal: AbortSignal;
+	readonly settled: Promise<void>;
+	policyAllowed(): void;
+	policyRefused(): void;
+	resolved(): void;
+	succeeded(): void;
+	failed(): void;
+}
 export interface Observer {
+	beginAttempt(target: Destination, timeoutMs?: number): ObservationAttempt;
 	observe<T, R>(
 		target: Destination,
 		steps: ObservationSteps<T, R>,
@@ -97,6 +107,99 @@ export function createRecorder(options: {
 				throw new RecorderError("LIFECYCLE");
 			}
 		};
+		const begin = (
+			state: State,
+			id: string,
+			target: Destination,
+			timeoutMs = 1000,
+		): ObservationAttempt => {
+			requireActive(state);
+			if (entries.length >= MAX_ATTEMPTS || pending >= MAX_PENDING) {
+				failed = true;
+				fail(state);
+				throw new RecorderError("CAPACITY_EXCEEDED");
+			}
+			let copied: Destination;
+			try {
+				copied = destination(target);
+				if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000)
+					throw new RecorderError("INVALID_RESULT");
+			} catch {
+				failed = true;
+				fail(state);
+				throw new RecorderError("INVALID_RESULT");
+			}
+			const entry: Entry = {
+				observerId: id,
+				sequence: entries.length,
+				destination: copied,
+				outcome: "pending",
+				stage: "policy",
+			};
+			entries.push(entry);
+			state.attempts++;
+			const controller = new AbortController();
+			const completion = Promise.withResolvers<void>();
+			state.pending.add(controller);
+			pending++;
+			const started = performance.now();
+			const release = (): void => {
+				clearTimeout(timer);
+				controller.signal.removeEventListener("abort", aborted);
+				state.pending.delete(controller);
+				pending--;
+			};
+			const end = (outcome: Outcome): void => {
+				if (entry.outcome !== "pending") return;
+				entry.outcome = outcome;
+				release();
+				completion.resolve();
+			};
+			const aborted = (): void => end("failed");
+			controller.signal.addEventListener("abort", aborted, { once: true });
+			const timer = setTimeout(() => controller.abort(), timeoutMs);
+			const requireStage = (stage: Stage): void => {
+				if (performance.now() - started >= timeoutMs) controller.abort();
+				if (
+					sealed ||
+					state.state !== "active" ||
+					entry.outcome !== "pending" ||
+					entry.stage !== stage
+				) {
+					if (!sealed) {
+						failed = true;
+						fail(state);
+					}
+					throw new RecorderError("LIFECYCLE");
+				}
+			};
+			return Object.freeze({
+				signal: controller.signal,
+				settled: completion.promise,
+				policyAllowed(): void {
+					requireStage("policy");
+					entry.stage = "dns";
+				},
+				policyRefused(): void {
+					requireStage("policy");
+					end("refused");
+				},
+				resolved(): void {
+					requireStage("dns");
+					entry.stage = "connect";
+				},
+				succeeded(): void {
+					requireStage("connect");
+					end("succeeded");
+				},
+				failed(): void {
+					if (entry.outcome === "pending") {
+						end("failed");
+						controller.abort();
+					}
+				},
+			});
+		};
 		return Object.freeze({
 			observer(id: string): Observer {
 				const state = states.get(id);
@@ -106,6 +209,9 @@ export function createRecorder(options: {
 				}
 				state.state = "active";
 				return Object.freeze({
+					beginAttempt(target: Destination, timeoutMs = 1000): ObservationAttempt {
+						return begin(state, id, target, timeoutMs);
+					},
 					async scanCanary(
 						canary: Uint8Array,
 						chunks: PayloadChunks,
@@ -155,76 +261,45 @@ export function createRecorder(options: {
 						steps: ObservationSteps<T, R>,
 						timeoutMs = 1000,
 					): Promise<Observed<R>> {
-						requireActive(state);
-						if (entries.length >= MAX_ATTEMPTS || pending >= MAX_PENDING) {
-							failed = true;
-							fail(state);
-							throw new RecorderError("CAPACITY_EXCEEDED");
-						}
-						let copied: Destination;
-						try {
-							copied = destination(target);
-							if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000)
-								throw new RecorderError("INVALID_RESULT");
-						} catch {
-							failed = true;
-							fail(state);
-							throw new RecorderError("INVALID_RESULT");
-						}
-						const entry: Entry = {
-							observerId: id,
-							sequence: entries.length,
-							destination: copied,
-							outcome: "pending",
-							stage: "policy",
-						};
-						entries.push(entry);
-						state.attempts++;
-						const controller = new AbortController();
-						state.pending.add(controller);
-						pending++;
+						const attempt = begin(state, id, target, timeoutMs);
+						let stage: Stage = "policy";
+						let interrupt: () => void = () => {};
 						const interrupted = new Promise<never>((_resolve, reject) => {
-							controller.signal.addEventListener(
-								"abort",
-								() => reject(new Error("Observation ended")),
-								{ once: true },
-							);
+							interrupt = () => reject(new Error("Observation ended"));
+							attempt.signal.addEventListener("abort", interrupt, { once: true });
 						});
-						const timer = setTimeout(() => controller.abort(), timeoutMs);
-						const wait = async <V>(stage: Stage, action: () => V | Promise<V>): Promise<V> => {
-							if (sealed || state.state !== "active" || controller.signal.aborted)
-								throw new Error("Observation ended");
-							entry.stage = stage;
+						const wait = async <V>(action: () => V | Promise<V>): Promise<V> => {
+							attempt.signal.throwIfAborted();
 							const value = await Promise.race([
 								Promise.resolve().then(() => {
-									if (sealed || state.state !== "active" || controller.signal.aborted)
-										throw new Error("Observation ended");
+									attempt.signal.throwIfAborted();
 									return action();
 								}),
 								interrupted,
 							]);
-							if (sealed || state.state !== "active" || controller.signal.aborted)
-								throw new Error("Observation ended");
+							attempt.signal.throwIfAborted();
 							return value;
 						};
 						try {
-							const allowed = await wait("policy", () => steps.policy(controller.signal));
+							const allowed = await wait(() => steps.policy(attempt.signal));
 							if (allowed !== true) {
 								if (allowed !== false) throw new Error("Invalid policy result");
-								entry.outcome = "refused";
+								attempt.policyRefused();
 								return { outcome: "refused", stage: "policy" };
 							}
-							const resolved = await wait("dns", () => steps.resolve(controller.signal));
-							const value = await wait("connect", () => steps.connect(resolved, controller.signal));
-							entry.outcome = "succeeded";
+							attempt.policyAllowed();
+							stage = "dns";
+							const resolved = await wait(() => steps.resolve(attempt.signal));
+							attempt.resolved();
+							stage = "connect";
+							const value = await wait(() => steps.connect(resolved, attempt.signal));
+							attempt.succeeded();
 							return { outcome: "succeeded", stage: "connect", value };
 						} catch {
-							entry.outcome = "failed";
-							return { outcome: "failed", stage: entry.stage };
+							attempt.failed();
+							return { outcome: "failed", stage };
 						} finally {
-							clearTimeout(timer);
-							state.pending.delete(controller);
-							pending--;
+							attempt.signal.removeEventListener("abort", interrupt);
 						}
 					},
 					complete(): void {

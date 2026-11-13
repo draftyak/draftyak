@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import type { PairingRefusalCode } from "@draftyak/protocol/pairing";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { NativeDevicePeer } from "../../src/authz/native-peer.ts";
 import type { VerifiedCandidate } from "../../src/identity/devices-pairing.ts";
 import type { SqlReader, SqlTransaction } from "../../src/store/store.ts";
@@ -13,11 +14,11 @@ const [
 	{ signStatement },
 	{ auditHeadTag },
 	{ assertAuthorizerStore },
-	{ deviceApiError },
+	{ AuthzError, deviceApiError },
 	{ NativeDeviceTls },
 	{ cliConfirmPinScope, pairConfirmPinScope, revokePinScope },
 	{ advanceEpochForRestore, confirmForRecovery },
-	{ DevicePairingAuthority },
+	{ DevicePairingAuthority, DevicePairingRefusal },
 	{ MasterKey },
 	{
 		admit,
@@ -52,9 +53,31 @@ beforeEach(async () => {
 	f = await fixture();
 });
 afterEach(async () => {
+	vi.restoreAllMocks();
 	if (f) await closeFixture(f);
 });
 const empty = Object.freeze(Object.create(null));
+
+function pairingRefusal(action: () => unknown, code: PairingRefusalCode): void {
+	let failure: unknown;
+	try {
+		action();
+	} catch (error) {
+		failure = error;
+	}
+	expect(failure).toBeInstanceOf(DevicePairingRefusal);
+	if (!(failure instanceof DevicePairingRefusal)) throw new Error("Expected pairing refusal");
+	expect(failure.code).toBe(code);
+	expect(failure.message).toBe(code);
+	expect(failure.name).toBe("DevicePairingRefusal");
+	expect(Object.hasOwn(failure, "cause")).toBe(false);
+	expect(Object.getOwnPropertyDescriptor(failure, "code")).toMatchObject({
+		value: code,
+		writable: false,
+		configurable: false,
+	});
+	expect(Reflect.set(failure, "code", "PAIR_WINDOW_CLOSED")).toBe(false);
+}
 
 it("native TLS plus sidecar proof is pending until a real PIN atomically installs the owner", async () => {
 	const client = await device(f),
@@ -118,6 +141,7 @@ it("bootstrap rolls owner, PIN, confirmation and audit back together and burns i
 it("rejects structural candidates, peer facts, foreign registry peers and dead connections", async () => {
 	const client = await bootstrap(f);
 	f.store.write((tx) => {
+		expect(() => f.registry.recordCandidate(tx, empty as VerifiedCandidate)).toThrow(AuthzError);
 		expect(() => f.registry.recordCandidate(tx, empty as VerifiedCandidate)).toThrow(
 			"CANDIDATE_INVALID",
 		);
@@ -157,15 +181,25 @@ it("binds proofs to the actual native TLS exporter and certificate, closes after
 		wrongConnection = claimBytes(first, secret);
 	for (let count = 0; count < 3; count++)
 		f.store.write((tx) => {
-			expect(() => authority.claim(tx, second.peer, wrongConnection)).toThrow("CANDIDATE_INVALID");
+			pairingRefusal(() => authority.claim(tx, second.peer, wrongConnection), "PAIR_PROOF_INVALID");
 		});
 	f.store.write((tx) => {
-		expect(() => authority.claim(tx, first.peer, wrongConnection)).toThrow("CANDIDATE_INVALID");
+		pairingRefusal(() => authority.claim(tx, first.peer, wrongConnection), "PAIR_WINDOW_CLOSED");
 	});
 	const replacement = sidecar(f, secret);
 	f.store.write((tx) => {
-		expect(() => replacement.claim(tx, first.peer, wrongConnection)).toThrow("CANDIDATE_INVALID");
+		pairingRefusal(() => replacement.claim(tx, first.peer, wrongConnection), "PAIR_WINDOW_CLOSED");
 	});
+	const differentSecret = randomBytes(16);
+	try {
+		sidecar(f, differentSecret);
+		const spent = sidecar(f, secret);
+		f.store.write((tx) => {
+			pairingRefusal(() => spent.claim(tx, first.peer, wrongConnection), "PAIR_WINDOW_CLOSED");
+		});
+	} finally {
+		differentSecret.fill(0);
+	}
 	expect(auditActions(f)).toEqual([]);
 	secret.fill(0);
 });
@@ -176,6 +210,15 @@ it("requires actual store/master-key root binding, replaces old windows and cons
 	const wrongKey = new MasterKey(randomBytes(32));
 	try {
 		expect(() => new DevicePairingAuthority(f.registry, f.store, wrongKey, secret)).toThrow();
+		expect(
+			() =>
+				new DevicePairingAuthority(
+					Object.create(Object.getPrototypeOf(f.registry)),
+					f.store,
+					f.key,
+					secret,
+				),
+		).toThrow(AuthzError);
 	} finally {
 		wrongKey.destroy();
 	}
@@ -184,19 +227,330 @@ it("requires actual store/master-key root binding, replaces old windows and cons
 		exchange = claimExchange(client, secret),
 		bytes = exchange.claim;
 	f.store.write((tx) => {
-		expect(() => first.claim(tx, client.peer, bytes)).toThrow("CANDIDATE_INVALID");
+		pairingRefusal(() => first.claim(tx, client.peer, bytes), "PAIR_WINDOW_CLOSED");
 	});
 	const answer = f.store.write((tx) => replacement.claim(tx, client.peer, bytes));
 	expect(f.store.read((db) => f.registry.facts(db, answer.deviceId))).toBeUndefined();
 	const id = f.store.write((tx) => replacement.reveal(tx, client.peer, exchange.reveal)).deviceId;
 	f.store.write((tx) => {
-		expect(() => replacement.claim(tx, client.peer, bytes)).toThrow("CANDIDATE_INVALID");
+		pairingRefusal(() => replacement.claim(tx, client.peer, bytes), "PAIR_WINDOW_CLOSED");
 	});
 	expect(f.store.read((db) => f.registry.facts(db, id)?.storedCapabilities)).toEqual([]);
 	expect(() => replacement.claimPairing()).toThrow("KIND_UNAVAILABLE");
+	expect(() => replacement.claimPairing()).toThrow(AuthzError);
 	bytes.fill(0);
 	exchange.reveal.fill(0);
 	secret.fill(0);
+});
+
+it.each(["closed", "expired"] as const)(
+	"strict claim parsing precedes a %s private window",
+	async (kind) => {
+		const client = await device(f),
+			secret = randomBytes(16),
+			bytes = claimBytes(client, secret),
+			start = performance.now();
+		const clock = vi.spyOn(performance, "now").mockReturnValue(start);
+		const authority = sidecar(f, secret);
+		try {
+			if (kind === "closed") authority.close();
+			else clock.mockReturnValue(start + 300_000);
+			for (const body of [Buffer.from("{"), Buffer.alloc(4097)])
+				f.store.write((tx) => {
+					pairingRefusal(() => authority.claim(tx, client.peer, body), "PAIR_CLAIM_INVALID");
+				});
+			f.store.write((tx) => {
+				pairingRefusal(() => authority.claim(tx, client.peer, bytes), "PAIR_WINDOW_CLOSED");
+			});
+			expect(auditActions(f)).toEqual([]);
+		} finally {
+			clock.mockRestore();
+			bytes.fill(0);
+			secret.fill(0);
+		}
+	},
+);
+
+it.each(["closed", "expired"] as const)(
+	"strict reveal parsing precedes a %s private window",
+	async (kind) => {
+		const client = await device(f),
+			secret = randomBytes(16),
+			exchange = claimExchange(client, secret),
+			start = performance.now();
+		const clock = vi.spyOn(performance, "now").mockReturnValue(start);
+		const authority = sidecar(f, secret);
+		try {
+			const answer = f.store.write((tx) => authority.claim(tx, client.peer, exchange.claim));
+			if (kind === "closed") authority.close();
+			else clock.mockReturnValue(start + 300_000);
+			for (const body of [Buffer.from("{"), Buffer.alloc(1025)])
+				f.store.write((tx) => {
+					pairingRefusal(() => authority.reveal(tx, client.peer, body), "PAIR_REVEAL_INVALID");
+				});
+			f.store.write((tx) => {
+				pairingRefusal(
+					() => authority.reveal(tx, client.peer, exchange.reveal),
+					"PAIR_WINDOW_CLOSED",
+				);
+			});
+			expect(f.store.read((db) => f.registry.facts(db, answer.deviceId))).toBeUndefined();
+			expect(auditActions(f)).toEqual([]);
+		} finally {
+			clock.mockRestore();
+			exchange.claim.fill(0);
+			exchange.reveal.fill(0);
+			secret.fill(0);
+		}
+	},
+);
+
+it("malformed, wrong-window and same-certificate foreign-peer reveals preserve the pending exchange", async () => {
+	const client = await device(f),
+		other = await device(f, client),
+		secret = randomBytes(16),
+		exchange = claimExchange(client, secret),
+		authority = sidecar(f, secret);
+	try {
+		expect(other.transportSpkiSha256).toBe(client.transportSpkiSha256);
+		expect(other.peer).not.toBe(client.peer);
+		const answer = f.store.write((tx) => authority.claim(tx, client.peer, exchange.claim));
+		f.store.write((tx) => {
+			pairingRefusal(
+				() => authority.reveal(tx, client.peer, Buffer.from("{")),
+				"PAIR_REVEAL_INVALID",
+			);
+			const wrong = JSON.parse(Buffer.from(exchange.reveal).toString("utf8"));
+			const pid = Buffer.from(wrong.pid, "base64url");
+			pid[0] = (pid[0] ?? 0) ^ 1;
+			wrong.pid = pid.toString("base64url");
+			pairingRefusal(
+				() => authority.reveal(tx, client.peer, Buffer.from(JSON.stringify(wrong))),
+				"PAIR_WINDOW_CLOSED",
+			);
+			pairingRefusal(() => authority.reveal(tx, other.peer, exchange.reveal), "PAIR_WINDOW_CLOSED");
+			pairingRefusal(() => authority.claim(tx, client.peer, exchange.claim), "PAIR_WINDOW_CLOSED");
+		});
+		const recorded = f.store.write((tx) => authority.reveal(tx, client.peer, exchange.reveal));
+		expect(recorded.deviceId).toBe(answer.deviceId);
+		expect(f.store.read((db) => f.registry.facts(db, answer.deviceId)?.storedCapabilities)).toEqual(
+			[],
+		);
+		expect(auditActions(f)).toEqual(["device.claimed"]);
+	} finally {
+		exchange.claim.fill(0);
+		exchange.reveal.fill(0);
+		secret.fill(0);
+	}
+});
+
+it("a parsed commitment mismatch consumes the pending exchange before any candidate is persisted", async () => {
+	const client = await device(f),
+		secret = randomBytes(16),
+		exchange = claimExchange(client, secret),
+		authority = sidecar(f, secret);
+	try {
+		const answer = f.store.write((tx) => authority.claim(tx, client.peer, exchange.claim));
+		const wrong = JSON.parse(Buffer.from(exchange.reveal).toString("utf8"));
+		const nonce = Buffer.from(wrong.nd, "base64url");
+		nonce[0] = (nonce[0] ?? 0) ^ 1;
+		wrong.nd = nonce.toString("base64url");
+		f.store.write((tx) => {
+			pairingRefusal(
+				() => authority.reveal(tx, client.peer, Buffer.from(JSON.stringify(wrong))),
+				"PAIR_COMMITMENT_MISMATCH",
+			);
+			pairingRefusal(
+				() => authority.reveal(tx, client.peer, exchange.reveal),
+				"PAIR_WINDOW_CLOSED",
+			);
+		});
+		expect(f.store.read((db) => f.registry.facts(db, answer.deviceId))).toBeUndefined();
+		expect(auditActions(f)).toEqual([]);
+	} finally {
+		exchange.claim.fill(0);
+		exchange.reveal.fill(0);
+		secret.fill(0);
+	}
+});
+
+it("private native-peer failures return only the fixed closed-window refusal", async () => {
+	const client = await device(f),
+		secret = randomBytes(16),
+		bytes = claimBytes(client, secret),
+		authority = sidecar(f, secret);
+	try {
+		f.store.write((tx) => {
+			pairingRefusal(
+				() => authority.claim(tx, empty as NativeDevicePeer, bytes),
+				"PAIR_WINDOW_CLOSED",
+			);
+		});
+		expect(auditActions(f)).toEqual([]);
+	} finally {
+		bytes.fill(0);
+		secret.fill(0);
+	}
+});
+
+it("private registry and persistence exceptions have no cause or detail in pairing refusals", async () => {
+	const client = await device(f),
+		secret = randomBytes(16),
+		exchange = claimExchange(client, secret),
+		authority = sidecar(f, secret);
+	const prototype = Object.getPrototypeOf(f.registry) as NativeFixture["registry"];
+	try {
+		const state = vi.spyOn(prototype, "state").mockImplementation(() => {
+			throw new Error("DYTEST private registry detail");
+		});
+		f.store.write((tx) => {
+			pairingRefusal(() => authority.claim(tx, client.peer, exchange.claim), "PAIR_WINDOW_CLOSED");
+		});
+		state.mockRestore();
+		const answer = f.store.write((tx) => authority.claim(tx, client.peer, exchange.claim));
+		const record = vi.spyOn(prototype, "recordCandidate").mockImplementation(() => {
+			throw new Error("DYTEST private persistence detail");
+		});
+		f.store.write((tx) => {
+			pairingRefusal(
+				() => authority.reveal(tx, client.peer, exchange.reveal),
+				"PAIR_WINDOW_CLOSED",
+			);
+		});
+		record.mockRestore();
+		f.store.write((tx) => {
+			pairingRefusal(
+				() => authority.reveal(tx, client.peer, exchange.reveal),
+				"PAIR_WINDOW_CLOSED",
+			);
+		});
+		expect(f.store.read((db) => f.registry.facts(db, answer.deviceId))).toBeUndefined();
+		expect(auditActions(f)).toEqual([]);
+	} finally {
+		vi.restoreAllMocks();
+		exchange.claim.fill(0);
+		exchange.reveal.fill(0);
+		secret.fill(0);
+	}
+});
+
+it("an actual restore epoch change closes a former pairing window with a fixed refusal", async () => {
+	const client = await bootstrap(f),
+		secret = randomBytes(16),
+		bytes = claimBytes(client, secret),
+		authority = sidecar(f, secret);
+	try {
+		f.store.write((tx) => advanceEpochForRestore(f.registry, tx));
+		f.store.write((tx) => {
+			pairingRefusal(() => authority.claim(tx, client.peer, bytes), "PAIR_WINDOW_CLOSED");
+		});
+		expect(f.registry.currentState().epoch).toBe(1);
+	} finally {
+		bytes.fill(0);
+		secret.fill(0);
+	}
+});
+
+it("schema-invalid current-window claims spend the budget while malformed and unknown-window claims do not", async () => {
+	const client = await device(f),
+		controlSecret = randomBytes(16),
+		secret = randomBytes(16),
+		controlBytes = claimBytes(client, controlSecret),
+		bytes = claimBytes(client, secret);
+	try {
+		const control = sidecar(f, controlSecret);
+		const unknown = JSON.parse(Buffer.from(controlBytes).toString("utf8"));
+		const pid = Buffer.from(unknown.pid, "base64url");
+		pid[0] = (pid[0] ?? 0) ^ 1;
+		unknown.pid = pid.toString("base64url");
+		unknown.unexpected = true;
+		for (let count = 0; count < 3; count++)
+			f.store.write((tx) => {
+				pairingRefusal(
+					() => control.claim(tx, client.peer, Buffer.from("{")),
+					"PAIR_CLAIM_INVALID",
+				);
+				pairingRefusal(
+					() => control.claim(tx, client.peer, Buffer.from(JSON.stringify(unknown))),
+					"PAIR_CLAIM_INVALID",
+				);
+			});
+		expect(f.store.write((tx) => control.claim(tx, client.peer, controlBytes)).epoch).toBe(0);
+		control.close();
+		const authority = sidecar(f, secret),
+			invalid = { ...JSON.parse(Buffer.from(bytes).toString("utf8")), unexpected: true };
+		for (let count = 0; count < 3; count++)
+			f.store.write((tx) => {
+				pairingRefusal(
+					() => authority.claim(tx, client.peer, Buffer.from(JSON.stringify(invalid))),
+					"PAIR_CLAIM_INVALID",
+				);
+			});
+		f.store.write((tx) => {
+			pairingRefusal(() => authority.claim(tx, client.peer, bytes), "PAIR_WINDOW_CLOSED");
+		});
+		const replacement = sidecar(f, secret);
+		f.store.write((tx) => {
+			pairingRefusal(() => replacement.claim(tx, client.peer, bytes), "PAIR_WINDOW_CLOSED");
+		});
+		expect(auditActions(f)).toEqual([]);
+	} finally {
+		controlBytes.fill(0);
+		bytes.fill(0);
+		controlSecret.fill(0);
+		secret.fill(0);
+	}
+});
+
+it("a private thrown proxy never runs its prototype hook and consumes the accepted pending reveal", async () => {
+	const client = await device(f),
+		secret = randomBytes(16),
+		exchange = claimExchange(client, secret),
+		authority = sidecar(f, secret);
+	let prototypeReads = 0;
+	const privateFailure = new Proxy(new Error("DYTEST private proxy detail"), {
+		getPrototypeOf() {
+			prototypeReads++;
+			throw new Error("DYTEST private prototype detail");
+		},
+	});
+	const prototype = Object.getPrototypeOf(f.registry) as NativeFixture["registry"];
+	const record = Object.getOwnPropertyDescriptor(prototype, "recordCandidate");
+	if (!record || !Object.hasOwn(record, "value")) throw new Error("Missing persistence method");
+	try {
+		const answer = f.store.write((tx) => authority.claim(tx, client.peer, exchange.claim));
+		Object.defineProperty(prototype, "recordCandidate", {
+			...record,
+			value() {
+				throw privateFailure;
+			},
+		});
+		let failure: unknown;
+		try {
+			f.store.write((tx) => authority.reveal(tx, client.peer, exchange.reveal));
+		} catch (error) {
+			failure = error;
+		}
+		Object.defineProperty(prototype, "recordCandidate", record);
+		expect(prototypeReads).toBe(0);
+		pairingRefusal(() => {
+			throw failure;
+		}, "PAIR_WINDOW_CLOSED");
+		f.store.write((tx) => {
+			pairingRefusal(
+				() => authority.reveal(tx, client.peer, exchange.reveal),
+				"PAIR_WINDOW_CLOSED",
+			);
+		});
+		expect(f.store.read((db) => f.registry.facts(db, answer.deviceId))).toBeUndefined();
+		expect(auditActions(f)).toEqual([]);
+	} finally {
+		Object.defineProperty(prototype, "recordCandidate", record);
+		vi.restoreAllMocks();
+		exchange.claim.fill(0);
+		exchange.reveal.fill(0);
+		secret.fill(0);
+	}
 });
 
 it("ordinary pairing and never-bootstrapped sidecar candidates cannot become approvers through CLI", async () => {

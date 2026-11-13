@@ -14,10 +14,13 @@ const identities = new WeakMap<
 	EncryptedKeyIdentity,
 	{ fingerprint?: Buffer; purpose?: DatabasePurpose; created?: boolean }
 >();
+const apply = Reflect.apply;
 const derive = MasterKey.prototype.derive;
 const closeDatabase = Database.prototype.close;
 // Failed initialization retains only its original native connection, never caller key authority.
 let initialization: SqliteDatabase | undefined;
+// Connections this opener returned, which a refusing store may hand back once.
+const issued = new WeakSet<SqliteDatabase>();
 const initializationFailure = (): Error => new Error("Database initialization cleanup unavailable");
 const isDatabaseClosed = (database: SqliteDatabase): boolean => database.open === false;
 function closeInitialization(): void {
@@ -111,6 +114,12 @@ function reserveNewFile(filename: string): CreationReservation {
 		throw reservationFailure();
 	}
 }
+/** Closes an issued connection its store refused, or retains it for the next open to retry. */
+export function releaseFailedOpen(db: SqliteDatabase): void {
+	if (initialization !== undefined || !issued.delete(db)) throw initializationFailure();
+	initialization = db;
+	closeInitialization();
+}
 export function createEncryptedKeyIdentity(): EncryptedKeyIdentity {
 	const identity = Object.freeze(Object.create(null)) as EncryptedKeyIdentity;
 	identities.set(identity, {});
@@ -133,7 +142,7 @@ export function assertEncryptedKeyIdentity(identity: EncryptedKeyIdentity, key: 
 	try {
 		const state = identities.get(identity);
 		if (!state?.fingerprint || !state.purpose || types.isProxy(key)) throw new Error();
-		bytes = derive.call(key, state.purpose);
+		bytes = apply(derive, key, [state.purpose]);
 		fingerprint = createHash("sha256").update(bytes).digest();
 		if (!timingSafeEqual(fingerprint, state.fingerprint)) throw new Error();
 	} catch {
@@ -195,7 +204,7 @@ export function openEncrypted(
 	)
 		throw new Error("Unknown database key purpose");
 	if (types.isProxy(masterKey)) throw new Error("Database key unavailable");
-	const key = derive.call(masterKey, purpose);
+	const key = apply(derive, masterKey, [purpose]);
 	let db: SqliteDatabase | undefined;
 	try {
 		// Retry only the retained native resource before any requested-file lookup or allocation.
@@ -298,6 +307,7 @@ export function openEncrypted(
 			creationReservation = undefined;
 		}
 		if (state) state.created = created;
+		issued.add(db);
 		return db;
 	} catch (error) {
 		if (identity !== undefined) destroyEncryptedKeyIdentity(identity);

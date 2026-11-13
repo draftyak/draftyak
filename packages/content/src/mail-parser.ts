@@ -142,6 +142,7 @@ export async function parseMailCore(raw: Uint8Array, evidence: MailEvidence): Pr
 	if (evidence.ownerAddresses.length > MAX_ADDRESSES) throw new ContentError("STRUCTURE_LIMIT");
 	try {
 		const headers = wireHeaders(raw);
+		const replyToHeaderCount = headers.filter(({ key }) => key === "reply-to").length;
 		const rawSha256 = digest(raw);
 		const parser = new PostalMime({
 			maxNestingDepth: 12,
@@ -212,6 +213,7 @@ export async function parseMailCore(raw: Uint8Array, evidence: MailEvidence): Pr
 			cc: mailboxes(parsed.cc ?? []),
 			bcc: mailboxes(parsed.bcc ?? []),
 			replyTo: mailboxes(parsed.replyTo ?? []),
+			replyToHeaderCount,
 			subject: parsed.subject ?? "",
 			...metadata,
 			body,
