@@ -73,6 +73,9 @@ const renewJob = JobQueue.prototype.renew;
 const appendEvent = EventLog.prototype.append;
 // 256 labels of 256 visible ASCII bytes, all JSON-escaped, plus separators/quotes.
 const MAX_LABEL_JSON_BYTES = 131_841;
+const RAW_PURGE_CHUNK_BATCH = 64;
+const RAW_PURGE_INDEX =
+	"CREATE INDEX rawcontent_account_purge ON rawcontent_objects(account_id,user_id,id)";
 const REF_FIELDS = ["accountId", "generation", "pluginInstanceId", "ownerEpoch", "mode"];
 const JOB_FIELDS = [
 	"id",
@@ -279,6 +282,100 @@ function message(raw: MessageRow): NativeMessageMetadata {
 		state: "unparsed",
 		direction: "inbound",
 	});
+}
+
+function purgeRawAccount(
+	sql: SqlTransaction,
+	accountId: string,
+	ownerId: string,
+): { deleted: number; more: boolean } {
+	const markers = sql.all<{
+		name: string;
+		type: string;
+		tableName: string;
+		definition: string | null;
+	}>(`SELECT name,type,tbl_name AS tableName,
+ CASE WHEN name='rawcontent_account_purge' AND length(CAST(sql AS BLOB))<=256 THEN sql END AS definition
+ FROM main.sqlite_schema WHERE name IN
+ ('rawcontent_objects','rawcontent_chunks','_migrations_rawcontent','_migrations_rawcontent_lock','rawcontent_account_purge')`);
+	// Metadata-only compositions never activate raw storage. An applied or partial
+	// namespace must instead carry its explicit account-purge migration already.
+	if (markers.length === 0) return { deleted: 0, more: false };
+	for (const name of [
+		"rawcontent_objects",
+		"rawcontent_chunks",
+		"_migrations_rawcontent",
+		"_migrations_rawcontent_lock",
+	]) {
+		const marker = markers.find((row) => row.name === name);
+		if (!marker || marker.type !== "table" || marker.tableName !== name) refuse();
+	}
+	const index = markers.find((row) => row.name === "rawcontent_account_purge");
+	if (
+		!index ||
+		index.type !== "index" ||
+		index.tableName !== "rawcontent_objects" ||
+		typeof index.definition !== "string" ||
+		index.definition.replace(/\s+/g, " ").trim() !== RAW_PURGE_INDEX
+	)
+		refuse();
+	const object = sql.get<{ id: string; userId: string }>(
+		`SELECT id,user_id AS userId FROM main.rawcontent_objects INDEXED BY rawcontent_account_purge
+ WHERE account_id=? ORDER BY user_id,id LIMIT 1`,
+		[accountId],
+	);
+	if (!object) return { deleted: 0, more: false };
+	// Do not filter a corrupt foreign owner out of the account's indexed range.
+	if (object.userId !== ownerId) refuse();
+	const blobId = id(object.id);
+	// Retire derived content across this account's generations before removing any
+	// Raw bytes. Account purge does not assume raw_ref is the Raw object's ID.
+	for (const comparison of ["<", ">"] as const) {
+		if (
+			sql.get(
+				`SELECT 1 FROM main.content_parsed_messages INDEXED BY content_parsed_owner
+ WHERE account_id=? AND user_id${comparison}? LIMIT 1`,
+				[accountId, ownerId],
+			)
+		)
+			refuse();
+	}
+	let deleted = sql.run(
+		`DELETE FROM main.content_parsed_messages WHERE rowid IN
+ (SELECT rowid FROM main.content_parsed_messages INDEXED BY content_parsed_page
+  WHERE account_id=? AND user_id=? ORDER BY generation,user_id,message_id LIMIT ?)`,
+		[accountId, ownerId, CONTENT_PURGE_BATCH],
+	).changes;
+	// DELETE reaches the parsed/FTS trigger in this same transaction. Do not start
+	// chunk deletion while another bounded batch of derived rows is still present.
+	if (
+		sql.get(
+			"SELECT 1 FROM main.content_parsed_messages INDEXED BY content_parsed_owner WHERE account_id=? LIMIT 1",
+			[accountId],
+		) !== undefined
+	)
+		return { deleted, more: true };
+	deleted += sql.run(
+		`DELETE FROM main.rawcontent_chunks WHERE object_id=? AND seq IN
+ (SELECT seq FROM main.rawcontent_chunks WHERE object_id=? ORDER BY seq LIMIT ${RAW_PURGE_CHUNK_BATCH})`,
+		[blobId, blobId],
+	).changes;
+	if (!sql.get("SELECT 1 FROM main.rawcontent_chunks WHERE object_id=? LIMIT 1", [blobId])) {
+		const removed = sql.run(
+			"DELETE FROM main.rawcontent_objects WHERE id=? AND account_id=? AND user_id=?",
+			[blobId, accountId, ownerId],
+		).changes;
+		if (removed !== 1) refuse();
+		deleted += removed;
+	}
+	return {
+		deleted,
+		more:
+			sql.get(
+				"SELECT 1 FROM main.rawcontent_objects INDEXED BY rawcontent_account_purge WHERE account_id=? LIMIT 1",
+				[accountId],
+			) !== undefined,
+	};
 }
 
 /**
@@ -561,7 +658,43 @@ export class NativeMetadataStore {
 			const ref = reference(snapshot(input));
 			const record = this.#account(scope, sql, ref, true);
 			this.#lease(lease, record, "retention");
-			let deleted = sql.run(
+			const raw = purgeRawAccount(sql, ref.accountId, record.account.userId);
+			let deleted = raw.deleted;
+			// Drain bounded journal children before deleting their metadata parents.
+			deleted += sql.run(
+				`DELETE FROM main.sync_page_observations WHERE rowid IN
+ (SELECT rowid FROM main.sync_page_observations WHERE account_id=?
+  ORDER BY generation,scan_id,page_ordinal,change_index LIMIT ?)`,
+				[ref.accountId, CONTENT_PURGE_BATCH],
+			).changes;
+			deleted += sql.run(
+				`DELETE FROM main.sync_scan_pages WHERE rowid IN
+ (SELECT rowid FROM main.sync_scan_pages WHERE account_id=?
+  ORDER BY generation,scan_id,ordinal LIMIT ?)
+ AND NOT EXISTS(SELECT 1 FROM main.sync_page_observations o
+  WHERE o.scan_id=sync_scan_pages.scan_id AND o.page_ordinal=sync_scan_pages.ordinal
+  AND o.account_id=sync_scan_pages.account_id AND o.generation=sync_scan_pages.generation)`,
+				[ref.accountId, CONTENT_PURGE_BATCH],
+			).changes;
+			deleted += sql.run(
+				`DELETE FROM main.sync_scans WHERE rowid IN
+ (SELECT rowid FROM main.sync_scans WHERE account_id=?
+  ORDER BY user_id,generation,id LIMIT ?)
+ AND NOT EXISTS(SELECT 1 FROM main.sync_scan_pages p
+  WHERE p.scan_id=sync_scans.id AND p.account_id=sync_scans.account_id
+  AND p.generation=sync_scans.generation)`,
+				[ref.accountId, CONTENT_PURGE_BATCH],
+			).changes;
+			const journalMore = ["sync_page_observations", "sync_scan_pages", "sync_scans"].some(
+				(table) =>
+					sql.get(`SELECT 1 FROM main.${table} WHERE account_id=? LIMIT 1`, [ref.accountId]) !==
+					undefined,
+			);
+			if (journalMore) {
+				const next = renewJob.call(this.#jobs, scope, lease);
+				return Object.freeze({ deleted, more: true, lease: next });
+			}
+			deleted += sql.run(
 				`DELETE FROM main.content_messages WHERE rowid IN
  (SELECT rowid FROM main.content_messages WHERE account_id=? ORDER BY generation,provider_id LIMIT ?)`,
 				[ref.accountId, CONTENT_PURGE_BATCH],
@@ -580,7 +713,10 @@ export class NativeMetadataStore {
 					[ref.accountId, CONTENT_PURGE_BATCH],
 				).changes;
 			}
-			const more = [
+			const metadataMore = [
+				"sync_page_observations",
+				"sync_scan_pages",
+				"sync_scans",
 				"content_messages",
 				"content_conversations",
 				"content_pages",
@@ -590,6 +726,7 @@ export class NativeMetadataStore {
 					sql.get(`SELECT 1 FROM main.${table} WHERE account_id=? LIMIT 1`, [ref.accountId]) !==
 					undefined,
 			);
+			const more = raw.more || metadataMore;
 			let next: JobLease | null = null;
 			if (more) next = renewJob.call(this.#jobs, scope, lease);
 			else completeJob.call(this.#jobs, scope, lease);
