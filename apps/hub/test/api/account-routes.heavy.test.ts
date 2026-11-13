@@ -1,3 +1,4 @@
+import { afterEach, expect, it } from "vitest";
 import type { AccountPage } from "../../src/accounts/records.ts";
 import {
 	ACCOUNT_API_MAX_RESPONSE_BYTES,
@@ -7,11 +8,10 @@ import { createNativeAccountReads } from "../../src/api/accounts.ts";
 import { createNativeApiRouter, type NativeApiResponse } from "../../src/api/router.ts";
 import { Authorizer } from "../../src/authz/authorizer.ts";
 import { newId } from "../../src/kernel/ids.ts";
-import { afterEach, expect, it } from "vitest";
 import {
+	type AccountRouteFixture,
 	accountRouteDeviceKeys,
 	accountRouteFixture,
-	type AccountRouteFixture,
 	seedRouteAccounts,
 } from "./fixtures/account-routes.ts";
 

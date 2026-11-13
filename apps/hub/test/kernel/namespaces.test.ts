@@ -17,7 +17,10 @@ const requiredCredentialAsset = path.join(
 const requiredAccountAsset = path.join(HUB_NAMESPACES.accounts, "0001_accounts.sql");
 const requiredRegistryAsset = path.join(HUB_NAMESPACES.pluginregistry, "0001_registry.sql");
 const requiredBackupAsset = path.join(HUB_NAMESPACES.backup, "0001_backup_recovery.sql");
-const requiredOwnerSettingsAsset = path.join(HUB_NAMESPACES.ownersettings, "0001_owner_settings.sql");
+const requiredOwnerSettingsAsset = path.join(
+	HUB_NAMESPACES.ownersettings,
+	"0001_owner_settings.sql",
+);
 const source = path.resolve(import.meta.dirname, "../../src");
 const expectedFolders = [
 	["audit", "store/migrations/audit"],
