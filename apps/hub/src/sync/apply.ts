@@ -51,6 +51,10 @@ export interface NativeMessageMetadata {
 	readonly state: "unparsed";
 	readonly direction: "inbound";
 }
+export interface NativeConversationMetadata {
+	readonly id: string;
+	readonly threadId: string;
+}
 export interface MetadataPurgeProgress {
 	readonly deleted: number;
 	readonly more: boolean;
@@ -502,6 +506,29 @@ export class NativeMetadataStore {
 			const ref = reference(snapshot(input));
 			const record = this.#account(scope, sql, ref);
 			return this.#checkpoint(sql, ref, record.account.userId);
+		});
+	}
+	conversation(
+		scope: WorkScope,
+		input: MetadataAccountRef,
+		canonicalId: string,
+	): NativeConversationMetadata | undefined {
+		return this.#work(scope, (sql) => {
+			const ref = reference(snapshot(input));
+			const selected = id(canonicalId);
+			const record = this.#account(scope, sql, ref);
+			const row = sql.get<{ valid: number; id: string | null; threadId: string | null }>(
+				`SELECT
+ CASE WHEN typeof(id)='text' AND length(CAST(id AS BLOB))=26
+  AND typeof(provider_id)='text' AND length(CAST(provider_id AS BLOB)) BETWEEN 1 AND 256 THEN 1 ELSE 0 END AS valid,
+ CASE WHEN typeof(id)='text' AND length(CAST(id AS BLOB))=26 THEN id END AS id,
+ CASE WHEN typeof(provider_id)='text' AND length(CAST(provider_id AS BLOB)) BETWEEN 1 AND 256 THEN provider_id END AS threadId
+ FROM main.content_conversations WHERE id=? AND user_id=? AND account_id=? AND generation=?`,
+				[selected, record.account.userId, ref.accountId, ref.generation],
+			);
+			if (!row) return undefined;
+			if (row.valid !== 1) refuse();
+			return Object.freeze({ id: id(row.id), threadId: visible(row.threadId, 256) });
 		});
 	}
 	messages(
