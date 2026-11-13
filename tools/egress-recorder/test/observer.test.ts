@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	activateTestOnly,
 	assertDestinations,
@@ -176,30 +176,101 @@ describe("attempt observations", () => {
 	});
 
 	it("does not dispatch after a deadline, completion race or late DNS settlement", async () => {
-		const recorder = createRecorder({ profile: "test", observers: [hub] });
-		const observer = recorder.observer(hub.id);
-		let release: (value: string) => void = () => {};
-		let connected = 0;
-		const pending = observer.observe(
-			target,
-			{
-				policy: () => true,
-				resolve: () =>
-					new Promise<string>((resolve) => {
-						release = resolve;
-					}),
-				connect: () => {
-					connected++;
+		const pending: Promise<unknown>[] = [];
+		const releases: (() => void)[] = [];
+		const holdDns = () => {
+			const recorder = createRecorder({ profile: "test", observers: [hub] });
+			const observer = recorder.observer(hub.id);
+			const entered = Promise.withResolvers<void>();
+			const dns = Promise.withResolvers<string>();
+			const release = () => dns.resolve("late");
+			const connect = vi.fn();
+			releases.push(release);
+			const observing = observer.observe(
+				target,
+				{
+					policy: () => true,
+					resolve: () => {
+						entered.resolve();
+						return dns.promise;
+					},
+					connect,
 				},
-			},
-			5,
-		);
-		expect(await pending).toEqual({ outcome: "failed", stage: "dns" });
-		release("late");
-		await Promise.resolve();
-		expect(connected).toBe(0);
-		observer.complete();
-		expect(readResult(recorder.finish(), required).attempts[0]?.outcome).toBe("failed");
+				5,
+			);
+			pending.push(observing);
+			let settled = false;
+			void observing.then(
+				() => {
+					settled = true;
+				},
+				() => {
+					settled = true;
+				},
+			);
+			const admitted = Promise.race([
+				entered.promise,
+				observing.then(() => {
+					throw new Error("Expected DNS resolver entry");
+				}),
+			]);
+			return {
+				recorder,
+				observer,
+				admitted,
+				observing,
+				release,
+				connect,
+				get settled() {
+					return settled;
+				},
+			};
+		};
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+		try {
+			const deadline = holdDns();
+			await deadline.admitted;
+			const started = performance.now();
+			await vi.advanceTimersByTimeAsync(5);
+			expect(performance.now() - started).toBe(5);
+			expect(deadline.settled).toBe(true);
+			expect(await deadline.observing).toEqual({ outcome: "failed", stage: "dns" });
+			expect(deadline.connect).not.toHaveBeenCalled();
+			deadline.observer.complete();
+			deadline.release();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(deadline.connect).not.toHaveBeenCalled();
+			expect(readResult(deadline.recorder.finish(), required).attempts).toEqual([
+				{
+					observerId: hub.id,
+					sequence: 0,
+					destination: target,
+					outcome: "failed",
+					stage: "dns",
+				},
+			]);
+
+			const completion = holdDns();
+			await completion.admitted;
+			expect(() => completion.observer.complete()).toThrow("LIFECYCLE");
+			await vi.advanceTimersByTimeAsync(0);
+			expect(completion.settled).toBe(true);
+			expect(await completion.observing).toEqual({ outcome: "failed", stage: "dns" });
+			completion.release();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(completion.connect).not.toHaveBeenCalled();
+			expect(() => readResult(completion.recorder.finish(), required)).toThrow(
+				"OBSERVATION_FAILED",
+			);
+		} finally {
+			for (const release of releases) release();
+			try {
+				await vi.runAllTimersAsync();
+				await Promise.allSettled(pending);
+			} finally {
+				vi.useRealTimers();
+			}
+		}
 	});
 
 	it("marks observation incomplete when finished with work in flight", async () => {

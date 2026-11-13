@@ -29,7 +29,8 @@ type HubNamespace =
 	| "adminchallenges"
 	| "backup"
 	| "backupops"
-	| "backupchallenges";
+	| "backupchallenges"
+	| "ownersettings";
 
 /** The current fixed native schema inventory; callers cannot substitute migration folders. */
 export const HUB_NAMESPACES: Readonly<Record<HubNamespace, string>> = Object.freeze({
@@ -51,6 +52,7 @@ export const HUB_NAMESPACES: Readonly<Record<HubNamespace, string>> = Object.fre
 	backup: bundled("recovery/backup-migrations"),
 	backupops: bundled("identity/backup-migrations"),
 	backupchallenges: bundled("identity/backup-challenge-migrations"),
+	ownersettings: bundled("api/migrations"),
 });
 
 const SCHEMAS = Object.freeze([
@@ -75,6 +77,7 @@ const SCHEMAS = Object.freeze([
 	["backup", "0001_backup_recovery.sql"],
 	["backupops", "0001_backup_operations.sql"],
 	["backupchallenges", "0001_backup_challenges.sql"],
+	["ownersettings", "0001_owner_settings.sql"],
 ] as const);
 
 /** Migrate the registered native schemas in order; the caller retains store and key cleanup. */

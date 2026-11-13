@@ -22,6 +22,7 @@ const EXPECTED = [
 	["backup", ["0001_backup_recovery"]],
 	["backupops", ["0001_backup_operations"]],
 	["backupchallenges", ["0001_backup_challenges"]],
+	["ownersettings", ["0001_owner_settings"]],
 ] as const;
 const DOMAIN_TABLES = [
 	"accounts",
@@ -48,6 +49,7 @@ const DOMAIN_TABLES = [
 	"native_drafts",
 	"native_send_attempts",
 	"outbox",
+	"owner_settings",
 	"pair_confirm_operations",
 	"plugin_candidates",
 	"plugin_generations",
@@ -103,6 +105,7 @@ function expectSchemas(store: HubStore): void {
 			"plugin_registry_identities",
 			"plugin_versions",
 			"outbox",
+			"owner_settings",
 			"approval_challenges",
 			"pair_confirm_operations",
 			"approvals",

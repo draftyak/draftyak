@@ -1,0 +1,1517 @@
+{
+  "components": {
+    "schemas": {
+      "draftyak.entities.Account": {
+        "$defs": {
+          "draftyak.entities.AccountMode": {
+            "description": "read_only has no send or organize path.",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "type": "string"
+          },
+          "draftyak.entities.AccountStatus": {
+            "description": "active syncs; paused doesn't, until its cause clears; credential_lost waits for a reconnect until deletionDeadline; disconnecting cancels, revokes and purges.",
+            "enum": [
+              "active",
+              "paused",
+              "credential_lost",
+              "disconnecting"
+            ],
+            "type": "string"
+          },
+          "draftyak.entities.ChatAccount": {
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "const": "credential_lost"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "null"
+                  },
+                  "status": {
+                    "not": {
+                      "const": "credential_lost"
+                    }
+                  }
+                }
+              }
+            ],
+            "description": "A chat workspace served by a channel plugin. selfUserId is the owner's own user id, which the hub checks itself, so it can tell the owner's messages from others'.",
+            "properties": {
+              "alias": {
+                "description": "An owner-chosen account alias.",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "channel": {
+                "const": "chat",
+                "type": "string"
+              },
+              "createdAt": {
+                "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "deletionDeadline": {
+                "anyOf": [
+                  {
+                    "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "When a credential_lost account is purged unless reconnected; otherwise null."
+              },
+              "disclosureVersion": {
+                "description": "The version of the disclosure the owner agreed to for it.",
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "historyLimitDays": {
+                "description": "How many days back the first sync reaches.",
+                "maximum": 365,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "id": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/draftyak.entities.Account/$defs/draftyak.entities.AccountMode"
+              },
+              "pluginInstanceId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "selfUserId": {
+                "$ref": "#/components/schemas/draftyak.entities.Account/$defs/draftyak.normalized-change.ProviderId"
+              },
+              "status": {
+                "$ref": "#/components/schemas/draftyak.entities.Account/$defs/draftyak.entities.AccountStatus"
+              },
+              "teamId": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/draftyak.entities.Account/$defs/draftyak.normalized-change.ProviderId"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "userId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channel",
+              "id",
+              "userId",
+              "alias",
+              "mode",
+              "status",
+              "deletionDeadline",
+              "historyLimitDays",
+              "disclosureVersion",
+              "createdAt",
+              "pluginInstanceId",
+              "teamId",
+              "selfUserId"
+            ],
+            "type": "object"
+          },
+          "draftyak.entities.EmailAccount": {
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "const": "credential_lost"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "null"
+                  },
+                  "status": {
+                    "not": {
+                      "const": "credential_lost"
+                    }
+                  }
+                }
+              }
+            ],
+            "description": "A mailbox served by a channel plugin; address is the mailbox's own.",
+            "properties": {
+              "address": {
+                "$ref": "#/components/schemas/draftyak.entities.Account/$defs/draftyak.entities.EmailAddress"
+              },
+              "alias": {
+                "description": "An owner-chosen account alias.",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "channel": {
+                "const": "email",
+                "type": "string"
+              },
+              "createdAt": {
+                "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "deletionDeadline": {
+                "anyOf": [
+                  {
+                    "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "When a credential_lost account is purged unless reconnected; otherwise null."
+              },
+              "disclosureVersion": {
+                "description": "The version of the disclosure the owner agreed to for it.",
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "historyLimitDays": {
+                "description": "How many days back the first sync reaches.",
+                "maximum": 365,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "id": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/draftyak.entities.Account/$defs/draftyak.entities.AccountMode"
+              },
+              "pluginInstanceId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/draftyak.entities.Account/$defs/draftyak.entities.AccountStatus"
+              },
+              "userId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channel",
+              "id",
+              "userId",
+              "alias",
+              "mode",
+              "status",
+              "deletionDeadline",
+              "historyLimitDays",
+              "disclosureVersion",
+              "createdAt",
+              "pluginInstanceId",
+              "address"
+            ],
+            "type": "object"
+          },
+          "draftyak.entities.EmailAddress": {
+            "description": "An address as the hub normalizes it: a dot-atom local part as given, without spaces, quotes or invisible characters, and a lower-case DNS domain with IDN labels as A-labels.",
+            "maxLength": 254,
+            "not": {
+              "pattern": "\\n"
+            },
+            "pattern": "^[-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+(?:[.][-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
+            "type": "string"
+          },
+          "draftyak.normalized-change.ProviderId": {
+            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces.",
+            "maxLength": 256,
+            "minLength": 1,
+            "not": {
+              "pattern": "\\n"
+            },
+            "pattern": "^[!-~]+$(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "description": "A connected account. alias is the owner's own name for it, never taken from provider data.",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/draftyak.entities.Account/$defs/draftyak.entities.ChatAccount"
+          },
+          {
+            "$ref": "#/components/schemas/draftyak.entities.Account/$defs/draftyak.entities.EmailAccount"
+          }
+        ]
+      },
+      "draftyak.entities.OwnerSettings": {
+        "$defs": {
+          "draftyak.entities.Weekday": {
+            "enum": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "type": "string"
+          },
+          "draftyak.entities.WorkingHours": {
+            "additionalProperties": false,
+            "description": "The owner's working days and hours, HH:mm in their zone, start before end; the default is mon to fri, 09:00 to 17:00.",
+            "properties": {
+              "days": {
+                "items": {
+                  "$ref": "#/components/schemas/draftyak.entities.OwnerSettings/$defs/draftyak.entities.Weekday"
+                },
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "end": {
+                "maxLength": 5,
+                "minLength": 5,
+                "pattern": "^(?:(?:[01][0-9]|2[0-3]):[0-5][0-9]|24:00)$(?![\\s\\S])",
+                "type": "string"
+              },
+              "start": {
+                "maxLength": 5,
+                "minLength": 5,
+                "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "days",
+              "start",
+              "end"
+            ],
+            "type": "object"
+          },
+          "draftyak.tool-v1.IanaZone": {
+            "description": "An IANA time zone name, such as America/Chicago; Temporal checks that it exists.",
+            "maxLength": 64,
+            "not": {
+              "pattern": "\\n"
+            },
+            "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:\\/[A-Za-z0-9_+-]+)*$(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The owner's time zone, which schedules and lookups use, and working hours.",
+        "properties": {
+          "workingHours": {
+            "$ref": "#/components/schemas/draftyak.entities.OwnerSettings/$defs/draftyak.entities.WorkingHours"
+          },
+          "zone": {
+            "$ref": "#/components/schemas/draftyak.entities.OwnerSettings/$defs/draftyak.tool-v1.IanaZone"
+          }
+        },
+        "required": [
+          "zone",
+          "workingHours"
+        ],
+        "type": "object"
+      },
+      "draftyak.native.AccountPage": {
+        "$defs": {
+          "draftyak.entities.Account": {
+            "description": "A connected account. alias is the owner's own name for it, never taken from provider data.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/draftyak.native.AccountPage/$defs/draftyak.entities.ChatAccount"
+              },
+              {
+                "$ref": "#/components/schemas/draftyak.native.AccountPage/$defs/draftyak.entities.EmailAccount"
+              }
+            ]
+          },
+          "draftyak.entities.AccountMode": {
+            "description": "read_only has no send or organize path.",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "type": "string"
+          },
+          "draftyak.entities.AccountStatus": {
+            "description": "active syncs; paused doesn't, until its cause clears; credential_lost waits for a reconnect until deletionDeadline; disconnecting cancels, revokes and purges.",
+            "enum": [
+              "active",
+              "paused",
+              "credential_lost",
+              "disconnecting"
+            ],
+            "type": "string"
+          },
+          "draftyak.entities.ChatAccount": {
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "const": "credential_lost"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "null"
+                  },
+                  "status": {
+                    "not": {
+                      "const": "credential_lost"
+                    }
+                  }
+                }
+              }
+            ],
+            "description": "A chat workspace served by a channel plugin. selfUserId is the owner's own user id, which the hub checks itself, so it can tell the owner's messages from others'.",
+            "properties": {
+              "alias": {
+                "description": "An owner-chosen account alias.",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "channel": {
+                "const": "chat",
+                "type": "string"
+              },
+              "createdAt": {
+                "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "deletionDeadline": {
+                "anyOf": [
+                  {
+                    "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "When a credential_lost account is purged unless reconnected; otherwise null."
+              },
+              "disclosureVersion": {
+                "description": "The version of the disclosure the owner agreed to for it.",
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "historyLimitDays": {
+                "description": "How many days back the first sync reaches.",
+                "maximum": 365,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "id": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/draftyak.native.AccountPage/$defs/draftyak.entities.AccountMode"
+              },
+              "pluginInstanceId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "selfUserId": {
+                "$ref": "#/components/schemas/draftyak.native.AccountPage/$defs/draftyak.normalized-change.ProviderId"
+              },
+              "status": {
+                "$ref": "#/components/schemas/draftyak.native.AccountPage/$defs/draftyak.entities.AccountStatus"
+              },
+              "teamId": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/draftyak.native.AccountPage/$defs/draftyak.normalized-change.ProviderId"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "userId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channel",
+              "id",
+              "userId",
+              "alias",
+              "mode",
+              "status",
+              "deletionDeadline",
+              "historyLimitDays",
+              "disclosureVersion",
+              "createdAt",
+              "pluginInstanceId",
+              "teamId",
+              "selfUserId"
+            ],
+            "type": "object"
+          },
+          "draftyak.entities.EmailAccount": {
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "const": "credential_lost"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "null"
+                  },
+                  "status": {
+                    "not": {
+                      "const": "credential_lost"
+                    }
+                  }
+                }
+              }
+            ],
+            "description": "A mailbox served by a channel plugin; address is the mailbox's own.",
+            "properties": {
+              "address": {
+                "$ref": "#/components/schemas/draftyak.native.AccountPage/$defs/draftyak.entities.EmailAddress"
+              },
+              "alias": {
+                "description": "An owner-chosen account alias.",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "channel": {
+                "const": "email",
+                "type": "string"
+              },
+              "createdAt": {
+                "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "deletionDeadline": {
+                "anyOf": [
+                  {
+                    "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "When a credential_lost account is purged unless reconnected; otherwise null."
+              },
+              "disclosureVersion": {
+                "description": "The version of the disclosure the owner agreed to for it.",
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "historyLimitDays": {
+                "description": "How many days back the first sync reaches.",
+                "maximum": 365,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "id": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/draftyak.native.AccountPage/$defs/draftyak.entities.AccountMode"
+              },
+              "pluginInstanceId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/draftyak.native.AccountPage/$defs/draftyak.entities.AccountStatus"
+              },
+              "userId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channel",
+              "id",
+              "userId",
+              "alias",
+              "mode",
+              "status",
+              "deletionDeadline",
+              "historyLimitDays",
+              "disclosureVersion",
+              "createdAt",
+              "pluginInstanceId",
+              "address"
+            ],
+            "type": "object"
+          },
+          "draftyak.entities.EmailAddress": {
+            "description": "An address as the hub normalizes it: a dot-atom local part as given, without spaces, quotes or invisible characters, and a lower-case DNS domain with IDN labels as A-labels.",
+            "maxLength": 254,
+            "not": {
+              "pattern": "\\n"
+            },
+            "pattern": "^[-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+(?:[.][-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
+            "type": "string"
+          },
+          "draftyak.native.AccountRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "account": {
+                "$ref": "#/components/schemas/draftyak.native.AccountPage/$defs/draftyak.entities.Account"
+              },
+              "generation": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "account",
+              "generation"
+            ],
+            "type": "object"
+          },
+          "draftyak.normalized-change.ProviderId": {
+            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces.",
+            "maxLength": 256,
+            "minLength": 1,
+            "not": {
+              "pattern": "\\n"
+            },
+            "pattern": "^[!-~]+$(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/draftyak.native.AccountPage/$defs/draftyak.native.AccountRecord"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "nextId": {
+            "anyOf": [
+              {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "accounts",
+          "nextId"
+        ],
+        "type": "object"
+      },
+      "draftyak.native.AccountRecord": {
+        "$defs": {
+          "draftyak.entities.Account": {
+            "description": "A connected account. alias is the owner's own name for it, never taken from provider data.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/draftyak.native.AccountRecord/$defs/draftyak.entities.ChatAccount"
+              },
+              {
+                "$ref": "#/components/schemas/draftyak.native.AccountRecord/$defs/draftyak.entities.EmailAccount"
+              }
+            ]
+          },
+          "draftyak.entities.AccountMode": {
+            "description": "read_only has no send or organize path.",
+            "enum": [
+              "full",
+              "read_only"
+            ],
+            "type": "string"
+          },
+          "draftyak.entities.AccountStatus": {
+            "description": "active syncs; paused doesn't, until its cause clears; credential_lost waits for a reconnect until deletionDeadline; disconnecting cancels, revokes and purges.",
+            "enum": [
+              "active",
+              "paused",
+              "credential_lost",
+              "disconnecting"
+            ],
+            "type": "string"
+          },
+          "draftyak.entities.ChatAccount": {
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "const": "credential_lost"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "null"
+                  },
+                  "status": {
+                    "not": {
+                      "const": "credential_lost"
+                    }
+                  }
+                }
+              }
+            ],
+            "description": "A chat workspace served by a channel plugin. selfUserId is the owner's own user id, which the hub checks itself, so it can tell the owner's messages from others'.",
+            "properties": {
+              "alias": {
+                "description": "An owner-chosen account alias.",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "channel": {
+                "const": "chat",
+                "type": "string"
+              },
+              "createdAt": {
+                "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "deletionDeadline": {
+                "anyOf": [
+                  {
+                    "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "When a credential_lost account is purged unless reconnected; otherwise null."
+              },
+              "disclosureVersion": {
+                "description": "The version of the disclosure the owner agreed to for it.",
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "historyLimitDays": {
+                "description": "How many days back the first sync reaches.",
+                "maximum": 365,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "id": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/draftyak.native.AccountRecord/$defs/draftyak.entities.AccountMode"
+              },
+              "pluginInstanceId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "selfUserId": {
+                "$ref": "#/components/schemas/draftyak.native.AccountRecord/$defs/draftyak.normalized-change.ProviderId"
+              },
+              "status": {
+                "$ref": "#/components/schemas/draftyak.native.AccountRecord/$defs/draftyak.entities.AccountStatus"
+              },
+              "teamId": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/draftyak.native.AccountRecord/$defs/draftyak.normalized-change.ProviderId"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "userId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channel",
+              "id",
+              "userId",
+              "alias",
+              "mode",
+              "status",
+              "deletionDeadline",
+              "historyLimitDays",
+              "disclosureVersion",
+              "createdAt",
+              "pluginInstanceId",
+              "teamId",
+              "selfUserId"
+            ],
+            "type": "object"
+          },
+          "draftyak.entities.EmailAccount": {
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "const": "credential_lost"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "deletionDeadline": {
+                    "type": "null"
+                  },
+                  "status": {
+                    "not": {
+                      "const": "credential_lost"
+                    }
+                  }
+                }
+              }
+            ],
+            "description": "A mailbox served by a channel plugin; address is the mailbox's own.",
+            "properties": {
+              "address": {
+                "$ref": "#/components/schemas/draftyak.native.AccountRecord/$defs/draftyak.entities.EmailAddress"
+              },
+              "alias": {
+                "description": "An owner-chosen account alias.",
+                "not": {
+                  "pattern": "\\n"
+                },
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "channel": {
+                "const": "email",
+                "type": "string"
+              },
+              "createdAt": {
+                "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "deletionDeadline": {
+                "anyOf": [
+                  {
+                    "description": "An instant as UTC milliseconds since the epoch, a safe integer.",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "When a credential_lost account is purged unless reconnected; otherwise null."
+              },
+              "disclosureVersion": {
+                "description": "The version of the disclosure the owner agreed to for it.",
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "historyLimitDays": {
+                "description": "How many days back the first sync reaches.",
+                "maximum": 365,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "id": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/draftyak.native.AccountRecord/$defs/draftyak.entities.AccountMode"
+              },
+              "pluginInstanceId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/draftyak.native.AccountRecord/$defs/draftyak.entities.AccountStatus"
+              },
+              "userId": {
+                "description": "A ULID: 26 upper-case Crockford base32 characters.",
+                "maxLength": 26,
+                "minLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channel",
+              "id",
+              "userId",
+              "alias",
+              "mode",
+              "status",
+              "deletionDeadline",
+              "historyLimitDays",
+              "disclosureVersion",
+              "createdAt",
+              "pluginInstanceId",
+              "address"
+            ],
+            "type": "object"
+          },
+          "draftyak.entities.EmailAddress": {
+            "description": "An address as the hub normalizes it: a dot-atom local part as given, without spaces, quotes or invisible characters, and a lower-case DNS domain with IDN labels as A-labels.",
+            "maxLength": 254,
+            "not": {
+              "pattern": "\\n"
+            },
+            "pattern": "^[-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+(?:[.][-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
+            "type": "string"
+          },
+          "draftyak.normalized-change.ProviderId": {
+            "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces.",
+            "maxLength": 256,
+            "minLength": 1,
+            "not": {
+              "pattern": "\\n"
+            },
+            "pattern": "^[!-~]+$(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/draftyak.native.AccountRecord/$defs/draftyak.entities.Account"
+          },
+          "generation": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "account",
+          "generation"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "DraftYak native API",
+    "version": "1"
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/accounts": {
+      "get": {
+        "operationId": "pageAccounts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "afterId",
+            "required": false,
+            "schema": {
+              "description": "A ULID: 26 upper-case Crockford base32 characters.",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/draftyak.native.AccountPage"
+                },
+                "x-draftyak-max-bytes": 1048576
+              }
+            },
+            "description": "Account page"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INVALID_REQUEST"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "INVALID_REQUEST"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "FORBIDDEN"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "FORBIDDEN"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAVAILABLE"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "UNAVAILABLE"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "x-draftyak-capability": "read",
+        "x-draftyak-native-only": true
+      }
+    },
+    "/api/v1/accounts/{accountId}": {
+      "get": {
+        "operationId": "getAccount",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "required": true,
+            "schema": {
+              "description": "A ULID: 26 upper-case Crockford base32 characters.",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/draftyak.native.AccountRecord"
+                },
+                "x-draftyak-max-bytes": 1048576
+              }
+            },
+            "description": "Account snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INVALID_REQUEST"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "INVALID_REQUEST"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "FORBIDDEN"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "FORBIDDEN"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "NOT_FOUND"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "NOT_FOUND"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAVAILABLE"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "UNAVAILABLE"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "x-draftyak-capability": "read",
+        "x-draftyak-native-only": true
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "operationId": "getOwnerSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/draftyak.entities.OwnerSettings"
+                },
+                "x-draftyak-max-bytes": 4096
+              }
+            },
+            "description": "Owner settings"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INVALID_REQUEST"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "INVALID_REQUEST"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "FORBIDDEN"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "FORBIDDEN"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "NOT_FOUND"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "NOT_FOUND"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAVAILABLE"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "UNAVAILABLE"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "x-draftyak-capability": "read",
+        "x-draftyak-native-only": true
+      },
+      "put": {
+        "operationId": "putOwnerSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/draftyak.entities.OwnerSettings"
+              },
+              "x-draftyak-max-bytes": 4096
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/draftyak.entities.OwnerSettings"
+                },
+                "x-draftyak-max-bytes": 4096
+              }
+            },
+            "description": "Owner settings"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "INVALID_REQUEST"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "INVALID_REQUEST"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "FORBIDDEN"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "FORBIDDEN"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "UNAVAILABLE"
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "UNAVAILABLE"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Unavailable"
+          }
+        },
+        "x-draftyak-capability": "admin",
+        "x-draftyak-native-only": true
+      }
+    }
+  }
+}

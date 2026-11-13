@@ -68,14 +68,37 @@ const assets = [
 		"identity/backup-challenge-migrations/0001_backup_challenges.sql",
 		"identity/backup-challenge-migrations/0001_backup_challenges.sql",
 	],
+	["api/migrations/0001_owner_settings.sql", "api/migrations/0001_owner_settings.sql"],
 ] as const;
 
+function compiledBuildRoot(hub: string, parent: string): string {
+	const supplied = process.env.DRAFTYAK_TEST_HUB_BUILD_DIR;
+	if (supplied === undefined) return path.join(hub, "dist");
+	if (typeof supplied !== "string" || supplied.length === 0 || !path.isAbsolute(supplied))
+		throw new Error("Compiled account approval build directory refused");
+	const selected = path.resolve(supplied);
+	const info = lstatSync(selected);
+	if (
+		path.dirname(selected) !== parent ||
+		!path.basename(selected).startsWith(".m37-fresh-hub-build-") ||
+		!info.isDirectory() ||
+		info.isSymbolicLink() ||
+		realpathSync(selected) !== selected
+	)
+		throw new Error("Compiled account approval build directory refused");
+	const entry = path.join(selected, "index.mjs");
+	const entryInfo = lstatSync(entry);
+	if (!entryInfo.isFile() || entryInfo.isSymbolicLink() || realpathSync(entry) !== entry)
+		throw new Error("Compiled account approval build entry refused");
+	return selected;
+}
 it.each(["cached", "closed-before-use"] as const)(
 	"owns the compiled account approval graph through the original session (%s)",
 	(mode) => {
 		const hub = path.resolve(import.meta.dirname, "../.."),
 			workspace = path.resolve(hub, "../..");
 		const parent = realpathSync(path.join(hub, "node_modules"));
+		const buildRoot = compiledBuildRoot(hub, parent);
 		const stage = realpathSync(mkdtempSync(path.join(parent, ".account-approvals-compiled-test-")));
 		const cleanup = (): void => {
 			if (
@@ -89,13 +112,13 @@ it.each(["cached", "closed-before-use"] as const)(
 			expect(existsSync(stage)).toBe(false);
 		};
 		try {
-			copyFileSync(path.join(hub, "dist/index.mjs"), path.join(stage, "index.mjs"));
+			copyFileSync(path.join(buildRoot, "index.mjs"), path.join(stage, "index.mjs"));
 			copyFileSync(
-				path.join(import.meta.dirname, "fixtures/compiled-account-approvals.mjs"),
+				path.join(import.meta.dirname, "fixtures/native-account-approvals-session.mjs"),
 				path.join(stage, "smoke.mjs"),
 			);
 			for (const [source, relative] of assets) {
-				const built = path.join(hub, "dist", relative);
+				const built = path.join(buildRoot, relative);
 				expect(lstatSync(built).isFile()).toBe(true);
 				expect(lstatSync(built).isSymbolicLink()).toBe(false);
 				expect(readFileSync(built)).toEqual(readFileSync(path.join(hub, "src", source)));
@@ -117,7 +140,6 @@ it.each(["cached", "closed-before-use"] as const)(
 					path.join(stage, "smoke.mjs"),
 					nativeBinding,
 					mode,
-					hub,
 				],
 				{ cwd: stage, env: {}, encoding: "utf8", timeout: 60_000, windowsHide: true, shell: false },
 			);
@@ -127,15 +149,59 @@ it.each(["cached", "closed-before-use"] as const)(
 				/^\(node:\d+\) \[PERM0001\] SecurityWarning: The flag --allow-addons must be used with extreme caution\. It could invalidate the permission model\.\r?\n\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)\r?\n$/,
 			);
 			expect(JSON.parse(run.stdout)).toEqual({
-				ok: true,
+				schema: "native-account-approvals-session/v1",
 				mode,
-				schemas: 18,
-				cached: mode === "cached",
+				checks: [
+					"single-compiled-namespace",
+					"approval-constructor-not-exported",
+					"original-key-live",
+					"original-store-readable",
+					...(mode === "cached"
+						? [
+								"original-first-zero-users-before-getter",
+								"original-first-zero-users-after-getter",
+								"original-facade-frozen",
+								"original-facade-exact-methods",
+								"original-cached-zero-users-before-getter",
+								"original-cached-zero-users-after-getter",
+								"original-facade-cached",
+							]
+						: []),
+					"original-getter-refused",
+					"original-key-erased",
+					"original-store-closed",
+					"original-repeat-close-resolved",
+					"same-seed-reopen-original-hub",
+					"reopened-store-readable",
+					"reopened-first-zero-users-before-getter",
+					"reopened-first-zero-users-after-getter",
+					"reopened-facade-frozen",
+					"reopened-facade-exact-methods",
+					"reopened-cached-zero-users-before-getter",
+					"reopened-cached-zero-users-after-getter",
+					"reopened-facade-cached",
+					...(mode === "cached" ? ["facade-is-per-session"] : []),
+					"reopened-getter-refused",
+					"reopened-key-erased",
+					"reopened-store-closed",
+					"owned-directory-removed",
+				],
 				beforeBootstrap: true,
-				closedRefused: true,
-				keyErased: true,
-				reopened: true,
-				runtimeConstructor: false,
+				preBootstrapWitnesses: [
+					...(mode === "cached"
+						? [
+								["original", "first"],
+								["original", "cached"],
+							]
+						: []),
+					["reopened", "first"],
+					["reopened", "cached"],
+				].map(([phase, call]) => ({
+					phase,
+					call,
+					before: { users: 0, bootstrapDone: 0, ownerUserId: null },
+					after: { users: 0, bootstrapDone: 0, ownerUserId: null },
+				})),
 			});
 		} finally {
 			cleanup();

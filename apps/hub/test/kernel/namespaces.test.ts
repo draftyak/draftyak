@@ -17,6 +17,10 @@ const requiredCredentialAsset = path.join(
 const requiredAccountAsset = path.join(HUB_NAMESPACES.accounts, "0001_accounts.sql");
 const requiredRegistryAsset = path.join(HUB_NAMESPACES.pluginregistry, "0001_registry.sql");
 const requiredBackupAsset = path.join(HUB_NAMESPACES.backup, "0001_backup_recovery.sql");
+const requiredOwnerSettingsAsset = path.join(
+	HUB_NAMESPACES.ownersettings,
+	"0001_owner_settings.sql",
+);
 const source = path.resolve(import.meta.dirname, "../../src");
 const expectedFolders = [
 	["audit", "store/migrations/audit"],
@@ -37,6 +41,7 @@ const expectedFolders = [
 	["backup", "recovery/backup-migrations"],
 	["backupops", "identity/backup-migrations"],
 	["backupchallenges", "identity/backup-challenge-migrations"],
+	["ownersettings", "api/migrations"],
 ] as const;
 const namespaces = expectedFolders.map(([namespace]) => namespace);
 const requiredAssets = [
@@ -61,6 +66,7 @@ const requiredAssets = [
 	"recovery/backup-migrations/0001_backup_recovery.sql",
 	"identity/backup-migrations/0001_backup_operations.sql",
 	"identity/backup-challenge-migrations/0001_backup_challenges.sql",
+	"api/migrations/0001_owner_settings.sql",
 ].map((file) => path.join(source, file));
 const approvalAssets = [
 	["outbox", "outbox/propose-migrations/0001_proposals.sql"],
@@ -87,7 +93,7 @@ function recorder(): { store: HubStore; calls: string[] } {
 	return { store, calls };
 }
 
-it("checks all twenty-one required assets and migrates all eighteen namespaces exactly once", async () => {
+it("checks all twenty-two required assets and migrates all nineteen namespaces exactly once", async () => {
 	const { store, calls } = recorder();
 	await migrateHubSchemas(store);
 	expect(Object.keys(HUB_NAMESPACES)).toEqual(namespaces);
@@ -109,8 +115,9 @@ it("checks all twenty-one required assets and migrates all eighteen namespaces e
 	expect(access).toHaveBeenCalledWith(requiredAccountAsset, constants.R_OK);
 	expect(access).toHaveBeenCalledWith(requiredRegistryAsset, constants.R_OK);
 	expect(access).toHaveBeenCalledWith(requiredBackupAsset, constants.R_OK);
+	expect(access).toHaveBeenCalledWith(requiredOwnerSettingsAsset, constants.R_OK);
 	expect(calls).toEqual(namespaces);
-	expect(new Set(calls).size).toBe(18);
+	expect(new Set(calls).size).toBe(19);
 });
 
 it("refuses a missing revision immutability asset before later namespaces can migrate", async () => {

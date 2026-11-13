@@ -32,6 +32,7 @@ const config: UserConfig = defineConfig({
 			from: "src/identity/backup-challenge-migrations/*.sql",
 			to: "dist/identity/backup-challenge-migrations",
 		},
+		{ from: "src/api/migrations/*.sql", to: "dist/api/migrations" },
 	],
 });
 export default config;
