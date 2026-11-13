@@ -207,11 +207,20 @@ function appFile(app, relative) {
 	return result;
 }
 async function admitted(record, format) {
+	const callerCheckpoint = checkpoint;
+	checkpoint = 20;
 	const admission = await openNativeAppAdmission(record.original);
+	checkpoint = 21;
 	assert.equal(typeof admission.close, "function");
-	if (format === 2)
+	if (format === 2) {
+		checkpoint = 22;
 		assert.doesNotThrow(() => assertNativeAppAdmissionCurrent(admission, record.original));
-	assert.equal(await nativeAppAdmissionFormat(record.original), format);
+	}
+	checkpoint = 23;
+	const observedFormat = await nativeAppAdmissionFormat(record.original);
+	checkpoint = 24;
+	assert.equal(observedFormat, format);
+	checkpoint = callerCheckpoint;
 	return admission;
 }
 function pin(row) {
@@ -266,28 +275,43 @@ function surface(row) {
 const pinKey = (row) => JSON.stringify([row.id, row.package.version]);
 const surfaceKey = (row) => JSON.stringify([row.id, row.version]);
 async function inputData(record, admission, manifest) {
+	const callerCheckpoint = checkpoint;
+	checkpoint = 30;
 	const inputs = await nativeAppAdmissionInputs(admission, record.original);
+	checkpoint = 31;
 	assert.equal(inputs.version, manifest.version);
+	checkpoint = 32;
 	assert.deepEqual(pins(inputs.bundles), pins(manifest.bundles));
+	checkpoint = callerCheckpoint;
 	return inputs;
 }
 async function selectedArchives(record, admission, app, manifest) {
+	const callerCheckpoint = checkpoint;
 	const ids = new Set();
 	for (const selected of manifest.bundles) {
+		checkpoint = 40;
 		assert.equal(typeof selected.id, "string");
 		assert.equal(ids.has(selected.id), false);
 		ids.add(selected.id);
+		checkpoint = 41;
 		const archivePath = appFile(app, selected.archive);
 		const file = manifest.files.find((row) => row.path === selected.archive);
 		assert.ok(file);
+		checkpoint = 42;
 		const staged = readFileSync(archivePath);
+		checkpoint = 43;
 		assert.equal(staged.length, file.bytes);
 		assert.equal(createHash("sha256").update(staged).digest("hex"), file.sha256);
+		checkpoint = 44;
 		const captured = await nativeAppAdmissionArchive(admission, record.original, selected.id);
+		checkpoint = 45;
 		assert.equal(captured instanceof Uint8Array, true);
+		checkpoint = 46;
 		assert.deepEqual(Buffer.from(captured), staged);
 	}
+	checkpoint = 47;
 	assert.equal(ids.size, 5);
+	checkpoint = callerCheckpoint;
 }
 async function positive(record, app, manifest) {
 	const admission = await admitted(record, 1);
@@ -626,13 +650,24 @@ async function run() {
 }
 
 let receipt;
-try {
-	try { receipt = await run(); } finally { await cleanup(); }
-	assert.equal(completed, true);
-	process.stdout.write(JSON.stringify(receipt) + "\n");
-} catch {
+let runFailed = false;
+let runFailureStep = 0;
+let cleanupFailed = false;
+try { receipt = await run(); }
+catch { runFailed = true; runFailureStep = checkpoint; }
+try { await cleanup(); }
+catch { cleanupFailed = true; }
+function failure(step, variant) {
 	const reportedMode = modes.has(mode) ? mode : "entry";
-	process.stderr.write(`DYTEST native application fixture checkpoint step=${checkpoint} variant=0\n`);
+	process.stderr.write(`DYTEST native application fixture checkpoint step=${step} variant=${variant}\n`);
 	process.stderr.write(`DYTEST native application fixture failed (${reportedMode})\n`);
 	process.exitCode = 1;
+}
+if (runFailed) failure(runFailureStep, cleanupFailed ? 2 : 0);
+else if (cleanupFailed) failure(60, 1);
+else {
+	try {
+		assert.equal(completed, true);
+		process.stdout.write(JSON.stringify(receipt) + "\n");
+	} catch { failure(61, 3); }
 }
