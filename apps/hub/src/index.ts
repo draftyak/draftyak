@@ -5,6 +5,12 @@ export {
 	NativeAccounts,
 } from "./accounts/records.ts";
 export {
+	AccountReadError,
+	type AccountReadErrorCode,
+	createNativeAccountReads,
+	type NativeAccountReads,
+} from "./api/accounts.ts";
+export {
 	buildNativeApiOpenApi,
 	type NativeApiOpenApiDescriptor,
 	type NativeApiOpenApiDocument,
