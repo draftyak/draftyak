@@ -2,6 +2,11 @@ import { canonicalize } from "@draftyak/protocol/jcs";
 import type { NativeDevicePeer } from "../authz/native-peer.ts";
 import type { HubSession } from "../lifecycle/session.ts";
 import {
+	createNativeAccountApiRoutes,
+	NATIVE_ACCOUNT_API_ROUTE_DESCRIPTORS,
+	type NativeAccountApiRouteDescriptor,
+} from "./account-routes.ts";
+import {
 	createOwnerSettings,
 	OWNER_SETTINGS_MAX_BYTES,
 	OwnerSettingsError,
@@ -24,7 +29,7 @@ export interface NativeApiRouter {
 }
 
 const SETTINGS_SCHEMA = "draftyak.entities.OwnerSettings";
-export interface NativeApiRouteDescriptor {
+interface SettingsApiRouteDescriptor {
 	readonly operationId: "getOwnerSettings" | "putOwnerSettings";
 	readonly method: "GET" | "PUT";
 	readonly path: "/api/v1/settings";
@@ -47,6 +52,7 @@ export interface NativeApiRouteDescriptor {
 		capability: "read" | "admin";
 	}>;
 }
+export type NativeApiRouteDescriptor = SettingsApiRouteDescriptor | NativeAccountApiRouteDescriptor;
 
 const encoder = new TextEncoder();
 const ERROR_STATUS = Object.freeze({
@@ -72,7 +78,7 @@ function settingsResponse(value: OwnerSettingsValue): NativeApiResponse {
 	return Object.freeze({ status: 200, body });
 }
 
-interface Route extends NativeApiRouteDescriptor {
+interface Route extends SettingsApiRouteDescriptor {
 	handle(
 		settings: OwnerSettingsHandle,
 		peer: NativeDevicePeer,
@@ -110,8 +116,8 @@ const ROUTES: readonly Route[] = Object.freeze([
 ]);
 
 /** Metadata describes these handlers; the bound service enforces live device rights. */
-export const NATIVE_API_ROUTE_DESCRIPTORS: readonly NativeApiRouteDescriptor[] = Object.freeze(
-	ROUTES.map((route) =>
+export const NATIVE_API_ROUTE_DESCRIPTORS: readonly NativeApiRouteDescriptor[] = Object.freeze([
+	...ROUTES.map((route) =>
 		Object.freeze({
 			operationId: route.operationId,
 			method: route.method,
@@ -122,11 +128,13 @@ export const NATIVE_API_ROUTE_DESCRIPTORS: readonly NativeApiRouteDescriptor[] =
 			security: route.security,
 		}),
 	),
-);
+	...NATIVE_ACCOUNT_API_ROUTE_DESCRIPTORS,
+]);
 
 /** Peer identity comes from the native caller, separately from untrusted request data. */
 export function createNativeApiRouter(session: HubSession): NativeApiRouter {
 	const settings = createOwnerSettings(session);
+	const accounts = createNativeAccountApiRoutes(session);
 	return Object.freeze({
 		dispatch(
 			peer: NativeDevicePeer,
@@ -136,6 +144,8 @@ export function createNativeApiRouter(session: HubSession): NativeApiRouter {
 		): NativeApiResponse {
 			if (typeof method !== "string" || typeof path !== "string")
 				return errorResponse("INVALID_REQUEST");
+			const accountResponse = accounts.dispatch(peer, method, path, body);
+			if (accountResponse !== undefined) return accountResponse;
 			const route = ROUTES.find((entry) => entry.method === method && entry.path === path);
 			if (route === undefined) return errorResponse("NOT_FOUND");
 			try {

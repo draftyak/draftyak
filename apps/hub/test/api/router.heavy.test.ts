@@ -149,7 +149,7 @@ afterEach(async () => {
 	if (failed) throw new Error("DYTEST router fixture cleanup incomplete");
 });
 
-it("describes exactly the settings handlers that dispatch invokes", async () => {
+it("describes exactly the shared handlers that dispatch invokes", async () => {
 	expect(NATIVE_API_ROUTE_DESCRIPTORS).toEqual([
 		{
 			operationId: "getOwnerSettings",
@@ -178,6 +178,33 @@ it("describes exactly the settings handlers that dispatch invokes", async () => 
 			],
 			security: { nativeOnly: true, capability: "admin" },
 		},
+		{
+			operationId: "pageAccounts",
+			method: "GET",
+			path: "/api/v1/accounts",
+			request: { schemaRef: null, maxBytes: 0 },
+			response: { schemaRef: "draftyak.native.AccountPage", maxBytes: 1_048_576 },
+			errors: [
+				{ status: 400, code: "INVALID_REQUEST" },
+				{ status: 403, code: "FORBIDDEN" },
+				{ status: 503, code: "UNAVAILABLE" },
+			],
+			security: { nativeOnly: true, capability: "read" },
+		},
+		{
+			operationId: "getAccount",
+			method: "GET",
+			path: "/api/v1/accounts/{accountId}",
+			request: { schemaRef: null, maxBytes: 0 },
+			response: { schemaRef: "draftyak.native.AccountRecord", maxBytes: 1_048_576 },
+			errors: [
+				{ status: 400, code: "INVALID_REQUEST" },
+				{ status: 403, code: "FORBIDDEN" },
+				{ status: 404, code: "NOT_FOUND" },
+				{ status: 503, code: "UNAVAILABLE" },
+			],
+			security: { nativeOnly: true, capability: "read" },
+		},
 	]);
 	expect(Object.isFrozen(NATIVE_API_ROUTE_DESCRIPTORS)).toBe(true);
 	for (const entry of NATIVE_API_ROUTE_DESCRIPTORS) {
@@ -194,15 +221,28 @@ it("describes exactly the settings handlers that dispatch invokes", async () => 
 	}
 	const context = await open(),
 		administrator = await owner(context);
+	// A real generated identifier is query DATA; this fixture has no account rows.
+	const missingAccountId = native.idOf(administrator);
 	for (const entry of NATIVE_API_ROUTE_DESCRIPTORS) {
+		const path =
+			entry.operationId === "getAccount"
+				? entry.path.replace("{accountId}", missingAccountId)
+				: entry.path;
 		const response = context.router.dispatch(
 			administrator.peer,
 			entry.method,
-			entry.path,
+			path,
 			entry.method === "PUT" ? encode(SETTINGS) : undefined,
 		);
-		if (entry.method === "GET") refused(response, 404, "NOT_FOUND");
-		else ok(response, SETTINGS);
+		if (entry.path === ROUTE) {
+			if (entry.method === "GET") refused(response, 404, "NOT_FOUND");
+			else ok(response, SETTINGS);
+		} else if (entry.operationId === "pageAccounts") {
+			ok(response, { accounts: [], nextId: null });
+		} else {
+			expect(entry.operationId).toBe("getAccount");
+			refused(response, 404, "NOT_FOUND");
+		}
 	}
 	ok(context.router.dispatch(administrator.peer, "GET", ROUTE, undefined), SETTINGS);
 });
