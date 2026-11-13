@@ -69,6 +69,7 @@ const tables: readonly Table[] = [
 		"id,kind,owner_user_id,epoch,state,payload,audit_seq,audit_mac,mac",
 	),
 	table("native_backup_challenges", challengeColumns),
+	table("native_runtime_settings", "singleton,sync_paused", "singleton"),
 	..."audit,core,devices,jobs,events,revisions,credentials,tickets,accounts,pluginregistry,outbox,challenges,verifier,admin,adminchallenges,backup,backupops,backupchallenges"
 		.split(",")
 		.flatMap((name) => [

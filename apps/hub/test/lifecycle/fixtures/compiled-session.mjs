@@ -7,7 +7,7 @@ import path from "node:path";
 // These expectations are independent of the production namespace inventory.
 const migrations = [
 	["audit", ["0001_chain"]],
-	["core", ["0001_identity"]],
+	["core", ["0001_identity", "0002_native_runtime_state"]],
 	["devices", ["0001_devices"]],
 	["jobs", ["0001_jobs"]],
 	["events", ["0001_events"]],
@@ -33,6 +33,7 @@ const businessTables = [
 	"outbox", "approval_challenges", "pair_confirm_operations", "approvals",
 	"native_admin_operations", "native_admin_challenges", "native_backup_recovery",
 	"native_backup_operations", "native_backup_challenges",
+	"native_runtime_settings",
 ].sort();
 let phase = "admission";
 
@@ -103,6 +104,8 @@ async function main() {
 					names.map((name) => ({ name })));
 			}
 			assert.equal(db.get("SELECT count(*) AS n FROM main.native_backup_recovery").n, 0);
+			assert.deepEqual(db.get("SELECT singleton, sync_paused FROM main.native_runtime_settings"),
+				{ singleton: 1, sync_paused: 0 });
 		});
 		migrate = HubStore.prototype.migrate;
 		HubStore.prototype.migrate = function (namespace) {
