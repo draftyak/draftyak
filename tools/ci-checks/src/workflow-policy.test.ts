@@ -595,8 +595,8 @@ describe("workflow policy", () => {
 		["heavy selection environment", `      SPIKE: \${{ matrix.spike }}`, "      SPIKE: ''"],
 		[
 			"Windows condition",
-			"      - run: pnpm verify\n",
-			"      - if: false\n        run: pnpm verify\n",
+			"      - run: pnpm verify --profile windows-core\n",
+			"      - if: false\n        run: pnpm verify --profile windows-core\n",
 		],
 	])("refuses changed CI execution contract: %s", (_, before, after) => {
 		const file = ".github/workflows/ci.yml";
@@ -670,6 +670,7 @@ describe("workflow policy", () => {
 			"spike-run",
 			"spikes",
 			"heavy",
+			"windows-tests",
 			"windows",
 			"macos",
 			"required",
@@ -677,7 +678,7 @@ describe("workflow policy", () => {
 		expect(ci.required).toMatchObject({
 			if: "always()",
 			name: `\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`,
-			needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"],
+			needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "windows-tests", "macos"],
 		});
 		const reportedJobs = files.flatMap((file) =>
 			Object.entries(jobs(path.basename(file))).map(([id, job]) => ({
@@ -767,14 +768,25 @@ describe("workflow policy", () => {
 		expect(ci.windows?.if).toBe(
 			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && needs.changes.outputs.native-transport == 'true'))",
 		);
-		expect(ci.windows?.steps.find((step) => step.run === "pnpm verify")).toEqual({
-			run: "pnpm verify",
+		expect(
+			ci.windows?.steps.find((step) => step.run === "pnpm verify --profile windows-core"),
+		).toEqual({
+			run: "pnpm verify --profile windows-core",
 			env: { TURBO_CONCURRENCY: "1" },
 		});
 		expect(ci.windows?.steps.at(-1)?.run).toBe(
 			"pnpm exec node tools/ci-checks/src/native-transport.ts run",
 		);
-		for (const name of ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"]) {
+		for (const name of [
+			"changes",
+			"cheap",
+			"full",
+			"spikes",
+			"heavy",
+			"windows",
+			"windows-tests",
+			"macos",
+		]) {
 			const job = ci[name];
 			expect(job?.outputs?.source, name).toBe(`\${{ steps.source.outputs.source }}`);
 			const steps = job?.steps ?? [];
@@ -2042,7 +2054,9 @@ describe("Windows native event-page execution", () => {
 			run: command,
 		});
 		const eventAt = steps.findIndex((entry) => entry.run === command);
-		expect(eventAt).toBeGreaterThan(steps.findIndex((entry) => entry.run === "pnpm verify"));
+		expect(eventAt).toBeGreaterThan(
+			steps.findIndex((entry) => entry.run === "pnpm verify --profile windows-core"),
+		);
 		expect(eventAt).toBeLessThan(steps.findIndex((entry) => entry.id === "native"));
 	});
 
@@ -2088,5 +2102,142 @@ describe("Windows native event-page execution", () => {
 		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
 			"must preserve windows command and its execution controls",
 		);
+	});
+});
+
+describe("Windows verification workload partition", () => {
+	const file = ".github/workflows/ci.yml";
+	const source = (): string => read(file).replaceAll("\r\n", "\n");
+	interface PartitionJob {
+		if?: string;
+		"runs-on"?: string;
+		"timeout-minutes"?: number;
+		needs?: string | string[];
+		outputs?: Record<string, string>;
+		steps: Record<string, unknown>[];
+	}
+	const jobs = (text: string): Record<string, PartitionJob> =>
+		(parseYaml(text).value as unknown as { jobs: Record<string, PartitionJob> }).jobs;
+	const block = (text: string): string => {
+		const first = text.indexOf("  windows-tests:\n");
+		const last = text.indexOf("  windows:\n", first);
+		expect(first).toBeGreaterThanOrEqual(0);
+		expect(last).toBeGreaterThan(first);
+		return text.slice(first, last);
+	};
+
+	it("requires both Windows workloads with separate profiles and unchanged native custody", () => {
+		const current = source();
+		expect(checkWorkflow(file, current, toolchain)).toEqual([]);
+		const ci = jobs(current),
+			tests = ci["windows-tests"],
+			core = ci.windows;
+		if (!tests || !core) throw new Error("both Windows workloads must exist");
+		expect(tests.if).toBe(core.if);
+		expect(ci.required?.needs).toEqual([
+			"changes",
+			"cheap",
+			"full",
+			"spikes",
+			"heavy",
+			"windows",
+			"windows-tests",
+			"macos",
+		]);
+		for (const [name, profile] of [
+			["windows-tests", "windows-tests"],
+			["windows", "windows-core"],
+		] as const) {
+			const selected = ci[name];
+			expect(selected).toBeDefined();
+			if (!selected) throw new Error("Windows workload is missing");
+			expect(selected["runs-on"]).toBe("windows-2025");
+			expect(selected["timeout-minutes"]).toBe(30);
+			expect(
+				selected.steps.find((step) => step.run === "pnpm verify --profile " + profile),
+			).toEqual({ run: "pnpm verify --profile " + profile, env: { TURBO_CONCURRENCY: "1" } });
+		}
+		expect(tests.outputs).toEqual({ source: "$" + "{{ steps.source.outputs.source }}" });
+		expect(tests.steps.some((step) => step.id === "native")).toBe(false);
+		expect(tests.steps.some((step) => String(step.run).includes("events-native-page"))).toBe(false);
+		const native = core.steps.find((step) => step.id === "native");
+		expect(native).toMatchObject({
+			if: "needs.changes.outputs.native-transport == 'true'",
+			run: "pnpm exec node tools/ci-checks/src/native-transport.ts run",
+		});
+		expect(
+			core.steps.filter((step) => String(step.run).includes("events-native-page")),
+		).toHaveLength(1);
+	});
+
+	it("refuses to omit the test workload from required dependencies", () => {
+		const current = source();
+		const before = "needs: [changes, cheap, full, spikes, heavy, windows, windows-tests, macos]";
+		expect(current).toContain(before);
+		const mutated = current.replace(
+			before,
+			"needs: [changes, cheap, full, spikes, heavy, windows, macos]",
+		);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"must preserve required job execution controls",
+		);
+	});
+
+	const moveRustAfterInstall = (text: string): string => {
+		const first = text.indexOf("      - uses: dtolnay/rust-toolchain@");
+		const last = text.indexOf("      - uses: Swatinem/rust-cache@", first);
+		expect(first).toBeGreaterThanOrEqual(0);
+		expect(last).toBeGreaterThan(first);
+		const rust = text.slice(first, last);
+		const without = text.slice(0, first) + text.slice(last);
+		const install = "      - run: pnpm install --frozen-lockfile\n";
+		expect(without).toContain(install);
+		return without.replace(install, install + rust);
+	};
+	const changes: readonly (readonly [string, (text: string) => string])[] = [
+		["dependency", (text) => text.replace("    needs: changes", "    needs: full")],
+		["admission", (text) => text.replace(/^    if: .+$/m, "    if: false")],
+		["runner", (text) => text.replace("runs-on: windows-2025", "runs-on: ubuntu-24.04")],
+		["budget", (text) => text.replace("timeout-minutes: 30", "timeout-minutes: 31")],
+		[
+			"Rust condition",
+			(text) =>
+				text.replace(
+					"hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'",
+					"needs.changes.outputs.native-transport == 'true'",
+				),
+		],
+		["Rust order", moveRustAfterInstall],
+		["frozen install", (text) => text.replace("pnpm install --frozen-lockfile", "pnpm install")],
+		[
+			"Docker prerequisite",
+			(text) => text.replace("          Start-Service -Name docker -ErrorAction Stop\n", ""),
+		],
+		["profile", (text) => text.replace("--profile windows-tests", "--profile default")],
+		[
+			"serial package orchestration",
+			(text) => text.replace("TURBO_CONCURRENCY: '1'", "TURBO_CONCURRENCY: '2'"),
+		],
+		[
+			"source output",
+			(text) =>
+				text.replace("source: $" + "{{ steps.source.outputs.source }}", "source: unchecked"),
+		],
+		[
+			"source capture",
+			(text) =>
+				text.replace(
+					"node tools/ci-checks/src/verification-receipt.ts capture",
+					"node tools/ci-checks/src/verification-receipt.ts report",
+				),
+		],
+	];
+	it.each(changes)("refuses weakened Windows test %s", (_name, change) => {
+		const current = source(),
+			original = block(current),
+			changed = change(original);
+		expect(changed).not.toBe(original);
+		const mutated = current.replace(original, changed);
+		expect(checkWorkflow(file, mutated, toolchain).length).toBeGreaterThan(0);
 	});
 });

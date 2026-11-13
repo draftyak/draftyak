@@ -394,6 +394,57 @@ jobs:
           appendFileSync(process.env.GITHUB_OUTPUT, `completed=${JSON.stringify(process.env.HEAVY.split('\n'))}\n`);
           NODE
 
+  windows-tests:
+    needs: changes
+    outputs:
+      source: ${{ steps.source.outputs.source }}
+    if: needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && needs.changes.outputs.native-transport == 'true'))
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - id: source
+        run: node tools/ci-checks/src/verification-receipt.ts capture
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master on 2026-10-16
+        if: hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'
+        with:
+          toolchain: 1.95.0
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: needs.changes.outputs.native-transport == 'true'
+        with:
+          workspaces: crates
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.job }}-${{ hashFiles('pnpm-lock.yaml', '.github/workflows/**', '**/*.ts', '**/*.json', '!**/node_modules/**') }}
+          restore-keys: turbo-${{ runner.os }}-${{ github.job }}-
+      - run: pnpm install --frozen-lockfile
+      # Warm the hosted runner's engine before parallel test capability probes.
+      - name: Initialize the Windows container service
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          Start-Service -Name docker -ErrorAction Stop
+          (Get-Service -Name docker).WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+          $dockerOs = docker version --format '{{.Server.Os}}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($dockerOs -notin @('windows', 'linux')) { throw 'Docker engine did not report its platform' }
+          Write-Output "Docker engine platform: $dockerOs"
+      - run: pnpm verify --profile windows-tests
+        env:
+          # Package suites each start their own test workers on this runner.
+          TURBO_CONCURRENCY: '1'
+
   windows:
     needs: changes
     outputs:
@@ -447,7 +498,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($dockerOs -notin @('windows', 'linux')) { throw 'Docker engine did not report its platform' }
           Write-Output "Docker engine platform: $dockerOs"
-      - run: pnpm verify
+      - run: pnpm verify --profile windows-core
         env:
           # Package suites each start their own test workers on this runner.
           TURBO_CONCURRENCY: '1'
@@ -508,7 +559,7 @@ jobs:
   required:
     # The merge rule requires `required`, so a draft run's cheap-only result reports under another name.
     name: ${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}
-    needs: [changes, cheap, full, spikes, heavy, windows, macos]
+    needs: [changes, cheap, full, spikes, heavy, windows, windows-tests, macos]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
