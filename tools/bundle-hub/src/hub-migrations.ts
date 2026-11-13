@@ -17,9 +17,6 @@ export const HUB_MIGRATION_FILES: readonly string[] = Object.freeze([
 ]);
 
 const expected = new Set(HUB_MIGRATION_FILES);
-const directories = [
-	...new Set(HUB_MIGRATION_FILES.map((file) => file.slice(0, file.lastIndexOf("/") + 1))),
-];
 
 export function assertHubMigrations(files: readonly Pick<FileRecord, "path" | "bytes">[]): void {
 	const present = new Map(files.map((file) => [file.path, file.bytes]));
@@ -28,9 +25,7 @@ export function assertHubMigrations(files: readonly Pick<FileRecord, "path" | "b
 		files.some(
 			(file) =>
 				file.path.startsWith("migrations/") ||
-				(file.path.endsWith(".sql") &&
-					directories.some((directory) => file.path.startsWith(directory)) &&
-					!expected.has(file.path)),
+				(file.path.endsWith(".sql") && !expected.has(file.path)),
 		)
 	)
 		throw new Error("hub migration inventory is incomplete or misplaced");
