@@ -42,6 +42,7 @@ export {
 } from "./drafts/freeze.ts";
 export { normalizeDraftBody, normalizeDraftContent } from "./drafts/normalize.ts";
 export {
+	type ConsumedDraftDisposition,
 	type DraftAppend,
 	type DraftBinding,
 	type DraftCreation,
