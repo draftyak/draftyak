@@ -24,7 +24,7 @@ describe("spikeVitestConfig", () => {
 	it("keeps M0.1's tiers and adds a requires: tag per capability, skipping only missing ones", () => {
 		vi.stubEnv("CI", "");
 		const heavy = config("heavy").test;
-		expect(heavy?.include).toEqual(["**/*.heavy.test.ts"]);
+		expect(heavy?.include).toEqual(["**/*.heavy.test.{ts,tsx}"]);
 		const names = [...Object.keys(capabilities), "nowhere", "here"].map(
 			(name) => `requires:${name}`,
 		);

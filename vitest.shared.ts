@@ -4,10 +4,10 @@ import { type ConfigEnv, defaultExclude, type ViteUserConfig } from "vitest/conf
 export type Tier = "unit" | "heavy" | "live" | "device";
 
 export const tierFiles: Readonly<Record<Tier, string>> = {
-	unit: "**/*.test.ts",
-	heavy: "**/*.heavy.test.ts",
-	live: "**/*.live.test.ts",
-	device: "**/*.device.test.ts",
+	unit: "**/*.test.{ts,tsx}",
+	heavy: "**/*.heavy.test.{ts,tsx}",
+	live: "**/*.live.test.{ts,tsx}",
+	device: "**/*.device.test.{ts,tsx}",
 };
 
 // The tier is Vitest's --mode (default "test" = unit): a plain flag, the same in every shell.
