@@ -50,6 +50,9 @@ importers:
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@modelcontextprotocol/client':
+        specifier: 2.3.1
+        version: 2.3.1
       '@peculiar/x509':
         specifier: 2.2.0
         version: 2.2.0
