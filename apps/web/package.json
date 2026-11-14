@@ -20,6 +20,7 @@
   "dependencies": {
     "@draftyak/content": "workspace:*",
     "@draftyak/protocol": "workspace:*",
+    "@tanstack/react-router": "1.170.46",
     "@tanstack/react-virtual": "3.14.26",
     "react": "19.3.1",
     "react-dom": "19.3.1",
