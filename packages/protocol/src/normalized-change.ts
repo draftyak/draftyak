@@ -1,6 +1,5 @@
 import * as z from "zod";
-import { wellFormedText } from "./extension.ts";
-import { Base64Url, Ulid, UtcMs } from "./scalars.ts";
+import { Base64Url, Ulid, UtcMs, boundedText as wellFormedText } from "./scalars.ts";
 
 // One sync page carries at most MAX_CHANGES changes; bytes travel inline up to MAX_INLINE_BYTES,
 // and anything larger as a blob the hub holds.

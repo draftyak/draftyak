@@ -107,6 +107,7 @@ export async function namedFiles(
 	insensitive: boolean = process.platform === "win32",
 	readDirectory: ReadDirectory = (dir) => readdir(dir, { withFileTypes: true }),
 	statPath: StatPath = (target) => lstat(target),
+	readCapacity: () => number = () => 4,
 ): Promise<string[]> {
 	if (!basename || /[/\\\0*?[\]]/.test(basename)) throw new Error("invalid basename");
 	root = path.resolve(root);
@@ -255,8 +256,18 @@ export async function namedFiles(
 			}
 		};
 		const advance = (): void => {
+			let capacity = 0;
+			if (!failed) {
+				try {
+					capacity = readCapacity();
+					if (!Number.isInteger(capacity) || capacity < 1 || capacity > 64) throw inventoryFailed();
+				} catch {
+					failed = true;
+					first = undefined;
+				}
+			}
 			// Refill each free slot immediately; a slow sibling must not stall the whole frontier.
-			while (!failed && active < 4 && first) {
+			while (!failed && active < capacity && first) {
 				const current = first;
 				first = current.next;
 				active += 1;
@@ -310,10 +321,18 @@ export async function namedWorktreeFiles(
 	insensitive: boolean = process.platform === "win32",
 	readDirectory: ReadDirectory = (dir) => readdir(dir, { withFileTypes: true }),
 	statPath: StatPath = (target) => lstat(target),
+	readCapacity: () => number = () => 4,
 ): Promise<string[]> {
 	try {
 		try {
-			const found = await namedFiles(basename, root, insensitive, readDirectory, statPath);
+			const found = await namedFiles(
+				basename,
+				root,
+				insensitive,
+				readDirectory,
+				statPath,
+				readCapacity,
+			);
 			const kind = await statPath(root);
 			if (!kind.isDirectory() || kind.isSymbolicLink()) throw inventoryFailed();
 			return found;

@@ -27,6 +27,7 @@ Object.freeze(EVENT_KINDS);
 export type EventKind = (typeof EVENT_KINDS)[number];
 const kinds = new Set<string>(EVENT_KINDS);
 const assertNativeTransaction = WorkDatabase.prototype.assertTransaction;
+const invokeOriginal = Reflect.apply;
 export interface EventInput {
 	readonly userId: string;
 	readonly accountId: string | null;
@@ -38,6 +39,12 @@ interface AccountRestoreChangedInput {
 	readonly userId: string;
 	readonly accountId: string;
 	readonly channel: "email" | "chat";
+}
+interface OutboxRestoreChangedInput {
+	readonly userId: string;
+	readonly accountId: string;
+	readonly dataClass: DataClass;
+	readonly outboxId: string;
 }
 export interface EventRecord extends EventInput {
 	readonly seq: number;
@@ -225,6 +232,25 @@ export class EventLog {
 		return this.#appendCaptured(sql, data, at);
 	}
 
+	/** Fixed outbox-restore invalidation inside the receiver's original native write. */
+	appendOutboxRestoreChangedInTransaction(
+		sql: SqlTransaction,
+		raw: OutboxRestoreChangedInput,
+	): EventRecord {
+		invokeOriginal(assertNativeTransaction, this.#database, [sql]);
+		const captured = fields(raw, ["userId", "accountId", "dataClass", "outboxId"]);
+		const data = input({
+			userId: captured.userId,
+			accountId: id(captured.accountId),
+			dataClass: captured.dataClass,
+			kind: "outbox.changed",
+			ids: [captured.outboxId],
+		});
+		const at = integer(this.#now());
+		invokeOriginal(assertNativeTransaction, this.#database, [sql]);
+		return this.#appendCaptured(sql, data, at);
+	}
+
 	page(scope: WorkScope, raw: EventPageInput): EventPage {
 		const values = fields(raw, ["userId", "afterSeq"], ["limit"]);
 		const userId = id(values.userId);
@@ -302,6 +328,7 @@ export class EventLog {
 }
 
 const originalAccountRestoreAppend = EventLog.prototype.appendAccountRestoreChangedInTransaction;
+const originalOutboxRestoreAppend = EventLog.prototype.appendOutboxRestoreChangedInTransaction;
 
 /** Deep native DATA entry only; the fixed offline receiver owns its transaction. */
 export function appendAccountRestoreChangedInTransaction(
@@ -312,6 +339,20 @@ export function appendAccountRestoreChangedInTransaction(
 	try {
 		if (typeof log !== "object" || log === null || types.isProxy(log)) throw new WorkError("scope");
 		return originalAccountRestoreAppend.call(log as EventLog, tx, raw);
+	} catch {
+		throw new WorkError("scope");
+	}
+}
+
+/** Fixed restore DATA only; this function creates no scope, transaction or send authority. */
+export function appendOutboxRestoreChangedInTransaction(
+	log: unknown,
+	tx: SqlTransaction,
+	raw: OutboxRestoreChangedInput,
+): EventRecord {
+	try {
+		if (typeof log !== "object" || log === null || types.isProxy(log)) throw new WorkError("scope");
+		return invokeOriginal(originalOutboxRestoreAppend, log, [tx, raw]);
 	} catch {
 		throw new WorkError("scope");
 	}

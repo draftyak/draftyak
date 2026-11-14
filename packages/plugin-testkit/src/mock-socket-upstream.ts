@@ -158,6 +158,7 @@ interface Socket {
 	terminationFailed: boolean;
 	unknownBackend: boolean;
 	removeLifetime: () => void;
+	lifetimeOwner: AbortSignal;
 	backend?: CapturedConnection;
 }
 interface Event {
@@ -173,6 +174,11 @@ export interface MockSocketManager {
 	): Promise<{ readonly socketId: string }>;
 	ack(socketId: string, envelopeId: string, signal: AbortSignal): Promise<null>;
 	closeSocket(socketId: string): Promise<null>;
+	retarget(
+		socketIds: readonly string[],
+		from: AbortSignal,
+		to: AbortSignal,
+	): readonly string[] | undefined;
 	abort(): void;
 	settled(): Promise<void>;
 }
@@ -340,6 +346,28 @@ export function createMockSocketManager(
 		return socket;
 	}
 	return {
+		retarget(socketIds, from, to) {
+			if (closed || unqualified || from.aborted || to.aborted) return undefined;
+			const selected: Socket[] = [];
+			for (const socketId of socketIds) {
+				const socket = sockets.get(socketId);
+				// Settled or already retiring resources cannot be renewed.
+				if (!socket || socket.retiring) continue;
+				if (!socket.opened || socket.lifetimeOwner !== from) return undefined;
+				selected.push(socket);
+			}
+			if (!selected.length) return undefined;
+			const lifetime = nativeSignalAny([to]);
+			if (lifetime.aborted) return undefined;
+			for (const socket of selected) {
+				const abort = (): void => retire(socket);
+				lifetime.addEventListener("abort", abort, { once: true });
+				socket.removeLifetime();
+				socket.removeLifetime = () => lifetime.removeEventListener("abort", abort);
+				socket.lifetimeOwner = to;
+			}
+			return Object.freeze(selected.map((socket) => socket.id));
+		},
 		async open(url, signal, lifetimeInput) {
 			let lifetime: AbortSignal | undefined;
 			try {
@@ -369,6 +397,7 @@ export function createMockSocketManager(
 				terminationFailed: false,
 				unknownBackend: false,
 				removeLifetime: () => {},
+				lifetimeOwner: lifetimeInput ?? signal,
 			};
 			void socket.done.promise.catch(() => {});
 			sockets.set(socket.id, socket);

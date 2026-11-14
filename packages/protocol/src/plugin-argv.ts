@@ -1,7 +1,7 @@
 import path from "node:path";
 
 /** Minimum supported plugin Node version; checking the actual executable belongs to the parent. */
-export const PLUGIN_NODE_MINIMUM_VERSION = "26.5.1";
+export const PLUGIN_NODE_MINIMUM_VERSION = "26.13.1";
 
 /** Node-runtime exec flags only. Application arguments follow the entry and are not exec flags. */
 export const PLUGIN_ALLOWED_FLAGS: readonly string[] = Object.freeze([
@@ -173,5 +173,5 @@ export function isPluginNodeVersionSupported(version: string): boolean {
 	const parts = match.slice(1).map(Number);
 	if (!parts.every(Number.isSafeInteger)) return false;
 	const [major = 0, minor = 0, patch = 0] = parts;
-	return major > 26 || (major === 26 && (minor > 5 || (minor === 5 && patch >= 1)));
+	return major > 26 || (major === 26 && (minor > 13 || (minor === 13 && patch >= 1)));
 }

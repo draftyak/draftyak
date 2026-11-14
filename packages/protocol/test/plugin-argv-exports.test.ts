@@ -28,7 +28,7 @@ try {
     const spec = {pluginDir, entry:path.join(pluginDir,'main.mjs'), entryArgs:['--allow-net']};
     const argv = api.buildPluginArgv(spec);
     if (api.checkPluginArgv(argv, spec).length || argv.at(-1) !== '--allow-net') throw Error('Consumer mismatch');
-    console.log(JSON.stringify({ok:true, floor:api.PLUGIN_NODE_MINIMUM_VERSION, below:api.isPluginNodeVersionSupported('26.5.0'), at:api.isPluginNodeVersionSupported('26.5.1')}));
+    console.log(JSON.stringify({ok:true, floor:api.PLUGIN_NODE_MINIMUM_VERSION, below:api.isPluginNodeVersionSupported('26.13.0'), at:api.isPluginNodeVersionSupported('26.13.1')}));
   } else console.log(JSON.stringify({ok:true}));
 } catch (error) {
   console.log(JSON.stringify({ok:false, code:error.code ?? error.message}));
@@ -92,7 +92,7 @@ describe.each(["source", "packed"])("native Node %s argv consumer", (name) => {
 	it("loads the canonical export and uses the actual builder/checker and version floor", () => {
 		expect(consume(name, "@draftyak/protocol/plugin-argv", true)).toEqual({
 			ok: true,
-			floor: "26.5.1",
+			floor: "26.13.1",
 			below: false,
 			at: true,
 		});

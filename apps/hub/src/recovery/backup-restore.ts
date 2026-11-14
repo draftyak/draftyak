@@ -4,13 +4,16 @@ import fs, { type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { types } from "node:util";
 import { AuditChain } from "../audit/chain.ts";
+import { advanceEpochForRestore, DeviceRegistry } from "../identity/devices.ts";
+import { HubIdentity } from "../identity/hub-key.ts";
+import { installPinForRestore, type PinInitialization, PinService } from "../identity/pin.ts";
 import { fields } from "../jobs/values.ts";
 import { admitDataFolder, type DataFolder } from "../kernel/data-directory.ts";
 import { MasterKey } from "../kernel/master-key.ts";
 import { HUB_NAMESPACES } from "../kernel/namespaces.ts";
 import { flushDirectory } from "../store/durable-file.ts";
 import { captureMigrationPlan, migrationTables } from "../store/migrator.ts";
-import { HubStore, type SqlReader } from "../store/store.ts";
+import { HubStore, type SqlReader, type SqlTransaction } from "../store/store.ts";
 import {
 	BACKUP_ARTIFACT_HEADER_SIZE,
 	type BackupArtifactHeader,
@@ -50,9 +53,19 @@ const copyBytes = Uint8Array.prototype.set;
 const destroyMasterKey = MasterKey.prototype.destroy;
 const deriveMasterKey = MasterKey.prototype.derive;
 const readStore = HubStore.prototype.read;
+const writeStore = HubStore.prototype.write;
+const checkpointStore = HubStore.prototype.checkpoint;
 const closeStore = HubStore.prototype.close;
 const verifyAudit = AuditChain.prototype.verify;
 const destroyAudit = AuditChain.prototype.destroy;
+const loadExistingIdentity = HubIdentity.loadExisting;
+const lockIdentity = HubIdentity.prototype.lock;
+const preparePin = PinService.prototype.prepareInitialization;
+const discardPin = PinService.prototype.discard;
+const lockPins = PinService.prototype.lock;
+const registryState = DeviceRegistry.prototype.state;
+const lockRegistry = DeviceRegistry.prototype.lock;
+const invokeOriginal = Reflect.apply;
 interface CapturedPreparation {
 	readonly artifactFile: string;
 	readonly destination: string;
@@ -102,8 +115,9 @@ interface PreparedImage {
 interface PreparedRestore {
 	readonly owner: RestoreOwner;
 	readonly header: BackupArtifactHeader;
-	readonly image: PreparedImage;
-	state: "READY" | "CLOSING" | "CLOSED";
+	image: PreparedImage;
+	state: "READY" | "RESETTING" | "AUTHORITY_RESET" | "FAILED" | "CLOSING" | "CLOSED";
+	operation: Promise<void> | undefined;
 	closing: Promise<void> | undefined;
 }
 const preparations = new WeakMap<NativeBackupPreparation, PreparedRestore>();
@@ -578,6 +592,13 @@ async function retireOwner(owner: RestoreOwner): Promise<void> {
 function closePrepared(item: PreparedRestore): Promise<void> {
 	if (item.closing) return item.closing;
 	const closing = Promise.resolve().then(async () => {
+		// The original producer may still own PIN KDF work, a transaction or an image sync.
+		// Its failure does not prevent cleanup, but its settlement must precede erasure.
+		try {
+			await item.operation;
+		} catch {
+			// Only cleanup is admitted after a failed operation.
+		}
 		item.header.capsule.fill(0);
 		item.header.binding.fill(0);
 		await retireOwner(item.owner);
@@ -598,6 +619,208 @@ export async function closeNativeBackupPreparation(raw: unknown): Promise<void> 
 		item.state = "CLOSING";
 		await closePrepared(item);
 	} catch {
+		throw new NativeBackupRestoreError();
+	}
+}
+
+interface AuthorityResetSnapshot {
+	readonly ownerUserId: string;
+	readonly epoch: number;
+	readonly pinVersion: number;
+}
+
+function authoritySnapshot(db: SqlReader, devices: DeviceRegistry): AuthorityResetSnapshot {
+	const state = invokeOriginal(registryState, devices, [db]) as ReturnType<typeof registryState>;
+	if (
+		typeof state.ownerUserId !== "string" ||
+		!Number.isSafeInteger(state.epoch) ||
+		state.epoch < 1
+	)
+		refuse();
+	const row = db.get<{ version: unknown }>(
+		"SELECT version FROM main.approval_pins WHERE user_id=?",
+		[state.ownerUserId],
+	);
+	if (typeof row?.version !== "number" || !Number.isSafeInteger(row.version) || row.version < 1)
+		refuse();
+	return { ownerUserId: state.ownerUserId, epoch: state.epoch, pinVersion: row.version };
+}
+
+function assertResetting(item: PreparedRestore): void {
+	if (
+		item.state !== "RESETTING" ||
+		!item.owner.active ||
+		item.owner.closing ||
+		item.owner.storeUncertain ||
+		!item.owner.store ||
+		!item.owner.key
+	)
+		refuse();
+}
+
+async function assertPreparedImage(item: PreparedRestore): Promise<void> {
+	assertResetting(item);
+	await assertImage(item.owner);
+	const image = item.owner.image ?? refuse();
+	const current = await image.handle.stat({ bigint: true });
+	const named = await fs.lstat(image.path, { bigint: true });
+	if (!matchesPreparedImage(item.image, current) || !matchesPreparedImage(item.image, named))
+		refuse();
+	assertResetting(item);
+}
+
+function releaseResetServices(
+	devices: DeviceRegistry | undefined,
+	pins: PinService | undefined,
+	prepared: PinInitialization | undefined,
+	identity: HubIdentity | undefined,
+	audit: AuditChain | undefined,
+	auditKey: Buffer | undefined,
+): void {
+	let failed = false;
+	for (const release of [
+		() => {
+			if (devices) invokeOriginal(lockRegistry, devices, []);
+		},
+		() => {
+			if (pins && prepared) invokeOriginal(discardPin, pins, [prepared]);
+		},
+		() => {
+			if (pins) invokeOriginal(lockPins, pins, []);
+		},
+		() => {
+			if (identity) invokeOriginal(lockIdentity, identity, []);
+		},
+		() => {
+			if (audit) invokeOriginal(destroyAudit, audit, []);
+		},
+		() => {
+			auditKey?.fill(0);
+		},
+	]) {
+		try {
+			release();
+		} catch {
+			failed = true;
+		}
+	}
+	if (failed) refuse();
+}
+
+async function resetPreparedAuthority(item: PreparedRestore, pin: string): Promise<void> {
+	const owner = item.owner;
+	let auditKey: Buffer | undefined;
+	let audit: AuditChain | undefined;
+	let identity: HubIdentity | undefined;
+	let pins: PinService | undefined;
+	let devices: DeviceRegistry | undefined;
+	let prepared: PinInitialization | undefined;
+	let updated: PreparedImage | undefined;
+	try {
+		await assertPreparedImage(item);
+		const store = owner.store ?? refuse();
+		const key = owner.key ?? refuse();
+		auditKey = invokeOriginal(deriveMasterKey, key, ["audit"]) as Buffer;
+		audit = new AuditChain(auditKey);
+		auditKey.fill(0);
+		identity = (await invokeOriginal(loadExistingIdentity, HubIdentity, [
+			store,
+			key,
+		])) as HubIdentity;
+		await assertPreparedImage(item);
+		pins = new PinService(store, audit);
+		devices = new DeviceRegistry(store, audit, pins, { identity });
+		const chain = audit;
+		const registry = devices;
+		const service = pins;
+		const before = invokeOriginal(readStore, store, [
+			(db: SqlReader) => {
+				invokeOriginal(verifyAudit, chain, [db]);
+				return authoritySnapshot(db, registry);
+			},
+		]) as AuthorityResetSnapshot;
+		if (before.epoch >= Number.MAX_SAFE_INTEGER || before.pinVersion >= Number.MAX_SAFE_INTEGER)
+			refuse();
+		const initialization = (await invokeOriginal(preparePin, service, [
+			before.ownerUserId,
+			pin,
+		])) as PinInitialization;
+		prepared = initialization;
+		await assertPreparedImage(item);
+		invokeOriginal(writeStore, store, [
+			(tx: SqlTransaction) => {
+				assertResetting(item);
+				invokeOriginal(verifyAudit, chain, [tx]);
+				const current = authoritySnapshot(tx, registry);
+				if (
+					current.ownerUserId !== before.ownerUserId ||
+					current.epoch !== before.epoch ||
+					current.pinVersion !== before.pinVersion
+				)
+					refuse();
+				if (advanceEpochForRestore(registry, tx) !== before.epoch + 1) refuse();
+				installPinForRestore(service, tx, initialization, before.ownerUserId);
+				const after = authoritySnapshot(tx, registry);
+				const pinRow = tx.get<{
+					failures: unknown;
+					locked_until: unknown;
+					salt_bytes: unknown;
+					hash_bytes: unknown;
+					binary: unknown;
+				}>(
+					"SELECT failures,locked_until,length(salt) AS salt_bytes,length(hash) AS hash_bytes,typeof(salt)='blob' AND typeof(hash)='blob' AS binary FROM main.approval_pins WHERE user_id=?",
+					[before.ownerUserId],
+				);
+				if (
+					after.ownerUserId !== before.ownerUserId ||
+					after.epoch !== before.epoch + 1 ||
+					after.pinVersion !== before.pinVersion + 1 ||
+					(invokeOriginal(registryState, registry, [tx]) as ReturnType<typeof registryState>)
+						.bootstrapDone ||
+					pinRow?.failures !== 0 ||
+					pinRow.locked_until !== 0 ||
+					pinRow.salt_bytes !== 16 ||
+					pinRow.hash_bytes !== 32 ||
+					pinRow.binary !== 1
+				)
+					refuse();
+				invokeOriginal(verifyAudit, chain, [tx]);
+				assertResetting(item);
+			},
+		]);
+		assertResetting(item);
+		invokeOriginal(checkpointStore, store, []);
+		await assertImage(owner);
+		const image = owner.image ?? refuse();
+		await image.handle.sync();
+		assertResetting(item);
+		updated = await capturePreparedImage(owner);
+	} finally {
+		releaseResetServices(devices, pins, prepared, identity, audit, auditKey);
+	}
+	assertResetting(item);
+	item.image = updated ?? refuse();
+	// Other restore reductions, installation and native key delivery are still required.
+	// This private phase never denotes an installable or send-authorized image.
+	item.state = "AUTHORITY_RESET";
+}
+
+/** Resets epoch/bootstrap and PIN once on the held image; it does not publish a restored hub. */
+export async function resetNativeBackupAuthority(raw: unknown, pin: unknown): Promise<void> {
+	let item: PreparedRestore | undefined;
+	let operation: Promise<void> | undefined;
+	try {
+		item = preparation(raw);
+		if (item.state !== "READY" || item.operation || typeof pin !== "string") refuse();
+		item.state = "RESETTING";
+		const current = item;
+		// Reserve the whole original job before an asynchronous producer can run or re-enter.
+		operation = Promise.resolve().then(() => resetPreparedAuthority(current, pin));
+		item.operation = operation;
+		await operation;
+	} catch {
+		if (item?.state === "RESETTING" && operation && item.operation === operation)
+			item.state = "FAILED";
 		throw new NativeBackupRestoreError();
 	}
 }
@@ -728,6 +951,7 @@ async function prepareCaptured(input: CapturedPreparation): Promise<NativeBackup
 			header,
 			image: readyImage,
 			state: "READY",
+			operation: undefined,
 			closing: undefined,
 		});
 		retained = true;

@@ -12,6 +12,7 @@ import {
 	type JsonMemberWriter,
 	writeJsonMember,
 } from "@draftyak/json-member";
+import { CHANNEL_V1, channelV1 } from "@draftyak/protocol/channel-v1";
 import { type HeaderList, headersSha256, sha256Hex } from "@draftyak/protocol/hash";
 import {
 	HOST_JSON_MEMBER_MAX_DECODED_BYTES,
@@ -21,7 +22,7 @@ import {
 	HOST_METHOD_SCHEMAS,
 	HOST_REQUEST_TIMEOUT_MS,
 	type HostErrorCode,
-	type HostFetchParams,
+	HostFetchParams,
 	type HostFetchResult,
 	HostHeaders,
 	type HostMethod,
@@ -91,11 +92,51 @@ interface Lookup {
 	readonly kind: ToolKind | undefined;
 	readonly argumentsDigest: string;
 	readonly controller: AbortController;
+	readonly startedAt: number;
 	readonly deadline: number;
 	readonly permit: string | undefined;
 	active: boolean;
 	requests: number;
 	pending: number;
+}
+/** Private constructor plumbing for work owned by one actual channel-listen call. */
+export interface ProcessLease {
+	readonly signal: AbortSignal;
+	readonly deadline: number;
+	run<T>(action: () => T): T;
+	accepts(method: HostMethod, params: unknown): boolean;
+	commit(result: unknown): boolean;
+	close(): void;
+}
+const processLeaseFactories = new WeakMap<
+	MockHost,
+	{
+		readonly plugin: string;
+		readonly instance: string;
+		readonly begin: (method: string, params: Record<string, unknown>) => ProcessLease | undefined;
+	}
+>();
+/** Resolve constructor-issued plumbing; structural hosts cannot issue background authority. */
+export function getProcessLeaseFactory(
+	host: MockHost,
+	identity: { readonly plugin: string; readonly instance: string },
+): ((method: string, params: Record<string, unknown>) => ProcessLease | undefined) | undefined {
+	const issued = processLeaseFactories.get(host);
+	return issued?.plugin === identity.plugin && issued.instance === identity.instance
+		? issued.begin
+		: undefined;
+}
+interface ChannelLease {
+	readonly scope: Lookup;
+	readonly sockets: Map<string, string>;
+	readonly urls: Set<string>;
+	readonly reconnects: Set<string>;
+	reconnectOpens: number;
+	reconnectFetches: number;
+	committed: boolean;
+	transferred: boolean;
+	accepts(method: HostMethod, params: unknown): boolean;
+	close(): void;
 }
 interface Attempt {
 	scope?: Lookup;
@@ -200,6 +241,7 @@ export function createMockHost(
 ): {
 	readonly host: MockHost;
 	settled(): Promise<void>;
+	beginProcessLease(method: string, params: Record<string, unknown>): ProcessLease | undefined;
 	lookup<T>(
 		action: (signal: AbortSignal, permit?: string) => Promise<T>,
 		kind?: ToolKind,
@@ -288,6 +330,9 @@ export function createMockHost(
 	const scopes = new AsyncLocalStorage<Lookup>();
 	const attempts = new AsyncLocalStorage<Attempt>();
 	const retained = new Set<Lookup>();
+	const ownedWork = new Set<Promise<unknown>>();
+	const channelLeases = new WeakMap<Lookup, ChannelLease>();
+	const retainedLeases = new Set<ChannelLease>();
 	const grants = new Map<string, Lookup>();
 	const reserved = new Set<string>();
 	const tickets = new Map<string, { ticket: SendTicket; headers: HeaderList }>();
@@ -309,13 +354,19 @@ export function createMockHost(
 	const elapsed = (): number => performance.now();
 	const release = (scope: Lookup): void => {
 		if (scope.active || scope.pending !== 0) return;
+		const lease = channelLeases.get(scope);
+		if (lease?.transferred) lease.close();
+		if (scope.pending !== 0) return;
+		if (lease) retainedLeases.delete(lease);
 		retained.delete(scope);
 		if (scope.permit !== undefined) reserved.delete(scope.permit);
 	};
 	const own = <T>(scope: Lookup | undefined, work: Promise<T>): Promise<T> => {
 		if (!scope) return work;
 		scope.pending++;
+		ownedWork.add(work);
 		const settled = (): void => {
+			ownedWork.delete(work);
 			scope.pending--;
 			release(scope);
 		};
@@ -330,7 +381,11 @@ export function createMockHost(
 	};
 	const disable = (): void => {
 		disabled = true;
-		for (const scope of retained) retire(scope, new HostError("DENIED"));
+		for (const scope of retained) {
+			const lease = channelLeases.get(scope);
+			if (lease) lease.close();
+			else retire(scope, new HostError("DENIED"));
+		}
 	};
 	const recordDenial = (method: HostMethod, reason: string, scope?: Lookup): void => {
 		if (denials.length < 4096)
@@ -929,6 +984,22 @@ export function createMockHost(
 		}
 	};
 	let socketManager: MockSocketManager | undefined;
+	const reconnectRequest = (params: HostFetchParams): string | undefined => {
+		if (
+			manifest.kind !== "channel" ||
+			!("profile" in manifest.egress) ||
+			manifest.egress.profile !== "slack-v1" ||
+			params.method !== "POST" ||
+			params.url !== "https://slack.com/api/apps.connections.open" ||
+			params.lookupPermit !== undefined ||
+			params.sendTicket !== undefined ||
+			params.saveAs !== undefined ||
+			params.stream === true ||
+			(params.body !== undefined && (!("base64" in params.body) || params.body.base64 !== ""))
+		)
+			return undefined;
+		return JSON.stringify(jsonCopy(params));
+	};
 	const base = memoryHost(async (method, params, signal) => {
 		if (closed) return deny("HOST_CLOSED");
 		if (disabled) return deny("PLUGIN_DISABLED");
@@ -937,24 +1008,45 @@ export function createMockHost(
 			!["host/fetch", "host/log", "host/kv.get", "host/kv.set", "host/kv.delete"].includes(method)
 		)
 			return deny("TOOL_METHOD_FORBIDDEN");
+		const scope = scopes.getStore();
+		const lease = scope && channelLeases.get(scope);
 		switch (method) {
-			case "host/ws.open":
+			case "host/ws.open": {
 				if (!socketManager) return deny("METHOD_UNSUPPORTED", "UNSUPPORTED");
-				return socketManager.open(
-					(params as { url: string }).url,
-					signal,
-					attempts.getStore()?.signal,
+				if (lease?.committed && ++lease.reconnectOpens > 3) return deny("LEASE_RECONNECT_LIMIT");
+				const url = (params as { url: string }).url;
+				const result = await own(
+					lease?.scope,
+					socketManager.open(
+						url,
+						signal,
+						lease?.scope.controller.signal ?? attempts.getStore()?.signal,
+					),
 				);
+				if (lease) {
+					if (!lease.scope.active || lease.scope.controller.signal.aborted) {
+						await own(lease.scope, socketManager.closeSocket(result.socketId));
+						return deny("LOOKUP_ENDED");
+					}
+					lease.sockets.set(result.socketId, url);
+					lease.urls.add(url);
+				}
+				return result;
+			}
 			case "host/ws.send": {
 				if (!socketManager) return deny("METHOD_UNSUPPORTED", "UNSUPPORTED");
 				const request = params as { socketId: string; envelopeId: string };
-				return socketManager.ack(request.socketId, request.envelopeId, signal);
+				return own(lease?.scope, socketManager.ack(request.socketId, request.envelopeId, signal));
 			}
 			case "host/ws.close":
 				if (!socketManager) return deny("METHOD_UNSUPPORTED", "UNSUPPORTED");
-				return socketManager.closeSocket((params as { socketId: string }).socketId);
+				return own(
+					lease?.scope,
+					socketManager.closeSocket((params as { socketId: string }).socketId),
+				);
 			case "host/fetch": {
 				const request = params as HostFetchParams;
+				if (lease?.committed && ++lease.reconnectFetches > 3) return deny("LEASE_RECONNECT_LIMIT");
 				const scope =
 					manifest.kind === "tool"
 						? request.lookupPermit === undefined
@@ -973,7 +1065,17 @@ export function createMockHost(
 					}
 					if (++scope.requests > TOOL_REQUESTS_PER_LOOKUP) return deny("LOOKUP_REQUEST_LIMIT");
 				}
-				return own(scope, fetch(request, signal, scope));
+				const result = await own(scope, fetch(request, signal, scope));
+				const fingerprint = reconnectRequest(request);
+				if (
+					lease &&
+					!lease.committed &&
+					fingerprint !== undefined &&
+					result.status >= 200 &&
+					result.status < 300
+				)
+					lease.reconnects.add(fingerprint);
+				return result;
 			}
 			case "host/log": {
 				if (logs.length >= STATE_LIMIT) return deny("LOG_LIMIT", "TOO_LARGE");
@@ -1015,39 +1117,47 @@ export function createMockHost(
 		throw error;
 	}
 	const host: MockHost = {
-		async request<M extends HostMethod>(
+		request<M extends HostMethod>(
 			method: M,
 			params: HostMethods[M]["params"],
 			requestOptions?: HostRequestOptions,
 		): Promise<HostMethods[M]["result"]> {
-			const startedAt = elapsed();
-			const attempt: Attempt = {};
-			if (manifest.kind !== "tool" || method !== "host/fetch") attempt.scope = scopes.getStore();
-			try {
-				const signal = requestOptions?.signal;
-				const timeoutMs = requestOptions?.timeoutMs;
-				attempt.signal = signal;
-				const budget = timeoutMs ?? HOST_REQUEST_TIMEOUT_MS;
-				// Invalid options remain the memory host's refusal, without coercing caller values here.
-				if (Number.isFinite(budget) && budget > 0 && budget <= HOST_REQUEST_TIMEOUT_MS)
-					attempt.deadline = startedAt + budget;
-				return await attempts.run(attempt, () =>
-					base.request(
+			const owner = scopes.getStore();
+			const work = (async (): Promise<HostMethods[M]["result"]> => {
+				const startedAt = elapsed();
+				const attempt: Attempt = {};
+				if (manifest.kind !== "tool" || method !== "host/fetch") attempt.scope = scopes.getStore();
+				try {
+					const lease = attempt.scope && channelLeases.get(attempt.scope);
+					if (lease && !lease.accepts(method, params)) return deny("LEASE_OPERATION_REFUSED");
+					const signal = requestOptions?.signal;
+					const timeoutMs = requestOptions?.timeoutMs;
+					attempt.signal = signal;
+					const budget = timeoutMs ?? HOST_REQUEST_TIMEOUT_MS;
+					// Invalid options remain the memory host's refusal, without coercing caller values here.
+					if (Number.isFinite(budget) && budget > 0 && budget <= HOST_REQUEST_TIMEOUT_MS)
+						attempt.deadline = startedAt + budget;
+					return await attempts.run(attempt, () =>
+						base.request(
+							method,
+							params,
+							requestOptions === undefined ? undefined : { signal, timeoutMs },
+						),
+					);
+				} catch (error) {
+					const failure = error instanceof HostError ? error : new HostError("BAD_REQUEST");
+					recordDenial(
 						method,
-						params,
-						requestOptions === undefined ? undefined : { signal, timeoutMs },
-					),
-				);
-			} catch (error) {
-				const failure = error instanceof HostError ? error : new HostError("BAD_REQUEST");
-				recordDenial(
-					method,
-					attempt.reason ??
-						(error instanceof Refusal ? error.reason : closed ? "HOST_CLOSED" : failure.code),
-					attempt.scope,
-				);
-				throw failure;
-			}
+						attempt.reason ??
+							(error instanceof Refusal ? error.reason : closed ? "HOST_CLOSED" : failure.code),
+						attempt.scope,
+					);
+					throw failure;
+				}
+			})();
+			// A transferred scope may release its controller only after the complete
+			// host reply has settled, including the memory host's signal arbitration.
+			return own(owner, work);
 		},
 		subscribe: base.subscribe,
 		get denials() {
@@ -1119,9 +1229,207 @@ export function createMockHost(
 			blobBytes = 0;
 		},
 	};
-	return {
+	const bridge: ReturnType<typeof createMockHost> = {
 		host,
-		settled: () => socketManager?.settled() ?? Promise.resolve(),
+		async settled() {
+			const results = await Promise.allSettled([
+				socketManager?.settled() ?? Promise.resolve(),
+				(async () => {
+					while (ownedWork.size) await Promise.allSettled([...ownedWork]);
+				})(),
+			]);
+			while (ownedWork.size) await Promise.allSettled([...ownedWork]);
+			for (const result of results) if (result.status === "rejected") throw result.reason;
+		},
+		beginProcessLease(method, params) {
+			const origin = scopes.getStore();
+			if (
+				method !== "tools/call" ||
+				params.name !== "channel_listen" ||
+				manifest.kind !== "channel" ||
+				manifest.contract.extension !== CHANNEL_V1 ||
+				manifest.contract.version !== 1 ||
+				!socketManager ||
+				!origin ||
+				origin.generation !== generation ||
+				origin.instance !== options.instance ||
+				origin.account !== account ||
+				!origin.active ||
+				origin.controller.signal.aborted ||
+				closed ||
+				disabled ||
+				elapsed() >= origin.deadline
+			)
+				return undefined;
+			const input = channelV1.tools.channel_listen.input.safeParse(params.arguments);
+			if (
+				!input.success ||
+				sha256Hex(Buffer.from(JSON.stringify(jsonCopy(params.arguments)))) !==
+					origin.argumentsDigest
+			)
+				return undefined;
+			if (retained.size >= 16) throw new MockHubError("LOOKUP_LIMIT");
+			let leaseDeadline = origin.deadline;
+			let timer: NodeJS.Timeout | undefined;
+			let disposing = false;
+			const scope: Lookup = {
+				id: origin.id,
+				generation,
+				instance: origin.instance,
+				account: origin.account,
+				kind: undefined,
+				argumentsDigest: origin.argumentsDigest,
+				controller: new AbortController(),
+				startedAt: origin.startedAt,
+				get deadline() {
+					return leaseDeadline;
+				},
+				permit: undefined,
+				active: true,
+				requests: 0,
+				pending: 0,
+			};
+			const revoke = (): void => {
+				if (disposing) return;
+				disposing = true;
+				if (timer) clearTimeout(timer);
+				origin.controller.signal.removeEventListener("abort", revoke);
+				for (const socketId of lease.sockets.keys())
+					own(scope, socketManager?.closeSocket(socketId).catch(() => {}) ?? Promise.resolve());
+				retire(scope, new HostError("DENIED"));
+			};
+			const accepts = (method: HostMethod, params: unknown): boolean => {
+				if (closed || disabled || !scope.active || scope.controller.signal.aborted) return false;
+				if (elapsed() >= scope.deadline) {
+					revoke();
+					return false;
+				}
+				if (!lease.committed)
+					return origin.active && !origin.controller.signal.aborted && elapsed() < origin.deadline;
+				if (!params || typeof params !== "object" || Array.isArray(params)) return false;
+				const data = params as Record<string, unknown>;
+				switch (method) {
+					case "host/ws.send":
+					case "host/ws.close":
+						return typeof data.socketId === "string" && lease.sockets.has(data.socketId);
+					case "host/ws.open":
+						return (
+							lease.reconnectOpens < 3 && typeof data.url === "string" && lease.urls.has(data.url)
+						);
+					case "host/changed":
+						return lease.sockets.size > 0;
+					case "host/fetch": {
+						const parsed = HostFetchParams.safeParse(params);
+						if (!parsed.success) return false;
+						const fingerprint = reconnectRequest(parsed.data);
+						return (
+							lease.reconnectFetches < 3 &&
+							fingerprint !== undefined &&
+							lease.reconnects.has(fingerprint)
+						);
+					}
+					default:
+						return false;
+				}
+			};
+			const lease: ChannelLease = {
+				scope,
+				sockets: new Map(),
+				urls: new Set(),
+				reconnects: new Set(),
+				reconnectOpens: 0,
+				reconnectFetches: 0,
+				committed: false,
+				transferred: false,
+				accepts,
+				close: revoke,
+			};
+			channelLeases.set(scope, lease);
+			retainedLeases.add(lease);
+			retained.add(scope);
+			origin.controller.signal.addEventListener("abort", revoke, { once: true });
+			scope.controller.signal.addEventListener("abort", revoke, { once: true });
+			return Object.freeze({
+				signal: scope.controller.signal,
+				get deadline() {
+					return scope.deadline;
+				},
+				run<T>(action: () => T): T {
+					if (!scope.active || scope.controller.signal.aborted || elapsed() >= scope.deadline)
+						throw new HostError("DENIED");
+					return scopes.run(scope, action);
+				},
+				accepts,
+				commit(result: unknown): boolean {
+					if (lease.committed) return scope.active && !scope.controller.signal.aborted;
+					const body =
+						result && typeof result === "object" && !Array.isArray(result)
+							? (result as Record<string, unknown>)
+							: undefined;
+					const output = channelV1.tools.channel_listen.output.safeParse(body?.structuredContent);
+					if (
+						!body ||
+						(body.isError !== undefined && body.isError !== false) ||
+						(body.resultType !== undefined && body.resultType !== "complete") ||
+						!output.success ||
+						output.data.leaseMs > input.data.leaseMs ||
+						!origin.active ||
+						origin.controller.signal.aborted ||
+						!scope.active ||
+						scope.controller.signal.aborted ||
+						closed ||
+						disabled ||
+						elapsed() >= origin.deadline ||
+						elapsed() >= origin.startedAt + output.data.leaseMs
+					) {
+						revoke();
+						return false;
+					}
+					if (!lease.sockets.size) {
+						const previous = [...retainedLeases].filter(
+							(candidate) =>
+								candidate !== lease &&
+								candidate.committed &&
+								candidate.scope.active &&
+								!candidate.scope.controller.signal.aborted &&
+								elapsed() < candidate.scope.deadline,
+						);
+						if (previous.length !== 1) {
+							revoke();
+							return false;
+						}
+						const old = previous[0]!;
+						const moved = socketManager?.retarget(
+							[...old.sockets.keys()],
+							old.scope.controller.signal,
+							scope.controller.signal,
+						);
+						if (!moved?.length) {
+							revoke();
+							return false;
+						}
+						for (const socketId of moved) {
+							const url = old.sockets.get(socketId)!;
+							lease.sockets.set(socketId, url);
+							lease.urls.add(url);
+							old.sockets.delete(socketId);
+						}
+						for (const fingerprint of old.reconnects) lease.reconnects.add(fingerprint);
+						// Invalidate old authority now. In-flight work keeps its original deadline
+						// and capacity until it settles; aborting it here could kill a transferred socket.
+						old.transferred = true;
+						old.scope.active = false;
+						release(old.scope);
+					}
+					leaseDeadline = origin.startedAt + output.data.leaseMs;
+					lease.committed = true;
+					origin.controller.signal.removeEventListener("abort", revoke);
+					timer = setTimeout(revoke, Math.max(0, leaseDeadline - elapsed()));
+					return true;
+				},
+				close: revoke,
+			});
+		},
 		async lookup<T>(
 			action: (signal: AbortSignal, permit?: string) => Promise<T>,
 			kind?: ToolKind,
@@ -1153,6 +1461,7 @@ export function createMockHost(
 				: manifest.kind === "tool"
 					? 15_000
 					: 30_000;
+			const startedAt = elapsed();
 			const scope: Lookup = {
 				id: ++nextLookup,
 				generation,
@@ -1161,7 +1470,8 @@ export function createMockHost(
 				kind,
 				argumentsDigest: sha256Hex(Buffer.from(JSON.stringify(jsonCopy(args ?? null)))),
 				controller: new AbortController(),
-				deadline: elapsed() + budget,
+				startedAt,
+				deadline: startedAt + budget,
 				permit,
 				active: true,
 				requests: 0,
@@ -1201,4 +1511,10 @@ export function createMockHost(
 			}
 		},
 	};
+	processLeaseFactories.set(host, {
+		plugin: manifest.id,
+		instance: options.instance,
+		begin: bridge.beginProcessLease,
+	});
+	return bridge;
 }
