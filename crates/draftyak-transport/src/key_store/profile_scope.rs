@@ -5,12 +5,16 @@ use std::fmt;
 use super::{SERVICE, StoreError};
 
 const RECORD_PREFIX: &str = "desktop-profile-identity-namespace-v1--";
+const HUB_MASTER_KEY_SERVICE: &str = "com.draftyak.transport.hub-master-key.v1";
+const HUB_MASTER_KEY_RECORD_PREFIX: &str = "desktop-profile-hub-master-key-namespace-v1--";
 
 /// A canonical desktop profile selection in a namespace separate from legacy records.
 #[derive(Clone, Eq, PartialEq)]
 pub struct NativeProfileScope {
     record_name: String,
     service_name: String,
+    master_key_record_name: String,
+    master_key_service_name: String,
 }
 
 impl NativeProfileScope {
@@ -18,6 +22,8 @@ impl NativeProfileScope {
         Self {
             record_name: format!("{RECORD_PREFIX}default"),
             service_name: format!("{SERVICE}.desktop-profile.default"),
+            master_key_record_name: format!("{HUB_MASTER_KEY_RECORD_PREFIX}default"),
+            master_key_service_name: format!("{HUB_MASTER_KEY_SERVICE}.desktop-profile.default"),
         }
     }
 
@@ -35,6 +41,10 @@ impl NativeProfileScope {
         Ok(Self {
             record_name: format!("{RECORD_PREFIX}named-{name}"),
             service_name: format!("{SERVICE}.desktop-profile.named.{name}"),
+            master_key_record_name: format!("{HUB_MASTER_KEY_RECORD_PREFIX}named-{name}"),
+            master_key_service_name: format!(
+                "{HUB_MASTER_KEY_SERVICE}.desktop-profile.named.{name}"
+            ),
         })
     }
 
@@ -44,6 +54,14 @@ impl NativeProfileScope {
 
     pub(super) fn backend_service_name(&self) -> &str {
         &self.service_name
+    }
+
+    pub(super) fn backend_master_key_record_name(&self) -> &str {
+        &self.master_key_record_name
+    }
+
+    pub(super) fn backend_master_key_service_name(&self) -> &str {
+        &self.master_key_service_name
     }
 }
 
