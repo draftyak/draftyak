@@ -2,6 +2,12 @@ export {
 	LiveUpdatesStatus,
 	type LiveUpdatesStatusProps,
 } from "./app/LiveUpdatesStatus.tsx";
+export {
+	createSettingsAppController,
+	type SettingsAppController,
+	type SettingsAppSnapshot,
+	type SettingsAppView,
+} from "./app/settings-app-controller.ts";
 export { ApprovalQueue, type ApprovalQueueProps } from "./approvals/ApprovalQueue.tsx";
 export {
 	type DraftBodyEditIntent,
@@ -52,3 +58,11 @@ export {
 	OwnerSettingsField,
 	type OwnerSettingsFieldProps,
 } from "./settings/OwnerSettingsField.tsx";
+export {
+	createOwnerSettingsController,
+	type OwnerSettingsCallOptions,
+	type OwnerSettingsController,
+	type OwnerSettingsPort,
+	SettingsRefetchError,
+} from "./settings/settings-controller.ts";
+export type { OwnerSettingsState } from "./settings/settings-state.ts";
