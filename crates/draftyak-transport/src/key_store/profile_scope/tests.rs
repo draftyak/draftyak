@@ -274,3 +274,138 @@ fn per_profile_service_open_without_native_feature_refuses_without_fallback() {
         ));
     }
 }
+
+#[test]
+fn hub_master_key_names_are_separate_without_changing_device_names() {
+    let default = NativeProfileScope::default_profile();
+    let named = NativeProfileScope::named_profile("default").expect("valid profile data");
+    assert_eq!(
+        default.backend_master_key_service_name(),
+        "com.draftyak.transport.hub-master-key.v1.desktop-profile.default"
+    );
+    assert_eq!(
+        named.backend_master_key_service_name(),
+        "com.draftyak.transport.hub-master-key.v1.desktop-profile.named.default"
+    );
+    assert_eq!(
+        default.backend_master_key_record_name(),
+        "desktop-profile-hub-master-key-namespace-v1--default"
+    );
+    assert_eq!(
+        named.backend_master_key_record_name(),
+        "desktop-profile-hub-master-key-namespace-v1--named-default"
+    );
+    assert_eq!(
+        default.backend_service_name(),
+        "com.draftyak.transport.device.v1.desktop-profile.default"
+    );
+    assert_eq!(
+        named.backend_record_name(),
+        "desktop-profile-identity-namespace-v1--named-default"
+    );
+    assert_ne!(
+        default.backend_master_key_service_name(),
+        named.backend_master_key_service_name()
+    );
+    assert_ne!(
+        default.backend_master_key_record_name(),
+        named.backend_master_key_record_name()
+    );
+    for scope in [default, named] {
+        assert_ne!(
+            scope.backend_master_key_service_name(),
+            super::super::SERVICE
+        );
+        assert_ne!(
+            scope.backend_master_key_service_name(),
+            scope.backend_service_name()
+        );
+        assert_ne!(
+            scope.backend_master_key_record_name(),
+            scope.backend_record_name()
+        );
+        assert!(scope.backend_master_key_record_name().len() > 32);
+        let debug = format!("{scope:?}");
+        assert!(!debug.contains(scope.backend_master_key_service_name()));
+        assert!(!debug.contains(scope.backend_master_key_record_name()));
+    }
+}
+
+#[test]
+fn hub_master_key_names_keep_all_supported_lengths_distinct_and_bounded() {
+    let mut services = std::collections::HashSet::new();
+    let mut records = std::collections::HashSet::new();
+    for scope in [
+        NativeProfileScope::default_profile(),
+        NativeProfileScope::named_profile("default").expect("valid profile data"),
+    ] {
+        assert!(services.insert(scope.backend_master_key_service_name().to_owned()));
+        assert!(records.insert(scope.backend_master_key_record_name().to_owned()));
+    }
+    for length in 1..=32 {
+        for name in ["0".repeat(length), format!("{}b", "a".repeat(length - 1))] {
+            let scope =
+                NativeProfileScope::named_profile(&name).expect("valid bounded profile data");
+            let service = scope.backend_master_key_service_name();
+            let record = scope.backend_master_key_record_name();
+            assert!(service.is_ascii() && record.is_ascii());
+            assert!(service.len() <= 95 && record.len() <= 83);
+            assert!(service.len() <= 128 && record.len() <= 128);
+            assert!(record.len() > 32);
+            assert!(service.ends_with(&format!(".named.{name}")));
+            assert!(record.ends_with(&format!("--named-{name}")));
+            assert!(services.insert(service.to_owned()));
+            assert!(records.insert(record.to_owned()));
+            assert_ne!(service, scope.backend_service_name());
+            assert_ne!(record, scope.backend_record_name());
+        }
+    }
+    assert_eq!(services.len(), 66);
+    assert_eq!(records.len(), 66);
+}
+
+#[test]
+fn hub_master_key_names_preserve_the_32nd_byte_and_reconstruct_stably() {
+    let first_name = "0123456789abcdefghijklmnopqrstuv";
+    let second_name = "0123456789abcdefghijklmnopqrstuw";
+    assert_eq!(first_name.len(), 32);
+    assert_eq!(second_name.len(), 32);
+    let first = NativeProfileScope::named_profile(first_name).expect("valid maximum profile data");
+    let second =
+        NativeProfileScope::named_profile(second_name).expect("valid maximum profile data");
+    assert_ne!(
+        first.backend_master_key_service_name(),
+        second.backend_master_key_service_name()
+    );
+    assert_ne!(
+        first.backend_master_key_record_name(),
+        second.backend_master_key_record_name()
+    );
+    assert_eq!(first.backend_master_key_service_name().len(), 95);
+    assert_eq!(first.backend_master_key_record_name().len(), 83);
+    assert!(
+        first
+            .backend_master_key_service_name()
+            .ends_with(first_name)
+    );
+    assert!(first.backend_master_key_record_name().ends_with(first_name));
+    let restored =
+        NativeProfileScope::named_profile(first_name).expect("same canonical profile data");
+    let cloned = first.clone();
+    assert_eq!(
+        restored.backend_master_key_service_name(),
+        first.backend_master_key_service_name()
+    );
+    assert_eq!(
+        restored.backend_master_key_record_name(),
+        first.backend_master_key_record_name()
+    );
+    assert_eq!(
+        cloned.backend_master_key_service_name(),
+        first.backend_master_key_service_name()
+    );
+    assert_eq!(
+        cloned.backend_master_key_record_name(),
+        first.backend_master_key_record_name()
+    );
+}

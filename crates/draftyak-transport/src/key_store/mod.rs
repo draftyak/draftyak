@@ -21,12 +21,14 @@ use crate::{
 mod forget_tests;
 #[cfg(all(test, feature = "native-store", not(feature = "mock-store")))]
 mod linux_environment;
+mod master_key;
 #[cfg(feature = "native-store")]
 mod platform;
 mod profile_scope;
 #[cfg(any(test, feature = "mock-store"))]
 pub mod testing;
 
+pub use master_key::{NativeHubMasterKey, NativeHubMasterKeyStore};
 pub use profile_scope::NativeProfileScope;
 
 const SERVICE: &str = "com.draftyak.transport.device.v1";
