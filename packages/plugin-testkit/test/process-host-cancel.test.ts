@@ -126,6 +126,7 @@ async function fixture(fakeClock = false) {
 			}
 		},
 	});
+	const ioExit = Promise.withResolvers<{ code: number | null; signal: NodeJS.Signals | null }>();
 	const child = Object.assign(new EventEmitter(), {
 		pid: 1,
 		exitCode: null as number | null,
@@ -134,6 +135,8 @@ async function fixture(fakeClock = false) {
 			queueMicrotask(() => {
 				child.exitCode = 0;
 				child.emit("exit", 0, null);
+				ioExit.resolve({ code: 0, signal: null });
+				queueMicrotask(() => child.emit("close", 0, null));
 			});
 			return true;
 		}),
@@ -142,16 +145,34 @@ async function fixture(fakeClock = false) {
 		roots.add(path.dirname((parameters[2] as { cwd: string }).cwd));
 		return child as unknown as childProcess.ChildProcess;
 	});
+	// Unit model only: destroy cancels these synthetic streams; no post-exit bytes are drained.
+	const ioClosed = Promise.all(
+		[input, ...outputs].map(
+			(stream) => new Promise<void>((resolve) => stream.once("close", () => resolve())),
+		),
+	);
+	const completion: Promise<pluginStdio.PluginStdioResult> = Promise.all([
+		ioExit.promise,
+		ioClosed,
+	]).then(([exit]) => ({
+		...exit,
+		error: "destroyed" as const,
+		drains: [
+			{ bytes: 0, result: "closed" },
+			{ bytes: 0, result: "closed" },
+		] as const,
+	}));
 	vi.spyOn(pluginStdio, "openPluginStdio").mockResolvedValue({
 		kind: "pipe",
 		stdio: ["pipe", "pipe", "pipe"],
 		attach: () => ({
 			input,
 			outputs,
-			completion: new Promise<pluginStdio.PluginStdioResult>(() => {}),
+			completion,
 			destroy: async () => {
 				input.destroy();
 				for (const output of outputs) output.destroy();
+				await ioClosed;
 			},
 		}),
 		destroy: async () => {},

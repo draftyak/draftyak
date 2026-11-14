@@ -13,11 +13,12 @@
     "build": "tsdown"
   },
   "dependencies": {
-    "@draftyak/content": "workspace:*",
     "@draftyak/bounded-files": "workspace:*",
+    "@draftyak/content": "workspace:*",
     "@draftyak/extensions": "workspace:*",
     "@draftyak/mime": "workspace:*",
     "@draftyak/protocol": "workspace:*",
+    "@modelcontextprotocol/client": "2.3.1",
     "@peculiar/x509": "2.2.0",
     "better-sqlite3-multiple-ciphers": "13.0.3",
     "kysely": "0.29.6",
@@ -28,6 +29,7 @@
     "@draftyak/egress-recorder": "workspace:*",
     "@draftyak/fake-commercial": "workspace:*",
     "@draftyak/sdk": "workspace:*",
+    "@modelcontextprotocol/server": "2.3.1",
     "@types/ws": "8.18.2",
     "fast-check": "4.10.2",
     "tsdown": "0.23.1"
