@@ -232,6 +232,17 @@ export function captureDraftBinding(input: DraftBinding): DraftBinding {
 		throw revisionUnavailable();
 	return value as unknown as DraftBinding;
 }
+function captureHistoryBinding(bound: DraftBinding, afterRev: number, limit: number): DraftBinding {
+	if (
+		!Number.isSafeInteger(afterRev) ||
+		afterRev < 0 ||
+		!Number.isSafeInteger(limit) ||
+		limit < 1 ||
+		limit > 32
+	)
+		throw revisionUnavailable();
+	return captureDraftBinding(bound);
+}
 export function immutableDraftData<T>(input: T): T {
 	if (input && typeof input === "object") {
 		for (const value of Object.values(input)) immutableDraftData(value);
@@ -652,21 +663,34 @@ export class NativeDraftRevisions {
 			throw revisionUnavailable();
 		}
 	}
+	#historyPage(
+		db: SqlReader,
+		bound: DraftBinding,
+		afterRev: number,
+		limit: number,
+	): readonly DraftRevision[] {
+		const header = this.#header(db, bound);
+		return immutableDraftData(this.#history(db, header, afterRev, limit).page);
+	}
 	history(bound: DraftBinding, afterRev = 0, limit = 32): readonly DraftRevision[] {
 		try {
-			if (
-				!Number.isSafeInteger(afterRev) ||
-				afterRev < 0 ||
-				!Number.isSafeInteger(limit) ||
-				limit < 1 ||
-				limit > 32
-			)
-				throw revisionUnavailable();
-			const captured = captureDraftBinding(bound);
-			return this.#view((db) => {
-				const header = this.#header(db, captured);
-				return immutableDraftData(this.#history(db, header, afterRev, limit).page);
-			});
+			const captured = captureHistoryBinding(bound, afterRev, limit);
+			return this.#view((db) => this.#historyPage(db, captured, afterRev, limit));
+		} catch {
+			throw revisionUnavailable();
+		}
+	}
+	/** Read authenticated history within this store's existing live transaction. */
+	historyInTransaction(
+		tx: SqlTransaction,
+		bound: DraftBinding,
+		afterRev = 0,
+		limit = 32,
+	): readonly DraftRevision[] {
+		try {
+			this.#assertTransaction(tx);
+			const captured = captureHistoryBinding(bound, afterRev, limit);
+			return this.#historyPage(tx, captured, afterRev, limit);
 		} catch {
 			throw revisionUnavailable();
 		}

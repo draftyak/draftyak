@@ -500,6 +500,7 @@ describe("redaction", () => {
 			"extensions",
 			"plugins",
 			"accountApprovals",
+			"draftReads",
 			"close",
 		]);
 		expect(Object.isFrozen(session)).toBe(true);

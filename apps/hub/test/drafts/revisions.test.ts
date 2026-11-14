@@ -24,6 +24,197 @@ afterEach(() => {
 		rmSync(f.dir, { recursive: true, force: true });
 	}
 });
+
+describe("native revision history in original transactions", () => {
+	it("returns the same ordered immutable pages with the default 32-revision bound", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			bound = f.bind(input);
+		f.create(input);
+		for (let rev = 1; rev <= 32; rev++)
+			f.store.write((tx) => f.revisions.appendInTransaction(tx, { ...input, expectedRev: rev }));
+		const expected = f.revisions.history(bound),
+			page = f.revisions.history(bound, 8, 2);
+		f.store.write((tx) => {
+			const history = f.revisions.historyInTransaction(tx, bound);
+			expect(history).toEqual(expected);
+			expect(history.map((revision) => revision.rev)).toEqual(
+				Array.from({ length: 32 }, (_, index) => index + 1),
+			);
+			expect(f.revisions.historyInTransaction(tx, bound, 8, 2)).toEqual(page);
+			expect(page.map((revision) => revision.rev)).toEqual([9, 10]);
+			expect(f.revisions.historyInTransaction(tx, bound, 0, 1)).toEqual(expected.slice(0, 1));
+			expect(
+				f.revisions.historyInTransaction(tx, bound, 32, 32).map((revision) => revision.rev),
+			).toEqual([33]);
+			const empty = f.revisions.historyInTransaction(tx, bound, Number.MAX_SAFE_INTEGER);
+			expect(empty).toEqual([]);
+			expect(Object.isFrozen(empty)).toBe(true);
+			expect(Object.isFrozen(history)).toBe(true);
+			const first = history[0];
+			if (!first) throw new Error("Expected original stored revision");
+			expect(Object.isFrozen(first)).toBe(true);
+			expect(Object.isFrozen(first.content)).toBe(true);
+			expect(Object.isFrozen(first.author)).toBe(true);
+			expect(Object.isFrozen(first.flags)).toBe(true);
+		});
+	});
+	it("rejects invalid cursors and limits without retiring the caller's live transaction", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			bound = f.bind(input),
+			one = f.create(input);
+		f.store.write((tx) => {
+			for (const afterRev of [-1, 0.5, Number.NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])
+				expect(() => f.revisions.historyInTransaction(tx, bound, afterRev)).toThrow(
+					"Draft revision unavailable",
+				);
+			for (const limit of [0, 33, 1.5, Number.NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])
+				expect(() => f.revisions.historyInTransaction(tx, bound, 0, limit)).toThrow(
+					"Draft revision unavailable",
+				);
+			expect(f.revisions.historyInTransaction(tx, bound)).toEqual([one.revision]);
+		});
+	});
+	it("sees its own uncommitted append while another real connection sees only committed history", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			bound = f.bind(input),
+			one = f.create(input),
+			store = new HubStore(f.options),
+			other = new NativeDraftRevisions(store, f.audit, f.key, f.clock);
+		f.stores.push(store);
+		f.services.push(other);
+		const two = f.store.write((tx) => {
+			const appended = f.revisions.appendInTransaction(tx, {
+				...input,
+				expectedRev: 1,
+				content: { ...input.content, body: "uncommitted transaction history" },
+			});
+			expect(f.revisions.historyInTransaction(tx, bound)).toEqual([
+				one.revision,
+				appended.revision,
+			]);
+			expect(other.history(bound)).toEqual([one.revision]);
+			return appended;
+		});
+		expect(other.history(bound)).toEqual([one.revision, two.revision]);
+	});
+	it("does not persist an uncommitted revision observed before the original transaction rolls back", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			bound = f.bind(input),
+			one = f.create(input);
+		expect(() =>
+			f.store.write((tx) => {
+				const appended = f.revisions.appendInTransaction(tx, {
+					...input,
+					expectedRev: 1,
+					content: { ...input.content, body: "rolled back transaction history" },
+				});
+				expect(f.revisions.historyInTransaction(tx, bound)).toEqual([
+					one.revision,
+					appended.revision,
+				]);
+				throw new Error("DYTEST rollback original history transaction");
+			}),
+		).toThrow("DYTEST rollback original history transaction");
+		expect(f.revisions.history(bound)).toEqual([one.revision]);
+		expect(f.revisions.current(bound)).toEqual(one);
+	});
+	it("requires the live transaction of its exact store even for another receiver on the same database", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			bound = f.bind(input),
+			one = f.create(input),
+			store = new HubStore(f.options),
+			other = new NativeDraftRevisions(store, f.audit, f.key, f.clock);
+		f.stores.push(store);
+		f.services.push(other);
+		const ended = f.store.write((tx) => tx);
+		expect(() => f.revisions.historyInTransaction(ended, bound)).toThrow(
+			"Draft revision unavailable",
+		);
+		expect(f.revisions.history(bound)).toEqual([one.revision]);
+		f.store.read((reader) => {
+			// This is the original same-store read scope, deliberately not a write transaction.
+			expect(() =>
+				f.revisions.historyInTransaction(reader as unknown as SqlTransaction, bound),
+			).toThrow("Draft revision unavailable");
+		});
+		let shadowCalls = 0;
+		Object.defineProperty(f.revisions, "assertTransaction", {
+			value: () => {
+				shadowCalls++;
+			},
+		});
+		store.write((tx) => {
+			expect(() => f.revisions.historyInTransaction(tx, bound)).toThrow(
+				"Draft revision unavailable",
+			);
+			expect(other.historyInTransaction(tx, bound)).toEqual([one.revision]);
+		});
+		f.store.write((tx) => {
+			expect(() => other.historyInTransaction(tx, bound)).toThrow("Draft revision unavailable");
+			expect(f.revisions.historyInTransaction(tx, bound)).toEqual([one.revision]);
+		});
+		expect(shadowCalls).toBe(0);
+	});
+	it("preserves binding and destroyed-receiver guards inside an actual transaction", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			bound = f.bind(input),
+			one = f.create(input);
+		f.store.write((tx) => {
+			for (const changed of [
+				{ ...bound, accountId: newId() },
+				{ ...bound, conversationId: newId() },
+				{ ...bound, channel: bound.channel === "email" ? ("chat" as const) : ("email" as const) },
+			])
+				expect(() => f.revisions.historyInTransaction(tx, changed)).toThrow(
+					"Draft revision unavailable",
+				);
+			expect(f.revisions.historyInTransaction(tx, bound)).toEqual([one.revision]);
+		});
+		f.revisions.destroy();
+		f.store.write((tx) => {
+			expect(() => f.revisions.historyInTransaction(tx, bound)).toThrow(
+				"Draft revision unavailable",
+			);
+		});
+	});
+	it("authenticates earlier revisions even outside the requested page or beyond the latest revision", async () => {
+		const f = await fixture(),
+			input = f.make(),
+			bound = f.bind(input);
+		f.create(input);
+		const two = f.store.write((tx) =>
+			f.revisions.appendInTransaction(tx, { ...input, expectedRev: 1 }),
+		);
+		f.store.write((tx) => {
+			expect(f.revisions.historyInTransaction(tx, bound, 1, 1)).toEqual([two.revision]);
+			expect(f.revisions.historyInTransaction(tx, bound, 2, 1)).toEqual([]);
+		});
+		corruptRevisionStorage(f, (database) => {
+			const row = database
+				.prepare("SELECT payload FROM native_draft_revisions WHERE draft_id=? AND rev=1")
+				.get(input.draftId) as { payload: string } | undefined;
+			if (!row) throw new Error("missing earlier revision");
+			const payload = JSON.parse(row.payload);
+			payload.author.id = newId();
+			expect(
+				database
+					.prepare("UPDATE native_draft_revisions SET payload=? WHERE draft_id=? AND rev=1")
+					.run(canonicalize(payload), input.draftId).changes,
+			).toBe(1);
+		});
+		for (const afterRev of [1, 2])
+			expect(() =>
+				f.store.write((tx) => f.revisions.historyInTransaction(tx, bound, afterRev, 1)),
+			).toThrow("Draft revision unavailable");
+		expect(() => f.revisions.history(bound, 1, 1)).toThrow("Draft revision unavailable");
+	});
+});
 describe("encrypted immutable native revision storage", () => {
 	it("normalizes before shared hashing and persists immutable history across encrypted reopen", async () => {
 		const f = await fixture(),
