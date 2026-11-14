@@ -24,6 +24,34 @@ import {
 } from "./route-helpers.ts";
 
 requireLoopbackNetworkGuard();
+
+const nativeEventsLifetimeObserver = vi.hoisted(() => ({
+	onClose: undefined as ((listener: unknown) => void) | undefined,
+}));
+vi.mock("../../../src/authz/native-peer.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../../src/authz/native-peer.ts")>();
+	const prototype = actual.NativeDeviceTls.prototype;
+	const descriptor = Object.getOwnPropertyDescriptor(prototype, "close");
+	if (
+		!descriptor ||
+		typeof descriptor.value !== "function" ||
+		descriptor.writable !== true ||
+		descriptor.configurable !== true
+	)
+		throw new Error("Original TLS listener close descriptor unavailable");
+	const originalClose: typeof prototype.close = descriptor.value;
+	Object.defineProperty(prototype, "close", {
+		...descriptor,
+		value: function (
+			this: InstanceType<typeof actual.NativeDeviceTls>,
+			...args: Parameters<typeof originalClose>
+		): ReturnType<typeof originalClose> {
+			nativeEventsLifetimeObserver.onClose?.(this);
+			return Reflect.apply(originalClose, this, args);
+		},
+	});
+	return actual;
+});
 const [
 	{ openNativeDeviceApi, closeFailedNativeDeviceContext, NativeDeviceTls },
 	{ DeviceStatus, BootstrapStatus, PairingWindow, checkRouteResponseBytes, checkApiErrorBytes },
@@ -1656,4 +1684,531 @@ it("serves the exact persisted send-review snapshot over real TLS without rewrit
 	} finally {
 		await reopened.close();
 	}
+});
+
+const [
+	{ default: EventWebSocket },
+	{ EventFrame: EventFrameCodec, EventsRequest, checkFrameLength },
+] = await Promise.all([import("ws"), import("@draftyak/protocol/device-api")]);
+type AttachedEventFrame = ReturnType<typeof EventFrameCodec.parse>;
+const eventProtocol = "draftyak.events.v1";
+
+function observeUpgradeStatus(client: FakeDevice): {
+	readonly status: Promise<number>;
+	stop(): void;
+} {
+	const result = Promise.withResolvers<number>();
+	void result.promise.catch(() => {});
+	const chunks: Buffer[] = [];
+	let total = 0;
+	const stop = (): void => {
+		client.socket.off("data", data);
+		client.socket.off("close", fail);
+	};
+	const fail = (): void => {
+		stop();
+		result.reject(new Error("Events HTTP upgrade did not complete"));
+	};
+	const data = (chunk: Buffer): void => {
+		total += chunk.byteLength;
+		if (total > 8192) {
+			fail();
+			return;
+		}
+		chunks.push(Buffer.from(chunk));
+		const raw = Buffer.concat(chunks);
+		const end = raw.indexOf("\r\n\r\n");
+		if (end < 0) return;
+		const line = raw.subarray(0, raw.indexOf("\r\n")).toString("ascii");
+		const match = /^HTTP\/1\.1 ([1-5][0-9]{2}) [\x20-\x7e]*$/.exec(line);
+		stop();
+		if (!match) result.reject(new Error("Events HTTP upgrade status refused"));
+		else result.resolve(Number(match[1]));
+	};
+	client.socket.on("data", data);
+	client.socket.once("close", fail);
+	return { status: result.promise, stop };
+}
+
+async function attachedEvents(context: NativeDeviceContext, identity: FakeDeviceIdentity) {
+	const endpoint = context.endpoint;
+	const client = await connect(context, identity);
+	const handshake = observeUpgradeStatus(client);
+	const opened = Promise.withResolvers<void>();
+	const ready = Promise.withResolvers<AttachedEventFrame>();
+	const closed = Promise.withResolvers<number>();
+	void opened.promise.catch(() => {});
+	void ready.promise.catch(() => {});
+	const frames: AttachedEventFrame[] = [];
+	let decodingFailed = false;
+	let connectionCalls = 0;
+	let suppliedSocket: FakeDevice["socket"] | undefined;
+	const createConnection = (): FakeDevice["socket"] => {
+		connectionCalls++;
+		suppliedSocket = client.socket;
+		return suppliedSocket;
+	};
+	const socket = new EventWebSocket(
+		`wss://127.0.0.1:${endpoint.port}/device/v1/events`,
+		[eventProtocol],
+		{
+			createConnection,
+		},
+	);
+	socket.on("open", () => opened.resolve());
+	socket.on("unexpected-response", (_request, response) => {
+		response.resume();
+		opened.reject(new Error("Events HTTP upgrade refused"));
+		ready.reject(new Error("Events HTTP upgrade refused"));
+		socket.terminate();
+	});
+	socket.on("error", () => {
+		opened.reject(new Error("Events connection failed"));
+		ready.reject(new Error("Events connection failed"));
+	});
+	socket.on("close", (code) => {
+		handshake.stop();
+		closed.resolve(code);
+	});
+	socket.on("message", (data, binary) => {
+		try {
+			if (binary || !Buffer.isBuffer(data) || !checkFrameLength(data.byteLength))
+				throw new Error("Events frame refused");
+			const text = data.toString("utf8");
+			const frame = EventFrameCodec.parse(JSON.parse(text));
+			if (canonicalize(frame) !== text) throw new Error("Events frame refused");
+			frames.push(frame);
+			if (frames.length === 1) {
+				if (frame.type !== "ready") throw new Error("Events initial frame refused");
+				ready.resolve(frame);
+			}
+		} catch {
+			decodingFailed = true;
+			ready.reject(new Error("Events frame refused"));
+		}
+	});
+	return {
+		client,
+		socket,
+		frames,
+		opened: opened.promise,
+		ready: ready.promise,
+		closed: closed.promise,
+		status: handshake.status,
+		get decodingFailed() {
+			return decodingFailed;
+		},
+		get connectionCalls() {
+			return connectionCalls;
+		},
+		get suppliedOriginalSocket() {
+			return suppliedSocket === client.socket;
+		},
+		async dispose(): Promise<void> {
+			handshake.stop();
+			if (socket.readyState !== EventWebSocket.CLOSED) socket.terminate();
+			await bounded(closed.promise);
+		},
+	};
+}
+
+async function startAttachedEvents(
+	context: NativeDeviceContext,
+	identity: FakeDeviceIdentity,
+	after: string | null = null,
+) {
+	const wire = await attachedEvents(context, identity);
+	try {
+		await bounded(wire.opened);
+		expect(await bounded(wire.status)).toBe(101);
+		expect(wire.socket.protocol).toBe(eventProtocol);
+		expect(wire.connectionCalls).toBe(1);
+		expect(wire.suppliedOriginalSocket).toBe(true);
+		const initial = canonicalize(EventsRequest.parse({ after }));
+		if (after === null) expect(initial).toBe('{"after":null}');
+		wire.socket.send(initial);
+		expect((await bounded(wire.ready)).type).toBe("ready");
+		expect(wire.decodingFailed).toBe(false);
+		return wire;
+	} catch (error) {
+		await wire.dispose();
+		throw error;
+	}
+}
+
+function eventsUpgradeRequest(port: number, extraHeaders: readonly string[] = []): Buffer {
+	return Buffer.from(
+		[
+			"GET /device/v1/events HTTP/1.1",
+			`Host: 127.0.0.1:${port}`,
+			"Upgrade: websocket",
+			"Connection: Upgrade",
+			`Sec-WebSocket-Key: ${randomBytes(16).toString("base64")}`,
+			"Sec-WebSocket-Version: 13",
+			`Sec-WebSocket-Protocol: ${eventProtocol}`,
+			...extraHeaders,
+			"",
+			"",
+		].join("\r\n"),
+		"ascii",
+	);
+}
+
+async function rawEventsRefusal(client: FakeDevice, bytes: Uint8Array): Promise<Buffer> {
+	const chunks: Buffer[] = [];
+	let total = 0;
+	const result = Promise.withResolvers<Buffer>();
+	const stop = (): void => {
+		client.socket.off("data", data);
+		client.socket.off("close", close);
+		client.socket.off("error", fail);
+	};
+	const fail = (): void => {
+		stop();
+		result.reject(new Error("Events refusal did not complete"));
+	};
+	const data = (chunk: Buffer): void => {
+		total += chunk.byteLength;
+		if (total > 8192) {
+			fail();
+			return;
+		}
+		chunks.push(Buffer.from(chunk));
+	};
+	const close = (): void => {
+		stop();
+		result.resolve(Buffer.concat(chunks));
+	};
+	client.socket.on("data", data);
+	client.socket.once("close", close);
+	client.socket.once("error", fail);
+	try {
+		client.socket.write(bytes);
+		return await bounded(result.promise);
+	} finally {
+		stop();
+	}
+}
+
+it("keeps events connected past the HTTP deadline and retires the context resources", async () => {
+	const fixture = folder();
+	const credentials = await prepareRouteDevices(fixture);
+	const { context, key } = await start(fixture, false);
+	const endpoint = context.endpoint;
+	const wire = await startAttachedEvents(context, credentials.confirmed);
+	try {
+		await new Promise<void>((resolve) => setTimeout(resolve, 10_500));
+		expect(wire.socket.readyState).toBe(EventWebSocket.OPEN);
+		expect(wire.client.socket.destroyed).toBe(false);
+		expect(wire.decodingFailed).toBe(false);
+		expect(wire.frames.length).toBe(1);
+		const originalSocketClosed = socketClosed(wire.client.socket);
+		const ending = context.close();
+		void ending.catch(() => {});
+		expect(() => context.endpoint).toThrow("CONTEXT_UNAVAILABLE");
+		expectUsable(key);
+		await bounded(originalSocketClosed);
+		expect(await bounded(wire.closed)).toBe(1001);
+		await bounded(ending);
+		expect(wire.client.socket.closed).toBe(true);
+		expect(wire.socket.readyState).toBe(EventWebSocket.CLOSED);
+		expectErased(key);
+		const reopened = await fixture.open();
+		expect(reopened.hid).toBe(endpoint.hid);
+		await reopened.close();
+	} finally {
+		await wire.dispose();
+	}
+}, 30_000);
+
+it("refuses an Origin on the genuine events upgrade before 101 with an empty HTTP body", async () => {
+	const fixture = folder();
+	const credentials = await prepareRouteDevices(fixture);
+	const { context } = await start(fixture, false);
+	const client = await connect(context, credentials.confirmed);
+	const raw = await rawEventsRefusal(
+		client,
+		eventsUpgradeRequest(context.endpoint.port, ["Origin: https://invalid.example"]),
+	);
+	const split = raw.indexOf("\r\n\r\n");
+	expect(split >= 0).toBe(true);
+	const header = raw.subarray(0, split).toString("ascii");
+	expect(header.split("\r\n", 1)[0]).toMatch(/^HTTP\/1\.1 403(?: |$)/);
+	expect(header).toMatch(/\r\nConnection: close(?:\r\n|$)/i);
+	expect(header).toMatch(/\r\nContent-Length: 0(?:\r\n|$)/i);
+	expect(raw.subarray(split + 4).byteLength).toBe(0);
+	expect(client.socket.closed).toBe(true);
+});
+
+it("closes the genuine event stream with 1008 for a second valid initial text message", async () => {
+	const fixture = folder();
+	const credentials = await prepareRouteDevices(fixture);
+	const { context } = await start(fixture, false);
+	const wire = await startAttachedEvents(context, credentials.confirmed);
+	try {
+		wire.socket.send(canonicalize(EventsRequest.parse({ after: null })));
+		expect(await bounded(wire.closed)).toBe(1008);
+		expect(wire.decodingFailed).toBe(false);
+		expect(wire.frames.length).toBe(1);
+		expect(wire.frames[0]?.type).toBe("ready");
+	} finally {
+		await wire.dispose();
+	}
+});
+
+async function disposeAttachedEventConnections(
+	wires: readonly (Awaited<ReturnType<typeof startAttachedEvents>> | undefined)[],
+): Promise<void> {
+	const results = await Promise.allSettled(wires.map((wire) => wire?.dispose()));
+	if (results.some((result) => result.status === "rejected"))
+		throw new Error("Events reconnect cleanup incomplete");
+}
+
+it("retains the real emitted event cursor across a new TLS connection to the same context", async () => {
+	const fixture = folder();
+	const credentials = await prepareRouteDevices(fixture);
+	const { context } = await start(fixture, false);
+	let first: Awaited<ReturnType<typeof startAttachedEvents>> | undefined;
+	let resumed: Awaited<ReturnType<typeof startAttachedEvents>> | undefined;
+	try {
+		first = await startAttachedEvents(context, credentials.confirmed);
+		const actualReady = await bounded(first.ready);
+		if (actualReady.type !== "ready") throw new Error("Events actual ready cursor unavailable");
+		const originalSocketClosed = socketClosed(first.client.socket);
+		first.socket.close(1000);
+		await bounded(first.closed);
+		await bounded(originalSocketClosed);
+		expect(first.client.socket.closed).toBe(true);
+		resumed = await startAttachedEvents(context, credentials.confirmed, actualReady.cursor);
+		expect((await bounded(resumed.ready)).type).toBe("ready");
+		expect(resumed.decodingFailed).toBe(false);
+		expect(resumed.connectionCalls).toBe(1);
+		expect(resumed.suppliedOriginalSocket).toBe(true);
+	} finally {
+		await disposeAttachedEventConnections([first, resumed]);
+	}
+});
+
+it("hands the original issued peer and HTTP upgrade objects to the real events manager", async () => {
+	const [
+		{ IncomingMessage, Server },
+		{ TLSSocket },
+		{ attachNativeDeviceHttp },
+		{ createNativeEventWebSocket },
+		{ Authorizer },
+	] = await Promise.all([
+		import("node:http"),
+		import("node:tls"),
+		import("../../../src/api/device/routes.ts"),
+		import("../../../src/api/device/events-websocket.ts"),
+		import("../../../src/authz/authorizer.ts"),
+	]);
+	const fixture = folder();
+	const credentials = await prepareRouteDevices(fixture);
+	const session = await fixture.open({ masterKey: fixture.key() });
+	let events: ReturnType<typeof createNativeEventWebSocket> | undefined;
+	let listener: InstanceType<typeof NativeDeviceTls> | undefined;
+	let client: FakeDevice | undefined;
+	let restoreEmit: (() => void) | undefined;
+	const retire = async (): Promise<void> => {
+		if (events) await events.close();
+		if (listener) await listener.close();
+		await session.close();
+	};
+	failedOpenings.push(retire);
+	try {
+		events = createNativeEventWebSocket(session);
+		const originalEvents = events;
+		const issued =
+			Promise.withResolvers<
+				Parameters<NonNullable<ConstructorParameters<typeof NativeDeviceTls>[2]>>
+			>();
+		void issued.promise.catch(() => {});
+		let originalSocket: import("node:tls").TLSSocket | undefined;
+		type Upgrade = Parameters<NonNullable<Parameters<typeof attachNativeDeviceHttp>[2]>>;
+		const observed = Promise.withResolvers<Upgrade>();
+		void observed.promise.catch(() => {});
+		const originalEmit = Server.prototype.emit;
+		const observer = vi.spyOn(Server.prototype, "emit").mockImplementation(function (
+			this: InstanceType<typeof Server>,
+			event: string | symbol,
+			...args: unknown[]
+		): boolean {
+			if (event === "upgrade" && args[1] === originalSocket) {
+				const [request, socket, head] = args;
+				if (
+					request instanceof IncomingMessage &&
+					socket instanceof TLSSocket &&
+					Buffer.isBuffer(head)
+				)
+					observed.resolve([request, socket, head]);
+				else observed.reject(new Error("Original HTTP upgrade arguments unavailable"));
+			}
+			return Reflect.apply(originalEmit, this, [event, ...args]);
+		});
+		restoreEmit = () => observer.mockRestore();
+		const upgrade = vi.fn((...args: Parameters<typeof originalEvents.upgrade>) =>
+			originalEvents.upgrade(...args),
+		);
+		const dispatch = vi.fn(async () => undefined);
+		listener = new NativeDeviceTls(session.devices, session.identity, (peer, socket) => {
+			originalSocket = socket;
+			issued.resolve([peer, socket]);
+			attachNativeDeviceHttp(socket, dispatch, (request, stream, head) =>
+				upgrade(peer, request, stream, head),
+			);
+		});
+		const port = await listener.listen();
+		client = await openFakeDevice({ port, hid: session.hid }, credentials.confirmed);
+		clients.add(client);
+		const [peer, socket] = await bounded(issued.promise);
+		expect(socket.getProtocol()).toBe("TLSv1.3");
+		const authorizer = new Authorizer(session.devices);
+		expect(() =>
+			session.store.read((db) => authorizer.requirePeerRoute(db, peer, "status")),
+		).not.toThrow();
+		const raw = await rawEventsRefusal(
+			client,
+			eventsUpgradeRequest(port, ["Origin: https://invalid.example"]),
+		);
+		const original = await bounded(observed.promise);
+		expect(upgrade).toHaveBeenCalledTimes(1);
+		const actual = upgrade.mock.calls[0];
+		if (!actual) throw new Error("Actual events manager call unavailable");
+		expect(actual[0]).toBe(peer);
+		expect(actual[1]).toBe(original[0]);
+		expect(actual[2]).toBe(socket);
+		expect(actual[2]).toBe(original[1]);
+		expect(actual[1].socket).toBe(socket);
+		expect(actual[3]).toBe(original[2]);
+		expect(actual[3].byteLength).toBe(0);
+		expect(dispatch).not.toHaveBeenCalled();
+		const split = raw.indexOf("\r\n\r\n");
+		expect(split).toBeGreaterThanOrEqual(0);
+		const header = raw.subarray(0, split).toString("ascii");
+		expect(header.split("\r\n", 1)[0]).toMatch(/^HTTP\/1\.1 403(?: |$)/);
+		expect(header).toMatch(/\r\nContent-Length: 0(?:\r\n|$)/i);
+		expect(raw.subarray(split + 4).byteLength).toBe(0);
+	} finally {
+		restoreEmit?.();
+		if (client) await bounded(destroySocket(client.socket));
+		await retire();
+	}
+});
+
+it("joins the real events manager before closing its original TLS listener and retiring its key", async () => {
+	const fixture = folder();
+	const credentials = await prepareRouteDevices(fixture);
+	const { WebSocketServer } = await import("ws");
+	const release = Promise.withResolvers<void>();
+	const originalListen = NativeDeviceTls.prototype.listen;
+	const listeners: InstanceType<typeof NativeDeviceTls>[] = [];
+	const listening = vi.spyOn(NativeDeviceTls.prototype, "listen").mockImplementation(function (
+		this: InstanceType<typeof NativeDeviceTls>,
+		...args: Parameters<typeof originalListen>
+	): ReturnType<typeof originalListen> {
+		listeners.push(this);
+		return Reflect.apply(originalListen, this, args);
+	});
+	const forwarded: Promise<void>[] = [];
+	const originalFailures: unknown[] = [];
+	const cleanupFailures: unknown[] = [];
+	let restoreServerClose: (() => void) | undefined;
+	let context: NativeDeviceContext | undefined;
+	let wire: Awaited<ReturnType<typeof startAttachedEvents>> | undefined;
+	let ending: Promise<void> | undefined;
+	try {
+		const started = await start(fixture, false);
+		context = started.context;
+		const key = started.key;
+		expect(listeners).toHaveLength(1);
+		const listener = listeners[0];
+		if (!listener) throw new Error("Original TLS listener unavailable");
+		wire = await startAttachedEvents(context, credentials.confirmed);
+		expect(wire.socket.readyState).toBe(EventWebSocket.OPEN);
+		const originalServerClose = WebSocketServer.prototype.close;
+		type ServerCloseCallback = NonNullable<Parameters<typeof originalServerClose>[0]>;
+		const physical = Promise.withResolvers<{
+			readonly receiver: InstanceType<typeof WebSocketServer>;
+			readonly error: Parameters<ServerCloseCallback>[0];
+			readonly afterReturn: boolean;
+		}>();
+		let closeReturned = false;
+		const serverClosing = vi.spyOn(WebSocketServer.prototype, "close").mockImplementation(function (
+			this: InstanceType<typeof WebSocketServer>,
+			callback?: ServerCloseCallback,
+		): ReturnType<typeof originalServerClose> {
+			if (typeof callback !== "function")
+				return Reflect.apply(originalServerClose, this, [callback]);
+			const server = this;
+			return Reflect.apply(originalServerClose, this, [
+				function (this: unknown, ...args: Parameters<ServerCloseCallback>): void {
+					physical.resolve({ receiver: server, error: args[0], afterReturn: closeReturned });
+					const completion = release.promise.then(() => {
+						Reflect.apply(callback, this, args);
+					});
+					forwarded.push(completion);
+					void completion.catch(() => {});
+				},
+			]);
+		});
+		restoreServerClose = () => serverClosing.mockRestore();
+		const listenerEntries: unknown[] = [];
+		nativeEventsLifetimeObserver.onClose = (receiver) => {
+			if (receiver === listener) listenerEntries.push(receiver);
+		};
+		let settled = false;
+		ending = context.close();
+		closeReturned = true;
+		void ending.then(
+			() => {
+				settled = true;
+			},
+			() => {
+				settled = true;
+			},
+		);
+		const closed = await bounded(physical.promise);
+		expect(closed.receiver).toBeInstanceOf(WebSocketServer);
+		expect(closed.error).toBeUndefined();
+		expect(closed.afterReturn).toBe(true);
+		expect(serverClosing).toHaveBeenCalledTimes(1);
+		expect(listenerEntries).toHaveLength(0);
+		expect(settled).toBe(false);
+		expect(context.close()).toBe(ending);
+		expectUsable(key);
+		release.resolve();
+		await bounded(ending);
+		expect(listenerEntries).toHaveLength(1);
+		expect(listenerEntries[0]).toBe(listener);
+		expectErased(key);
+		await bounded(wire.closed);
+		await Promise.all(forwarded);
+	} catch (error) {
+		originalFailures.push(error);
+	} finally {
+		release.resolve();
+		const cleanup = await Promise.allSettled([
+			wire?.dispose() ?? Promise.resolve(),
+			context ? bounded(ending ?? context.close()) : Promise.resolve(),
+			...forwarded,
+		]);
+		nativeEventsLifetimeObserver.onClose = undefined;
+		cleanupFailures.push(
+			...cleanup.flatMap((outcome) => (outcome.status === "rejected" ? [outcome.reason] : [])),
+		);
+		for (const restore of [restoreServerClose, () => listening.mockRestore()]) {
+			try {
+				restore?.();
+			} catch (error) {
+				cleanupFailures.push(error);
+			}
+		}
+	}
+	if (cleanupFailures.length)
+		throw new AggregateError(
+			[...originalFailures, ...cleanupFailures],
+			"Events join cleanup incomplete",
+		);
+	if (originalFailures.length) throw originalFailures[0];
 });
