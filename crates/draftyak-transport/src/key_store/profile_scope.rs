@@ -1,8 +1,8 @@
-//! Canonical profile-to-record names. This data conveys no native admission authority.
+//! Canonical profile record and service names, without native admission authority.
 
 use std::fmt;
 
-use super::StoreError;
+use super::{SERVICE, StoreError};
 
 const RECORD_PREFIX: &str = "desktop-profile-identity-namespace-v1--";
 
@@ -10,12 +10,14 @@ const RECORD_PREFIX: &str = "desktop-profile-identity-namespace-v1--";
 #[derive(Clone, Eq, PartialEq)]
 pub struct NativeProfileScope {
     record_name: String,
+    service_name: String,
 }
 
 impl NativeProfileScope {
     pub fn default_profile() -> Self {
         Self {
             record_name: format!("{RECORD_PREFIX}default"),
+            service_name: format!("{SERVICE}.desktop-profile.default"),
         }
     }
 
@@ -32,11 +34,16 @@ impl NativeProfileScope {
         }
         Ok(Self {
             record_name: format!("{RECORD_PREFIX}named-{name}"),
+            service_name: format!("{SERVICE}.desktop-profile.named.{name}"),
         })
     }
 
     pub(super) fn backend_record_name(&self) -> &str {
         &self.record_name
+    }
+
+    pub(super) fn backend_service_name(&self) -> &str {
+        &self.service_name
     }
 }
 
