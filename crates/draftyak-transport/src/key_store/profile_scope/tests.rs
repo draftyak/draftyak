@@ -176,9 +176,8 @@ fn debug_output_redacts_both_profile_forms_and_the_backend_namespace() {
 #[test]
 fn invalid_profile_errors_are_fixed_and_do_not_echo_the_input() {
     let input = "DYTEST-invalid/profile";
-    let error = NativeProfileScope::named_profile(input)
-        .err()
-        .expect("invalid profile data must be refused");
+    let error =
+        NativeProfileScope::named_profile(input).expect_err("invalid profile data must be refused");
     assert_eq!(error, StoreError::InvalidInput);
     assert_eq!(error.code(), "STORE_INVALID_INPUT");
     assert_eq!(error.to_string(), "invalid native store input");
