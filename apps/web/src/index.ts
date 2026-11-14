@@ -14,6 +14,11 @@ export {
 	type ConversationViewProps,
 	type MessageBodyPresentation,
 } from "./conversation/ConversationView.tsx";
+export {
+	type AttachmentDownloadIntent,
+	MailAttachments,
+	type MailAttachmentsProps,
+} from "./conversation/MailAttachments.tsx";
 export { MessageBody, type MessageBodyProps } from "./conversation/MessageBody.tsx";
 export {
 	ConversationList,
