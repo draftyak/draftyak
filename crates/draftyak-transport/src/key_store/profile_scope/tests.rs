@@ -170,6 +170,7 @@ fn debug_output_redacts_both_profile_forms_and_the_backend_namespace() {
         assert_eq!(debug, "NativeProfileScope([redacted])");
         assert!(!debug.contains("dytest-scope-42"));
         assert!(!debug.contains(scope.backend_record_name()));
+        assert!(!debug.contains(scope.backend_service_name()));
     }
 }
 
@@ -194,6 +195,81 @@ fn profile_open_without_the_native_feature_refuses_without_a_backend() {
     ] {
         assert!(matches!(
             super::super::NativeStore::open_profile(&scope),
+            Err(StoreError::Unavailable)
+        ));
+    }
+}
+
+#[test]
+fn profile_services_are_distinct_from_legacy_and_named_default() {
+    let default = NativeProfileScope::default_profile();
+    let named = NativeProfileScope::named_profile("default").expect("valid profile data");
+    assert_eq!(
+        default.backend_service_name(),
+        "com.draftyak.transport.device.v1.desktop-profile.default"
+    );
+    assert_eq!(
+        named.backend_service_name(),
+        "com.draftyak.transport.device.v1.desktop-profile.named.default"
+    );
+    assert_ne!(default.backend_service_name(), super::super::SERVICE);
+    assert_ne!(named.backend_service_name(), super::super::SERVICE);
+    assert_ne!(default.backend_service_name(), named.backend_service_name());
+}
+
+#[test]
+fn service_isolation_preserves_the_full_profile_boundary() {
+    let mut services = std::collections::HashSet::new();
+    services.insert(
+        NativeProfileScope::default_profile()
+            .backend_service_name()
+            .to_owned(),
+    );
+    services.insert(
+        NativeProfileScope::named_profile("default")
+            .expect("valid profile data")
+            .backend_service_name()
+            .to_owned(),
+    );
+    for length in 1..=32 {
+        for name in ["a".repeat(length), format!("{}b", "a".repeat(length - 1))] {
+            let scope = NativeProfileScope::named_profile(&name).expect("valid profile data");
+            assert!(scope.backend_service_name().is_ascii());
+            assert!(
+                scope
+                    .backend_service_name()
+                    .ends_with(&format!(".named.{name}"))
+            );
+            assert!(services.insert(scope.backend_service_name().to_owned()));
+        }
+    }
+    assert_eq!(services.len(), 66);
+}
+
+#[test]
+fn reconstructing_a_scope_keeps_both_persistent_names_stable() {
+    for name in ["0", "default", "work-1", "0123456789abcdefghijklmnopqrstuv"] {
+        let first = NativeProfileScope::named_profile(name).expect("valid profile data");
+        let clone = first.clone();
+        let restored = NativeProfileScope::named_profile(name).expect("valid profile data");
+        assert_eq!(first.backend_service_name(), clone.backend_service_name());
+        assert_eq!(
+            first.backend_service_name(),
+            restored.backend_service_name()
+        );
+        assert_eq!(first.backend_record_name(), restored.backend_record_name());
+    }
+}
+
+#[cfg(not(feature = "native-store"))]
+#[test]
+fn per_profile_service_open_without_native_feature_refuses_without_fallback() {
+    for scope in [
+        NativeProfileScope::default_profile(),
+        NativeProfileScope::named_profile("default").expect("valid profile data"),
+    ] {
+        assert!(matches!(
+            super::super::NativeStore::open_profile_service(&scope),
             Err(StoreError::Unavailable)
         ));
     }

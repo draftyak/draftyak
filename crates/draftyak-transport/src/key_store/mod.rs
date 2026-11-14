@@ -243,6 +243,24 @@ impl NativeStore {
             Err(StoreError::Unavailable)
         }
     }
+    /// Opens this profile's distinct OS keychain service and scoped record.
+    /// The existing record-only API and its persisted namespace stay unchanged.
+    /// Callers must still hold their original native admission and lifetime.
+    pub fn open_profile_service(scope: &NativeProfileScope) -> Result<Self, StoreError> {
+        let service = scope.backend_service_name();
+        let account = scope.backend_record_name();
+        #[cfg(feature = "native-store")]
+        {
+            Ok(Self {
+                record: platform::open(service, account)?,
+            })
+        }
+        #[cfg(not(feature = "native-store"))]
+        {
+            let _ = (service, account);
+            Err(StoreError::Unavailable)
+        }
+    }
     fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, StoreError> {
         let bytes = self.record.read()?;
         if bytes
