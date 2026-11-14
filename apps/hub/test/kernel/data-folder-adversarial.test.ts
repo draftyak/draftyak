@@ -70,19 +70,59 @@ vi.mock("node:fs", async (importOriginal) => {
 
 const temporaryRoot = realpathSync.native(os.tmpdir());
 const held: DataFolder[] = [];
+const roots = new Set<string>();
+const recoveryObligations: Array<() => void> = [];
+let cleanupFailure: AggregateError | undefined;
 let root: string;
 
 beforeEach(() => {
-	root = realpathSync.native(mkdtempSync(path.join(temporaryRoot, "draftyak-data-")));
+	if (cleanupFailure || held.length || roots.size || recoveryObligations.length)
+		throw new Error("DYTEST-PREVIOUS-DATA-LIFETIME-INCOMPLETE");
+	const created = mkdtempSync(path.join(temporaryRoot, "draftyak-data-"));
+	roots.add(created);
+	root = realpathSync.native(created);
 });
 afterEach(() => {
+	if (cleanupFailure) throw cleanupFailure;
 	faults.mkdir = undefined;
 	faults.spelledStat = undefined;
 	faults.lockStat = undefined;
 	faults.lockChecks = 0;
-	vi.restoreAllMocks();
-	for (const folder of held.splice(0)) folder.release();
-	rmSync(root, { recursive: true, force: true });
+	const failures: unknown[] = [];
+	try {
+		for (const folder of held) {
+			try {
+				folder.release();
+			} catch (error) {
+				failures.push(error);
+			}
+		}
+		for (const recover of recoveryObligations) {
+			try {
+				recover();
+			} catch (error) {
+				failures.push(error);
+			}
+		}
+		if (failures.length === 0) {
+			for (const owned of roots) {
+				try {
+					rmSync(owned, { recursive: true, force: true });
+				} catch (error) {
+					failures.push(error);
+				}
+			}
+		}
+		if (failures.length) {
+			cleanupFailure = new AggregateError(failures, "Data lifetime cleanup remains incomplete");
+			throw cleanupFailure;
+		}
+		held.length = 0;
+		recoveryObligations.length = 0;
+		roots.clear();
+	} finally {
+		vi.restoreAllMocks();
+	}
 });
 
 function folder(...parts: string[]): string {
@@ -107,6 +147,20 @@ function refused(spelling: string, code: StartupRefusalCode): StartupRefusal {
 	expect(failure).toBeInstanceOf(StartupRefusal);
 	expect((failure as StartupRefusal).code).toBe(code);
 	return failure as StartupRefusal;
+}
+
+function releaseRefused(value: DataFolder, original: Error): void {
+	let failure: unknown;
+	try {
+		value.release();
+	} catch (error) {
+		failure = error;
+	}
+	expect(failure).toBeInstanceOf(StartupRefusal);
+	expect(failure).not.toBe(original);
+	expect((failure as StartupRefusal).code).toBe("DATA_DIR_LOCK_IO");
+	expect((failure as StartupRefusal).cause).toBeUndefined();
+	expect(inspect(failure, { showHidden: true, depth: null })).not.toContain(original.message);
 }
 
 it("classifies the canonical spelling, so a link into a synced folder is refused as synced", () => {
@@ -442,5 +496,241 @@ it.each(["replace", "missing", "nonregular"] as const)(
 		faults.lockStat = undefined;
 		expect(() => admitted.assertHeld()).not.toThrow();
 		refused(data, "DATA_DIR_LOCKED");
+	},
+);
+
+interface RetainedConnection {
+	readonly connection: Database.Database;
+	readonly owner: Set<Database.Database>;
+}
+
+// Observe only real SUT-created lock connections, after the actual retention operation.
+function observeHeldLock(lock: string) {
+	const connections: RetainedConnection[] = [];
+	const add = Set.prototype.add;
+	const pragma = Database.prototype.pragma;
+	const observer = vi.spyOn(Set.prototype, "add").mockImplementation(function (
+		this: Set<unknown>,
+		value: unknown,
+	) {
+		const result = add.call(this, value);
+		if (value instanceof Database && value.open) {
+			const main = (
+				pragma.call(value, "database_list") as { name?: unknown; file?: unknown }[]
+			).find((row) => row.name === "main");
+			if (main?.file === lock)
+				connections.push({ connection: value, owner: this as Set<Database.Database> });
+		}
+		return result;
+	});
+	return { connections, restore: () => observer.mockRestore() };
+}
+
+it("retains a failed release and fences held checks until the same original close is retried", () => {
+	const data = folder("data");
+	const watched = observeHeldLock(path.join(data, "run", "hub.lock"));
+	const originalClose = Database.prototype.close;
+	const failure = new Error("DYTEST-original-close-failed");
+	let target: Database.Database | undefined;
+	let first: DataFolder | undefined;
+	let blocked = true;
+	let reenter = true;
+	let reentrantFailure: unknown;
+	let attempts = 0;
+	vi.spyOn(Database.prototype, "close").mockImplementation(function (this: Database.Database) {
+		if (this === target) {
+			attempts++;
+			if (reenter) {
+				reenter = false;
+				try {
+					first?.release();
+				} catch (error) {
+					reentrantFailure = error;
+				}
+			}
+			if (blocked) throw failure;
+		}
+		return originalClose.call(this);
+	});
+	try {
+		try {
+			first = admit(data);
+		} finally {
+			watched.restore();
+		}
+		expect(watched.connections).toHaveLength(1);
+		const original = watched.connections[0]!;
+		target = original.connection;
+		releaseRefused(first!, failure);
+		expect(attempts).toBe(1);
+		expect(reentrantFailure).toBeInstanceOf(StartupRefusal);
+		expect(original.owner.has(original.connection)).toBe(true);
+		expect(original.connection.open).toBe(true);
+		expect(() => first!.assertHeld()).toThrowError(new StartupRefusal("DATA_DIR_LOCK_IO"));
+		refused(data, "DATA_DIR_LOCKED");
+		expect(attempts).toBe(1);
+		blocked = false;
+		first.release();
+		expect(attempts).toBe(2);
+		expect(original.connection.open).toBe(false);
+		expect(original.owner.has(original.connection)).toBe(false);
+		const later = admit(data);
+		first.release();
+		expect(attempts).toBe(2);
+		expect(() => later.assertHeld()).not.toThrow();
+		refused(data, "DATA_DIR_LOCKED");
+	} finally {
+		blocked = false;
+		reenter = false;
+		watched.restore();
+	}
+});
+
+it("observes an original physically closed by a failed release without closing its later holder", () => {
+	const data = folder("data");
+	const watched = observeHeldLock(path.join(data, "run", "hub.lock"));
+	const originalClose = Database.prototype.close;
+	const failure = new Error("DYTEST-close-threw-after-completion");
+	let target: Database.Database | undefined;
+	let throwAfterClose = true;
+	let attempts = 0;
+	vi.spyOn(Database.prototype, "close").mockImplementation(function (this: Database.Database) {
+		if (this === target) {
+			attempts++;
+			const result = originalClose.call(this);
+			if (throwAfterClose) throw failure;
+			return result;
+		}
+		return originalClose.call(this);
+	});
+	try {
+		let first: DataFolder;
+		try {
+			first = admit(data);
+		} finally {
+			watched.restore();
+		}
+		expect(watched.connections).toHaveLength(1);
+		const original = watched.connections[0]!;
+		target = original.connection;
+		releaseRefused(first, failure);
+		expect(original.connection.open).toBe(false);
+		expect(original.owner.has(original.connection)).toBe(true);
+		expect(() => first.assertHeld()).toThrowError(new StartupRefusal("DATA_DIR_LOCK_IO"));
+		const later = admit(data);
+		throwAfterClose = false;
+		first.release();
+		first.release();
+		expect(attempts).toBe(1);
+		expect(original.owner.has(original.connection)).toBe(false);
+		expect(() => later.assertHeld()).not.toThrow();
+		refused(data, "DATA_DIR_LOCKED");
+	} finally {
+		throwAfterClose = false;
+		watched.restore();
+	}
+});
+
+it.each([false, true])(
+	"retains refused acquisition cleanup and retries its original before new admission (closed first: %s)",
+	(closedFirst) => {
+		const data = folder("data");
+		const other = folder("other");
+		const nested = folder("nested");
+		const lock = path.join(data, "run", "hub.lock");
+		writeFileSync(path.join(folder("data", "run"), "hub.lock"), "");
+		const watched = observeHeldLock(lock);
+		const originalClose = Database.prototype.close;
+		const pragma = Database.prototype.pragma;
+		const originalReceivers: Database.Database[] = [];
+		const failure = new Error("DYTEST-refused-original-close-failed");
+		let blocked = true;
+		let reenter = false;
+		let reentrantFailure: unknown;
+		let attempts = 0;
+		vi.spyOn(Database.prototype, "close").mockImplementation(function (this: Database.Database) {
+			const main = this.open
+				? (pragma.call(this, "database_list") as { name?: unknown; file?: unknown }[]).find(
+						(row) => row.name === "main",
+					)
+				: undefined;
+			if (main?.file === lock) {
+				if (!originalReceivers.includes(this)) originalReceivers.push(this);
+				attempts++;
+				if (reenter) {
+					reenter = false;
+					try {
+						admit(nested);
+					} catch (error) {
+						reentrantFailure = error;
+					}
+				}
+				if (blocked) {
+					if (closedFirst) originalClose.call(this);
+					throw failure;
+				}
+			}
+			return originalClose.call(this);
+		});
+		// No DataFolder is returned on failure, so retain the actual actor and root cleanup too.
+		recoveryObligations.push(() => {
+			let recovered: DataFolder;
+			try {
+				recovered = admit(data);
+			} catch {
+				// Failure-path hygiene only; this does not count as production retry evidence.
+				for (const original of originalReceivers) if (original.open) originalClose.call(original);
+				recovered = admit(data);
+			}
+			recovered.release();
+			for (const original of originalReceivers) {
+				if (original.open) throw new Error("DYTEST-refused-original-still-open");
+			}
+		});
+		try {
+			faults.lockChecks = 0;
+			faults.lockStat = "replace";
+			try {
+				refused(data, "DATA_DIR_LOCK_IO");
+			} finally {
+				watched.restore();
+			}
+			expect(watched.connections).toHaveLength(1);
+			const original = watched.connections[0]!;
+			expect(originalReceivers).toEqual([original.connection]);
+			expect(original.owner.has(original.connection)).toBe(true);
+			expect(original.connection.open).toBe(!closedFirst);
+			faults.lockStat = undefined;
+			faults.lockChecks = 0;
+			if (!closedFirst) {
+				reenter = true;
+				const next = observeHeldLock(path.join(other, "run", "hub.lock"));
+				try {
+					refused(other, "DATA_DIR_LOCK_IO");
+				} finally {
+					next.restore();
+				}
+				expect(next.connections).toEqual([]);
+				expect(readdirSync(path.join(other, "run"))).toEqual([]);
+				expect(readdirSync(path.join(nested, "run"))).toEqual([]);
+				expect(reentrantFailure).toBeInstanceOf(StartupRefusal);
+				expect((reentrantFailure as StartupRefusal).code).toBe("DATA_DIR_LOCK_IO");
+				expect(attempts).toBe(2);
+			}
+			blocked = false;
+			const later = admit(other);
+			expect(original.connection.open).toBe(false);
+			expect(original.owner.has(original.connection)).toBe(false);
+			expect(attempts).toBe(closedFirst ? 1 : 3);
+			expect(() => later.assertHeld()).not.toThrow();
+			refused(other, "DATA_DIR_LOCKED");
+			expect(() => later.assertHeld()).not.toThrow();
+		} finally {
+			blocked = false;
+			reenter = false;
+			faults.lockStat = undefined;
+			faults.lockChecks = 0;
+			watched.restore();
+		}
 	},
 );
