@@ -10,6 +10,11 @@ import {
 import path from "node:path";
 import { inspect, types } from "node:util";
 import type { IdentityProvider } from "@draftyak/extensions";
+import {
+	createNativeDraftReadContext,
+	type NativeDraftReadContext,
+	type NativeDraftReads,
+} from "../api/device/draft-context.ts";
 import { AuditChain } from "../audit/chain.ts";
 import { EventLog } from "../events/log.ts";
 import { singleOwnerIdentity } from "../extensions/free/identity.ts";
@@ -117,6 +122,8 @@ export interface HubSession {
 	plugins(): Promise<PluginRegistry>;
 	/** Account approvals bound to this original session. Accepts no configuration arguments. */
 	accountApprovals(): NativeAccountApprovals;
+	/** Authenticated saved drafts from this original session. Accepts no configuration arguments. */
+	draftReads(): NativeDraftReads;
 	/**
 	 * Closes the extensions, locks device authority, the PIN service and identity, destroys the audit key, closes
 	 * the store and erases the master key. Idempotent; a store close that fails is retried next call.
@@ -181,6 +188,9 @@ interface NativeOwner {
 	pluginsPromise?: Promise<PluginRegistry>;
 	accountApprovals?: NativeAccountApprovalsHandle;
 	accountApprovalsClosed: boolean;
+	draftReads?: NativeDraftReadContext;
+	draftReadFacade?: NativeDraftReads;
+	draftReadsClosed: boolean;
 	pairingWindows?: NativePairingWindowsHandle;
 	pairingWindowsClosed: boolean;
 	recovery?: NativeBackupRecoveryHandle;
@@ -496,6 +506,7 @@ function session(
 		stopped: false,
 		drained: false,
 		accountApprovalsClosed: false,
+		draftReadsClosed: false,
 		pairingWindowsClosed: false,
 		recoveryClosed: false,
 		artifactsClosed: false,
@@ -513,10 +524,18 @@ function session(
 		owner.closePromise = closing;
 		const draining: Promise<void>[] = [];
 		const approvals = owner.accountApprovals;
+		const drafts = owner.draftReads;
 		const recovery = owner.recovery;
 		const pairingWindows = owner.pairingWindows;
 		const images = owner.images;
 		const artifacts = owner.artifacts;
+		if (drafts && !owner.draftReadsClosed) {
+			try {
+				drafts.beginClose();
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
 		if (artifacts && !owner.artifactsClosed) {
 			try {
 				artifacts.beginClose();
@@ -557,6 +576,17 @@ function session(
 				draining.push(
 					drainNativePlugins(result).then(() => {
 						owner.drained = true;
+					}),
+				);
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
+		if (drafts && !owner.draftReadsClosed) {
+			try {
+				draining.push(
+					drafts.close().then(() => {
+						owner.draftReadsClosed = true;
 					}),
 				);
 			} catch {
@@ -705,6 +735,35 @@ function session(
 			throw new HubSessionError("SESSION_UNAVAILABLE");
 		}
 	};
+	const draftReads = (...arguments_: unknown[]): NativeDraftReads => {
+		try {
+			if (arguments_.length !== 0) throw new HubSessionError("SESSION_UNAVAILABLE");
+			sessionOwner(result, "open");
+			owner.draftReads ??= createNativeDraftReadContext(result, masterKey);
+			const child = owner.draftReads;
+			if (!owner.draftReadFacade) {
+				const facade: NativeDraftReads = {
+					get(peer, id) {
+						sessionOwner(result, "open");
+						const value = child.get(peer, id);
+						sessionOwner(result, "open");
+						return value;
+					},
+					history(peer, id, afterRev, limit) {
+						sessionOwner(result, "open");
+						const value = child.history(peer, id, afterRev, limit);
+						sessionOwner(result, "open");
+						return value;
+					},
+				};
+				owner.draftReadFacade = Object.freeze(facade);
+			}
+			sessionOwner(result, "open");
+			return owner.draftReadFacade;
+		} catch {
+			throw new HubSessionError("SESSION_UNAVAILABLE");
+		}
+	};
 	const { identity } = parts;
 	const result = {
 		hubId: identity.hubId,
@@ -712,6 +771,7 @@ function session(
 		...parts,
 		plugins,
 		accountApprovals,
+		draftReads,
 		close,
 	};
 	nativeOwners.set(result, owner);
