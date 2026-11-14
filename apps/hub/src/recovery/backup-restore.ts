@@ -3,14 +3,34 @@ import { type BigIntStats, constants } from "node:fs";
 import fs, { type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { types } from "node:util";
+import {
+	NativeAccounts,
+	restrictNativeAccountsForRestoreInTransaction,
+} from "../accounts/records.ts";
 import { AuditChain } from "../audit/chain.ts";
+import { Authorizer } from "../authz/authorizer.ts";
+import { CredentialVault } from "../credentials/vault.ts";
+import { NativeDraftRevisions } from "../drafts/revisions.ts";
+import { EventLog } from "../events/log.ts";
 import { advanceEpochForRestore, DeviceRegistry } from "../identity/devices.ts";
 import { HubIdentity } from "../identity/hub-key.ts";
 import { installPinForRestore, type PinInitialization, PinService } from "../identity/pin.ts";
+import { WorkDatabase } from "../jobs/database.ts";
 import { fields } from "../jobs/values.ts";
+import { systemClock } from "../kernel/clock.ts";
 import { admitDataFolder, type DataFolder } from "../kernel/data-directory.ts";
 import { MasterKey } from "../kernel/master-key.ts";
 import { HUB_NAMESPACES } from "../kernel/namespaces.ts";
+import {
+	expireNativeOutboxPendingForRestoreInTransaction,
+	NativeOutboxProposals,
+	resetNativeOutboxProposalsForRestoreInTransaction,
+} from "../outbox/propose.ts";
+import {
+	NativeApprovalRestore,
+	resetNativeApprovalStorageForRestoreInTransaction,
+} from "../outbox/restore-approvals.ts";
+import { resetSendTicketStorageForRestore, SendTicketStorage } from "../outbox/ticket-storage.ts";
 import { flushDirectory } from "../store/durable-file.ts";
 import { captureMigrationPlan, migrationTables } from "../store/migrator.ts";
 import { HubStore, type SqlReader, type SqlTransaction } from "../store/store.ts";
@@ -65,6 +85,11 @@ const discardPin = PinService.prototype.discard;
 const lockPins = PinService.prototype.lock;
 const registryState = DeviceRegistry.prototype.state;
 const lockRegistry = DeviceRegistry.prototype.lock;
+const destroyProposals = NativeOutboxProposals.prototype.destroy;
+const destroyRevisions = NativeDraftRevisions.prototype.destroy;
+const destroyApprovalStorage = NativeApprovalRestore.prototype.destroy;
+const destroyTicketStorage = SendTicketStorage.prototype.destroy;
+const drainCredentialVault = CredentialVault.prototype.drain;
 const invokeOriginal = Reflect.apply;
 interface CapturedPreparation {
 	readonly artifactFile: string;
@@ -119,6 +144,14 @@ interface PreparedRestore {
 	state: "READY" | "RESETTING" | "AUTHORITY_RESET" | "FAILED" | "CLOSING" | "CLOSED";
 	operation: Promise<void> | undefined;
 	closing: Promise<void> | undefined;
+	readonly services: {
+		audit: AuditChain | undefined;
+		vault: CredentialVault | undefined;
+		tickets: SendTicketStorage | undefined;
+		approvals: NativeApprovalRestore | undefined;
+		proposals: NativeOutboxProposals | undefined;
+		revisions: NativeDraftRevisions | undefined;
+	};
 }
 const preparations = new WeakMap<NativeBackupPreparation, PreparedRestore>();
 function preparation(raw: unknown): PreparedRestore {
@@ -599,6 +632,8 @@ function closePrepared(item: PreparedRestore): Promise<void> {
 		} catch {
 			// Only cleanup is admitted after a failed operation.
 		}
+		await releaseOutboxServices(item);
+		releaseRetainedAudit(item);
 		item.header.capsule.fill(0);
 		item.header.binding.fill(0);
 		await retireOwner(item.owner);
@@ -669,16 +704,70 @@ async function assertPreparedImage(item: PreparedRestore): Promise<void> {
 	assertResetting(item);
 }
 
-function releaseResetServices(
+async function releaseOutboxServices(item: PreparedRestore): Promise<void> {
+	let failed = false;
+	for (const release of [
+		() => {
+			if (item.services.approvals) {
+				invokeOriginal(destroyApprovalStorage, item.services.approvals, []);
+				item.services.approvals = undefined;
+			}
+		},
+		() => {
+			if (item.services.tickets) {
+				invokeOriginal(destroyTicketStorage, item.services.tickets, []);
+				item.services.tickets = undefined;
+			}
+		},
+		async () => {
+			const vault = item.services.vault;
+			if (vault) {
+				await (invokeOriginal(drainCredentialVault, vault, []) as Promise<void>);
+				item.services.vault = undefined;
+			}
+		},
+		() => {
+			if (item.services.proposals) {
+				invokeOriginal(destroyProposals, item.services.proposals, []);
+				item.services.proposals = undefined;
+			}
+		},
+		() => {
+			if (item.services.revisions) {
+				invokeOriginal(destroyRevisions, item.services.revisions, []);
+				item.services.revisions = undefined;
+			}
+		},
+	]) {
+		try {
+			await release();
+		} catch {
+			failed = true;
+		}
+	}
+	if (failed) refuse();
+}
+
+function releaseRetainedAudit(item: PreparedRestore): void {
+	// A rejected drain retains the original facade and its audit parent for cleanup retry.
+	if (item.services.vault) refuse();
+	if (item.services.audit) {
+		invokeOriginal(destroyAudit, item.services.audit, []);
+		item.services.audit = undefined;
+	}
+}
+
+async function releaseResetServices(
+	item: PreparedRestore,
 	devices: DeviceRegistry | undefined,
 	pins: PinService | undefined,
 	prepared: PinInitialization | undefined,
 	identity: HubIdentity | undefined,
-	audit: AuditChain | undefined,
 	auditKey: Buffer | undefined,
-): void {
+): Promise<void> {
 	let failed = false;
 	for (const release of [
+		() => releaseOutboxServices(item),
 		() => {
 			if (devices) invokeOriginal(lockRegistry, devices, []);
 		},
@@ -692,14 +781,14 @@ function releaseResetServices(
 			if (identity) invokeOriginal(lockIdentity, identity, []);
 		},
 		() => {
-			if (audit) invokeOriginal(destroyAudit, audit, []);
+			releaseRetainedAudit(item);
 		},
 		() => {
 			auditKey?.fill(0);
 		},
 	]) {
 		try {
-			release();
+			await release();
 		} catch {
 			failed = true;
 		}
@@ -722,6 +811,7 @@ async function resetPreparedAuthority(item: PreparedRestore, pin: string): Promi
 		const key = owner.key ?? refuse();
 		auditKey = invokeOriginal(deriveMasterKey, key, ["audit"]) as Buffer;
 		audit = new AuditChain(auditKey);
+		item.services.audit = audit;
 		auditKey.fill(0);
 		identity = (await invokeOriginal(loadExistingIdentity, HubIdentity, [
 			store,
@@ -733,6 +823,29 @@ async function resetPreparedAuthority(item: PreparedRestore, pin: string): Promi
 		const chain = audit;
 		const registry = devices;
 		const service = pins;
+		const database = new WorkDatabase(store);
+		const events = new EventLog(database, systemClock.wallMs);
+		const accounts = new NativeAccounts(database, events, chain, systemClock.wallMs);
+		// Retain each actual derived-key owner before any later constructor or producer can fail.
+		const revisions = new NativeDraftRevisions(store, chain, key);
+		item.services.revisions = revisions;
+		const proposals = new NativeOutboxProposals(
+			store,
+			chain,
+			key,
+			revisions,
+			registry,
+			new Authorizer(registry),
+			identity,
+		);
+		item.services.proposals = proposals;
+		// No credential callback is started: this facade only binds stored ticket DATA.
+		const vault = new CredentialVault(store, chain, key);
+		item.services.vault = vault;
+		const tickets = new SendTicketStorage(store, chain, vault, key, systemClock);
+		item.services.tickets = tickets;
+		const approvals = new NativeApprovalRestore(store, chain, key);
+		item.services.approvals = approvals;
 		const before = invokeOriginal(readStore, store, [
 			(db: SqlReader) => {
 				invokeOriginal(verifyAudit, chain, [db]);
@@ -784,6 +897,18 @@ async function resetPreparedAuthority(item: PreparedRestore, pin: string): Promi
 					pinRow.binary !== 1
 				)
 					refuse();
+				const restricted = restrictNativeAccountsForRestoreInTransaction(accounts, tx);
+				if (!Number.isSafeInteger(restricted) || restricted < 0) refuse();
+				const expired = expireNativeOutboxPendingForRestoreInTransaction(proposals, tx);
+				if (!Number.isSafeInteger(expired) || expired < 0) refuse();
+				const reapproved = resetNativeOutboxProposalsForRestoreInTransaction(proposals, tx);
+				if (!Number.isSafeInteger(reapproved) || reapproved < 0) refuse();
+				const resetTickets = resetSendTicketStorageForRestore(tickets, tx);
+				if (!Number.isSafeInteger(resetTickets) || resetTickets < 0) refuse();
+				// Propagate a stored-approval refusal through this original Store.write.
+				// Its zero-live predicate does not complete in-flight proposal reconciliation.
+				const invalidated = resetNativeApprovalStorageForRestoreInTransaction(approvals, tx);
+				if (!Number.isSafeInteger(invalidated) || invalidated < 0) refuse();
 				invokeOriginal(verifyAudit, chain, [tx]);
 				assertResetting(item);
 			},
@@ -796,7 +921,7 @@ async function resetPreparedAuthority(item: PreparedRestore, pin: string): Promi
 		assertResetting(item);
 		updated = await capturePreparedImage(owner);
 	} finally {
-		releaseResetServices(devices, pins, prepared, identity, audit, auditKey);
+		await releaseResetServices(item, devices, pins, prepared, identity, auditKey);
 	}
 	assertResetting(item);
 	item.image = updated ?? refuse();
@@ -805,7 +930,7 @@ async function resetPreparedAuthority(item: PreparedRestore, pin: string): Promi
 	item.state = "AUTHORITY_RESET";
 }
 
-/** Resets epoch/bootstrap and PIN once on the held image; it does not publish a restored hub. */
+/** Reduces authority, accounts, proposals, tickets and approvals; never publishes a restored hub. */
 export async function resetNativeBackupAuthority(raw: unknown, pin: unknown): Promise<void> {
 	let item: PreparedRestore | undefined;
 	let operation: Promise<void> | undefined;
@@ -952,6 +1077,14 @@ async function prepareCaptured(input: CapturedPreparation): Promise<NativeBackup
 			image: readyImage,
 			state: "READY",
 			operation: undefined,
+			services: {
+				audit: undefined,
+				vault: undefined,
+				tickets: undefined,
+				approvals: undefined,
+				proposals: undefined,
+				revisions: undefined,
+			},
 			closing: undefined,
 		});
 		retained = true;
