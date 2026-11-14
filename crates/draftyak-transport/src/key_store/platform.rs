@@ -77,7 +77,6 @@ impl RecordStore for PlatformRecord {
             .set_secret(bytes)
             .map_err(|_| StoreError::WriteFailed)
     }
-    #[cfg(any(test, feature = "mock-store"))]
     fn remove(&self) -> Result<(), StoreError> {
         match self.entry.delete_credential() {
             Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
