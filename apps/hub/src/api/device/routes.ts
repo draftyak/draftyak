@@ -274,6 +274,7 @@ function failureCode(error: unknown): string {
 export function attachNativeDeviceHttp(
 	socket: TLSSocket,
 	dispatch: (request: NativeDeviceRequest) => Promise<NativeDeviceRouteResult>,
+	nativeEvents?: (request: IncomingMessage, socket: TLSSocket, head: Buffer) => void,
 ): void {
 	if (!(socket instanceof TLSSocket)) return;
 	if (
@@ -295,6 +296,7 @@ export function attachNativeDeviceHttp(
 	let phase: Phase = "initial";
 	let retainedUntil: number | undefined;
 	let closed = false;
+	let upgraded = false;
 	let ending = false;
 	let inFlight = false;
 	let responding = false;
@@ -305,6 +307,7 @@ export function attachNativeDeviceHttp(
 		if (!socket.destroyed) socket.destroy();
 	};
 	const finishSocket = (): void => {
+		if (upgraded) return;
 		closeTimer ??= setTimeout(destroy, CLOSE_GRACE_MS);
 		try {
 			if (!socket.writableEnded) socket.end();
@@ -313,9 +316,11 @@ export function attachNativeDeviceHttp(
 		}
 	};
 	const arm = (deadline: number): void => {
+		if (upgraded) return;
 		if (timer !== undefined) clearTimeout(timer);
 		timer = setTimeout(
 			() => {
+				if (upgraded) return;
 				if (ending || responding || (!inFlight && phase !== "initial")) destroy();
 				else failure("UNAVAILABLE");
 			},
@@ -330,6 +335,7 @@ export function attachNativeDeviceHttp(
 	): void => {
 		response.once("error", destroy);
 		if (
+			upgraded ||
 			closed ||
 			ending ||
 			responding ||
@@ -369,6 +375,10 @@ export function attachNativeDeviceHttp(
 		}
 	};
 	const failure = (code: string, response = current): void => {
+		if (upgraded) {
+			destroy();
+			return;
+		}
 		if (closed || socket.destroyed) return;
 		const { status, body } = errorBody(code);
 		if (response) {
@@ -420,12 +430,45 @@ export function attachNativeDeviceHttp(
 	});
 	server.on("checkContinue", (_request, response) => failure("INVALID_REQUEST", response));
 	server.on("checkExpectation", (_request, response) => failure("INVALID_REQUEST", response));
-	server.on("upgrade", () => failure("FORBIDDEN"));
+	server.on("upgrade", (request, stream, head) => {
+		if (
+			stream !== socket ||
+			request.socket !== socket ||
+			!Buffer.isBuffer(head) ||
+			upgraded ||
+			inFlight ||
+			responding ||
+			ending ||
+			closed ||
+			socket.destroyed ||
+			!socket.writable ||
+			current !== undefined ||
+			phase !== "initial" ||
+			performance.now() >= born + REQUEST_MS
+		)
+			return destroy();
+		if (typeof nativeEvents !== "function") return failure("FORBIDDEN");
+		upgraded = true;
+		if (timer !== undefined) {
+			clearTimeout(timer);
+			timer = undefined;
+		}
+		if (closeTimer !== undefined) {
+			clearTimeout(closeTimer);
+			closeTimer = undefined;
+		}
+		try {
+			nativeEvents(request, socket, head);
+		} catch {
+			destroy();
+		}
+	});
 	server.on("connect", () => failure("FORBIDDEN"));
 	server.on("request", (request, response) => {
 		response.once("error", destroy);
 		request.once("error", destroy);
-		if (inFlight || responding || ending || closed || phase === "opener") return destroy();
+		if (upgraded || inFlight || responding || ending || closed || phase === "opener")
+			return destroy();
 		inFlight = true;
 		current = response;
 		arm(Math.min(performance.now() + REQUEST_MS, retainedUntil ?? Infinity));
