@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JobLease } from "../../src/jobs/queue.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import type { SqlValue } from "../../src/store/store.ts";
-import { NativeParsedError, type NativeParsedSource } from "../../src/sync/parsed.ts";
+import {
+	MAX_PARSED_JSON_BYTES,
+	NativeParsedError,
+	type NativeParsedSource,
+} from "../../src/sync/parsed.ts";
 import { emailMessage, fixture, type NativeParsedFixture } from "./parsed-fixture.ts";
 
 let current: NativeParsedFixture | undefined;
@@ -71,10 +75,13 @@ function restoreOldCacheRow(f: NativeParsedFixture, row: SavedCacheRow): void {
 		);
 	});
 }
-async function preparedInput(body = "Synthetic parsed body") {
+async function preparedInput(
+	body = "Synthetic parsed body",
+	contentType: "text/plain" | "text/html" = "text/plain",
+) {
 	const f = owned(),
 		bytes = new TextEncoder().encode(
-			`From: Sender <sender@example.invalid>\r\nTo: ${f.account.address}\r\nSubject: Synthetic parsed mail\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${body}`,
+			`From: Sender <sender@example.invalid>\r\nTo: ${f.account.address}\r\nSubject: Synthetic parsed mail\r\nContent-Type: ${contentType}; charset=UTF-8\r\n\r\n${body}`,
 		);
 	f.apply([emailMessage()]);
 	const messageId = f.database.write((scope) => f.metadata.messages(scope, f.ref())[0]?.id);
@@ -623,4 +630,180 @@ describe("parsed Reply-To header count DATA", () => {
 		expect(f.database.write((scope) => f.model.read(scope, f.ref(), messageId))).toEqual(committed);
 		f.database.write((scope) => f.model.abandon(scope, invalidSource));
 	});
+});
+
+describe("parsed untrusted HTML storage DATA", () => {
+	it.each([
+		["nonempty", "<p>DYTEST visible body</p><!--DYTEST raw HTML only-->"],
+		["empty", ""],
+	] as const)("round-trips accepted %s HTML through real commit and read", async (_label, html) => {
+		const { f, bytes, blob, mail, messageId } = await preparedInput(html, "text/html");
+		try {
+			expect(Object.hasOwn(mail, "untrustedHtml")).toBe(true);
+			const decodedHtml = mail.untrustedHtml;
+			expect(typeof decodedHtml).toBe("string");
+			if (html === "") expect(decodedHtml).toBe("");
+			else expect(decodedHtml).toContain("DYTEST raw HTML only");
+			const source = f.capture(messageId, blob);
+			passes(f, source);
+			const committed = f.database.write((scope) => f.model.commit(scope, source, mail));
+			expect(Object.hasOwn(committed.mail, "untrustedHtml")).toBe(true);
+			expect(committed.mail.untrustedHtml).toBe(decodedHtml);
+			const stored = f.database.write((scope) => f.model.read(scope, f.ref(), messageId));
+			if (!stored) throw new Error("Synthetic HTML extraction missing");
+			expect(stored).toEqual(committed);
+			expect(Object.hasOwn(stored.mail, "untrustedHtml")).toBe(true);
+			expect(stored.mail.untrustedHtml).toBe(decodedHtml);
+			expect(
+				f.database.write((scope) => f.model.forThread(scope, f.ref(), "DYTEST-parsed-thread"))
+					.records[0]?.mail.untrustedHtml,
+			).toBe(decodedHtml);
+			const row = savedCacheRow(f, messageId);
+			expect(JSON.parse(String(row.parsed_json)).untrustedHtml).toBe(decodedHtml);
+			expect(row.cleaned_body).toBe(mail.body.text);
+			expect(mail.body.text).not.toContain("DYTEST raw HTML only");
+		} finally {
+			bytes.fill(0);
+		}
+	});
+
+	it("keeps the legacy optional HTML field absent for real plaintext mail", async () => {
+		const { f, bytes, mail, messageId, source } = await prepared();
+		try {
+			expect(Object.hasOwn(mail, "untrustedHtml")).toBe(false);
+			passes(f, source);
+			const committed = f.database.write((scope) => f.model.commit(scope, source, mail));
+			const stored = f.database.write((scope) => f.model.read(scope, f.ref(), messageId));
+			expect(stored).toEqual(committed);
+			expect(Object.hasOwn(committed.mail, "untrustedHtml")).toBe(false);
+			if (!stored) throw new Error("Synthetic legacy extraction missing");
+			expect(Object.hasOwn(stored.mail, "untrustedHtml")).toBe(false);
+			expect(
+				Object.hasOwn(JSON.parse(String(savedCacheRow(f, messageId).parsed_json)), "untrustedHtml"),
+			).toBe(false);
+		} finally {
+			bytes.fill(0);
+		}
+	});
+
+	it.each([
+		"nonstring",
+		"undefined",
+		"ill-formed",
+		"byte-limit",
+		"refused-body",
+		"accessor",
+	] as const)("refuses %s HTML DATA without replacing a genuine extraction", async (variant) => {
+		const { f, bytes, blob, mail, messageId } = await preparedInput(
+			"<p>DYTEST HTML</p>",
+			"text/html",
+		);
+		try {
+			expect(typeof mail.untrustedHtml).toBe("string");
+			const source = f.capture(messageId, blob);
+			passes(f, source);
+			const committed = f.database.write((scope) => f.model.commit(scope, source, mail));
+			const before = savedCacheRow(f, messageId);
+			const invalidSource = f.capture(messageId, blob);
+			passes(f, invalidSource);
+			let getterCalls = 0;
+			let input: unknown;
+			if (variant === "nonstring") input = { ...mail, untrustedHtml: 17 };
+			else if (variant === "undefined") input = { ...mail, untrustedHtml: undefined };
+			else if (variant === "ill-formed") input = { ...mail, untrustedHtml: "\ud800" };
+			else if (variant === "byte-limit") {
+				const value = "\u{1f4a5}".repeat(262_145);
+				expect(value.length).toBeLessThan(1_048_576);
+				expect(Buffer.byteLength(value, "utf8")).toBeGreaterThan(1_048_576);
+				input = { ...mail, untrustedHtml: value };
+			} else if (variant === "refused-body") input = { ...mail, bodyRefusal: "INVALID_INPUT" };
+			else
+				input = Object.defineProperty({ ...mail }, "untrustedHtml", {
+					enumerable: true,
+					get() {
+						getterCalls++;
+						return mail.untrustedHtml;
+					},
+				});
+			expect(() =>
+				f.database.write((scope) => f.model.commit(scope, invalidSource, input as ParsedMail)),
+			).toThrow(NativeParsedError);
+			expect(getterCalls).toBe(0);
+			expect(rowCount(f)).toBe(1);
+			expect(savedCacheRow(f, messageId)).toEqual(before);
+			expect(f.database.write((scope) => f.model.read(scope, f.ref(), messageId))).toEqual(
+				committed,
+			);
+			f.database.write((scope) => f.model.abandon(scope, invalidSource));
+		} finally {
+			bytes.fill(0);
+		}
+	});
+
+	it("persists a real refused HTML body's metadata without restoring raw HTML", async () => {
+		const { f, bytes, blob, mail, messageId } = await preparedInput(
+			"x".repeat(1_048_577),
+			"text/html",
+		);
+		try {
+			expect(mail.bodyRefusal).toBe("INPUT_LIMIT");
+			expect(Object.hasOwn(mail, "untrustedHtml")).toBe(false);
+			const source = f.capture(messageId, blob);
+			passes(f, source);
+			const committed = f.database.write((scope) => f.model.commit(scope, source, mail));
+			const stored = f.database.write((scope) => f.model.read(scope, f.ref(), messageId));
+			expect(stored).toEqual(committed);
+			if (!stored) throw new Error("Synthetic refused extraction missing");
+			expect(stored.mail.bodyRefusal).toBe("INPUT_LIMIT");
+			expect(Object.hasOwn(stored.mail, "untrustedHtml")).toBe(false);
+			expect(savedCacheRow(f, messageId).cleaned_body).toBe(mail.body.text);
+		} finally {
+			bytes.fill(0);
+		}
+	});
+
+	it.each([
+		["exact", MAX_PARSED_JSON_BYTES, true],
+		["one-over", MAX_PARSED_JSON_BYTES + 1, false],
+	] as const)(
+		"charges escaped HTML against the whole-mail JSON %s budget",
+		async (_label, bytes, accepted) => {
+			const html = `<p>DYTEST budget text</p><!--${"\n".repeat(4096)}-->`;
+			const { f, bytes: rawBytes, blob, mail, messageId } = await preparedInput(html, "text/html");
+			try {
+				expect(mail.untrustedHtml).toContain("\n");
+				const input = byteBoundaryData(mail, bytes);
+				expect(input.untrustedHtml).toBe(mail.untrustedHtml);
+				expect(Buffer.byteLength(JSON.stringify(input), "utf8")).toBe(bytes);
+				const lease = f.lease(messageId);
+				const source = f.database.write((scope) =>
+					f.model.capture(scope, lease, f.ref(), messageId, blob),
+				);
+				passes(f, source);
+				if (accepted) {
+					const committed = f.database.write((scope) => f.model.commit(scope, source, input));
+					expect(committed.mail.untrustedHtml).toBe(mail.untrustedHtml);
+					expect(Buffer.byteLength(JSON.stringify(committed.mail), "utf8")).toBe(bytes);
+					expect(f.database.write((scope) => f.model.read(scope, f.ref(), messageId))).toEqual(
+						committed,
+					);
+					expect(savedCacheRow(f, messageId).cleaned_body).toBe(mail.body.text);
+					expect(f.database.write((scope) => f.jobs.get(scope, lease.job.id)?.state)).toBe(
+						"SUCCEEDED",
+					);
+				} else {
+					expect(() => f.database.write((scope) => f.model.commit(scope, source, input))).toThrow(
+						NativeParsedError,
+					);
+					expect(rowCount(f)).toBe(0);
+					expect(() => f.database.write((scope) => f.model.abandon(scope, source))).not.toThrow();
+					expect(f.database.write((scope) => f.jobs.get(scope, lease.job.id)?.state)).toBe(
+						"PENDING",
+					);
+				}
+			} finally {
+				rawBytes.fill(0);
+			}
+		},
+	);
 });

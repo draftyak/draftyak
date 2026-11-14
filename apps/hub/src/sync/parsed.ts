@@ -250,7 +250,15 @@ function parsed(value: unknown): ParsedMail {
 			"body",
 			"attachments",
 		],
-		["messageId", "inReplyTo", "references", "date", "bodyRefusal", "replyToHeaderCount"],
+		[
+			"messageId",
+			"inReplyTo",
+			"references",
+			"date",
+			"bodyRefusal",
+			"replyToHeaderCount",
+			"untrustedHtml",
+		],
 	);
 	sha(m.rawSha256);
 	if (m.direction !== "inbound") refuse();
