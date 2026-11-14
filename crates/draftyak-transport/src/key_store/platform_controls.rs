@@ -69,11 +69,13 @@ enum Read {
 struct Observed {
     reads: AtomicUsize,
     writes: AtomicUsize,
+    removals: AtomicUsize,
     formatted: Arc<AtomicUsize>,
 }
 struct ScriptedCredential {
     read: Read,
     write: Option<Failure>,
+    removal: Option<Failure>,
     persistence: Option<&'static str>,
     observed: Arc<Observed>,
 }
@@ -100,7 +102,11 @@ impl CredentialApi for ScriptedCredential {
             .unwrap_or_default())
     }
     fn delete_credential(&self) -> keyring_core::Result<()> {
-        Err(Error::NoEntry)
+        self.observed.removals.fetch_add(1, Ordering::SeqCst);
+        match self.removal {
+            Some(failure) => Err(failure.error(&self.observed.formatted)),
+            None => Err(Error::NoEntry),
+        }
     }
     fn get_credential(&self) -> keyring_core::Result<Option<Arc<Credential>>> {
         Ok(None)
@@ -123,10 +129,19 @@ fn scripted_with(
     write: Option<Failure>,
     persistence: Option<&'static str>,
 ) -> (NativeStore, Arc<Observed>) {
+    scripted_with_removal(read, write, persistence, None)
+}
+fn scripted_with_removal(
+    read: Read,
+    write: Option<Failure>,
+    persistence: Option<&'static str>,
+    removal: Option<Failure>,
+) -> (NativeStore, Arc<Observed>) {
     let observed = Arc::new(Observed::default());
     let entry = Entry::new_with_credential(Arc::new(ScriptedCredential {
         read,
         write,
+        removal,
         persistence,
         observed: observed.clone(),
     }));
@@ -136,6 +151,51 @@ fn scripted_with(
         },
         observed,
     )
+}
+
+#[test]
+fn forgetting_an_absent_platform_record_verifies_absence() {
+    let (store, observed) = scripted(Read::Missing, None);
+    assert_eq!(store.forget_identity(), Ok(()));
+    assert_eq!(observed.removals.load(Ordering::SeqCst), 1);
+    assert_eq!(observed.reads.load(Ordering::SeqCst), 1);
+    assert_eq!(observed.writes.load(Ordering::SeqCst), 0);
+    assert_eq!(observed.formatted.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn platform_removal_failures_refuse_without_retry_or_backend_diagnostics() {
+    for failure in [Failure::Platform, Failure::Access] {
+        let (store, observed) =
+            scripted_with_removal(Read::Present, None, Some("Local"), Some(failure));
+        assert_eq!(store.forget_identity(), Err(StoreError::WriteFailed));
+        assert_eq!(observed.removals.load(Ordering::SeqCst), 1);
+        assert_eq!(observed.reads.load(Ordering::SeqCst), 0);
+        assert_eq!(observed.writes.load(Ordering::SeqCst), 0);
+        assert_eq!(observed.formatted.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[test]
+fn platform_readback_failures_cannot_confirm_forgetting() {
+    for failure in [Failure::Platform, Failure::Access] {
+        let (store, observed) = scripted(Read::Failed(failure), None);
+        assert_eq!(store.forget_identity(), Err(StoreError::Unavailable));
+        assert_eq!(observed.removals.load(Ordering::SeqCst), 1);
+        assert_eq!(observed.reads.load(Ordering::SeqCst), 1);
+        assert_eq!(observed.writes.load(Ordering::SeqCst), 0);
+        assert_eq!(observed.formatted.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[test]
+fn a_platform_no_entry_delete_cannot_hide_a_remaining_record() {
+    let (store, observed) = scripted(Read::Present, None);
+    assert_eq!(store.forget_identity(), Err(StoreError::WriteFailed));
+    assert_eq!(observed.removals.load(Ordering::SeqCst), 1);
+    assert_eq!(observed.reads.load(Ordering::SeqCst), 1);
+    assert_eq!(observed.writes.load(Ordering::SeqCst), 0);
+    assert_eq!(observed.formatted.load(Ordering::SeqCst), 0);
 }
 
 #[test]
