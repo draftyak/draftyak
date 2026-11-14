@@ -51,6 +51,7 @@ async function fixture(outcome: TerminationOutcome) {
 	const source = realpathSync(mkdtempSync(path.join(temporary, "draftyak-lifecycle-proof-")));
 	owned.add(source);
 	writeFileSync(path.join(source, "entry.mjs"), "export {};\n", { flag: "wx" });
+	const ioExit = Promise.withResolvers<{ code: number | null; signal: NodeJS.Signals | null }>();
 	const child = Object.assign(new EventEmitter(), {
 		pid: 1,
 		exitCode: null as number | null,
@@ -77,15 +78,33 @@ async function fixture(outcome: TerminationOutcome) {
 		},
 	});
 	const outputs = [new PassThrough(), new PassThrough()] as const;
+	// Unit model only: destroy cancels these synthetic streams; no post-exit bytes are drained.
+	const ioClosed = Promise.all(
+		[input, ...outputs].map(
+			(stream) => new Promise<void>((resolve) => stream.once("close", () => resolve())),
+		),
+	);
+	const completion: Promise<pluginStdio.PluginStdioResult> = Promise.all([
+		ioExit.promise,
+		ioClosed,
+	]).then(([exit]) => ({
+		...exit,
+		error: "destroyed" as const,
+		drains: [
+			{ bytes: 0, result: "closed" },
+			{ bytes: 0, result: "closed" },
+		] as const,
+	}));
 	const destroyIo = vi.fn(async () => {
 		input.destroy();
 		for (const stream of outputs) stream.destroy();
+		await ioClosed;
 	});
 	const destroyStdio = vi.fn(async () => {});
 	const attached = vi.fn(() => ({
 		input,
 		outputs,
-		completion: new Promise<pluginStdio.PluginStdioResult>(() => {}),
+		completion,
 		destroy: destroyIo,
 	}));
 	vi.spyOn(pluginStdio, "openPluginStdio").mockResolvedValue({
@@ -108,12 +127,13 @@ async function fixture(outcome: TerminationOutcome) {
 	expect(childProcess.spawn).toHaveBeenCalledTimes(1);
 	expect(attached).toHaveBeenCalledWith(child);
 	expect(existsSync(stage)).toBe(true);
-	return { adapter, child, stage, request, destroyIo, destroyStdio, unsubscribe };
+	return { adapter, child, stage, request, destroyIo, destroyStdio, unsubscribe, ioExit };
 }
 
 describe.each(["false", "throw", "error"] as const)("unconfirmed %s termination", (outcome) => {
 	it("retains the child and stage until the unchanged deadline, then refuses cleanup", async () => {
 		const state = await fixture(outcome);
+		const originalExitListeners = state.child.rawListeners("exit");
 		let settled = false;
 		let failure: unknown;
 		const closing = state.adapter.close().then(
@@ -151,7 +171,7 @@ describe.each(["false", "throw", "error"] as const)("unconfirmed %s termination"
 		await expect(state.adapter.close()).rejects.toMatchObject({ code: "PROCESS_CLEANUP_FAILED" });
 		expect(state.child.kill).toHaveBeenCalledTimes(2);
 		await state.request;
-		expect(state.child.listenerCount("exit")).toBe(0);
+		expect(state.child.rawListeners("exit")).toEqual(originalExitListeners);
 		expect(state.child.listenerCount("error")).toBe(0);
 		expect(vi.getTimerCount()).toBe(0);
 	});
@@ -169,6 +189,8 @@ describe.each(["false", "throw", "error"] as const)("unconfirmed %s termination"
 		expect(existsSync(state.stage)).toBe(true);
 		state.child.exitCode = 0;
 		state.child.emit("exit", 0, null);
+		state.ioExit.resolve({ code: 0, signal: null });
+		state.child.emit("close", 0, null);
 		await closing;
 		expect(settled).toBe(true);
 		expect(existsSync(state.stage)).toBe(false);
