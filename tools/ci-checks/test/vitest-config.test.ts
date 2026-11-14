@@ -41,10 +41,10 @@ const cases = contexts.flatMap(({ platform, ci, timeouts }) =>
 	modes.map((mode, index) => ({ platform, ci, mode, timeout: timeouts[index] })),
 );
 const tiers = [
-	{ mode: "test", tier: "unit", pattern: "**/*.test.ts", empty: false },
-	{ mode: "heavy", tier: "heavy", pattern: "**/*.heavy.test.ts", empty: true },
-	{ mode: "live", tier: "live", pattern: "**/*.live.test.ts", empty: true },
-	{ mode: "device", tier: "device", pattern: "**/*.device.test.ts", empty: true },
+	{ mode: "test", tier: "unit", pattern: "**/*.test.{ts,tsx}", empty: false },
+	{ mode: "heavy", tier: "heavy", pattern: "**/*.heavy.test.{ts,tsx}", empty: true },
+	{ mode: "live", tier: "live", pattern: "**/*.live.test.{ts,tsx}", empty: true },
+	{ mode: "device", tier: "device", pattern: "**/*.device.test.{ts,tsx}", empty: true },
 ];
 
 describe("consumed Vitest configuration", () => {
@@ -66,7 +66,12 @@ describe("consumed Vitest configuration", () => {
 			expect(config.test?.include).toEqual([pattern]);
 			expect(config.test?.exclude).toEqual(
 				mode === "test"
-					? [...defaultExclude, "**/*.heavy.test.ts", "**/*.live.test.ts", "**/*.device.test.ts"]
+					? [
+							...defaultExclude,
+							"**/*.heavy.test.{ts,tsx}",
+							"**/*.live.test.{ts,tsx}",
+							"**/*.device.test.{ts,tsx}",
+						]
 					: defaultExclude,
 			);
 			expect(config.test?.passWithNoTests).toBe(empty);
