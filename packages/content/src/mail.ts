@@ -1,7 +1,13 @@
 import { EmailAddress, type MessageDirection } from "@draftyak/protocol/entities/common";
 import type { MailAuth } from "./auth-results.ts";
 import type { HygieneResult } from "./hygiene.ts";
-import { ContentError, type ContentErrorCode, MAX_MAIL_BYTES } from "./limits.ts";
+import {
+	boundedText,
+	ContentError,
+	type ContentErrorCode,
+	MAX_MAIL_BYTES,
+	MAX_TEXT_BYTES,
+} from "./limits.ts";
 import { normalizeAddress, parseMailCore } from "./mail-parser.ts";
 
 /** Hub- or broker-observed provider/send evidence; never plugin sync claims or message headers. */
@@ -34,6 +40,8 @@ export interface ParsedMail {
 	readonly references?: string;
 	readonly date?: string;
 	readonly body: HygieneResult;
+	/** Accepted decoded MIME HTML, still untrusted display data; never prompt text. */
+	readonly untrustedHtml?: string;
 	/** The body was withheld; headers, authentication and attachment metadata remain available. */
 	readonly bodyRefusal?: ContentErrorCode;
 	readonly attachments: readonly {
@@ -69,13 +77,22 @@ export function checkedMailEvidence(evidence: MailEvidence): MailEvidence {
 
 /** A refused From can never retain sender verification or outbound direction. */
 export function checkedParsedMail(mail: ParsedMail): ParsedMail {
+	const htmlField = Object.getOwnPropertyDescriptor(mail, "untrustedHtml");
+	let untrustedHtml: string | undefined;
+	if (htmlField !== undefined) {
+		if (!Object.hasOwn(htmlField, "value") || mail.bodyRefusal !== undefined)
+			throw new ContentError("INVALID_INPUT");
+		const value: unknown = htmlField.value;
+		boundedText(value, MAX_TEXT_BYTES);
+		untrustedHtml = value;
+	}
 	const valid = (mailbox: ParsedMailbox): boolean =>
 		EmailAddress.safeParse(mailbox.address).success;
 	const from = mail.from.filter(valid);
 	const refusedFrom = from.length !== mail.from.length;
 	const auth: MailAuth = refusedFrom ? { dmarc: "none", reason: "ambiguous-from" } : mail.auth;
 	const direction: MessageDirection = refusedFrom ? "inbound" : mail.direction;
-	return {
+	const result = {
 		...mail,
 		from,
 		to: mail.to.filter(valid),
@@ -85,6 +102,12 @@ export function checkedParsedMail(mail: ParsedMail): ParsedMail {
 		auth,
 		direction,
 	};
+	// Return only the validated snapshot, including when a caller supplies an accessor or proxy.
+	delete result.untrustedHtml;
+	if (untrustedHtml !== undefined && result.bodyRefusal !== undefined)
+		throw new ContentError("INVALID_INPUT");
+	if (untrustedHtml !== undefined) result.untrustedHtml = untrustedHtml;
+	return result;
 }
 
 /** Parse in a worker in production. Returned text and metadata are untrusted display data. */

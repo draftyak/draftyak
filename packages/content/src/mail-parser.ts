@@ -180,6 +180,7 @@ export async function parseMailCore(raw: Uint8Array, evidence: MailEvidence): Pr
 		const direction: MessageDirection = owner && validSent ? "outbound" : "inbound";
 		let body: HygieneResult;
 		let bodyRefusal: ContentErrorCode | undefined;
+		let untrustedHtml: string | undefined;
 		try {
 			// postal-mime 4.0.7 omits empty HTML from Email. Its pinned runtime
 			// text-type set preserves presence without a second MIME parser.
@@ -189,6 +190,7 @@ export async function parseMailCore(raw: Uint8Array, evidence: MailEvidence): Pr
 			const text = hasHtml ? (parsed.html ?? "") : (parsed.text ?? "");
 			boundedText(text, MAX_TEXT_BYTES);
 			body = hasHtml ? cleanHtml(text) : cleanText(text);
+			if (hasHtml) untrustedHtml = text;
 		} catch (error) {
 			// An unmodelled HTML body must never expose its text/plain alternative.
 			bodyRefusal = error instanceof ContentError ? error.code : "INVALID_INPUT";
@@ -217,6 +219,7 @@ export async function parseMailCore(raw: Uint8Array, evidence: MailEvidence): Pr
 			subject: parsed.subject ?? "",
 			...metadata,
 			body,
+			...(untrustedHtml !== undefined ? { untrustedHtml } : {}),
 			...(bodyRefusal ? { bodyRefusal } : {}),
 			attachments: parsed.attachments.map(({ filename, mimeType, content }) => {
 				if (filename !== null) boundedText(filename, 2048);

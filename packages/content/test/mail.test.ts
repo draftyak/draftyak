@@ -192,6 +192,7 @@ describe("MIME and bounded output", () => {
 		);
 		const mail = await parseMail(bytes, evidence);
 		expect(mail.body.text).toContain("Visible html");
+		expect(mail.untrustedHtml).toBe('<p>Visible html</p><p style="display:none">HIDDEN_CANARY</p>');
 		expect(mail.body.text).not.toContain("HIDDEN_CANARY");
 		expect(mail.body.text).not.toContain("Unfiltered plain alternative");
 		expect(mail.attachments).toEqual([
@@ -204,6 +205,22 @@ describe("MIME and bounded output", () => {
 		]);
 		expect(JSON.stringify(mail)).not.toContain(canary);
 		expect(mail.rawSha256).toBe(sha256(bytes));
+	});
+
+	it("retains accepted empty HTML as an explicit display value", async () => {
+		const mail = await parseMail(raw(["Content-Type: text/html; charset=utf-8"], ""), evidence);
+		expect(Object.hasOwn(mail, "untrustedHtml")).toBe(true);
+		expect(mail.untrustedHtml).toBe("");
+		expect(mail.body.text).toBe("");
+		expect(mail.bodyRefusal).toBeUndefined();
+	});
+
+	it("keeps HTML-looking plain text outside the HTML display field", async () => {
+		const text = "DYTEST plain <b>text</b>";
+		const mail = await parseMail(raw(["Content-Type: text/plain; charset=utf-8"], text), evidence);
+		expect(Object.hasOwn(mail, "untrustedHtml")).toBe(false);
+		expect(mail.body.text).toBe(text);
+		expect(mail.bodyRefusal).toBeUndefined();
 	});
 
 	it("keeps nested RFC822 messages out of thread text", async () => {
