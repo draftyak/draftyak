@@ -1,7 +1,8 @@
 import { DraftOutputV1 } from "@draftyak/protocol/draft-output";
+import * as jcs from "@draftyak/protocol/jcs";
 import { canonicalize } from "@draftyak/protocol/jcs";
 import { AI_HTTP_PROFILES } from "@draftyak/protocol/manifest/ai-http";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	type AiCandidateRequest,
 	type AiProfileRegistration,
@@ -17,6 +18,7 @@ import {
 	verifyAiRequest,
 	verifyCapturedAiRequest,
 } from "../../../../src/plugins/broker/ai/index.ts";
+import { MAX_AI_REQUEST_JSON_UNITS } from "../../../../src/plugins/broker/ai/request-json.ts";
 import {
 	compatibleSchema,
 	messagesSchema,
@@ -136,6 +138,36 @@ function changedBody(candidate: AiCandidateRequest, body: unknown): AiCandidateR
 }
 
 describe("native profile registry", () => {
+	it("refuses structural excess before parsing a captured request body", () => {
+		const { candidate, binding } = base("messages-api-v1");
+		const parse = vi.spyOn(jcs, "parseStrict");
+		try {
+			expect(() => verifyAiRequest(registry, "messages-api-v1", candidate, binding)).not.toThrow();
+			expect(parse).toHaveBeenCalledTimes(1);
+			parse.mockClear();
+			const excessive = encoder.encode(`[${"0,".repeat(MAX_AI_REQUEST_JSON_UNITS - 1)}0]`);
+			expect(() =>
+				verifyAiRequest(registry, "messages-api-v1", { ...candidate, body: excessive }, binding),
+			).toThrow(AiVerificationError);
+			expect(parse).not.toHaveBeenCalled();
+		} finally {
+			parse.mockRestore();
+		}
+	});
+	it("accepts large punctuation-rich draft text through the built-in verifier", () => {
+		const { candidate, binding, body } = base("messages-api-v1");
+		const prompt = 'DYTEST-[]{} , \\" \\\\ \\u005b\n'.repeat(8192);
+		const next = changedBody(candidate, {
+			...body,
+			messages: [{ role: "user", content: prompt }],
+		});
+		expect(next.body.byteLength).toBeGreaterThan(65_536);
+		const verified = verifyAiRequest(registry, "messages-api-v1", next, {
+			...binding,
+			draft: { ...binding.draft, prompt },
+		});
+		expect(snapshotVerifiedAiRequest(verified).body).toEqual(next.body);
+	});
 	it("requires each merged profile exactly once and rejects malformed registrations", () => {
 		for (const registrations of [
 			[],
