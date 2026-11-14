@@ -9,6 +9,7 @@ import {
 	PluginBootstrap,
 } from "@draftyak/protocol/host-channel";
 import { canonicalize, parseStrict } from "@draftyak/protocol/jcs";
+import { parseJSONRPCMessage } from "@modelcontextprotocol/client";
 
 export class PluginWireError extends Error {
 	readonly code = "PLUGIN_WIRE_INVALID";
@@ -170,6 +171,20 @@ export function encodePluginHostFrame(json: Uint8Array): Buffer {
 export function encodePluginBootstrapFrame(json: Uint8Array): Buffer {
 	try {
 		return parentFrame(PluginBootstrap.parse(parseStrict(retain(json))));
+	} catch {
+		invalid();
+	}
+}
+
+/** Encode MCP envelope DATA; request handlers and process authority are validated elsewhere. */
+export function encodePluginMcpFrame(json: Uint8Array): Buffer {
+	try {
+		const value = parseStrict(retain(json));
+		if (internalMessage(value)) invalid();
+		parseJSONRPCMessage(value);
+		const encoded = canonicalize(value);
+		if (Buffer.byteLength(encoded) > HOST_MAX_FRAME_BYTES) invalid();
+		return Buffer.from(`${encoded}\n`, "utf8");
 	} catch {
 		invalid();
 	}
