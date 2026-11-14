@@ -79,11 +79,17 @@ describe("fixed synthetic performance corpus DATA", () => {
 		const ids = new Set<string>();
 		const messageIds = new Set<string>();
 		const matches = [0, 0, 0, 0];
+		const queryPatterns = PERFORMANCE_QUERY_FIXTURES.map(
+			(fixture) => new RegExp(`\\b${fixture.asciiTerm}\\b`),
+		);
 		let observed = 0;
 		let bytes = 0;
 		let wireValid = true;
 		let firstId = "";
 		let lastId = "";
+		const messageIdPattern = /^Message-ID: <([^>]+)>\r?$/m;
+		const printableWirePattern = /^[\x20-\x7e\r\n]+$/;
+		const loneNewlinePattern = /[\r\n]/;
 		function* witnessed(): Generator<string, void, unknown> {
 			for (const line of generatePerformanceCorpusJsonl()) {
 				independentDigest.update(line, "utf8");
@@ -92,12 +98,12 @@ describe("fixed synthetic performance corpus DATA", () => {
 				const parts = row.rfc822.split("\r\n\r\n");
 				const headers = parts[0] ?? "";
 				const body = parts[1] ?? "";
-				const messageId = /^Message-ID: <([^>]+)>\r?$/m.exec(headers)?.[1] ?? "";
+				const messageId = messageIdPattern.exec(headers)?.[1] ?? "";
 				wireValid &&=
 					row.version === 1 &&
-					/^[\x20-\x7e\r\n]+$/.test(row.rfc822) &&
+					printableWirePattern.test(row.rfc822) &&
 					row.rfc822.endsWith("\r\n") &&
-					!/[\r\n]/.test(row.rfc822.replaceAll("\r\n", "")) &&
+					!loneNewlinePattern.test(row.rfc822.replaceAll("\r\n", "")) &&
 					row.rfc822.split("\r\n").every((value) => value.length <= 78) &&
 					headers.startsWith("Date: Wed, 04 Nov 2026 16:06:25 +0000\r\n") &&
 					headers.includes("From: dytest-sender@addresses.invalid\r\n") &&
@@ -110,10 +116,9 @@ describe("fixed synthetic performance corpus DATA", () => {
 				if (observed === 0) firstId = row.fixtureId;
 				lastId = row.fixtureId;
 				observed++;
-				for (let index = 0; index < PERFORMANCE_QUERY_FIXTURES.length; index++) {
-					const fixture = PERFORMANCE_QUERY_FIXTURES[index];
-					if (fixture && new RegExp(`\\b${fixture.asciiTerm}\\b`).test(body))
-						matches[index] = (matches[index] ?? 0) + 1;
+				for (let index = 0; index < queryPatterns.length; index++) {
+					const pattern = queryPatterns[index];
+					if (pattern?.test(body)) matches[index] = (matches[index] ?? 0) + 1;
 				}
 				yield line;
 			}
