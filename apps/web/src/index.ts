@@ -21,6 +21,12 @@ export {
 	type ConversationListIntents,
 	type ConversationListProps,
 } from "./inbox/ConversationList.tsx";
+export {
+	InboxWorkspace,
+	type InboxWorkspaceAccounts,
+	type InboxWorkspaceComposer,
+	type InboxWorkspaceProps,
+} from "./inbox/InboxWorkspace.tsx";
 export type { ConversationTitle, DisplayTime } from "./inbox/presentation.ts";
 export {
 	createEventSession,
