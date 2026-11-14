@@ -7,6 +7,7 @@ const config: UserConfig = defineConfig({
 	dts: { generator: "oxc" },
 	copy: [
 		{ from: "src/drafts/migrations/*.sql", to: "dist/drafts/migrations" },
+		{ from: "src/drafts/reply-source-migrations/*.sql", to: "dist/drafts/reply-source-migrations" },
 		{ from: "src/identity/devices-migrations/*.sql", to: "dist/devices-migrations" },
 		{ from: "src/jobs/jobs-migrations/*.sql", to: "dist/jobs-migrations" },
 		{ from: "src/events/events-migrations/*.sql", to: "dist/events-migrations" },
