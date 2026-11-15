@@ -107,11 +107,23 @@ export async function namedFiles(
 	insensitive: boolean = process.platform === "win32",
 	readDirectory: ReadDirectory = (dir) => readdir(dir, { withFileTypes: true }),
 	statPath: StatPath = (target) => lstat(target),
+	readCapacity: () => number = () => 4,
 ): Promise<string[]> {
 	if (!basename || /[/\\\0*?[\]]/.test(basename)) throw new Error("invalid basename");
 	root = path.resolve(root);
+	const rootPrefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
 	const wanted = insensitive ? basename.toLowerCase() : basename;
-	const equal = (name: string): boolean => (insensitive ? name.toLowerCase() : name) === wanted;
+	const dotWanted = wanted.charCodeAt(0) === 0x2e;
+	const equal = (name: string): boolean => {
+		if (!insensitive) return name === wanted;
+		// A non-dot ASCII first code unit cannot lowercase to the target's leading dot.
+		// Every other name retains the complete comparison, including Unicode expansion.
+		if (dotWanted) {
+			const first = name.charCodeAt(0);
+			if (first <= 0x7f && first !== 0x2e) return false;
+		}
+		return name.toLowerCase() === wanted;
+	};
 	const relativeName = (directory: string, name: string): string =>
 		directory === "." ||
 		directory.endsWith("/") ||
@@ -135,15 +147,7 @@ export async function namedFiles(
 		missingDirectory(target, readDirectory, statPath, root);
 	// Other checkouts add and remove folders mid-walk. The root must list; below it, a vanished
 	// folder is skipped and any other failed folder is listed once more before validation is refused.
-	const list = async (dir: string, target: string): Promise<readonly Entry[]> => {
-		if (dir === "") return readDirectory(target);
-		let first: readonly Entry[] | undefined;
-		try {
-			first = await readDirectory(target);
-		} catch {
-			// Failed reads retain the fresh disappearance proof and bounded retry below.
-		}
-		if (first) return first;
+	const retryListing = async (target: string): Promise<readonly Entry[]> => {
 		if (await gone(target)) return [];
 		await sleep(RETRY_DELAY_MS);
 		const second = await attempt(target);
@@ -163,35 +167,41 @@ export async function namedFiles(
 		throw new Error("file-name inventory failed");
 	};
 	type PendingDirectory = {
-		readonly directory: string;
+		readonly directory: string | undefined;
 		readonly target: string;
 		readonly plain: boolean;
 		next?: PendingDirectory;
 	};
 	let first: PendingDirectory | undefined = { directory: "", target: root, plain: true };
-	let last: PendingDirectory | undefined = first;
 	const found: string[] = [];
 	await new Promise<void>((resolve, reject) => {
 		let active = 0;
 		let failed = false;
 		const visit = async (
-			directory: string,
+			directory: string | undefined,
 			absolute: string,
 			plainAncestry: boolean,
 		): Promise<void> => {
 			try {
-				const children = await list(directory, absolute);
+				let children: readonly Entry[];
+				try {
+					// Successful reads have one await, without a wrapper promise per directory.
+					children = await readDirectory(absolute);
+				} catch {
+					if (directory === "") throw inventoryFailed();
+					children = await retryListing(absolute);
+				}
 				if (failed) return;
+				let discoveredFirst: PendingDirectory | undefined;
+				let discoveredLast: PendingDirectory | undefined;
 				for (const entry of children) {
 					const name = entry.name;
-					if (typeof name !== "string") throw inventoryFailed();
+					if (typeof name !== "string" || !name.isWellFormed() || name.includes("\uFFFD"))
+						throw inventoryFailed();
 					const matches = equal(name);
 					const descend = entry.isDirectory() && !entry.isSymbolicLink();
 					// Ordinary files need no relative path; keep normalization for synthetic edge names.
 					if (matches || descend) {
-						const relative = relativeName(directory, name);
-						if (matches) found.push(relative);
-						if (!descend) continue;
 						// Ordinary components can extend an already-normalized native target. Keep the
 						// original whole-path normalization for every unusual component and descendant.
 						const plain =
@@ -200,30 +210,65 @@ export async function namedFiles(
 							name !== "." &&
 							name !== ".." &&
 							!/[\\/:\0]/.test(name);
-						const target = plain
-							? `${absolute}${absolute.endsWith(path.sep) ? "" : path.sep}${name}`
-							: path.join(root, relative);
-						const pending: PendingDirectory = { directory: relative, target, plain };
-						if (last) last.next = pending;
-						else first = pending;
-						last = pending;
+						// Plain queued directories need only their native target. Materialize a relative
+						// path for a match or the first unusual component, never by resolving/casefolding.
+						const relative =
+							matches || !plain
+								? relativeName(
+										directory ?? absolute.slice(rootPrefix.length).replaceAll(path.sep, "/"),
+										name,
+									)
+								: undefined;
+						if (matches) {
+							if (relative === undefined) throw inventoryFailed();
+							found.push(relative);
+						}
+						if (!descend) continue;
+						let target: string;
+						if (plain) target = `${absolute}${absolute.endsWith(path.sep) ? "" : path.sep}${name}`;
+						else {
+							if (relative === undefined) throw inventoryFailed();
+							target = path.join(root, relative);
+						}
+						const pending: PendingDirectory = {
+							directory: plain ? undefined : relative,
+							target,
+							plain,
+						};
+						if (discoveredLast) discoveredLast.next = pending;
+						else discoveredFirst = pending;
+						discoveredLast = pending;
 					}
+				}
+				// Keep each listing's order, but descend before older pending siblings instead
+				// of retaining every directory in a breadth-level frontier at once.
+				if (discoveredLast) {
+					discoveredLast.next = first;
+					first = discoveredFirst;
 				}
 			} catch {
 				failed = true;
 				first = undefined;
-				last = undefined;
 			} finally {
 				active -= 1;
 				advance();
 			}
 		};
 		const advance = (): void => {
+			let capacity = 0;
+			if (!failed) {
+				try {
+					capacity = readCapacity();
+					if (!Number.isInteger(capacity) || capacity < 1 || capacity > 64) throw inventoryFailed();
+				} catch {
+					failed = true;
+					first = undefined;
+				}
+			}
 			// Refill each free slot immediately; a slow sibling must not stall the whole frontier.
-			while (!failed && active < 4 && first) {
+			while (!failed && active < capacity && first) {
 				const current = first;
 				first = current.next;
-				if (!first) last = undefined;
 				active += 1;
 				// Passing only values prevents a slow read from retaining a dequeued node's tail.
 				void visit(current.directory, current.target, current.plain);
@@ -275,10 +320,18 @@ export async function namedWorktreeFiles(
 	insensitive: boolean = process.platform === "win32",
 	readDirectory: ReadDirectory = (dir) => readdir(dir, { withFileTypes: true }),
 	statPath: StatPath = (target) => lstat(target),
+	readCapacity: () => number = () => 4,
 ): Promise<string[]> {
 	try {
 		try {
-			const found = await namedFiles(basename, root, insensitive, readDirectory, statPath);
+			const found = await namedFiles(
+				basename,
+				root,
+				insensitive,
+				readDirectory,
+				statPath,
+				readCapacity,
+			);
 			const kind = await statPath(root);
 			if (!kind.isDirectory() || kind.isSymbolicLink()) throw inventoryFailed();
 			return found;

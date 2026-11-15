@@ -269,7 +269,11 @@ mod tests {
 
     #[test]
     fn the_stored_key_signs_only_for_its_pinned_hub_and_signs_again_after_reload() {
-        let reviewed = ADMIN_REVIEW_KINDS[0];
+        let reviewed = ADMIN_REVIEW_KINDS
+            .iter()
+            .copied()
+            .find(|kind| RETAINED_ADMIN_KINDS.contains(kind))
+            .expect("a reviewed admin kind retained for native signing");
         let unreviewed = ADMIN_KINDS
             .iter()
             .copied()

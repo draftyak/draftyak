@@ -1,6 +1,7 @@
 import type { LookupPermit } from "@draftyak/protocol/host-channel";
 import { type HostFetch, hostFetch } from "./fetch.ts";
 import type { HostChannel } from "./host.ts";
+import { openHostSocket } from "./socket.ts";
 
 export interface PluginInstance {
 	readonly id: string;
@@ -49,24 +50,7 @@ export function createPluginContext(
 		signal,
 		fetch: hostFetch(host, signal, lookupScope),
 		ws: Object.freeze({
-			async open(url: string): Promise<HostSocket> {
-				const { socketId: id } = await host.request("host/ws.open", { url }, { signal });
-				return Object.freeze({
-					id,
-					async sendAck(envelopeId: string): Promise<void> {
-						await host.request("host/ws.send", { socketId: id, envelopeId }, { signal });
-					},
-					subscribe(listener: (data: string) => void): () => void {
-						return host.subscribe((event) => {
-							if (event.method === "host/ws.message" && event.params.socketId === id)
-								listener(event.params.data);
-						});
-					},
-					async close(): Promise<void> {
-						await host.request("host/ws.close", { socketId: id }, { signal });
-					},
-				});
-			},
+			open: (url: string): Promise<HostSocket> => openHostSocket(host, url, signal),
 		}),
 		kv: Object.freeze({
 			async get(key: string): Promise<unknown> {

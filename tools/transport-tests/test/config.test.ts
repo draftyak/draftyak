@@ -62,7 +62,7 @@ describe("native-store heavy configuration admission", () => {
 				throw Error("unexpected case selection");
 			},
 		);
-		expect(config.test?.include).toEqual(["**/*.test.ts"]);
+		expect(config.test?.include).toEqual(["**/*.test.{ts,tsx}"]);
 	});
 	it("fails admission before configuring filtered or empty heavy results", async () => {
 		const names = vi.fn(() => ["required native result"]);

@@ -1,0 +1,473 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://draftyak.com/spec/schemas/draft-read-v1.schema.json",
+  "$ref": "#/$defs/draftyak.draft-read.CurrentDraft",
+  "$defs": {
+    "draftyak.draft-read.CurrentDraft": {
+      "type": "object",
+      "properties": {
+        "draft": {
+          "$ref": "#/$defs/draftyak.entities.Draft"
+        },
+        "revision": {
+          "$ref": "#/$defs/draftyak.entities.DraftRevision"
+        }
+      },
+      "required": [
+        "draft",
+        "revision"
+      ],
+      "additionalProperties": false,
+      "description": "A draft header and its current revision from one read. The draft ids and revision numbers must match; the runtime validator checks that join. This data grants no authority."
+    },
+    "draftyak.entities.Draft": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "accountId": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "conversationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rev": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "$ref": "#/$defs/draftyak.entities.DraftState"
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+        },
+        "updatedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "conversationId",
+        "rev",
+        "state",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false,
+      "description": "A draft and its latest revision number, which an edit names as the one it expects. conversationId is null for a new email conversation; a chat draft always has one."
+    },
+    "draftyak.entities.DraftState": {
+      "type": "string",
+      "enum": [
+        "open",
+        "sent",
+        "discarded"
+      ],
+      "description": "sent and discarded drafts take no new revisions."
+    },
+    "draftyak.entities.DraftRevision": {
+      "type": "object",
+      "properties": {
+        "draftId": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "rev": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "author": {
+          "$ref": "#/$defs/draftyak.entities.DraftAuthor"
+        },
+        "content": {
+          "$ref": "#/$defs/draftyak.entities.DraftContent"
+        },
+        "contentSha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+          "description": "A SHA-256 digest as 64 lower-case hex characters."
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/draftyak.flags.Flag"
+          },
+          "uniqueItems": true,
+          "description": "A revision's flags, in any order; flagsHash sorts them."
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+        }
+      },
+      "required": [
+        "draftId",
+        "rev",
+        "author",
+        "content",
+        "contentSha256",
+        "flags",
+        "createdAt"
+      ],
+      "additionalProperties": false,
+      "description": "An immutable revision: its content, contentSha256 the SHA-256 of the JCS of that content, and the flags computed against it."
+    },
+    "draftyak.entities.DraftAuthor": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "owner",
+            "ai",
+            "agent",
+            "plugin"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false,
+      "description": "Who wrote a revision: the owner (a user id), the hub's AI (an AI run id), an agent (a grant or agent token id) or a plugin (a plugin instance id)."
+    },
+    "draftyak.entities.DraftContent": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/draftyak.entities.ChatDraftContent"
+        },
+        {
+          "$ref": "#/$defs/draftyak.entities.EmailDraftContent"
+        }
+      ],
+      "description": "What a revision says and to whom, in its account's channel."
+    },
+    "draftyak.entities.ChatDraftContent": {
+      "type": "object",
+      "properties": {
+        "channel": {
+          "type": "string",
+          "const": "chat"
+        },
+        "threadTs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "broadcast": {
+          "type": "boolean"
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 40000,
+          "not": {
+            "pattern": "\\r"
+          },
+          "description": "In NFC with LF line ends: the hub turns CR LF and a lone CR into LF and normalizes to NFC before it stores a revision."
+        }
+      },
+      "required": [
+        "channel",
+        "threadTs",
+        "broadcast",
+        "body"
+      ],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "properties": {
+            "broadcast": {
+              "const": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "threadTs": {
+              "type": "string"
+            }
+          }
+        }
+      ],
+      "description": "A chat draft in its conversation: a top-level post (threadTs null) or a thread reply, which broadcast also posts to the channel."
+    },
+    "draftyak.normalized-change.ProviderId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[!-~]+$(?![\\s\\S])",
+      "description": "A provider's own id, opaque to the hub: visible ASCII, no spaces.",
+      "not": {
+        "pattern": "\\n"
+      }
+    },
+    "draftyak.entities.EmailDraftContent": {
+      "type": "object",
+      "properties": {
+        "channel": {
+          "type": "string",
+          "const": "email"
+        },
+        "to": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/draftyak.entities.EmailAddress"
+          }
+        },
+        "cc": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/draftyak.entities.EmailAddress"
+          }
+        },
+        "bcc": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/draftyak.entities.EmailAddress"
+          }
+        },
+        "subject": {
+          "type": "string",
+          "maxLength": 2000,
+          "not": {
+            "pattern": "[\\r\\n]"
+          }
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 100000,
+          "not": {
+            "pattern": "\\r"
+          },
+          "description": "In NFC with LF line ends: the hub turns CR LF and a lone CR into LF and normalizes to NFC before it stores a revision."
+        },
+        "attachments": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/draftyak.entities.DraftAttachment"
+          }
+        }
+      },
+      "required": [
+        "channel",
+        "to",
+        "cc",
+        "bcc",
+        "subject",
+        "body",
+        "attachments"
+      ],
+      "additionalProperties": false,
+      "description": "The recipients, subject, body and attachments of an email draft, at most 100 of each list. For a reply the hub fills to and cc from the thread, and adds threading when it freezes a snapshot."
+    },
+    "draftyak.entities.EmailAddress": {
+      "type": "string",
+      "maxLength": 254,
+      "pattern": "^[-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+(?:[.][-A-Za-z0-9!#$%&'*+/=?^_`{|}~\\u00a1-\\u00ac\\u00ae-\\u034e\\u0350-\\u05ff\\u0606-\\u061b\\u061d-\\u06dc\\u06de-\\u070e\\u0710-\\u088f\\u0892-\\u08e1\\u08e3-\\u115e\\u1161-\\u167f\\u1681-\\u17b3\\u17b6-\\u180a\\u1810-\\u1fff\\u2010-\\u2027\\u2030-\\u205e\\u2070-\\u27ff\\u2801-\\u2fff\\u3001-\\u3163\\u3165-\\ud7ff\\uf900-\\ufdcf\\ufdf0-\\ufdff\\ufe10-\\ufefe\\uff00-\\uff9f\\uffa1-\\uffef]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
+      "not": {
+        "pattern": "\\n"
+      },
+      "description": "An address as the hub normalizes it: a dot-atom local part as given, without spaces, quotes or invisible characters, and a lower-case DNS domain with IDN labels as A-labels."
+    },
+    "draftyak.entities.DraftAttachment": {
+      "type": "object",
+      "properties": {
+        "blobId": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "not": {
+            "pattern": "[\\r\\n]"
+          }
+        },
+        "contentType": {
+          "$ref": "#/$defs/draftyak.normalized-change.MediaType"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+          "description": "A SHA-256 digest as 64 lower-case hex characters."
+        }
+      },
+      "required": [
+        "blobId",
+        "filename",
+        "contentType",
+        "size",
+        "sha256"
+      ],
+      "additionalProperties": false,
+      "description": "A file the hub holds as a blob, with the name, type, size and hash it sends. The hub lower-cases the media type it was given and drops its parameters, and uses application/octet-stream for one it can't read."
+    },
+    "draftyak.normalized-change.MediaType": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255,
+      "pattern": "^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+$(?![\\s\\S])",
+      "description": "A lower-case type/subtype without parameters, such as image/png.",
+      "not": {
+        "pattern": "\\n"
+      }
+    },
+    "draftyak.flags.Flag": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "NEW_RECIPIENT",
+                "RECIPIENT_ADDED_BY_AGENT",
+                "REPLY_TO_REDIRECT",
+                "AGENT_AUTHORED",
+                "DMARC_FAIL",
+                "EXTERNAL_LINK",
+                "AGENT_INSERTED_CONTACT",
+                "ATTACHMENT_ADDED_BY_AGENT",
+                "INVISIBLE_CHARS",
+                "MASS_MENTION",
+                "CROSS_THREAD_DATA",
+                "SECRET_PATTERN",
+                "TOOL_DATA_IN_BODY"
+              ]
+            },
+            "severity": {
+              "type": "string",
+              "const": "ack"
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code",
+            "severity"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "TOOL_CONTEXT_USED"
+              ]
+            },
+            "severity": {
+              "type": "string",
+              "const": "info"
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code",
+            "severity"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "SUSPECTED_INSTRUCTIONS",
+                "TOOL_INSTRUCTIONS"
+              ]
+            },
+            "severity": {
+              "type": "string",
+              "const": "advisory"
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "code",
+            "severity"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "A flag on a draft revision: its code, the code's severity, and an optional detail (1 to 1,000 Unicode scalar values) that the composer and the approval window show as data."
+    }
+  }
+}
