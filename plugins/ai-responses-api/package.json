@@ -37,6 +37,7 @@
   "devDependencies": {
     "@draftyak/fakes": "workspace:*",
     "@draftyak/hub": "workspace:*",
+    "@draftyak/plugin-testkit": "workspace:*",
     "fast-check": "4.10.2",
     "tsdown": "0.23.1"
   }
