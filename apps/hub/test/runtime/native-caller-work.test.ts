@@ -112,6 +112,56 @@ describe("NativeCallerWork", () => {
 		await expect(stopped).resolves.toBeUndefined();
 	});
 
+	it("keeps admitted work pending when a genuine promise cannot attach its observer", async () => {
+		const caller = new NativeCallerWork();
+		const failure = new Error("settlement observer unavailable");
+		let speciesReads = 0;
+		class UnobservablePromise<T> extends Promise<T> {
+			static override get [Symbol.species](): PromiseConstructor {
+				speciesReads += 1;
+				throw failure;
+			}
+		}
+		let release!: () => void;
+		let released = false;
+		const original = new UnobservablePromise<void>((resolve) => {
+			release = () => {
+				released = true;
+				resolve();
+			};
+		});
+		let starts = 0;
+		let reentrantStop: Promise<void> | undefined;
+		let observed: unknown;
+		try {
+			expect(original).toBeInstanceOf(Promise);
+			expect(original.then).toBe(Promise.prototype.then);
+			expect(Object.hasOwn(original, "then")).toBe(false);
+			try {
+				caller.run(() => {
+					starts += 1;
+					reentrantStop = caller.stop();
+					return original;
+				});
+			} catch (error) {
+				observed = error;
+			}
+			expect(starts).toBe(1);
+			expect(observed).toBe(failure);
+			expect(speciesReads).toBe(1);
+			const stopped = caller.stop();
+			expect(stopped).toBe(reentrantStop);
+			expect(released).toBe(false);
+			await expectPending(stopped);
+			expect(released).toBe(false);
+			expect(caller.stop()).toBe(stopped);
+		} finally {
+			// Fulfil the original work without claiming that its failed observer joined it.
+			release();
+			await setImmediate();
+		}
+	});
+
 	it("joins nested work admitted before the fence and refuses later starts", async () => {
 		const caller = new NativeCallerWork();
 		const outer = deferred<void>();
