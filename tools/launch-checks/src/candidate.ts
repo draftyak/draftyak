@@ -54,6 +54,7 @@ interface CapturedFile {
 }
 
 type Cleanup = () => Promise<void>;
+type DescriptorOwnership = "owned" | "indeterminate";
 const failedCleanup = new Set<Cleanup>();
 const keyType = Object.getOwnPropertyDescriptor(KeyObject.prototype, "type")?.get;
 const fields = [
@@ -165,7 +166,18 @@ export async function checkCandidatePayload(
 	const selected = input(options);
 	const expected = expectations(selected.expected);
 	const builder = new NativeAppReleaseBuilder(selected.root);
-	const descriptors = new Set<number>();
+	const descriptors = new Map<number, DescriptorOwnership>();
+	const closeDescriptor = (fd: number): void => {
+		if (descriptors.get(fd) !== "owned") refuse("cleanup");
+		// A throwing close may already have released this number for another resource.
+		descriptors.set(fd, "indeterminate");
+		try {
+			closeSync(fd);
+		} catch {
+			refuse("cleanup");
+		}
+		descriptors.delete(fd);
+	};
 	let closeJob: Promise<void> | undefined;
 	const cleanup: Cleanup = () => {
 		if (closeJob) return closeJob;
@@ -177,10 +189,13 @@ export async function checkCandidatePayload(
 			} catch {
 				failed = true;
 			}
-			for (const fd of [...descriptors]) {
+			for (const [fd, ownership] of [...descriptors]) {
+				if (ownership === "indeterminate") {
+					failed = true;
+					continue;
+				}
 				try {
-					closeSync(fd);
-					descriptors.delete(fd);
+					closeDescriptor(fd);
 				} catch {
 					failed = true;
 				}
@@ -268,7 +283,7 @@ export async function checkCandidatePayload(
 			name,
 			constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
 		);
-		descriptors.add(fd);
+		descriptors.set(fd, "owned");
 		const stat = fstatSync(fd, { bigint: true });
 		regular(stat);
 		if (!sameStat(named, stat)) refuse("payload");
@@ -308,8 +323,7 @@ export async function checkCandidatePayload(
 		const metadata: unknown = JSON.parse(decode(bundle.bytes));
 		if (metadata && typeof metadata === "object" && Object.hasOwn(metadata, "profile"))
 			refuse("payload");
-		closeSync(bundle.fd);
-		descriptors.delete(bundle.fd);
+		closeDescriptor(bundle.fd);
 		const ordered = manifest.bundles.map((bundle) => {
 			const wanted = expected.bundles.find((item) => item.id === bundle.id);
 			if (!wanted) return refuse("expectation");
@@ -338,7 +352,7 @@ export async function checkCandidatePayload(
 	}
 }
 
-/** Retry only cleanup that an earlier settled check could not finish. */
+/** Complete safe cleanup and refuse while descriptor ownership remains indeterminate. */
 export async function closeCandidatePayloadChecks(): Promise<void> {
 	const outcomes = await Promise.allSettled([...failedCleanup].map((cleanup) => cleanup()));
 	if (outcomes.some((outcome) => outcome.status === "rejected")) refuse("cleanup");
