@@ -129,6 +129,7 @@ function Fixture() {
 					setForeign(false);
 				}}
 				conversationList={{
+					accountId: selected.accountId,
 					data: { status: "ready", items },
 					selectedConversationId: selected.id,
 					intents: {
@@ -142,6 +143,8 @@ function Fixture() {
 					},
 				}}
 				conversationView={{
+					accountId: selected.accountId,
+					conversationId: selected.id,
 					conversation: selected,
 					messages: { status: "ready", items: [message] },
 					selectedMessageId: message.id,
@@ -153,6 +156,8 @@ function Fixture() {
 					intents: { back() {}, selectMessage() {}, retry() {} },
 				}}
 				composer={{
+					accountId: selected.accountId,
+					conversationId: selected.id,
 					status: "ready",
 					props: {
 						draft,

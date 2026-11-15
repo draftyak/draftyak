@@ -5,7 +5,7 @@ import { Message } from "@draftyak/protocol/entities/message";
 import { OutboxItem } from "@draftyak/protocol/entities/outbox";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement, type ReactElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { DraftComposerProps } from "../../src/composer/DraftComposer.tsx";
 import { InboxWorkspace, type InboxWorkspaceProps } from "../../src/inbox/InboxWorkspace.tsx";
 
@@ -112,11 +112,14 @@ function props(overrides: Partial<InboxWorkspaceProps> = {}): InboxWorkspaceProp
 		selectedAccountId: id(20),
 		onSelectAccount: vi.fn(),
 		conversationList: {
+			accountId: id(20),
 			data: { status: "ready", items: [conversation()] },
 			selectedConversationId: id(10),
 			intents: { selectConversation: vi.fn(), retry: vi.fn() },
 		},
 		conversationView: {
+			accountId: id(20),
+			conversationId: id(10),
 			conversation: conversation(),
 			messages: { status: "ready", items: [message()] },
 			selectedMessageId: id(30),
@@ -127,7 +130,7 @@ function props(overrides: Partial<InboxWorkspaceProps> = {}): InboxWorkspaceProp
 			},
 			intents: { back: vi.fn(), selectMessage: vi.fn(), retry: vi.fn() },
 		},
-		composer: { status: "ready", props: composer() },
+		composer: { accountId: id(20), conversationId: id(10), status: "ready", props: composer() },
 		...overrides,
 	};
 }
@@ -152,13 +155,68 @@ function expectNoContent(): void {
 }
 afterEach(cleanup);
 
+// jsdom has no layout. Supply DOM geometry, not a replacement virtualizer.
+const rectangle = HTMLElement.prototype.getBoundingClientRect;
+const heightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+	HTMLElement.prototype,
+	"scrollHeight",
+);
+const scrollDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+beforeAll(() => {
+	vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+		this: HTMLElement,
+	) {
+		return this.classList.contains("inbox-panel__viewport")
+			? DOMRect.fromRect({ width: 800, height: 640 })
+			: rectangle.call(this);
+	});
+	Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+		configurable: true,
+		get(this: HTMLElement) {
+			return this.classList.contains("inbox-panel__viewport") ? 640 : 0;
+		},
+	});
+	Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+		configurable: true,
+		get(this: HTMLElement) {
+			const size = this.querySelector("[aria-setsize]")?.getAttribute("aria-setsize");
+			return this.classList.contains("inbox-panel__viewport")
+				? Math.max(640, Number(size ?? 0) * 320)
+				: 0;
+		},
+	});
+	Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+		configurable: true,
+		value(this: HTMLElement, options: ScrollToOptions | number, top?: number) {
+			this.scrollTop = typeof options === "number" ? (top ?? 0) : (options.top ?? this.scrollTop);
+		},
+	});
+});
+afterAll(() => {
+	vi.restoreAllMocks();
+	for (const [name, descriptor] of [
+		["clientHeight", heightDescriptor],
+		["scrollHeight", scrollHeightDescriptor],
+		["scrollTo", scrollDescriptor],
+	] as const) {
+		if (descriptor === undefined) Reflect.deleteProperty(HTMLElement.prototype, name);
+		else Object.defineProperty(HTMLElement.prototype, name, descriptor);
+	}
+});
+
 describe("inbox workspace", () => {
 	it("composes the actual children and forwards their original exact intents", () => {
 		const input = props();
 		if (input.composer.status !== "ready") throw new Error("DYTEST ready composer required");
 		const onEditIntent = vi.fn();
 		const draftProps = { ...input.composer.props, onEditIntent };
-		render(view({ ...input, composer: { status: "ready", props: draftProps } }));
+		render(
+			view({
+				...input,
+				composer: { accountId: id(20), conversationId: id(10), status: "ready", props: draftProps },
+			}),
+		);
 		expect(screen.getByRole("region", { name: "Inbox workspace" })).toBeDefined();
 		expect(screen.getByText(BODY)).toBeDefined();
 		expect(screen.queryByText("DYTEST snippet is not a body")).toBeNull();
@@ -204,7 +262,12 @@ describe("inbox workspace", () => {
 		const onEditIntent = vi.fn();
 		const current = {
 			...input,
-			composer: { status: "ready" as const, props: { ...input.composer.props, onEditIntent } },
+			composer: {
+				accountId: id(20),
+				conversationId: id(10),
+				status: "ready" as const,
+				props: { ...input.composer.props, onEditIntent },
+			},
 		};
 		const result = render(view(current));
 		edit("DYTEST unsent local edit");
@@ -276,17 +339,22 @@ describe("inbox workspace", () => {
 				selectedAccountId: id(21),
 				conversationList: {
 					...input.conversationList,
+					accountId: id(21),
 					data: { status: "ready", items: [chatConversation] },
 					selectedConversationId: id(11),
 				},
 				conversationView: {
 					...input.conversationView,
+					accountId: id(21),
+					conversationId: id(11),
 					conversation: chatConversation,
 					messages: { status: "ready", items: [chatMessage] },
 					selectedMessageId: id(31),
 					bodyPresentation: { messageId: id(31), status: "ready", content: "DYTEST chat body" },
 				},
 				composer: {
+					accountId: id(21),
+					conversationId: id(11),
 					status: "ready",
 					props: {
 						...draftProps,
@@ -456,6 +524,8 @@ describe("inbox workspace", () => {
 			view({
 				...input,
 				composer: {
+					accountId: id(20),
+					conversationId: id(10),
 					status: "ready",
 					props: { ...draftProps, draft: Draft.parse({ ...draftProps.draft, ...changes }) },
 				},
@@ -478,6 +548,8 @@ describe("inbox workspace", () => {
 			view(
 				props({
 					composer: {
+						accountId: id(20),
+						conversationId: id(10),
 						status: "ready",
 						props: {
 							...draftProps,
@@ -499,7 +571,7 @@ describe("inbox workspace", () => {
 	] as const)(
 		"preserves the distinct composer %s state without manufacturing a draft",
 		(_name, state, label) => {
-			render(view(props({ composer: state })));
+			render(view(props({ composer: { accountId: id(20), conversationId: id(10), ...state } })));
 			expect(screen.getByText(label, { exact: true })).toBeDefined();
 			expect(screen.getByText(BODY)).toBeDefined();
 			expect(screen.queryByRole("textbox", { name: "Draft body" })).toBeNull();
@@ -524,11 +596,12 @@ describe("inbox workspace", () => {
 					conversationList: { ...input.conversationList, data, selectedConversationId: null },
 					conversationView: {
 						...input.conversationView,
+						conversationId: null,
 						conversation: null,
 						selectedMessageId: null,
 						bodyPresentation: null,
 					},
-					composer: { status: "none" },
+					composer: { accountId: id(20), conversationId: null, status: "none" },
 				}),
 			);
 			expect(screen.getByText(label, { exact: true })).toBeDefined();
@@ -556,7 +629,7 @@ describe("inbox workspace", () => {
 					selectedMessageId: null,
 					bodyPresentation: null,
 				},
-				composer: { status: "none" },
+				composer: { accountId: id(20), conversationId: id(10), status: "none" },
 			}),
 		);
 		expect(screen.getByText(label, { exact: true })).toBeDefined();
@@ -579,7 +652,7 @@ describe("inbox workspace", () => {
 					...input.conversationView,
 					messages: { status: "ready", items: [message(changes)] },
 				},
-				composer: { status: "none" },
+				composer: { accountId: id(20), conversationId: id(10), status: "none" },
 			}),
 		);
 		expect(screen.getByRole("alert").textContent).toBe("Conversation unavailable");
@@ -594,6 +667,8 @@ describe("inbox workspace", () => {
 			view(
 				props({
 					composer: {
+						accountId: id(20),
+						conversationId: id(10),
 						status: "ready",
 						props: {
 							...draftProps,
@@ -694,7 +769,16 @@ describe("inbox workspace", () => {
 			stateReason: null,
 		});
 		render(
-			view(props({ composer: { status: "ready", props: { ...draftProps, outboxItems: [item] } } })),
+			view(
+				props({
+					composer: {
+						accountId: id(20),
+						conversationId: id(10),
+						status: "ready",
+						props: { ...draftProps, outboxItems: [item] },
+					},
+				}),
+			),
 		);
 		expect(screen.getByText("A live outbox item locks this draft.")).toBeDefined();
 		expect(
@@ -718,7 +802,7 @@ describe("inbox workspace", () => {
 					...input.conversationView,
 					bodyPresentation: { messageId: id(31), status: "ready", content: BODY },
 				},
-				composer: { status: "none" },
+				composer: { accountId: id(20), conversationId: id(10), status: "none" },
 			}),
 		);
 		expect(screen.getByRole("alert").textContent).toBe("Conversation unavailable");
@@ -749,7 +833,14 @@ describe("inbox workspace", () => {
 					finish = resolve;
 				}),
 		);
-		const input = props({ composer: { status: "ready", props: composer({ onEditIntent }) } });
+		const input = props({
+			composer: {
+				accountId: id(20),
+				conversationId: id(10),
+				status: "ready",
+				props: composer({ onEditIntent }),
+			},
+		});
 		const result = render(view(input));
 		edit("DYTEST pending old reply");
 		fireEvent.click(screen.getByRole("button", { name: "Request new revision" }));
@@ -761,5 +852,305 @@ describe("inbox workspace", () => {
 		expectNoContent();
 		expect(screen.queryByText("Edit requested; waiting for a new revision.")).toBeNull();
 		expect(onEditIntent).toHaveBeenCalledTimes(1);
+	});
+});
+
+function otherEmailAccount(): Account {
+	return Account.parse({
+		...account(),
+		id: id(22),
+		alias: "secondary-mail",
+		address: "secondary@example.invalid",
+	});
+}
+
+function emptyScope(accountId: string): InboxWorkspaceProps {
+	const input = props();
+	return {
+		...input,
+		accounts: { status: "ready", items: [account(), otherEmailAccount()] },
+		selectedAccountId: accountId,
+		conversationList: {
+			accountId,
+			data: { status: "ready", items: [] },
+			selectedConversationId: null,
+			intents: { selectConversation: vi.fn(), retry: vi.fn() },
+		},
+		conversationView: {
+			accountId,
+			conversationId: null,
+			conversation: null,
+			messages: { status: "ready", items: [] },
+			selectedMessageId: null,
+			bodyPresentation: null,
+			intents: { back: vi.fn(), selectMessage: vi.fn(), retry: vi.fn() },
+		},
+		composer: { accountId, conversationId: null, status: "none" },
+	};
+}
+
+function selectedScope(accountId: string, conversationId: string): InboxWorkspaceProps {
+	const input = emptyScope(accountId);
+	const selected = conversation({ accountId, id: conversationId });
+	return {
+		...input,
+		conversationList: {
+			...input.conversationList,
+			data: { status: "ready", items: [selected] },
+			selectedConversationId: conversationId,
+		},
+		conversationView: {
+			...input.conversationView,
+			conversationId,
+			conversation: selected,
+		},
+		composer: { accountId, conversationId, status: "none" },
+	};
+}
+
+function listState(
+	state: "loading" | "error" | "empty",
+): InboxWorkspaceProps["conversationList"]["data"] {
+	return state === "empty" ? { status: "ready", items: [] } : { status: state };
+}
+
+function messagesState(
+	state: "loading" | "error" | "empty",
+): InboxWorkspaceProps["conversationView"]["messages"] {
+	return state === "empty" ? { status: "ready", items: [] } : { status: state };
+}
+
+function replyState(
+	state: "none" | "loading" | "error",
+	accountId: string,
+	conversationId: string,
+): InboxWorkspaceProps["composer"] {
+	return state === "error"
+		? { accountId, conversationId, status: state, retry: vi.fn() }
+		: { accountId, conversationId, status: state };
+}
+
+function expectNoSubordinateActions(): void {
+	expectNoContent();
+	for (const name of [
+		"Retry conversations",
+		"Retry messages",
+		"Retry reply draft",
+		"Back to inbox",
+	]) {
+		expect(screen.queryByRole("button", { name })).toBeNull();
+	}
+}
+
+describe("workspace originating presentation scopes", () => {
+	it.each([
+		["loading", "Loading conversations"],
+		["error", "Conversations unavailable"],
+		["empty", "No conversations"],
+	] as const)("withholds a stale account list %s bundle and its actions", (state, label) => {
+		const oldBase = emptyScope(id(20));
+		const old = {
+			...oldBase,
+			conversationList: { ...oldBase.conversationList, data: listState(state) },
+		};
+		const nextBase = emptyScope(id(22));
+		const next = {
+			...nextBase,
+			conversationList: { ...nextBase.conversationList, data: listState(state) },
+		};
+		const result = render(view(old));
+		expect(screen.getByText(label, { exact: true })).toBeDefined();
+
+		result.rerender(view({ ...next, conversationList: old.conversationList }));
+		expect(screen.getByRole("alert").textContent).toBe("Inbox workspace unavailable");
+		expectNoSubordinateActions();
+		expect(old.conversationList.intents.retry).not.toHaveBeenCalled();
+		expect(old.conversationList.intents.selectConversation).not.toHaveBeenCalled();
+		expect(old.conversationView.intents.back).not.toHaveBeenCalled();
+
+		result.rerender(view(next));
+		expect(screen.getByText(label, { exact: true })).toBeDefined();
+		fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
+		expect(next.conversationView.intents.back).toHaveBeenCalledExactlyOnceWith();
+		if (state === "error") {
+			fireEvent.click(screen.getByRole("button", { name: "Retry conversations" }));
+			expect(next.conversationList.intents.retry).toHaveBeenCalledExactlyOnceWith();
+		}
+		expect(old.conversationList.intents.retry).not.toHaveBeenCalled();
+		expect(old.conversationView.intents.back).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["account", "loading", "Loading messages"],
+		["account", "error", "Messages unavailable"],
+		["account", "empty", "No messages"],
+		["conversation", "loading", "Loading messages"],
+		["conversation", "error", "Messages unavailable"],
+		["conversation", "empty", "No messages"],
+	] as const)("withholds stale %s message %s state and its callbacks", (axis, state, label) => {
+		const oldBase = selectedScope(id(20), id(10));
+		const old = {
+			...oldBase,
+			conversationView: { ...oldBase.conversationView, messages: messagesState(state) },
+		};
+		const nextBase = selectedScope(axis === "account" ? id(22) : id(20), id(12));
+		const next = {
+			...nextBase,
+			conversationView: { ...nextBase.conversationView, messages: messagesState(state) },
+		};
+		const result = render(view(old));
+		expect(screen.getByText(label, { exact: true })).toBeDefined();
+
+		result.rerender(
+			view({
+				...next,
+				conversationView: {
+					...old.conversationView,
+					conversation: next.conversationView.conversation,
+					conversationId: axis === "account" ? id(12) : id(10),
+				},
+			}),
+		);
+		expect(screen.getByRole("alert").textContent).toBe("Inbox workspace unavailable");
+		expectNoSubordinateActions();
+		expect(old.conversationView.intents.retry).not.toHaveBeenCalled();
+		expect(old.conversationView.intents.back).not.toHaveBeenCalled();
+		expect(old.conversationView.intents.selectMessage).not.toHaveBeenCalled();
+
+		result.rerender(view(next));
+		expect(screen.getByText(label, { exact: true })).toBeDefined();
+		fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
+		expect(next.conversationView.intents.back).toHaveBeenCalledExactlyOnceWith();
+		if (state === "error") {
+			fireEvent.click(screen.getByRole("button", { name: "Retry messages" }));
+			expect(next.conversationView.intents.retry).toHaveBeenCalledExactlyOnceWith();
+		}
+		expect(old.conversationView.intents.retry).not.toHaveBeenCalled();
+		expect(old.conversationView.intents.back).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["account", "none", "No reply draft"],
+		["account", "loading", "Loading reply draft"],
+		["account", "error", "Reply draft unavailable"],
+		["conversation", "none", "No reply draft"],
+		["conversation", "loading", "Loading reply draft"],
+		["conversation", "error", "Reply draft unavailable"],
+	] as const)("withholds stale %s composer %s state and retry", (axis, state, label) => {
+		const oldBase = selectedScope(id(20), id(10));
+		const old = { ...oldBase, composer: replyState(state, id(20), id(10)) };
+		const nextAccountId = axis === "account" ? id(22) : id(20);
+		const nextBase = selectedScope(nextAccountId, id(12));
+		const next = { ...nextBase, composer: replyState(state, nextAccountId, id(12)) };
+		const result = render(view(old));
+		expect(screen.getByText(label, { exact: true })).toBeDefined();
+
+		result.rerender(
+			view({
+				...next,
+				composer: { ...old.composer, conversationId: axis === "account" ? id(12) : id(10) },
+			}),
+		);
+		expect(screen.getByRole("alert").textContent).toBe("Inbox workspace unavailable");
+		expectNoSubordinateActions();
+		if (old.composer.status === "error") expect(old.composer.retry).not.toHaveBeenCalled();
+
+		result.rerender(view(next));
+		expect(screen.getByText(label, { exact: true })).toBeDefined();
+		fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
+		expect(next.conversationView.intents.back).toHaveBeenCalledExactlyOnceWith();
+		if (next.composer.status === "error") {
+			fireEvent.click(screen.getByRole("button", { name: "Retry reply draft" }));
+			expect(next.composer.retry).toHaveBeenCalledExactlyOnceWith();
+		}
+		if (old.composer.status === "error") expect(old.composer.retry).not.toHaveBeenCalled();
+		expect(old.conversationView.intents.back).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[
+			"list account",
+			(p: InboxWorkspaceProps): InboxWorkspaceProps => ({
+				...p,
+				conversationList: { ...p.conversationList, accountId: null },
+			}),
+		],
+		[
+			"view account",
+			(p: InboxWorkspaceProps): InboxWorkspaceProps => ({
+				...p,
+				conversationView: { ...p.conversationView, accountId: null },
+			}),
+		],
+		[
+			"composer account",
+			(p: InboxWorkspaceProps): InboxWorkspaceProps => ({
+				...p,
+				composer: { ...p.composer, accountId: null },
+			}),
+		],
+		[
+			"view conversation",
+			(p: InboxWorkspaceProps): InboxWorkspaceProps => ({
+				...p,
+				conversationView: { ...p.conversationView, conversationId: null },
+			}),
+		],
+		[
+			"composer conversation",
+			(p: InboxWorkspaceProps): InboxWorkspaceProps => ({
+				...p,
+				composer: { ...p.composer, conversationId: null },
+			}),
+		],
+	] as const)("refuses an unknown originating %s without retagging", (_name, change) => {
+		const input = props();
+		render(view(change(input)));
+		expect(screen.getByRole("alert").textContent).toBe("Inbox workspace unavailable");
+		expectNoSubordinateActions();
+		expect(input.conversationList.intents.selectConversation).not.toHaveBeenCalled();
+		expect(input.conversationView.intents.selectMessage).not.toHaveBeenCalled();
+	});
+
+	it.each(["conversationList", "conversationView", "composer"] as const)(
+		"refuses a legacy unscoped %s bundle",
+		(key) => {
+			const input = props();
+			const legacy = Object.fromEntries(
+				Object.entries(input[key]).filter(
+					([name]) => name !== "accountId" && name !== "conversationId",
+				),
+			);
+			render(view({ ...input, [key]: legacy } as unknown as InboxWorkspaceProps));
+			expect(screen.getByRole("alert").textContent).toBe("Inbox workspace unavailable");
+			expectNoSubordinateActions();
+		},
+	);
+
+	it("keeps detached old reply controls inert through an account A-B-A return", () => {
+		const first = props();
+		const result = render(view(first));
+		const oldForm = screen.getByRole("textbox", { name: "Draft body" }).closest("form");
+		if (!oldForm || first.composer.status !== "ready")
+			throw new Error("DYTEST original reply required");
+		edit("DYTEST old detached reply");
+		result.rerender(view(selectedScope(id(22), id(12))));
+		const latest = props();
+		result.rerender(view(latest));
+		fireEvent.submit(oldForm);
+		expect(first.composer.props.onEditIntent).not.toHaveBeenCalled();
+		if (latest.composer.status !== "ready") throw new Error("DYTEST current reply required");
+		expect(latest.composer.props.onEditIntent).not.toHaveBeenCalled();
+		edit("DYTEST current reply after return");
+		fireEvent.click(screen.getByRole("button", { name: "Request new revision" }));
+		expect(latest.composer.props.onEditIntent).toHaveBeenCalledExactlyOnceWith({
+			draftId: id(40),
+			expectedRev: 2,
+			content: {
+				...latest.composer.props.currentRevision.content,
+				body: "DYTEST current reply after return",
+			},
+		});
+		expect(first.composer.props.onEditIntent).not.toHaveBeenCalled();
 	});
 });
