@@ -56,9 +56,16 @@ export function createAppRouter(
 	controller: AppNavigationPort,
 	renderView: (view: AppView) => ReactElement,
 ): AppRouter {
+	type NavigationIntent = { readonly view: AppView; readonly readOnly?: boolean };
 	let closed = false;
-	let intent: { readonly view: AppView } | undefined;
+	let intent: NavigationIntent | undefined;
 	let activeNavigation: Promise<void> | undefined;
+	let activeCommit:
+		| {
+				readonly owner: NavigationIntent;
+				readonly settled: Promise<void>;
+		  }
+		| undefined;
 	let initialView: unknown;
 	try {
 		initialView = controller.getSnapshot().view;
@@ -86,6 +93,46 @@ export function createAppRouter(
 		},
 	});
 
+	function assertCurrent(current: NavigationIntent, signal?: AbortSignal): void {
+		if (closed || signal?.aborted || intent !== current) throw new AppNavigationError();
+	}
+
+	async function selectView(
+		current: NavigationIntent,
+		signal?: AbortSignal,
+		readOnly = current.readOnly === true,
+	): Promise<void> {
+		try {
+			assertCurrent(current, signal);
+			while (activeNavigation !== undefined) {
+				await activeNavigation;
+				assertCurrent(current, signal);
+			}
+			const selected = controller.getSnapshot().view;
+			assertCurrent(current, signal);
+			if (selected !== current.view) {
+				if (readOnly) throw new AppNavigationError();
+				let release!: () => void;
+				const joined = new Promise<void>((resolve) => {
+					release = resolve;
+				});
+				activeNavigation = joined;
+				try {
+					// Keep the reservation until the original host work actually settles.
+					await controller.navigate(current.view);
+				} finally {
+					if (activeNavigation === joined) activeNavigation = undefined;
+					release();
+				}
+			}
+			const confirmed = controller.getSnapshot().view;
+			assertCurrent(current, signal);
+			if (confirmed !== current.view) throw new AppNavigationError();
+		} catch {
+			throw new AppNavigationError();
+		}
+	}
+
 	function route(view: AppView) {
 		return createRoute({
 			getParentRoute: () => root,
@@ -94,40 +141,23 @@ export function createAppRouter(
 			pendingComponent: PendingView,
 			async beforeLoad({ abortController }): Promise<void> {
 				if (closed || abortController.signal.aborted) throw new AppNavigationError();
-				const current = intent?.view === view ? intent : { view };
+				const committing = activeCommit?.owner;
+				const commitOwner = committing?.view === view ? committing : undefined;
+				const ownsIntent = commitOwner === undefined && intent?.view !== view;
+				const current: NavigationIntent =
+					commitOwner ?? (intent?.view === view ? intent : { view });
+				if (commitOwner !== undefined) assertCurrent(commitOwner, abortController.signal);
 				intent = current;
 				try {
-					// A controller may publish only when its asynchronous navigation settles.
-					// Join it before a newer intent can start another controller write.
-					while (activeNavigation !== undefined) {
-						await activeNavigation;
-						if (closed || abortController.signal.aborted || intent !== current)
-							throw new AppNavigationError();
-					}
-					if (controller.getSnapshot().view !== view) {
-						let release!: () => void;
-						const joined = new Promise<void>((resolve) => {
-							release = resolve;
-						});
-						activeNavigation = joined;
-						try {
-							await controller.navigate(view);
-						} finally {
-							if (activeNavigation === joined) activeNavigation = undefined;
-							release();
-						}
-					}
-					if (
-						closed ||
-						abortController.signal.aborted ||
-						intent !== current ||
-						controller.getSnapshot().view !== view
-					)
-						throw new AppNavigationError();
-				} catch {
-					throw new AppNavigationError();
+					await selectView(
+						current,
+						abortController.signal,
+						commitOwner !== undefined || current.readOnly === true,
+					);
+					assertCurrent(current, abortController.signal);
 				} finally {
-					if (intent === current) intent = undefined;
+					// Explicit navigate owns its token through route commitment too.
+					if (ownsIntent && intent === current) intent = undefined;
 				}
 			},
 			component: () => (closed ? null : renderView(view)),
@@ -149,14 +179,39 @@ export function createAppRouter(
 		throw new AppNavigationError();
 	}
 
-	function navigate(view: AppView, replace = false): Promise<void> {
+	function navigate(view: AppView, replace = false, readOnly = false): Promise<void> {
 		if (closed) return Promise.resolve();
 		if (!validView(view)) return Promise.reject(new AppNavigationError());
-		const current = { view };
+		const current = { view, readOnly };
 		intent = current;
 		let work: Promise<void>;
 		try {
-			work = router.navigate({ to: paths[view], search: {}, hash: "", replace });
+			// A failed host selection must reject the caller without committing a route error.
+			work = selectView(current).then(async () => {
+				if (closed) return;
+				while (activeCommit !== undefined) {
+					await activeCommit.settled;
+					if (closed) return;
+					assertCurrent(current);
+				}
+				const selected = controller.getSnapshot().view;
+				assertCurrent(current);
+				if (selected !== view) throw new AppNavigationError();
+				let release!: () => void;
+				const commit = {
+					owner: current,
+					settled: new Promise<void>((resolve) => {
+						release = resolve;
+					}),
+				};
+				activeCommit = commit;
+				try {
+					await router.navigate({ to: paths[view], search: {}, hash: "", replace });
+				} finally {
+					if (activeCommit === commit) activeCommit = undefined;
+					release();
+				}
+			});
 		} catch {
 			if (intent === current) intent = undefined;
 			return Promise.reject(new AppNavigationError());
@@ -166,7 +221,17 @@ export function createAppRouter(
 				if (!closed) throw new AppNavigationError();
 			})
 			.finally(() => {
-				if (intent === current) intent = undefined;
+				if (intent !== current) return;
+				intent = undefined;
+				if (closed) return;
+				let selected: unknown;
+				try {
+					selected = controller.getSnapshot().view;
+				} catch {
+					return;
+				}
+				// Reconcile real publications skipped while this owner was in flight.
+				if (validView(selected)) sync(selected);
 			});
 	}
 
@@ -181,7 +246,7 @@ export function createAppRouter(
 			history.location.pathname === paths[view]
 		)
 			return;
-		void navigate(view, true).catch(() => {});
+		void navigate(view, true, true).catch(() => {});
 	}
 
 	function close(): void {

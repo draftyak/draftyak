@@ -104,14 +104,24 @@ function controlledPort(initial: AppView = "inbox") {
 	let active = 0;
 	let maximum = 0;
 	let draining = false;
-	const writes: { readonly view: AppView; readonly release: () => void }[] = [];
-	const hooks: { start?: (view: AppView) => void; publish?: (view: AppView) => void } = {};
+	const writes: {
+		readonly view: AppView;
+		readonly release: () => void;
+		readonly reject: (reason: unknown) => void;
+	}[] = [];
+	const hooks: {
+		start?: (view: AppView) => void;
+		publish?: (view: AppView) => void;
+		snapshot?: () => void;
+	} = {};
 	const navigate = vi.fn(async (view: AppView) => {
 		let release!: () => void;
-		const gate = new Promise<void>((resolve) => {
+		let reject!: (reason: unknown) => void;
+		const gate = new Promise<void>((resolve, no) => {
 			release = resolve;
+			reject = no;
 		});
-		writes.push({ view, release });
+		writes.push({ view, release, reject });
 		active += 1;
 		maximum = Math.max(maximum, active);
 		try {
@@ -128,7 +138,13 @@ function controlledPort(initial: AppView = "inbox") {
 		draining = true;
 		for (const write of writes) write.release();
 	});
-	const port: AppNavigationPort = { getSnapshot: () => ({ view: current }), navigate };
+	const port: AppNavigationPort = {
+		getSnapshot: () => {
+			hooks.snapshot?.();
+			return { view: current };
+		},
+		navigate,
+	};
 	return {
 		port,
 		navigate,
@@ -139,6 +155,15 @@ function controlledPort(initial: AppView = "inbox") {
 		},
 		get maximum() {
 			return maximum;
+		},
+		publish(view: AppView): void {
+			current = view;
+			hooks.publish?.(view);
+		},
+		fail(index: number): void {
+			const write = writes[index];
+			if (!write) throw new Error("Missing controlled navigation");
+			write.reject(new Error("DYTEST_CONTROLLER_DETAIL"));
 		},
 		release(index: number): void {
 			const write = writes[index];
@@ -173,7 +198,7 @@ describe("local application router", () => {
 		expect(host.navigate.mock.calls).toEqual([["review"]]);
 	});
 
-	it("keeps the pending view until the controller publishes its asynchronous selection", async () => {
+	it("keeps the current route until an explicit asynchronous selection succeeds", async () => {
 		const host = controlledPort();
 		const item = await mount(host.port);
 		let work!: Promise<void>;
@@ -182,7 +207,7 @@ describe("local application router", () => {
 		});
 		await eventually(() => {
 			expect(host.writes.map((write) => write.view)).toEqual(["review"]);
-			expect(item.container.querySelector('[role="status"]')?.textContent).toBe("Loading view");
+			shown(item, "inbox");
 		});
 		expect(host.current).toBe("inbox");
 		expect(item.rendered).not.toContain("review");
@@ -191,6 +216,26 @@ describe("local application router", () => {
 			await work;
 		});
 		await eventually(() => shown(item, "review"));
+	});
+
+	it("retains the real router pending state for a router-originated link", async () => {
+		const host = controlledPort();
+		const item = await mount(host.port);
+		const link = item.container.querySelector<HTMLAnchorElement>('a[href="/review"]');
+		expect(link).not.toBeNull();
+		await act(async () => {
+			link?.click();
+		});
+		await eventually(() => {
+			expect(host.writes.map((write) => write.view)).toEqual(["review"]);
+			expect(item.container.querySelector('[role="status"]')?.textContent).toBe("Loading view");
+		});
+		expect(item.rendered).not.toContain("review");
+		await act(async () => {
+			host.release(0);
+		});
+		await eventually(() => shown(item, "review"));
+		expect(host.navigate).toHaveBeenCalledExactlyOnceWith("review");
 	});
 
 	it("joins the active write and keeps the latest intent over intermediate publications", async () => {
@@ -341,7 +386,7 @@ describe("local application router", () => {
 	});
 
 	it.each(["rejects", "does not publish"] as const)(
-		"renders fixed text when navigation %s",
+		"keeps current content and rejects with a fixed public error when selection %s",
 		async (failure) => {
 			const port: AppNavigationPort = {
 				getSnapshot: () => ({ view: "inbox" }),
@@ -350,19 +395,172 @@ describe("local application router", () => {
 				}),
 			};
 			const item = await mount(port);
+			let result!: PromiseSettledResult<void>;
 			await act(async () => {
-				await Promise.allSettled([observe(item.app.navigate("review"))]);
+				[result] = await Promise.allSettled([observe(item.app.navigate("review"))]);
 			});
-			await eventually(() => {
-				expect(item.container.querySelector('[role="alert"]')?.textContent).toBe(
-					"View unavailable.",
-				);
+			expect(result).toMatchObject({
+				status: "rejected",
+				reason: { code: "APP_NAVIGATION_FAILED", message: "View unavailable" },
 			});
+			await eventually(() => shown(item, "inbox"));
 			expect(item.rendered).not.toContain("review");
 			expect(item.container.textContent).not.toContain("DYTEST_CONTROLLER_DETAIL");
 			expect(port.navigate).toHaveBeenCalledExactlyOnceWith("review");
 		},
 	);
+
+	it("retains the live current route on rejection after an unrelated same-view publication", async () => {
+		const host = controlledPort();
+		const item = await mount(host.port);
+		host.hooks.publish = (view) => item.app.sync(view);
+		const originalHeading = item.container.querySelector("h1");
+		let work!: Promise<void>;
+		await act(async () => {
+			work = observe(item.app.navigate("review"));
+		});
+		await eventually(() => expect(host.navigate).toHaveBeenCalledExactlyOnceWith("review"));
+		await act(async () => host.publish("inbox"));
+		shown(item, "inbox");
+		let result!: PromiseSettledResult<void>;
+		await act(async () => {
+			host.fail(0);
+			[result] = await Promise.allSettled([work]);
+		});
+		expect(result).toMatchObject({
+			status: "rejected",
+			reason: { code: "APP_NAVIGATION_FAILED", message: "View unavailable" },
+		});
+		shown(item, "inbox");
+		expect(item.container.querySelector("h1")).toBe(originalHeading);
+		expect(item.container.querySelector('[role="alert"]')).toBeNull();
+		expect(item.container.textContent).not.toContain("DYTEST_CONTROLLER_DETAIL");
+		await act(async () => host.publish("inbox"));
+		shown(item, "inbox");
+		expect(item.container.querySelector("h1")).toBe(originalHeading);
+		expect(host.navigate).toHaveBeenCalledExactlyOnceWith("review");
+		await act(async () => host.publish("settings"));
+		await eventually(() => shown(item, "settings"));
+		expect(host.navigate).toHaveBeenCalledExactlyOnceWith("review");
+	});
+
+	it("does not commit an older rejected selection over a newer intent", async () => {
+		const host = controlledPort();
+		const item = await mount(host.port);
+		host.hooks.publish = (view) => item.app.sync(view);
+		const work: Promise<void>[] = [];
+		await act(async () => {
+			work.push(observe(item.app.navigate("review")));
+		});
+		await eventually(() => expect(host.writes.map((write) => write.view)).toEqual(["review"]));
+		await act(async () => {
+			host.publish("settings");
+			work.push(observe(item.app.navigate("inbox")));
+		});
+		expect(host.writes.map((write) => write.view)).toEqual(["review"]);
+		await act(async () => host.fail(0));
+		await eventually(() =>
+			expect(host.writes.map((write) => write.view)).toEqual(["review", "inbox"]),
+		);
+		expect(host.maximum).toBe(1);
+		expect(item.rendered).not.toContain("review");
+		await act(async () => {
+			host.release(1);
+			await Promise.allSettled(work);
+		});
+		await eventually(() => shown(item, "inbox"));
+		expect(host.current).toBe("inbox");
+		expect(host.maximum).toBe(1);
+		expect(item.container.textContent).not.toContain("DYTEST_CONTROLLER_DETAIL");
+	});
+
+	it("keeps close inert when the original pending selection rejects", async () => {
+		const host = controlledPort();
+		const item = await mount(host.port);
+		host.hooks.publish = (view) => item.app.sync(view);
+		let work!: Promise<void>;
+		await act(async () => {
+			work = observe(item.app.navigate("review"));
+		});
+		await eventually(() => expect(host.writes.length).toBe(1));
+		await act(async () => host.publish("settings"));
+		const rendersBeforeClose = item.rendered.length;
+		item.app.close();
+		await act(async () => {
+			host.fail(0);
+			await work;
+			await item.app.navigate("settings");
+			item.app.sync("settings");
+		});
+		expect(host.writes.map((write) => write.view)).toEqual(["review"]);
+		expect(host.current).toBe("settings");
+		expect(item.rendered.length).toBe(rendersBeforeClose);
+	});
+
+	it("reconciles the latest real selection skipped while a rejected request was pending", async () => {
+		const host = controlledPort();
+		const item = await mount(host.port);
+		host.hooks.publish = (view) => item.app.sync(view);
+		let work!: Promise<void>;
+		await act(async () => {
+			work = observe(item.app.navigate("review"));
+		});
+		await eventually(() => expect(host.navigate).toHaveBeenCalledExactlyOnceWith("review"));
+		await act(async () => host.publish("settings"));
+		expect(host.current).toBe("settings");
+		expect(host.writes.map((write) => write.view)).toEqual(["review"]);
+		let result!: PromiseSettledResult<void>;
+		await act(async () => {
+			host.fail(0);
+			[result] = await Promise.allSettled([work]);
+		});
+		expect(result).toMatchObject({
+			status: "rejected",
+			reason: { code: "APP_NAVIGATION_FAILED", message: "View unavailable" },
+		});
+		await eventually(() => shown(item, "settings"));
+		expect(host.navigate).toHaveBeenCalledExactlyOnceWith("review");
+		expect(host.maximum).toBe(1);
+		expect(item.container.textContent).not.toContain("DYTEST_CONTROLLER_DETAIL");
+	});
+
+	it("fences a newer intent arriving between selection and the old route commit", async () => {
+		const host = controlledPort();
+		const item = await mount(host.port);
+		let queued = false;
+		let later: Promise<void> | undefined;
+		host.hooks.snapshot = () => {
+			if (queued || host.current !== "review" || item.app.history.location.pathname !== "/review")
+				return;
+			queued = true;
+			queueMicrotask(() => {
+				later = observe(item.app.navigate("settings"));
+			});
+		};
+		let first!: Promise<void>;
+		await act(async () => {
+			first = observe(item.app.navigate("review"));
+		});
+		await eventually(() => expect(host.writes.map((write) => write.view)).toEqual(["review"]));
+		await act(async () => host.release(0));
+		await eventually(() => {
+			expect(queued).toBe(true);
+			expect(later).toBeDefined();
+			expect(host.writes.map((write) => write.view)).toEqual(["review", "settings"]);
+		});
+		await act(async () => {
+			await Promise.allSettled([first]);
+		});
+		expect(item.rendered).not.toContain("review");
+		expect(host.maximum).toBe(1);
+		await act(async () => {
+			host.release(1);
+			await Promise.allSettled([later]);
+		});
+		await eventually(() => shown(item, "settings"));
+		expect(host.maximum).toBe(1);
+		expect(host.navigate.mock.calls).toEqual([["review"], ["settings"]]);
+	});
 
 	it.each([false, true])(
 		"keeps a closed router inert with an active host write=%s",
