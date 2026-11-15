@@ -1,0 +1,109 @@
+.app-frame {
+	box-sizing: border-box;
+	display: grid;
+	gap: 1.25rem;
+	inline-size: 100%;
+	min-inline-size: 0;
+	max-inline-size: 90rem;
+	margin-inline: auto;
+	padding: clamp(0.75rem, 2vw, 2rem);
+	color: inherit;
+	overflow-wrap: anywhere;
+}
+
+.app-frame__skip-link {
+	box-sizing: border-box;
+	justify-self: start;
+	max-inline-size: 100%;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid currentColor;
+	border-radius: 0.25rem;
+	color: inherit;
+	font: inherit;
+	text-underline-offset: 0.2em;
+}
+
+.app-frame__header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	min-inline-size: 0;
+}
+
+.app-frame__title {
+	min-inline-size: 0;
+	max-inline-size: 100%;
+	margin: 0;
+	font-size: clamp(1.5rem, 4vw, 2rem);
+}
+
+.app-frame__nav {
+	min-inline-size: 0;
+	max-inline-size: 100%;
+}
+
+.app-frame__nav-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.app-frame__nav-list > li {
+	flex: 1 1 auto;
+	min-inline-size: 0;
+}
+
+.app-frame__nav-button {
+	box-sizing: border-box;
+	inline-size: 100%;
+	min-inline-size: 0;
+	min-block-size: 2.75rem;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid currentColor;
+	border-radius: 0.25rem;
+	background: #fff;
+	color: #102a43;
+	font: inherit;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.app-frame__nav-button[aria-current="page"] {
+	border-width: 0.2rem;
+	background: #e7f1ff;
+}
+
+.app-frame__skip-link:focus-visible,
+.app-frame__nav-button:focus-visible,
+.app-frame__main:focus {
+	outline: 0.2rem solid currentColor;
+	outline-offset: 0.25rem;
+}
+
+.app-frame__main,
+.app-frame__feedback,
+.app-frame__content {
+	min-inline-size: 0;
+	max-inline-size: 100%;
+}
+
+.app-frame__main {
+	scroll-margin-block-start: 1rem;
+}
+
+.app-frame__feedback > [role="alert"] {
+	margin-block: 0 1rem;
+	padding: 0.75rem;
+	border-inline-start: 0.25rem solid currentColor;
+}
+
+@media (forced-colors: active) {
+	.app-frame__nav-button[aria-current="page"] {
+		border-color: Highlight;
+	}
+}
