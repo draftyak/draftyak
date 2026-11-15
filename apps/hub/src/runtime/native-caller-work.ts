@@ -22,14 +22,17 @@ export class NativeCallerWork {
 			complete();
 		};
 
+		let original: Promise<T>;
 		try {
-			const original = start();
-			void original.then(settled, settled);
-			return original;
+			original = start();
 		} catch (error) {
 			settled();
 			throw error;
 		}
+		// Observer attachment can fail after work starts. Retain the reservation
+		// on that failure so shared resources cannot retire before work is joined.
+		void original.then(settled, settled);
+		return original;
 	}
 
 	/** Fences admission immediately and joins admitted work, including failures. */
