@@ -9,7 +9,8 @@ export const step: Step = {
 		// Finish repository-wide policy checks before other package tests begin.
 		for (const filter of ["--filter=@draftyak/verify", "--filter=!@draftyak/verify"]) {
 			try {
-				if ((await ctx.turbo(["run", "test", filter])) !== 0) failed = true;
+				if ((await ctx.turbo(["run", "test", filter], { env: { TURBO_CONCURRENCY: "1" } })) !== 0)
+					failed = true;
 			} catch {
 				failed = true;
 			}

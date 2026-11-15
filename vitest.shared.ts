@@ -30,6 +30,8 @@ export function vitestConfig(env: ConfigEnv): ViteUserConfig {
 		// No .env loading: live secrets reach tests only through the spike kit.
 		envDir: false,
 		test: {
+			// Bound per-package forks when workspace tasks share the same machine.
+			maxWorkers: 2,
 			include: [tierFiles[tier]],
 			exclude: tier === "unit" ? [...defaultExclude, ...otherTiers] : defaultExclude,
 			passWithNoTests: tier !== "unit",
