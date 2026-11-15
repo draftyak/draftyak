@@ -3,10 +3,10 @@ import { lstat, realpath, stat } from "node:fs/promises";
 import { url as inspectorUrl } from "node:inspector";
 import path from "node:path";
 import { types } from "node:util";
+import { isKnownSyncedPath } from "@draftyak/bounded-files";
 import { SNAPSHOT_UNICODE_VERSION } from "@draftyak/protocol/snapshot";
 import { classifyNode, loadNodePolicy } from "./node-version.ts";
 import { probeFlags, probeSource } from "./probe.ts";
-import { isKnownSyncedPath } from "./synced-folders.ts";
 
 export { classifyNode };
 
