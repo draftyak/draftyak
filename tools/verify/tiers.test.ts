@@ -29,6 +29,7 @@ describe("test tiers", () => {
 		const { envDir, test } = config("test");
 		expect(envDir).toBe(false);
 		expect(test).toMatchObject({
+			maxWorkers: 2,
 			include: [tierFiles.unit],
 			passWithNoTests: false,
 			testTimeout: 30_000,
@@ -50,6 +51,7 @@ describe("test tiers", () => {
 		(tier) => {
 			const { test } = config(tier);
 			expect(test).toMatchObject({
+				maxWorkers: 2,
 				include: [tierFiles[tier]],
 				passWithNoTests: true,
 				testTimeout: 30_000,
@@ -85,6 +87,75 @@ function ownVitest(): { readonly cli: string; readonly entryUrl: string } {
 }
 
 const discoveryModes = ["test", "heavy", "live", "device"] as const;
+
+describe("test worker capacity", () => {
+	it("executes every unit file using at most two worker slots", () => {
+		const project = realpathSync(mkdtempSync(path.join(os.tmpdir(), "draftyak-worker-capacity-")));
+		try {
+			const { cli, entryUrl } = ownVitest();
+			const shared = path.resolve(import.meta.dirname, "../../vitest.shared.ts");
+			writeFileSync(
+				path.join(project, "vitest.config.mts"),
+				`export { vitestConfig as default } from ${JSON.stringify(pathToFileURL(shared).href)};\n`,
+			);
+			const markers = path.join(project, "markers");
+			mkdirSync(markers);
+			const cases = Array.from({ length: 6 }, (_, index) => `case-${index}`);
+			for (const name of cases) {
+				writeFileSync(
+					path.join(project, `${name}.test.ts`),
+					`import { expect, it } from ${JSON.stringify(entryUrl)};
+import { writeFileSync } from 'node:fs';
+import { setTimeout } from 'node:timers/promises';
+it('uses a bounded worker slot', async () => {
+	const slot = Number(process.env.VITEST_POOL_ID);
+	expect(Number.isInteger(slot)).toBe(true);
+	expect(slot).toBeGreaterThanOrEqual(1);
+	expect(slot).toBeLessThanOrEqual(2);
+	await setTimeout(25);
+	writeFileSync(${JSON.stringify(path.join(markers, name))}, 'DYTEST', { flag: 'wx' });
+});
+`,
+				);
+			}
+			const result = spawnSync(
+				process.execPath,
+				[
+					cli,
+					"run",
+					"--mode",
+					"test",
+					"--reporter=default",
+					"--exclude",
+					"**/*siwc*/**",
+					"--exclude",
+					"**/*siwc*",
+					"--exclude",
+					"**/*dynamic-agent*",
+					"--exclude",
+					"**/*dynamic_agent*",
+				],
+				{
+					cwd: project,
+					env: { ...process.env, VITEST_MAX_WORKERS: "" },
+					encoding: "utf8",
+					windowsHide: true,
+					timeout: 20_000,
+					maxBuffer: 1024 * 1024,
+				},
+			);
+			expect(result.error).toBeUndefined();
+			expect(result.signal).toBeNull();
+			expect(result.status, result.stdout + result.stderr).toBe(0);
+			expect(readdirSync(markers).sort()).toEqual(cases);
+		} finally {
+			expect(lstatSync(project).isSymbolicLink()).toBe(false);
+			expect(realpathSync(project)).toBe(project);
+			rmSync(project, { recursive: true, force: true });
+			expect(existsSync(project)).toBe(false);
+		}
+	});
+});
 
 describe("test tier file discovery", () => {
 	it.each(discoveryModes)("executes only the synthetic %s TS and TSX fixtures", (mode) => {
