@@ -11,7 +11,95 @@ import {
 } from "../../src/plugins/supervisor/rss-watch.ts";
 
 const originalSpawn = childProcess.spawn;
+const originalSetTimeout = globalThis.setTimeout;
+const originalClearTimeout = globalThis.clearTimeout;
 const childSource = "process.stdin.resume();process.stdin.once('end',()=>process.exit(0));";
+
+interface ObservationState {
+	valid: boolean;
+	origin: number;
+	cleanup: boolean;
+	fault: boolean;
+	timer: boolean;
+	restoreFailed: boolean;
+	registered: number;
+	fired: number;
+	firstRegisteredMs: number | null;
+	firstFireMs: number | null;
+	tokens: ReturnType<typeof originalSetTimeout>[];
+}
+
+interface ChildFacts {
+	spawn: boolean;
+	error: boolean;
+	exit: boolean;
+	close: boolean;
+	exitCode: number | null;
+	signal: "none" | "SIGKILL" | "SIGTERM" | "other";
+	stdoutBytes: number;
+	stderrBytes: number;
+	numericValid: boolean;
+	rssBytes: number | null;
+	stdoutEnd: boolean;
+	stdoutClose: boolean;
+	stdoutError: boolean;
+	stderrEnd: boolean;
+	stderrClose: boolean;
+	stderrError: boolean;
+	spawnMs: number | null;
+	errorMs: number | null;
+	exitMs: number | null;
+	closeMs: number | null;
+	stdoutFirstMs: number | null;
+	stderrFirstMs: number | null;
+	stdoutEndMs: number | null;
+	stdoutCloseMs: number | null;
+	stderrEndMs: number | null;
+	stderrCloseMs: number | null;
+	killCalls: number;
+	firstKillMs: number | null;
+	firstKillDuringTimer: boolean;
+	firstKillDuringFault: boolean;
+	firstKillDuringCleanup: boolean;
+}
+
+function observationState(): ObservationState {
+	const state: ObservationState = {
+		valid: true,
+		origin: 0,
+		cleanup: false,
+		fault: false,
+		timer: false,
+		restoreFailed: false,
+		registered: 0,
+		fired: 0,
+		firstRegisteredMs: null,
+		firstFireMs: null,
+		tokens: [],
+	};
+	try {
+		state.origin = performance.now();
+		if (!Number.isFinite(state.origin) || state.origin < 0) state.valid = false;
+	} catch {
+		state.valid = false;
+	}
+	return state;
+}
+
+function stamp(state: ObservationState): number | null {
+	try {
+		const elapsed = performance.now() - state.origin;
+		if (Number.isFinite(elapsed) && elapsed >= 0) return elapsed;
+	} catch {
+		/* Only fixed invalid-observation DATA is retained. */
+	}
+	state.valid = false;
+	return null;
+}
+
+function boundedIncrement(value: number): number {
+	return Math.min(32, value + 1);
+}
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;
@@ -56,10 +144,48 @@ interface OriginalChild {
 	readonly exit: () => { code: number | null; signal: NodeJS.Signals | null } | undefined;
 	readonly sawClose: () => boolean;
 	readonly rssBytes: () => number | undefined;
+	readonly facts: () => Readonly<ChildFacts>;
 	stop(): void;
 }
 
-function retainChild(child: ChildProcess): OriginalChild {
+function retainChild(
+	child: ChildProcess,
+	observation: ObservationState,
+	wrapKill = false,
+): OriginalChild {
+	const facts: ChildFacts = {
+		spawn: false,
+		error: false,
+		exit: false,
+		close: false,
+		exitCode: null,
+		signal: "none",
+		stdoutBytes: 0,
+		stderrBytes: 0,
+		numericValid: false,
+		rssBytes: null,
+		stdoutEnd: false,
+		stdoutClose: false,
+		stdoutError: false,
+		stderrEnd: false,
+		stderrClose: false,
+		stderrError: false,
+		spawnMs: null,
+		errorMs: null,
+		exitMs: null,
+		closeMs: null,
+		stdoutFirstMs: null,
+		stderrFirstMs: null,
+		stdoutEndMs: null,
+		stdoutCloseMs: null,
+		stderrEndMs: null,
+		stderrCloseMs: null,
+		killCalls: 0,
+		firstKillMs: null,
+		firstKillDuringTimer: false,
+		firstKillDuringFault: false,
+		firstKillDuringCleanup: false,
+	};
 	const closed = deferred<void>(),
 		spawned = deferred<boolean>(),
 		exited = deferred<void>();
@@ -69,7 +195,12 @@ function retainChild(child: ChildProcess): OriginalChild {
 	let numericText = "",
 		invalidOutput = false,
 		stderrSeen = false;
+	let restoreKill: (() => void) | undefined;
 	child.stdout?.on("data", (chunk: unknown) => {
+		facts.stdoutFirstMs ??= stamp(observation);
+		facts.stdoutBytes = Buffer.isBuffer(chunk)
+			? Math.min(257, facts.stdoutBytes + chunk.length)
+			: 257;
 		if (!Buffer.isBuffer(chunk) || chunk.length > 256 - numericText.length) {
 			invalidOutput = true;
 			return;
@@ -85,6 +216,34 @@ function retainChild(child: ChildProcess): OriginalChild {
 	child.stderr?.on("data", () => {
 		stderrSeen = true;
 	});
+	child.stderr?.on("data", (chunk: unknown) => {
+		facts.stderrFirstMs ??= stamp(observation);
+		facts.stderrBytes = Buffer.isBuffer(chunk)
+			? Math.min(257, facts.stderrBytes + chunk.length)
+			: 257;
+	});
+	child.stdout?.once("end", () => {
+		facts.stdoutEnd = true;
+		facts.stdoutEndMs = stamp(observation);
+	});
+	child.stdout?.once("close", () => {
+		facts.stdoutClose = true;
+		facts.stdoutCloseMs = stamp(observation);
+	});
+	child.stdout?.on("error", () => {
+		facts.stdoutError = true;
+	});
+	child.stderr?.once("end", () => {
+		facts.stderrEnd = true;
+		facts.stderrEndMs = stamp(observation);
+	});
+	child.stderr?.once("close", () => {
+		facts.stderrClose = true;
+		facts.stderrCloseMs = stamp(observation);
+	});
+	child.stderr?.on("error", () => {
+		facts.stderrError = true;
+	});
 	const pipes = child.stdio.flatMap((stream) => {
 		if (!stream) return [];
 		const done = deferred<void>();
@@ -94,15 +253,28 @@ function retainChild(child: ChildProcess): OriginalChild {
 	});
 	child.once("spawn", () => {
 		sawSpawn = true;
+		facts.spawn = true;
+		facts.spawnMs = stamp(observation);
 		spawned.resolve(true);
 	});
-	child.once("error", () => spawned.resolve(false));
+	child.on("error", () => {
+		facts.error = true;
+		facts.errorMs ??= stamp(observation);
+		spawned.resolve(false);
+	});
 	child.once("exit", (code, signal) => {
 		exit = { code, signal };
+		facts.exit = true;
+		facts.exitMs = stamp(observation);
+		facts.exitCode = code !== null && Number.isSafeInteger(code) && code >= 0 ? code : null;
+		facts.signal =
+			signal === null ? "none" : signal === "SIGKILL" || signal === "SIGTERM" ? signal : "other";
 		exited.resolve();
 	});
 	child.once("close", () => {
 		sawClose = true;
+		facts.close = true;
+		facts.closeMs = stamp(observation);
 		closed.resolve();
 	});
 	const joined = observe(
@@ -110,8 +282,46 @@ function retainChild(child: ChildProcess): OriginalChild {
 			await closed.promise;
 			if (sawSpawn) await exited.promise;
 			await Promise.all(pipes);
+			restoreKill?.();
 		})(),
 	);
+	if (wrapKill) {
+		const kill = child.kill;
+		const ownKill = Object.getOwnPropertyDescriptor(child, "kill");
+		try {
+			Object.defineProperty(child, "kill", {
+				configurable: true,
+				value: function (this: ChildProcess, ...args: Parameters<ChildProcess["kill"]>) {
+					try {
+						if (facts.killCalls === 0) {
+							facts.firstKillMs = stamp(observation);
+							facts.firstKillDuringTimer = observation.timer;
+							facts.firstKillDuringFault = observation.fault;
+							facts.firstKillDuringCleanup = observation.cleanup;
+						}
+						facts.killCalls = boundedIncrement(facts.killCalls);
+					} catch {
+						observation.valid = false;
+					}
+					return Reflect.apply(kill, this, args);
+				},
+			});
+			restoreKill = () => {
+				try {
+					if (ownKill) Object.defineProperty(child, "kill", ownKill);
+					else if (!Reflect.deleteProperty(child, "kill")) {
+						observation.valid = false;
+						observation.restoreFailed = true;
+					}
+				} catch {
+					observation.valid = false;
+					observation.restoreFailed = true;
+				}
+			};
+		} catch {
+			observation.valid = false;
+		}
+	}
 	return {
 		child,
 		closed: closed.promise,
@@ -124,6 +334,18 @@ function retainChild(child: ChildProcess): OriginalChild {
 			if (invalidOutput || stderrSeen || !/^[0-9]+$/.test(raw)) return undefined;
 			const value = Number(raw) * (process.platform === "win32" ? 1 : 1024);
 			return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+		},
+		facts() {
+			const raw = numericText.trim();
+			const value = Number(raw) * (process.platform === "win32" ? 1 : 1024);
+			facts.numericValid =
+				!invalidOutput &&
+				!stderrSeen &&
+				/^[0-9]+$/.test(raw) &&
+				Number.isSafeInteger(value) &&
+				value >= 0;
+			facts.rssBytes = facts.numericValid ? value : null;
+			return Object.freeze({ ...facts });
 		},
 		stop() {
 			if (!sawClose && child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
@@ -173,6 +395,7 @@ class CloseDelivery {
 }
 
 interface Harness {
+	readonly observation: ObservationState;
 	readonly original: OriginalChild;
 	readonly probes: OriginalChild[];
 	readonly watches: PluginRssWatch[];
@@ -180,6 +403,7 @@ interface Harness {
 	readonly firstProbe: Promise<OriginalChild>;
 	readonly faultKillAccepted: () => boolean;
 	readonly invocations: ProbeInvocation[];
+	sampleState(watch: PluginRssWatch): "pending" | "fulfilled" | "rejected";
 	captureProbe(actual: ChildProcess, args: Parameters<typeof originalSpawn>): void;
 	waitForProbe(watch: PluginRssWatch): Promise<OriginalChild>;
 	watch(maxBytes?: number): PluginRssWatch;
@@ -199,6 +423,7 @@ interface ProbeInvocation {
 
 let scope: AsyncLocalStorage<{ readonly harness: Harness; readonly holdClose: boolean }>;
 let restoreSpawn: () => void;
+let restoreTimer: () => void;
 let teardown = false;
 const harnesses: Harness[] = [];
 const bodies: Promise<unknown>[] = [];
@@ -211,24 +436,27 @@ function body(work: () => Promise<void>): Promise<void> {
 
 function harness(holdClose = false, killProbe = false): Harness {
 	if (teardown) throw new Error("Test acquisition closed");
+	const observation = observationState();
 	const child = originalSpawn(process.execPath, ["-e", childSource], {
 		stdio: ["pipe", "pipe", "pipe"],
 		env: {},
 		windowsHide: true,
 	});
-	const original = retainChild(child);
+	const original = retainChild(child, observation);
 	child.stdout?.resume();
 	child.stderr?.resume();
 	const probes: OriginalChild[] = [],
 		watches: PluginRssWatch[] = [];
 	const invocations: ProbeInvocation[] = [];
 	const observations: Promise<unknown>[] = [];
+	const sampleStates = new WeakMap<PluginRssWatch, () => "pending" | "fulfilled" | "rejected">();
 	const firstProbe = deferred<OriginalChild>(),
 		closeDelivery = new CloseDelivery();
 	let cleanup: Promise<void> | undefined;
 	let cleanupFailed = false;
 	let faultKillAccepted = false;
 	const h: Harness = {
+		observation,
 		original,
 		probes,
 		watches,
@@ -236,8 +464,13 @@ function harness(holdClose = false, killProbe = false): Harness {
 		firstProbe: firstProbe.promise,
 		invocations,
 		faultKillAccepted: () => faultKillAccepted,
+		sampleState(watch) {
+			const state = sampleStates.get(watch);
+			if (!state) observation.valid = false;
+			return state?.() ?? "pending";
+		},
 		captureProbe(actual, args) {
-			const probe = retainChild(actual);
+			const probe = retainChild(actual, observation, true);
 			probes.push(probe);
 			try {
 				const options = args[2];
@@ -256,10 +489,14 @@ function harness(holdClose = false, killProbe = false): Harness {
 			}
 			if (holdClose) closeDelivery.intercept(actual);
 			if (killProbe) {
+				const wasFault = observation.fault;
+				observation.fault = true;
 				try {
 					faultKillAccepted = actual.kill("SIGKILL");
 				} catch {
 					faultKillAccepted = false;
+				} finally {
+					observation.fault = wasFault;
 				}
 			}
 			firstProbe.resolve(probe);
@@ -280,14 +517,23 @@ function harness(holdClose = false, killProbe = false): Harness {
 		},
 		retain(watch) {
 			watches.push(watch);
+			sampleStates.set(watch, stateOf(watch.firstSample));
 			observe(watch.firstSample);
 			observe(watch.stopped);
 			return watch;
 		},
 		cancel() {
+			observation.cleanup = true;
 			for (const watch of watches) {
 				try {
 					observe(watch.stop());
+				} catch {
+					cleanupFailed = true;
+				}
+			}
+			for (const token of observation.tokens) {
+				try {
+					originalClearTimeout(token);
 				} catch {
 					cleanupFailed = true;
 				}
@@ -319,7 +565,11 @@ function harness(holdClose = false, killProbe = false): Harness {
 						await Promise.all(batch.map((probe) => probe.joined));
 					}
 					await original.joined;
-					if (cleanupFailed || outcomes.some((result) => result.status === "rejected")) {
+					if (
+						cleanupFailed ||
+						observation.restoreFailed ||
+						outcomes.some((result) => result.status === "rejected")
+					) {
 						throw new Error("Test original cleanup failed");
 					}
 				}),
@@ -335,6 +585,68 @@ function fixed(error: unknown, code: "RSS_LIMIT" | "RSS_UNAVAILABLE"): void {
 	expect(error).toBeInstanceOf(PluginRssError);
 	expect(error).toMatchObject({ name: "PluginRssError", message: "Plugin RSS watch failed", code });
 	expect(Object.hasOwn(error as object, "cause")).toBe(false);
+}
+
+function probeFacts(h: Harness, watch: PluginRssWatch) {
+	const state = h.observation;
+	const sampleState = h.sampleState(watch);
+	const watched = h.original.facts();
+	const probe = h.probes[0]?.facts() ?? null;
+	const reason: unknown = watch.signal.reason;
+	const watchCode = !watch.signal.aborted
+		? "none"
+		: reason instanceof PluginRssError &&
+				(reason.code === "RSS_LIMIT" || reason.code === "RSS_UNAVAILABLE")
+			? reason.code
+			: "other";
+	return Object.freeze({
+		schema: "rss-probe-facts-r1",
+		valid: state.valid,
+		sampleState,
+		watchAborted: watch.signal.aborted,
+		watchCode,
+		cleanup: state.cleanup,
+		fault: state.fault,
+		watched,
+		probe,
+		timers: Object.freeze({
+			registered: state.registered,
+			fired: state.fired,
+			firstRegisteredMs: state.firstRegisteredMs,
+			firstFireMs: state.firstFireMs,
+		}),
+	});
+}
+
+function assertProbeSuccess(
+	h: Harness,
+	watch: PluginRssWatch,
+	code: "none" | "RSS_LIMIT" = "none",
+): void {
+	const facts = probeFacts(h, watch);
+	expect(facts, `RSS_PROBE_FACTS=${JSON.stringify(facts)}`).toMatchObject({
+		valid: true,
+		cleanup: false,
+		watchAborted: code !== "none",
+		watchCode: code,
+		watched: { spawn: true, error: false, exit: false, close: false },
+		probe: {
+			spawn: true,
+			error: false,
+			exit: true,
+			close: true,
+			exitCode: 0,
+			signal: "none",
+			stdoutEnd: true,
+			stdoutClose: true,
+			stdoutError: false,
+			stderrEnd: true,
+			stderrClose: true,
+			stderrError: false,
+			stderrBytes: 0,
+			numericValid: true,
+		},
+	});
 }
 
 beforeEach(() => {
@@ -353,6 +665,46 @@ beforeEach(() => {
 		spy.mockRestore();
 		syncBuiltinESMExports();
 	};
+	const timerSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(function (
+		this: unknown,
+		...args: Parameters<typeof originalSetTimeout>
+	) {
+		const current = scope.getStore();
+		if (!current || args[1] !== 5000) return Reflect.apply(originalSetTimeout, this, args);
+		const observation = current.harness.observation;
+		const callback = args[0];
+		const wrapped = function (this: unknown, ...callbackArgs: unknown[]) {
+			const wasTimer = observation.timer;
+			try {
+				observation.timer = true;
+				observation.fired = boundedIncrement(observation.fired);
+				observation.firstFireMs ??= stamp(observation);
+			} catch {
+				observation.valid = false;
+			}
+			try {
+				return Reflect.apply(callback, this, callbackArgs);
+			} finally {
+				observation.timer = wasTimer;
+			}
+		};
+		const token: ReturnType<typeof originalSetTimeout> = Reflect.apply(originalSetTimeout, this, [
+			wrapped,
+			args[1],
+			...args.slice(2),
+		]);
+		try {
+			observation.tokens.push(token);
+			observation.registered = boundedIncrement(observation.registered);
+			observation.firstRegisteredMs ??= stamp(observation);
+		} catch {
+			observation.valid = false;
+		}
+		return token;
+	});
+	restoreTimer = () => {
+		timerSpy.mockRestore();
+	};
 });
 
 afterEach(async () => {
@@ -363,8 +715,15 @@ afterEach(async () => {
 		const outcomes = await Promise.allSettled(harnesses.map((h) => h.join()));
 		expect(outcomes.every((result) => result.status === "fulfilled")).toBe(true);
 	} finally {
-		restoreSpawn();
-		scope.disable();
+		try {
+			restoreTimer();
+		} finally {
+			try {
+				restoreSpawn();
+			} finally {
+				scope.disable();
+			}
+		}
 	}
 });
 
@@ -375,6 +734,7 @@ describe("plugin RSS watch", () => {
 			expect(await h.original.spawned).toBe(true);
 			const watch = h.watch();
 			const sample = await watch.firstSample;
+			assertProbeSuccess(h, watch);
 			expect(Number.isSafeInteger(sample)).toBe(true);
 			expect(sample).toBeGreaterThan(0);
 			expect(sample).toBe(h.probes[0]?.rssBytes());
@@ -425,6 +785,7 @@ describe("plugin RSS watch", () => {
 			expect(await h.original.spawned).toBe(true);
 			const watch = h.watch(1);
 			const sample = await watch.firstSample;
+			assertProbeSuccess(h, watch, "RSS_LIMIT");
 			expect(sample).toBeGreaterThan(1);
 			expect(watch.signal.aborted).toBe(true);
 			fixed(watch.signal.reason, "RSS_LIMIT");
@@ -503,6 +864,41 @@ describe("plugin RSS watch", () => {
 			expect(h.original.child.signalCode).toBeNull();
 		}));
 
+	it("waits for genuine probe-close delivery after the original deadline fires", () =>
+		body(async () => {
+			const h = harness(true);
+			expect(await h.original.spawned).toBe(true);
+			const watch = h.watch();
+			const sampled = stateOf(watch.firstSample);
+			const stopped = stateOf(watch.stopped);
+			const probe = await h.waitForProbe(watch);
+			await probe.joined;
+			await turn();
+			assertProbeSuccess(h, watch);
+			expect(h.closeDelivery.callbacks.length).toBeGreaterThan(0);
+			expect(sampled()).toBe("pending");
+			expect(watch.signal.aborted).toBe(false);
+			const anchor = performance.now();
+			await observe(
+				new Promise<void>((resolve) => {
+					originalSetTimeout(resolve, 5_100);
+				}),
+			);
+			expect(performance.now() - anchor).toBeGreaterThanOrEqual(5_000);
+			expect(watch.signal.aborted, `RSS_PROBE_FACTS=${JSON.stringify(probeFacts(h, watch))}`).toBe(
+				true,
+			);
+			fixed(watch.signal.reason, "RSS_UNAVAILABLE");
+			expect(h.observation.fired).toBeGreaterThan(0);
+			expect(await watch.firstSample).toBeUndefined();
+			expect(stopped()).toBe("pending");
+			h.closeDelivery.release();
+			await watch.stopped;
+			await probe.joined;
+			expect(stopped()).toBe("fulfilled");
+			expect(h.original.child.exitCode).toBeNull();
+		}));
+
 	it("refuses a late real sample before the due deadline timer can run", () =>
 		body(async () => {
 			const h = harness(true);
@@ -514,6 +910,7 @@ describe("plugin RSS watch", () => {
 			await probe.joined;
 			await turn();
 			expect(h.closeDelivery.callbacks.length).toBeGreaterThan(0);
+			assertProbeSuccess(h, watch);
 			expect(probe.exit()).toEqual({ code: 0, signal: null });
 			expect(probe.rssBytes()).toBeGreaterThan(0);
 			expect(sampled()).toBe("pending");
@@ -573,7 +970,9 @@ describe("plugin RSS watch", () => {
 				fixed(failure, "RSS_UNAVAILABLE");
 			}
 			const valid = h.watch();
-			expect(await valid.firstSample).toBeGreaterThan(0);
+			const sample = await valid.firstSample;
+			assertProbeSuccess(h, valid);
+			expect(sample).toBeGreaterThan(0);
 			expect(valid.signal.aborted).toBe(false);
 			await valid.stop();
 		}));
