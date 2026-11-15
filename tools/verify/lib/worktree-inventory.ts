@@ -94,6 +94,13 @@ export function createInventoryHost(
 			}
 		}
 	};
+	const releaseFs = (): void => {
+		activeFs -= 1;
+		if (activeFs === 0) {
+			for (const resolve of fsWaiters) resolve();
+			fsWaiters.clear();
+		}
+	};
 	const track = async <T>(work: () => Promise<T>): Promise<T> => {
 		if (stopped) throw failed();
 		activeFs += 1;
@@ -102,21 +109,23 @@ export function createInventoryHost(
 			if (stopped) throw failed();
 			return result;
 		} finally {
-			activeFs -= 1;
-			if (activeFs === 0) {
-				for (const resolve of fsWaiters) resolve();
-				fsWaiters.clear();
-			}
+			releaseFs();
 		}
 	};
 	return {
-		readDirectory: (directory) =>
-			track(async () => {
+		readDirectory: async (directory) => {
+			if (stopped) throw failed();
+			activeFs += 1;
+			try {
 				directoryVisits += 1;
 				const found = await ports.readDirectory(directory);
 				entries += found.length;
+				if (stopped) throw failed();
 				return found;
-			}),
+			} finally {
+				releaseFs();
+			}
+		},
 		statPath: (target) => track(() => ports.statPath(target)),
 		snapshot: () => ({ pendingGit: children.size, pendingFs: activeFs, directoryVisits, entries }),
 		stopped: () => stopped,

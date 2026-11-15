@@ -147,15 +147,7 @@ export async function namedFiles(
 		missingDirectory(target, readDirectory, statPath, root);
 	// Other checkouts add and remove folders mid-walk. The root must list; below it, a vanished
 	// folder is skipped and any other failed folder is listed once more before validation is refused.
-	const list = async (dir: string | undefined, target: string): Promise<readonly Entry[]> => {
-		if (dir === "") return readDirectory(target);
-		let first: readonly Entry[] | undefined;
-		try {
-			first = await readDirectory(target);
-		} catch {
-			// Failed reads retain the fresh disappearance proof and bounded retry below.
-		}
-		if (first) return first;
+	const retryListing = async (target: string): Promise<readonly Entry[]> => {
 		if (await gone(target)) return [];
 		await sleep(RETRY_DELAY_MS);
 		const second = await attempt(target);
@@ -191,7 +183,14 @@ export async function namedFiles(
 			plainAncestry: boolean,
 		): Promise<void> => {
 			try {
-				const children = await list(directory, absolute);
+				let children: readonly Entry[];
+				try {
+					// Successful reads have one await, without a wrapper promise per directory.
+					children = await readDirectory(absolute);
+				} catch {
+					if (directory === "") throw inventoryFailed();
+					children = await retryListing(absolute);
+				}
 				if (failed) return;
 				let discoveredFirst: PendingDirectory | undefined;
 				let discoveredLast: PendingDirectory | undefined;
