@@ -6,7 +6,7 @@ import path from "node:path";
 const namespaces = [
 	"audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets",
 	"accounts", "pluginregistry", "outbox", "challenges", "verifier", "admin", "adminchallenges", "backup",
-	"backupops", "backupchallenges",
+	"backupops", "backupchallenges", "ownersettings",
 ].sort();
 const approvalTables = [
 	"outbox", "approval_challenges", "pair_confirm_operations", "approvals",

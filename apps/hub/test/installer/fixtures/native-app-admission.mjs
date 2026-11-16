@@ -319,7 +319,7 @@ async function main() {
 	assert.equal(loadExtensionConfig(path.join(profile, "data")).modules.length, 0);
 	assert.equal(session.store.read((db) => db.all(
 		"SELECT name FROM main.sqlite_schema WHERE type='table' AND name LIKE '_migrations_%'",
-	)).filter((row) => !row.name.endsWith("_lock")).length, 18);
+	)).filter((row) => !row.name.endsWith("_lock")).length, 19);
 	phase = mode;
 	if (["signature", "pin", "identity", "preloaded", "missing-flag", "duplicate-flag", "node-options", "node-path", "unconfigured"].includes(mode)) {
 		await refuses(() => openNativeAppAdmission(session));
@@ -582,5 +582,5 @@ if (bodyFailed || cleanupFailed) {
 	process.stderr.write("DYTEST native application fixture checkpoint step=" + bodyStep + " variant=" + bodyVariant + "\n");
 	process.exitCode = 1;
 } else {
-	process.stdout.write(JSON.stringify({ ok: true, capture: "configured-signed-node-fixture", mode, schemas: 18, bundles: 5 }) + "\n");
+	process.stdout.write(JSON.stringify({ ok: true, capture: "configured-signed-node-fixture", mode, schemas: 19, bundles: 5 }) + "\n");
 }

@@ -27,9 +27,10 @@ const migrations = {
 	backup: ["0001_backup_recovery"],
 	backupops: ["0001_backup_operations"],
 	backupchallenges: ["0001_backup_challenges"],
+	ownersettings: ["0001_owner_settings"],
 };
 const namespaces = Object.keys(migrations);
-const business = "accounts,approval_challenges,approval_pins,approvals,audit_events,audit_meta,credentials,device_authority,devices,event_meta,events,hub_meta,jobs,jobs_meta,native_admin_challenges,native_admin_operations,native_backup_challenges,native_backup_operations,native_backup_recovery,native_draft_locks,native_draft_revisions,native_drafts,native_runtime_settings,native_send_attempts,outbox,pair_confirm_operations,plugin_candidates,plugin_generations,plugin_registry_identities,plugin_versions,users".split(",");
+const business = "accounts,approval_challenges,approval_pins,approvals,audit_events,audit_meta,credentials,device_authority,devices,event_meta,events,hub_meta,jobs,jobs_meta,native_admin_challenges,native_admin_operations,native_backup_challenges,native_backup_operations,native_backup_recovery,native_draft_locks,native_draft_revisions,native_drafts,native_runtime_settings,native_send_attempts,outbox,owner_settings,pair_confirm_operations,plugin_candidates,plugin_generations,plugin_registry_identities,plugin_versions,users".split(",");
 const bookkeeping = namespaces.flatMap(name => [`_migrations_${name}`, `_migrations_${name}_lock`]);
 const expectedTables = [...business, ...bookkeeping].sort();
 const coreAsset = path.join(stage, "store/migrations/core/0002_native_runtime_state.sql");
@@ -174,7 +175,7 @@ try {
 	let opened = await native(filename);
 	assert.deepEqual(calls, namespaces);
 	const schemas = inspect(opened.store, 0);
-	assert.equal(schemas, 18);
+	assert.equal(schemas, 19);
 	checkpoint = 6;
 	const sameKey = newKey(); opened.store.assertMasterKey(sameKey); sameKey.destroy();
 	const differentSeed = Buffer.from(seed); differentSeed[0] ^= 1;
