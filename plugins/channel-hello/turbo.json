@@ -1,0 +1,6 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test:heavy": { "dependsOn": ["^build", "build"], "cache": false }
+  }
+}

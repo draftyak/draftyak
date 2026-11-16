@@ -62,7 +62,12 @@ aws-lc-rs: aarch64-linux-android: fails (aws-lc-sys: Building with: CMake)`);
 
 describe("when mobile builds must run", () => {
 	it("only in spikes-run: GitHub Actions with strict skips, on the build's own OS", () => {
-		const github = { GITHUB_ACTIONS: "true", DRAFTYAK_STRICT_SKIPS: "1" };
+		const github = {
+			GITHUB_ACTIONS: "true",
+			DRAFTYAK_STRICT_SKIPS: "1",
+			GITHUB_WORKFLOW: "spikes",
+			GITHUB_JOB: "run",
+		};
 		expect(mustBuild(github, process.platform)).toBe(true);
 		expect(mustBuild(github, process.platform === "darwin" ? "linux" : "darwin")).toBe(false);
 		expect(mustBuild({ GITHUB_ACTIONS: "true" }, process.platform)).toBe(false);
@@ -70,10 +75,16 @@ describe("when mobile builds must run", () => {
 	});
 
 	it("leaves the host checks to CI's full job and local runs, not spikes-run", () => {
+		const github = {
+			GITHUB_ACTIONS: "true",
+			DRAFTYAK_STRICT_SKIPS: "1",
+			GITHUB_WORKFLOW: "spikes",
+			GITHUB_JOB: "run",
+		};
 		const hostChecks = (env: NodeJS.ProcessEnv): boolean =>
 			capabilities(env)["host-checks"]?.detect() ?? false;
-		expect(spikesRun({ GITHUB_ACTIONS: "true", DRAFTYAK_STRICT_SKIPS: "1" })).toBe(true);
-		expect(hostChecks({ GITHUB_ACTIONS: "true", DRAFTYAK_STRICT_SKIPS: "1" })).toBe(false);
+		expect(spikesRun(github)).toBe(true);
+		expect(hostChecks(github)).toBe(false);
 		expect(hostChecks({ GITHUB_ACTIONS: "true" })).toBe(true);
 		expect(hostChecks({ DRAFTYAK_STRICT_SKIPS: "1" })).toBe(true);
 	});

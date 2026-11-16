@@ -1,4 +1,4 @@
-use crate::{hash::jcs_sha256, jcs::parse_strict};
+use crate::{hash::jcs_sha256, jcs::parse_strict, statements::decode};
 use serde::{Deserialize, Deserializer, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -76,7 +76,7 @@ fn optional<'de, D: Deserializer<'de>>(decoder: D) -> Result<Option<String>, D::
 }
 impl<'de> Deserialize<'de> for Flag {
     fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        let value = Wire::deserialize(decoder)?;
+        let value: Wire = crate::statements::decode_from(decoder, "FLAGS_INVALID")?;
         if value.code.severity() != value.severity
             || value
                 .detail
@@ -113,7 +113,7 @@ impl FlagsError {
 }
 pub fn parse_flags(bytes: &[u8]) -> Result<Vec<Flag>, FlagsError> {
     let value = parse_strict(bytes).map_err(|_| FlagsError::Invalid)?;
-    serde_json::from_value(value).map_err(|_| FlagsError::Invalid)
+    decode(&value).ok_or(FlagsError::Invalid)
 }
 pub fn flags_hash(flags: &[Flag]) -> Result<String, FlagsError> {
     let mut sorted = flags.to_vec();

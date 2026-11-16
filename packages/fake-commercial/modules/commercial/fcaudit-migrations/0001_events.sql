@@ -1,0 +1,1 @@
+CREATE TABLE ext_fcaudit_events(id TEXT PRIMARY KEY) STRICT;

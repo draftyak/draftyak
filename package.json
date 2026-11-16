@@ -7,7 +7,7 @@
     "node": ">=26.5.1"
   },
   "scripts": {
-    "lint": "biome ci .",
+    "lint": "node apps/hub/scripts/outbox-suppression-scan.ts && biome ci .",
     "format": "biome check --write .",
     "typecheck": "node tools/verify/turbo.ts run typecheck",
     "test": "node tools/verify/turbo.ts run test",

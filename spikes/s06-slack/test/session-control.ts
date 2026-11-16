@@ -262,6 +262,19 @@ function openControl(env: NodeJS.ProcessEnv, evidenceFile: string): SessionContr
 		cue: (step) => append(step),
 		artifact: (target) => {
 			let evidence: number | undefined;
+			const closeEvidence = (): void => {
+				if (evidence === undefined) return;
+				const descriptor = evidence;
+				// A failed close leaves ownership uncertain; never retry that descriptor.
+				evidence = undefined;
+				try {
+					closeSync(descriptor);
+				} catch {
+					failed = true;
+					close();
+					throw new Error(REFUSED);
+				}
+			};
 			try {
 				need(
 					!closed && !failed && seq === 3 && path.resolve(target) === path.resolve(evidenceFile),
@@ -289,13 +302,14 @@ function openControl(env: NodeJS.ProcessEnv, evidenceFile: string): SessionContr
 						after.mtimeNs === before.mtimeNs &&
 						after.ctimeNs === before.ctimeNs,
 				);
+				closeEvidence();
 				append("artifact", { sha256: hash.digest("hex"), bytes, identity: expectedEvidence });
 			} catch {
 				failed = true;
 				close();
 				throw new Error(REFUSED);
 			} finally {
-				if (evidence !== undefined) closeSync(evidence);
+				closeEvidence();
 			}
 		},
 		close,

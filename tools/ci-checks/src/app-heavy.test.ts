@@ -3,9 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { changedApplication, heavyApplications } from "./app-heavy.ts";
+import type { WorkspacePackage } from "./changes.ts";
 import { areaNames, classify } from "./changes.ts";
 
 const roots: string[] = [];
+const packages = new Map<string, readonly WorkspacePackage[]>();
 afterAll(() => {
 	for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
@@ -14,6 +16,12 @@ const manifest = (name: string): string =>
 function fixture(files: Record<string, string> = {}): string {
 	const root = mkdtempSync(path.join(tmpdir(), "draftyak-app-heavy-"));
 	roots.push(root);
+	packages.set(
+		root,
+		Object.keys(files)
+			.filter((file) => file.endsWith("/package.json"))
+			.map((file) => ({ folder: path.posix.dirname(file), dependencies: [] })),
+	);
 	for (const [file, content] of Object.entries(files)) {
 		mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
 		writeFileSync(path.join(root, file), content);
@@ -25,7 +33,13 @@ const valid = {
 	"apps/hub/package.json": manifest("@draftyak/hub"),
 };
 const root = fixture(valid);
-const select = (files: string[], directory = root) => classify(files, directory, () => []);
+const select = (files: string[], directory = root) =>
+	classify(
+		files,
+		directory,
+		() => [],
+		() => packages.get(directory) ?? [],
+	);
 
 describe("reviewed native application heavy suites", () => {
 	it("discovers exactly the two real manifests and nonempty scripts", () => {

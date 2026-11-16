@@ -11,6 +11,7 @@ interface Request {
 	readonly id: number;
 	readonly command: string;
 	readonly filename?: string;
+	readonly stateMigrations?: string;
 	readonly key?: Uint8Array;
 	readonly wall?: number;
 	readonly monotonic?: number;
@@ -39,7 +40,14 @@ function claim(accountId: string, jobId?: string): JobLease | undefined {
 process.on("message", (request: Request) => {
 	try {
 		if (request.command === "init") {
-			if (store || !request.key || !request.filename) throw new Error("Invalid fixture init");
+			if (
+				store ||
+				!request.key ||
+				!request.filename ||
+				typeof request.stateMigrations !== "string" ||
+				!request.stateMigrations
+			)
+				throw new Error("Invalid fixture init");
 			try {
 				key = new MasterKey(request.key);
 			} finally {
@@ -55,6 +63,7 @@ process.on("message", (request: Request) => {
 					audit: path.join(migrations, "audit"),
 					jobs: JOB_MIGRATIONS,
 					events: EVENT_MIGRATIONS,
+					state: request.stateMigrations,
 				},
 			});
 			database = new WorkDatabase(store);

@@ -9,14 +9,22 @@ import { uniqueItems } from "../entities/fields.ts";
 import { OutboxState, StateReason } from "../entities/outbox.ts";
 import { type Flag, Flags, flagsHash } from "../flags.ts";
 import { jcsSha256 } from "../hash.ts";
-import { DisplayName, PairingRole } from "../pairing.ts";
+import { DisplayName, PairingRole, PairingSas } from "../pairing.ts";
 import { Sha256Hex, Ulid, UtcMs } from "../scalars.ts";
 import { contentHash, SendSnapshotV1 } from "../snapshot.ts";
-import { ADMIN_KINDS, AgentSessionReviewSubject, SigningKey } from "../statements.ts";
+import { AdminKind, AgentSessionReviewSubject, SigningKey } from "../statements.ts";
+import {
+	ADMIN_REVIEW_KINDS,
+	AdminAccountSubject,
+	AdminDataBackupSubject,
+	AdminDeviceCapabilitiesSubject,
+	type AdminOperationReview,
+	type AdminReviewKind,
+} from "./admin.ts";
 import { presetFitsRole } from "./common.ts";
 
 export type OperationRequest =
-	| { readonly kind: (typeof ADMIN_KINDS)[number]; readonly ids: readonly string[] }
+	| { readonly kind: AdminKind; readonly ids: readonly string[] }
 	| {
 			readonly kind: "pair-confirm";
 			readonly ids: readonly [string];
@@ -24,7 +32,20 @@ export type OperationRequest =
 	  };
 export const OperationRequest: z.ZodType<OperationRequest> = z
 	.discriminatedUnion("kind", [
-		z.strictObject({ kind: z.enum(ADMIN_KINDS), ids: uniqueItems(z.array(Ulid).max(100)) }),
+		z.strictObject({
+			kind: AdminKind.exclude(ADMIN_REVIEW_KINDS),
+			ids: uniqueItems(z.array(Ulid).max(100)),
+		}),
+		// A reviewed kind names the account or device its subject describes, or nothing to back up.
+		z.strictObject({
+			kind: AdminKind.extract([
+				"account.disconnect",
+				"account.mode-full",
+				"security.device-capabilities",
+			]),
+			ids: z.tuple([Ulid]),
+		}),
+		z.strictObject({ kind: z.literal("data.backup"), ids: z.array(Ulid).max(0) }),
 		z.strictObject({
 			kind: z.literal("pair-confirm"),
 			ids: z.tuple([Ulid]),
@@ -77,6 +98,7 @@ export interface PairConfirmSubject {
 	readonly signingKey: string;
 	readonly preset: ConfirmationPreset;
 	readonly capabilities: readonly DeviceCapability[];
+	readonly sas: string;
 }
 export const PairConfirmSubject: z.ZodType<PairConfirmSubject> = z
 	.strictObject({
@@ -87,6 +109,7 @@ export const PairConfirmSubject: z.ZodType<PairConfirmSubject> = z
 		signingKey: SigningKey,
 		preset: ConfirmationPreset,
 		capabilities: DeviceCapabilities,
+		sas: PairingSas,
 	})
 	.refine(
 		(value) =>
@@ -111,7 +134,7 @@ export interface AgentSessionReview {
 	readonly expiresAt: number;
 	readonly remainingMs: number;
 }
-export type OperationReview = PairConfirmationReview | AgentSessionReview;
+export type OperationReview = PairConfirmationReview | AgentSessionReview | AdminOperationReview;
 const pairReview = z.strictObject({
 	id: Ulid,
 	kind: z.literal("pair-confirm"),
@@ -128,8 +151,24 @@ const agentSessionReview = z.strictObject({
 	expiresAt: UtcMs,
 	remainingMs: z.int().min(0).max(120_000),
 });
+const adminReview = <K extends AdminReviewKind, S extends z.ZodType>(kind: K, subject: S) =>
+	z.strictObject({
+		id: Ulid,
+		kind: z.literal(kind),
+		digest: Sha256Hex,
+		subject,
+		expiresAt: UtcMs,
+		remainingMs: z.int().min(0).max(120_000),
+	});
 export const OperationReview: z.ZodType<OperationReview> = z
-	.discriminatedUnion("kind", [pairReview, agentSessionReview])
+	.discriminatedUnion("kind", [
+		pairReview,
+		agentSessionReview,
+		adminReview("account.disconnect", AdminAccountSubject),
+		adminReview("account.mode-full", AdminAccountSubject),
+		adminReview("security.device-capabilities", AdminDeviceCapabilitiesSubject),
+		adminReview("data.backup", AdminDataBackupSubject),
+	])
 	.refine(
 		(value) => {
 			try {

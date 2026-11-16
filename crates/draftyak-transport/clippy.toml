@@ -1,0 +1,14 @@
+disallowed-types = [
+    { path = "keyring_core::mock::Store", reason = "Native identity storage must not use the upstream in-memory mock store." },
+    { path = "keyring_core::mock::Cred", reason = "Native identity storage must not use the upstream in-memory mock store." },
+    { path = "keyring_core::mock::CredData", reason = "Native identity storage must not use the upstream in-memory mock store." },
+]
+disallowed-methods = [
+    { path = "keyring_core::mock::Store::new", reason = "Native identity storage must not use the upstream in-memory mock store." },
+    { path = "keyring_core::Entry::new", reason = "Entries come only from the platform store, never from the process-wide default store." },
+    { path = "keyring_core::Entry::new_with_modifiers", reason = "Entries come only from the platform store, never from the process-wide default store." },
+    { path = "keyring_core::Entry::search", reason = "Entries come only from the platform store, never from the process-wide default store." },
+    { path = "keyring_core::set_default_store", reason = "Entries come only from the platform store, never from the process-wide default store." },
+    { path = "keyring_core::get_default_store", reason = "Entries come only from the platform store, never from the process-wide default store." },
+    { path = "keyring_core::unset_default_store", reason = "Entries come only from the platform store, never from the process-wide default store." },
+]

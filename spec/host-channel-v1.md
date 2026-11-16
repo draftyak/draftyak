@@ -16,13 +16,24 @@ channel and reject its pending requests. No Node IPC channel or handle-transfer
 API is used.
 
 One JSON frame is at most 1,048,576 bytes before RS/LF. A child has at most 16
-active host requests; replies use the exact opaque string request ID. A request
-times out within 30,000 ms, or sooner when its call's signal is cancelled. Closing
-the channel rejects all pending requests. Late replies to retired IDs are ignored.
-Local ID retirement is not a request to cancel upstream work. The parent broker
-and supervisor must bind host work to their own current MCP/lookup permit signal
-and stop it on cancellation, timeout or instance shutdown; an SDK promise alone
-does not grant or extend that authority.
+active host requests, including requests whose streamed body is still active;
+replies use the exact opaque string request ID. A request times out within
+30,000 ms, or sooner when its call's signal is cancelled. Closing the channel
+rejects all pending requests. Late replies to retired IDs are ignored.
+On local cancellation or timeout the child sends the strict child-to-parent
+notification `{"jsonrpc":"2.0","method":"host/cancel","params":{"requestId":"<original ID>"}}`.
+It has no envelope ID, reply, reason, URL, stream ID or authority fields. The parent
+aborts only the owned controller for that original request; unknown or duplicate
+cancellations are inert and receive no acknowledgment. This notification is not
+a parent-to-child notification or an RPC method. A streamed header does not retire
+the original signal or reset its deadline: cancellation remains connected until
+the actual terminal stream notification, cancellation, timeout or channel close.
+A cancelled request stops counting toward the child's limit at once. The parent
+may keep counting it until its own work for it has stopped, refusing new requests
+over the limit with `TOO_LARGE` meanwhile; only a request beyond 16 active,
+uncancelled ones closes the channel. The parent broker and supervisor must bind host work to their own
+current MCP/lookup permit signal and stop it on cancellation, timeout or instance
+shutdown; an SDK promise alone does not grant or extend that authority.
 Headers have at most 64 pairs, each name at most 128 ASCII token characters and
 each value at most 8,192 visible ASCII characters with interior spaces/tabs.
 Their aggregate name/value bytes are at most 16,384. Line terminators are refused.
@@ -238,6 +249,10 @@ base64url `base64`, `done`, and optional typed `error`. Stream chunks are at mos
 65,536 bytes; the SDK caps a streamed response at 33,554,432 bytes and rejects
 out-of-order chunks, typed errors, cancellation or incomplete channel closure.
 Chunks arriving in the fetch reply's read are buffered within the frame bound.
+Cancellation correlation retains at most 16 logical pending/streaming request
+records and at most 16 early terminal stream IDs while fetch headers are unresolved;
+the latter contain no payload and are cleared after the final unresolved header.
+Cancellation does not synthesize a second reply or a local stream notification.
 
 `host/ws.message` `data` is the text of one WebSocket message, bounded only by
 the frame. A frame is at most 1,048,576 bytes and the smallest `host/ws.message`

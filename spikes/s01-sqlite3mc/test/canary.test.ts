@@ -145,8 +145,24 @@ describe("an encrypted database", () => {
 	});
 
 	// db.serialize() returns the decrypted pages: what a stolen key would reveal, free pages included.
-	it("scrubs a deleted row from the decrypted pages only with secure_delete and FTS5 secure-delete", async () => {
-		const run = async (secureDelete: boolean, ftsSecureDelete: boolean): Promise<string[]> => {
+	it.for([
+		{ setup: "both on", secureDelete: true, ftsSecureDelete: true, left: [] },
+		{
+			setup: "secure_delete off",
+			secureDelete: false,
+			ftsSecureDelete: true,
+			left: ["body", "sender", "subject"],
+		},
+		// Without FTS5's secure-delete, the delete marker in the index holds the deleted tokens.
+		{
+			setup: "FTS5 secure-delete off",
+			secureDelete: true,
+			ftsSecureDelete: false,
+			left: ["body", "subject"],
+		},
+	])(
+		"scrubs a deleted row from the decrypted pages only with secure_delete and FTS5 secure-delete: $setup",
+		async ({ secureDelete, ftsSecureDelete, left }) => {
 			const file = path.join(tempDir(), "draftyak.db");
 			const canaries = newCanaries();
 			const db = await coreDatabase(file, deriveHexKey(newMasterKey()));
@@ -161,16 +177,12 @@ describe("an encrypted database", () => {
 				ftsIntegrity(db);
 				const image = db.serialize();
 				expect(image.subarray(0, 16).equals(SQLITE_HEADER)).toBe(true);
-				return inImage(image, deletedTails(canaries));
+				expect(inImage(image, deletedTails(canaries))).toEqual(left);
 			} finally {
 				db.close();
 			}
-		};
-		expect(await run(true, true)).toEqual([]);
-		expect(await run(false, true)).toEqual(["body", "sender", "subject"]);
-		// Without FTS5's secure-delete, the delete marker in the index holds the deleted tokens.
-		expect(await run(true, false)).toEqual(["body", "subject"]);
-	});
+		},
+	);
 
 	it("refuses an online backup, which better-sqlite3 would write to an unkeyed file", async () => {
 		const dir = tempDir();

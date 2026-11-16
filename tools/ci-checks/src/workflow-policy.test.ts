@@ -37,6 +37,106 @@ const workflow = (on: string[], steps = checkout, permissions = ["contents: read
 const pr = ["pull_request:"];
 const run = (expression: string): string[] => ["- run: |", `    echo "\${{ ${expression} }}"`];
 
+describe("the native receipt execution contract", () => {
+	const file = ".github/workflows/native-store.yml";
+	const source = (): string => read(file).replaceAll("\r\n", "\n");
+	it("admits only the complete owner-only native workflow and its one-day receipt upload", () => {
+		expect(checkWorkflow(file, source(), toolchain)).toEqual([]);
+	});
+	it.each([
+		["write permission", (text: string) => text.replace("contents: read", "contents: write")],
+		[
+			"another runner",
+			(text: string) => text.replace("runs-on: macos-15", "runs-on: ubuntu-24.04"),
+		],
+		["another job", (text: string) => text.replace("  native-store:", "  other:")],
+		["missing owner fence", (text: string) => text.replace("github.actor == 'nicksavov'", "true")],
+		["another control ref", (text: string) => text.replace(`ref: \${{ github.sha }}`, "ref: m2")],
+		[
+			"changed admission",
+			(text: string) => text.replace("native-store.ts admit", "native-store.ts run"),
+		],
+		[
+			"changed verification",
+			(text: string) => text.replace("native-store.ts verify-source", "native-store.ts admit"),
+		],
+		[
+			"another source checkout",
+			(text: string) => text.replace(`ref: \${{ steps.source.outputs.head }}`, "ref: m2"),
+		],
+		[
+			"ignored native failure",
+			(text: string) =>
+				text.replace("        id: native", "        id: native\n        continue-on-error: true"),
+		],
+		["renamed producer", (text: string) => text.replace("id: native", "id: other")],
+		[
+			"unconditional upload",
+			(text: string) =>
+				text.replace(
+					`\${{ success() && steps.native.outputs.receipt == 'ready' }}`,
+					`\${{ always() }}`,
+				),
+		],
+		[
+			"missing readiness fence",
+			(text: string) =>
+				text.replace(
+					`\${{ success() && steps.native.outputs.receipt == 'ready' }}`,
+					`\${{ success() }}`,
+				),
+		],
+		[
+			"missing attempt identity",
+			(text: string) =>
+				text.replace(
+					`native-store-receipt-\${{ github.run_id }}-\${{ github.run_attempt }}`,
+					"native-store-receipt",
+				),
+		],
+		[
+			"raw native report",
+			(text: string) =>
+				text.replace(
+					`path: \${{ runner.temp }}/native-store-receipt.json`,
+					`path: \${{ runner.temp }}/native-store.json`,
+				),
+		],
+		[
+			"broader evidence path",
+			(text: string) =>
+				text.replace(
+					`path: \${{ runner.temp }}/native-store-receipt.json`,
+					"path: spikes/*/evidence/",
+				),
+		],
+		[
+			"extra upload path",
+			(text: string) =>
+				text.replace(
+					`path: \${{ runner.temp }}/native-store-receipt.json`,
+					`path: |\n            \${{ runner.temp }}/native-store-receipt.json\n            source/`,
+				),
+		],
+		["longer retention", (text: string) => text.replace("retention-days: 1", "retention-days: 2")],
+		[
+			"missing-file success",
+			(text: string) => text.replace("if-no-files-found: error", "if-no-files-found: warn"),
+		],
+		["another command", (text: string) => `${text}      - run: echo synthetic-extra\n`],
+	] as const)("refuses %s", (_name, mutate) => {
+		expect(checkWorkflow(file, mutate(source()), toolchain).join("\n")).toContain(
+			"trusted native receipt contract",
+		);
+	});
+
+	it("refuses the same receipt path outside the exact native workflow", () => {
+		expect(
+			checkWorkflow(".github/workflows/unrelated.yml", source(), toolchain).join("\n"),
+		).toContain("trusted native receipt");
+	});
+});
+
 // The reviewed source contract, with a one-line condition within the current YAML subset.
 const labelsFixture = `name: Sync approved labels
 on:
@@ -82,6 +182,24 @@ const labelsChange = (before: string, after: string): string => {
 	if (!labelsFixture.includes(before)) throw new Error(`missing labels fixture anchor: ${before}`);
 	return labelsFixture.replace(before, after);
 };
+const classifierChange = (before: string, after: string): string => {
+	const source = read(".github/workflows/ci.yml").replaceAll("\r\n", "\n");
+	const end = source.indexOf("\n  cheap:");
+	const prefix = source.slice(0, end);
+	if (end < 0 || !prefix.includes(before)) throw new Error("missing classifier fixture anchor");
+	return prefix.replace(before, after) + source.slice(end);
+};
+const classifierOutputs = [
+	["areas", `\${{ steps.areas.outputs.areas }}`],
+	["docs-only", `\${{ steps.areas.outputs.docs-only }}`],
+	["rust", `\${{ steps.areas.outputs.rust }}`],
+	["spikes", `\${{ steps.areas.outputs.spikes }}`],
+	["heavy", `\${{ steps.areas.outputs.heavy }}`],
+	["native-transport", `\${{ steps.native.outputs.native-transport }}`],
+	["ordinary-heavy", `\${{ steps.native.outputs.ordinary-heavy }}`],
+	["template-smoke", `\${{ steps.areas.outputs.template-smoke }}`],
+	["source", `\${{ steps.source.outputs.source }}`],
+] as const;
 
 describe("workflow policy", () => {
 	it.each(["&evt pull_request_target", "!event pull_request_target", "!!str workflow_run"])(
@@ -103,6 +221,92 @@ describe("workflow policy", () => {
 
 	it.each(files)("%s follows the policy", (file) => {
 		expect(checkWorkflow(file, read(file), toolchain)).toEqual([]);
+	});
+
+	it.each(classifierOutputs)("refuses changed classifier job output: %s", (name, value) => {
+		for (const replacement of [
+			"''",
+			"'true'",
+			`\${{ steps.other.outputs.${name} }}`,
+			`\${{ steps.areas.outputs.unknown }}`,
+		]) {
+			if (replacement === value) continue;
+			const mutated = classifierChange(`      ${name}: ${value}`, `      ${name}: ${replacement}`);
+			expect(checkWorkflow(".github/workflows/ci.yml", mutated, toolchain).join("\n")).toContain(
+				"must preserve classifier job output mappings",
+			);
+		}
+	});
+
+	it.each(classifierOutputs)("refuses a missing classifier job output: %s", (name, value) => {
+		const mutated = classifierChange(`      ${name}: ${value}\n`, "");
+		expect(checkWorkflow(".github/workflows/ci.yml", mutated, toolchain).join("\n")).toContain(
+			"must preserve classifier job output mappings",
+		);
+	});
+
+	it.each([
+		["missing mapping", "    outputs:\n", "    ignored:\n"],
+		["null mapping", "    outputs:\n", "    outputs: null\n    ignored:\n"],
+		["extra output", "    outputs:\n", "    outputs:\n      extra: 'false'\n"],
+	])("refuses %s on the classifier job", (_, before, after) => {
+		const mutated = classifierChange(before, after);
+		expect(checkWorkflow(".github/workflows/ci.yml", mutated, toolchain).join("\n")).toContain(
+			"must preserve classifier job output mappings",
+		);
+	});
+
+	it.each([
+		["renamed ID", "      - id: areas", "      - id: other"],
+		["missing ID", "      - id: areas\n        env:", "      - env:"],
+		[
+			"duplicate ID",
+			"      - id: areas",
+			"      - id: areas\n        run: echo classifier-disabled\n      - id: areas",
+		],
+		[
+			"replaced command",
+			"run: node tools/ci-checks/src/changes.ts",
+			"run: echo classifier-disabled",
+		],
+		[
+			"echoed command",
+			"run: node tools/ci-checks/src/changes.ts",
+			"run: echo node tools/ci-checks/src/changes.ts",
+		],
+		["condition", "      - id: areas", "      - id: areas\n        if: false"],
+		["shell", "      - id: areas", "      - id: areas\n        shell: echo {0}"],
+		[
+			"working directory",
+			"      - id: areas",
+			"      - id: areas\n        working-directory: elsewhere",
+		],
+		["soft failure", "      - id: areas", "      - id: areas\n        continue-on-error: true"],
+		[
+			"base revision",
+			`BASE_SHA: \${{ github.event.pull_request.base.sha || github.event.before }}`,
+			`BASE_SHA: \${{ github.event.pull_request.head.sha || github.sha }}`,
+		],
+		[
+			"head revision",
+			`HEAD_SHA: \${{ github.event.pull_request.head.sha || github.sha }}`,
+			"HEAD_SHA: HEAD",
+		],
+		[
+			"missing base revision",
+			`          BASE_SHA: \${{ github.event.pull_request.base.sha || github.event.before }}\n`,
+			"",
+		],
+		[
+			"extra environment",
+			"      - id: areas\n        env:",
+			"      - id: areas\n        env:\n          EXTRA: value",
+		],
+	])("refuses changed classifier producer: %s", (_, before, after) => {
+		const mutated = classifierChange(before, after);
+		expect(checkWorkflow(".github/workflows/ci.yml", mutated, toolchain).join("\n")).toContain(
+			"must preserve changes command and its execution controls",
+		);
 	});
 
 	it.each([
@@ -338,6 +542,16 @@ describe("workflow policy", () => {
 		],
 		["build replacement", "run: pnpm build", "run: echo build-disabled"],
 		["build removal", "      - run: pnpm build\n", ""],
+		[
+			"Windows Rust setup loses ordinary crates coverage",
+			"if: (hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true')",
+			"if: needs.changes.outputs.native-transport == 'true'",
+		],
+		[
+			"Windows Rust setup loses native coverage",
+			"if: (hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true')",
+			"if: hashFiles('crates/Cargo.toml') != ''",
+		],
 		["build condition", "      - run: pnpm build", "      - if: false\n        run: pnpm build"],
 		["build shell", "      - run: pnpm build", "      - run: pnpm build\n        shell: echo {0}"],
 		[
@@ -353,7 +567,7 @@ describe("workflow policy", () => {
 		["heavy condition", "if: needs.changes.outputs.spikes != ''", "if: false"],
 		[
 			"heavy condition removal",
-			"        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''\n",
+			"        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n",
 			"",
 		],
 		[
@@ -363,28 +577,53 @@ describe("workflow policy", () => {
 		],
 		[
 			"heavy command replacement",
-			`node tools/verify/turbo.ts run test:heavy "\${filters[@]}"`,
+			`node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
 			"echo heavy-suite-disabled",
+		],
+		[
+			"heavy serial flag removal",
+			`node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
+			`node tools/verify/turbo.ts run test:heavy --log-order=stream --log-prefix=task "\${filters[@]}"`,
+		],
+		["heavy parallel execution", "test:heavy --concurrency=1", "test:heavy --concurrency=2"],
+		[
+			"heavy echo prefix",
+			`node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
+			`echo node tools/verify/turbo.ts run test:heavy --concurrency=1 --log-order=stream --log-prefix=task "\${filters[@]}"`,
 		],
 		[
 			"heavy filter removal",
 			'          for dir in $SPIKES; do filters+=("--filter=./$dir"); done\n',
 			"",
 		],
-		["heavy selection environment", `SPIKES: \${{ needs.changes.outputs.spikes }}`, "SPIKES: ''"],
+		[
+			"heavy selection environment",
+			`name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n        env:\n          SPIKES: \${{ needs.changes.outputs.spikes }}`,
+			`name: test:heavy for the touched spikes and the selected packages\n        if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''\n        env:\n          SPIKES: ''`,
+		],
 		[
 			"heavy package condition removal",
-			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''",
+			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
 			"if: needs.changes.outputs.spikes != ''",
 		],
 		[
+			"native-only selection bypasses the ordinary empty guard",
+			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.ordinary-heavy != ''",
+			"if: needs.changes.outputs.spikes != '' || needs.changes.outputs.heavy != ''",
+		],
+		[
 			"heavy package selection environment",
-			`HEAVY: \${{ needs.changes.outputs.heavy }}`,
+			`HEAVY: \${{ needs.changes.outputs.ordinary-heavy }}`,
 			"HEAVY: ''",
 		],
 		[
+			"native selector leaks into the ordinary task",
+			`HEAVY: \${{ needs.changes.outputs.ordinary-heavy }}`,
+			`HEAVY: \${{ needs.changes.outputs.heavy }}`,
+		],
+		[
 			"heavy package selection environment removal",
-			`          HEAVY: \${{ needs.changes.outputs.heavy }}\n`,
+			`          HEAVY: \${{ needs.changes.outputs.ordinary-heavy }}\n`,
 			"",
 		],
 		[
@@ -499,11 +738,11 @@ describe("workflow policy", () => {
 			(parseYaml(read(`.github/workflows/${name}`)).value as { jobs: Record<string, unknown> })
 				.jobs;
 		const ci = jobs("ci.yml");
-		expect(Object.keys(ci)).toEqual(["changes", "cheap", "full", "windows", "required"]);
+		expect(Object.keys(ci)).toEqual(["changes", "cheap", "full", "windows", "macos", "required"]);
 		expect(ci.required).toMatchObject({
 			if: "always()",
 			name: `\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`,
-			needs: ["changes", "cheap", "full", "windows"],
+			needs: ["changes", "cheap", "full", "windows", "macos"],
 		});
 		const reportedJobs = files.flatMap((file) =>
 			Object.entries(jobs(path.basename(file))).map(([id, job]) => ({
@@ -591,13 +830,16 @@ describe("workflow policy", () => {
 			}
 		).jobs;
 		expect(ci.windows?.if).toBe(
-			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft))",
+			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && needs.changes.outputs.native-transport == 'true'))",
 		);
-		expect(ci.windows?.steps.at(-1)).toEqual({
+		expect(ci.windows?.steps.find((step) => step.run === "pnpm verify")).toEqual({
 			run: "pnpm verify",
 			env: { TURBO_CONCURRENCY: "1" },
 		});
-		for (const name of ["changes", "cheap", "full", "windows"]) {
+		expect(ci.windows?.steps.at(-1)?.run).toBe(
+			"pnpm exec node tools/ci-checks/src/native-transport.ts run",
+		);
+		for (const name of ["changes", "cheap", "full", "windows", "macos"]) {
 			const job = ci[name];
 			expect(job?.outputs?.source, name).toBe(`\${{ steps.source.outputs.source }}`);
 			const steps = job?.steps ?? [];
@@ -1344,5 +1586,59 @@ describe("workflow policy", () => {
 		["a lone CR", workflow(["push:", "  branches: [main] #\r    tags: ['v*']"]), "U+000D"],
 	])("refuses %s", (_, source, problem) => {
 		expect(checkWorkflow("x.yml", source, "1.95.0").join("\n")).toContain(problem);
+	});
+});
+
+describe("selected browser provisioning contract", () => {
+	const file = ".github/workflows/ci.yml";
+	it.each([
+		["missing plan", "node tools/ci-checks/src/browser-setup.ts plan", "echo no-plan"],
+		["wrong plan source", "id: browser-setup", "id: another-plan"],
+		[
+			"unconditional cache",
+			"id: browser-cache\n        if: steps.browser-setup.outputs.required == 'true'",
+			"id: browser-cache\n        if: true",
+		],
+		[
+			"different cache path",
+			"path: ${{ steps.browser-setup.outputs.path }}",
+			"path: another-cache",
+		],
+		[
+			"different lock cache key",
+			"key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}",
+			"key: playwright-unlocked",
+		],
+		[
+			"ignored setup failure",
+			"run: node tools/ci-checks/src/browser-setup.ts install",
+			"run: node tools/ci-checks/src/browser-setup.ts install || true",
+		],
+		[
+			"cache-hit install bypass",
+			"name: Install browser prerequisites\n        if: steps.browser-setup.outputs.required == 'true'",
+			"name: Install browser prerequisites\n        if: steps.browser-cache.outputs.cache-hit != 'true'",
+		],
+	])("rejects %s in the actual workflow", (_, before, after) => {
+		const source = read(file).replaceAll("\r\n", "\n");
+		const mutated = source.replace(before, after);
+		expect(mutated).not.toBe(source);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain("must preserve");
+	});
+	it("requires the cache between the plan and install", () => {
+		const source = read(file).replaceAll("\r\n", "\n");
+		const start = source.indexOf("      - name: Cache Playwright browsers\n");
+		const end = source.indexOf("      - name: Install browser prerequisites\n", start);
+		expect(start).toBeGreaterThan(0);
+		expect(end).toBeGreaterThan(start);
+		const cache = source.slice(start, end);
+		const without = source.slice(0, start) + source.slice(end);
+		const mutated = without.replace(
+			"      - name: test:heavy for the touched spikes and the selected packages\n",
+			cache + "      - name: test:heavy for the touched spikes and the selected packages\n",
+		);
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			"must preserve the selected browser cache",
+		);
 	});
 });

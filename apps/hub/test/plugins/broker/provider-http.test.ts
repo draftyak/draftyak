@@ -102,7 +102,7 @@ async function fixture(networkPolicy: EgressPolicy = policy) {
 	});
 	await store.migrate("audit");
 	await store.migrate("credentials");
-	const vault = new CredentialVault(store, audit),
+	const vault = new CredentialVault(store, audit, key),
 		secret = `DYTEST-${randomBytes(20).toString("hex")}`;
 	const credential: CredentialBinding = {
 		ownerKind: "provider",
