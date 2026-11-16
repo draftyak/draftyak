@@ -1,6 +1,7 @@
+import { clearTimeout as clearTrailerTimer, setTimeout as startTrailerTimer } from "node:timers";
 import { brotliCompressSync, constants, deflateSync, gunzipSync, gzipSync } from "node:zlib";
 import { createFake } from "@draftyak/fakes";
-import type { HostFetchResult } from "@draftyak/protocol/host-channel";
+import { HOST_REQUEST_TIMEOUT_MS, type HostFetchResult } from "@draftyak/protocol/host-channel";
 import { validateManifest } from "@draftyak/protocol/manifest";
 import { afterEach, expect, it } from "vitest";
 import { createMockHub, type MockHub } from "../src/index.ts";
@@ -22,7 +23,7 @@ function hubFor(response: () => Response, maxBytes = 96 * 1024): MockHub {
 		...checked.manifest,
 		egress: {
 			rules: checked.manifest.egress.rules.map((rule) =>
-				rule.class === "read" ? { ...rule, maxBytes } : rule,
+				rule.class === "read" ? { ...rule, maxBytes, timeoutMs: HOST_REQUEST_TIMEOUT_MS } : rule,
 			),
 		},
 	};
@@ -171,6 +172,129 @@ it("refuses a missing gzip trailer after a complete decoded JSON prefix without 
 	await refused(hub, "DENIED", "ENTITY_FAILED");
 	damaged = false;
 	expect(blob(hub, await request(hub))).toEqual(Uint8Array.from(Buffer.alloc(1024, 37)));
+});
+
+it("accepts a valid gzip trailer after a delayed entity finish", async () => {
+	const expected = Uint8Array.from(Buffer.alloc(1024, 37));
+	const entity = Buffer.from(JSON.stringify({ raw: Buffer.from(expected).toString("base64url") }));
+	const complete = gzipSync(entity);
+	const prefix = complete.subarray(0, complete.byteLength - 8);
+	const trailer = complete.subarray(complete.byteLength - 8);
+	expect(trailer.byteLength).toBe(8);
+	expect(gunzipSync(prefix, { finishFlush: constants.Z_SYNC_FLUSH })).toEqual(entity);
+	let releaseTail!: () => void;
+	const tailGate = new Promise<void>((resolve) => {
+		releaseTail = resolve;
+	});
+	let timer: ReturnType<typeof startTrailerTimer> | undefined;
+	let prefixSent = false;
+	let stopped = false;
+	let tailPullStarted = false;
+	let timerFired = false;
+	let trailerDelivered = false;
+	let producerClosed = false;
+	let tailPull: Promise<void> | undefined;
+	let tailState: "not-started" | "pending" | "fulfilled" | "rejected" = "not-started";
+	const stop = (): void => {
+		stopped = true;
+		if (timer !== undefined) clearTrailerTimer(timer);
+		timer = undefined;
+		releaseTail();
+	};
+	const source = new ReadableStream<Uint8Array>(
+		{
+			pull(controller) {
+				if (stopped) return;
+				if (!prefixSent) {
+					prefixSent = true;
+					controller.enqueue(prefix);
+					return;
+				}
+				if (tailPull) return tailPull;
+				tailPullStarted = true;
+				tailState = "pending";
+				tailPull = Promise.resolve().then(async () => {
+					if (stopped) return;
+					// Arm only when the actual producer asks for the original eight trailer bytes.
+					timer = startTrailerTimer(() => {
+						timer = undefined;
+						timerFired = true;
+						releaseTail();
+					}, 1100);
+					await tailGate;
+					if (stopped) return;
+					controller.enqueue(trailer);
+					trailerDelivered = true;
+					controller.close();
+					producerClosed = true;
+				});
+				void tailPull.then(
+					() => {
+						tailState = "fulfilled";
+					},
+					() => {
+						tailState = "rejected";
+					},
+				);
+				return tailPull;
+			},
+			cancel() {
+				stop();
+			},
+		},
+		{ highWaterMark: 0 },
+	);
+	const hub = hubFor(() => new Response(source, { headers: { "content-encoding": "gzip" } }));
+	type Outcome =
+		| { readonly kind: "fulfilled"; readonly response: HostFetchResult }
+		| { readonly kind: "rejected"; readonly code: "TIMEOUT" | "OTHER" };
+	let originalRequest: Promise<HostFetchResult> | undefined;
+	let observedRequest: Promise<Outcome> | undefined;
+	let outcome: Outcome | undefined;
+	let capturedBlob: Uint8Array | undefined;
+	let denialReasons: string[] = [];
+	const denialStart = hub.host.denials.length;
+	try {
+		originalRequest = request(hub);
+		observedRequest = originalRequest.then(
+			(response): Outcome => ({ kind: "fulfilled", response }),
+			(error: unknown): Outcome => {
+				const code =
+					error !== null && typeof error === "object"
+						? Object.getOwnPropertyDescriptor(error, "code")?.value
+						: undefined;
+				return { kind: "rejected", code: code === "TIMEOUT" ? "TIMEOUT" : "OTHER" };
+			},
+		);
+		outcome = await observedRequest;
+		denialReasons = hub.host.denials.slice(denialStart).map(({ reason }) => reason);
+		if (outcome.kind === "fulfilled") {
+			const body = outcome.response.body;
+			if (body && "ref" in body) capturedBlob = hub.host.readBlob(body.ref);
+		}
+	} finally {
+		// Release original producers before any join, including the old-route timeout path.
+		stop();
+		const originalWork: Promise<unknown>[] = [tailGate];
+		if (originalRequest) originalWork.push(originalRequest);
+		if (observedRequest) originalWork.push(observedRequest);
+		if (tailPull) originalWork.push(tailPull);
+		await Promise.allSettled(originalWork);
+		await hub.close();
+	}
+	expect({
+		outcome: outcome?.kind,
+		code: outcome?.kind === "rejected" ? outcome.code : null,
+		denials: denialReasons,
+		tailPullStarted,
+	}).toEqual({ outcome: "fulfilled", code: null, denials: [], tailPullStarted: true });
+	if (outcome?.kind !== "fulfilled") throw new Error("Expected completed gzip request");
+	expect(timerFired).toBe(true);
+	expect(trailerDelivered).toBe(true);
+	expect(producerClosed).toBe(true);
+	expect(tailState).toBe("fulfilled");
+	expect(outcome.response.body).toEqual({ ref: expect.any(String) });
+	expect(capturedBlob).toEqual(expected);
 });
 
 it.each(["compress", "gzip, br", "gzip, gzip"])(

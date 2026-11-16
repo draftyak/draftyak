@@ -51,7 +51,7 @@ function append(f: RevisionFixture, input: DraftCreation, rev: number, entry: En
 }
 
 describe("native revision writes across wall-clock corrections", () => {
-	it("retains the stored timestamp when the existing lock API omits an operation floor", async () => {
+	it("retains the stored timestamp when release preparation omits an operation floor", async () => {
 		const f = await fixture(),
 			input = f.make(),
 			bound = f.bind(input),
@@ -60,9 +60,11 @@ describe("native revision writes across wall-clock corrections", () => {
 		const proof = f.store.write((tx) => f.freeze.freezeInTransaction(tx, bound, 1, snapshot)),
 			locked = f.revisions.current(bound);
 		f.time.now -= 5_000;
-		const unchanged = f.store.write((tx) =>
-			f.revisions.setLockInTransaction(tx, bound, 1, locked.lockId, locked.lockId),
+		const prepared = f.store.write((tx) =>
+			f.revisions.prepareLockInTransaction(tx, bound, 1, locked.lockId, null),
 		);
+		expect(prepared.at).toBe(locked.draft.updatedAt);
+		const unchanged = f.revisions.current(bound);
 		expect(unchanged.lockId).toBe(locked.lockId);
 		expect(unchanged.draft.updatedAt).toBe(locked.draft.updatedAt);
 		expect(f.store.write((tx) => f.freeze.consumeInTransaction(tx, proof)).snapshot).toEqual(
@@ -79,7 +81,7 @@ describe("native revision writes across wall-clock corrections", () => {
 				before = rows(f);
 			expect(() =>
 				f.store.write((tx) =>
-					f.revisions.setLockInTransaction(tx, f.bind(input), 1, null, null, floor),
+					f.revisions.prepareLockInTransaction(tx, f.bind(input), 1, null, newId(), floor),
 				),
 			).toThrow("Draft revision unavailable");
 			expect(f.revisions.current(f.bind(input))).toEqual(one);

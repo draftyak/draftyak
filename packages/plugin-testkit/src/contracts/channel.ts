@@ -73,6 +73,8 @@ export interface ChannelContractFixture {
 		readonly resync?: () => MaybePromise<readonly PluginChange[]>;
 		/** Expire the provider's current cursor, without altering the plugin. */
 		readonly expireCursor: () => MaybePromise<void>;
+		/** Exact continuation pages before typed expiry; omitted means immediate expiry. */
+		readonly expiryProgressPages?: number;
 	};
 	/** Opt in with provider DATA covering pagination, completion and truncation. */
 	readonly selectedSync?: readonly ChannelSelectedSyncScenario[];
@@ -256,6 +258,28 @@ async function pages(hub: MockHub, first: SyncRequest): Promise<SyncPage> {
 	throw new CheckFailure("CHANNEL_SYNC_PAGE_LIMIT");
 }
 
+async function cursorExpiry(hub: MockHub, first: string, progressPages: number): Promise<void> {
+	let cursor = first;
+	const cursors = new Set<string>([first]);
+	for (let page = 0; page < progressPages; page++) {
+		const checked = SyncPage.safeParse(
+			result("channel_sync", await hub.call("channel_sync", { mode: "delta", cursor })),
+		);
+		requireCheck(checked.success, "CHANNEL_SYNC_RESULT");
+		const output = checked.data;
+		// Continuation data is discarded; only the typed error establishes expiry.
+		requireCheck(output.more, "CHANNEL_ERROR_RESULT");
+		requireCheck(!cursors.has(output.cursor), "CHANNEL_SYNC_STALLED");
+		cursors.add(output.cursor);
+		cursor = output.cursor;
+	}
+	errorResult(
+		"channel_sync",
+		await hub.call("channel_sync", { mode: "delta", cursor }),
+		"CURSOR_EXPIRED",
+	);
+}
+
 export async function checkChannelSurface(
 	options: ChannelContractOptions,
 ): Promise<ChannelContractResult> {
@@ -323,6 +347,12 @@ export async function checkChannelSync(
 	options: ChannelContractOptions,
 ): Promise<ChannelContractResult> {
 	return run(options, async ({ hub, fixture }) => {
+		const declaredProgressPages = fixture.sync.expiryProgressPages;
+		const progressPages = declaredProgressPages === undefined ? 0 : declaredProgressPages;
+		requireCheck(
+			Number.isInteger(progressPages) && progressPages >= 0 && progressPages <= 63,
+			"CHANNEL_SYNC_EXPIRY_FIXTURE",
+		);
 		requireCheck(fixture.sync.initial.length > 0, "CHANNEL_SYNC_FIXTURE_EMPTY");
 		const initial = await pages(hub, { mode: "initial", since: fixture.sync.since });
 		requireCheck(equal(initial.changes, fixture.sync.initial), "CHANNEL_SYNC_INITIAL");
@@ -331,11 +361,7 @@ export async function checkChannelSync(
 		const delta = await pages(hub, { mode: "delta", cursor: initial.cursor });
 		requireCheck(equal(delta.changes, deltaChanges), "CHANNEL_SYNC_DELTA");
 		await fixture.sync.expireCursor();
-		errorResult(
-			"channel_sync",
-			await hub.call("channel_sync", { mode: "delta", cursor: delta.cursor }),
-			"CURSOR_EXPIRED",
-		);
+		await cursorExpiry(hub, delta.cursor, progressPages);
 		const resync = await pages(hub, { mode: "resync", since: fixture.sync.since });
 		requireCheck(
 			equal(
