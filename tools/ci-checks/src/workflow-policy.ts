@@ -54,6 +54,30 @@ const requiredPrTypes: Readonly<Record<string, readonly string[]>> = {
 const nonDocs = "needs.changes.outputs.docs-only != 'true'";
 const nativeSelected = "needs.changes.outputs.native-transport == 'true'";
 const readyRun = "(github.event_name != 'pull_request' || !github.event.pull_request.draft)";
+const hubCrashSelected =
+	"(contains(fromJSON(needs.changes.outputs.areas), 'heavy:...{./apps/hub}') || contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/hub'))";
+const hubCrashTest: YamlMap = {
+	id: "store-crash",
+	if: hubCrashSelected,
+	"working-directory": "apps/hub",
+	env: { DRAFTYAK_STRICT_SKIPS: "1" },
+	run: [
+		'node "$GITHUB_WORKSPACE/node_modules/vitest/vitest.mjs" run \\',
+		"  test/model/store-crash-recovery.heavy.test.ts \\",
+		"  --mode heavy --maxWorkers=1 --reporter=default --passWithNoTests=false \\",
+		"  --exclude '**/*siwc*/**' --exclude '**/*siwc*' \\",
+		"  --exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'",
+		"",
+	].join("\n"),
+};
+const hubCrashRequired: YamlMap = {
+	if: `${nonDocs} && ${readyRun} && ${hubCrashSelected}`,
+	env: {
+		WINDOWS_RESULT: `\${{ needs.windows.result }}`,
+		MACOS_RESULT: `\${{ needs.macos.result }}`,
+	},
+	run: `node --input-type=module -e 'if (process.env.WINDOWS_RESULT !== "success" || process.env.MACOS_RESULT !== "success") process.exit(1)'`,
+};
 const ciControls: Readonly<Record<string, YamlMap>> = {
 	changes: {},
 	cheap: { needs: "changes" },
@@ -88,9 +112,12 @@ const ciControls: Readonly<Record<string, YamlMap>> = {
 	},
 	windows: {
 		needs: "changes",
-		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ${nativeSelected}))`,
+		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && (${nativeSelected} || ${hubCrashSelected})))`,
 	},
-	macos: { needs: "changes", if: `${nonDocs} && ${readyRun} && ${nativeSelected}` },
+	macos: {
+		needs: "changes",
+		if: `${nonDocs} && ${readyRun} && (${nativeSelected} || ${hubCrashSelected})`,
+	},
 	required: {
 		needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"],
 		if: "always()",
@@ -360,7 +387,7 @@ const nativePlatforms = {
 	macos: { platform: "darwin", architecture: "arm64", runner: "macos-15" },
 } as const;
 for (const [job, platform] of Object.entries(nativePlatforms)) {
-	const conditional: YamlMap = job === "macos" ? {} : { if: nativeSelected };
+	const conditional: YamlMap = { if: nativeSelected };
 	const env = { NATIVE_PLATFORM: platform.platform, NATIVE_ARCHITECTURE: platform.architecture };
 	const platformCheck: YamlMap = {
 		...conditional,
@@ -375,9 +402,26 @@ for (const [job, platform] of Object.entries(nativePlatforms)) {
 	};
 	ciCommands[job] =
 		job === "macos"
-			? [platformCheck, { run: "pnpm install --frozen-lockfile" }, execute]
-			: [platformCheck, ...(ciCommands[job] ?? []), execute];
+			? [platformCheck, { run: "pnpm install --frozen-lockfile" }, hubCrashTest, execute]
+			: [
+					platformCheck,
+					...(ciCommands[job] ?? []),
+					...(job === "windows" ? [hubCrashTest] : []),
+					execute,
+				];
 }
+ciCommands.required = [
+	hubCrashRequired,
+	{
+		env: {
+			CI_NEEDS: `\${{ toJSON(needs) }}`,
+			CI_HEAD_SHA: `\${{ github.event.pull_request.head.sha || github.sha }}`,
+			CI_BASE_SHA: `\${{ github.event.pull_request.base.sha || github.event.before }}`,
+			CI_PR_DRAFT: `\${{ github.event.pull_request.draft == true }}`,
+		},
+		run: "node tools/ci-checks/src/verification-receipt.ts report",
+	},
+];
 const prTitleCommands: readonly YamlMap[] = [
 	{
 		env: {
@@ -777,7 +821,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 						? { if: "needs.changes.outputs.rust != ''" }
 						: job === "windows"
 							? { if: `hashFiles('crates/Cargo.toml') != '' || ${nativeSelected}` }
-							: {}),
+							: { if: nativeSelected }),
 					with: { toolchain: rustToolchain, components: "clippy, rustfmt" },
 				};
 				if (rustSteps.length !== 1 || !isDeepStrictEqual(rustSteps[0], expectedRust))
@@ -801,6 +845,13 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 							["jobs", job, "steps"],
 							"must preserve the pinned native Rust cache after setup",
 						);
+				}
+				if (job === "macos") {
+					const caches = asList(definition.steps)
+						.map(asMap)
+						.filter((step) => String(step.uses).startsWith("Swatinem/rust-cache@"));
+					if (caches.length !== 1 || caches[0]?.if !== nativeSelected)
+						report(["jobs", job, "steps"], "must preserve the selected native Mac Rust cache");
 				}
 				for (const step of asList(definition.steps).map(asMap)) {
 					const ordinaryCondition = Object.hasOwn(asMap(step.env), "SPIKES")

@@ -8,7 +8,13 @@ import {
 	type StepContext,
 	type StepOutcome,
 } from "./lib/registry.ts";
-import { capture, type Invocation, type RunOptions, run } from "./lib/spawn.ts";
+import {
+	type ChildLifecycleEvent,
+	capture,
+	type Invocation,
+	type RunOptions,
+	run,
+} from "./lib/spawn.ts";
 import { resolveBiome, resolvePnpm, resolveTurbo, telemetryOff } from "./lib/tools.ts";
 
 const here = import.meta.dirname;
@@ -45,13 +51,78 @@ function lazy<T>(resolve: () => T): () => T {
 	};
 }
 
-function context(profile: Profile): StepContext {
+export type DirectInvocationTool = "run" | "capture" | "node" | "pnpm" | "turbo" | "biome";
+export type DirectInvocationKind = DirectInvocationTool | "test/verify" | "test/remaining";
+
+export function directInvocationKind(
+	tool: DirectInvocationTool,
+	step: string,
+	args: readonly string[],
+): DirectInvocationKind {
+	if (
+		tool === "turbo" &&
+		step === "test" &&
+		args.length === 3 &&
+		args[0] === "run" &&
+		args[1] === "test"
+	) {
+		if (args[2] === "--filter=@draftyak/verify") return "test/verify";
+		if (args[2] === "--filter=!@draftyak/verify") return "test/remaining";
+	}
+	return tool;
+}
+
+function technicalName(value: string): string {
+	return /^[a-z][a-z0-9-]{0,63}$/.test(value) ? value : "other";
+}
+
+/** Metadata from this direct child only; child output and command details are not inputs. */
+export function childLifecycleLine(
+	profile: string,
+	step: string,
+	kind: DirectInvocationKind,
+	event: ChildLifecycleEvent,
+): string {
+	return (
+		"verify: child " +
+		JSON.stringify({
+			version: 1,
+			profile: technicalName(profile),
+			step: technicalName(step),
+			kind,
+			event: event.type,
+			invocationId: event.invocationId,
+			pid: event.pid,
+			code: event.type === "exit" || event.type === "close" ? event.code : null,
+			signal: event.type === "exit" || event.type === "close" ? event.signal : null,
+			errorCode: event.type === "error" ? event.errorCode : null,
+		})
+	);
+}
+
+function context(profile: Profile, activeStep: () => string): StepContext {
 	const env = process.env;
-	const at = (options?: RunOptions): RunOptions => ({
-		cwd: root,
-		...options,
-		env: { ...env, ...options?.env },
-	});
+	const at = (
+		tool: DirectInvocationTool,
+		args: readonly string[],
+		options?: RunOptions,
+	): RunOptions => {
+		const step = activeStep();
+		const kind = directInvocationKind(tool, step, args);
+		const observer = options?.onLifecycle;
+		return {
+			cwd: root,
+			...options,
+			env: { ...env, ...options?.env },
+			onLifecycle: (event) => {
+				try {
+					console.log(childLifecycleLine(profile.name, step, kind, event));
+				} finally {
+					observer?.(event);
+				}
+			},
+		};
+	};
 	const pnpm = lazy(() => resolvePnpm(env));
 	const turbo = lazy(() => resolveTurbo(root));
 	const biome = lazy(() => resolveBiome(root));
@@ -63,12 +134,12 @@ function context(profile: Profile): StepContext {
 		root,
 		profile: profile.name,
 		env,
-		run: (command, args, options) => run({ command, args }, at(options)),
-		capture: (command, args, options) => capture({ command, args }, at(options)),
-		node: (args, options) => run({ command: process.execPath, args }, at(options)),
-		pnpm: (args, options) => run(withArgs(pnpm(), args), at(options)),
-		turbo: (args, options) => run({ command: turbo(), args }, at(options)),
-		biome: (args, options) => run({ command: biome(), args }, at(options)),
+		run: (command, args, options) => run({ command, args }, at("run", args, options)),
+		capture: (command, args, options) => capture({ command, args }, at("capture", args, options)),
+		node: (args, options) => run({ command: process.execPath, args }, at("node", args, options)),
+		pnpm: (args, options) => run(withArgs(pnpm(), args), at("pnpm", args, options)),
+		turbo: (args, options) => run({ command: turbo(), args }, at("turbo", args, options)),
+		biome: (args, options) => run({ command: biome(), args }, at("biome", args, options)),
 	};
 }
 
@@ -143,10 +214,16 @@ export async function main(
 	console.log(
 		`verify: profile ${profile.name}: ${selected.map((s) => s.name).join(", ") || "no steps"}`,
 	);
-	const ctx = context(profile);
+	let activeStep = "none";
+	const ctx = context(profile, () => activeStep);
 	const results: Result[] = [];
 	for (const [index, step] of selected.entries()) {
-		results.push(await runStep(step, ctx, `[${index + 1}/${selected.length}] ${step.name}`));
+		activeStep = step.name;
+		try {
+			results.push(await runStep(step, ctx, `[${index + 1}/${selected.length}] ${step.name}`));
+		} finally {
+			activeStep = "none";
+		}
 	}
 
 	const width = Math.max(0, ...results.map((result) => result.step.name.length));
