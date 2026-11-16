@@ -16,6 +16,7 @@ const config: UserConfig = defineConfig({
 		{ from: "src/outbox/migrations/*.sql", to: "dist/outbox/migrations" },
 		{ from: "src/plugins/registry/migrations/*.sql", to: "dist/plugins/registry/migrations" },
 		{ from: "src/accounts/migrations/*.sql", to: "dist/accounts/migrations" },
+		{ from: "src/sync/migrations/*.sql", to: "dist/sync/migrations" },
 		{ from: "src/identity/challenges-migrations/*.sql", to: "dist/identity/challenges-migrations" },
 		{ from: "src/outbox/verifier-migrations/*.sql", to: "dist/outbox/verifier-migrations" },
 		{ from: "src/outbox/propose-migrations/*.sql", to: "dist/outbox/propose-migrations" },

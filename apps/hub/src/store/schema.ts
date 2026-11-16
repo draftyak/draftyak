@@ -25,6 +25,7 @@ const DELIVERED: ReadonlyMap<string, string> = new Map([
 	["credentials", delivered("credentials/migrations", "credentials/migrations")],
 	["tickets", delivered("outbox/migrations", "outbox/migrations")],
 	["accounts", delivered("accounts/migrations", "accounts/migrations")],
+	["content", delivered("sync/migrations", "sync/migrations")],
 	["pluginregistry", delivered("plugins/registry/migrations", "plugins/registry/migrations")],
 	["outbox", delivered("outbox/propose-migrations", "outbox/propose-migrations")],
 	["challenges", delivered("identity/challenges-migrations", "identity/challenges-migrations")],
@@ -134,7 +135,7 @@ function reference(binding: string): SqliteDatabase {
 	const db = new Database(":memory:", { nativeBinding: binding });
 	// The settings that shape what migrate() creates: foreign keys stay off for its run.
 	db.exec(
-		"PRAGMA foreign_keys = OFF; PRAGMA recursive_triggers = ON; PRAGMA trusted_schema = OFF; PRAGMA temp_store = MEMORY;",
+		"PRAGMA foreign_keys = OFF; PRAGMA recursive_triggers = ON; PRAGMA trusted_schema = OFF; PRAGMA temp_store = MEMORY; PRAGMA secure_delete = ON;",
 	);
 	references.set(binding, db);
 	return db;

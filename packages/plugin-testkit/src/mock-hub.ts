@@ -9,6 +9,7 @@ import {
 import type { PluginInstance } from "@draftyak/sdk";
 import { createMockHost } from "./host.ts";
 import { createInMemory } from "./in-memory.ts";
+import { copyMockSocketUpstreams } from "./mock-socket-upstream.ts";
 import { createProcess } from "./process.ts";
 import {
 	copyCompatibleHttpInputs,
@@ -18,7 +19,10 @@ import {
 	type MockHub,
 	MockHubError,
 	type MockHubOptions,
+	type MockProcessHandle,
 } from "./types.ts";
+
+const nativeSignalAny = AbortSignal.any.bind(AbortSignal);
 
 function freeze<T>(value: T): T {
 	if (value && typeof value === "object") {
@@ -30,7 +34,7 @@ function freeze<T>(value: T): T {
 
 function ownOption(
 	options: MockHubOptions,
-	name: "instance" | "responsesHttp" | "compatibleHttp" | "messagesHttp",
+	name: "instance" | "responsesHttp" | "compatibleHttp" | "messagesHttp" | "socketUpstreams",
 	code: string,
 ): unknown {
 	const slot = Object.getOwnPropertyDescriptor(options, name);
@@ -84,6 +88,9 @@ export function createMockHub(options: MockHubOptions): MockHub {
 		![Object.prototype, null].includes(Object.getPrototypeOf(options))
 	)
 		throw new MockHubError("INVALID_OPTIONS");
+	const socketSupplied = ownOption(options, "socketUpstreams", "INVALID_SOCKET_UPSTREAM");
+	const socketBindings =
+		socketSupplied === undefined ? undefined : copyMockSocketUpstreams(socketSupplied);
 	const messagesSupplied = ownOption(options, "messagesHttp", "INVALID_MESSAGES_BINDINGS");
 	const messagesBindings =
 		messagesSupplied === undefined ? undefined : copyMessagesHttpInputs(messagesSupplied);
@@ -129,16 +136,27 @@ export function createMockHub(options: MockHubOptions): MockHub {
 		...(account ? { account } : {}),
 		instance: instance.id,
 		upstreams: options.upstreams,
+		...(socketBindings === undefined ? {} : { socketUpstreams: socketBindings }),
 		...(options.secrets ? { secrets: options.secrets } : {}),
 		...(bindings ? { responsesHttp: bindings } : {}),
 		...(compatibleBindings === undefined ? {} : { compatibleHttp: compatibleBindings }),
 		...(messagesBindings === undefined ? {} : { messagesHttp: messagesBindings }),
 	});
+	let processHandle: MockProcessHandle | undefined;
 	const memory = (() => {
 		try {
-			return mode === "process"
-				? createProcess(options.plugin, bridge.host, { plugin: manifest.id, instance: instance.id })
-				: createInMemory(entry, bridge.host, manifest.kind === "tool", instance);
+			if (mode === "process") {
+				const driver = createProcess(options.plugin, bridge.host, {
+					plugin: manifest.id,
+					instance: instance.id,
+				});
+				processHandle = Object.freeze({
+					endInput: () => driver.endInput(),
+					whenClosed: driver.whenClosed,
+				});
+				return driver;
+			}
+			return createInMemory(entry, bridge.host, manifest.kind === "tool", instance);
 		} catch (error) {
 			bridge.host.close();
 			throw error;
@@ -153,6 +171,7 @@ export function createMockHub(options: MockHubOptions): MockHub {
 	const hub: MockHub = {
 		host: bridge.host,
 		manifest,
+		...(processHandle === undefined ? {} : { process: processHandle }),
 		async discover() {
 			available();
 			return memory.request("server/discover");
@@ -164,6 +183,7 @@ export function createMockHub(options: MockHubOptions): MockHub {
 		async call(name, args, metadata = {}, optionsForCall) {
 			available();
 			const callOptions = copyMockCallOptions(optionsForCall);
+			if (callOptions?.signal?.aborted) throw new MockHubError("PROCESS_CALL_ABORTED");
 			if (callOptions?.onProgress && mode !== "process")
 				throw new MockHubError("PROCESS_PROGRESS_UNAVAILABLE");
 			if (manifest.kind === "tool" && !Object.hasOwn(canonicalToolsV1, name))
@@ -177,6 +197,11 @@ export function createMockHub(options: MockHubOptions): MockHub {
 			const params = jsonCopy({ name, arguments: args, _meta: metadata });
 			return bridge.lookup(
 				async (signal, permit) => {
+					const requestSignal =
+						callOptions?.signal === undefined
+							? signal
+							: nativeSignalAny([signal, callOptions.signal]);
+					if (requestSignal.aborted) throw new MockHubError("PROCESS_CALL_ABORTED");
 					const admitted =
 						permit === undefined
 							? params
@@ -184,7 +209,7 @@ export function createMockHub(options: MockHubOptions): MockHub {
 									...params,
 									_meta: { ...params._meta, [LOOKUP_PERMIT_META_KEY]: permit },
 								};
-					const result = await memory.request("tools/call", admitted, signal, callOptions);
+					const result = await memory.request("tools/call", admitted, requestSignal, callOptions);
 					if (manifest.kind === "tool") {
 						const outcome = checkToolResult(
 							name as CanonicalToolName,
@@ -206,7 +231,13 @@ export function createMockHub(options: MockHubOptions): MockHub {
 			closed = true;
 			void (async () => {
 				bridge.host.close();
-				if ("close" in memory && typeof memory.close === "function") await memory.close();
+				const outcomes = await Promise.allSettled([
+					bridge.settled(),
+					(async () => {
+						if ("close" in memory && typeof memory.close === "function") await memory.close();
+					})(),
+				]);
+				for (const result of outcomes) if (result.status === "rejected") throw result.reason;
 			})().then(outcome.resolve, outcome.reject);
 			return closing;
 		},

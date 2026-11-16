@@ -219,28 +219,40 @@ export async function inventoryWorktrees(
 		progress?.phase(2);
 		let next = 0;
 		let refused = false;
+		let liveWorkerCount = Math.min(16, roots.length);
+		const workerCount = liveWorkerCount;
+		const readCapacity = (): number => {
+			if (liveWorkerCount < 1) throw failed();
+			return Math.floor(64 / liveWorkerCount);
+		};
 		const worker = async (): Promise<void> => {
-			while (!refused && !host.stopped() && next < roots.length) {
-				const directory = roots[next++];
-				if (directory === undefined) continue;
-				try {
-					const found = await namedWorktreeFiles(
-						".env.live",
-						directory,
-						refreshWorktrees,
-						process.platform === "win32",
-						host.readDirectory,
-						host.statPath,
-					);
-					if (found.length !== 0) throw failed();
-				} catch {
-					refused = true;
-					host.stop();
+			try {
+				while (!refused && !host.stopped() && next < roots.length) {
+					const directory = roots[next++];
+					if (directory === undefined) continue;
+					try {
+						const found = await namedWorktreeFiles(
+							".env.live",
+							directory,
+							refreshWorktrees,
+							process.platform === "win32",
+							host.readDirectory,
+							host.statPath,
+							readCapacity,
+						);
+						if (found.length !== 0) throw failed();
+					} catch {
+						refused = true;
+						host.stop();
+					}
 				}
+			} finally {
+				// A worker releases its share only after its final scan and root checks settle.
+				liveWorkerCount -= 1;
 			}
 		};
 		progress?.phase(3);
-		await Promise.allSettled(Array.from({ length: 16 }, worker));
+		await Promise.allSettled(Array.from({ length: workerCount }, worker));
 		if (refused || host.stopped() || next !== roots.length) throw failed();
 	} catch {
 		progress?.phase(5);

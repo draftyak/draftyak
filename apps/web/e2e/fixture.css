@@ -1,0 +1,39 @@
+* {
+	box-sizing: border-box;
+}
+
+html {
+	background: #fff;
+	color: #111827;
+	font-family: system-ui, sans-serif;
+	line-height: 1.5;
+}
+
+body {
+	margin: 0;
+}
+
+main {
+	max-inline-size: 48rem;
+	margin-inline: auto;
+	padding: 1rem;
+}
+
+h1 {
+	font-size: 1.5rem;
+}
+
+input {
+	max-inline-size: 100%;
+	font: inherit;
+}
+
+input:focus-visible {
+	outline: 0.2rem solid #1d4ed8;
+	outline-offset: 0.2rem;
+}
+
+section[aria-label="Flag display"] {
+	min-inline-size: 0;
+	margin-block: 1.5rem;
+}

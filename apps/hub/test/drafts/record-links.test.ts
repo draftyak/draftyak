@@ -201,7 +201,7 @@ describe("native draft record links", () => {
 				f.store.write((tx) => f.freeze.releaseInTransaction(tx, bound, snapshot.outbox)),
 			).toThrow(refused);
 			expect(() =>
-				f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 1, row.id, row.id)),
+				f.store.write((tx) => f.revisions.prepareLockInTransaction(tx, bound, 1, row.id, null)),
 			).toThrow(refused);
 		},
 	);
@@ -225,7 +225,7 @@ describe("native draft record links", () => {
 			]),
 		);
 		expect(() =>
-			f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 1, row.id, row.id)),
+			f.store.write((tx) => f.revisions.prepareLockInTransaction(tx, bound, 1, row.id, null)),
 		).toThrow(refused);
 		expect(() =>
 			f.store.write((tx) => f.freeze.proofInTransaction(tx, bound, snapshot.outbox)),

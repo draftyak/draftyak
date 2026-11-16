@@ -18,6 +18,7 @@ import {
 	startInDocker,
 } from "../docker.ts";
 import { exec, sleep } from "../exec.ts";
+import { nodeVersions } from "../node.ts";
 import { kitDir, repoRoot } from "../repo.ts";
 
 // Pinned at first use (2026-10-17): the multi-arch OCI index of debian:bookworm-slim. It has no
@@ -127,18 +128,19 @@ it(
 );
 
 // M0.5's pinned Alpine Node: the smallest image here that can serve HTTP.
+const versions = nodeVersions();
 const NODE = (
 	JSON.parse(readFileSync(path.join(repoRoot, "tools", "fetch-node", "images.json"), "utf8")) as {
 		musl: Record<string, string>;
 	}
-).musl["26.12.0"];
+).musl[versions.bundled];
 
 it(
 	"starts a background container on a published loopback port, then stops and removes it",
 	options,
 	async (ctx) => {
 		await needDocker(ctx);
-		if (NODE === undefined) throw new Error("images.json has no musl 26.12.0 image");
+		if (NODE === undefined) throw new Error(`images.json has no musl ${versions.bundled} image`);
 		// Answers whether host.docker.internal resolves, which a Linux engine needs hostGateway for.
 		const server = [
 			'require("node:dns").lookup("host.docker.internal", (error) => {',
@@ -184,7 +186,7 @@ it(
 	options,
 	async (ctx) => {
 		await needDocker(ctx);
-		if (NODE === undefined) throw new Error("images.json has no musl 26.12.0 image");
+		if (NODE === undefined) throw new Error(`images.json has no musl ${versions.bundled} image`);
 		const script = [
 			`const { startInDocker } = await import(${JSON.stringify(pathToFileURL(path.join(kitDir, "docker.ts")).href)});`,
 			`const container = await startInDocker(${JSON.stringify({

@@ -13,6 +13,16 @@ export {
 	type ProviderStreamProgress,
 } from "./ai/providers/streaming.ts";
 export {
+	closeFailedNativeDeviceContext,
+	type NativeDeviceApiConfig,
+	type NativeDeviceContext,
+	NativeDeviceContextError,
+	type NativeDeviceContextErrorCode,
+	type NativeDeviceEndpoint,
+	openNativeDeviceApi,
+	openNativeDeviceContext,
+} from "./api/device/context.ts";
+export {
 	AUDIT_EXPORT_MAX_BYTES,
 	AUDIT_EXPORT_MAX_EVENTS,
 	AUDIT_VERIFY_BATCH_SIZE,
@@ -31,6 +41,7 @@ export {
 export { AuthzError, type AuthzErrorCode, deviceApiError } from "./authz/errors.ts";
 export { type NativeDevicePeer, NativeDeviceTls } from "./authz/native-peer.ts";
 export { cliConfirmPinScope, pairConfirmPinScope, revokePinScope } from "./authz/scopes.ts";
+export * from "./content/ingest.ts";
 export {
 	type CredentialBinding,
 	type CredentialDescriptor,
@@ -50,6 +61,7 @@ export {
 } from "./drafts/freeze.ts";
 export { normalizeDraftBody, normalizeDraftContent } from "./drafts/normalize.ts";
 export {
+	type ConsumedDraftDisposition,
 	type DraftAppend,
 	type DraftBinding,
 	type DraftCreation,
@@ -327,4 +339,19 @@ export {
 	type PluginRegistryErrorCode,
 	type PluginRegistryOptions,
 } from "./plugins/registry/index.ts";
+export {
+	closeNativeBackupPreparation,
+	type NativeBackupPreparation,
+	type NativeBackupPreparationInput,
+	NativeBackupRestoreError,
+	prepareNativeBackup,
+	resetNativeBackupAuthority,
+} from "./recovery/backup-restore.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";
+export * from "./sync/apply.ts";
+export * from "./sync/cursors.ts";
+export * from "./sync/engine.ts";
+export * from "./sync/pages.ts";
+export * from "./sync/parsed.ts";
+export * from "./sync/raw-store.ts";
+export * from "./sync/thread.ts";

@@ -534,6 +534,22 @@ export function startInventoryAfter(
 	return execution;
 }
 
+// Failure observation does not establish precheck settlement or physical closure.
+export function observeInventoryFailure(
+	execution: InventoryExecution,
+	onFailure: (diagnostic: string) => void,
+): void {
+	const timing = executions.get(execution);
+	if (timing === undefined) throw failed();
+	void execution.reported.then(undefined, () => {
+		try {
+			onFailure(`file-name inventory failed [${timing.diagnostic()}]`);
+		} catch {
+			// An observer cannot replace the original reporting or completion outcome.
+		}
+	});
+}
+
 // Reporting keeps its earlier deadline; caller completion additionally requires the
 // actual precheck settlement and physical closure within the original deadline.
 export function joinInventoryExecution(execution: InventoryExecution): Promise<void> {

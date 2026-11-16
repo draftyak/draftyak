@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { changedApplication, heavyApplications } from "./app-heavy.ts";
 import { appendSummary, cliArgs, git, revision, runCli, setOutputs } from "./lib.ts";
@@ -18,6 +18,10 @@ export interface Areas {
 	readonly strayRust: readonly string[];
 }
 
+export type SelectionOrigin = "diff" | "tracked-fallback";
+
+const postponedSpike = "spikes/s12-sms";
+const postponedHeavyDisposition = `${postponedSpike} test:heavy is postponed and not run for the desktop pilot.`;
 const communityFiles = new Set(["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES"]);
 const toolchainFiles = new Set(["rust-toolchain.toml", "rust-toolchain"]);
 // Every heavy suite depends on these; so does pnpm-lock.yaml when no package.json changed.
@@ -161,20 +165,142 @@ export function isDocs(file: string): boolean {
 	return /\.md$/i.test(file) || communityFiles.has(file) || /^spikes\/[^/]+\/evidence\//.test(file);
 }
 
-// The Cargo workspace holding a file: the nearest [workspace] manifest above it, else the nearest
-// package. Each Rust spike is its own workspace; the repo root never is one.
+// Only unambiguous literal workspace metadata can associate an external package with crates/.
+// Cargo still validates the complete manifests when the selected Rust job builds the workspace.
+function cargoSections(source: string): { package?: string; workspace?: string } | undefined {
+	if (source.includes('"""') || source.includes("'''")) return undefined;
+	const sections: { package?: string[]; workspace?: string[] } = {};
+	let current: "package" | "workspace" | undefined;
+	for (const raw of source.split(/\r?\n/)) {
+		const line = raw.replace(/"(?:[^"\\]|\\.)*"|'[^']*'|#.*/g, (part) =>
+			part.startsWith("#") ? "" : part,
+		);
+		if (line.trimStart().startsWith("[")) {
+			const name = /^\s*\[(package|workspace)\]\s*$/.exec(line)?.[1];
+			current = name === "package" || name === "workspace" ? name : undefined;
+			if (current) {
+				if (sections[current] !== undefined) return undefined;
+				sections[current] = [];
+			}
+		} else if (current) sections[current]?.push(line);
+	}
+	return {
+		package: sections.package?.join("\n"),
+		workspace: sections.workspace?.join("\n"),
+	};
+}
+
+function cargoValue(
+	section: string,
+	key: "workspace" | "members" | "exclude",
+): { present: boolean; value: string } | undefined {
+	const pattern = new RegExp(`^[ \\t]*(?:${key}|"${key}"|'${key}')[ \\t]*=[ \\t]*`, "gm");
+	const matches = [...section.matchAll(pattern)];
+	if (matches.length === 0) return { present: false, value: "" };
+	if (matches.length !== 1) return undefined;
+	const match = matches[0];
+	return match === undefined
+		? undefined
+		: { present: true, value: section.slice((match.index ?? 0) + match[0].length) };
+}
+
+const cargoPath = (value: string): string | undefined =>
+	/^(['"])([a-z0-9_@./-]+)\1$/i.exec(value.trim())?.[2];
+
+function cargoPaths(value: string): string[] | undefined {
+	const array = /^\[([\s\S]*?)\][ \t]*(?:\n|$)/.exec(value);
+	if (array?.[1] === undefined) return undefined;
+	if (array[1].trim() === "") return [];
+	const entries = array[1].split(",");
+	if (entries.at(-1)?.trim() === "") entries.pop();
+	const paths = entries.map(cargoPath);
+	return paths.every((entry): entry is string => entry !== undefined) ? paths : undefined;
+}
+
+function cargoDirectory(base: string, value: string): string | undefined {
+	if (path.posix.isAbsolute(value) || path.win32.isAbsolute(value)) return undefined;
+	const directory = path.posix.normalize(path.posix.join(base, value)).replace(/\/+$/, "");
+	return directory !== "." && folderName(directory) ? directory : undefined;
+}
+
+function containedCargo(root: string, directory: string): string | undefined {
+	try {
+		const actualRoot = realpathSync(root);
+		const expected = path.resolve(actualRoot, directory, "Cargo.toml");
+		const actual = realpathSync(expected);
+		const relative = path.relative(actualRoot, actual);
+		if (
+			path.isAbsolute(relative) ||
+			relative === ".." ||
+			relative.startsWith(`..${path.sep}`) ||
+			path.relative(expected, actual) !== ""
+		)
+			return undefined;
+		return actual;
+	} catch {
+		return undefined;
+	}
+}
+
+function externalCratesWorkspace(root: string, member: string, source: string): string | undefined {
+	const declaration = cargoSections(source);
+	if (declaration?.package === undefined || !containedCargo(root, member)) return undefined;
+	const pointer = cargoValue(declaration.package, "workspace");
+	if (!pointer?.present) return undefined;
+	const value = cargoPath(pointer.value.split("\n", 1)[0] ?? "");
+	if (value === undefined || cargoDirectory(member, value) !== "crates") return undefined;
+	const manifest = containedCargo(root, "crates");
+	if (manifest === undefined) return undefined;
+	const workspace = cargoSections(readFileSync(manifest, "utf8"));
+	if (workspace?.workspace === undefined) return undefined;
+	// An explicit pointer on the proposed workspace root is not another edge to follow.
+	if (
+		workspace.package !== undefined &&
+		cargoValue(workspace.package, "workspace")?.present !== false
+	)
+		return undefined;
+	const members = cargoValue(workspace.workspace, "members");
+	const excluded = cargoValue(workspace.workspace, "exclude");
+	if (!members?.present || excluded === undefined) return undefined;
+	const memberPaths = cargoPaths(members.value);
+	const excludedPaths = excluded.present ? cargoPaths(excluded.value) : [];
+	if (memberPaths === undefined || excludedPaths === undefined) return undefined;
+	const resolved = memberPaths.map((entry) => cargoDirectory("crates", entry));
+	const exclusions = excludedPaths.map((entry) => cargoDirectory("crates", entry));
+	if (resolved.includes(undefined) || exclusions.includes(undefined)) return undefined;
+	if (new Set(resolved.map((entry) => entry?.toLowerCase())).size !== resolved.length)
+		return undefined;
+	if (!resolved.includes(member)) return undefined;
+	if (
+		exclusions.some(
+			(entry) => entry !== undefined && (member === entry || member.startsWith(`${entry}/`)),
+		)
+	)
+		return undefined;
+	return "crates";
+}
+
+// The nearest ancestor workspace still wins; otherwise accept a proven external crates member,
+// else the nearest package. Each Rust spike is its own workspace; the repo root never is one.
 export function rustWorkspace(root: string, file: string): string | undefined {
 	if (path.posix.isAbsolute(file)) {
 		throw new Error("Rust workspace paths must be repository-relative");
 	}
 	let nearest: string | undefined;
+	let external: string | undefined;
 	for (let dir = path.posix.dirname(file); dir !== "."; dir = path.posix.dirname(dir)) {
 		const manifest = path.join(root, dir, "Cargo.toml");
 		if (!existsSync(manifest)) continue;
-		if (/^\s*\[workspace\]/m.test(readFileSync(manifest, "utf8"))) return dir;
-		nearest ??= dir;
+		const source = readFileSync(manifest, "utf8");
+		if (/^\s*\[workspace\]/m.test(source)) return dir;
+		if (nearest === undefined) {
+			nearest = dir;
+			// An external member's own lock is ignored by its workspace, so it is not covered.
+			if (path.posix.basename(file) !== "Cargo.lock")
+				external = externalCratesWorkspace(root, dir, source);
+		}
 	}
-	return nearest;
+	return external ?? nearest;
 }
 
 // cargo reads only manifests named Cargo.toml, so a [package] or [workspace] table in any other
@@ -220,7 +346,10 @@ export function classify(
 	allFiles: () => readonly string[] = () => tracked(root),
 	packageMetadata: () => readonly WorkspacePackage[] = () =>
 		workspacePackages(readFileSync(path.join(root, "pnpm-lock.yaml"), "utf8")),
+	origin: SelectionOrigin = "diff",
 ): Areas {
+	if (origin !== "diff" && origin !== "tracked-fallback")
+		throw new Error("invalid change selection origin");
 	let docsOnly = files.length > 0;
 	let ts = false;
 	let workflows = false;
@@ -271,6 +400,10 @@ export function classify(
 	const noPackageJson = !files.some((file) => path.posix.basename(file) === "package.json");
 	for (const file of files) {
 		if (isDocs(file)) continue;
+		if (origin === "diff" && (file === postponedSpike || file.startsWith(`${postponedSpike}/`)))
+			throw new Error(
+				`postponed spike implementation requires a separate disposition: ${postponedSpike}`,
+			);
 		docsOnly = false;
 		shared ||= sharedSpikeFiles.has(file);
 		if (file.startsWith(".github/")) workflows = true;
@@ -327,6 +460,9 @@ export function classify(
 			if (manifest.startsWith("crates/")) addWorkspace(manifest);
 		}
 	}
+	// Keep workspace/static and Rust classification intact; only the Android SMS heavy task
+	// is postponed for the desktop pilot. Retained transitive consumers remain selected.
+	spikes.delete(postponedSpike);
 	return {
 		docsOnly,
 		ts,
@@ -365,9 +501,11 @@ function main(argv: readonly string[]): number {
 	const head = revision(args.head ?? (process.env.HEAD_SHA || "HEAD"), "head");
 	let files: readonly string[];
 	let scope: string;
+	let origin: SelectionOrigin = "diff";
 	if (base === "" || /^0+$/.test(base)) {
 		files = tracked(root);
-		scope = "no base revision, so every area";
+		origin = "tracked-fallback";
+		scope = "no base revision, so every retained area";
 	} else {
 		const range = `${revision(base, "base")}...${head}`;
 		try {
@@ -377,12 +515,14 @@ function main(argv: readonly string[]): number {
 			scope = range;
 		} catch (error) {
 			files = tracked(root);
-			scope = `diff failed (${error instanceof Error ? error.message : error}), so every area`;
+			origin = "tracked-fallback";
+			scope = `diff failed (${error instanceof Error ? error.message : error}), so every retained area`;
 		}
 	}
-	const areas = classify(files, root);
+	const areas = classify(files, root, undefined, undefined, origin);
 	const names = areaNames(areas);
 	console.log(`changes: ${scope}: ${files.length} files: ${names.join(", ") || "no areas"}`);
+	console.log(`changes: ${postponedHeavyDisposition}`);
 	const untested = untestedRust(areas);
 	if (untested.length > 0) {
 		console.log(`changes: no spike package's test:heavy or crates/ runs ${untested.join(", ")}`);
@@ -403,7 +543,9 @@ function main(argv: readonly string[]): number {
 		heavy: areas.heavy.join("\n"),
 		"template-smoke": String(areas.templateSmoke),
 	});
-	appendSummary(`### Changed areas\n\n${names.map((name) => `- ${name}`).join("\n") || "none"}`);
+	appendSummary(
+		`### Changed areas\n\n${names.map((name) => `- ${name}`).join("\n") || "none"}\n\n${postponedHeavyDisposition}`,
+	);
 	return 0;
 }
 

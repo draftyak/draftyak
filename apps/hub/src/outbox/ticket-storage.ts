@@ -92,6 +92,8 @@ const appendAudit = AuditChain.prototype.append,
 	verifyAudit = AuditChain.prototype.verify;
 const describeCredential = CredentialVault.prototype.describeInTransaction;
 const derive = MasterKey.prototype.derive;
+const restoreApply = Reflect.apply;
+const restoreResets = new WeakMap<object, (tx: SqlTransaction) => number>();
 const states: readonly string[] = [
 	"ISSUED",
 	"REDEEMED",
@@ -250,6 +252,144 @@ export class SendTicketStorage {
 		this.#vault = vault;
 		this.#clock = clock;
 		this.#key = key;
+		restoreResets.set(this, (tx) => this.#resetForRestore(tx));
+	}
+	#restoreTransaction(tx: SqlTransaction): void {
+		if (this.#destroyed) throw unavailable();
+		assertStoreTransaction(this.#store, tx);
+		restoreApply(verifyAudit, this.#audit, [tx]);
+	}
+	#restoreValid(tx: SqlReader, row: StoredAttempt): void {
+		if (
+			!Ulid.safeParse(row.id).success ||
+			!Ulid.safeParse(row.outbox_id).success ||
+			!Ulid.safeParse(row.ticket_id).success ||
+			typeof row.payload !== "string" ||
+			!types.isUint8Array(row.body) ||
+			!states.includes(row.state) ||
+			!UtcMs.safeParse(row.updated_at).success ||
+			!Number.isSafeInteger(row.audit_seq) ||
+			row.audit_seq < 1 ||
+			!Sha256Hex.safeParse(row.mac).success
+		)
+			throw unavailable();
+		const { mac, ...rest } = row;
+		if (!timingSafeEqual(Buffer.from(mac, "hex"), Buffer.from(this.#mac(rest), "hex")))
+			throw unavailable();
+		const latest = tx.get<{ seq: number; action: string }>(
+			"SELECT seq,action FROM main.audit_events WHERE refs=? ORDER BY seq DESC LIMIT 1",
+			[this.#refs(row)],
+		);
+		if (
+			!latest ||
+			latest.seq !== row.audit_seq ||
+			latest.action !== `send.${row.state.toLowerCase()}`
+		)
+			throw unavailable();
+		restoreApply(restoreOriginal.payload, this, [row]);
+	}
+	#restoreReduce(
+		tx: SqlTransaction,
+		prior: StoredAttempt,
+		state: "NEEDS_REAPPROVAL" | "UNKNOWN",
+	): void {
+		const updatedAt = restoreApply(restoreOriginal.now, this, []);
+		this.#restoreTransaction(tx);
+		if (updatedAt < prior.updated_at) throw unavailable();
+		restoreApply(appendAudit, this.#audit, [
+			tx,
+			{
+				id: newId(updatedAt),
+				at: updatedAt,
+				action: `send.${state.toLowerCase()}`,
+				actor: { kind: "hub", id: null },
+				refs: JSON.parse(this.#refs(prior)),
+			},
+		]);
+		const seq = tx.get<{ audit_seq: number }>(
+			"SELECT audit_seq FROM main.audit_meta WHERE singleton=1",
+		)?.audit_seq;
+		if (!seq || !Number.isSafeInteger(seq)) throw unavailable();
+		const base = {
+			id: prior.id,
+			outbox_id: prior.outbox_id,
+			ticket_id: prior.ticket_id,
+			payload: prior.payload,
+			body: prior.body,
+			state,
+			updated_at: updatedAt,
+			audit_seq: seq,
+		};
+		const saved = { ...base, mac: this.#mac(base) };
+		if (
+			tx.run(
+				"UPDATE main.native_send_attempts SET state=?,updated_at=?,audit_seq=?,mac=? WHERE id=? AND outbox_id=? AND ticket_id=? AND payload=? AND body=? AND state=? AND updated_at=? AND audit_seq=? AND mac=?",
+				[
+					saved.state,
+					saved.updated_at,
+					saved.audit_seq,
+					saved.mac,
+					prior.id,
+					prior.outbox_id,
+					prior.ticket_id,
+					prior.payload,
+					prior.body,
+					prior.state,
+					prior.updated_at,
+					prior.audit_seq,
+					prior.mac,
+				],
+			).changes !== 1
+		)
+			throw unavailable();
+		const actual = tx.get<StoredAttempt>(`${SELECT} WHERE id=?`, [prior.id]);
+		if (!actual) throw unavailable();
+		this.#restoreValid(tx, actual);
+		if (
+			actual.id !== saved.id ||
+			actual.outbox_id !== saved.outbox_id ||
+			actual.ticket_id !== saved.ticket_id ||
+			actual.payload !== saved.payload ||
+			actual.state !== saved.state ||
+			actual.updated_at !== saved.updated_at ||
+			actual.audit_seq !== saved.audit_seq ||
+			actual.mac !== saved.mac ||
+			actual.body.byteLength !== saved.body.byteLength ||
+			!timingSafeEqual(actual.body, saved.body)
+		)
+			throw unavailable();
+	}
+	#resetForRestore(tx: SqlTransaction): number {
+		this.#restoreTransaction(tx);
+		let after: string | undefined;
+		let changed = 0;
+		for (;;) {
+			this.#restoreTransaction(tx);
+			const rows = tx.all<{ id: string }>(
+				after === undefined
+					? "SELECT id FROM main.native_send_attempts ORDER BY id LIMIT 128"
+					: "SELECT id FROM main.native_send_attempts WHERE id>? ORDER BY id LIMIT 128",
+				after === undefined ? [] : [after],
+			);
+			if (rows.length > 128) throw unavailable();
+			let previous = after;
+			for (const { id } of rows) {
+				if (!Ulid.safeParse(id).success || (previous !== undefined && id <= previous))
+					throw unavailable();
+				const row = tx.get<StoredAttempt>(`${SELECT} WHERE id=?`, [id]);
+				if (!row || row.id !== id) throw unavailable();
+				this.#restoreValid(tx, row);
+				if (row.state === "ISSUED" || row.state === "REDEEMED" || row.state === "SENDING") {
+					this.#restoreReduce(tx, row, row.state === "SENDING" ? "UNKNOWN" : "NEEDS_REAPPROVAL");
+					if (!Number.isSafeInteger(changed + 1)) throw unavailable();
+					changed++;
+				}
+				previous = id;
+			}
+			if (rows.length < 128) return changed;
+			if (previous === undefined || previous === after) throw unavailable();
+			after = previous;
+		}
 	}
 	now(): number {
 		if (this.#destroyed) throw unavailable();
@@ -510,5 +650,22 @@ export class SendTicketStorage {
 	destroy(): void {
 		this.#destroyed = true;
 		this.#key.fill(0);
+	}
+}
+
+const restoreOriginal = Object.freeze({
+	payload: SendTicketStorage.prototype.payload,
+	now: SendTicketStorage.prototype.now,
+});
+
+/** Restrict existing persistence DATA in the caller's live write; errors must escape that write. */
+export function resetSendTicketStorageForRestore(storage: unknown, tx: SqlTransaction): number {
+	try {
+		if (!storage || typeof storage !== "object" || types.isProxy(storage)) throw unavailable();
+		const reset = restoreResets.get(storage);
+		if (!reset) throw unavailable();
+		return reset(tx);
+	} catch {
+		throw unavailable();
 	}
 }

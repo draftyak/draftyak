@@ -96,7 +96,7 @@ describe("stored draft and lock times under wall-clock regressions", () => {
 		},
 	);
 	it.each(["backward step", "corrected forward jump"] as const)(
-		"keeps edit, freeze, release, unlock and consume available after a %s",
+		"keeps edit, freeze, release and consume available after a %s",
 		async (kind) => {
 			const f = await fixture(),
 				input = f.make(),
@@ -125,8 +125,8 @@ describe("stored draft and lock times under wall-clock regressions", () => {
 			step();
 			const second = { ...first, outbox: newId() };
 			f.store.write((tx) => f.freeze.freezeInTransaction(tx, bound, 2, second));
-			const lock = f.revisions.current(bound).lockId as string;
-			f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 2, lock, null));
+			f.store.write((tx) => f.freeze.releaseInTransaction(tx, bound, second.outbox));
+			locks.push(...lockTimes(f, second.outbox));
 			step();
 			const three = f.store.write((tx) =>
 				f.revisions.appendInTransaction(tx, { ...input, expectedRev: 2 }),
@@ -144,11 +144,27 @@ describe("stored draft and lock times under wall-clock regressions", () => {
 				stored,
 				stored,
 			]);
-			const consumed = f.revisions.current(bound).lockId as string;
+			const consumed = f.revisions.current(bound),
+				consumedHistory = f.revisions.history(bound),
+				consumedRows = () =>
+					f.store.read((db) => ({
+						lock: db.get("SELECT * FROM native_draft_locks WHERE outbox_id=?", [last.outbox]),
+						events: db.all("SELECT * FROM audit_events ORDER BY seq"),
+						audit: db.all("SELECT * FROM audit_meta"),
+					})),
+				before = consumedRows();
+			expect(consumed.lockId).not.toBeNull();
 			f.time.now = stored + 1000;
-			f.store.write((tx) => f.revisions.setLockInTransaction(tx, bound, 3, consumed, null));
-			expect(f.revisions.current(bound).draft.updatedAt).toBe(stored + 1000);
+			expect(() =>
+				f.store.write((tx) => f.freeze.releaseInTransaction(tx, bound, last.outbox)),
+			).toThrow("Draft revision unavailable");
+			expect(f.revisions.current(bound)).toEqual(consumed);
+			expect(f.revisions.history(bound)).toEqual(consumedHistory);
+			expect(consumedRows()).toEqual(before);
+			f.store.read((db) => f.audit.verify(db));
 			const next = f.reopen();
+			expect(next.revisions.current(bound)).toEqual(consumed);
+			expect(next.revisions.history(bound)).toEqual(consumedHistory);
 			expect(next.revisions.current(bound).draft.rev).toBe(3);
 			expect(next.revisions.history(bound)).toHaveLength(3);
 		},

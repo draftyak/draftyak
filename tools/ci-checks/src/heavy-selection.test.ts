@@ -277,9 +277,13 @@ describe("heavy selection contract", () => {
 			]),
 		);
 		const kit = classify(["spikes/kit/run.ts"], root);
-		for (const pkg of metadata.filter((pkg) => pkg.folder.startsWith("spikes/"))) {
+		expect(metadata.some((pkg) => pkg.folder === "spikes/s12-sms")).toBe(true);
+		for (const pkg of metadata.filter(
+			(pkg) => pkg.folder.startsWith("spikes/") && pkg.folder !== "spikes/s12-sms",
+		)) {
 			expect(kit.spikes, pkg.folder).toContain(pkg.folder);
 		}
+		expect(kit.spikes).not.toContain("spikes/s12-sms");
 		for (const file of ["pnpm-lock.yaml", "vitest.shared.ts", ".node-version"]) {
 			expect(classify([file], root).spikes).toEqual(kit.spikes);
 		}
