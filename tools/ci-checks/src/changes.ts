@@ -287,7 +287,12 @@ export function classify(
 		// Keep existing package selection, while never losing the bounded app suites in that case.
 		if (globalFiles.has(file) || file === "pnpm-lock.yaml") globalApplications = true;
 		const app = changedApplication(file);
-		if (app !== undefined && eligibleApplications().includes(app)) withDependents.add(app);
+		if (app !== undefined && eligibleApplications().includes(app)) {
+			withDependents.add(app);
+			// Doctor's compiled consumer builds the CLI without a production workspace back-edge.
+			if (app === "apps/cli" && eligibleApplications().includes("tools/doctor"))
+				alone.add("tools/doctor");
+		}
 		const pkg = /^(?:packages|plugins)\/[^/]+(?=\/)/.exec(file)?.[0];
 		if (pkg !== undefined && isPackage(root, pkg)) withDependents.add(pkg);
 		if (pkg !== undefined && smokePackages.has(pkg)) templateSmoke = true;
