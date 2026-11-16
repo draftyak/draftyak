@@ -24,6 +24,7 @@ import {
 	nativePairingWindows,
 	openHubSession,
 } from "../../lifecycle/session.ts";
+import { createNativeEventWebSocket, type NativeEventWebSocket } from "./events-websocket.ts";
 import {
 	captureNativeOutboxFooterPolicy,
 	createNativeOutboxReadContext,
@@ -90,6 +91,8 @@ interface Owner {
 	sidecar?: DevicePairingAuthority;
 	outbox?: NativeOutboxReadContext;
 	runtime?: NativeRuntimeState;
+	events?: NativeEventWebSocket;
+	eventsClosed: boolean;
 	listenerClose?: Promise<void>;
 	listenerClosed: boolean;
 	sessionClosed: boolean;
@@ -132,6 +135,10 @@ function closeOwner(owner: Owner): Promise<void> {
 	const { promise, resolve, reject } = Promise.withResolvers<void>();
 	owner.closing = promise;
 	const run = async (): Promise<void> => {
+		if (owner.events && !owner.eventsClosed) {
+			await owner.events.close();
+			owner.eventsClosed = true;
+		}
 		if (owner.sidecar) closeSidecar.call(owner.sidecar);
 		owner.outbox?.close();
 		if (owner.runtime) await owner.runtime.close();
@@ -362,6 +369,7 @@ async function openContext(
 ): Promise<NativeDeviceContext> {
 	const owner: Owner = {
 		phase: "opening",
+		eventsClosed: false,
 		listenerClosed: false,
 		sessionClosed: false,
 		pending: new Set(),
@@ -374,6 +382,7 @@ async function openContext(
 		if (startup) {
 			try {
 				if (!startup.masterKey) throw new NativeDeviceContextError("CONTEXT_OPTIONS");
+				owner.events = createNativeEventWebSocket(session);
 				if (startup.runtimeMode !== undefined)
 					owner.runtime = createNativeRuntimeState(session, startup.runtimeMode);
 				owner.outbox = createNativeOutboxReadContext(session, startup.masterKey, owner.runtime);
@@ -476,7 +485,16 @@ export async function openNativeDeviceApi(
 		return await openContext(
 			options,
 			(peer, socket, _context, owner) => {
-				attachNativeDeviceHttp(socket, (request) => dispatch(owner, peer, captured, request));
+				attachNativeDeviceHttp(
+					socket,
+					(request) => dispatch(owner, peer, captured, request),
+					(request, upgradeSocket, head) => {
+						admitted(owner);
+						if (upgradeSocket !== socket || request.socket !== socket) return unavailable();
+						const events = owner.events ?? unavailable();
+						events.upgrade(peer, request, upgradeSocket, head);
+					},
+				);
 			},
 			startup,
 		);
