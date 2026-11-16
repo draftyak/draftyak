@@ -1,4 +1,4 @@
-import { KeyObject, verify } from "node:crypto";
+import { generateKeyPairSync, KeyObject, verify } from "node:crypto";
 import {
 	type BigIntStats,
 	closeSync,
@@ -57,6 +57,8 @@ type Cleanup = () => Promise<void>;
 type DescriptorOwnership = "owned" | "indeterminate";
 const failedCleanup = new Set<Cleanup>();
 const keyType = Object.getOwnPropertyDescriptor(KeyObject.prototype, "type")?.get;
+let keyAlgorithm: PropertyDescriptor["get"];
+let keyAlgorithmInitialized = false;
 const fields = [
 	"dev",
 	"ino",
@@ -82,6 +84,25 @@ function sameStat(first: BigIntStats, second: BigIntStats): boolean {
 function regular(stat: BigIntStats): void {
 	if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n || stat.ino === 0n)
 		refuse("payload");
+}
+
+function nativeKeyAlgorithm(key: KeyObject): unknown {
+	if (!keyAlgorithmInitialized) {
+		keyAlgorithmInitialized = true;
+		// Only the native getter is retained; these generated keys have no release role.
+		const { publicKey } = generateKeyPairSync("ed25519");
+		let prototype: object | null = Object.getPrototypeOf(publicKey);
+		for (let depth = 0; depth < 4 && prototype && prototype !== KeyObject.prototype; depth++) {
+			const getter = Object.getOwnPropertyDescriptor(prototype, "asymmetricKeyType")?.get;
+			if (typeof getter === "function") {
+				keyAlgorithm = getter;
+				break;
+			}
+			prototype = Object.getPrototypeOf(prototype);
+		}
+	}
+	if (!keyAlgorithm) refuse("input");
+	return Reflect.apply(keyAlgorithm, key, []);
 }
 
 function input(raw: CandidatePayloadOptions): CandidatePayloadOptions {
@@ -111,7 +132,7 @@ function input(raw: CandidatePayloadOptions): CandidatePayloadOptions {
 			Reflect.apply(keyType, key, []) !== "public" ||
 			["type", "asymmetricKeyType", "export"].some((name) => Object.hasOwn(key, name)) ||
 			types.isProxy(Object.getPrototypeOf(key)) ||
-			key.asymmetricKeyType !== "ed25519"
+			nativeKeyAlgorithm(key) !== "ed25519"
 		)
 			refuse("input");
 		return { root: releaseRoot(copy.root), expected: copy.expected, publicKey: key };
