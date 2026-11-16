@@ -42,6 +42,8 @@ describe("mbox raw-message size", () => {
 	it("accepts the actual bounded view when a shadowed byteLength overstates its size", async () => {
 		const raw = Uint8Array.from([0xff, 0x41, 0x42, 0xff]).subarray(1, 3);
 		Object.defineProperty(raw, "byteLength", { value: 100 });
+		Object.defineProperty(raw, "byteOffset", { value: 0 });
+		Object.defineProperty(raw, "buffer", { value: Uint8Array.from([0x58, 0x59]).buffer });
 		const chunks: Uint8Array[] = [];
 		for await (const chunk of writeMbox([message(raw)], { maxMessageBytes: 2 })) {
 			chunks.push(chunk);
@@ -49,5 +51,23 @@ describe("mbox raw-message size", () => {
 		expect(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).subarray(-3)).toEqual(
 			Buffer.from([0x41, 0x42, 0x0a]),
 		);
+	});
+
+	it("snapshots the bounded bytes before envelope metadata can resize their buffer", async () => {
+		const backing = new ArrayBuffer(2, { maxByteLength: 100 });
+		const raw = new Uint8Array(backing);
+		raw.set([0x41, 0x42]);
+		const record = {
+			raw,
+			get envelopeFrom() {
+				backing.resize(100);
+				return "sender@example.invalid";
+			},
+			receivedAtMs: 0,
+		};
+		const chunks: Uint8Array[] = [];
+		for await (const chunk of writeMbox([record], { maxMessageBytes: 2 })) chunks.push(chunk);
+		const expected = Buffer.from("From sender@example.invalid Thu Jan  1 00:00:00 1970\nAB\n");
+		expect(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))).toEqual(expected);
 	});
 });
