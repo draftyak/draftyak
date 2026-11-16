@@ -18,10 +18,10 @@ import {
 export type Tier = "unit" | "heavy" | "live" | "device";
 
 export const tierFiles: Readonly<Record<Tier, string>> = {
-	unit: "**/*.test.ts",
-	heavy: "**/*.heavy.test.ts",
-	live: "**/*.live.test.ts",
-	device: "**/*.device.test.ts",
+	unit: "**/*.test.{ts,tsx}",
+	heavy: "**/*.heavy.test.{ts,tsx}",
+	live: "**/*.live.test.{ts,tsx}",
+	device: "**/*.device.test.{ts,tsx}",
 };
 
 // The tier is Vitest's --mode (default "test" = unit): a plain flag, the same in every shell.
@@ -44,6 +44,8 @@ export function vitestConfig(env: ConfigEnv): ViteUserConfig {
 		// No .env loading: live secrets reach tests only through the spike kit.
 		envDir: false,
 		test: {
+			// Bound per-package forks when workspace tasks share the same machine.
+			maxWorkers: 2,
 			include: [tierFiles[tier]],
 			exclude: tier === "unit" ? [...defaultExclude, ...otherTiers] : defaultExclude,
 			passWithNoTests: tier !== "unit",

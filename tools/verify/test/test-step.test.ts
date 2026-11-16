@@ -10,13 +10,16 @@ const selections = [
 function fakeContext(invoke: (index: number) => Promise<number>): {
 	readonly context: StepContext;
 	readonly calls: string[][];
+	readonly environments: (NodeJS.ProcessEnv | undefined)[];
 } {
 	const calls: string[][] = [];
+	const environments: (NodeJS.ProcessEnv | undefined)[] = [];
 	const unexpected = async (): Promise<never> => {
 		throw new Error("Unexpected verification command");
 	};
 	return {
 		calls,
+		environments,
 		context: {
 			root: ".",
 			profile: "default",
@@ -26,8 +29,9 @@ function fakeContext(invoke: (index: number) => Promise<number>): {
 			node: unexpected,
 			pnpm: unexpected,
 			biome: unexpected,
-			turbo: async (args) => {
+			turbo: async (args, options) => {
 				calls.push([...args]);
+				environments.push(options?.env);
 				return invoke(calls.length - 1);
 			},
 		},
@@ -35,6 +39,16 @@ function fakeContext(invoke: (index: number) => Promise<number>): {
 }
 
 describe("isolated verification unit-test step", () => {
+	it("bounds each workspace selection without changing its coverage or the caller environment", async () => {
+		const { context, calls, environments } = fakeContext(async () => 0);
+		context.env.TURBO_CONCURRENCY = "64";
+		context.env.DYTEST_KEEP = "retained";
+		expect(await step.run(context)).toEqual({ status: "passed" });
+		expect(calls).toEqual(selections);
+		expect(environments).toEqual([{ TURBO_CONCURRENCY: "1" }, { TURBO_CONCURRENCY: "1" }]);
+		expect(context.env).toEqual({ TURBO_CONCURRENCY: "64", DYTEST_KEEP: "retained" });
+	});
+
 	it.each(["zero", "nonzero", "throw"] as const)(
 		"awaits both selections without overlap or early completion after first %s",
 		async (firstOutcome) => {
