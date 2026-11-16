@@ -5,6 +5,11 @@ export const MBOX_CHUNK_BYTES = 65_536;
 export const MBOX_MAX_MESSAGES = 10_000;
 export const MBOX_MAX_OUTPUT_BYTES = 1_073_741_824;
 
+const byteLength = Object.getOwnPropertyDescriptor(
+	Object.getPrototypeOf(Uint8Array.prototype),
+	"byteLength",
+)?.get;
+
 export interface MboxMessage {
 	readonly raw: Uint8Array;
 	readonly envelopeFrom: string;
@@ -49,6 +54,16 @@ function limit(value: number | undefined, maximum: number): number {
 
 function checkAbort(signal: AbortSignal | undefined): void {
 	if (signal?.aborted) throw new MboxError("ABORTED");
+}
+
+function rawByteLength(raw: Uint8Array): number {
+	try {
+		const length: unknown = byteLength?.call(raw);
+		if (typeof length !== "number") throw new MboxError("BAD_INPUT");
+		return length;
+	} catch {
+		throw new MboxError("BAD_INPUT");
+	}
 }
 
 function envelope(message: MboxMessage): Uint8Array {
@@ -171,7 +186,7 @@ export async function* writeMbox(
 			const message = result.value;
 			const input = message?.raw;
 			if (!(input instanceof Uint8Array)) throw new MboxError("BAD_INPUT");
-			if (input.byteLength > maxMessageBytes) throw new MboxError("MESSAGE_TOO_LARGE");
+			if (rawByteLength(input) > maxMessageBytes) throw new MboxError("MESSAGE_TOO_LARGE");
 			const prefix = envelope(message);
 			// Copy once before yielding, so caller mutation cannot change this record.
 			const raw = new Uint8Array(input);
