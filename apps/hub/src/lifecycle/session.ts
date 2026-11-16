@@ -37,6 +37,7 @@ import { systemClock, type TimerClock } from "../kernel/clock.ts";
 import { admitDataFolder, type DataFolder } from "../kernel/data-directory.ts";
 import { MasterKey } from "../kernel/master-key.ts";
 import { HUB_NAMESPACES, migrateHubSchemas } from "../kernel/namespaces.ts";
+import { PluginActivationLifetime } from "../kernel/plugin-runtime-lifetime.ts";
 import type { BundledPluginPin } from "../plugins/installer/index.ts";
 import { rootDirectory } from "../plugins/installer/tree.ts";
 import { openNativePluginRegistry, type PluginRegistry } from "../plugins/registry/index.ts";
@@ -161,6 +162,7 @@ const destroyAudit = AuditChain.prototype.destroy;
 const lockIdentity = HubIdentity.prototype.lock;
 const lockPins = PinService.prototype.lock;
 const lockDevices = DeviceRegistry.prototype.lock;
+const closeRuntimeLifetime = PluginActivationLifetime.prototype.close;
 const redacted = (): string => "[REDACTED]";
 // One session per data folder in this process, from the start of its open until its store closes.
 const live = new Set<string>();
@@ -178,6 +180,7 @@ interface NativeOwner {
 	phase: "open" | "closing" | "closed";
 	native?: NativePluginSessionParts;
 	rootStat?: BigIntStats;
+	runtimeLifetime?: PluginActivationLifetime;
 	pluginsPromise?: Promise<PluginRegistry>;
 	accountApprovals?: NativeAccountApprovalsHandle;
 	accountApprovalsClosed: boolean;
@@ -235,6 +238,32 @@ export function assertHubSessionAdmission(session: unknown): void {
 	} catch {
 		throw new HubSessionError("SESSION_UNAVAILABLE");
 	}
+}
+
+/** Original-session cleanup ownership only; this ledger grants no plugin authority. */
+export function nativePluginRuntimeLifetime(session: unknown): PluginActivationLifetime {
+	if (arguments.length !== 1) throw new HubSessionError("SESSION_UNAVAILABLE");
+	const owner = sessionOwner(session, "open");
+	owner.runtimeLifetime ??= new PluginActivationLifetime();
+	if (owner.runtimeLifetime.closing) throw new HubSessionError("SESSION_UNAVAILABLE");
+	return owner.runtimeLifetime;
+}
+
+/** Deep ownership check; held admission permits cleanup, never allocation or reopening. */
+export function assertNativePluginRuntimeLifetimeOwner(
+	session: unknown,
+	expected: PluginActivationLifetime,
+	phase: "open" | "held" = "open",
+): void {
+	if (arguments.length < 2 || arguments.length > 3)
+		throw new HubSessionError("SESSION_UNAVAILABLE");
+	const owner = sessionOwner(session, phase);
+	if (
+		!owner.runtimeLifetime ||
+		owner.runtimeLifetime !== expected ||
+		(phase === "open" && owner.runtimeLifetime.closing)
+	)
+		throw new HubSessionError("SESSION_UNAVAILABLE");
 }
 
 /** Internal assertion only: no service parts or proof object leave the original owner. */
@@ -512,6 +541,13 @@ function session(
 		const { promise: closing, resolve, reject } = Promise.withResolvers<void>();
 		owner.closePromise = closing;
 		const draining: Promise<void>[] = [];
+		if (owner.runtimeLifetime) {
+			try {
+				draining.push(closeRuntimeLifetime.call(owner.runtimeLifetime));
+			} catch {
+				draining.push(Promise.reject(new HubSessionError("CLOSE_INCOMPLETE")));
+			}
+		}
 		const approvals = owner.accountApprovals;
 		const recovery = owner.recovery;
 		const pairingWindows = owner.pairingWindows;
