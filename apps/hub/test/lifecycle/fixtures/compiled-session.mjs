@@ -24,6 +24,7 @@ const migrations = [
 	["backup", ["0001_backup_recovery"]],
 	["backupops", ["0001_backup_operations"]],
 	["backupchallenges", ["0001_backup_challenges"]],
+	["ownersettings", ["0001_owner_settings"]],
 ];
 const businessTables = [
 	"audit_meta", "audit_events", "hub_meta", "users", "approval_pins", "jobs", "jobs_meta",
@@ -33,7 +34,7 @@ const businessTables = [
 	"outbox", "approval_challenges", "pair_confirm_operations", "approvals",
 	"native_admin_operations", "native_admin_challenges", "native_backup_recovery",
 	"native_backup_operations", "native_backup_challenges",
-	"native_runtime_settings",
+	"native_runtime_settings", "owner_settings",
 ].sort();
 let phase = "admission";
 
@@ -299,7 +300,7 @@ async function main() {
 		assert.deepEqual(order.slice(beforeHealthy), [...migrations, ...migrations].map(([namespace]) => namespace));
 		assert.equal(modules, 0);
 		process.stdout.write(`${JSON.stringify({
-			ok: true, mode, schemas: 18, businessTables: businessTables.length, bookkeepingTables: 36, recoveryCapsule,
+			ok: true, mode, schemas: 19, businessTables: businessTables.length, bookkeepingTables: 38, recoveryCapsule,
 			beforeIdentity: true, refused, failedOpenClosed: mode !== "positive",
 			failedKeyErased: mode !== "positive", reopened: true, auditVerified: true, accountsRoundTrip: true, modules,
 		})}\n`);
