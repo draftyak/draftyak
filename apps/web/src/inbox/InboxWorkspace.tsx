@@ -1,6 +1,6 @@
 import { Account } from "@draftyak/protocol/entities/account";
 import { Draft } from "@draftyak/protocol/entities/draft";
-import { type ReactElement, useId } from "react";
+import { type ReactElement, useId, useLayoutEffect, useMemo, useRef } from "react";
 import { DraftComposer, type DraftComposerProps } from "../composer/DraftComposer.tsx";
 import { ConversationView, type ConversationViewProps } from "../conversation/ConversationView.tsx";
 import { ConversationList, type ConversationListProps } from "./ConversationList.tsx";
@@ -12,18 +12,28 @@ export type InboxWorkspaceAccounts =
 	| { readonly status: "error"; readonly retry: () => void }
 	| { readonly status: "ready"; readonly items: readonly Account[] };
 
-export type InboxWorkspaceComposer =
+export type InboxWorkspaceComposer = {
+	/** Originating presentation snapshot; these IDs confer no request authority. */
+	readonly accountId: Account["id"] | null;
+	readonly conversationId: ConversationListProps["selectedConversationId"];
+} & (
 	| { readonly status: "none" }
 	| { readonly status: "loading" }
 	| { readonly status: "error"; readonly retry: () => void }
-	| { readonly status: "ready"; readonly props: DraftComposerProps };
+	| { readonly status: "ready"; readonly props: DraftComposerProps }
+);
 
 export interface InboxWorkspaceProps {
 	readonly accounts: InboxWorkspaceAccounts;
 	readonly selectedAccountId: Account["id"] | null;
 	readonly onSelectAccount: (id: Account["id"]) => void;
-	readonly conversationList: ConversationListProps;
-	readonly conversationView: ConversationViewProps;
+	readonly conversationList: ConversationListProps & {
+		readonly accountId: Account["id"] | null;
+	};
+	readonly conversationView: ConversationViewProps & {
+		readonly accountId: Account["id"] | null;
+		readonly conversationId: ConversationListProps["selectedConversationId"];
+	};
 	readonly composer: InboxWorkspaceComposer;
 }
 
@@ -46,11 +56,19 @@ function readAccounts(values: readonly Account[]): readonly Account[] | undefine
 
 function boundConversation(
 	account: Account,
-	list: ConversationListProps,
-	view: ConversationViewProps,
+	list: InboxWorkspaceProps["conversationList"],
+	view: InboxWorkspaceProps["conversationView"],
 	composer: InboxWorkspaceComposer,
 ): ConversationViewProps["conversation"] | undefined {
 	try {
+		if (
+			list.accountId !== account.id ||
+			view.accountId !== account.id ||
+			composer.accountId !== account.id ||
+			view.conversationId !== list.selectedConversationId ||
+			composer.conversationId !== list.selectedConversationId
+		)
+			return undefined;
 		if (
 			!["loading", "error", "ready"].includes(list.data.status) ||
 			!["loading", "error", "ready"].includes(view.messages.status) ||
@@ -66,6 +84,7 @@ function boundConversation(
 			return undefined;
 		const conversation = view.conversation === null ? null : readConversation(view.conversation);
 		if (conversation === undefined) return undefined;
+		if (view.conversationId !== (conversation?.id ?? null)) return undefined;
 		if (list.selectedConversationId === null) {
 			if (conversation !== null) return undefined;
 		} else if (
@@ -109,6 +128,29 @@ export function InboxWorkspace({
 			? undefined
 			: boundConversation(selected, conversationList, conversationView, composer);
 	const scope = selected ? JSON.stringify([selected.id, conversation?.id ?? null]) : "";
+	const callbackBinding = useMemo(
+		() => ({
+			accounts,
+			selectedAccountId,
+			onSelectAccount,
+			conversationList,
+			conversationView,
+			composer,
+		}),
+		[accounts, selectedAccountId, onSelectAccount, conversationList, conversationView, composer],
+	);
+	const currentBinding = useRef<object | null>(null);
+	useLayoutEffect(() => {
+		currentBinding.current = callbackBinding;
+		return () => {
+			if (currentBinding.current === callbackBinding) currentBinding.current = null;
+		};
+	}, [callbackBinding]);
+	const current = (): boolean => currentBinding.current === callbackBinding;
+	const onEditIntent =
+		conversation !== undefined && composer.status === "ready"
+			? composer.props.onEditIntent
+			: undefined;
 	return (
 		<section className="inbox-workspace" aria-label="Inbox workspace">
 			<section className="inbox-workspace__accounts" aria-labelledby={accountsHeadingId}>
@@ -118,7 +160,12 @@ export function InboxWorkspace({
 				) : accounts?.status === "error" ? (
 					<>
 						<p role="alert">Accounts unavailable</p>
-						<button type="button" onClick={() => accounts.retry()}>
+						<button
+							type="button"
+							onClick={() => {
+								if (current()) accounts.retry();
+							}}
+						>
 							Retry accounts
 						</button>
 					</>
@@ -134,7 +181,9 @@ export function InboxWorkspace({
 									type="button"
 									className="inbox-workspace__account"
 									aria-current={account.id === selectedAccountId ? "true" : undefined}
-									onClick={() => onSelectAccount(account.id)}
+									onClick={() => {
+										if (current()) onSelectAccount(account.id);
+									}}
 								>
 									<bdi>{account.alias}</bdi>
 									<span>{account.channel === "email" ? "Email" : "Chat"}</span>
@@ -155,21 +204,61 @@ export function InboxWorkspace({
 				) : (
 					<>
 						<div className="inbox-workspace__list">
-							<ConversationList key={selectedAccountId} {...conversationList} />
+							<ConversationList
+								key={selectedAccountId}
+								data={conversationList.data}
+								selectedConversationId={conversationList.selectedConversationId}
+								intents={{
+									selectConversation: (id) => {
+										if (current()) conversationList.intents.selectConversation(id);
+									},
+									retry: () => {
+										if (current()) conversationList.intents.retry();
+									},
+								}}
+							/>
 						</div>
 						<div className="inbox-workspace__detail">
-							<ConversationView key={scope} {...conversationView} />
+							<ConversationView
+								key={scope}
+								conversation={conversationView.conversation}
+								messages={conversationView.messages}
+								selectedMessageId={conversationView.selectedMessageId}
+								bodyPresentation={conversationView.bodyPresentation}
+								intents={{
+									back: () => {
+										if (current()) conversationView.intents.back();
+									},
+									selectMessage: (id) => {
+										if (current()) conversationView.intents.selectMessage(id);
+									},
+									retry: () => {
+										if (current()) conversationView.intents.retry();
+									},
+								}}
+							/>
 						</div>
 						{conversation !== null && (
 							<div className="inbox-workspace__composer">
 								{composer.status === "ready" ? (
-									<DraftComposer key={scope} {...composer.props} />
+									<DraftComposer
+										key={scope}
+										{...composer.props}
+										onEditIntent={(intent) => {
+											if (current()) return onEditIntent?.(intent);
+										}}
+									/>
 								) : composer.status === "loading" ? (
 									<p role="status">Loading reply draft</p>
 								) : composer.status === "error" ? (
 									<>
 										<p role="alert">Reply draft unavailable</p>
-										<button type="button" onClick={() => composer.retry()}>
+										<button
+											type="button"
+											onClick={() => {
+												if (current()) composer.retry();
+											}}
+										>
 											Retry reply draft
 										</button>
 									</>
