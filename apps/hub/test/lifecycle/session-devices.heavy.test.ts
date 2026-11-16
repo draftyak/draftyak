@@ -30,7 +30,7 @@ afterEach(async () => {
 		for (const client of transport.devices) client.socket.destroy();
 		await transport.tls.close();
 	}
-	f.remove();
+	await f.remove();
 });
 
 const WALL = 1_800_000_000_000;
@@ -91,7 +91,7 @@ it("bootstraps a real session owner over TLS and PIN, preserves it on reopen and
 		);
 	});
 	await closeTransport(first.native);
-	first.session.close();
+	await first.session.close();
 	expect(() => first.session.devices.currentState()).toThrow("UNAVAILABLE");
 	const second = await open();
 	expect(second.session.devices).not.toBe(first.session.devices);
@@ -123,7 +123,7 @@ it("persists a restore epoch without restoring the earlier peer's approval autho
 		expect(() => first.native.authorizer.requirePeerDevice(db, client.peer, "approve")).toThrow();
 	});
 	await closeTransport(first.native);
-	first.session.close();
+	await first.session.close();
 	const second = await open();
 	expect(second.session.devices.currentState()).toEqual(restored);
 	expect(await second.session.identityProvider.users()).toEqual([{ id: ownerId }]);
@@ -141,7 +141,7 @@ it("refuses an in-flight native bootstrap after the session closes", async () =>
 	const candidate = admit(native, client);
 	const preparing = session.devices.prepareBootstrap(candidate, PIN);
 	const rejected = expect(preparing).rejects.toThrow();
-	session.close();
+	await session.close();
 	await rejected;
 	expect(() => session.devices.currentState()).toThrow("UNAVAILABLE");
 	const reopened = await f.open();
@@ -175,7 +175,7 @@ it("selects the captured module identity directory without granting its users na
 	expect(owner(native)).not.toBe(DIRECTORY_USER);
 	expect(session.devices.currentState().ownerUserId).toBe(owner(native));
 	expect(await session.identityProvider.users()).toEqual([{ id: DIRECTORY_USER }]);
-	session.close();
+	await session.close();
 	expect(() => session.identityProvider.users()).toThrow();
 	expect(() => session.identityProvider.maxOwners()).toThrow();
 });

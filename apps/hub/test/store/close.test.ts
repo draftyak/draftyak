@@ -22,7 +22,12 @@ afterEach(() => {
 	rmSync(f.dir, { recursive: true, force: true });
 });
 function reopen(): HubStore {
-	const store = new HubStore({ filename: f.filename, nativeBinding, masterKey: f.key });
+	const store = new HubStore({
+		filename: f.filename,
+		nativeBinding,
+		masterKey: f.key,
+		migrations: f.migrations,
+	});
 	opened.push(store);
 	return store;
 }

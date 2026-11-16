@@ -536,3 +536,112 @@ describe("shared refresh and revision coordination", () => {
 		expect(refreshes).toBe(1);
 	});
 });
+
+describe("current original credential binding projection", () => {
+	it("projects only its exact binding and sees uncommitted replacement without taking rollback ownership", async () => {
+		const f = await fixture(),
+			owner = gmail(),
+			reference = f.create(owner, token(later()));
+		f.create(slack(owner.ownerId), slackValue());
+		f.create(slackApp(owner.ownerId), appValue());
+		f.create(provider(owner.ownerId), keyValue());
+		const otherOwner = gmail(),
+			missingOwner = gmail(),
+			otherReference = f.create(otherOwner, token(later()));
+		const auditCount = f.actions().length;
+		const current = f.store.write((tx) => f.vault.describeBindingInTransaction(tx, owner));
+		expect(current).toEqual({ reference, generation: 1, binding: owner });
+		expect(Object.isFrozen(current) && Object.isFrozen(current.binding)).toBe(true);
+		const otherCurrent = f.store.write((tx) =>
+			f.vault.describeBindingInTransaction(tx, otherOwner),
+		);
+		expect(otherCurrent).toEqual({ reference: otherReference, generation: 1, binding: otherOwner });
+		expect(() =>
+			f.store.write((tx) => f.vault.describeBindingInTransaction(tx, missingOwner)),
+		).toThrow(CredentialError);
+		expect(f.actions().length).toBe(auditCount);
+		expect(() =>
+			f.store.write((tx) => {
+				f.vault.replaceInTransaction(tx, reference, owner, token(later()));
+				const replaced = f.vault.describeBindingInTransaction(tx, owner);
+				expect(replaced.reference === reference && replaced.generation === 2).toBe(true);
+				throw new Error("OWNED_CREDENTIAL_ROLLBACK");
+			}),
+		).toThrow("OWNED_CREDENTIAL_ROLLBACK");
+		expect(f.vault.describe(reference, owner).generation).toBe(1);
+		expect(f.actions().length).toBe(auditCount);
+	});
+
+	it("refuses no current match or multiple current matches instead of choosing a reference", async () => {
+		const f = await fixture(),
+			owner = gmail();
+		const read = () => f.store.write((tx) => f.vault.describeBindingInTransaction(tx, owner));
+		expect(read).toThrow(CredentialError);
+		const first = f.create(owner, token(later()));
+		expect(read().reference).toBe(first);
+		const second = f.create(owner, token(later()));
+		expect(read).toThrow(CredentialError);
+		f.store.write((tx) => f.vault.invalidateInTransaction(tx, second, owner, "revoke"));
+		expect(read().reference).toBe(first);
+		f.store.write((tx) => f.vault.invalidateInTransaction(tx, first, owner, "disconnect"));
+		expect(read).toThrow(CredentialError);
+	});
+
+	it("requires its original live write and unlocked vault before hostile transaction or binding hooks", async () => {
+		const f = await fixture(),
+			other = await fixture(),
+			owner = gmail();
+		f.create(owner, token(later()));
+		let retired: SqlTransaction | undefined,
+			hooks = 0;
+		f.store.write((tx) => {
+			retired = tx;
+		});
+		expect(() => f.vault.describeBindingInTransaction(retired as SqlTransaction, owner)).toThrow(
+			CredentialError,
+		);
+		f.store.read((db) => {
+			expect(() => f.vault.describeBindingInTransaction(db as SqlTransaction, owner)).toThrow(
+				CredentialError,
+			);
+		});
+		other.store.write((tx) => {
+			expect(() => f.vault.describeBindingInTransaction(tx, owner)).toThrow(CredentialError);
+		});
+		f.store.write((tx) => {
+			const proxy = new Proxy(tx, {
+				get() {
+					hooks++;
+					throw new Error("OWNED_CREDENTIAL_SQL_HOOK");
+				},
+			});
+			expect(() => f.vault.describeBindingInTransaction(proxy, owner)).toThrow(CredentialError);
+			const fake = {
+				all() {
+					hooks++;
+				},
+				get() {
+					hooks++;
+				},
+				run() {
+					hooks++;
+				},
+			};
+			expect(() =>
+				f.vault.describeBindingInTransaction(fake as unknown as SqlTransaction, owner),
+			).toThrow(CredentialError);
+			const hostile = new Proxy(owner, {
+				get() {
+					hooks++;
+					throw new Error("OWNED_CREDENTIAL_BINDING_HOOK");
+				},
+			});
+			expect(() => f.vault.describeBindingInTransaction(tx, hostile)).toThrow(CredentialError);
+		});
+		expect(hooks).toBe(0);
+		f.vault.destroy();
+		f.store.write((tx) => {
+			expect(() => f.vault.describeBindingInTransaction(tx, owner)).toThrow(CredentialError);
+		});
+	});
+});

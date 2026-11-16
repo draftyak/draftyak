@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { types } from "node:util";
+import { parseStrict } from "@draftyak/protocol/jcs";
 import {
 	type PairingClaim,
+	type PairingRefusalCode,
 	type PairingResult,
 	readPairingClaim,
 	readPairingReveal,
@@ -21,10 +23,30 @@ import {
 	DeviceRegistry,
 	isDeviceRegistry,
 } from "./devices.ts";
+import { takePostBootstrapPairingCandidate } from "./pairing-windows.ts";
 
 export interface VerifiedCandidate {
 	readonly __verifiedCandidate: never;
 }
+
+/** A fixed wire refusal; native state and parser diagnostics never reach the caller. */
+export class DevicePairingRefusal extends Error {
+	readonly code: PairingRefusalCode;
+	constructor(code: PairingRefusalCode) {
+		super(code);
+		this.name = "DevicePairingRefusal";
+		this.code = code;
+		Object.defineProperty(this, "code", { writable: false, configurable: false });
+	}
+}
+
+const pairingRefusals = new WeakSet<object>();
+const pairingRefuse = (code: PairingRefusalCode): never => {
+	const error = new DevicePairingRefusal(code);
+	pairingRefusals.add(error);
+	throw error;
+};
+
 interface Candidate {
 	readonly registry: DeviceRegistry;
 	readonly transaction: SqlTransaction;
@@ -81,6 +103,8 @@ export function takeCandidate(
 	proof: VerifiedCandidate,
 ): CandidateEvidence {
 	if (typeof proof !== "object" || proof === null || types.isProxy(proof)) return refuse();
+	const postBootstrap = takePostBootstrapPairingCandidate(registry, tx, proof);
+	if (postBootstrap !== undefined) return postBootstrap;
 	const candidate = candidates.get(proof);
 	candidates.delete(proof);
 	if (
@@ -141,94 +165,148 @@ export class DevicePairingAuthority {
 		this.#closed ||= spent.has(this.#window.pid);
 		active.set(registry, this);
 	}
-	claim(tx: SqlTransaction, peer: NativeDevicePeer, body: Uint8Array): PairingResult {
-		const current = state.call(this.#registry, tx);
-		if (current.epoch !== this.#epoch) return refuse();
-		const elapsed = performance.now() - this.#started;
-		if (elapsed < 0 || elapsed >= 300_000) {
-			this.close();
-			return refuse();
-		}
-		if (this.#closed || active.get(this.#registry) !== this || this.#attempts >= 3) return refuse();
-		if (current.bootstrapDone) throw new AuthzError("BOOTSTRAP_DONE");
-		let claim: ReturnType<typeof readPairingClaim>;
-		try {
-			claim = readPairingClaim(copyBytes(body, 4096));
-		} catch {
-			return refuse();
-		}
-		if (claim.pid !== this.#window.pid) return refuse();
-		const pid = fromBase64Url(this.#window.pid);
-		if (!pid) return refuse();
-		const spki = nativePeerSpki(this.#registry, peer);
-		const ekm = nativePeerEkm(this.#registry, peer, pid);
-		try {
-			if (verifyPairingClaim(claim, this.#window, { ekm, clientSpkiSha256: spki })) {
-				this.#attempts++;
-				if (this.#attempts >= 3) this.close();
-				return refuse();
-			}
-		} finally {
-			ekm.fill(0);
-		}
-		this.#closed = true;
-		this.#spent.add(this.#window.pid);
-		const answer = Object.freeze({
-			deviceId: newId(),
-			epoch: current.epoch,
-			nh: randomBytes(16).toString("base64url"),
-		});
-		this.#pending = Object.freeze({ claim: Object.freeze(claim), peer, answer });
-		return answer;
+	#failedClaim(): void {
+		this.#attempts++;
+		if (this.#attempts >= 3) this.close();
 	}
-	reveal(tx: SqlTransaction, peer: NativeDevicePeer, body: Uint8Array): CandidateRecord {
+	#chargeInvalidClaim(tx: SqlTransaction, body: Uint8Array | undefined): void {
+		if (!body) return;
+		const value = parseStrict(body);
+		if (
+			typeof value !== "object" ||
+			value === null ||
+			Array.isArray(value) ||
+			Object.getOwnPropertyDescriptor(value, "pid")?.value !== this.#window.pid
+		)
+			return;
 		const current = state.call(this.#registry, tx);
 		const elapsed = performance.now() - this.#started;
 		if (
-			active.get(this.#registry) !== this ||
-			current.epoch !== this.#epoch ||
-			current.bootstrapDone ||
-			elapsed < 0 ||
-			elapsed >= 300_000
-		) {
-			this.close();
-			return refuse();
+			!this.#closed &&
+			active.get(this.#registry) === this &&
+			this.#attempts < 3 &&
+			current.epoch === this.#epoch &&
+			!current.bootstrapDone &&
+			elapsed >= 0 &&
+			elapsed < 300_000
+		)
+			this.#failedClaim();
+	}
+	claim(tx: SqlTransaction, peer: NativeDevicePeer, body: Uint8Array): PairingResult {
+		let snapshot: Uint8Array | undefined;
+		let claim: ReturnType<typeof readPairingClaim>;
+		try {
+			snapshot = copyBytes(body, 4096);
+			claim = readPairingClaim(snapshot);
+		} catch {
+			try {
+				// Only an unambiguous bounded PID can charge a live window.
+				this.#chargeInvalidClaim(tx, snapshot);
+			} catch {}
+			return pairingRefuse("PAIR_CLAIM_INVALID");
 		}
-		const pending = this.#pending;
-		if (!pending || pending.peer !== peer) return refuse();
+		let chargeFailure = false;
+		try {
+			const current = state.call(this.#registry, tx);
+			if (current.epoch !== this.#epoch) return pairingRefuse("PAIR_WINDOW_CLOSED");
+			const elapsed = performance.now() - this.#started;
+			if (elapsed < 0 || elapsed >= 300_000) {
+				this.close();
+				return pairingRefuse("PAIR_WINDOW_CLOSED");
+			}
+			if (
+				this.#closed ||
+				active.get(this.#registry) !== this ||
+				this.#attempts >= 3 ||
+				current.bootstrapDone ||
+				claim.pid !== this.#window.pid
+			)
+				return pairingRefuse("PAIR_WINDOW_CLOSED");
+			const pid = fromBase64Url(this.#window.pid);
+			if (!pid) return pairingRefuse("PAIR_WINDOW_CLOSED");
+			chargeFailure = true;
+			const spki = nativePeerSpki(this.#registry, peer);
+			const ekm = nativePeerEkm(this.#registry, peer, pid);
+			try {
+				const code = verifyPairingClaim(claim, this.#window, { ekm, clientSpkiSha256: spki });
+				if (code) {
+					chargeFailure = false;
+					this.#failedClaim();
+					return pairingRefuse(code);
+				}
+			} finally {
+				ekm.fill(0);
+			}
+			chargeFailure = false;
+			this.#closed = true;
+			this.#spent.add(this.#window.pid);
+			const answer = Object.freeze({
+				deviceId: newId(),
+				epoch: current.epoch,
+				nh: randomBytes(16).toString("base64url"),
+			});
+			this.#pending = Object.freeze({ claim: Object.freeze(claim), peer, answer });
+			return answer;
+		} catch (error) {
+			if (typeof error === "object" && error !== null && pairingRefusals.has(error)) throw error;
+			if (chargeFailure) this.#failedClaim();
+			return pairingRefuse("PAIR_WINDOW_CLOSED");
+		}
+	}
+	reveal(tx: SqlTransaction, peer: NativeDevicePeer, body: Uint8Array): CandidateRecord {
 		let reveal: ReturnType<typeof readPairingReveal>;
 		try {
 			reveal = readPairingReveal(copyBytes(body, 1024));
 		} catch {
-			return refuse();
+			return pairingRefuse("PAIR_REVEAL_INVALID");
 		}
-		if (reveal.pid !== pending.claim.pid) return refuse();
-		let spki: string;
 		try {
-			spki = nativePeerSpki(this.#registry, peer);
+			const current = state.call(this.#registry, tx);
+			const elapsed = performance.now() - this.#started;
+			if (
+				active.get(this.#registry) !== this ||
+				current.epoch !== this.#epoch ||
+				current.bootstrapDone ||
+				elapsed < 0 ||
+				elapsed >= 300_000
+			) {
+				this.close();
+				return pairingRefuse("PAIR_WINDOW_CLOSED");
+			}
+			const pending = this.#pending;
+			if (!pending || pending.peer !== peer || reveal.pid !== pending.claim.pid)
+				return pairingRefuse("PAIR_WINDOW_CLOSED");
+			let spki: string;
+			try {
+				spki = nativePeerSpki(this.#registry, peer);
+			} catch {
+				this.close();
+				return pairingRefuse("PAIR_WINDOW_CLOSED");
+			}
+			this.#pending = undefined;
+			if (spki !== pending.claim.transportSpkiSha256) return pairingRefuse("PAIR_WINDOW_CLOSED");
+			const code = verifyPairingReveal(reveal, pending.claim);
+			if (code) return pairingRefuse(code);
+			const proof = Object.freeze(Object.create(null)) as VerifiedCandidate;
+			candidates.set(proof, {
+				registry: this.#registry,
+				transaction: tx,
+				peer,
+				epoch: current.epoch,
+				evidence: Object.freeze({
+					deviceId: pending.answer.deviceId,
+					window: "sidecar",
+					role: "device",
+					name: pending.claim.name,
+					transportSpkiSha256: spki,
+					signingKey: pending.claim.signingKey,
+				}),
+			});
+			return record.call(this.#registry, tx, proof);
 		} catch (error) {
-			this.close();
-			throw error;
+			if (typeof error === "object" && error !== null && pairingRefusals.has(error)) throw error;
+			return pairingRefuse("PAIR_WINDOW_CLOSED");
 		}
-		this.#pending = undefined;
-		if (spki !== pending.claim.transportSpkiSha256 || verifyPairingReveal(reveal, pending.claim))
-			return refuse();
-		const proof = Object.freeze(Object.create(null)) as VerifiedCandidate;
-		candidates.set(proof, {
-			registry: this.#registry,
-			transaction: tx,
-			peer,
-			epoch: current.epoch,
-			evidence: Object.freeze({
-				deviceId: pending.answer.deviceId,
-				window: "sidecar",
-				role: "device",
-				name: pending.claim.name,
-				transportSpkiSha256: spki,
-				signingKey: pending.claim.signingKey,
-			}),
-		});
-		return record.call(this.#registry, tx, proof);
 	}
 	/** Ordinary pairing stays closed until the commit/reveal producer is delivered. */
 	claimPairing(): never {

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
+	chmodSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
@@ -12,6 +13,11 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { expect } from "vitest";
+import type { Authorizer as SourceAuthorizer } from "../../src/authz/authorizer.ts";
+import type {
+	NativeDevicePeer,
+	NativeDeviceTls as SourceNativeDeviceTls,
+} from "../../src/authz/native-peer.ts";
 import { MasterKey } from "../../src/kernel/master-key.ts";
 import {
 	type HubSession,
@@ -20,6 +26,7 @@ import {
 	openHubSession,
 } from "../../src/lifecycle/session.ts";
 import type { SqlReader } from "../../src/store/store.ts";
+import type { NativeFixture } from "../authz/native-fixture.ts";
 import { moduleSource, pin } from "../extensions/helpers.ts";
 import { nativeBinding } from "../store/helpers.ts";
 
@@ -30,6 +37,13 @@ export const PIN = "582910";
 export const noRows: SqlReader = { get: () => undefined, all: () => [] };
 
 const temporaryRoot = realpathSync.native(os.tmpdir());
+
+function writable(root: string): void {
+	const stat = lstatSync(root);
+	if (stat.isSymbolicLink()) return;
+	chmodSync(root, stat.isDirectory() ? 0o700 : 0o600);
+	if (stat.isDirectory()) for (const name of readdirSync(root)) writable(path.join(root, name));
+}
 
 export interface SessionFixture {
 	/** A canonical data folder, empty until a test writes to it. */
@@ -42,7 +56,7 @@ export interface SessionFixture {
 	open(options?: Partial<HubSessionOptions>): Promise<HubSession>;
 	/** A new folder beside the data folder, never inside it. */
 	scratch(): string;
-	remove(): void;
+	remove(): Promise<void>;
 }
 
 export function sessionFixture(prefix = "draftyak-session-"): SessionFixture {
@@ -70,14 +84,9 @@ export function sessionFixture(prefix = "draftyak-session-"): SessionFixture {
 			return session;
 		},
 		scratch: () => realpathSync.native(mkdtempSync(path.join(root, "scratch-"))),
-		remove() {
-			for (const session of sessions.splice(0)) {
-				try {
-					session.close();
-				} catch {
-					/* Reported by the test that made the close fail. */
-				}
-			}
+		async remove() {
+			for (const session of sessions) await session.close();
+			sessions.length = 0;
 			for (const created of keys.splice(0)) created.destroy();
 			bytes.fill(0);
 			const current = lstatSync(root);
@@ -88,6 +97,7 @@ export function sessionFixture(prefix = "draftyak-session-"): SessionFixture {
 				current.dev !== born.dev
 			)
 				throw new Error("Unowned session fixture folder");
+			writable(root);
 			rmSync(root, { recursive: true, force: true });
 		},
 	};
@@ -175,4 +185,53 @@ export function configureIdentityModule(fixture: SessionFixture): void {
 	if (!module) throw new Error("Missing identity module fixture");
 	module.provides.push("identity");
 	writeFileSync(filename, JSON.stringify(config));
+}
+
+/** Real session services with generated TLS clients; the helper grants no device authority. */
+export async function sessionTransport(
+	session: HubSession,
+	key: MasterKey,
+	folder: string,
+	constructors?: {
+		readonly Authorizer: typeof SourceAuthorizer;
+		readonly NativeDeviceTls: typeof SourceNativeDeviceTls;
+	},
+): Promise<NativeFixture> {
+	const { requireLoopbackNetworkGuard } = await import("../helpers/loopback-network.ts");
+	requireLoopbackNetworkGuard();
+	const [{ Authorizer }, { NativeDeviceTls }] = await Promise.all([
+		import("../../src/authz/authorizer.ts"),
+		import("../../src/authz/native-peer.ts"),
+	]);
+	const nextPeers: NativeDevicePeer[] = [];
+	const waiting: Array<(peer: NativeDevicePeer) => void> = [];
+	const runtime = constructors ?? { NativeDeviceTls, Authorizer };
+	const authorizer = new runtime.Authorizer(session.devices);
+	const tls = new runtime.NativeDeviceTls(session.devices, session.identity, (peer) => {
+		const next = waiting.shift();
+		if (next) next(peer);
+		else nextPeers.push(peer);
+	});
+	const port = await tls.listen();
+	return {
+		dir: folder,
+		filename: path.join(folder, "draftyak.db"),
+		key,
+		store: session.store,
+		audit: session.audit,
+		pins: session.pins,
+		identity: session.identity,
+		registry: session.devices,
+		authorizer,
+		tls,
+		port,
+		devices: [],
+		nextPeers,
+		waiting,
+	};
+}
+
+export async function closeSessionTransport(native: NativeFixture): Promise<void> {
+	for (const client of native.devices) client.socket.destroy();
+	await native.tls.close();
 }

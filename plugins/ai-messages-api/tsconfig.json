@@ -1,0 +1,5 @@
+{
+  "extends": "../../apps/hub/tsconfig.json",
+  "compilerOptions": { "resolveJsonModule": true },
+  "include": ["**/*.ts"]
+}

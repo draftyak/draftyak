@@ -1,12 +1,15 @@
+import { addAbortListener } from "node:events";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	type CredentialActor,
 	type CredentialBinding,
 	CredentialError,
 	type CredentialOwner,
+	CredentialRefreshError,
 	type CredentialUse,
 	type CredentialValue,
 } from "../../src/credentials/vault.ts";
+import type { TimerClock } from "../../src/kernel/clock.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import type { SqlTransaction } from "../../src/store/store.ts";
 import {
@@ -30,6 +33,397 @@ const MAX = 9007199254740991;
 const ownerOf = (binding: CredentialBinding): CredentialOwner => ({
 	ownerKind: binding.ownerKind,
 	ownerId: binding.ownerId,
+});
+
+describe("credential vault drain", () => {
+	const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+	const refused = (work: Promise<unknown>): Promise<boolean> =>
+		work.then(
+			() => false,
+			(error: unknown) =>
+				error instanceof CredentialError && error.code === "CREDENTIAL_UNAVAILABLE",
+		);
+	it.each(["fulfilled", "rejected"] as const)(
+		"joins an original %s use callback after its caller stops waiting",
+		async (outcome) => {
+			const f = await vaultFixture(),
+				owner = provider(),
+				reference = f.create(owner, keyValue()),
+				caller = new AbortController(),
+				entered = deferred<void>(),
+				release = deferred<void>(),
+				finished = deferred<void>();
+			let calls = 0,
+				context: CredentialUse | undefined,
+				state = "pending";
+			const pending = f.vault.withCredential(
+				reference,
+				owner,
+				{ requestClass: "read", signal: caller.signal },
+				async (_, current) => {
+					calls++;
+					context = current;
+					entered.resolve();
+					try {
+						await release.promise;
+						if (outcome === "rejected") throw new Error("DYTEST late callback failure");
+						return "DYTEST late result";
+					} finally {
+						finished.resolve();
+					}
+				},
+			);
+			const rejection = refused(pending);
+			let draining: Promise<void> | undefined;
+			try {
+				await entered.promise;
+				caller.abort();
+				expect(await rejection).toBe(true);
+				expect(context?.signal.aborted).toBe(true);
+				const auditCount = f.actions().length;
+				draining = f.vault.drain();
+				expect(f.vault.drain()).toBe(draining);
+				const completion = draining.then(
+					() => {
+						state = "closed";
+					},
+					() => {
+						state = "failed";
+					},
+				);
+				await turn();
+				expect(state).toBe("pending");
+				release.resolve();
+				await finished.promise;
+				await completion;
+				expect(state).toBe("closed");
+				expect(calls).toBe(1);
+				expect(f.row(reference)?.status).toBe("active");
+				expect(f.row(reference)?.generation).toBe(1);
+				expect(f.actions().length).toBe(auditCount);
+				expect(() => f.vault.describe(reference, owner)).toThrow(CredentialError);
+				expect(
+					await refused(
+						f.vault.withCredential(reference, owner, { requestClass: "read" }, () => {
+							calls++;
+						}),
+					),
+				).toBe(true);
+				expect(calls).toBe(1);
+			} finally {
+				caller.abort();
+				f.vault.destroy();
+				release.resolve();
+				if (calls) await finished.promise;
+				await Promise.allSettled([pending, draining ?? f.vault.drain()]);
+			}
+		},
+	);
+	it.each(["refresh-first", "timer-first"] as const)(
+		"joins the original refresh and timer finally independently: %s",
+		async (order) => {
+			const time = fakeClock(),
+				refreshEntered = deferred<void>(),
+				refreshRelease = deferred<void>(),
+				refreshDone = deferred<void>(),
+				timerEntered = deferred<void>(),
+				timerAborted = deferred<void>(),
+				timerRelease = deferred<void>(),
+				timerDone = deferred<void>();
+			let refreshCalls = 0,
+				timerCalls = 0,
+				uses = 0,
+				exchange: CredentialUse | undefined,
+				state = "pending";
+			const clock: TimerClock = {
+				wallMs: time.clock.wallMs,
+				monotonicMs: time.clock.monotonicMs,
+				after: async (_, signal) => {
+					timerCalls++;
+					const aborted = deferred<void>();
+					let listener: Disposable | undefined;
+					try {
+						timerEntered.resolve();
+						if (!signal) throw new Error("DYTEST missing timer signal");
+						listener = addAbortListener(signal, () => aborted.resolve());
+						if (signal.aborted) aborted.resolve();
+						await aborted.promise;
+						timerAborted.resolve();
+						await timerRelease.promise;
+						throw new Error("DYTEST stopped timer");
+					} finally {
+						listener?.[Symbol.dispose]();
+						timerDone.resolve();
+					}
+				},
+			};
+			const f = await vaultFixture({ clock }),
+				owner = gmail(),
+				reference = f.create(owner, token(time.state.wall - 1)),
+				rotated = token(time.state.wall + 3_600_000),
+				caller = new AbortController();
+			const pending = f.vault.withCredential(
+				reference,
+				owner,
+				{
+					requestClass: "read",
+					signal: caller.signal,
+					refresh: async (_, current) => {
+						refreshCalls++;
+						exchange = current;
+						refreshEntered.resolve();
+						try {
+							await refreshRelease.promise;
+							if (order === "timer-first") throw new CredentialRefreshError("temporary");
+							return rotated;
+						} finally {
+							refreshDone.resolve();
+						}
+					},
+				},
+				() => {
+					uses++;
+				},
+			);
+			const rejection = refused(pending);
+			let queued: Promise<unknown> | undefined, draining: Promise<void> | undefined;
+			try {
+				await refreshEntered.promise;
+				await timerEntered.promise;
+				queued = f.vault.withCredential(reference, owner, { requestClass: "read" }, () => {
+					uses++;
+				});
+				const queuedRejection = refused(queued);
+				caller.abort();
+				expect(await rejection).toBe(true);
+				expect(exchange?.signal.aborted).toBe(false);
+				const kept = f.row(reference)?.value,
+					auditCount = f.actions().length;
+				draining = f.vault.drain();
+				expect(f.vault.drain()).toBe(draining);
+				const completion = draining.then(
+					() => {
+						state = "closed";
+					},
+					() => {
+						state = "failed";
+					},
+				);
+				expect(await queuedRejection).toBe(true);
+				await timerAborted.promise;
+				expect(exchange?.signal.aborted).toBe(true);
+				await turn();
+				expect(state).toBe("pending");
+				if (order === "refresh-first") {
+					refreshRelease.resolve();
+					await refreshDone.promise;
+					await turn();
+					expect(state).toBe("pending");
+					timerRelease.resolve();
+				} else {
+					timerRelease.resolve();
+					await timerDone.promise;
+					await turn();
+					expect(state).toBe("pending");
+					refreshRelease.resolve();
+				}
+				await completion;
+				expect(state).toBe("closed");
+				expect(refreshCalls).toBe(1);
+				expect(timerCalls).toBe(1);
+				expect(uses).toBe(0);
+				expect(f.row(reference)?.status).toBe("refreshing");
+				expect(f.row(reference)?.generation).toBe(2);
+				expect(Buffer.from(f.row(reference)?.value ?? []).equals(Buffer.from(kept ?? []))).toBe(
+					true,
+				);
+				expect(f.actions().length).toBe(auditCount);
+				await f.vault.drain();
+				expect(refreshCalls).toBe(1);
+				expect(f.actions().length).toBe(auditCount);
+			} finally {
+				caller.abort();
+				f.vault.destroy();
+				refreshRelease.resolve();
+				timerRelease.resolve();
+				if (refreshCalls) await refreshDone.promise;
+				if (timerCalls) await timerDone.promise;
+				await Promise.allSettled([pending, queued, draining ?? f.vault.drain()]);
+			}
+		},
+	);
+	it("drains its cancelled queue without joining or cancelling a sibling facade", async () => {
+		const time = fakeClock(),
+			f = await vaultFixture({ clock: time.clock }),
+			sibling = f.open(),
+			owner = gmail(),
+			reference = f.create(owner, token(time.state.wall - 1)),
+			otherOwner = provider(),
+			otherReference = f.create(otherOwner, keyValue()),
+			entered = deferred<void>(),
+			release = deferred<void>(),
+			finished = deferred<void>();
+		let exchange: CredentialUse | undefined,
+			refreshCalls = 0,
+			queuedUses = 0,
+			state = "pending";
+		const pending = f.vault.withCredential(
+			reference,
+			owner,
+			{
+				requestClass: "read",
+				refresh: async (_, current) => {
+					refreshCalls++;
+					exchange = current;
+					entered.resolve();
+					try {
+						await release.promise;
+						return token(time.state.wall + 3_600_000);
+					} finally {
+						finished.resolve();
+					}
+				},
+			},
+			() => "DYTEST ready",
+		);
+		const success = pending.then(
+			(result) => result === "DYTEST ready",
+			() => false,
+		);
+		let queued: Promise<unknown> | undefined, draining: Promise<void> | undefined;
+		try {
+			await entered.promise;
+			queued = sibling.withCredential(reference, owner, { requestClass: "read" }, () => {
+				queuedUses++;
+			});
+			const rejection = refused(queued);
+			draining = sibling.drain();
+			const completion = draining.then(
+				() => {
+					state = "closed";
+				},
+				() => {
+					state = "failed";
+				},
+			);
+			expect(await rejection).toBe(true);
+			await turn();
+			expect(state).toBe("closed");
+			expect(exchange?.signal.aborted).toBe(false);
+			expect(queuedUses).toBe(0);
+			expect(f.vault.describe(otherReference, otherOwner).generation).toBe(1);
+			f.key.derive("secrets").fill(0);
+			release.resolve();
+			await finished.promise;
+			expect(await success).toBe(true);
+			await completion;
+			expect(refreshCalls).toBe(1);
+			expect(f.row(reference)?.status).toBe("active");
+			expect(f.row(reference)?.generation).toBe(2);
+			await expect(f.vault.drain()).resolves.toBeUndefined();
+			expect(time.waits.size).toBe(0);
+		} finally {
+			sibling.destroy();
+			f.vault.destroy();
+			release.resolve();
+			if (refreshCalls) await finished.promise;
+			await Promise.allSettled([pending, queued, draining ?? sibling.drain(), f.vault.drain()]);
+		}
+	});
+	it("refuses a new refresh when its audit clock re-enters destroy", async () => {
+		const time = fakeClock();
+		let armed = false,
+			wallReads = 0,
+			fenced = false,
+			refreshCalls = 0,
+			uses = 0,
+			timers = 0,
+			draining: Promise<void> | undefined;
+		const clock: TimerClock = {
+			wallMs: () => {
+				if (armed && ++wallReads === 2) {
+					fenced = true;
+					f.vault.destroy();
+					draining = f.vault.drain();
+				}
+				return time.clock.wallMs();
+			},
+			monotonicMs: time.clock.monotonicMs,
+			after: (ms, signal) => {
+				timers++;
+				return time.clock.after(ms, signal);
+			},
+		};
+		const f = await vaultFixture({ clock }),
+			owner = gmail(),
+			reference = f.create(owner, token(time.state.wall - 1));
+		armed = true;
+		const pending = f.vault.withCredential(
+			reference,
+			owner,
+			{
+				requestClass: "read",
+				refresh: async () => {
+					refreshCalls++;
+					return token(time.state.wall + 3_600_000);
+				},
+			},
+			() => {
+				uses++;
+			},
+		);
+		const rejection = refused(pending);
+		try {
+			expect(await rejection).toBe(true);
+			expect(fenced).toBe(true);
+			expect(refreshCalls).toBe(0);
+			expect(uses).toBe(0);
+			expect(timers).toBe(0);
+			expect(draining).toBeDefined();
+			await expect(draining ?? f.vault.drain()).resolves.toBeUndefined();
+			expect(f.row(reference)?.status).toBe("refreshing");
+			expect(f.row(reference)?.generation).toBe(2);
+			expect(f.actions().at(-1)?.action).toBe("credential.refresh_started");
+			expect(time.waits.size).toBe(0);
+		} finally {
+			armed = false;
+			f.vault.destroy();
+			await Promise.allSettled([pending, draining ?? f.vault.drain()]);
+		}
+	});
+	it("keeps destroy synchronous and fences admission before an empty drain", async () => {
+		const f = await vaultFixture(),
+			owner = provider(),
+			reference = f.create(owner, keyValue());
+		let uses = 0;
+		let sibling: ReturnType<typeof f.open> | undefined;
+		try {
+			expect(f.vault.destroy()).toBeUndefined();
+			expect(() => f.vault.describe(reference, owner)).toThrow(CredentialError);
+			expect(
+				await refused(
+					f.vault.withCredential(reference, owner, { requestClass: "read" }, () => {
+						uses++;
+					}),
+				),
+			).toBe(true);
+			const draining = f.vault.drain();
+			expect(f.vault.drain()).toBe(draining);
+			await expect(draining).resolves.toBeUndefined();
+			expect(f.vault.drain()).toBe(draining);
+			expect(uses).toBe(0);
+			sibling = f.open();
+			expect(sibling.describe(reference, owner).generation).toBe(1);
+			await expect(
+				sibling.withCredential(reference, owner, { requestClass: "read" }, () => "DYTEST ready"),
+			).resolves.toBe("DYTEST ready");
+			await sibling.drain();
+		} finally {
+			f.vault.destroy();
+			sibling?.destroy();
+			await Promise.allSettled([f.vault.drain(), sibling?.drain()]);
+		}
+	});
 });
 
 describe("credential removal", () => {
