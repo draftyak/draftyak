@@ -612,16 +612,16 @@ function exercise(f: Fixture, generated: GeneratedCase): void {
 }
 
 describe("composed stored restore reductions", () => {
-	// Ten bounded batches preserve the default test timeout while exercising 500 real cases.
-	for (let batch = 0; batch < 10; batch++) {
-		it(`matches the storage model and atomic rollback (batch ${batch + 1}/10)`, () => {
+	// Run all 500 real-storage cases in small batches under the default test timeout.
+	for (let batch = 0; batch < 100; batch++) {
+		it(`matches the storage model and atomic rollback (batch ${batch + 1}/100)`, () => {
 			if (bodies.size) throw new Error("Earlier property body is not joined");
 			const original = Promise.resolve().then(() =>
 				fc.assert(
 					fc.asyncProperty(caseArbitrary, (generated) =>
 						withFixture((f) => exercise(f, generated)),
 					),
-					{ numRuns: 50 },
+					{ numRuns: 5 },
 				),
 			);
 			bodies.add(original);
