@@ -42,6 +42,7 @@ const namespaces = expectedFolders.map(([namespace]) => namespace);
 const requiredAssets = [
 	"store/migrations/audit/0001_chain.sql",
 	"store/migrations/core/0001_identity.sql",
+	"store/migrations/core/0002_native_runtime_state.sql",
 	"identity/devices-migrations/0001_devices.sql",
 	"jobs/jobs-migrations/0001_jobs.sql",
 	"events/events-migrations/0001_events.sql",
@@ -87,7 +88,7 @@ function recorder(): { store: HubStore; calls: string[] } {
 	return { store, calls };
 }
 
-it("checks all twenty-one required assets and migrates all eighteen namespaces exactly once", async () => {
+it("checks all twenty-two required assets and migrates all eighteen namespaces exactly once", async () => {
 	const { store, calls } = recorder();
 	await migrateHubSchemas(store);
 	expect(Object.keys(HUB_NAMESPACES)).toEqual(namespaces);

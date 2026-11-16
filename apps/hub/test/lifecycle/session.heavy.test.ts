@@ -121,6 +121,10 @@ it.each(compiledSessionModes)(
 			for (const [source, relative] of [
 				["store/migrations/audit/0001_chain.sql", "store/migrations/audit/0001_chain.sql"],
 				["store/migrations/core/0001_identity.sql", "store/migrations/core/0001_identity.sql"],
+				[
+					"store/migrations/core/0002_native_runtime_state.sql",
+					"store/migrations/core/0002_native_runtime_state.sql",
+				],
 				["identity/devices-migrations/0001_devices.sql", "devices-migrations/0001_devices.sql"],
 				["jobs/jobs-migrations/0001_jobs.sql", "jobs-migrations/0001_jobs.sql"],
 				["events/events-migrations/0001_events.sql", "events-migrations/0001_events.sql"],
@@ -217,7 +221,7 @@ it.each(compiledSessionModes)(
 				ok: true,
 				mode,
 				schemas: 18,
-				businessTables: 30,
+				businessTables: 31,
 				bookkeepingTables: 36,
 				recoveryCapsule: mode === "positive",
 				beforeIdentity: true,

@@ -49,6 +49,7 @@ describe("selected Hub store process-crash coverage", () => {
 			"spike-run",
 			"spikes",
 			"heavy",
+			"windows-tests",
 			"windows",
 			"macos",
 			"required",
@@ -60,6 +61,7 @@ describe("selected Hub store process-crash coverage", () => {
 			"spikes",
 			"heavy",
 			"windows",
+			"windows-tests",
 			"macos",
 		]);
 		expect(definition("required").if).toBe("always()");
