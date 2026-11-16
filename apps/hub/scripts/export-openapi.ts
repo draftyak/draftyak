@@ -1,4 +1,8 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { canonicalize, parseStrict } from "@draftyak/protocol/jcs";
 
 const artifact = new URL("../openapi.json", import.meta.url);
@@ -74,6 +78,44 @@ function accountSchemas(): Readonly<Record<string, Readonly<Record<string, unkno
 	};
 }
 
+function formatDocument(document: unknown): Uint8Array {
+	const manifestFile = createRequire(import.meta.url).resolve("@biomejs/biome/package.json");
+	const manifest = object(JSON.parse(readFileSync(manifestFile, "utf8")));
+	const declaredBin = typeof manifest.bin === "string" ? manifest.bin : object(manifest.bin).biome;
+	if (manifest.name !== "@biomejs/biome" || typeof declaredBin !== "string" || declaredBin === "")
+		throw new Error("Invalid OpenAPI formatter");
+	const packageRoot = realpathSync(path.dirname(manifestFile));
+	const bin = realpathSync(path.resolve(packageRoot, declaredBin));
+	const relative = path.relative(packageRoot, bin);
+	if (
+		relative === "" ||
+		path.isAbsolute(relative) ||
+		relative === ".." ||
+		relative.startsWith(`..${path.sep}`) ||
+		!statSync(bin).isFile()
+	)
+		throw new Error("Invalid OpenAPI formatter");
+	const formatted = spawnSync(
+		process.execPath,
+		[bin, "format", "--stdin-file-path", fileURLToPath(artifact)],
+		{
+			cwd: fileURLToPath(new URL("../../../", import.meta.url)),
+			input: `${JSON.stringify(document, null, 2)}\n`,
+			maxBuffer: 16 * 1024 * 1024,
+			shell: false,
+			windowsHide: true,
+		},
+	);
+	if (
+		formatted.error !== undefined ||
+		formatted.status !== 0 ||
+		formatted.signal !== null ||
+		formatted.stdout.length === 0
+	)
+		throw new Error("OpenAPI formatting failed");
+	return formatted.stdout;
+}
+
 export async function nativeApiOpenApiBytes(): Promise<Uint8Array> {
 	const [{ buildNativeApiOpenApi }, { NATIVE_API_ROUTE_DESCRIPTORS }] = await Promise.all([
 		import("../src/api/openapi.ts"),
@@ -85,7 +127,7 @@ export async function nativeApiOpenApiBytes(): Promise<Uint8Array> {
 		accountSchemas(),
 	);
 	const sorted = JSON.parse(canonicalize(document));
-	return Buffer.from(`${JSON.stringify(sorted, null, 2)}\n`, "utf8");
+	return formatDocument(sorted);
 }
 
 async function main(): Promise<void> {

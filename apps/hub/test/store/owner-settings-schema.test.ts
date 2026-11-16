@@ -134,7 +134,9 @@ function expectOwnerSettings(store: HubStore): void {
 	expect(
 		store.read((db) => db.get("SELECT type FROM main.sqlite_schema WHERE name = 'owner_settings'")),
 	).toEqual({ type: "table" });
-	expect(store.read((db) => db.get("SELECT count(*) AS n FROM main.owner_settings"))).toEqual({ n: 0 });
+	expect(store.read((db) => db.get("SELECT count(*) AS n FROM main.owner_settings"))).toEqual({
+		n: 0,
+	});
 }
 
 function earlierLedgers(store: HubStore) {
@@ -163,11 +165,50 @@ it("upgrades the earlier native prefix and bare-reopens owner settings without r
 	const before = earlierLedgers(earlier);
 	for (const ledger of before) expect(ledger.rows.length).toBeGreaterThan(0);
 	expect(
-		earlier.read((db) => db.get("SELECT name FROM main.sqlite_schema WHERE name = 'owner_settings'")),
+		earlier.read((db) =>
+			db.get("SELECT name FROM main.sqlite_schema WHERE name = 'owner_settings'"),
+		),
 	).toBeUndefined();
 	closeStore(f, earlier);
 	closeStore(f, await native(f));
 	const reopened = bare(f);
 	expectOwnerSettings(reopened);
 	expect(earlierLedgers(reopened)).toEqual(before);
+});
+
+it("refuses a bare reopen when real owner settings were registered under an unknown namespace", async () => {
+	const f = fixture();
+	const known = Object.fromEntries(
+		Object.entries(HUB_NAMESPACES).filter(([namespace]) => namespace !== "ownersettings"),
+	);
+	const registered = bare(f, { ...known, futureowner: HUB_NAMESPACES.ownersettings }, true);
+	for (const namespace of EARLIER_NAMESPACES) await registered.migrate(namespace);
+	for (const namespace of Object.keys(known)) {
+		if (!EARLIER_NAMESPACES.some((earlier) => earlier === namespace))
+			await registered.migrate(namespace);
+	}
+	await expect(registered.migrate("futureowner")).resolves.toEqual(["0001_owner_settings"]);
+	for (const namespace of Object.keys(known)) {
+		expect(
+			registered.read((db) => db.all(`SELECT name FROM main._migrations_${namespace}`)).length,
+		).toBeGreaterThan(0);
+	}
+	expect(
+		registered.read((db) => db.all("SELECT name FROM main._migrations_futureowner ORDER BY name")),
+	).toEqual([{ name: "0001_owner_settings" }]);
+	expect(
+		registered.read((db) =>
+			db.get("SELECT name FROM main.sqlite_schema WHERE name = '_migrations_ownersettings'"),
+		),
+	).toBeUndefined();
+	expect(
+		registered.read((db) =>
+			db.get("SELECT type FROM main.sqlite_schema WHERE name = 'owner_settings'"),
+		),
+	).toEqual({ type: "table" });
+	expect(registered.read((db) => db.get("SELECT count(*) AS n FROM main.owner_settings"))).toEqual({
+		n: 0,
+	});
+	closeStore(f, registered);
+	expect(() => bare(f)).toThrow(/^Database schema is not recognized$/);
 });
