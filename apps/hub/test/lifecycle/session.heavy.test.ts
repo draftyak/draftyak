@@ -83,7 +83,7 @@ const compiledSessionModes = [
 	"missing-accounts",
 ] as const;
 it.each(compiledSessionModes)(
-	"opens and reopens a compiled session using all nine staged schemas (%s)",
+	"opens and reopens a compiled session using all ten staged schemas (%s)",
 	(mode) => {
 		const hub = path.resolve(import.meta.dirname, "../.."),
 			workspace = path.resolve(hub, "../..");
@@ -131,6 +131,10 @@ it.each(compiledSessionModes)(
 				],
 				["outbox/migrations/0001_send_attempts.sql", "outbox/migrations/0001_send_attempts.sql"],
 				["accounts/migrations/0001_accounts.sql", "accounts/migrations/0001_accounts.sql"],
+				[
+					"channels/gmail/connection/credential-migrations/0001_credentials.sql",
+					"credential-migrations/0001_credentials.sql",
+				],
 			] as const) {
 				const built = path.join(hub, "dist", relative);
 				expect(readFileSync(built)).toEqual(readFileSync(path.join(hub, "src", source)));
@@ -165,9 +169,9 @@ it.each(compiledSessionModes)(
 			expect(JSON.parse(run.stdout)).toEqual({
 				ok: true,
 				mode,
-				schemas: 9,
-				businessTables: 17,
-				bookkeepingTables: 18,
+				schemas: 10,
+				businessTables: 18,
+				bookkeepingTables: 20,
 				beforeIdentity: true,
 				refused: mode === "positive" ? null : "STORE_UNAVAILABLE",
 				failedOpenClosed: mode !== "positive",

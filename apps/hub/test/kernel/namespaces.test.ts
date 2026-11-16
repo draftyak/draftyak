@@ -31,7 +31,7 @@ function recorder(): { store: HubStore; calls: string[] } {
 	return { store, calls };
 }
 
-it("checks the required assets and migrates all nine namespaces exactly once", async () => {
+it("checks the required assets and migrates all ten namespaces exactly once", async () => {
 	const { store, calls } = recorder();
 	await migrateHubSchemas(store);
 	expect(access).toHaveBeenCalledWith(requiredRevisionAsset, constants.R_OK);
@@ -47,8 +47,9 @@ it("checks the required assets and migrates all nine namespaces exactly once", a
 		"credentials",
 		"tickets",
 		"accounts",
+		"gmailcredentials",
 	]);
-	expect(new Set(calls).size).toBe(9);
+	expect(new Set(calls).size).toBe(10);
 });
 
 it("refuses a missing revision immutability asset before later namespaces can migrate", async () => {

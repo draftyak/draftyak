@@ -63,6 +63,9 @@ importers:
       '@draftyak/fake-commercial':
         specifier: workspace:*
         version: link:../../packages/fake-commercial
+      '@draftyak/fakes':
+        specifier: workspace:*
+        version: link:../../packages/fakes
       '@draftyak/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -249,6 +252,25 @@ importers:
       fast-check:
         specifier: 4.10.2
         version: 4.10.2
+      tsdown:
+        specifier: 0.23.1
+        version: 0.23.1(typescript@7.0.2)
+
+  plugins/channel-gmail:
+    dependencies:
+      '@draftyak/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@draftyak/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+    devDependencies:
+      '@draftyak/fakes':
+        specifier: workspace:*
+        version: link:../../packages/fakes
+      '@draftyak/plugin-testkit':
+        specifier: workspace:*
+        version: link:../../packages/plugin-testkit
       tsdown:
         specifier: 0.23.1
         version: 0.23.1(typescript@7.0.2)

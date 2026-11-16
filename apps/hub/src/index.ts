@@ -24,6 +24,14 @@ export { AuthzError, type AuthzErrorCode, deviceApiError } from "./authz/errors.
 export { type NativeDevicePeer, NativeDeviceTls } from "./authz/native-peer.ts";
 export { cliConfirmPinScope, pairConfirmPinScope, revokePinScope } from "./authz/scopes.ts";
 export {
+	GMAIL_CREDENTIAL_MIGRATIONS,
+	GMAIL_DELETION_DELAY_MS,
+	type GmailCredentialDeadline,
+	type GmailCredentialOptions,
+	GmailCredentials,
+	type GoogleDesktopClient,
+} from "./channels/gmail/connection/google-credentials.ts";
+export {
 	type CredentialBinding,
 	type CredentialDescriptor,
 	CredentialError,

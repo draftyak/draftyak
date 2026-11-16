@@ -5,6 +5,11 @@ export const MBOX_CHUNK_BYTES = 65_536;
 export const MBOX_MAX_MESSAGES = 10_000;
 export const MBOX_MAX_OUTPUT_BYTES = 1_073_741_824;
 
+const typedArray = Object.getPrototypeOf(Uint8Array.prototype);
+const byteLength = Object.getOwnPropertyDescriptor(typedArray, "byteLength")?.get;
+const byteOffset = Object.getOwnPropertyDescriptor(typedArray, "byteOffset")?.get;
+const backingBuffer = Object.getOwnPropertyDescriptor(typedArray, "buffer")?.get;
+
 export interface MboxMessage {
 	readonly raw: Uint8Array;
 	readonly envelopeFrom: string;
@@ -49,6 +54,22 @@ function limit(value: number | undefined, maximum: number): number {
 
 function checkAbort(signal: AbortSignal | undefined): void {
 	if (signal?.aborted) throw new MboxError("ABORTED");
+}
+
+function snapshotRaw(raw: Uint8Array, maximum: number): Uint8Array {
+	try {
+		const length: unknown = byteLength?.call(raw),
+			offset: unknown = byteOffset?.call(raw),
+			buffer = backingBuffer?.call(raw);
+		if (typeof length !== "number" || typeof offset !== "number") {
+			throw new MboxError("BAD_INPUT");
+		}
+		if (length > maximum) throw new MboxError("MESSAGE_TOO_LARGE");
+		return new Uint8Array(new Uint8Array(buffer, offset, length));
+	} catch (error) {
+		if (error instanceof MboxError) throw error;
+		throw new MboxError("BAD_INPUT");
+	}
 }
 
 function envelope(message: MboxMessage): Uint8Array {
@@ -171,10 +192,9 @@ export async function* writeMbox(
 			const message = result.value;
 			const input = message?.raw;
 			if (!(input instanceof Uint8Array)) throw new MboxError("BAD_INPUT");
-			if (input.byteLength > maxMessageBytes) throw new MboxError("MESSAGE_TOO_LARGE");
+			// Snapshot the bounded view before record metadata can change its bytes.
+			const raw = snapshotRaw(input, maxMessageBytes);
 			const prefix = envelope(message);
-			// Copy once before yielding, so caller mutation cannot change this record.
-			const raw = new Uint8Array(input);
 			let size = prefix.byteLength + raw.byteLength + 1;
 			for (let start = 0; start < raw.length; ) {
 				checkAbort(signal);

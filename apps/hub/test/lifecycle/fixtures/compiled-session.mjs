@@ -15,11 +15,13 @@ const migrations = [
 	["credentials", ["0001_credentials", "0002_sealed_credentials"]],
 	["tickets", ["0001_send_attempts"]],
 	["accounts", ["0001_accounts"]],
+	["gmailcredentials", ["0001_credentials"]],
 ];
 const businessTables = [
 	"audit_meta", "audit_events", "hub_meta", "users", "approval_pins", "jobs", "jobs_meta",
 	"events", "event_meta", "native_drafts", "native_draft_revisions", "native_draft_locks",
 	"credentials", "native_send_attempts", "device_authority", "devices", "accounts",
+	"gmail_credentials",
 ].sort();
 let phase = "admission";
 
@@ -225,7 +227,7 @@ async function main() {
 		assert.deepEqual(order.slice(beforeHealthy), [...migrations, ...migrations].map(([namespace]) => namespace));
 		assert.equal(modules, 0);
 		process.stdout.write(`${JSON.stringify({
-			ok: true, mode, schemas: 9, businessTables: businessTables.length, bookkeepingTables: 18,
+			ok: true, mode, schemas: 10, businessTables: businessTables.length, bookkeepingTables: 20,
 			beforeIdentity: true, refused, failedOpenClosed: mode !== "positive",
 			failedKeyErased: mode !== "positive", reopened: true, auditVerified: true, accountsRoundTrip: true, modules,
 		})}\n`);
