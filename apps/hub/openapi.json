@@ -5,20 +5,12 @@
         "$defs": {
           "draftyak.entities.AccountMode": {
             "description": "read_only has no send or organize path.",
-            "enum": [
-              "full",
-              "read_only"
-            ],
+            "enum": ["full", "read_only"],
             "type": "string"
           },
           "draftyak.entities.AccountStatus": {
             "description": "active syncs; paused doesn't, until its cause clears; credential_lost waits for a reconnect until deletionDeadline; disconnecting cancels, revokes and purges.",
-            "enum": [
-              "active",
-              "paused",
-              "credential_lost",
-              "disconnecting"
-            ],
+            "enum": ["active", "paused", "credential_lost", "disconnecting"],
             "type": "string"
           },
           "draftyak.entities.ChatAccount": {
@@ -303,15 +295,7 @@
       "draftyak.entities.OwnerSettings": {
         "$defs": {
           "draftyak.entities.Weekday": {
-            "enum": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri",
-              "sat",
-              "sun"
-            ],
+            "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
             "type": "string"
           },
           "draftyak.entities.WorkingHours": {
@@ -339,11 +323,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "days",
-              "start",
-              "end"
-            ],
+            "required": ["days", "start", "end"],
             "type": "object"
           },
           "draftyak.tool-v1.IanaZone": {
@@ -366,10 +346,7 @@
             "$ref": "#/components/schemas/draftyak.entities.OwnerSettings/$defs/draftyak.tool-v1.IanaZone"
           }
         },
-        "required": [
-          "zone",
-          "workingHours"
-        ],
+        "required": ["zone", "workingHours"],
         "type": "object"
       },
       "draftyak.native.AccountPage": {
@@ -387,20 +364,12 @@
           },
           "draftyak.entities.AccountMode": {
             "description": "read_only has no send or organize path.",
-            "enum": [
-              "full",
-              "read_only"
-            ],
+            "enum": ["full", "read_only"],
             "type": "string"
           },
           "draftyak.entities.AccountStatus": {
             "description": "active syncs; paused doesn't, until its cause clears; credential_lost waits for a reconnect until deletionDeadline; disconnecting cancels, revokes and purges.",
-            "enum": [
-              "active",
-              "paused",
-              "credential_lost",
-              "disconnecting"
-            ],
+            "enum": ["active", "paused", "credential_lost", "disconnecting"],
             "type": "string"
           },
           "draftyak.entities.ChatAccount": {
@@ -673,10 +642,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account",
-              "generation"
-            ],
+            "required": ["account", "generation"],
             "type": "object"
           },
           "draftyak.normalized-change.ProviderId": {
@@ -714,10 +680,7 @@
             ]
           }
         },
-        "required": [
-          "accounts",
-          "nextId"
-        ],
+        "required": ["accounts", "nextId"],
         "type": "object"
       },
       "draftyak.native.AccountRecord": {
@@ -735,20 +698,12 @@
           },
           "draftyak.entities.AccountMode": {
             "description": "read_only has no send or organize path.",
-            "enum": [
-              "full",
-              "read_only"
-            ],
+            "enum": ["full", "read_only"],
             "type": "string"
           },
           "draftyak.entities.AccountStatus": {
             "description": "active syncs; paused doesn't, until its cause clears; credential_lost waits for a reconnect until deletionDeadline; disconnecting cancels, revokes and purges.",
-            "enum": [
-              "active",
-              "paused",
-              "credential_lost",
-              "disconnecting"
-            ],
+            "enum": ["active", "paused", "credential_lost", "disconnecting"],
             "type": "string"
           },
           "draftyak.entities.ChatAccount": {
@@ -1031,10 +986,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "account",
-          "generation"
-        ],
+        "required": ["account", "generation"],
         "type": "object"
       }
     }
@@ -1085,15 +1037,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "INVALID_REQUEST"
-                      ],
+                      "enum": ["INVALID_REQUEST"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1110,15 +1058,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "FORBIDDEN"
-                      ],
+                      "enum": ["FORBIDDEN"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1135,15 +1079,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "UNAVAILABLE"
-                      ],
+                      "enum": ["UNAVAILABLE"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1194,15 +1134,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "INVALID_REQUEST"
-                      ],
+                      "enum": ["INVALID_REQUEST"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1219,15 +1155,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "FORBIDDEN"
-                      ],
+                      "enum": ["FORBIDDEN"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1244,15 +1176,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "NOT_FOUND"
-                      ],
+                      "enum": ["NOT_FOUND"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1269,15 +1197,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "UNAVAILABLE"
-                      ],
+                      "enum": ["UNAVAILABLE"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1314,15 +1238,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "INVALID_REQUEST"
-                      ],
+                      "enum": ["INVALID_REQUEST"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1339,15 +1259,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "FORBIDDEN"
-                      ],
+                      "enum": ["FORBIDDEN"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1364,15 +1280,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "NOT_FOUND"
-                      ],
+                      "enum": ["NOT_FOUND"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1389,15 +1301,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "UNAVAILABLE"
-                      ],
+                      "enum": ["UNAVAILABLE"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1443,15 +1351,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "INVALID_REQUEST"
-                      ],
+                      "enum": ["INVALID_REQUEST"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1468,15 +1372,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "FORBIDDEN"
-                      ],
+                      "enum": ["FORBIDDEN"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
@@ -1493,15 +1393,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "code": {
-                      "enum": [
-                        "UNAVAILABLE"
-                      ],
+                      "enum": ["UNAVAILABLE"],
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "code"
-                  ],
+                  "required": ["code"],
                   "type": "object"
                 }
               }
