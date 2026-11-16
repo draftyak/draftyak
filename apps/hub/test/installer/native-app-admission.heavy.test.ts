@@ -156,6 +156,7 @@ const folders = [
 	["recovery/backup-migrations", "recovery/backup-migrations"],
 	["identity/backup-migrations", "identity/backup-migrations"],
 	["identity/backup-challenge-migrations", "identity/backup-challenge-migrations"],
+	["api/migrations", "api/migrations"],
 ] as const;
 interface Owned {
 	readonly root: string;
@@ -390,7 +391,7 @@ async function prepare(configured: boolean): Promise<Built> {
 			copyFileSync(path.join(hub, "src", from, name), target);
 			migrations++;
 		}
-	expect(migrations).toBe(22);
+	expect(migrations).toBe(23);
 	const packages = BUNDLED_PLUGIN_IDS.map((id, index) =>
 		bundle(id, { version: index + 1 + ".2.3" }),
 	);
@@ -684,7 +685,7 @@ function execute(base: Built<NativeAppRelease | NativeReleaseV2>, mode: string):
 					ok: true,
 					capture: "configured-signed-node-fixture",
 					mode,
-					schemas: 18,
+					schemas: 19,
 					bundles: 5,
 				});
 		} catch {
