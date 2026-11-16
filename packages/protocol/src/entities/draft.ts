@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { Flags } from "../flags.ts";
+import { Flags } from "../flags-schema.ts";
 import { Sha256Hex, Ulid, UtcMs } from "../scalars.ts";
 import * as channels from "./draft/channels.ts";
 import { channelUnion } from "./fields.ts";

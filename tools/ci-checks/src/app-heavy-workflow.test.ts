@@ -22,9 +22,17 @@ interface Job {
 	readonly steps: Step[];
 }
 const workflow = parseYaml(readFileSync(path.join(repository, ".github/workflows/ci.yml"), "utf8"))
-	.value as unknown as { env?: Record<string, unknown>; jobs: { heavy: Job } };
+	.value as unknown as { env?: Record<string, unknown>; jobs: Record<"heavy" | "spike-run", Job> };
 const job = workflow.jobs.heavy;
 const steps = job.steps;
+const ordinary = job;
+const shard = workflow.jobs["spike-run"];
+const shardMatches = shard.steps.filter((entry) => entry.id === "heavy-test");
+const shardStep = shardMatches[0];
+if (shardMatches.length !== 1 || !shardStep?.run) throw new Error("missing selected shard workflow step");
+const shardRun = shardStep.run;
+const readySelection =
+	"needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && ";
 const matches = steps.filter((entry) => entry.id === "heavy-test");
 const step = matches[0];
 if (matches.length !== 1 || !step?.run || !step.env)
@@ -38,12 +46,12 @@ interface SelectionContext {
 	readonly draft?: boolean;
 }
 
-function shellCondition(value: string | undefined): string {
+function shellCondition(value: string | undefined, sharded: boolean): string {
 	const terms = new Map([
 		["needs.changes.outputs.docs-only != 'true'", '[ "$DOCS_ONLY" != true ]'],
 		["github.event_name != 'pull_request'", '[ "$EVENT_NAME" != pull_request ]'],
 		["!github.event.pull_request.draft", '[ "$PR_DRAFT" != true ]'],
-		["needs.changes.outputs.ordinary-heavy != ''", '[ -n "$ORDINARY_HEAVY" ]'],
+		[sharded ? "needs.changes.outputs.spike-count != '0'" : "needs.changes.outputs.ordinary-heavy != ''", sharded ? '[ "$SPIKE_COUNT" != 0 ]' : '[ -n "$ORDINARY_HEAVY" ]'],
 	]);
 	let condition = String(value);
 	let grammar = condition;
@@ -63,6 +71,8 @@ function exercise(
 	fail = false,
 	includeNative = false,
 	context: SelectionContext = {},
+	overlay: Partial<Record<"spikes" | "heavy" | "rust", readonly string[]>> = {},
+	sharded = false,
 ): { status: number | null; calls: unknown[] } {
 	const root = mkdtempSync(path.join(tmpdir(), "draftyak-app-heavy-shell-"));
 	try {
@@ -79,12 +89,15 @@ function exercise(
 		}
 		mkdirSync(path.join(root, "packages", "create-plugin"), { recursive: true });
 		writeFileSync(path.join(root, "packages", "create-plugin", "package.json"), "{}");
-		const selected = classify(
-			files,
-			root,
-			() => [],
-			() => [],
-		);
+		const selected = {
+			...classify(files, root, () => [], () => []),
+			...overlay,
+		};
+		const selectedJob = sharded ? shard : job;
+		const selectedStep = sharded ? shardStep : step;
+		const effective = { ...workflow.env, ...selectedJob.env, ...selectedStep?.env };
+		if (sharded && (effective.SPIKE !== "${{ matrix.spike }}" || selected.spikes.length !== 1))
+			throw new Error("expected one selected shard importer");
 		const rawHeavy = [...selected.heavy, ...(includeNative ? [nativeTransportFilter] : [])].join(
 			"\n",
 		);
@@ -96,22 +109,25 @@ function exercise(
 			[`\${{ needs.changes.outputs.heavy }}`, rawHeavy],
 			[`\${{ needs.changes.outputs.ordinary-heavy }}`, ordinary],
 		]);
-		const heavy = bindings.get(String(environment.HEAVY));
+		const heavy = sharded ? "" : bindings.get(String(effective.HEAVY));
 		if (heavy === undefined) throw new Error("unknown heavy environment binding");
-		const condition = shellCondition(job.if);
+		const condition = shellCondition(selectedJob.if, sharded);
+		const selectedRun = sharded ? shardRun : run;
+		const browserPath = path.join(root, "browsers");
 		const capture = path.join(root, "capture.mjs");
 		const output = path.join(root, "calls.jsonl");
 		writeFileSync(
 			capture,
 			[
 				'import {appendFileSync} from "node:fs";',
+				"if(process.env.PLAYWRIGHT_BROWSERS_PATH!==process.env.CAPTURE_BROWSER_EXPECTED)process.exit(24);",
 				'appendFileSync(process.env.CAPTURE_OUTPUT, JSON.stringify({args:process.argv.slice(2), strict:process.env.DRAFTYAK_STRICT_SKIPS})+"\\n");',
 				'if(process.env.CAPTURE_FAIL==="1")process.exit(23);',
 			].join("\n"),
 		);
 		// Absolute executable and script, no PATH interception or fallback. Only fixed argv metadata
 		// reaches this stand-in: neither Turbo nor an application/heavy/live command is executed.
-		const command = `node() { "$CAPTURE_NODE" "$CAPTURE_SCRIPT" "$@"; }\nreadonly -f node\nif ${condition}; then\n${run}\nfi`;
+		const command = `node() { "$CAPTURE_NODE" "$CAPTURE_SCRIPT" "$@"; }\nreadonly -f node\nif ${condition}; then\n${selectedRun}\nfi`;
 		const result = spawnSync(
 			bash,
 			["--noprofile", "--norc", "-e", "-o", "pipefail", "-c", command],
@@ -127,13 +143,21 @@ function exercise(
 					CAPTURE_SCRIPT: capture.replaceAll("\\", "/"),
 					CAPTURE_OUTPUT: output,
 					CAPTURE_FAIL: fail ? "1" : "0",
+					CAPTURE_BROWSER_EXPECTED: browserPath,
+					SPIKE_COUNT: String(selected.spikes.length),
+					SPIKES: selected.spikes.join("\n"),
+					SPIKE: selected.spikes[0] ?? "",
+					PLAYWRIGHT_BROWSERS_PATH:
+						effective.PLAYWRIGHT_BROWSERS_PATH === "${{ steps.browser-setup.outputs.path }}"
+							? browserPath
+							: String(effective.PLAYWRIGHT_BROWSERS_PATH ?? ""),
 					DOCS_ONLY: String(context.docsOnly ?? false),
 					EVENT_NAME: context.eventName ?? "pull_request",
 					PR_DRAFT: String(context.draft ?? false),
 					HEAVY: heavy,
 					ORDINARY_HEAVY: ordinary,
 					SMOKE: String(selected.templateSmoke),
-					DRAFTYAK_STRICT_SKIPS: String(environment.DRAFTYAK_STRICT_SKIPS ?? ""),
+					DRAFTYAK_STRICT_SKIPS: String(effective.DRAFTYAK_STRICT_SKIPS ?? ""),
 				},
 			},
 		);
@@ -152,6 +176,26 @@ function exercise(
 }
 
 describe("actual selected-heavy workflow application arguments", () => {
+	it("keeps the existing condition, build prerequisite and explicit strict skips", () => {
+		expect(ordinary.if).toBe(`${readySelection}needs.changes.outputs.ordinary-heavy != ''`);
+		expect(shard.if).toBe(`${readySelection}needs.changes.outputs.spike-count != '0'`);
+		expect(step.if).toBeUndefined();
+		expect(shardStep.if).toBeUndefined();
+		expect(environment.HEAVY).toBe("${{ needs.changes.outputs.ordinary-heavy }}");
+		expect(environment.PLAYWRIGHT_BROWSERS_PATH).toBe("${{ steps.browser-setup.outputs.path }}");
+		expect(environment.DRAFTYAK_STRICT_SKIPS).toBe("1");
+		expect(shard.env?.SPIKE).toBe("${{ matrix.spike }}");
+		for (const [job, commandStep] of [
+			[ordinary, step],
+			[shard, shardStep],
+		] as const) {
+			expect(job.env?.DRAFTYAK_STRICT_SKIPS).toBe("1");
+			expect(commandStep.env?.DRAFTYAK_STRICT_SKIPS).toBeUndefined();
+			const build = job.steps.findIndex((entry) => entry.run === "pnpm build");
+			expect(build).toBeGreaterThan(-1);
+			expect(build).toBeLessThan(job.steps.indexOf(commandStep));
+		}
+	});
 	it("keeps the job guard, build prerequisite and inherited strict skips", () => {
 		expect(job.needs).toBe("changes");
 		expect(job.if).toBe(
@@ -233,6 +277,60 @@ describe("actual selected-heavy workflow application arguments", () => {
 		const result = exercise(["apps/hub/src/main.ts"], true);
 		expect(result.status).toBe(23);
 		expect(result.calls).toHaveLength(1);
+	});
+	it.each([
+		["no work", { heavy: [] }],
+		["native only", { heavy: ["./tools/transport-tests"], rust: ["crates"] }],
+	] as const)("does not run an empty-filter ordinary command for %s", (_, overlay) => {
+		expect(exercise([], false, false, {}, overlay)).toEqual({ status: 0, calls: [] });
+	});
+	it("excludes the dedicated native wrapper from real ordinary shell arguments", () => {
+		const result = exercise([], false, false, {}, {
+			heavy: ["./tools/transport-tests", "...{./apps/cli}"],
+			rust: ["crates"],
+		});
+		expect(result).toEqual({
+			status: 0,
+			calls: [
+				{
+					args: [
+						"tools/verify/turbo.ts",
+						"run",
+						"test:heavy",
+						"--concurrency=1",
+						"--log-order=stream",
+						"--log-prefix=task",
+						"--filter=...{./apps/cli}",
+						"--filter=!./packages/create-plugin",
+					],
+					strict: "1",
+				},
+			],
+		});
+	});
+	it("retains the actual spike-only shell execution with empty ordinary selection", () => {
+		const selected = { spikes: ["spikes/kit"], heavy: [] };
+		expect(exercise([], false, false, {}, selected)).toEqual({ status: 0, calls: [] });
+		expect(exercise([], false, false, {}, selected, true)).toEqual({
+			status: 0,
+			calls: [
+				{
+					args: [
+						"tools/verify/turbo.ts",
+						"run",
+						"test:heavy",
+						"--concurrency=1",
+						"--log-order=stream",
+						"--log-prefix=task",
+						"--filter=./spikes/kit",
+					],
+					strict: "1",
+				},
+			],
+		});
+		const failure = exercise([], true, false, {}, selected, true);
+		expect(failure.status).toBe(23);
+		expect(failure.calls).toHaveLength(1);
 	});
 	it("invalidates the CI test cache when either reviewed app manifest changes", () => {
 		const config = JSON.parse(

@@ -133,7 +133,7 @@ const ciChangesOutputs: YamlMap = {
 	heavy: `\${{ steps.areas.outputs.heavy }}`,
 	"native-transport": `\${{ steps.native.outputs.native-transport }}`,
 	"ordinary-heavy": `\${{ steps.native.outputs.ordinary-heavy }}`,
-	"template-smoke": `\${{ steps.areas.outputs.template-smoke || 'false' }}`,
+	"template-smoke": `\${{ steps.areas.outputs.template-smoke }}`,
 	source: `\${{ steps.source.outputs.source }}`,
 };
 const browserRequired = "steps.browser-setup.outputs.required == 'true'";

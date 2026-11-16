@@ -154,6 +154,11 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 	const jobs = object(workflow.jobs);
 	const shard = object(jobs["spike-run"]);
 	const ordinary = object(jobs.heavy);
+	const outputs = object(object(jobs.changes).outputs);
+	expect(outputs.heavy, "raw heavy classifier metadata").toBe(`\${{ steps.areas.outputs.heavy }}`);
+	expect(outputs["ordinary-heavy"], "ordinary heavy classifier metadata").toBe(
+		`\${{ steps.native.outputs.ordinary-heavy }}`,
+	);
 	for (const [name, job, condition, command, browserSelection] of [
 		[
 			"spike-run",
@@ -428,6 +433,27 @@ describe("heavy selection contract", () => {
 			expect(() => selectionContract(changed)).toThrow(diagnostic);
 		});
 	}
+
+	it.each([
+		["raw heavy execution", "ordinary selector source"],
+		["raw metadata discarded", "raw heavy classifier metadata"],
+		["spike-only guard lost", "selection condition"],
+	])("rejects retained M1 %s after separating heavy jobs", (attack, diagnostic) => {
+		const changed = workflow();
+		selectionContract(changed);
+		const jobs = object(changed.jobs);
+		const before = JSON.stringify(changed);
+		if (attack === "raw heavy execution")
+			object(stepById(object(jobs.heavy), "heavy-test").env).HEAVY =
+				`\${{ needs.changes.outputs.heavy }}`;
+		if (attack === "raw metadata discarded")
+			object(object(jobs.changes).outputs).heavy = `\${{ steps.native.outputs.ordinary-heavy }}`;
+		if (attack === "spike-only guard lost")
+			object(jobs["spike-run"]).if =
+				`${selectedCondition} && needs.changes.outputs.ordinary-heavy != ''`;
+		expect(JSON.stringify(changed) === before, "mutation changes the actual workflow").toBe(false);
+		expect(() => selectionContract(changed)).toThrow(diagnostic);
+	});
 
 	it.each([
 		["wrong shard matrix", "complete shard matrix"],

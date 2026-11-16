@@ -4,6 +4,7 @@ import { types } from "node:util";
 import {
 	type AdminOperation,
 	type AuditSink,
+	type BackupManifest,
 	type BackupTarget,
 	type CertProvider,
 	defineExtensionModule,
@@ -443,6 +444,129 @@ interface StartState {
 	readonly owners: ModuleDatabaseOwner[];
 }
 
+declare const nativeBackupTargetBrand: unique symbol;
+/** Identifies an actual registered target; it grants no access to hub state. */
+export interface NativeBackupTarget {
+	readonly [nativeBackupTargetBrand]: true;
+}
+
+export class NativeBackupTargetError extends Error {
+	override name = "NativeBackupTargetError";
+	readonly code: "BACKUP_TARGET_UNAVAILABLE" = "BACKUP_TARGET_UNAVAILABLE";
+	constructor() {
+		super("Backup target unavailable");
+	}
+}
+
+interface NativeBackupHostOwner {
+	readonly state: StartState;
+	readonly backups: readonly RegisteredProvider<"backup">[];
+	readonly targets: ReadonlyMap<RegisteredProvider<"backup">, NativeBackupTarget>;
+}
+interface NativeBackupTargetOwner {
+	readonly host: ExtensionHost;
+	readonly owner: NativeBackupHostOwner;
+	readonly registration: RegisteredProvider<"backup">;
+}
+const nativeBackupHosts = new WeakMap<object, NativeBackupHostOwner>();
+const nativeBackupTargets = new WeakMap<object, NativeBackupTargetOwner>();
+
+function backupHostOwner(value: unknown): NativeBackupHostOwner {
+	if (value === null || typeof value !== "object" || types.isProxy(value))
+		throw new NativeBackupTargetError();
+	const owner = nativeBackupHosts.get(value);
+	if (!owner?.state.open) throw new NativeBackupTargetError();
+	return owner;
+}
+
+function backupTargetOwner(target: unknown, host: unknown): NativeBackupTargetOwner {
+	const owner = backupHostOwner(host);
+	if (target === null || typeof target !== "object" || types.isProxy(target))
+		throw new NativeBackupTargetError();
+	const source = nativeBackupTargets.get(target);
+	if (
+		!source ||
+		source.host !== host ||
+		source.owner !== owner ||
+		!owner.backups.includes(source.registration) ||
+		!owner.state.stagings.some((staging) => staging.services.get("backup") === source.registration)
+	)
+		throw new NativeBackupTargetError();
+	return source;
+}
+
+/** Captures one unambiguous target id without consulting caller provider properties. */
+export function captureNativeBackupTarget(host: unknown, id: unknown): NativeBackupTarget {
+	try {
+		const owner = backupHostOwner(host);
+		if (!isIdentifier(id)) throw new NativeBackupTargetError();
+		const matches = owner.backups.filter((registration) => registration.id === id);
+		if (matches.length !== 1) throw new NativeBackupTargetError();
+		const registration = matches[0];
+		if (!registration) throw new NativeBackupTargetError();
+		const target = owner.targets.get(registration);
+		if (!target) throw new NativeBackupTargetError();
+		backupTargetOwner(target, host);
+		return target;
+	} catch {
+		throw new NativeBackupTargetError();
+	}
+}
+
+/** These captured classes are data; core still filters state before sealing any bytes. */
+export function nativeBackupTargetRefusals(
+	target: unknown,
+	expectedHost: unknown,
+): readonly DataClass[] {
+	try {
+		return backupTargetOwner(target, expectedHost).registration.refuses;
+	} catch {
+		throw new NativeBackupTargetError();
+	}
+}
+
+/** Joins delivery and started stream cleanup; host.close itself remains synchronous. */
+export async function putNativeBackupTarget(
+	target: unknown,
+	expectedHost: unknown,
+	name: string,
+	sealed: AsyncIterable<Uint8Array>,
+	manifest: BackupManifest,
+): Promise<void> {
+	let stream: AsyncGenerator<Uint8Array, void, unknown> | undefined;
+	let failed = false;
+	try {
+		const source = backupTargetOwner(target, expectedHost);
+		stream = (async function* (): AsyncGenerator<Uint8Array, void, unknown> {
+			backupTargetOwner(target, expectedHost);
+			for await (const bytes of sealed) {
+				backupTargetOwner(target, expectedHost);
+				yield bytes;
+				backupTargetOwner(target, expectedHost);
+			}
+			backupTargetOwner(target, expectedHost);
+		})();
+		await source.registration.put(name, stream, manifest);
+		backupTargetOwner(target, expectedHost);
+	} catch {
+		failed = true;
+	} finally {
+		try {
+			await stream?.return();
+		} catch {
+			failed = true;
+		}
+	}
+	if (!failed) {
+		try {
+			backupTargetOwner(target, expectedHost);
+		} catch {
+			failed = true;
+		}
+	}
+	if (failed) throw new NativeBackupTargetError();
+}
+
 function release(state: StartState): boolean {
 	state.open = false;
 	for (const staging of state.stagings) staging.active = false;
@@ -467,7 +591,7 @@ function host(state: StartState, clock: DeadlineClock, folder: string): Extensio
 	const listeners = stagings.flatMap((staging) => staging.listeners);
 	const byId = new Map(stagings.map((staging) => [staging.config.id, staging]));
 	const denied: SendPolicyDecision = Object.freeze({ kind: "deny", policies: Object.freeze([]) });
-	return Object.freeze({
+	const result: ExtensionHost = Object.freeze({
 		modules: Object.freeze(
 			stagings.map(({ config }) => Object.freeze({ id: config.id, version: config.version })),
 		),
@@ -508,6 +632,19 @@ function host(state: StartState, clock: DeadlineClock, folder: string): Extensio
 			if (!clean) refuse("cleanup");
 		},
 	});
+	const targets = new Map<RegisteredProvider<"backup">, NativeBackupTarget>();
+	const owner: NativeBackupHostOwner = {
+		state,
+		backups: (lists.get("backup") ?? []) as unknown as readonly RegisteredProvider<"backup">[],
+		targets,
+	};
+	nativeBackupHosts.set(result, owner);
+	for (const registration of owner.backups) {
+		const target = Object.freeze(Object.create(null)) as NativeBackupTarget;
+		targets.set(registration, target);
+		nativeBackupTargets.set(target, { host: result, owner, registration });
+	}
+	return result;
 }
 
 /**

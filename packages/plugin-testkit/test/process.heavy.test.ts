@@ -107,43 +107,156 @@ async function facts(hub: MockHub): Promise<ProcessFacts> {
 	return result.structuredContent as ProcessFacts;
 }
 
+type RuntimeStage = "official-fetch" | "actual-version" | "actual-refusal";
 async function runtimeCommand(
+	stage: RuntimeStage,
 	executable: string,
 	args: readonly string[],
 	diagnostics: string,
 	env: NodeJS.ProcessEnv = process.env,
 ): Promise<string> {
-	const stderr = openSync(diagnostics, "wx");
+	const facts = {
+		stage,
+		spawnReturned: false,
+		spawnErrorObserved: false,
+		spawnErrorCode: null as string | null,
+		setupFailed: false,
+		setupErrorCode: null as string | null,
+		exit: { observed: false, code: null as number | null, signal: null as NodeJS.Signals | null },
+		close: { observed: false, code: null as number | null, signal: null as NodeJS.Signals | null },
+		stdoutEnd: false,
+		stdoutClose: false,
+		stdoutErrorObserved: false,
+		stdoutUnavailable: false,
+		oversized: false,
+		manualStopRequested: false,
+		manualStopFailed: false,
+		stderrSink: "owned-file",
+		stderrEOF: "NOT_OBSERVABLE_FILE_SINK",
+		stderrBytes: null as number | null,
+		stderrSynced: false,
+		stderrClosed: false,
+	};
+	const technicalCode = (error: unknown): string | null => {
+		if (!isNativeError(error)) return null;
+		const slot = Object.getOwnPropertyDescriptor(error, "code");
+		return slot &&
+			Object.hasOwn(slot, "value") &&
+			typeof slot.value === "string" &&
+			/^[A-Z][A-Z0-9_]{0,63}$/.test(slot.value)
+			? slot.value
+			: null;
+	};
+	const unknownClosure = async (): Promise<never> => {
+		const keeper = setInterval(() => {}, 60_000);
+		keeper.ref();
+		return await new Promise<never>(() => {});
+	};
+	let stderr: number | undefined;
+	let child: ReturnType<typeof spawn> | undefined;
+	let originalClose: Promise<void> | undefined;
+	let output = "";
 	try {
-		return await new Promise<string>((resolve, reject) => {
-			const child = spawn(executable, [...args], {
+		stderr = openSync(diagnostics, "wx");
+		try {
+			child = spawn(executable, [...args], {
 				windowsHide: true,
 				env,
 				stdio: ["ignore", "pipe", stderr],
 				timeout: 600_000,
 			});
-			if (child.stdout === null) {
-				child.kill();
-				reject(new Error("Below-floor runtime setup failed"));
-				return;
+		} catch (error) {
+			facts.spawnErrorObserved = true;
+			facts.spawnErrorCode = technicalCode(error);
+			throw error;
+		}
+		facts.spawnReturned = true;
+		child.once("exit", (code, signal) => {
+			facts.exit = { observed: true, code, signal };
+		});
+		child.once("error", (error) => {
+			facts.spawnErrorObserved = true;
+			facts.spawnErrorCode = technicalCode(error);
+		});
+		originalClose = new Promise<void>((resolve) =>
+			child!.once("close", (code, signal) => {
+				facts.close = { observed: true, code, signal };
+				resolve();
+			}),
+		);
+		const stop = (): void => {
+			facts.manualStopRequested = true;
+			try {
+				if (!child!.kill()) facts.manualStopFailed = true;
+			} catch {
+				facts.manualStopFailed = true;
 			}
-			let output = "";
-			let oversized = false;
+		};
+		if (child.stdout === null) {
+			facts.stdoutUnavailable = true;
+			stop();
+		} else {
 			child.stdout.on("data", (chunk: Buffer) => {
 				if (Buffer.byteLength(output) + chunk.length > 65_536) {
-					oversized = true;
-					child.kill();
+					facts.oversized = true;
+					stop();
 				} else output += chunk.toString("utf8");
 			});
-			child.once("error", () => reject(new Error("Below-floor runtime setup failed")));
-			child.once("close", (code) => {
-				if (code !== 0 || oversized) reject(new Error("Below-floor runtime setup failed"));
-				else resolve(output);
+			child.stdout.once("end", () => {
+				facts.stdoutEnd = true;
 			});
-		});
+			child.stdout.once("close", () => {
+				facts.stdoutClose = true;
+			});
+			child.stdout.once("error", () => {
+				facts.stdoutErrorObserved = true;
+			});
+		}
+		await originalClose;
+	} catch (error) {
+		facts.setupFailed = true;
+		facts.setupErrorCode = technicalCode(error);
 	} finally {
-		closeSync(stderr);
+		if (originalClose) await originalClose;
+		else if (child !== undefined) await unknownClosure();
+		if (stderr !== undefined) {
+			try {
+				facts.stderrBytes = fstatSync(stderr).size;
+			} catch {
+				facts.setupFailed = true;
+			}
+			try {
+				fsyncSync(stderr);
+				facts.stderrSynced = true;
+			} catch {
+				facts.setupFailed = true;
+			}
+			try {
+				closeSync(stderr);
+				facts.stderrClosed = true;
+			} catch {
+				facts.setupFailed = true;
+			}
+			if (!facts.stderrClosed) await unknownClosure();
+		}
 	}
+	if (
+		facts.setupFailed ||
+		facts.spawnErrorObserved ||
+		facts.stdoutUnavailable ||
+		facts.stdoutErrorObserved ||
+		facts.oversized ||
+		!facts.exit.observed ||
+		!facts.close.observed ||
+		facts.exit.code !== facts.close.code ||
+		facts.close.code !== 0 ||
+		facts.exit.signal !== null ||
+		facts.close.signal !== null ||
+		!facts.stderrSynced ||
+		!facts.stderrClosed
+	)
+		throw new Error(`Below-floor runtime setup failed ${JSON.stringify(facts)}`);
+	return output;
 }
 
 it("refuses the actual below-floor executable before launching an otherwise valid plugin", async () => {
@@ -157,6 +270,7 @@ it("refuses the actual below-floor executable before launching an otherwise vali
 		if (!["win", "linux", "darwin"].includes(platform) || !["x64", "arm64"].includes(process.arch))
 			throw new Error("Below-floor runtime setup failed");
 		const fetched = await runtimeCommand(
+			"official-fetch",
 			process.execPath,
 			[
 				fileURLToPath(new URL("../../../tools/fetch-node/fetch-node.mjs", import.meta.url)),
@@ -182,7 +296,14 @@ it("refuses the actual below-floor executable before launching an otherwise vali
 			throw new Error("Below-floor runtime setup failed");
 	}
 	expect(
-		(await runtimeCommand(executable, ["--version"], path.join(root, "version.stderr"))).trim(),
+		(
+			await runtimeCommand(
+				"actual-version",
+				executable,
+				["--version"],
+				path.join(root, "version.stderr"),
+			)
+		).trim(),
 	).toBe("v26.5.0");
 	const check = path.join(root, "check.mjs");
 	await writeFile(
@@ -199,7 +320,7 @@ it("refuses the actual below-floor executable before launching an otherwise vali
 		].join("\n"),
 	);
 	const result = JSON.parse(
-		await runtimeCommand(executable, [check], path.join(root, "check.stderr")),
+		await runtimeCommand("actual-refusal", executable, [check], path.join(root, "check.stderr")),
 	) as { node: string; pid: number; code: string };
 	expect(result).toMatchObject({
 		node: "26.5.0",
@@ -831,4 +952,5 @@ it("drives the preserved provider fixture and its host progress through the prod
 });
 
 import { spawn } from "node:child_process";
-import { closeSync, openSync } from "node:fs";
+import { closeSync, fstatSync, fsyncSync, openSync } from "node:fs";
+import { isNativeError } from "node:util/types";

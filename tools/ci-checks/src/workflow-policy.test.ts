@@ -266,7 +266,7 @@ const classifierOutputs = [
 	["spike-matrix", `\${{ steps.shards.outputs.matrix }}`],
 	["spike-count", `\${{ steps.shards.outputs.count }}`],
 	["heavy", `\${{ steps.areas.outputs.heavy }}`],
-	["template-smoke", `\${{ steps.areas.outputs.template-smoke || 'false' }}`],
+	["template-smoke", `\${{ steps.areas.outputs.template-smoke }}`],
 	["source", `\${{ steps.source.outputs.source }}`],
 ] as const;
 
@@ -1936,6 +1936,48 @@ describe("one-task CI heavy shards", () => {
 		);
 	});
 	it.each([
+		["package condition removal", " && needs.changes.outputs.ordinary-heavy != ''", ""],
+		[
+			"package selection environment",
+			"HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}",
+			"HEAVY: ''",
+		],
+		[
+			"package selection environment removal",
+			"          HEAVY: ${{ needs.changes.outputs.ordinary-heavy }}\n",
+			"",
+		],
+		[
+			"smoke selection forced true",
+			"SMOKE: ${{ needs.changes.outputs.template-smoke == 'true' || github.ref == 'refs/heads/main' || github.base_ref == 'main' }}",
+			"SMOKE: 'true'",
+		],
+		["strict skips removal", "      DRAFTYAK_STRICT_SKIPS: '1'\n", ""],
+		[
+			"package filter blank guard",
+			'if [ -n "$filter" ]; then filters+=("--filter=$filter"); fi',
+			'if false; then filters+=("--filter=$filter"); fi',
+		],
+		[
+			"whole smoke exclusion removal",
+			'          if [ "$SMOKE" != true ] && [ -f packages/create-plugin/package.json ]; then\n            filters+=("--filter=!./packages/create-plugin")\n          fi\n',
+			"",
+		],
+		[
+			"shell override",
+			"        id: heavy-test\n",
+			"        id: heavy-test\n        shell: echo {0}\n",
+		],
+		[
+			"working directory",
+			"        id: heavy-test\n",
+			"        id: heavy-test\n        working-directory: elsewhere\n",
+		],
+		[
+			"soft failure",
+			"        id: heavy-test\n",
+			"        id: heavy-test\n        continue-on-error: true\n",
+		],
 		["strict skips", "DRAFTYAK_STRICT_SKIPS: '1'", "DRAFTYAK_STRICT_SKIPS: '0'"],
 		[
 			"native filter leakage",

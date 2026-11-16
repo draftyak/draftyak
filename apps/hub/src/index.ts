@@ -1,4 +1,10 @@
 export {
+	AccountError,
+	type AccountPage,
+	type AccountRecord,
+	NativeAccounts,
+} from "./accounts/records.ts";
+export {
 	AUDIT_EXPORT_MAX_BYTES,
 	AUDIT_EXPORT_MAX_EVENTS,
 	AUDIT_VERIFY_BATCH_SIZE,
@@ -36,6 +42,7 @@ export {
 } from "./drafts/freeze.ts";
 export { normalizeDraftBody, normalizeDraftContent } from "./drafts/normalize.ts";
 export {
+	type ConsumedDraftDisposition,
 	type DraftAppend,
 	type DraftBinding,
 	type DraftCreation,
@@ -58,6 +65,7 @@ export {
 	type EventRecord,
 } from "./events/log.ts";
 export { SINGLE_OWNER_IDENTITY, singleOwnerIdentity } from "./extensions/free/identity.ts";
+export { SINGLE_OWNER_WORKSPACE, singleOwnerWorkspace } from "./extensions/free/workspace.ts";
 export {
 	ExtensionError,
 	type ExtensionErrorCode,
@@ -71,6 +79,20 @@ export {
 	startExtensions,
 } from "./extensions/index.ts";
 export {
+	ADMIN_OPERATION_MIGRATIONS,
+	NativeAccountModeOperations,
+	NativeAdminError,
+	type NativeAdminErrorCode,
+} from "./identity/admin-operations.ts";
+export {
+	CHALLENGE_MIGRATIONS,
+	ChallengeError,
+	type ChallengeErrorCode,
+	ChallengeService,
+	type ChallengeServiceOptions,
+} from "./identity/challenges.ts";
+export { ADMIN_CHALLENGE_MIGRATIONS } from "./identity/challenges-admin.ts";
+export {
 	type ApproverConfirmation,
 	type AuthorityState,
 	DEVICE_MIGRATIONS,
@@ -81,6 +103,7 @@ export {
 } from "./identity/devices.ts";
 export { DevicePairingAuthority } from "./identity/devices-pairing.ts";
 export { HubIdentity } from "./identity/hub-key.ts";
+export type { NativeAccountApprovals } from "./identity/native-account-approvals.ts";
 export {
 	PinError,
 	type PinInitialization,
@@ -118,7 +141,12 @@ export {
 	timeoutSignal,
 	withDeadline,
 } from "./kernel/clock.ts";
-export { isKnownSyncedPath } from "./kernel/data-directory.ts";
+export {
+	admitDataFolder,
+	type DataFolder,
+	type DataFolderOptions,
+	isKnownSyncedPath,
+} from "./kernel/data-directory.ts";
 export { type KeyPurpose, MasterKey } from "./kernel/master-key.ts";
 export {
 	type InitialMaterial,
@@ -135,10 +163,18 @@ export {
 	type SidecarStopReason,
 } from "./kernel/sidecar-input.ts";
 export {
+	checkLaunch,
+	type LaunchCheck,
+	type LaunchInput,
+	StartupRefusal,
+	type StartupRefusalCode,
+} from "./lifecycle/preflight.ts";
+export {
 	createLifecycleScheduler,
 	type LifecycleSchedulerOptions,
 } from "./lifecycle/scheduler.ts";
 export {
+	assertHubSessionAdmission,
 	type HubSession,
 	HubSessionError,
 	type HubSessionErrorCode,
@@ -172,6 +208,29 @@ export {
 } from "./lifecycle/state.ts";
 export { type NativeStorageOptions, openNativeStorage } from "./native-storage.ts";
 export {
+	NATIVE_OUTBOX_DEFAULT_TTL_MS,
+	NATIVE_OUTBOX_DEFAULT_UNDO_MS,
+	NativeOutboxProposals,
+	type NativeOutboxSettings,
+	type NativeProposalFacts,
+	type NativeProposalInput,
+	type NativeProposalProviders,
+	type NativeProposalRecord,
+	OUTBOX_MIGRATIONS,
+	tallyApprovals,
+} from "./outbox/propose.ts";
+export { ProposalError, type ProposalErrorCode } from "./outbox/propose-errors.ts";
+export {
+	assertNativeSendRenderMatches,
+	captureNativeSendRender,
+	MAX_NATIVE_SEND_BODY_BYTES,
+	type NativeBuiltinSendInput,
+	type NativeRenderedSend,
+	NativeSendRenderError,
+	nativeSendRenderProjection,
+	renderNativeBuiltinSend,
+} from "./outbox/renderers/index.ts";
+export {
 	SchedulerLoop,
 	type SchedulerLoopError,
 	type SchedulerLoopOptions,
@@ -186,6 +245,16 @@ export {
 	schedulingAvailable,
 	type WallScheduleInput,
 } from "./outbox/scheduler-time.ts";
+export {
+	APPROVAL_MIGRATIONS,
+	SendApprovalVerifier,
+	type SendApprovalVerifierOptions,
+} from "./outbox/verifier.ts";
+export type {
+	SendApprovalPolicy,
+	SendApprovalPolicyInput,
+	SendApprovalPolicyResult,
+} from "./outbox/verifier-types.ts";
 export {
 	type AiCandidateRequest,
 	type AiProfileRegistry,
@@ -212,8 +281,10 @@ export {
 	BLOCKED_LOOPBACK_PORTS,
 	canonicalAddress,
 	captureEgressPolicy,
+	classifyEndpoint,
 	createPinnedHttpsConnection,
 	type EgressPolicy,
+	type EndpointClassification,
 	egressHost,
 	egressPort,
 	HUB_DENIED_PORTS,
@@ -251,4 +322,12 @@ export {
 	type PluginRegistryErrorCode,
 	type PluginRegistryOptions,
 } from "./plugins/registry/index.ts";
+export {
+	closeNativeBackupPreparation,
+	type NativeBackupPreparation,
+	type NativeBackupPreparationInput,
+	NativeBackupRestoreError,
+	prepareNativeBackup,
+	resetNativeBackupAuthority,
+} from "./recovery/backup-restore.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";

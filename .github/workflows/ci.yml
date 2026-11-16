@@ -36,7 +36,7 @@ jobs:
       heavy: ${{ steps.areas.outputs.heavy }}
       native-transport: ${{ steps.native.outputs.native-transport }}
       ordinary-heavy: ${{ steps.native.outputs.ordinary-heavy }}
-      template-smoke: ${{ steps.areas.outputs.template-smoke || 'false' }}
+      template-smoke: ${{ steps.areas.outputs.template-smoke }}
       source: ${{ steps.source.outputs.source }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

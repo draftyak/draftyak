@@ -18,6 +18,10 @@ export function cliConfirmPinScope(candidate: string): string {
 	return `device.cli-confirm:${ulid(candidate)}`;
 }
 
+export function bootstrapPinScope(candidate: string): string {
+	return `device.bootstrap:${ulid(candidate)}`;
+}
+
 export function revokePinScope(target: string): string {
 	return `device.revoke:${ulid(target)}`;
 }
