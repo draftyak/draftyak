@@ -842,7 +842,14 @@ export function renderOpenApiTypes(document: unknown): string {
 	}
 }
 
-function localReferences(document: JsonObject): void {
+function localReferences(document: JsonObject, schemas: ReadonlyMap<string, Schema>): void {
+	const namedSchemaMaps = new Set<JsonObject>();
+	for (const value of schemas.values()) {
+		if (typeof value === "boolean") continue;
+		for (const keyword of ["properties", "$defs"]) {
+			if (value[keyword] !== undefined) namedSchemaMaps.add(record(value[keyword]));
+		}
+	}
 	const pending: Json[] = [document];
 	while (pending.length > 0) {
 		const value = pending.pop();
@@ -851,7 +858,8 @@ function localReferences(document: JsonObject): void {
 			pending.push(...value);
 			continue;
 		}
-		if (value.$ref !== undefined) {
+		// A validated schema map stores names, while each child is still checked below.
+		if (!namedSchemaMaps.has(value) && value.$ref !== undefined) {
 			const reference = string(value.$ref);
 			if (!reference.startsWith("#")) fail("OPENAPI_UNSUPPORTED");
 			let pointer: string;
@@ -986,8 +994,8 @@ function normalizeLibraryInput(
 export function validateOpenApiDocument(document: unknown): Buffer {
 	try {
 		const captured = record(capture(document));
-		localReferences(captured);
 		const schemas = new Renderer(captured).validated();
+		localReferences(captured, schemas);
 		const normalized = record(capture(normalizeLibraryInput(captured, schemas)));
 		new Renderer(normalized).validated();
 		const bytes = Buffer.from(JSON.stringify(normalized), "utf8");

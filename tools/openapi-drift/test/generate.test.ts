@@ -782,6 +782,59 @@ function compatibilityFixture() {
 	});
 }
 
+test("preserves dollar-ref property and definition names without skipping real references", async () => {
+	const document = documentWith({
+		"DYTEST.RefNames": {
+			type: "object",
+			additionalProperties: false,
+			required: ["$ref", "properties", "$defs"],
+			properties: {
+				$ref: { type: "string" },
+				properties: { $ref: "#/components/schemas/DYTEST.RefNames/$defs/$ref" },
+				$defs: {
+					type: "object",
+					properties: { $ref: { type: "boolean" } },
+				},
+			},
+			$defs: { $ref: { type: "integer" } },
+		},
+	});
+	const normalized = JSON.parse(validateOpenApiDocument(document).toString("utf8"));
+	const record = normalized.components.schemas["DYTEST.RefNames"];
+	assert.deepEqual(record.properties.$ref, { type: "string" });
+	assert.deepEqual(record.properties.$defs.properties.$ref, { type: "boolean" });
+	assert.equal(Object.hasOwn(record, "$defs"), false);
+	assert.equal(typeof record.properties.properties.$ref, "string");
+	assert.deepEqual(normalized.components.schemas.__draftyak_defs_000001, { type: "integer" });
+	const output = await generateOpenApiTypes(document);
+	assert.match(output, /\$ref: string;/);
+	assert.match(output, /\$ref\?: boolean;/);
+	for (const name of ["$ref", "properties", "$defs", "anyOf"]) {
+		for (const reference of [
+			"https://example.invalid/DYTEST",
+			"#/components/schemas/DYTEST.Missing",
+		]) {
+			assert.throws(
+				() =>
+					validateOpenApiDocument(
+						documentWith({
+							"DYTEST.Bad": { type: "object", properties: { [name]: { $ref: reference } } },
+						}),
+					),
+				OpenApiTypesError,
+			);
+		}
+	}
+	assert.throws(
+		() =>
+			validateOpenApiDocument({
+				...document,
+				"x-DYTEST": { $ref: "https://example.invalid/DYTEST" },
+			}),
+		OpenApiTypesError,
+	);
+});
+
 test("normalizes schema helpers without changing payload keyword fields or object constraints", () => {
 	const document = compatibilityFixture();
 	const before = JSON.stringify(document);
