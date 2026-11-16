@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 import {
+	INVENTORY_DIRECTORY_READ_BUDGET,
 	INVENTORY_SENTINEL,
 	inventoryEnvironment,
 	type OwnedProcess,
@@ -94,6 +95,13 @@ export function createInventoryHost(
 			}
 		}
 	};
+	const releaseFs = (): void => {
+		activeFs -= 1;
+		if (activeFs === 0) {
+			for (const resolve of fsWaiters) resolve();
+			fsWaiters.clear();
+		}
+	};
 	const track = async <T>(work: () => Promise<T>): Promise<T> => {
 		if (stopped) throw failed();
 		activeFs += 1;
@@ -102,21 +110,23 @@ export function createInventoryHost(
 			if (stopped) throw failed();
 			return result;
 		} finally {
-			activeFs -= 1;
-			if (activeFs === 0) {
-				for (const resolve of fsWaiters) resolve();
-				fsWaiters.clear();
-			}
+			releaseFs();
 		}
 	};
 	return {
-		readDirectory: (directory) =>
-			track(async () => {
+		readDirectory: async (directory) => {
+			if (stopped) throw failed();
+			activeFs += 1;
+			try {
 				directoryVisits += 1;
 				const found = await ports.readDirectory(directory);
 				entries += found.length;
+				if (stopped) throw failed();
 				return found;
-			}),
+			} finally {
+				releaseFs();
+			}
+		},
 		statPath: (target) => track(() => ports.statPath(target)),
 		snapshot: () => ({ pendingGit: children.size, pendingFs: activeFs, directoryVisits, entries }),
 		stopped: () => stopped,
@@ -219,28 +229,42 @@ export async function inventoryWorktrees(
 		progress?.phase(2);
 		let next = 0;
 		let refused = false;
+		let liveWorkerCount = Math.min(16, roots.length);
+		const workerCount = liveWorkerCount;
+		const readCapacity = (): number => {
+			if (liveWorkerCount < 1) throw failed();
+			// Keep each walk's existing validated maximum while sharing the larger
+			// process-wide filesystem capacity across the same sixteen root workers.
+			return Math.min(64, Math.floor(INVENTORY_DIRECTORY_READ_BUDGET / liveWorkerCount));
+		};
 		const worker = async (): Promise<void> => {
-			while (!refused && !host.stopped() && next < roots.length) {
-				const directory = roots[next++];
-				if (directory === undefined) continue;
-				try {
-					const found = await namedWorktreeFiles(
-						".env.live",
-						directory,
-						refreshWorktrees,
-						process.platform === "win32",
-						host.readDirectory,
-						host.statPath,
-					);
-					if (found.length !== 0) throw failed();
-				} catch {
-					refused = true;
-					host.stop();
+			try {
+				while (!refused && !host.stopped() && next < roots.length) {
+					const directory = roots[next++];
+					if (directory === undefined) continue;
+					try {
+						const found = await namedWorktreeFiles(
+							".env.live",
+							directory,
+							refreshWorktrees,
+							process.platform === "win32",
+							host.readDirectory,
+							host.statPath,
+							readCapacity,
+						);
+						if (found.length !== 0) throw failed();
+					} catch {
+						refused = true;
+						host.stop();
+					}
 				}
+			} finally {
+				// A worker releases its share only after its final scan and root checks settle.
+				liveWorkerCount -= 1;
 			}
 		};
 		progress?.phase(3);
-		await Promise.allSettled(Array.from({ length: 16 }, worker));
+		await Promise.allSettled(Array.from({ length: workerCount }, worker));
 		if (refused || host.stopped() || next !== roots.length) throw failed();
 	} catch {
 		progress?.phase(5);
