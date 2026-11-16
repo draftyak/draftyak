@@ -163,7 +163,7 @@ describe("owned inventory process", () => {
 			const child = inventoryEnvironment(supplied);
 			const expected: NodeJS.ProcessEnv = {
 				...os,
-				UV_THREADPOOL_SIZE: "64",
+				UV_THREADPOOL_SIZE: "128",
 				GIT_CONFIG_NOSYSTEM: "1",
 				GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
 				GIT_OPTIONAL_LOCKS: "0",

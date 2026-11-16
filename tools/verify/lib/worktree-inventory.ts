@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 import {
+	INVENTORY_DIRECTORY_READ_BUDGET,
 	INVENTORY_SENTINEL,
 	inventoryEnvironment,
 	type OwnedProcess,
@@ -232,7 +233,9 @@ export async function inventoryWorktrees(
 		const workerCount = liveWorkerCount;
 		const readCapacity = (): number => {
 			if (liveWorkerCount < 1) throw failed();
-			return Math.floor(64 / liveWorkerCount);
+			// Keep each walk's existing validated maximum while sharing the larger
+			// process-wide filesystem capacity across the same sixteen root workers.
+			return Math.min(64, Math.floor(INVENTORY_DIRECTORY_READ_BUDGET / liveWorkerCount));
 		};
 		const worker = async (): Promise<void> => {
 			try {
