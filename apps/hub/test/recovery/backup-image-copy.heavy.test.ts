@@ -211,6 +211,19 @@ it("copies epoch above one and a real FK cycle before installing all canonical g
 		restored.read((sql) => sql.get<{ n: number }>("SELECT count(*) AS n FROM audit_events")?.n),
 	).toBe(2);
 });
+it("preserves nondefault durable native pause state in the copied image", () => {
+	expect(
+		template.read((sql) => sql.get("SELECT singleton,sync_paused FROM native_runtime_settings")),
+	).toEqual({ singleton: 1, sync_paused: 0 });
+	source.write((sql) =>
+		sql.run("UPDATE native_runtime_settings SET sync_paused=1 WHERE singleton=1"),
+	);
+	const { restored } = roundTrip(source, template);
+	for (const store of [source, restored])
+		expect(
+			store.read((sql) => sql.get("SELECT singleton,sync_paused FROM native_runtime_settings")),
+		).toEqual({ singleton: 1, sync_paused: 1 });
+});
 it("pages literal rows and preserves BLOBs, full audit history and exact INT64 sequence state", async () => {
 	const bytes = randomBytes(1024),
 		userIds = Array.from({ length: 25 }, () => newId());

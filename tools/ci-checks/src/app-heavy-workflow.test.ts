@@ -29,7 +29,8 @@ const ordinary = job;
 const shard = workflow.jobs["spike-run"];
 const shardMatches = shard.steps.filter((entry) => entry.id === "heavy-test");
 const shardStep = shardMatches[0];
-if (shardMatches.length !== 1 || !shardStep?.run) throw new Error("missing selected shard workflow step");
+if (shardMatches.length !== 1 || !shardStep?.run)
+	throw new Error("missing selected shard workflow step");
 const shardRun = shardStep.run;
 const readySelection =
 	"needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && ";
@@ -51,7 +52,12 @@ function shellCondition(value: string | undefined, sharded: boolean): string {
 		["needs.changes.outputs.docs-only != 'true'", '[ "$DOCS_ONLY" != true ]'],
 		["github.event_name != 'pull_request'", '[ "$EVENT_NAME" != pull_request ]'],
 		["!github.event.pull_request.draft", '[ "$PR_DRAFT" != true ]'],
-		[sharded ? "needs.changes.outputs.spike-count != '0'" : "needs.changes.outputs.ordinary-heavy != ''", sharded ? '[ "$SPIKE_COUNT" != 0 ]' : '[ -n "$ORDINARY_HEAVY" ]'],
+		[
+			sharded
+				? "needs.changes.outputs.spike-count != '0'"
+				: "needs.changes.outputs.ordinary-heavy != ''",
+			sharded ? '[ "$SPIKE_COUNT" != 0 ]' : '[ -n "$ORDINARY_HEAVY" ]',
+		],
 	]);
 	let condition = String(value);
 	let grammar = condition;
@@ -90,7 +96,12 @@ function exercise(
 		mkdirSync(path.join(root, "packages", "create-plugin"), { recursive: true });
 		writeFileSync(path.join(root, "packages", "create-plugin", "package.json"), "{}");
 		const selected = {
-			...classify(files, root, () => [], () => []),
+			...classify(
+				files,
+				root,
+				() => [],
+				() => [],
+			),
 			...overlay,
 		};
 		const selectedJob = sharded ? shard : job;
@@ -285,10 +296,16 @@ describe("actual selected-heavy workflow application arguments", () => {
 		expect(exercise([], false, false, {}, overlay)).toEqual({ status: 0, calls: [] });
 	});
 	it("excludes the dedicated native wrapper from real ordinary shell arguments", () => {
-		const result = exercise([], false, false, {}, {
-			heavy: ["./tools/transport-tests", "...{./apps/cli}"],
-			rust: ["crates"],
-		});
+		const result = exercise(
+			[],
+			false,
+			false,
+			{},
+			{
+				heavy: ["./tools/transport-tests", "...{./apps/cli}"],
+				rust: ["crates"],
+			},
+		);
 		expect(result).toEqual({
 			status: 0,
 			calls: [

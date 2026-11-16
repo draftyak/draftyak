@@ -1,0 +1,48 @@
+.conversation-view {
+	min-inline-size: 0;
+	overflow-wrap: anywhere;
+}
+
+.conversation-view__messages {
+	list-style: none;
+	padding: 0;
+}
+
+.conversation-view__messages li + li {
+	margin-block-start: 0.5rem;
+}
+
+.conversation-view__messages button {
+	display: block;
+	inline-size: 100%;
+	padding: 0.75rem;
+	font: inherit;
+	text-align: start;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.conversation-view__messages [aria-current="true"] {
+	border: 0.2rem solid currentColor;
+}
+
+.conversation-view button:focus-visible {
+	outline: 0.2rem solid currentColor;
+	outline-offset: 0.2rem;
+}
+
+.conversation-view__metadata {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+	gap: 0.5rem;
+}
+
+.conversation-view__metadata dt {
+	font-weight: bold;
+}
+
+.conversation-view__metadata dd {
+	min-inline-size: 0;
+	margin: 0;
+	white-space: pre-wrap;
+}

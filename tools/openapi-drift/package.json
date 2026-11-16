@@ -1,0 +1,19 @@
+{
+  "name": "@draftyak/openapi-drift",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "typecheck": "node ../../node_modules/typescript/bin/tsc -b --pretty false",
+    "test": "node --test test/generate.test.ts test/format-types.test.ts"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "4.0.9",
+    "json-schema-to-ts": "3.1.1",
+    "openapi-typescript": "7.13.0",
+    "typescript": "npm:typescript@5.9.3"
+  }
+}
