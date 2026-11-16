@@ -191,12 +191,12 @@ describe("inventory directory read capacity", () => {
 			const completion = observe(inventoryWorktrees(main, hostFor(fs, main, [...empty, wide])));
 			try {
 				await setImmediate();
-				expect(fs.pendingPaths().filter((target) => inside(wide, target))).toHaveLength(4);
-				expect(fs.widePeak).toBe(4);
+				expect(fs.pendingPaths().filter((target) => inside(wide, target))).toHaveLength(8);
+				expect(fs.widePeak).toBe(8);
 				expect(fs.peak).toBeLessThanOrEqual(64);
 				for (const root of empty) fs.release(root);
 				await setImmediate();
-				expect(fs.active).toBe(4);
+				expect(fs.active).toBe(8);
 				const tailRead = fs.pendingPaths().find((target) => inside(wide, target));
 				if (tailRead === undefined) throw new Error("wide tail was not admitted");
 				fs.release(tailRead);
