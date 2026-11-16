@@ -72,6 +72,7 @@ const assets = [
 		"identity/backup-challenge-migrations/0001_backup_challenges.sql",
 		"identity/backup-challenge-migrations/0001_backup_challenges.sql",
 	],
+	["api/migrations/0001_owner_settings.sql", "api/migrations/0001_owner_settings.sql"],
 ] as const;
 
 it.each(["cached", "closed-before-use"] as const)(
@@ -133,7 +134,7 @@ it.each(["cached", "closed-before-use"] as const)(
 			expect(JSON.parse(run.stdout)).toEqual({
 				ok: true,
 				mode,
-				schemas: 18,
+				schemas: 19,
 				cached: mode === "cached",
 				beforeBootstrap: true,
 				closedRefused: true,
