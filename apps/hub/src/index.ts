@@ -50,6 +50,7 @@ export {
 } from "./drafts/freeze.ts";
 export { normalizeDraftBody, normalizeDraftContent } from "./drafts/normalize.ts";
 export {
+	type ConsumedDraftDisposition,
 	type DraftAppend,
 	type DraftBinding,
 	type DraftCreation,
@@ -288,8 +289,10 @@ export {
 	BLOCKED_LOOPBACK_PORTS,
 	canonicalAddress,
 	captureEgressPolicy,
+	classifyEndpoint,
 	createPinnedHttpsConnection,
 	type EgressPolicy,
+	type EndpointClassification,
 	egressHost,
 	egressPort,
 	HUB_DENIED_PORTS,
@@ -327,4 +330,12 @@ export {
 	type PluginRegistryErrorCode,
 	type PluginRegistryOptions,
 } from "./plugins/registry/index.ts";
+export {
+	closeNativeBackupPreparation,
+	type NativeBackupPreparation,
+	type NativeBackupPreparationInput,
+	NativeBackupRestoreError,
+	prepareNativeBackup,
+	resetNativeBackupAuthority,
+} from "./recovery/backup-restore.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";

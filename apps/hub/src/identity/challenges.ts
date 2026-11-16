@@ -940,6 +940,7 @@ export class ChallengeService {
 					refuse("SIGNATURE_INVALID");
 				assertGrant.call(this.#authorizer, tx, finalGrant);
 				this.#checkTime(held, sample(this.#clock));
+				assertGrant.call(this.#authorizer, tx, finalGrant);
 				return Object.freeze({ kind, id: held.target });
 			};
 			const result =

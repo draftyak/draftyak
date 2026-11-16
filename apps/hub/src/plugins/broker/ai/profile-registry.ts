@@ -2,7 +2,6 @@ import { aiProviderV1 } from "@draftyak/protocol/ai-provider-v1";
 import type { HeaderList } from "@draftyak/protocol/hash";
 import { headersSha256 } from "@draftyak/protocol/hash";
 import { HOST_MAX_HEADER_BYTES } from "@draftyak/protocol/host-channel";
-import { parseStrict } from "@draftyak/protocol/jcs";
 import { AI_HTTP_PROFILES, type AiProfile } from "@draftyak/protocol/manifest/ai-http";
 import {
 	addressFacts,
@@ -21,6 +20,7 @@ import {
 	messagesMetadataLifecycle,
 	reserveMessagesMetadata,
 } from "./messages-metadata.ts";
+import { parseCapturedAiRequestBody } from "./request-json.ts";
 import {
 	captureResponsesMetadataBinding,
 	responsesMetadataEndpoint,
@@ -359,7 +359,7 @@ export function verifyCapturedAiRequest(
 			},
 		);
 		if (source.kind === "draft") {
-			const body = parseStrict(candidate.body);
+			const body = parseCapturedAiRequestBody(candidate.body);
 			registration.verify({ body, headers: new Map(candidate.headers), binding: source.binding });
 		} else {
 			registration.verifyMetadata?.({

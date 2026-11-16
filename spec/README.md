@@ -83,6 +83,7 @@ These checked-in contracts remain draft until the M1 gate. A dash means the cont
 | Canonical JSON, signatures and header hashes | [Encodings](#encodings) | — | [JCS](vectors/jcs/), [ES256](vectors/sign/), [header hashes](vectors/hash/) |
 | Flags, severities and acknowledgement | [Flags v1](flags-v1.md) | [Flags v1](schemas/flags-v1.schema.json) | [Flags](vectors/flags/) |
 | Stored and displayed entities | — | [Entities v1](schemas/entities-v1.schema.json) | — |
+| Current draft and revision | — | [Draft read v1](schemas/draft-read-v1.schema.json) | — |
 | Pairing and confirmation | [Pairing v1](pairing-v1.md) | — | [Pairing](vectors/pairing/) |
 | Native device API | [Device API v1](device-api-v1.md) | [Device API v1](schemas/device-api-v1.schema.json) | [Device API](vectors/device-api/) |
 | Gmail code relay | [OAuth relay v1](oauth-relay-v1.md) | [OAuth relay v1](schemas/oauth-relay-v1.schema.json) | [OAuth relay](vectors/oauth-relay/) |

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { rmSync } from "node:fs";
+import { DraftRevision } from "@draftyak/protocol/entities/draft";
 import { canonicalize } from "@draftyak/protocol/jcs";
 import { type CurrentSendSnapshotV1, contentHash } from "@draftyak/protocol/snapshot";
 import { afterEach, describe, expect, it } from "vitest";
@@ -28,7 +29,13 @@ afterEach(() => {
 function rows(f: Awaited<ReturnType<typeof revisionFixture>>) {
 	return f.store.read((db) => ({
 		headers: db.all("SELECT * FROM native_drafts ORDER BY id"),
-		revisions: db.all("SELECT * FROM native_draft_revisions ORDER BY draft_id,rev"),
+		revisions: db.all<{
+			draft_id: string;
+			rev: number;
+			payload: string;
+			previous: string;
+			mac: string;
+		}>("SELECT * FROM native_draft_revisions ORDER BY draft_id,rev"),
 		locks: db.all("SELECT * FROM native_draft_locks ORDER BY id"),
 		audit: db.all("SELECT * FROM audit_events ORDER BY seq"),
 		meta: db.all("SELECT * FROM audit_meta"),
@@ -99,12 +106,12 @@ describe("independent native revision guard boundaries", () => {
 			const before = rows(f);
 			expect(() =>
 				f.store.write((tx) =>
-					f.revisions.setLockInTransaction(
+					f.revisions.prepareLockInTransaction(
 						tx,
 						bound,
 						field === "revision" ? 2 : 1,
 						field === "lock" ? newId() : lock,
-						lock,
+						null,
 					),
 				),
 			).toThrow("Draft revision unavailable");
@@ -158,6 +165,65 @@ describe("independent native revision guard boundaries", () => {
 		expect(facts.snapshotHash).toBe(contentHash(two));
 		expect(facts.snapshotHash).not.toBe(firstHash);
 		expect(facts.snapshot.schedule).toEqual(two.schedule);
+	});
+
+	it("refuses a signed earlier-row replacement at the next revision's previous link", async () => {
+		const f = await fixture();
+		const input = f.make();
+		const bound = f.bind(input);
+		const first = f.create(input);
+		const second = f.store.write((tx) =>
+			f.revisions.appendInTransaction(tx, {
+				...input,
+				expectedRev: 1,
+				content: { ...input.content, body: "second revision" },
+			}),
+		);
+		expect(f.revisions.current(bound)).toEqual(second);
+		expect(f.revisions.history(bound)).toEqual([first.revision, second.revision]);
+		const before = rows(f);
+		expect(before.revisions).toHaveLength(2);
+		expect(before.revisions[1]?.previous).toBe(before.revisions[0]?.mac);
+		corruptRevisionStorage(f, (database) => {
+			const stored = database
+				.prepare("SELECT * FROM native_draft_revisions WHERE draft_id=? AND rev=1")
+				.get(input.draftId) as
+				| { draft_id: string; rev: number; payload: string; previous: string; mac: string }
+				| undefined;
+			if (!stored) throw new Error("Fixture must have an earlier revision");
+			expect(stored.previous).toBe("");
+			const original = DraftRevision.parse(JSON.parse(stored.payload));
+			expect(original).toEqual(first.revision);
+			const replacement = DraftRevision.parse({
+				...original,
+				author: { ...original.author, id: newId(f.time.now) },
+			});
+			expect(replacement.author.id).not.toBe(original.author.id);
+			expect({ ...replacement, author: original.author }).toEqual(original);
+			const { mac: oldMac, ...signed } = stored;
+			const payload = canonicalize(replacement);
+			const mac = signFixtureDraftRow(f, "revision", { binding: bound, ...signed, payload });
+			expect(mac).not.toBe(oldMac);
+			expect(
+				database
+					.prepare("UPDATE native_draft_revisions SET payload=?,mac=? WHERE draft_id=? AND rev=1")
+					.run(payload, mac, input.draftId).changes,
+			).toBe(1);
+		});
+		const damaged = rows(f);
+		expect(damaged.headers).toEqual(before.headers);
+		expect(damaged.revisions.slice(1)).toEqual(before.revisions.slice(1));
+		expect(() => f.revisions.current(bound)).toThrow("Draft revision unavailable");
+		expect(() => f.revisions.history(bound)).toThrow("Draft revision unavailable");
+		expect(f.store.read((db) => db.all("SELECT id FROM revision_parent"))).toEqual([]);
+		expect(() =>
+			f.store.write((tx) => {
+				tx.run("INSERT INTO revision_parent(id) VALUES(987654)");
+				f.revisions.appendInTransaction(tx, { ...input, expectedRev: 2 });
+			}),
+		).toThrow("Draft revision unavailable");
+		expect(rows(f)).toEqual(damaged);
+		expect(f.store.read((db) => db.all("SELECT id FROM revision_parent"))).toEqual([]);
 	});
 
 	it("refuses an authentic second row with the wrong previous-revision link", async () => {
