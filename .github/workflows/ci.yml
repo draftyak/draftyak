@@ -94,7 +94,10 @@ jobs:
           key: turbo-${{ runner.os }}-${{ github.job }}-${{ hashFiles('pnpm-lock.yaml', '.github/workflows/**', '**/*.ts', '**/*.json', '!**/node_modules/**') }}
           restore-keys: turbo-${{ runner.os }}-${{ github.job }}-
       - if: needs.changes.outputs.docs-only != 'true'
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Prepare the current-source filesystem addon
+        if: needs.changes.outputs.docs-only != 'true'
+        run: node tools/verify/native-prepare.ts --online --prepare
       - if: needs.changes.outputs.docs-only != 'true'
         run: pnpm verify --profile cheap
 
@@ -139,7 +142,7 @@ jobs:
         if: needs.changes.outputs.rust != ''
         with:
           workspaces: ${{ needs.changes.outputs.rust }}
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - name: Run native transport checks
         id: native
@@ -190,7 +193,7 @@ jobs:
         if: needs.changes.outputs.rust != ''
         with:
           workspaces: ${{ needs.changes.outputs.rust }}
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - name: Prepare authenticated offline Node fixture
         id: offline-node
@@ -314,7 +317,7 @@ jobs:
         if: needs.changes.outputs.rust != ''
         with:
           workspaces: ${{ needs.changes.outputs.rust }}
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm build
       - name: Prepare authenticated offline Node fixture
         id: offline-node
@@ -415,7 +418,11 @@ jobs:
           path: .turbo/cache
           key: turbo-${{ runner.os }}-${{ github.job }}-${{ hashFiles('pnpm-lock.yaml', '.github/workflows/**', '**/*.ts', '**/*.json', '!**/node_modules/**') }}
           restore-keys: turbo-${{ runner.os }}-${{ github.job }}-
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Check pure Windows native-query helpers
+        run: powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/verify/test/inventory-native-query.test.ps1
+      - name: Prepare the current-source filesystem addon
+        run: node tools/verify/native-prepare.ts --online --prepare
       # Warm the hosted runner's engine before parallel test capability probes.
       - name: Initialize the Windows container service
         shell: pwsh
@@ -487,7 +494,7 @@ jobs:
         if: needs.changes.outputs.native-transport == 'true'
         with:
           workspaces: crates
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Recover Hub store after process interruption
         id: store-crash
         if: (contains(fromJSON(needs.changes.outputs.areas), 'heavy:...{./apps/hub}') || contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/hub'))
@@ -508,10 +515,60 @@ jobs:
           NATIVE_ARCHITECTURE: arm64
         run: pnpm exec node tools/ci-checks/src/native-transport.ts run
 
+  inventory-physical-macos:
+    needs: changes
+    outputs:
+      source: ${{ steps.source.outputs.source }}
+    if: needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - id: source
+        run: node tools/ci-checks/src/verification-receipt.ts capture
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Prepare the current-source filesystem addon
+        run: node tools/verify/native-prepare.ts --online --prepare
+      - name: Require all eight physical filesystem cases
+        id: physical-test
+        working-directory: tools/verify
+        run: |
+          test ! -e "$RUNNER_TEMP/inventory-physical.json"
+          node "$GITHUB_WORKSPACE/node_modules/vitest/vitest.mjs" run \
+            test/inventory-directory-physical.test.ts \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RUNNER_TEMP/inventory-physical.json" --passWithNoTests=false \
+            --exclude '**/*siwc*/**' --exclude '**/*siwc*' \
+            --exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import path from 'node:path';
+          const report = JSON.parse(readFileSync(path.join(process.env.RUNNER_TEMP, 'inventory-physical.json'), 'utf8'));
+          const expected = path.resolve(process.env.GITHUB_WORKSPACE, 'tools/verify/test/inventory-directory-physical.test.ts');
+          const result = report?.testResults?.[0];
+          if (report?.success !== true || report.numTotalTests !== 8 || report.numPassedTests !== 8 ||
+              report.numFailedTests !== 0 || report.numPendingTests !== 0 || report.numTodoTests !== 0 ||
+              !Array.isArray(report.testResults) || report.testResults.length !== 1 ||
+              typeof result?.name !== 'string' || path.resolve(result.name) !== expected ||
+              !Array.isArray(result.assertionResults) || result.assertionResults.length !== 8 ||
+              !result.assertionResults.every((assertion) => assertion?.status === 'passed')) {
+            throw new Error('physical inventory requires exactly eight passing tests without skips or todos');
+          }
+          NODE
+
   required:
     # The merge rule requires `required`, so a draft run's cheap-only result reports under another name.
     name: ${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}
-    needs: [changes, cheap, full, spikes, heavy, windows, macos]
+    needs: [changes, cheap, full, spikes, heavy, windows, macos, inventory-physical-macos]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5

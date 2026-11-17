@@ -78,6 +78,36 @@ const hubCrashRequired: YamlMap = {
 	},
 	run: `node --input-type=module -e 'if (process.env.WINDOWS_RESULT !== "success" || process.env.MACOS_RESULT !== "success") process.exit(1)'`,
 };
+const inventoryPhysicalTest: YamlMap = {
+	id: "physical-test",
+	"working-directory": "tools/verify",
+	run: [
+		"test ! -e \"$RUNNER_TEMP/inventory-physical.json\"",
+		"node \"$GITHUB_WORKSPACE/node_modules/vitest/vitest.mjs\" run \\",
+		"  test/inventory-directory-physical.test.ts \\",
+		"  --reporter=default --reporter=json \\",
+		"  --outputFile.json=\"$RUNNER_TEMP/inventory-physical.json\" --passWithNoTests=false \\",
+		"  --exclude '**/*siwc*/**' --exclude '**/*siwc*' \\",
+		"  --exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'",
+		"node --input-type=module <<'NODE'",
+		"import { readFileSync } from 'node:fs';",
+		"import path from 'node:path';",
+		"const report = JSON.parse(readFileSync(path.join(process.env.RUNNER_TEMP, 'inventory-physical.json'), 'utf8'));",
+		"const expected = path.resolve(process.env.GITHUB_WORKSPACE, 'tools/verify/test/inventory-directory-physical.test.ts');",
+		"const result = report?.testResults?.[0];",
+		"if (report?.success !== true || report.numTotalTests !== 8 || report.numPassedTests !== 8 ||",
+		"    report.numFailedTests !== 0 || report.numPendingTests !== 0 || report.numTodoTests !== 0 ||",
+		"    !Array.isArray(report.testResults) || report.testResults.length !== 1 ||",
+		"    typeof result?.name !== 'string' || path.resolve(result.name) !== expected ||",
+		"    !Array.isArray(result.assertionResults) || result.assertionResults.length !== 8 ||",
+		"    !result.assertionResults.every((assertion) => assertion?.status === 'passed')) {",
+		"  throw new Error('physical inventory requires exactly eight passing tests without skips or todos');",
+		"}",
+		"NODE",
+		"",
+	].join("\n"),
+};
+
 const ciControls: Readonly<Record<string, YamlMap>> = {
 	changes: {},
 	cheap: { needs: "changes" },
@@ -118,8 +148,14 @@ const ciControls: Readonly<Record<string, YamlMap>> = {
 		needs: "changes",
 		if: `${nonDocs} && ${readyRun} && (${nativeSelected} || ${hubCrashSelected})`,
 	},
+	"inventory-physical-macos": {
+		needs: "changes",
+		if: `${nonDocs} && ${readyRun}`,
+		"runs-on": "macos-15",
+		"timeout-minutes": 30,
+	},
 	required: {
-		needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"],
+		needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos", "inventory-physical-macos"],
 		if: "always()",
 	},
 };
@@ -191,6 +227,15 @@ const spikeUpload: YamlMap = {
 };
 
 const ciCommands: Record<string, readonly YamlMap[]> = {
+	"inventory-physical-macos": [
+		ciCheckout,
+		ciNode,
+		sourceCapture,
+		ciPnpm,
+		{ run: "pnpm install --frozen-lockfile --ignore-scripts" },
+		{ run: "node tools/verify/native-prepare.ts --online --prepare" },
+		inventoryPhysicalTest,
+	],
 	changes: [
 		{
 			id: "areas",
@@ -219,10 +264,11 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 			if: "needs.changes.outputs.docs-only == 'true'",
 			run: "node tools/verify/verify.ts --profile docs",
 		},
-		{ if: nonDocs, run: "pnpm install --frozen-lockfile" },
+		{ if: nonDocs, run: "pnpm install --frozen-lockfile --ignore-scripts" },
+		{ if: nonDocs, run: "node tools/verify/native-prepare.ts --online --prepare" },
 		{ if: nonDocs, run: "pnpm verify --profile cheap" },
 	],
-	full: [{ run: "pnpm install --frozen-lockfile" }, { run: "pnpm build" }],
+	full: [{ run: "pnpm install --frozen-lockfile --ignore-scripts" }, { run: "pnpm build" }],
 	"spike-run": [
 		ciCheckout,
 		ciNode,
@@ -236,7 +282,7 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 				"restore-keys": `turbo-\${{ runner.os }}-\${{ github.job }}-\${{ matrix.id }}-`,
 			},
 		},
-		{ run: "pnpm install --frozen-lockfile" },
+		{ run: "pnpm install --frozen-lockfile --ignore-scripts" },
 		{ run: "pnpm build" },
 		offlineNodePreparation,
 		{
@@ -305,7 +351,7 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 		ciNode,
 		sourceCapture,
 		ciPnpm,
-		{ run: "pnpm install --frozen-lockfile" },
+		{ run: "pnpm install --frozen-lockfile --ignore-scripts" },
 		{ run: "pnpm build" },
 		{
 			id: "offline-node",
@@ -365,7 +411,11 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 		},
 	],
 	windows: [
-		{ run: "pnpm install --frozen-lockfile" },
+		{ run: "pnpm install --frozen-lockfile --ignore-scripts" },
+		{
+			run: "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/verify/test/inventory-native-query.test.ps1",
+		},
+		{ run: "node tools/verify/native-prepare.ts --online --prepare" },
 		{ run: "pnpm verify", env: { TURBO_CONCURRENCY: "1" } },
 	],
 };
@@ -391,7 +441,7 @@ for (const [job, platform] of Object.entries(nativePlatforms)) {
 	};
 	ciCommands[job] =
 		job === "macos"
-			? [platformCheck, { run: "pnpm install --frozen-lockfile" }, hubCrashTest, execute]
+			? [platformCheck, { run: "pnpm install --frozen-lockfile --ignore-scripts" }, hubCrashTest, execute]
 			: [
 					platformCheck,
 					...(ciCommands[job] ?? []),
@@ -753,7 +803,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 					report(["jobs", job, "outputs"], "must preserve source and native completion outputs");
 			}
 			checkCommands(job, definition, [
-				...(["required", "spike-run", "spikes", "heavy"].includes(job) ? [] : [sourceCapture]),
+				...(["required", "spike-run", "spikes", "heavy", "inventory-physical-macos"].includes(job) ? [] : [sourceCapture]),
 				...(ciCommands[job] ?? []),
 			]);
 			if (["spike-run", "spikes", "heavy"].includes(job)) {
@@ -770,7 +820,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 					String(step.uses).startsWith("Swatinem/rust-cache@"),
 				);
 				const nodeAt = steps.findIndex((step) => step.uses === ciNode.uses);
-				const installAt = steps.findIndex((step) => step.run === "pnpm install --frozen-lockfile");
+				const installAt = steps.findIndex((step) => step.run === "pnpm install --frozen-lockfile --ignore-scripts");
 				const withoutName = (step: YamlMap | undefined): YamlMap =>
 					Object.fromEntries(Object.entries(step ?? {}).filter(([key]) => key !== "name"));
 				if (

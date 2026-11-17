@@ -109,7 +109,7 @@ function provisions(job: { [key: string]: Yaml }, browserSelection: string): voi
 	expect(object(heavy.env).PLAYWRIGHT_BROWSERS_PATH, "browser output binding").toBe(
 		`\${{ steps.browser-setup.outputs.path }}`,
 	);
-	for (const command of ["pnpm install --frozen-lockfile", "pnpm build"]) {
+	for (const command of ["pnpm install --frozen-lockfile --ignore-scripts", "pnpm build"]) {
 		const matches = all.filter((step) => step.run === command);
 		expect(matches, "one install and build").toHaveLength(1);
 		expect(all.indexOf(object(matches[0])), "build before offline Node").toBeLessThan(
@@ -173,7 +173,7 @@ function selectionContract(workflow: { [key: string]: Yaml }): void {
 	);
 	expect(validators, "one shard validation").toHaveLength(1);
 	expect(shardSteps.indexOf(object(validators[0])), "validate before install").toBeLessThan(
-		shardSteps.findIndex((step) => step.run === "pnpm install --frozen-lockfile"),
+		shardSteps.findIndex((step) => step.run === "pnpm install --frozen-lockfile --ignore-scripts"),
 	);
 	const ordinaryHeavy = stepById(ordinary, "heavy-test");
 	expect(object(ordinaryHeavy.env).HEAVY, "ordinary selector source").toBe(

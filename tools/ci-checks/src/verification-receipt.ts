@@ -14,6 +14,7 @@ export const jobNames = [
 	"heavy",
 	"windows",
 	"macos",
+	"inventory-physical-macos",
 ] as const;
 type JobName = (typeof jobNames)[number];
 type JobResult = "success" | "failure" | "cancelled" | "skipped";
@@ -251,6 +252,7 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 		heavy: full && (selection?.ordinaryHeavy.length ?? 0) > 0,
 		windows,
 		macos: native,
+		"inventory-physical-macos": full,
 	};
 	const problems: string[] = [];
 	const entries = jobNames.map((name) => {
@@ -305,9 +307,10 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 			if (source.checkoutSha !== testedSha)
 				problems.push(`${name}: checkout differs from tested SHA`);
 			if (source.nodeVersion !== nodeVersion) problems.push(`${name}: Node differs from the pin`);
-			const platform = name === "macos" ? "darwin" : name === "windows" ? "win32" : "linux";
+			const macos = name === "macos" || name === "inventory-physical-macos";
+			const platform = macos ? "darwin" : name === "windows" ? "win32" : "linux";
 			if (source.platform !== platform) problems.push(`${name}: unexpected runner platform`);
-			const architecture = name === "macos" ? "arm64" : "x64";
+			const architecture = macos ? "arm64" : "x64";
 			if (source.architecture !== architecture)
 				problems.push(`${name}: unexpected runner architecture`);
 		}

@@ -3,14 +3,19 @@ import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, readFileSync, statSync } from "node:fs";
 import {
 	chmod,
+	link,
 	lstat,
 	mkdir,
 	mkdtemp,
+	open,
 	readdir,
 	readFile,
+	realpath,
 	rename,
 	rm,
+	rmdir,
 	stat,
+	unlink,
 	writeFile,
 } from "node:fs/promises";
 import os from "node:os";
@@ -625,6 +630,465 @@ export async function fetchNode({ version, platform, arch, offline = false }, de
 	}
 	log(`node v${version} ${platform}-${arch} verified: ${path.join(dir, binary)}`);
 	return { binary: path.join(dir, binary), dir, version, arch, signer };
+}
+
+/** @typedef {import('node:fs').BigIntStats} DevelopmentIdentity */
+/** @typedef {{file: string, kind: 'reader'|'staged'|'lock', handle: import('node:fs/promises').FileHandle, identity?: DevelopmentIdentity, closeState: 'open'|'pending'|'closed'|'uncertain', closePromise?: Promise<void>, closeError?: unknown}} DevelopmentFile */
+/** @typedef {{key: string, state: 'active'|'closing'|'debt'|'closed', directories: Map<string, DevelopmentIdentity>, stage: string, files: DevelopmentFile[], originals: DevelopmentFile[], lock?: DevelopmentFile, lockVerified: boolean, primaryFailure?: unknown, cleanupFailure?: unknown}} DevelopmentScope */
+// Retain affected originals and their exact close promises for this module/process lifetime.
+// This is not a parent/process-liveness guarantee or a cross-process close certificate.
+/** @type {Map<string, DevelopmentScope>} */
+const developmentScopes = new Map();
+/** @param {DevelopmentIdentity} left @param {DevelopmentIdentity} right */
+const sameDevelopmentIdentity = (left, right) => left.dev === right.dev && left.ino === right.ino;
+/** @param {string} name */
+const developmentName = (name) =>
+	process.platform === "win32" ? path.resolve(name).toLowerCase() : path.resolve(name);
+/** @param {string} file @param {string} flags @param {DevelopmentFile['kind']} kind @param {DevelopmentScope} scope */
+async function openDevelopmentOriginal(file, flags, kind, scope) {
+	const handle = await open(file, flags, 0o600);
+	/** @type {DevelopmentFile} */
+	const original = { file, handle, kind, closeState: "open" };
+	scope.originals.push(original);
+	if (kind === "staged") scope.files.push(original);
+	if (kind === "lock") scope.lock = original;
+	return original;
+}
+/** @param {DevelopmentFile} original @returns {Promise<void>} */
+function closeDevelopmentOriginal(original) {
+	if (!original.closePromise) {
+		original.closeState = "pending";
+		// Install the retained promise before invoking the original close in a microtask.
+		original.closePromise = Promise.resolve()
+			.then(() => original.handle.close())
+			.then(
+				() => {
+					original.closeState = "closed";
+				},
+				(error) => {
+					original.closeState = "uncertain";
+					original.closeError = error;
+					throw error;
+				},
+			);
+	}
+	return original.closePromise;
+}
+/** @param {DevelopmentScope} scope */
+function closeDevelopmentFiles(scope) {
+	// Acquisition is sequential: reader validation follows all prior staged-handle I/O.
+	// Start every independent non-lock close before awaiting any one original outcome.
+	return Promise.allSettled(
+		scope.originals.filter((original) => original.kind !== "lock").map(closeDevelopmentOriginal),
+	);
+}
+
+/**
+ * Before-write component checks, not a portable handle-relative namespace guarantee.
+ * The private cache must have no concurrent uncooperative topology mutator; cooperating writers
+ * use the retained version lock below. Directory identities are snapshots, not OS locks.
+ * @param {string} target @param {boolean} directory @param {DevelopmentScope} scope
+ * @param {boolean} [missing]
+ */
+async function developmentPath(target, directory, scope, missing = false) {
+	if (!path.isAbsolute(target)) throw refuse("Node development cache must be absolute");
+	const chain = [];
+	for (let current = path.resolve(target); ; current = path.dirname(current)) {
+		chain.unshift(current);
+		if (path.dirname(current) === current) break;
+	}
+	/** @type {DevelopmentIdentity | undefined} */
+	let result;
+	for (const [index, current] of chain.entries()) {
+		try {
+			result = await lstat(current, { bigint: true });
+		} catch (error) {
+			if (missing && code(error) === "ENOENT") return undefined;
+			throw error;
+		}
+		const isDirectory = index < chain.length - 1 || directory;
+		if (
+			result.isSymbolicLink() ||
+			(isDirectory ? !result.isDirectory() : !result.isFile()) ||
+			developmentName(await realpath(current)) !== developmentName(current)
+		)
+			throw refuse("Node development cache component is not ordinary and canonical");
+		const after = await lstat(current, { bigint: true });
+		if (!sameDevelopmentIdentity(result, after))
+			throw refuse("Node development cache component changed");
+		if (isDirectory) {
+			const prior = scope.directories.get(current);
+			if (prior && !sameDevelopmentIdentity(prior, result))
+				throw refuse("Node development cache directory changed");
+			scope.directories.set(current, result);
+		}
+	}
+	return result;
+}
+/** @param {DevelopmentScope} scope */
+async function developmentFence(scope) {
+	for (const directory of [...scope.directories.keys()])
+		await developmentPath(directory, true, scope);
+}
+/** @param {string} directory @param {DevelopmentScope} scope */
+async function developmentDirectory(directory, scope) {
+	if (await developmentPath(directory, true, scope, true)) return;
+	await developmentFence(scope);
+	await mkdir(directory, { mode: 0o700 }); // Exclusive leaf creation; never recursive through a parent.
+	await developmentPath(directory, true, scope);
+}
+/** @param {string} file @param {DevelopmentScope} scope */
+async function developmentRead(file, scope) {
+	const named = await developmentPath(file, false, scope, true);
+	if (!named) return false;
+	const owned = await openDevelopmentOriginal(file, "r", "reader", scope);
+	const handle = owned.handle;
+	let primaryFailed = false;
+	let primaryFailure;
+	let checkedBytes;
+	try {
+		const original = await handle.stat({ bigint: true });
+		owned.identity = original;
+		const staged = scope.files.some(
+			(entry) => entry.identity && sameDevelopmentIdentity(entry.identity, original),
+		);
+		if (
+			!original.isFile() ||
+			(original.nlink !== 1n && !(staged && original.nlink === 2n)) ||
+			!sameDevelopmentIdentity(named, original)
+		)
+			throw refuse("Node development cache file binding changed");
+		const bytes = await handle.readFile();
+		const heldAfter = await handle.stat({ bigint: true });
+		const after = await developmentPath(file, false, scope);
+		if (
+			!after ||
+			!sameDevelopmentIdentity(original, heldAfter) ||
+			!sameDevelopmentIdentity(original, after) ||
+			heldAfter.size !== BigInt(bytes.length) ||
+			after.size !== heldAfter.size
+		)
+			throw refuse("Node development cache file binding changed");
+		checkedBytes = bytes;
+	} catch (error) {
+		primaryFailed = true;
+		primaryFailure = error;
+	}
+	let closeFailed = false;
+	let closeFailure;
+	try {
+		// Keep this read/validation pending until all independent originals settle.
+		const outcomes = await closeDevelopmentFiles(scope);
+		const failed = outcomes.find((outcome) => outcome.status === "rejected");
+		if (failed?.status === "rejected") throw failed.reason;
+	} catch (error) {
+		closeFailed = true;
+		closeFailure = error;
+		scope.cleanupFailure = error;
+	}
+	if (primaryFailed) throw primaryFailure;
+	if (closeFailed) throw closeFailure;
+	return checkedBytes;
+}
+/** @param {string} file @param {Uint8Array} expected @param {DevelopmentScope} scope */
+async function developmentHolds(file, expected, scope) {
+	const bytes = await developmentRead(file, scope);
+	if (!bytes) return false;
+	if (!bytes.equals(Buffer.from(expected)))
+		throw refuse("Node development cache holds different input bytes");
+	return true;
+}
+/**
+ * Stage through the retained original file handle, then publish by no-overwrite hard link.
+ * The version lock serializes cooperating writers; CAS never overwrites a destination.
+ * Neither supplies atomic containment against an adversarial parent-swap race.
+ * @param {string} file @param {Uint8Array} bytes @param {DevelopmentScope} scope
+ */
+async function developmentPut(file, bytes, scope) {
+	if (await developmentHolds(file, bytes, scope)) return;
+	await developmentFence(scope);
+	const staged = path.join(scope.stage, `${scope.files.length}.payload`);
+	const original = await openDevelopmentOriginal(staged, "wx", "staged", scope);
+	const handle = original.handle;
+	const identity = await handle.stat({ bigint: true });
+	original.identity = identity;
+	const named = await developmentPath(staged, false, scope);
+	if (
+		!named ||
+		!identity.isFile() ||
+		identity.nlink !== 1n ||
+		identity.size !== 0n ||
+		!sameDevelopmentIdentity(identity, named)
+	)
+		throw refuse("Node development stage file binding changed");
+	await developmentFence(scope);
+	await handle.writeFile(bytes);
+	await handle.sync();
+	if ((await handle.stat({ bigint: true })).size !== BigInt(bytes.length))
+		throw refuse("Node development stage write incomplete");
+	await developmentFence(scope);
+	try {
+		await link(staged, file);
+	} catch (error) {
+		if (code(error) !== "EEXIST" || !(await developmentHolds(file, bytes, scope))) throw error;
+	}
+	const published = await developmentPath(file, false, scope);
+	if (!published) throw refuse("Node development publication is absent");
+	// Open and verify the actual final destination, including the identical-CAS case.
+	if (!(await developmentHolds(file, bytes, scope)))
+		throw refuse("Node development publication differs");
+}
+/** @param {DevelopmentScope} scope */
+async function finishDevelopmentScope(scope) {
+	scope.state = "closing";
+	try {
+		// Start every independent admitted close before awaiting any one outcome.
+		const outcomes = await closeDevelopmentFiles(scope);
+		if (outcomes.some((outcome) => outcome.status === "rejected")) {
+			scope.state = "debt";
+			return false; // Keep actual originals, stage AND open lock.
+		}
+		for (const original of scope.files) {
+			if (original.closeState !== "closed")
+				throw refuse("Node development original close is unsettled");
+			const named = await developmentPath(original.file, false, scope);
+			if (!named || !original.identity || !sameDevelopmentIdentity(original.identity, named))
+				throw refuse("Node development cleanup binding changed");
+			await developmentFence(scope);
+			await unlink(original.file);
+		}
+		if (scope.stage) {
+			await developmentFence(scope);
+			await developmentPath(scope.stage, true, scope);
+			await rmdir(scope.stage);
+			scope.directories.delete(scope.stage);
+		}
+		if (scope.lock) {
+			// The lock is dependent on every other original and known stage cleanup.
+			await closeDevelopmentOriginal(scope.lock);
+			const named = await developmentPath(scope.lock.file, false, scope);
+			if (
+				!scope.lockVerified ||
+				!scope.lock.identity ||
+				named?.nlink !== 1n ||
+				!sameDevelopmentIdentity(scope.lock.identity, named)
+			)
+				throw refuse("Node development lock cleanup binding changed");
+			await developmentFence(scope);
+			await unlink(scope.lock.file);
+		}
+		scope.state = "closed";
+		return true;
+	} catch (error) {
+		scope.cleanupFailure = error;
+		scope.state = "debt";
+		return false;
+	}
+}
+
+/**
+ * Explicit development-input acquisition. Never runs during module import. The default is
+ * offline; callers must deliberately request online acquisition. Keep these files outside the
+ * executable-only node directory, and reverify the signed sums and every selected byte each call.
+ * Requires the initialized private runtime cache, cooperating version-locked writers and no
+ * concurrent uncooperative topology mutation. Fresh acquisition remains supported; adversarial atomic
+ * namespace containment is not established by the portable directory snapshot checks below.
+ * @param {Request} request @param {Deps} [deps]
+ * @returns {Promise<{ headers: string, importLibrary?: string, version: string,
+ *   arch: Arch, signer: string, sumsSha256: string, archiveSha256: string,
+ *   files: Readonly<Record<string, string>> }>}
+ */
+export async function fetchNodeDevelopment({ version, platform, arch, offline = true }, deps = {}) {
+	const pins = readJson("versions.json");
+	if (
+		!/^\d+\.\d+\.\d+$/.test(version) ||
+		![pins.minimum, pins.bundled].includes(version) ||
+		!isPlatform(platform) ||
+		!isArch(arch)
+	)
+		throw refuse("unqualified Node development target");
+	const { keysDir = path.join(here, "keys"), download = httpGet, log = () => {} } = deps;
+	const store = deps.cacheDir ?? cacheRoot();
+	const base = path.join(store, "node-development");
+	const root = path.join(base, version);
+	const output = path.join(root, `${platform}-${arch}`);
+	const include = path.join(output, "include");
+	const names = [
+		"node_api.h",
+		"node_api_types.h",
+		"js_native_api.h",
+		"js_native_api_types.h",
+		"node_version.h",
+	];
+	const archiveName = `node-v${version}-headers.tar.gz`;
+	const libraryName = platform === "win" ? `win-${arch}/node.lib` : undefined;
+	const rawNames = [
+		"SHASUMS256.txt",
+		"SHASUMS256.txt.sig",
+		archiveName,
+		...(libraryName ? [libraryName] : []),
+	];
+	const lockFile = path.join(store, `.node-development-${version}.lock`);
+	const key = developmentName(lockFile);
+	if (developmentScopes.has(key))
+		throw refuse("Node development namespace has an active or unsettled original scope");
+	/** @type {DevelopmentScope} */
+	const scope = {
+		key,
+		state: "active",
+		directories: new Map(),
+		stage: "",
+		files: [],
+		originals: [],
+		lockVerified: false,
+	};
+	developmentScopes.set(key, scope);
+	let primaryFailed = false;
+	let inputs;
+	try {
+		// Existing runtime acquisition initializes store. Reject existing linked-directory,
+		// symlink, noncanonical or wrong-kind components before cache writes; missing leaves follow.
+		await developmentPath(store, true, scope);
+		for (const directory of [
+			base,
+			root,
+			output,
+			include,
+			...(libraryName ? [path.dirname(path.join(root, libraryName))] : []),
+		])
+			await developmentPath(directory, true, scope, true);
+		for (const file of [
+			...rawNames.map((name) => path.join(root, name)),
+			...names.map((name) => path.join(include, name)),
+			...(libraryName ? [path.join(output, "node.lib")] : []),
+		])
+			await developmentPath(file, false, scope, true);
+		await developmentFence(scope);
+		const lock = await openDevelopmentOriginal(lockFile, "wx", "lock", scope);
+		const lockIdentity = await lock.handle.stat({ bigint: true });
+		lock.identity = lockIdentity;
+		const lockNamed = await developmentPath(lockFile, false, scope);
+		if (
+			!lockNamed ||
+			!lockIdentity.isFile() ||
+			lockIdentity.nlink !== 1n ||
+			!sameDevelopmentIdentity(lockIdentity, lockNamed)
+		)
+			throw refuse("Node development acquisition lock binding changed");
+		scope.lockVerified = true;
+		await developmentDirectory(base, scope);
+		await developmentFence(scope);
+		await restrict(base);
+		await developmentFence(scope);
+		await developmentDirectory(root, scope);
+		if (libraryName) await developmentDirectory(path.dirname(path.join(root, libraryName)), scope);
+		await developmentFence(scope);
+		scope.stage = await mkdtemp(path.join(base, `.stage-${version}-`));
+		await developmentPath(scope.stage, true, scope);
+		await developmentFence(scope);
+		await restrict(scope.stage);
+		await developmentFence(scope);
+		const obtain = async (/** @type {string} */ name) => {
+			const file = path.join(root, name);
+			const bytes = await developmentRead(file, scope);
+			if (bytes) return { file, bytes, cached: true };
+			if (offline) throw refuse("Node development input is not cached");
+			return {
+				file,
+				bytes: Buffer.from(await download(`${DIST}/v${version}/${name}`)),
+				cached: false,
+			};
+		};
+		const sums = await obtain("SHASUMS256.txt");
+		const signature = await obtain("SHASUMS256.txt.sig");
+		const signer = await verifySignature(
+			sums.bytes,
+			signature.bytes,
+			keysDir,
+			deps.gpgv ?? resolveGpgv(),
+		);
+		const checksums = parseChecksums(sums.bytes.toString("utf8"));
+		const archive = await obtain(archiveName);
+		if (sha256(archive.bytes) !== checksums.get(archiveName))
+			throw refuse("Node headers do not match signed checksums");
+		const prefix = `node-v${version}/include/node/`;
+		const selected = await readArchive(
+			archive.bytes,
+			"tar.gz",
+			names.map((name) => prefix + name),
+		);
+		const library = libraryName ? await obtain(libraryName) : undefined;
+		if (library && sha256(library.bytes) !== checksums.get(libraryName ?? ""))
+			throw refuse("Node import library does not match signed checksums");
+		// Check existing materialization before publishing ANY payload. Different bytes are a
+		// refusal, never repair/overwrite authority. New files use staged no-overwrite links.
+		if (await developmentPath(output, true, scope, true)) {
+			if (
+				(await readdir(output)).some(
+					(name) => !["include", ...(library ? ["node.lib"] : [])].includes(name),
+				)
+			)
+				throw refuse("Node development directory holds an unexpected file");
+		}
+		if (await developmentPath(include, true, scope, true)) {
+			if ((await readdir(include)).some((name) => !names.includes(name)))
+				throw refuse("Node development include directory holds an unexpected file");
+		}
+		/** @type {{file: string, bytes: Uint8Array}[]} */
+		const materialized = [];
+		for (const name of names) {
+			const bytes = selected.get(prefix + name);
+			if (!bytes) throw refuse("Node development header is absent");
+			materialized.push({ file: path.join(include, name), bytes });
+		}
+		if (library) materialized.push({ file: path.join(output, "node.lib"), bytes: library.bytes });
+		for (const entry of [...materialized, sums, signature, archive, ...(library ? [library] : [])])
+			await developmentHolds(entry.file, entry.bytes, scope);
+		await developmentDirectory(output, scope);
+		await developmentDirectory(include, scope);
+		for (const fetched of [sums, signature, archive, ...(library ? [library] : [])])
+			if (!fetched.cached) await developmentPut(fetched.file, fetched.bytes, scope);
+		for (const entry of materialized) await developmentPut(entry.file, entry.bytes, scope);
+		/** @type {Record<string, string>} */
+		const files = {};
+		for (const name of names) {
+			const bytes = selected.get(prefix + name);
+			if (!bytes) throw refuse("Node development header is absent");
+			files[`include/${name}`] = sha256(bytes);
+		}
+		if (library) {
+			files["node.lib"] = sha256(library.bytes);
+		}
+		await developmentFence(scope);
+		if ((await readdir(path.join(output, "include"))).some((name) => !names.includes(name)))
+			throw refuse("Node development include directory holds an unexpected file");
+		if (
+			(await readdir(output)).some(
+				(name) => !["include", ...(library ? ["node.lib"] : [])].includes(name),
+			)
+		)
+			throw refuse("Node development directory holds an unexpected file");
+		log(`Node development inputs v${version} verified`);
+		inputs = {
+			headers: path.join(output, "include"),
+			...(library ? { importLibrary: path.join(output, "node.lib") } : {}),
+			version,
+			arch,
+			signer,
+			sumsSha256: sha256(sums.bytes),
+			archiveSha256: sha256(archive.bytes),
+			files,
+		};
+	} catch (error) {
+		primaryFailed = true;
+		scope.primaryFailure = error;
+	}
+	const closed = await finishDevelopmentScope(scope);
+	if (closed) developmentScopes.delete(key);
+	if (primaryFailed) throw scope.primaryFailure;
+	if (!closed) throw refuse("Node development acquisition originals or cleanup remain unsettled");
+	if (inputs === undefined) throw refuse("Node development acquisition result is absent");
+	return inputs;
 }
 
 const SANDBOX = "--rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges";

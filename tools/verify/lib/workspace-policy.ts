@@ -1,6 +1,13 @@
 import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import {
+	type InventoryDirectory,
+	type InventoryEntryKind,
+	inventoryComponents,
+	type OpenInventoryDirectory,
+	openInventoryDirectory,
+} from "./inventory-directory.ts";
 
 // This is the complete approved workspace grammar, not an extraction of selected YAML keys.
 const WORKSPACE_LINES = [
@@ -48,6 +55,15 @@ const vanished = (error: unknown): boolean =>
 	(error.code === "ENOENT" || error.code === "ENOTDIR");
 
 const inventoryFailed = (): Error => new Error("file-name inventory failed");
+class InventoryCloseFailure extends Error {}
+
+async function closeDirectory(directory: InventoryDirectory): Promise<void> {
+	try {
+		await directory.close();
+	} catch {
+		throw new InventoryCloseFailure("file-name inventory failed");
+	}
+}
 
 // A failed lookup is not absence: filesystem names need not round-trip through strings.
 // Confirm the exact entry is absent from a fresh, unambiguous parent listing instead.
@@ -101,13 +117,13 @@ async function absentFromParent(
 
 // Directory names only: Git ignore rules and nested repositories cannot hide a copy.
 // Links are inspected by name but never traversed outside the physical worktree or into a cycle.
-export async function namedFiles(
+async function namedFilesUsingPaths(
 	basename: string,
 	root: string,
-	insensitive: boolean = process.platform === "win32",
-	readDirectory: ReadDirectory = (dir) => readdir(dir, { withFileTypes: true }),
-	statPath: StatPath = (target) => lstat(target),
-	readCapacity: () => number = () => 4,
+	insensitive: boolean,
+	readDirectory: ReadDirectory,
+	statPath: StatPath,
+	readCapacity: () => number,
 ): Promise<string[]> {
 	if (!basename || /[/\\\0*?[\]]/.test(basename)) throw new Error("invalid basename");
 	root = path.resolve(root);
@@ -284,6 +300,114 @@ export async function namedFiles(
 	return found.toSorted();
 }
 
+class BoundEntry implements Entry {
+	readonly name: string;
+	readonly kind: InventoryEntryKind;
+	constructor(name: string, kind: InventoryEntryKind) {
+		this.name = name;
+		this.kind = kind;
+	}
+	isDirectory(): boolean {
+		return this.kind === "directory";
+	}
+	isSymbolicLink(): boolean {
+		return this.kind === "link";
+	}
+}
+
+function directoryPorts(
+	root: string,
+	directory: InventoryDirectory,
+): {
+	readDirectory: ReadDirectory;
+	statPath: StatPath;
+} {
+	return {
+		readDirectory: async (target) =>
+			(await directory.read(inventoryComponents(root, target))).map(
+				({ name, kind }) => new BoundEntry(name, kind),
+			),
+		statPath: async (target) => {
+			const kind = await directory.stat(inventoryComponents(root, target));
+			return { isDirectory: () => kind === "directory", isSymbolicLink: () => kind === "link" };
+		},
+	};
+}
+
+/** Raw path ports are an in-memory test seam; production uses the opened-directory backend. */
+export async function namedFiles(
+	basename: string,
+	root: string,
+	insensitive: boolean = process.platform === "win32",
+	readDirectory?: ReadDirectory,
+	statPath?: StatPath,
+	readCapacity: () => number = () => 4,
+	openDirectory?: OpenInventoryDirectory,
+): Promise<string[]> {
+	if (openDirectory === undefined && (readDirectory !== undefined || statPath !== undefined)) {
+		return namedFilesUsingPaths(
+			basename,
+			root,
+			insensitive,
+			readDirectory ?? ((target) => readdir(target, { withFileTypes: true })),
+			statPath ?? ((target) => lstat(target)),
+			readCapacity,
+		);
+	}
+	root = path.resolve(root);
+	const directory = await (openDirectory ?? openInventoryDirectory)(root);
+	try {
+		const ports = directoryPorts(root, directory);
+		const found = await namedFilesUsingPaths(
+			basename,
+			root,
+			insensitive,
+			ports.readDirectory,
+			ports.statPath,
+			readCapacity,
+		);
+		if (!(await directory.current())) throw inventoryFailed();
+		return found;
+	} finally {
+		await closeDirectory(directory);
+	}
+}
+
+// Confirm absence by enumerating the actual opened parent, not by treating a failed open as
+// an absent root. A present linked/replaced/non-directory root cannot earn missing-root credit.
+async function missingOpenedDirectory(
+	target: string,
+	openDirectory: OpenInventoryDirectory,
+): Promise<boolean> {
+	let directory: InventoryDirectory;
+	try {
+		directory = await openDirectory(target);
+	} catch (error) {
+		if (!vanished(error) || path.dirname(target) === target) return false;
+		const parent = path.dirname(target);
+		let parentDirectory: InventoryDirectory;
+		try {
+			parentDirectory = await openDirectory(parent);
+		} catch (parentError) {
+			return vanished(parentError) && missingOpenedDirectory(parent, openDirectory);
+		}
+		try {
+			const names = (await parentDirectory.read([])).map(({ name }) => name);
+			if (
+				names.some((name) => inventoryComponents(parent, path.join(parent, name)).length !== 1) ||
+				new Set(names).size !== names.length ||
+				!(await parentDirectory.current())
+			)
+				return false;
+			return !names.includes(path.basename(target));
+		} finally {
+			await closeDirectory(parentDirectory);
+		}
+	}
+	await closeDirectory(directory);
+	return false;
+}
+
 export interface ListedWorktree {
 	readonly directory: string;
 	readonly prunable: boolean;
@@ -318,11 +442,14 @@ export async function namedWorktreeFiles(
 	root: string,
 	refreshWorktrees: () => Promise<readonly ListedWorktree[]>,
 	insensitive: boolean = process.platform === "win32",
-	readDirectory: ReadDirectory = (dir) => readdir(dir, { withFileTypes: true }),
-	statPath: StatPath = (target) => lstat(target),
+	readDirectory?: ReadDirectory,
+	statPath?: StatPath,
 	readCapacity: () => number = () => 4,
+	openDirectory?: OpenInventoryDirectory,
 ): Promise<string[]> {
 	try {
+		const physical =
+			openDirectory !== undefined || (readDirectory === undefined && statPath === undefined);
 		try {
 			const found = await namedFiles(
 				basename,
@@ -331,12 +458,34 @@ export async function namedWorktreeFiles(
 				readDirectory,
 				statPath,
 				readCapacity,
+				openDirectory,
 			);
-			const kind = await statPath(root);
-			if (!kind.isDirectory() || kind.isSymbolicLink()) throw inventoryFailed();
+			if (!physical) {
+				const kind = await (statPath ?? ((target) => lstat(target)))(root);
+				if (!kind.isDirectory() || kind.isSymbolicLink()) throw inventoryFailed();
+			}
 			return found;
-		} catch {
-			if (!(await missingDirectory(root, readDirectory, statPath))) throw inventoryFailed();
+		} catch (error) {
+			// Missing-root refresh can repair a vanished name, never an unclosed original.
+			if (error instanceof InventoryCloseFailure) throw error;
+			if (physical) {
+				if (
+					!(await missingOpenedDirectory(
+						path.resolve(root),
+						openDirectory ?? openInventoryDirectory,
+					))
+				)
+					throw inventoryFailed();
+			} else {
+				if (
+					!(await missingDirectory(
+						root,
+						readDirectory ?? ((target) => readdir(target, { withFileTypes: true })),
+						statPath ?? ((target) => lstat(target)),
+					))
+				)
+					throw inventoryFailed();
+			}
 		}
 		const key = (directory: string): string => {
 			if (!path.isAbsolute(directory) || !directory.isWellFormed() || directory.includes("\uFFFD"))

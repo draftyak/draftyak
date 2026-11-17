@@ -1,7 +1,11 @@
 import { isUtf8 } from "node:buffer";
 import { spawn } from "node:child_process";
-import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
+import {
+	type InventoryDirectory,
+	type OpenInventoryDirectory,
+	openInventoryDirectory,
+} from "./inventory-directory.ts";
 import {
 	INVENTORY_DIRECTORY_READ_BUDGET,
 	INVENTORY_SENTINEL,
@@ -29,6 +33,7 @@ export interface InventoryGitResult {
 export interface InventoryIo {
 	readDirectory: ReadDirectory;
 	statPath: StatPath;
+	openDirectory?: OpenInventoryDirectory;
 	spawnGit(args: readonly string[], cwd: string): OwnedProcess;
 	write(bytes: string, ack: (error?: Error | null) => void): void;
 }
@@ -37,6 +42,7 @@ export interface InventoryHost {
 	git(args: readonly string[]): Promise<InventoryGitResult>;
 	readDirectory: ReadDirectory;
 	statPath: StatPath;
+	openDirectory?: OpenInventoryDirectory;
 	stopped(): boolean;
 	stop(): void;
 	drain(): Promise<void>;
@@ -51,8 +57,14 @@ export interface ObservedInventoryHost extends InventoryHost {
 const failed = (): Error => new Error("file-name inventory failed");
 const GIT_PIPE_MAX = 4 * 1024 * 1024;
 const io: InventoryIo = {
-	readDirectory: (directory) => readdir(directory, { withFileTypes: true }),
-	statPath: (target) => lstat(target),
+	// Production has no pathname traversal fallback. Raw ports remain only for synthetic hosts.
+	readDirectory: async () => {
+		throw failed();
+	},
+	statPath: async () => {
+		throw failed();
+	},
+	openDirectory: openInventoryDirectory,
 	spawnGit: (args, cwd) =>
 		ownedProcess(
 			spawn("git", ["-c", "gc.auto=0", "-c", "maintenance.auto=false", ...args], {
@@ -79,9 +91,17 @@ export function createInventoryHost(
 	let entries = 0;
 	const fsWaiters = new Set<() => void>();
 	const children = new Map<OwnedProcess, Promise<void>>();
+	const directories = new Set<InventoryDirectory>();
 	const stop = (): void => {
 		if (stopped) return;
 		stopped = true;
+		for (const directory of directories) {
+			try {
+				directory.stop();
+			} catch {
+				/* Retain custody through close. */
+			}
+		}
 		try {
 			onStop?.();
 		} catch {
@@ -113,7 +133,55 @@ export function createInventoryHost(
 			releaseFs();
 		}
 	};
+	const openDirectory: OpenInventoryDirectory | undefined =
+		ports.openDirectory === undefined
+			? undefined
+			: async (target) =>
+					track(async () => {
+						const original = await ports.openDirectory?.(target);
+						if (original === undefined) throw failed();
+						let closure: Promise<void> | undefined;
+						let sealed = false;
+						const trackScope = <T>(work: () => Promise<T>): Promise<T> =>
+							sealed ? Promise.reject(failed()) : track(work);
+						const directory: InventoryDirectory = {
+							read: (components) =>
+								trackScope(async () => {
+									directoryVisits += 1;
+									const found = await original.read(components);
+									entries += found.length;
+									return found;
+								}),
+							stat: (components) => trackScope(() => original.stat(components)),
+							current: () => trackScope(() => original.current()),
+							stop: () => {
+								sealed = true;
+								original.stop();
+							},
+							close: () => {
+								sealed = true;
+								// Close is admitted after stop and is owned until the original close succeeds.
+								closure ??= Promise.resolve()
+									.then(() => original.close())
+									.then(() => {
+										directories.delete(directory);
+									});
+								return closure;
+							},
+						};
+						directories.add(directory);
+						if (stopped) {
+							try {
+								directory.stop();
+							} finally {
+								await directory.close();
+							}
+							throw failed();
+						}
+						return directory;
+					});
 	return {
+		...(openDirectory === undefined ? {} : { openDirectory }),
 		readDirectory: async (directory) => {
 			if (stopped) throw failed();
 			activeFs += 1;
@@ -128,13 +196,20 @@ export function createInventoryHost(
 			}
 		},
 		statPath: (target) => track(() => ports.statPath(target)),
-		snapshot: () => ({ pendingGit: children.size, pendingFs: activeFs, directoryVisits, entries }),
+		snapshot: () => ({
+			pendingGit: children.size,
+			pendingFs: activeFs + directories.size,
+			directoryVisits,
+			entries,
+		}),
 		stopped: () => stopped,
 		stop,
-		drained: () => activeFs === 0 && children.size === 0,
+		drained: () => activeFs === 0 && children.size === 0 && directories.size === 0,
 		drain: async () => {
 			while (children.size > 0) await Promise.allSettled([...children.values()]);
 			if (activeFs > 0) await new Promise<void>((resolve) => fsWaiters.add(resolve));
+			await Promise.allSettled([...directories].map((directory) => directory.close()));
+			if (directories.size !== 0) throw failed();
 		},
 		write: (bytes, ack) => ports.write(bytes, ack),
 		git: (args) =>
@@ -251,6 +326,7 @@ export async function inventoryWorktrees(
 							host.readDirectory,
 							host.statPath,
 							readCapacity,
+							host.openDirectory,
 						);
 						if (found.length !== 0) throw failed();
 					} catch {

@@ -51,6 +51,7 @@ describe("selected Hub store process-crash coverage", () => {
 			"heavy",
 			"windows",
 			"macos",
+			"inventory-physical-macos",
 			"required",
 		]);
 		expect(definition("required").needs).toEqual([
@@ -61,6 +62,7 @@ describe("selected Hub store process-crash coverage", () => {
 			"heavy",
 			"windows",
 			"macos",
+			"inventory-physical-macos",
 		]);
 		expect(definition("required").if).toBe("always()");
 		expect(definition("windows")["runs-on"]).toBe("windows-2025");
@@ -91,7 +93,7 @@ describe("selected Hub store process-crash coverage", () => {
 				env: { DRAFTYAK_STRICT_SKIPS: "1" },
 				run,
 			});
-			const install = all.findIndex((step) => step.run === "pnpm install --frozen-lockfile");
+			const install = all.findIndex((step) => step.run === "pnpm install --frozen-lockfile --ignore-scripts");
 			expect(install).toBeGreaterThanOrEqual(0);
 			expect(install).toBeLessThan(all.findIndex((step) => step.id === "store-crash"));
 			expect(all.find((step) => step.id === "native")?.if).toBe(native);
