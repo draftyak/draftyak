@@ -1,0 +1,14 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/apps/hub/openapi.json",
+        "$TURBO_ROOT$/tools/openapi-drift/*.ts",
+        "$TURBO_ROOT$/biome.json",
+        "$TURBO_ROOT$/.gitignore"
+      ]
+    }
+  }
+}
