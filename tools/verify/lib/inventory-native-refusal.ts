@@ -446,3 +446,51 @@ export function parseInventoryNativeToolchainRefusal(
 		return undefined;
 	}
 }
+
+const ubuntuPermissionRoles = [
+	"os-metadata",
+	"dpkg-executable",
+	"dpkg-query-executable",
+	"dpkg-deb-executable",
+	"gpgv-executable",
+	"xz-executable",
+	"package-metadata",
+	"archive-keyring",
+	"compiler",
+	"compiler-program-directory",
+	"compiler-subprogram",
+	"include-directory",
+	"linker-input",
+	"public-header",
+	"cxx-header",
+	"selected-file-recheck",
+	"os-metadata-recheck",
+	"archive-keyring-recheck",
+] as const;
+const ubuntuPermissionLexical = ["target", "ancestor"] as const;
+const ubuntuPermissionWrite = ["group-write", "other-write", "both"] as const;
+
+export interface InventoryUbuntuPermissionContext {
+	readonly role: (typeof ubuntuPermissionRoles)[number];
+	readonly lexical: (typeof ubuntuPermissionLexical)[number];
+	readonly write: (typeof ubuntuPermissionWrite)[number];
+}
+
+/** Reconstruct complete fixed failure context; this never grants permission or authority. */
+export function validateInventoryUbuntuPermissionContext(
+	value: unknown,
+): InventoryUbuntuPermissionContext | undefined {
+	try {
+		const fields = data(value, ["role", "lexical", "write"]);
+		if (
+			!fields ||
+			!oneOf(fields.role, ubuntuPermissionRoles) ||
+			!oneOf(fields.lexical, ubuntuPermissionLexical) ||
+			!oneOf(fields.write, ubuntuPermissionWrite)
+		)
+			return undefined;
+		return Object.freeze({ role: fields.role, lexical: fields.lexical, write: fields.write });
+	} catch {
+		return undefined;
+	}
+}

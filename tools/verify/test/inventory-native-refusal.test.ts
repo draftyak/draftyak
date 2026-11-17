@@ -3,6 +3,7 @@ import {
 	INVENTORY_NATIVE_REFUSAL_MAX_BYTES,
 	parseInventoryNativeToolchainRefusal,
 	validateInventoryNativeToolchainRefusal,
+	validateInventoryUbuntuPermissionContext,
 } from "../lib/inventory-native-refusal.ts";
 
 const closed = { kind: "command", complete: true, code: 1, signal: null } as const;
@@ -421,5 +422,172 @@ describe("fixed non-authoritative toolchain refusal metadata", () => {
 			),
 		).toBeUndefined();
 		expect(parseInventoryNativeToolchainRefusal("posix", closed, new Uint8Array())).toBeUndefined();
+	});
+});
+
+describe("fixed Ubuntu permission context", () => {
+	const roles = [
+		"os-metadata",
+		"dpkg-executable",
+		"dpkg-query-executable",
+		"dpkg-deb-executable",
+		"gpgv-executable",
+		"xz-executable",
+		"package-metadata",
+		"archive-keyring",
+		"compiler",
+		"compiler-program-directory",
+		"compiler-subprogram",
+		"include-directory",
+		"linker-input",
+		"public-header",
+		"cxx-header",
+		"selected-file-recheck",
+		"os-metadata-recheck",
+		"archive-keyring-recheck",
+	] as const;
+	const lexical = ["target", "ancestor"] as const;
+	const write = ["group-write", "other-write", "both"] as const;
+	const valid = { role: "os-metadata", lexical: "target", write: "group-write" };
+	const contexts = roles.flatMap((role) =>
+		lexical.flatMap((lexical) => write.map((write) => ({ role, lexical, write }))),
+	);
+
+	it.each(contexts)("accepts only the exact complete fixed context %j", (context) => {
+		const normalized = validateInventoryUbuntuPermissionContext(context);
+		expect(normalized).toEqual(context);
+		expect(normalized).not.toBe(context);
+		expect(Object.isFrozen(normalized)).toBe(true);
+		expect(Object.isFrozen(context)).toBe(false);
+	});
+	it("returns a fresh immutable complete record without changing or retaining its input", () => {
+		const input = { ...valid };
+		const before = Object.getOwnPropertyDescriptors(input);
+		const first = validateInventoryUbuntuPermissionContext(input);
+		const second = validateInventoryUbuntuPermissionContext(input);
+		if (!first || !second) throw new Error("expected fixed context");
+		expect(first).not.toBe(input);
+		expect(second).not.toBe(first);
+		expect(Object.getOwnPropertyDescriptors(input)).toEqual(before);
+		expect(Object.keys(first).sort()).toEqual(["lexical", "role", "write"]);
+		expect(Object.getPrototypeOf(first)).toBe(Object.prototype);
+		expect(Reflect.set(first, "write", "both")).toBe(false);
+		input.role = "compiler";
+		input.lexical = "ancestor";
+		input.write = "both";
+		expect(first).toEqual(valid);
+		expect(second).toEqual(valid);
+	});
+	it("reconstructs frozen and null-prototype data records", () => {
+		for (const input of [Object.freeze({ ...valid }), Object.assign(Object.create(null), valid)]) {
+			const normalized = validateInventoryUbuntuPermissionContext(input);
+			expect(normalized).toEqual(valid);
+			expect(normalized).not.toBe(input);
+			expect(Object.isFrozen(normalized)).toBe(true);
+			expect(Object.getPrototypeOf(normalized)).toBe(Object.prototype);
+		}
+	});
+	it.each([
+		{},
+		{ role: valid.role },
+		{ lexical: valid.lexical },
+		{ write: valid.write },
+		{ role: valid.role, lexical: valid.lexical },
+		{ role: valid.role, write: valid.write },
+		{ lexical: valid.lexical, write: valid.write },
+		{ ...valid, role: "unknown-role" },
+		{ ...valid, role: "OS-METADATA" },
+		{ ...valid, role: " os-metadata" },
+		{ ...valid, role: "os-metadata " },
+		{ ...valid, role: "/synthetic/os-metadata" },
+		{ ...valid, role: undefined },
+		{ ...valid, role: null },
+		{ ...valid, role: 1 },
+		{ ...valid, role: Object(valid.role) },
+		{ ...valid, lexical: "file" },
+		{ ...valid, lexical: "target " },
+		{ ...valid, lexical: true },
+		{ ...valid, lexical: undefined },
+		{ ...valid, lexical: null },
+		{ ...valid, write: "group" },
+		{ ...valid, write: "other-write " },
+		{ ...valid, write: 0o022 },
+		{ ...valid, write: false },
+		{ ...valid, write: undefined },
+		{ ...valid, write: null },
+		{ ...valid, path: "not-forwarded" },
+		{ ...valid, uid: 0 },
+		{ ...valid, mode: 0o775 },
+		{ ...valid, stage: "file" },
+		{ ...valid, code: "ubuntu-system-permissions" },
+	])("rejects partial, unknown, malformed or extended context %j", (context) => {
+		expect(validateInventoryUbuntuPermissionContext(context)).toBeUndefined();
+	});
+	it("rejects nonrecords, inherited fields and class instances without coercion", () => {
+		class Context {
+			role = valid.role;
+			lexical = valid.lexical;
+			write = valid.write;
+		}
+		for (const value of [
+			undefined,
+			null,
+			false,
+			true,
+			0,
+			-0,
+			NaN,
+			Infinity,
+			1n,
+			"",
+			"os-metadata",
+			Symbol("context"),
+			[],
+			[valid],
+			() => valid,
+			Object("context"),
+			new Context(),
+			Object.create(valid),
+		])
+			expect(validateInventoryUbuntuPermissionContext(value)).toBeUndefined();
+	});
+	it("rejects symbol, nonenumerable extra and prototype-spelling fields", () => {
+		const nonenumerable = Object.defineProperty({ ...valid }, "path", { value: "not-forwarded" });
+		const prototypeSpelling = Object.defineProperty({ ...valid }, "__proto__", { value: null });
+		for (const value of [{ ...valid, [Symbol("extra")]: true }, nonenumerable, prototypeSpelling])
+			expect(validateInventoryUbuntuPermissionContext(value)).toBeUndefined();
+	});
+	it("rejects data-field accessors without evaluating their getters", () => {
+		let reads = 0;
+		for (const key of ["role", "lexical", "write"]) {
+			const value = Object.defineProperty({ ...valid }, key, {
+				enumerable: true,
+				get() {
+					reads++;
+					throw new Error("context getter must not run");
+				},
+			});
+			expect(validateInventoryUbuntuPermissionContext(value)).toBeUndefined();
+		}
+		expect(reads).toBe(0);
+	});
+	it("keeps thrown proxy/reflection failures opaque without promising trap-free reflection", () => {
+		for (const failingTrap of ["getPrototypeOf", "ownKeys", "getOwnPropertyDescriptor"] as const) {
+			let calls = 0;
+			const value = new Proxy(
+				{ ...valid },
+				{
+					[failingTrap]() {
+						calls++;
+						throw new Error("context reflection failed");
+					},
+				},
+			);
+			expect(validateInventoryUbuntuPermissionContext(value)).toBeUndefined();
+			expect(calls).toBe(1);
+		}
+		const revoked = Proxy.revocable({ ...valid }, {});
+		revoked.revoke();
+		expect(validateInventoryUbuntuPermissionContext(revoked.proxy)).toBeUndefined();
 	});
 });

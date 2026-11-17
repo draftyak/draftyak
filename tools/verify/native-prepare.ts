@@ -7,7 +7,9 @@ import {
 } from "./lib/inventory-native-build.ts";
 import {
 	type InventoryNativeToolchainRefusal,
+	type InventoryUbuntuPermissionContext,
 	validateInventoryNativeToolchainRefusal,
+	validateInventoryUbuntuPermissionContext,
 } from "./lib/inventory-native-refusal.ts";
 
 type Action = "acquire-only" | "inspect" | "prepare";
@@ -88,6 +90,7 @@ const emit = (record: Readonly<Record<string, unknown>>): Promise<void> =>
 interface UbuntuInputRefusal {
 	readonly stage: "ubuntu-inputs";
 	readonly code?: string;
+	readonly permission?: InventoryUbuntuPermissionContext;
 }
 
 function ubuntuInputRefusal(module: object, error: unknown): UbuntuInputRefusal {
@@ -109,8 +112,24 @@ function ubuntuInputRefusal(module: object, error: unknown): UbuntuInputRefusal 
 			!/[^a-z0-9-]/.test(code) &&
 			/^ubuntu-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(code) &&
 			(known as (value: unknown) => unknown)(code) === true
-		)
-			return { stage: "ubuntu-inputs", code };
+		) {
+			let permission: InventoryUbuntuPermissionContext | undefined;
+			if (code === "ubuntu-system-permissions") {
+				try {
+					const context: unknown = Object.getOwnPropertyDescriptor(
+						module,
+						"getInventoryUbuntuPermissionContext",
+					)?.value;
+					if (typeof context === "function")
+						permission = validateInventoryUbuntuPermissionContext(
+							(context as (error: unknown) => unknown)(error),
+						);
+				} catch {
+					// Optional context cannot erase the already validated refusal code.
+				}
+			}
+			return { stage: "ubuntu-inputs", code, ...(permission === undefined ? {} : { permission }) };
+		}
 	} catch {
 		// Unrecognized failures stay opaque, including an unavailable code lookup.
 	}

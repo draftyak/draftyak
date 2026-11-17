@@ -14,6 +14,27 @@ const MAX_PACKAGES = 128 * 1024 * 1024;
 const MAX_DEB = 256 * 1024 * 1024;
 const MAX_TAR = 256 * 1024 * 1024;
 const ownRefusalCodes = new WeakMap();
+const ownSystemPermissionContexts = new WeakMap();
+const INVENTORY_UBUNTU_PERMISSION_ROLES = new Set([
+	"os-metadata",
+	"dpkg-executable",
+	"dpkg-query-executable",
+	"dpkg-deb-executable",
+	"gpgv-executable",
+	"xz-executable",
+	"package-metadata",
+	"archive-keyring",
+	"compiler",
+	"compiler-program-directory",
+	"compiler-subprogram",
+	"include-directory",
+	"linker-input",
+	"public-header",
+	"cxx-header",
+	"selected-file-recheck",
+	"os-metadata-recheck",
+	"archive-keyring-recheck",
+]);
 const INVENTORY_UBUNTU_REFUSAL_CODES = new Set([
 	"ubuntu-acquisition-already-active",
 	"ubuntu-acquisition-options",
@@ -242,6 +263,49 @@ export function getInventoryUbuntuRefusalCode(error) {
 	return isInventoryUbuntuRefusalCode(code) ? code : undefined;
 }
 
+/** @returns {Readonly<{role: string, lexical: "target" | "ancestor", write: "group-write" | "other-write" | "both"}> | undefined} */
+export function getInventoryUbuntuPermissionContext(error) {
+	return ownSystemPermissionContexts.get(error);
+}
+
+function requireLexicalSystemPermissions(mode, callerRole, lexicalTarget) {
+	try {
+		need((mode & 0o022) === 0, "ubuntu-system-permissions");
+	} catch (error) {
+		if (
+			ownRefusalCodes.get(error) === "ubuntu-system-permissions" &&
+			typeof callerRole === "string" &&
+			INVENTORY_UBUNTU_PERMISSION_ROLES.has(callerRole) &&
+			typeof lexicalTarget === "boolean" &&
+			Number.isInteger(mode) &&
+			mode >= 0 &&
+			mode <= 0xffffffff
+		) {
+			const groupWrite = (mode & 0o020) !== 0;
+			const otherWrite = (mode & 0o002) !== 0;
+			const write =
+				groupWrite && otherWrite
+					? "both"
+					: groupWrite
+						? "group-write"
+						: otherWrite
+							? "other-write"
+							: undefined;
+			if (write !== undefined) {
+				ownSystemPermissionContexts.set(
+					error,
+					Object.freeze({
+						role: callerRole,
+						lexical: lexicalTarget ? "target" : "ancestor",
+						write,
+					}),
+				);
+			}
+		}
+		throw error;
+	}
+}
+
 const need = (condition, code) => {
 	if (!condition) throw issueRefusal(code);
 };
@@ -256,6 +320,9 @@ function combinedFailure(primary, code) {
 	const result = new Refusal(first.code, [...first.failures, code]);
 	const ownCode = ownRefusalCodes.get(first);
 	if (ownCode !== undefined) ownRefusalCodes.set(result, ownCode);
+	const permissionContext = ownSystemPermissionContexts.get(first);
+	if (ownCode === "ubuntu-system-permissions" && permissionContext !== undefined)
+		ownSystemPermissionContexts.set(result, permissionContext);
 	return result;
 }
 
@@ -304,14 +371,15 @@ function sameFile(a, b) {
 	);
 }
 
-async function ownedSystem(file, directory = false) {
+async function ownedSystem(file, directory = false, callerRole) {
 	need(path.isAbsolute(file) && !file.includes("\0"), "ubuntu-system-path");
 	// Check lexical ancestors as well as the resolved target. System symlinks such
 	// as merged-/usr and the selected g++ alias remain part of the installed OS.
 	for (let current = file; ; current = path.dirname(current)) {
 		const entry = await lstat(current);
 		need(entry.uid === 0, "ubuntu-system-owner");
-		if (!entry.isSymbolicLink()) need((entry.mode & 0o022) === 0, "ubuntu-system-permissions");
+		if (!entry.isSymbolicLink())
+			requireLexicalSystemPermissions(entry.mode, callerRole, current === file);
 		if (path.dirname(current) === current) break;
 	}
 	const canonical = await realpath(file);
@@ -395,8 +463,8 @@ async function readStable(file, limit, owner, expectedIdentity) {
 	return (await readStableRecord(file, limit, owner, expectedIdentity)).bytes;
 }
 
-async function systemBytes(file, limit = MAX_DEB) {
-	const canonical = await ownedSystem(file);
+async function systemBytes(file, limit = MAX_DEB, callerRole) {
+	const canonical = await ownedSystem(file, false, callerRole);
 	return { path: canonical, bytes: await readStable(canonical, limit, 0) };
 }
 
@@ -734,11 +802,18 @@ function retainProcessInput(specification) {
 	return { bytes: snapshot, size, sha256 };
 }
 
-async function runSystem(command, args, context, limit = 1024 * 1024, inputSpecification) {
+async function runSystem(
+	command,
+	args,
+	context,
+	limit = 1024 * 1024,
+	inputSpecification,
+	callerRole,
+) {
 	// Snapshot/check before the first await. Neither a staged pathname nor a
 	// caller's mutable Buffer is subsequently reopened as authenticated input.
 	const input = retainProcessInput(inputSpecification);
-	command = await ownedSystem(command);
+	command = await ownedSystem(command, false, callerRole);
 	const child = spawn(command, args, {
 		cwd: context.stage,
 		shell: false,
@@ -864,8 +939,10 @@ async function runSystem(command, args, context, limit = 1024 * 1024, inputSpeci
 	return { stdout: Buffer.concat(output), stderr: Buffer.concat(diagnostics), input: input?.bytes };
 }
 
-async function commandText(command, args, context) {
-	return decodeUtf8((await runSystem(command, args, context)).stdout).trim();
+async function commandText(command, args, context, callerRole) {
+	return decodeUtf8(
+		(await runSystem(command, args, context, undefined, undefined, callerRole)).stdout,
+	).trim();
 }
 
 async function assertPublicationParents(records) {
@@ -1114,7 +1191,12 @@ async function installedPackage(file, context) {
 	for (const spelling of [file, ...(file.startsWith("/usr/") ? [file.slice(4)] : [])]) {
 		let answer;
 		try {
-			answer = await commandText("/usr/bin/dpkg-query", ["--search", spelling], context);
+			answer = await commandText(
+				"/usr/bin/dpkg-query",
+				["--search", spelling],
+				context,
+				"dpkg-query-executable",
+			);
 		} catch {
 			continue;
 		}
@@ -1136,6 +1218,7 @@ async function installedPackage(file, context) {
 			binary,
 		],
 		context,
+		"dpkg-query-executable",
 	);
 	const fields = query.split("\t");
 	need(
@@ -1154,13 +1237,17 @@ async function installedPackage(file, context) {
 	};
 }
 
-async function installedIntegrity(file, context) {
-	const checked = await systemBytes(file);
+async function installedIntegrity(file, context, callerRole) {
+	const checked = await systemBytes(file, MAX_DEB, callerRole);
 	const pkg = await installedPackage(checked.path, context);
 	let database;
 	for (const name of [...new Set([pkg.binary, pkg.name])]) {
 		try {
-			database = await systemBytes(`/var/lib/dpkg/info/${name}.md5sums`, 16 * 1024 * 1024);
+			database = await systemBytes(
+				`/var/lib/dpkg/info/${name}.md5sums`,
+				16 * 1024 * 1024,
+				"package-metadata",
+			);
 			break;
 		} catch (error) {
 			if (error?.code !== "ENOENT") throw error;
@@ -1206,6 +1293,7 @@ async function releaseInput(context, os, architecture, suite, keyring) {
 		context,
 		1024 * 1024,
 		{ bytes: release, size: release.length, sha256: sha(release) },
+		"gpgv-executable",
 	);
 	const status = decodeUtf8(result.stdout);
 	need(
@@ -1243,7 +1331,7 @@ async function releaseInput(context, os, architecture, suite, keyring) {
 				packages = await gunzipBounded(packed, parsed.indexSize);
 			else {
 				need(parsed.compressed.path.endsWith(".xz"), "ubuntu-index-compression");
-				await installedIntegrity("/usr/bin/xz", context);
+				await installedIntegrity("/usr/bin/xz", context, "xz-executable");
 				packages = (
 					await runSystem(
 						"/usr/bin/xz",
@@ -1251,6 +1339,7 @@ async function releaseInput(context, os, architecture, suite, keyring) {
 						context,
 						parsed.indexSize,
 						{ bytes: packed, size: parsed.compressed.size, sha256: parsed.compressed.sha256 },
+						"xz-executable",
 					)
 				).stdout;
 			}
@@ -1282,8 +1371,8 @@ async function releaseInput(context, os, architecture, suite, keyring) {
 	};
 }
 
-async function authenticatedFile(file, state) {
-	const checked = await installedIntegrity(file, state.context);
+async function authenticatedFile(file, state, callerRole) {
+	const checked = await installedIntegrity(file, state.context, callerRole);
 	const { pkg } = checked;
 	need(
 		pkg.architecture === state.architecture || pkg.architecture === "all",
@@ -1308,6 +1397,7 @@ async function authenticatedFile(file, state) {
 		state.context,
 		MAX_TAR,
 		{ bytes, size: record.size, sha256: record.sha256 },
+		"dpkg-deb-executable",
 	);
 	bytes = extracted.input;
 	const tar = extracted.stdout;
@@ -1343,32 +1433,34 @@ async function authenticatedFile(file, state) {
 }
 
 async function compilerQuery(compiler, args, context, verbose = false) {
-	const before = await systemBytes(compiler.path);
+	const before = await systemBytes(compiler.path, MAX_DEB, "compiler");
 	need(sha(before.bytes) === compiler.sha256, "ubuntu-compiler-changed");
-	const result = await runSystem(compiler.path, args, context);
-	const after = await systemBytes(compiler.path);
+	const result = await runSystem(compiler.path, args, context, undefined, undefined, "compiler");
+	const after = await systemBytes(compiler.path, MAX_DEB, "compiler");
 	need(sha(after.bytes) === compiler.sha256, "ubuntu-compiler-changed");
 	return verbose ? decodeUtf8(result.stderr) : decodeUtf8(result.stdout).trim();
 }
 
 async function acquire(context) {
-	const osInput = await systemBytes("/etc/os-release", 65536);
+	const osInput = await systemBytes("/etc/os-release", 65536, "os-metadata");
 	const os = parseOsRelease(osInput.bytes);
 	const architecture = process.arch === "x64" ? "amd64" : "arm64";
-	for (const utility of [
-		"/usr/bin/dpkg",
-		"/usr/bin/dpkg-query",
-		"/usr/bin/dpkg-deb",
-		"/usr/bin/gpgv",
+	for (const [utility, callerRole] of [
+		["/usr/bin/dpkg", "dpkg-executable"],
+		["/usr/bin/dpkg-query", "dpkg-query-executable"],
+		["/usr/bin/dpkg-deb", "dpkg-deb-executable"],
+		["/usr/bin/gpgv", "gpgv-executable"],
 	])
-		await installedIntegrity(utility, context);
+		await installedIntegrity(utility, context, callerRole);
 	need(
-		(await commandText("/usr/bin/dpkg", ["--print-architecture"], context)) === architecture,
+		(await commandText("/usr/bin/dpkg", ["--print-architecture"], context, "dpkg-executable")) ===
+			architecture,
 		"ubuntu-host-architecture",
 	);
 	const keyring = await installedIntegrity(
 		"/usr/share/keyrings/ubuntu-archive-keyring.gpg",
 		context,
+		"archive-keyring",
 	);
 	const releases = [];
 	const records = new Map();
@@ -1388,7 +1480,11 @@ async function acquire(context) {
 		}
 	}
 	const state = { context, architecture, records, packages: new Map(), selected: new Map() };
-	const compiler = await authenticatedFile(await ownedSystem("/usr/bin/g++"), state);
+	const compiler = await authenticatedFile(
+		await ownedSystem("/usr/bin/g++", false, "compiler"),
+		state,
+		"compiler",
+	);
 	// No selected compiler query precedes its signed-payload byte comparison.
 	const triple = await compilerQuery(compiler, ["-dumpmachine"], context);
 	need(
@@ -1404,7 +1500,7 @@ async function acquire(context) {
 	for (const directory of programs) {
 		need(path.isAbsolute(directory), "ubuntu-compiler-program-path");
 		try {
-			programDirectories.push(await ownedSystem(directory, true));
+			programDirectories.push(await ownedSystem(directory, true, "compiler-program-directory"));
 		} catch (error) {
 			if (error?.code !== "ENOENT") throw error;
 		}
@@ -1412,12 +1508,17 @@ async function acquire(context) {
 	for (const name of ["cc1plus", "collect2", "as", "ld"]) {
 		const reported = await compilerQuery(compiler, [`-print-prog-name=${name}`], context);
 		let selected;
-		if (path.isAbsolute(reported)) selected = await ownedSystem(reported);
+		if (path.isAbsolute(reported))
+			selected = await ownedSystem(reported, false, "compiler-subprogram");
 		else {
 			need(reported === name, "ubuntu-compiler-program-name");
 			for (const directory of programDirectories) {
 				try {
-					selected = await ownedSystem(path.join(directory, reported));
+					selected = await ownedSystem(
+						path.join(directory, reported),
+						false,
+						"compiler-subprogram",
+					);
 					break;
 				} catch (error) {
 					if (error?.code !== "ENOENT") throw error;
@@ -1425,7 +1526,7 @@ async function acquire(context) {
 			}
 		}
 		need(selected, "ubuntu-compiler-program-unavailable");
-		await authenticatedFile(selected, state);
+		await authenticatedFile(selected, state, "compiler-subprogram");
 	}
 	const verbose = await compilerQuery(
 		compiler,
@@ -1448,7 +1549,7 @@ async function acquire(context) {
 			reported.startsWith("/usr/include/") ||
 			reported.startsWith("/usr/lib/gcc/")
 		)
-			includeDirectories.push(await ownedSystem(reported, true));
+			includeDirectories.push(await ownedSystem(reported, true, "include-directory"));
 	}
 	need(includeDirectories.length > 0, "ubuntu-compiler-includes-unavailable");
 	let math;
@@ -1467,23 +1568,28 @@ async function acquire(context) {
 	]) {
 		const reported = await compilerQuery(compiler, [`-print-file-name=${name}`], context);
 		need(path.isAbsolute(reported), "ubuntu-compiler-link-input");
-		const selected = await authenticatedFile(reported, state);
+		const selected = await authenticatedFile(reported, state, "linker-input");
 		if (name === "libm.so") math = selected;
 	}
-	if (math && (await systemBytes(math.path)).bytes.includes(Buffer.from("libmvec.so"))) {
+	if (
+		math &&
+		(await systemBytes(math.path, MAX_DEB, "linker-input")).bytes.includes(
+			Buffer.from("libmvec.so"),
+		)
+	) {
 		const reported = await compilerQuery(compiler, ["-print-file-name=libmvec.so.1"], context);
 		need(path.isAbsolute(reported), "ubuntu-compiler-link-input");
-		await authenticatedFile(reported, state);
+		await authenticatedFile(reported, state, "linker-input");
 	}
 	for (const file of ["/usr/include/dirent.h", "/usr/include/fcntl.h", "/usr/include/unistd.h"])
-		await authenticatedFile(file, state);
+		await authenticatedFile(file, state, "public-header");
 	const cpp = includeDirectories.find((directory) => /\/c\+\+\/\d+(?:\.\d+)*$/.test(directory));
 	need(cpp, "ubuntu-libstdcxx-include-unavailable");
-	await authenticatedFile(path.join(cpp, "vector"), state);
+	await authenticatedFile(path.join(cpp, "vector"), state, "cxx-header");
 	// Refuse an OS/package upgrade across acquisition rather than describing a
 	// mixture of installed versions as a current selected closure.
 	for (const file of state.selected.values()) {
-		const current = await installedIntegrity(file.path, context);
+		const current = await installedIntegrity(file.path, context, "selected-file-recheck");
 		need(
 			current.sha256 === file.sha256 &&
 				current.pkg.binary === file.package &&
@@ -1493,14 +1599,19 @@ async function acquire(context) {
 			"ubuntu-selected-input-changed",
 		);
 	}
-	const currentOs = await systemBytes("/etc/os-release", 65536);
+	const currentOs = await systemBytes("/etc/os-release", 65536, "os-metadata-recheck");
 	need(
 		currentOs.path === osInput.path &&
 			sha(currentOs.bytes) === sha(osInput.bytes) &&
-			(await commandText("/usr/bin/dpkg", ["--print-architecture"], context)) === architecture,
+			(await commandText("/usr/bin/dpkg", ["--print-architecture"], context, "dpkg-executable")) ===
+				architecture,
 		"ubuntu-host-metadata-changed",
 	);
-	need(sha((await systemBytes(keyring.path)).bytes) === keyring.sha256, "ubuntu-keyring-changed");
+	need(
+		sha((await systemBytes(keyring.path, MAX_DEB, "archive-keyring-recheck")).bytes) ===
+			keyring.sha256,
+		"ubuntu-keyring-changed",
+	);
 	for (const release of releases)
 		need(release.validUntil === null || release.validUntil > Date.now(), "ubuntu-release-expired");
 	return {

@@ -10,16 +10,26 @@ const factories = vi.hoisted(() => ({
 	ubuntuRefusal: vi.fn(),
 	ubuntuKnown: vi.fn(),
 }));
+const ubuntuMock = vi.hoisted(() => ({
+	module: undefined as object | undefined,
+	permission: undefined as PropertyDescriptor | undefined,
+}));
 vi.mock("../lib/inventory-native-build.ts", () => ({
 	acquireInventoryNativeNodeInputs: factories.acquire,
 	inspectInventoryNativeToolchain: factories.inspect,
 	prepareInventoryNativeBuild: factories.prepare,
 }));
-vi.mock("../lib/inventory-native-ubuntu-inputs.mjs", () => ({
-	acquireInventoryUbuntuInputs: factories.ubuntu,
-	getInventoryUbuntuRefusalCode: factories.ubuntuRefusal,
-	isInventoryUbuntuRefusalCode: factories.ubuntuKnown,
-}));
+vi.mock("../lib/inventory-native-ubuntu-inputs.mjs", () => {
+	const module = {
+		acquireInventoryUbuntuInputs: factories.ubuntu,
+		getInventoryUbuntuRefusalCode: factories.ubuntuRefusal,
+		isInventoryUbuntuRefusalCode: factories.ubuntuKnown,
+	};
+	if (ubuntuMock.permission !== undefined)
+		Object.defineProperty(module, "getInventoryUbuntuPermissionContext", ubuntuMock.permission);
+	ubuntuMock.module = module;
+	return module;
+});
 
 import { parseNativePrepareArgs, runNativePrepare } from "../native-prepare.ts";
 
@@ -618,4 +628,183 @@ describe("explicit native preparation control protocol", () => {
 		expect(records().some((record) => record.event === "inventory-native-result")).toBe(false);
 		expect(output.join("")).not.toContain("RAW_DIAGNOSTIC_MUST_STAY_PRIVATE");
 	});
+});
+
+function permissionExport(descriptor: PropertyDescriptor | undefined): void {
+	ubuntuMock.permission =
+		descriptor === undefined ? undefined : { ...descriptor, configurable: true };
+	if (ubuntuMock.module === undefined) return;
+	if (ubuntuMock.permission === undefined)
+		Reflect.deleteProperty(ubuntuMock.module, "getInventoryUbuntuPermissionContext");
+	else
+		Object.defineProperty(
+			ubuntuMock.module,
+			"getInventoryUbuntuPermissionContext",
+			ubuntuMock.permission,
+		);
+}
+
+async function permissionFailure(
+	owner: HeldCase,
+	descriptor: PropertyDescriptor | undefined,
+	code: unknown = "ubuntu-system-permissions",
+	known: unknown = true,
+	error: unknown = new Error("RAW_DIAGNOSTIC_MUST_STAY_PRIVATE"),
+) {
+	selectLinuxProtocol();
+	permissionExport(descriptor);
+	factories.acquire.mockResolvedValue(nodeInputs());
+	factories.ubuntu.mockRejectedValue(error);
+	factories.ubuntuRefusal.mockReturnValue(code);
+	factories.ubuntuKnown.mockReturnValue(known);
+	owner.admit();
+	const pending = runNativePrepare(["--prepare"]);
+	owner.run(pending);
+	owner.drain(async () => {
+		try {
+			await pending;
+		} finally {
+			permissionExport(undefined);
+		}
+	});
+	expect(await pending).toBe(1);
+	expect(factories.prepare).not.toHaveBeenCalled();
+	expect(records().some((record) => record.event === "inventory-native-result")).toBe(false);
+	expect(output.join("")).not.toContain("RAW_DIAGNOSTIC_MUST_STAY_PRIVATE");
+	return records().find((record) => record.event === "inventory-native-failure");
+}
+
+describe("Ubuntu permission failure context", () => {
+	const context = { role: "compiler", lexical: "ancestor", write: "both" };
+	const refusal = { stage: "ubuntu-inputs", code: "ubuntu-system-permissions" };
+	it("emits only a complete normalized tuple from the actual rejected error", () =>
+		heldCase(async (owner) => {
+			let reads = 0;
+			const error = Object.create(null) as object;
+			for (const field of ["message", "code", "permission", "role", "lexical", "write"])
+				Object.defineProperty(error, field, {
+					get() {
+						reads++;
+						throw new Error("RAW_DIAGNOSTIC_MUST_STAY_PRIVATE");
+					},
+				});
+			const owned = new WeakMap<object, object>([[error, context]]);
+			const lookup = vi.fn((value: object) => owned.get(value));
+			expect(
+				await permissionFailure(owner, { value: lookup }, "ubuntu-system-permissions", true, error),
+			).toEqual({
+				event: "inventory-native-failure",
+				action: "prepare",
+				refusal: { ...refusal, permission: context },
+			});
+			expect(lookup).toHaveBeenCalledExactlyOnceWith(error);
+			expect(reads).toBe(0);
+		}));
+	it.each([
+		["missing", undefined],
+		["nonfunction", { value: "RAW_DIAGNOSTIC_MUST_STAY_PRIVATE" }],
+	] as const)("preserves the validated code with a %s optional export", (_name, descriptor) =>
+		heldCase(async (owner) => {
+			expect((await permissionFailure(owner, descriptor))?.refusal).toEqual(refusal);
+		}),
+	);
+	it("preserves the validated code when the optional lookup throws", () =>
+		heldCase(async (owner) => {
+			const lookup = vi.fn(() => {
+				throw new Error("RAW_DIAGNOSTIC_MUST_STAY_PRIVATE");
+			});
+			expect((await permissionFailure(owner, { value: lookup }))?.refusal).toEqual(refusal);
+			expect(lookup).toHaveBeenCalledTimes(1);
+		}));
+	it("ignores an optional export accessor without invoking it", () =>
+		heldCase(async (owner) => {
+			let reads = 0;
+			expect(
+				(
+					await permissionFailure(owner, {
+						get() {
+							reads++;
+							throw new Error("RAW_DIAGNOSTIC_MUST_STAY_PRIVATE");
+						},
+					})
+				)?.refusal,
+			).toEqual(refusal);
+			expect(reads).toBe(0);
+		}));
+	it.each([
+		["no context", undefined],
+		["null", null],
+		["scalar", "RAW_DIAGNOSTIC_MUST_STAY_PRIVATE"],
+		["unknown role", { ...context, role: "RAW_DIAGNOSTIC_MUST_STAY_PRIVATE" }],
+		["unknown lexical", { ...context, lexical: "RAW_DIAGNOSTIC_MUST_STAY_PRIVATE" }],
+		["unknown write", { ...context, write: "RAW_DIAGNOSTIC_MUST_STAY_PRIVATE" }],
+		["missing role", { lexical: "ancestor", write: "both" }],
+		["missing lexical", { role: "compiler", write: "both" }],
+		["missing write", { role: "compiler", lexical: "ancestor" }],
+		["extra data", { ...context, path: "RAW_DIAGNOSTIC_MUST_STAY_PRIVATE" }],
+		["misplaced wrapper", { permission: context }],
+		["misplaced platform tuple", { role: "compiler", stage: "file", failedPredicate: "owner" }],
+		["foreign prototype", Object.create(context) as object],
+	] as const)("drops %s while preserving the independently validated code", (_name, value) =>
+		heldCase(async (owner) => {
+			expect((await permissionFailure(owner, { value: () => value }))?.refusal).toEqual(refusal);
+		}),
+	);
+	it.each(["role", "lexical", "write"] as const)("does not invoke a context %s accessor", (field) =>
+		heldCase(async (owner) => {
+			let reads = 0;
+			const value = { ...context };
+			Object.defineProperty(value, field, {
+				enumerable: true,
+				get() {
+					reads++;
+					throw new Error("RAW_DIAGNOSTIC_MUST_STAY_PRIVATE");
+				},
+			});
+			expect((await permissionFailure(owner, { value: () => value }))?.refusal).toEqual(refusal);
+			expect(reads).toBe(0);
+		}),
+	);
+	it("does not serialize a foreign context hook or replace the validated code", () =>
+		heldCase(async (owner) => {
+			let calls = 0;
+			const value = {
+				...context,
+				toJSON() {
+					calls++;
+					return { message: "RAW_DIAGNOSTIC_MUST_STAY_PRIVATE" };
+				},
+			};
+			expect((await permissionFailure(owner, { value: () => value }))?.refusal).toEqual(refusal);
+			expect(calls).toBe(0);
+		}));
+	it("keeps reflection refusal opaque without erasing the validated code", () =>
+		heldCase(async (owner) => {
+			const value = new Proxy(
+				{},
+				{
+					getPrototypeOf() {
+						throw new Error("RAW_DIAGNOSTIC_MUST_STAY_PRIVATE");
+					},
+				},
+			);
+			expect((await permissionFailure(owner, { value: () => value }))?.refusal).toEqual(refusal);
+		}));
+	it.each([
+		[
+			"other validated code",
+			"ubuntu-system-owner",
+			true,
+			{ stage: "ubuntu-inputs", code: "ubuntu-system-owner" },
+		],
+		["unrecognized code", "ubuntu-system-permissions", false, { stage: "ubuntu-inputs" }],
+	] as const)("does not call the permission getter for %s", (_name, code, known, expected) =>
+		heldCase(async (owner) => {
+			const lookup = vi.fn(() => context);
+			expect((await permissionFailure(owner, { value: lookup }, code, known))?.refusal).toEqual(
+				expected,
+			);
+			expect(lookup).not.toHaveBeenCalled();
+		}),
+	);
 });
