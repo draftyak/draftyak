@@ -64,6 +64,7 @@ describe("required native transport workflow controls", () => {
 			"heavy",
 			"windows",
 			"windows-tests",
+			"windows-hub-tests",
 			"macos",
 		]);
 		expect(workflow.jobs.macos?.["runs-on"]).toBe("macos-15");
@@ -103,8 +104,8 @@ describe("required native transport workflow controls", () => {
 		expect(
 			check(
 				source.replace(
-					"needs: [changes, cheap, full, spikes, heavy, windows, windows-tests, macos]",
-					"needs: [changes, cheap, full, spikes, heavy, windows, windows-tests]",
+					"needs: [changes, cheap, full, spikes, heavy, windows, windows-tests, windows-hub-tests, macos]",
+					"needs: [changes, cheap, full, spikes, heavy, windows, windows-tests, windows-hub-tests]",
 				),
 			).join("\n"),
 		).toContain("required job execution controls");
