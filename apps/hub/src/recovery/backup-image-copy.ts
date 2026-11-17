@@ -76,6 +76,9 @@ const tables: readonly Table[] = [
 			table(`_migrations_${name}`, "name,timestamp", "name"),
 			table(`_migrations_${name}_lock`, "id,is_locked"),
 		]),
+	table("owner_settings", "user_id,settings_json", "user_id"),
+	table("_migrations_ownersettings", "name,timestamp", "name"),
+	table("_migrations_ownersettings_lock", "id,is_locked"),
 ];
 const nameSet = (names: string): ReadonlySet<string> => new Set(names.split(","));
 const indexes = nameSet(

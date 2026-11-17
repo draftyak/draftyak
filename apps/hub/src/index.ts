@@ -5,6 +5,12 @@ export {
 	NativeAccounts,
 } from "./accounts/records.ts";
 export {
+	AccountReadError,
+	type AccountReadErrorCode,
+	createNativeAccountReads,
+	type NativeAccountReads,
+} from "./api/accounts.ts";
+export {
 	closeFailedNativeDeviceContext,
 	type NativeDeviceApiConfig,
 	type NativeDeviceContext,
@@ -14,6 +20,27 @@ export {
 	openNativeDeviceApi,
 	openNativeDeviceContext,
 } from "./api/device/context.ts";
+export {
+	buildNativeApiOpenApi,
+	type NativeApiOpenApiDescriptor,
+	type NativeApiOpenApiDocument,
+} from "./api/openapi.ts";
+export {
+	createNativeApiRouter,
+	NATIVE_API_ROUTE_DESCRIPTORS,
+	type NativeApiErrorCode,
+	type NativeApiResponse,
+	type NativeApiRouteDescriptor,
+	type NativeApiRouter,
+} from "./api/router.ts";
+export {
+	createOwnerSettings,
+	OWNER_SETTINGS_MAX_BYTES,
+	OwnerSettingsError,
+	type OwnerSettingsErrorCode,
+	type OwnerSettingsHandle,
+	type OwnerSettingsValue,
+} from "./api/settings.ts";
 export {
 	AUDIT_EXPORT_MAX_BYTES,
 	AUDIT_EXPORT_MAX_EVENTS,

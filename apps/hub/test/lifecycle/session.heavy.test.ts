@@ -186,6 +186,7 @@ it.each(compiledSessionModes)(
 					"identity/backup-challenge-migrations/0001_backup_challenges.sql",
 					"identity/backup-challenge-migrations/0001_backup_challenges.sql",
 				],
+				["api/migrations/0001_owner_settings.sql", "api/migrations/0001_owner_settings.sql"],
 			] as const) {
 				const built = path.join(hub, "dist", relative);
 				expect(readFileSync(built)).toEqual(readFileSync(path.join(hub, "src", source)));
@@ -220,9 +221,9 @@ it.each(compiledSessionModes)(
 			expect(JSON.parse(run.stdout)).toEqual({
 				ok: true,
 				mode,
-				schemas: 18,
-				businessTables: 31,
-				bookkeepingTables: 36,
+				schemas: 19,
+				businessTables: 32,
+				bookkeepingTables: 38,
 				recoveryCapsule: mode === "positive",
 				beforeIdentity: true,
 				refused: mode === "positive" ? null : "STORE_UNAVAILABLE",

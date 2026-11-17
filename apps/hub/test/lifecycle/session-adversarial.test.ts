@@ -303,6 +303,7 @@ describe("first run", () => {
 				["backup"],
 				["backupops"],
 				["backupchallenges"],
+				["ownersettings"],
 			]);
 		} finally {
 			spy.mockRestore();
