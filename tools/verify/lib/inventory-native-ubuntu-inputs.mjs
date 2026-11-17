@@ -13,6 +13,207 @@ const MAX_RELEASE = 2 * 1024 * 1024;
 const MAX_PACKAGES = 128 * 1024 * 1024;
 const MAX_DEB = 256 * 1024 * 1024;
 const MAX_TAR = 256 * 1024 * 1024;
+const ownRefusalCodes = new WeakMap();
+const INVENTORY_UBUNTU_REFUSAL_CODES = new Set([
+	"ubuntu-acquisition-already-active",
+	"ubuntu-acquisition-options",
+	"ubuntu-bootstrap-lock-release",
+	"ubuntu-cache-alias",
+	"ubuntu-cache-bootstrap-parent-changed",
+	"ubuntu-cache-bootstrap-unconfirmed",
+	"ubuntu-cache-bootstrap-unqualified",
+	"ubuntu-cache-cleanup-exclusivity",
+	"ubuntu-cache-close",
+	"ubuntu-cache-directory",
+	"ubuntu-cache-existing-kind-or-link",
+	"ubuntu-cache-existing-mismatch",
+	"ubuntu-cache-lock-changed",
+	"ubuntu-cache-lock-unqualified",
+	"ubuntu-cache-path",
+	"ubuntu-cache-prior-publication-changed",
+	"ubuntu-cache-repository-alias",
+	"ubuntu-cache-repository-changed",
+	"ubuntu-cache-repository-owner",
+	"ubuntu-cache-sync",
+	"ubuntu-compiler-changed",
+	"ubuntu-compiler-include-bound",
+	"ubuntu-compiler-include-path",
+	"ubuntu-compiler-include-search",
+	"ubuntu-compiler-includes-unavailable",
+	"ubuntu-compiler-link-input",
+	"ubuntu-compiler-program-name",
+	"ubuntu-compiler-program-path",
+	"ubuntu-compiler-program-search",
+	"ubuntu-compiler-program-unavailable",
+	"ubuntu-compiler-target",
+	"ubuntu-control-bound",
+	"ubuntu-control-character",
+	"ubuntu-control-duplicate-field",
+	"ubuntu-control-field",
+	"ubuntu-control-line",
+	"ubuntu-control-line-bound",
+	"ubuntu-control-orphan-continuation",
+	"ubuntu-cross-sysroot-refused",
+	"ubuntu-deb-checksum",
+	"ubuntu-deb-size",
+	"ubuntu-deb-tar-bounds",
+	"ubuntu-deb-tar-checksum",
+	"ubuntu-deb-tar-dangling-metadata",
+	"ubuntu-deb-tar-duplicate-longlink",
+	"ubuntu-deb-tar-duplicate-longname",
+	"ubuntu-deb-tar-format-unsupported",
+	"ubuntu-deb-tar-global-pax-unsupported",
+	"ubuntu-deb-tar-header-bounds",
+	"ubuntu-deb-tar-link-metadata",
+	"ubuntu-deb-tar-longname-bounds",
+	"ubuntu-deb-tar-longname-format",
+	"ubuntu-deb-tar-member-duplicate",
+	"ubuntu-deb-tar-member-missing",
+	"ubuntu-deb-tar-member-not-regular",
+	"ubuntu-deb-tar-metadata-count",
+	"ubuntu-deb-tar-metadata-mix-unsupported",
+	"ubuntu-deb-tar-number",
+	"ubuntu-deb-tar-number-bounds",
+	"ubuntu-deb-tar-path",
+	"ubuntu-deb-tar-pax-bounds",
+	"ubuntu-deb-tar-pax-count",
+	"ubuntu-deb-tar-pax-duplicate",
+	"ubuntu-deb-tar-pax-encoding-unsupported",
+	"ubuntu-deb-tar-pax-name-bounds",
+	"ubuntu-deb-tar-pax-record",
+	"ubuntu-deb-tar-pax-size",
+	"ubuntu-deb-tar-pax-size-bounds",
+	"ubuntu-deb-tar-pax-unsupported",
+	"ubuntu-deb-tar-payload-bounds",
+	"ubuntu-deb-tar-special-size-unsupported",
+	"ubuntu-deb-tar-star-unsupported",
+	"ubuntu-deb-tar-string-padding",
+	"ubuntu-deb-tar-targets",
+	"ubuntu-deb-tar-terminator-missing",
+	"ubuntu-deb-tar-text",
+	"ubuntu-deb-tar-trailing-data",
+	"ubuntu-deb-tar-type-unsupported",
+	"ubuntu-decimal-bound",
+	"ubuntu-decimal-field",
+	"ubuntu-download-buffer",
+	"ubuntu-download-content-encoding",
+	"ubuntu-download-content-length",
+	"ubuntu-download-create",
+	"ubuntu-download-headers",
+	"ubuntu-download-limit",
+	"ubuntu-download-network",
+	"ubuntu-download-origin",
+	"ubuntu-download-overflow",
+	"ubuntu-download-redirect-limit",
+	"ubuntu-download-redirect-origin",
+	"ubuntu-download-status",
+	"ubuntu-download-timeout",
+	"ubuntu-download-truncated",
+	"ubuntu-download-url",
+	"ubuntu-field-spelling",
+	"ubuntu-gzip-buffer",
+	"ubuntu-gzip-create",
+	"ubuntu-gzip-input",
+	"ubuntu-gzip-overflow",
+	"ubuntu-gzip-size",
+	"ubuntu-gzip-stream",
+	"ubuntu-gzip-timeout",
+	"ubuntu-host-architecture",
+	"ubuntu-host-metadata-changed",
+	"ubuntu-index-compression",
+	"ubuntu-input-acquisition-refused",
+	"ubuntu-input-changed",
+	"ubuntu-input-close",
+	"ubuntu-input-encoding",
+	"ubuntu-input-owner-or-kind",
+	"ubuntu-input-size",
+	"ubuntu-installed-file-not-authentic-payload",
+	"ubuntu-installed-package-integrity",
+	"ubuntu-installed-version-not-in-signed-index",
+	"ubuntu-keyring-changed",
+	"ubuntu-libstdcxx-include-unavailable",
+	"ubuntu-lock-release",
+	"ubuntu-offline-authenticated-deb-missing",
+	"ubuntu-offline-packages-missing",
+	"ubuntu-offline-release-missing",
+	"ubuntu-original-closure-unconfirmed",
+	"ubuntu-original-file-close-unconfirmed",
+	"ubuntu-original-handle-unowned",
+	"ubuntu-os-command-close-unconfirmed",
+	"ubuntu-os-command-pipes",
+	"ubuntu-os-command-refused",
+	"ubuntu-os-release-format",
+	"ubuntu-package-architecture",
+	"ubuntu-package-duplicate-record",
+	"ubuntu-package-identity",
+	"ubuntu-package-integrity-format",
+	"ubuntu-package-integrity-unavailable",
+	"ubuntu-package-owner-unavailable",
+	"ubuntu-package-path",
+	"ubuntu-package-payload-record",
+	"ubuntu-package-record-conflict",
+	"ubuntu-package-stanza-bound",
+	"ubuntu-package-state",
+	"ubuntu-packages-checksum",
+	"ubuntu-packages-compressed-checksum",
+	"ubuntu-packages-compressed-size",
+	"ubuntu-packages-empty",
+	"ubuntu-packages-record-bound",
+	"ubuntu-packages-size",
+	"ubuntu-parser-byte-bound",
+	"ubuntu-parser-control",
+	"ubuntu-parser-newline",
+	"ubuntu-parser-utf8",
+	"ubuntu-process-input",
+	"ubuntu-process-input-changed",
+	"ubuntu-process-input-checksum",
+	"ubuntu-publication-destination-bytes",
+	"ubuntu-publication-exclusivity",
+	"ubuntu-publication-output-identity",
+	"ubuntu-publication-parent-changed",
+	"ubuntu-publication-stage-bytes",
+	"ubuntu-publication-stage-unowned",
+	"ubuntu-publication-unconfirmed",
+	"ubuntu-release-armor-headers",
+	"ubuntu-release-checksum-bound",
+	"ubuntu-release-checksum-row",
+	"ubuntu-release-clear-sign-header",
+	"ubuntu-release-compressed-index",
+	"ubuntu-release-context",
+	"ubuntu-release-context-value",
+	"ubuntu-release-dash-escape",
+	"ubuntu-release-expired",
+	"ubuntu-release-hash-header",
+	"ubuntu-release-identity",
+	"ubuntu-release-multiple-signature-boundaries",
+	"ubuntu-release-packages-index",
+	"ubuntu-release-scope",
+	"ubuntu-release-signature",
+	"ubuntu-release-signature-armor-base64",
+	"ubuntu-release-signature-armor-body",
+	"ubuntu-release-signature-armor-data",
+	"ubuntu-release-signature-armor-header",
+	"ubuntu-release-signature-boundary",
+	"ubuntu-release-time-bound",
+	"ubuntu-release-time-calendar",
+	"ubuntu-release-time-format",
+	"ubuntu-required-field",
+	"ubuntu-retained-publication-or-cleanup-debt",
+	"ubuntu-scalar-field",
+	"ubuntu-selected-input-changed",
+	"ubuntu-stage-cleanup",
+	"ubuntu-stage-close",
+	"ubuntu-stage-ownership-changed",
+	"ubuntu-stage-ownership-unqualified",
+	"ubuntu-stage-size",
+	"ubuntu-system-kind",
+	"ubuntu-system-owner",
+	"ubuntu-system-parent-kind",
+	"ubuntu-system-path",
+	"ubuntu-system-permissions",
+	"ubuntu-unsupported-distribution",
+	"ubuntu-unsupported-host",
+]);
 
 class Refusal extends Error {
 	constructor(code, additional = []) {
@@ -24,18 +225,38 @@ class Refusal extends Error {
 		this.stack = `${this.name}: ${this.message}`;
 	}
 }
+function issueRefusal(code, additional = []) {
+	const error = new Refusal(code, additional);
+	ownRefusalCodes.set(error, code);
+	return error;
+}
+
+/** @returns {boolean} */
+export function isInventoryUbuntuRefusalCode(value) {
+	return typeof value === "string" && INVENTORY_UBUNTU_REFUSAL_CODES.has(value);
+}
+
+/** @returns {string | undefined} */
+export function getInventoryUbuntuRefusalCode(error) {
+	const code = ownRefusalCodes.get(error);
+	return isInventoryUbuntuRefusalCode(code) ? code : undefined;
+}
+
 const need = (condition, code) => {
-	if (!condition) throw new Refusal(code);
+	if (!condition) throw issueRefusal(code);
 };
 let activeOperation;
 
 function fixedFailure(error) {
-	return error instanceof Refusal ? error : new Refusal("ubuntu-input-acquisition-refused");
+	return error instanceof Refusal ? error : issueRefusal("ubuntu-input-acquisition-refused");
 }
 
 function combinedFailure(primary, code) {
-	const first = primary ? fixedFailure(primary) : new Refusal(code);
-	return new Refusal(first.code, [...first.failures, code]);
+	const first = primary ? fixedFailure(primary) : issueRefusal(code);
+	const result = new Refusal(first.code, [...first.failures, code]);
+	const ownCode = ownRefusalCodes.get(first);
+	if (ownCode !== undefined) ownRefusalCodes.set(result, ownCode);
+	return result;
 }
 
 function ownHandle(handle) {
@@ -59,7 +280,7 @@ async function closeHandle(handle) {
 		// rejected close is neither a close receipt nor permission to retry/reset.
 		record.closeRejected = true;
 		activeOperation.retained = true;
-		throw new Refusal("ubuntu-original-file-close-unconfirmed");
+		throw issueRefusal("ubuntu-original-file-close-unconfirmed");
 	}
 }
 
@@ -69,7 +290,7 @@ function decodeUtf8(bytes) {
 	try {
 		return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 	} catch {
-		throw new Refusal("ubuntu-input-encoding");
+		throw issueRefusal("ubuntu-input-encoding");
 	}
 }
 
@@ -206,7 +427,7 @@ async function syncDirectory(directory) {
 	try {
 		await handle.sync();
 	} catch {
-		failure = new Refusal("ubuntu-cache-sync");
+		failure = issueRefusal("ubuntu-cache-sync");
 	}
 	try {
 		await closeHandle(handle);
@@ -1710,7 +1931,7 @@ function ubuntuTransferUrl(raw, base) {
 	try {
 		parsed = base === undefined ? new URL(raw) : new URL(raw, base);
 	} catch {
-		throw new Refusal("ubuntu-download-url");
+		throw issueRefusal("ubuntu-download-url");
 	}
 	need(
 		parsed.protocol === "https:" &&
@@ -1813,7 +2034,7 @@ async function fetchOfficialBytes(url, limit) {
 				clearTimeout(totalTimer);
 				clearTimeout(headerTimer);
 				if (failure !== undefined) {
-					reject(new Refusal(failure));
+					reject(issueRefusal(failure));
 					return;
 				}
 				if (nextUrl !== undefined) {
@@ -1823,7 +2044,7 @@ async function fetchOfficialBytes(url, limit) {
 				try {
 					resolve({ bytes: Buffer.concat(chunks, total) });
 				} catch {
-					reject(new Refusal("ubuntu-download-buffer"));
+					reject(issueRefusal("ubuntu-download-buffer"));
 				}
 			};
 			const stop = (code) => {
@@ -2010,7 +2231,7 @@ async function fetchOfficialBytes(url, limit) {
 					clearTimeout(totalTimer);
 					clearTimeout(headerTimer);
 					settled = true;
-					reject(new Refusal("ubuntu-download-create"));
+					reject(issueRefusal("ubuntu-download-create"));
 				} else stop("ubuntu-download-network");
 			}
 		});
@@ -2033,7 +2254,7 @@ async function gunzipBounded(bytes, expectedSize) {
 	try {
 		input = Buffer.from(bytes);
 	} catch {
-		throw new Refusal("ubuntu-gzip-input");
+		throw issueRefusal("ubuntu-gzip-input");
 	}
 	return new Promise((resolve, reject) => {
 		let original,
@@ -2055,13 +2276,13 @@ async function gunzipBounded(bytes, expectedSize) {
 			settled = true;
 			clearTimeout(timer);
 			if (failure !== undefined) {
-				reject(new Refusal(failure));
+				reject(issueRefusal(failure));
 				return;
 			}
 			try {
 				resolve(Buffer.concat(chunks, total));
 			} catch {
-				reject(new Refusal("ubuntu-gzip-buffer"));
+				reject(issueRefusal("ubuntu-gzip-buffer"));
 			}
 		};
 		const stop = (code) => {
@@ -2113,7 +2334,7 @@ async function gunzipBounded(bytes, expectedSize) {
 			if (original === undefined) {
 				clearTimeout(timer);
 				settled = true;
-				reject(new Refusal("ubuntu-gzip-create"));
+				reject(issueRefusal("ubuntu-gzip-create"));
 			} else stop("ubuntu-gzip-stream");
 		}
 	});

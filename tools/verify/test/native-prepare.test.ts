@@ -527,4 +527,95 @@ describe("explicit native preparation control protocol", () => {
 		});
 		expect(output.join("")).not.toContain("RAW_DIAGNOSTIC_MUST_STAY_PRIVATE");
 	});
+
+	it("emits fixed macOS resource facts while retaining the failed capture lifecycle", async () => {
+		const refusal = {
+			status: "unqualified-installed-posix-toolchain",
+			code: "system-owner-or-permissions",
+			role: "sdk-directory",
+			stage: "ancestor",
+			failedPredicate: "owner",
+		};
+		let advanced = false;
+		let cleaned = false;
+		factories.inspect.mockImplementation(async function* () {
+			try {
+				yield {
+					kind: "command",
+					complete: true,
+					files: [receiptFile],
+					code: 1,
+					signal: null,
+					refusal,
+				};
+				advanced = true;
+				return { receiptFile, sha256 };
+			} finally {
+				cleaned = true;
+			}
+		});
+		expect(await runNativePrepare(["--inspect"])).toBe(1);
+		expect(
+			records().find((record) => record.event === "inventory-native-capture")?.refusal,
+		).toEqual(refusal);
+		expect({ advanced, cleaned }).toEqual({ advanced: false, cleaned: true });
+		expect(records().some((record) => record.event === "inventory-native-result")).toBe(false);
+	});
+
+	it.each([
+		[
+			"unknown role",
+			{ role: "RAW_DIAGNOSTIC_MUST_STAY_PRIVATE", stage: "file", failedPredicate: "owner" },
+		],
+		[
+			"unknown stage",
+			{
+				role: "sdk-directory",
+				stage: "RAW_DIAGNOSTIC_MUST_STAY_PRIVATE",
+				failedPredicate: "owner",
+			},
+		],
+		[
+			"unknown predicate",
+			{ role: "sdk-directory", stage: "file", failedPredicate: "RAW_DIAGNOSTIC_MUST_STAY_PRIVATE" },
+		],
+		["missing role", { stage: "file", failedPredicate: "owner" }],
+		["missing stage", { role: "sdk-directory", failedPredicate: "owner" }],
+		["missing predicate", { role: "sdk-directory", stage: "file" }],
+		[
+			"unrelated code",
+			{
+				role: "sdk-directory",
+				stage: "file",
+				failedPredicate: "owner",
+				code: "metadata-command-refused",
+			},
+		],
+	] as const)("keeps unknown or partial macOS facts opaque: %s", async (_name, context) => {
+		const refusal = {
+			status: "unqualified-installed-posix-toolchain",
+			...context,
+			code: "code" in context ? context.code : "system-owner-or-permissions",
+		};
+		factories.inspect.mockImplementation(async function* () {
+			yield {
+				kind: "command",
+				complete: true,
+				files: [receiptFile],
+				code: 1,
+				signal: null,
+				refusal,
+			};
+			return { receiptFile, sha256 };
+		});
+		expect(await runNativePrepare(["--inspect"])).toBe(1);
+		expect(
+			Object.hasOwn(
+				records().find((record) => record.event === "inventory-native-capture") ?? {},
+				"refusal",
+			),
+		).toBe(false);
+		expect(records().some((record) => record.event === "inventory-native-result")).toBe(false);
+		expect(output.join("")).not.toContain("RAW_DIAGNOSTIC_MUST_STAY_PRIVATE");
+	});
 });

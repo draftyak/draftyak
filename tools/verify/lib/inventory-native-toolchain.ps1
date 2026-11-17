@@ -8,18 +8,39 @@ function Ordinary([string]$target,[bool]$directory){
   Require (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0 -and $item.PSIsContainer -eq $directory)
   return $item
 }
-function SignedMicrosoft([string]$target){
+function SignedMicrosoft([string]$target,[bool]$runtime=$false){
+  if($runtime){$script:runtimeCondition='file-ordinary';$script:runtimeSignatureStatus=$null}
   $item=Ordinary $target $false
+  if($runtime){$script:runtimeCondition='hash-before'}
   $before=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+  if($runtime){$script:runtimeCondition='authenticode-query'}
   $signature=Get-AuthenticodeSignature -LiteralPath $target
-  Require ($signature.Status -eq 'Valid' -and $null -ne $signature.SignerCertificate)
+  if($runtime){
+    $script:runtimeCondition='signature-status'
+    if($signature.Status -is [System.Management.Automation.SignatureStatus]){
+      $script:runtimeSignatureStatus=switch([int]$signature.Status){
+        0{'valid'} 1{'unknown-error'} 2{'not-signed'} 3{'hash-mismatch'}
+        4{'not-trusted'} 5{'not-supported-file-format'} 6{'incompatible'} default{$null}
+      }
+    }
+  }
+  Require ($signature.Status -eq 'Valid')
+  if($runtime){$script:runtimeCondition='signer-certificate'}
+  Require ($null -ne $signature.SignerCertificate)
   $certificate=$signature.SignerCertificate
+  if($runtime){$script:runtimeCondition='microsoft-signer'}
   Require ($certificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName,$false) -ceq 'Microsoft Corporation')
+  if($runtime){$script:runtimeCondition='eku-cardinality'}
   $usage=@($certificate.Extensions|Where-Object {$_.Oid.Value -eq '2.5.29.37'})
   Require ($usage.Count -eq 1)
+  if($runtime){$script:runtimeCondition='code-signing-usage'}
   $codeSigning=@($usage[0].EnhancedKeyUsages|Where-Object {$_.Value -eq '1.3.6.1.5.5.7.3.3'})
   Require ($codeSigning.Count -gt 0)
-  Require ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $before)
+  if($runtime){$script:runtimeCondition='hash-after'}
+  $after=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+  if($runtime){$script:runtimeCondition='byte-stability'}
+  Require ($after -ceq $before)
+  if($runtime){$script:runtimeCondition='file-receipt'}
   return [pscustomobject]@{path=$item.FullName;sha256=$before;signerThumbprint=$certificate.Thumbprint.ToLowerInvariant();fileVersion=$item.VersionInfo.FileVersion}
 }
 function ReadNative([string]$executable,[string[]]$arguments){
@@ -78,22 +99,31 @@ function TreeFiles([string]$root,[string]$label){
   return @($rows.ToArray()|Sort-Object input,relative)
 }
 function SignedRuntime([string]$root){
+  $script:runtimeCondition='root-ordinary'
   $todo=New-Object 'System.Collections.Generic.Stack[string]'
   $todo.Push((Ordinary $root $true).FullName)
   $rows=New-Object 'System.Collections.Generic.List[object]'
   while($todo.Count -gt 0){
+    $script:runtimeCondition='enumerate'
     foreach($item in @(Get-ChildItem -LiteralPath $todo.Pop() -Force)){
+      $script:runtimeCondition='entry-no-reparse'
       Require (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0)
       if($item.PSIsContainer){$todo.Push($item.FullName);continue}
       if($item.Extension -in @('.exe','.dll')){
+        $script:runtimeCondition='row-bound'
         Require ($rows.Count -lt 10000)
-        $rows.Add((SignedMicrosoft $item.FullName))
+        $rows.Add((SignedMicrosoft $item.FullName $true))
       }
     }
   }
+  $script:runtimeCondition='result'
   return @($rows.ToArray()|Sort-Object path)
 }
 $stage='host'
+$runtimeCondition=$null
+$runtimeSignatureStatus=$null
+$runtimeConditions=@('root-ordinary','enumerate','entry-no-reparse','row-bound','file-ordinary','hash-before','authenticode-query','signature-status','signer-certificate','microsoft-signer','eku-cardinality','code-signing-usage','hash-after','byte-stability','file-receipt','result')
+$runtimeSignatureStatuses=@('valid','unknown-error','not-signed','hash-mismatch','not-trusted','not-supported-file-format','incompatible')
 $queryFacts=[ordered]@{outcome='not-started';nativeExitCode=$null;timedOut=$false;stdoutWithinLimit=$null;stderrWithinLimit=$null;instanceCount=$null;parsedContainer=$null;candidateExists=$null;candidate=$null;isComplete=$null;isLaunchable=$null;completeCondition=$null;launchableCondition=$null}
 $queryOutcomes=@('not-started','start','pipe-start','wait','timeout','decode','native-exit','output-limit','cleanup','none','json','cardinality','object','complete','launchable','accepted')
 try{
@@ -166,6 +196,10 @@ try{
   [pscustomobject]@{status='verified-installed-windows-toolchain';receipt=$file;sha256=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()}|ConvertTo-Json -Compress
 }catch{
   $failure=[ordered]@{status='unqualified-installed-windows-toolchain';stage=$stage}
+  if($stage -ceq 'compiler-runtime-signatures' -and $runtimeCondition -cin $runtimeConditions){
+    $failure.runtimeCondition=$runtimeCondition
+    if($runtimeCondition -ceq 'signature-status' -and $runtimeSignatureStatus -cin $runtimeSignatureStatuses){$failure.signatureStatus=$runtimeSignatureStatus}
+  }
   if($stage -in @('vswhere-native','vswhere-json','vswhere-cardinality','vswhere-object','vswhere-complete','vswhere-launchable')){
     if($queryFacts.outcome -cnotin $queryOutcomes){$queryFacts.outcome='unknown'}
     $failure.query=[pscustomobject]$queryFacts

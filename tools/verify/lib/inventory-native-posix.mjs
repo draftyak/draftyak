@@ -16,6 +16,37 @@ class Refusal extends Error {
 		this.code = code;
 	}
 }
+const macSystemRoles = new Set([
+	"bootstrap-codesign",
+	"bootstrap-xcrun",
+	"bootstrap-xcode-select",
+	"bootstrap-plutil",
+	"bootstrap-pkgutil",
+	"bootstrap-dscl",
+	"command-codesign",
+	"command-xcrun",
+	"command-xcode-select",
+	"command-plutil",
+	"command-pkgutil",
+	"command-dscl",
+	"command-compiler",
+	"developer-directory",
+	"compiler-file",
+	"sdk-directory",
+	"sdk-settings-json",
+	"sdk-settings-plist",
+	"clt-receipt-plist",
+	"clt-receipt-bom",
+	"compiler-resource-directory",
+	"include-directory",
+	"framework-directory",
+	"linker-file",
+	"compiler-header-tree",
+	"sdk-tree",
+	"additional-include-tree",
+	"sdk-settings-final",
+]);
+const macSystemRefusals = new WeakMap();
 const need = (ok, code) => {
 	if (!ok) throw new Refusal(code);
 };
@@ -42,18 +73,39 @@ function requireCurrentReleaseBounds() {
 	}
 }
 
-async function ownedSystem(file, directory = false) {
+async function ownedSystem(file, directory = false, role) {
 	const canonical = await realpath(file);
 	let current = canonical;
 	for (;;) {
 		const info = await lstat(current);
-		need(
+		const permitted =
 			info.uid === 0 &&
-				(info.mode & 0o002) === 0 &&
-				((info.mode & 0o020) === 0 || trustedSystemGroups.has(info.gid)) &&
-				!info.isSymbolicLink(),
-			"system-owner-or-permissions",
-		);
+			(info.mode & 0o002) === 0 &&
+			((info.mode & 0o020) === 0 || trustedSystemGroups.has(info.gid)) &&
+			!info.isSymbolicLink();
+		if (!permitted) {
+			const error = new Refusal("system-owner-or-permissions");
+			if (macSystemRoles.has(role)) {
+				// Classify only the already-failed conjunction using its same stat and trust set.
+				const failedPredicate =
+					info.uid !== 0
+						? "owner"
+						: (info.mode & 0o002) !== 0
+							? "other-write"
+							: (info.mode & 0o020) !== 0 && !trustedSystemGroups.has(info.gid)
+								? "untrusted-group-write"
+								: "symbolic-link";
+				macSystemRefusals.set(
+					error,
+					Object.freeze({
+						role,
+						stage: current !== canonical ? "ancestor" : directory ? "directory" : "file",
+						failedPredicate,
+					}),
+				);
+			}
+			throw error;
+		}
 		if (current === canonical)
 			need(directory ? info.isDirectory() : info.isFile(), "system-input-kind");
 		const parent = path.dirname(current);
@@ -62,8 +114,8 @@ async function ownedSystem(file, directory = false) {
 	}
 	return canonical;
 }
-async function fileRecord(file) {
-	const canonical = await ownedSystem(file);
+async function fileRecord(file, role) {
+	const canonical = await ownedSystem(file, false, role);
 	const before = await stat(canonical);
 	const bytes = await readFile(canonical);
 	const after = await stat(canonical);
@@ -76,8 +128,8 @@ async function fileRecord(file) {
 	);
 	return { path: canonical, size: bytes.length, sha256: sha(bytes) };
 }
-async function run(command, args, binary = false, input) {
-	command = await ownedSystem(command);
+async function run(command, args, binary = false, input, role) {
+	command = await ownedSystem(command, false, role);
 	need(input === undefined || Buffer.isBuffer(input), "metadata-input-kind");
 	const inputSha256 = input === undefined ? undefined : sha(input);
 	const number = ++invocation;
@@ -164,9 +216,10 @@ async function run(command, args, binary = false, input) {
 	need(!failed && terminal.code === 0 && terminal.signal === null, "metadata-command-refused");
 	return { stdout: out, stderr: err };
 }
-const text = async (command, args) => (await run(command, args)).stdout.toString("utf8").trim();
-async function hashTree(root, label, allowedRoots = [root]) {
-	root = await ownedSystem(root, true);
+const text = async (command, args, role) =>
+	(await run(command, args, false, undefined, role)).stdout.toString("utf8").trim();
+async function hashTree(root, label, allowedRoots = [root], role) {
+	root = await ownedSystem(root, true, role);
 	const rows = [],
 		pending = [root],
 		seen = new Set();
@@ -185,14 +238,14 @@ async function hashTree(root, label, allowedRoots = [root]) {
 				"sdk-tree-alias-outside",
 			);
 			if (kind.isDirectory()) {
-				pending.push(await ownedSystem(canonical, true));
+				pending.push(await ownedSystem(canonical, true, role));
 				continue;
 			}
 			need(kind.isFile() && rows.length < 100000, "sdk-tree-input-kind-or-bound");
 			rows.push({
 				input: label,
 				relative: path.relative(root, lexical),
-				...(await fileRecord(canonical)),
+				...(await fileRecord(canonical, role)),
 			});
 		}
 	}
@@ -564,41 +617,61 @@ async function ubuntu() {
 	};
 }
 
-async function appleSigned(file) {
-	const record = await fileRecord(file);
-	await run("/usr/bin/codesign", ["--verify", "--strict", "-R", "=anchor apple", record.path]);
+async function appleSigned(file, role) {
+	const record = await fileRecord(file, role);
+	await run(
+		"/usr/bin/codesign",
+		["--verify", "--strict", "-R", "=anchor apple", record.path],
+		false,
+		undefined,
+		"command-codesign",
+	);
 	need(sha(await readFile(record.path)) === record.sha256, "apple-code-changed");
 	return record;
 }
 async function apple() {
 	need(process.arch === "x64" || process.arch === "arm64", "apple-host-architecture");
 	const bootstrap = [];
-	for (const file of [
-		"/usr/bin/codesign",
-		"/usr/bin/xcrun",
-		"/usr/bin/xcode-select",
-		"/usr/bin/plutil",
-		"/usr/sbin/pkgutil",
-		"/usr/bin/dscl",
+	for (const [file, role] of [
+		["/usr/bin/codesign", "bootstrap-codesign"],
+		["/usr/bin/xcrun", "bootstrap-xcrun"],
+		["/usr/bin/xcode-select", "bootstrap-xcode-select"],
+		["/usr/bin/plutil", "bootstrap-plutil"],
+		["/usr/sbin/pkgutil", "bootstrap-pkgutil"],
+		["/usr/bin/dscl", "bootstrap-dscl"],
 	])
-		bootstrap.push(await appleSigned(file));
+		bootstrap.push(await appleSigned(file, role));
 	const admin = /^PrimaryGroupID: (\d+)$/m.exec(
-		await text("/usr/bin/dscl", [".", "-read", "/Groups/admin", "PrimaryGroupID"]),
+		await text("/usr/bin/dscl", [".", "-read", "/Groups/admin", "PrimaryGroupID"], "command-dscl"),
 	);
 	need(admin, "apple-admin-group-unavailable");
 	trustedSystemGroups.add(Number(admin[1]));
-	const developer = await ownedSystem(await text("/usr/bin/xcode-select", ["--print-path"]), true);
+	const developer = await ownedSystem(
+		await text("/usr/bin/xcode-select", ["--print-path"], "command-xcode-select"),
+		true,
+		"developer-directory",
+	);
 	const compiler = await appleSigned(
-		await text("/usr/bin/xcrun", ["--sdk", "macosx", "--find", "clang++"]),
+		await text("/usr/bin/xcrun", ["--sdk", "macosx", "--find", "clang++"], "command-xcrun"),
+		"compiler-file",
 	);
 	need(compiler.path.startsWith(developer + "/"), "apple-compiler-outside-selected-developer");
 	const sdk = await ownedSystem(
-		await text("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-path"]),
+		await text("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-path"], "command-xcrun"),
 		true,
+		"sdk-directory",
 	);
 	need(sdk.startsWith(developer + "/"), "apple-sdk-outside-selected-developer");
-	const sdkVersion = await text("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-version"]),
-		sdkBuild = await text("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-build-version"]);
+	const sdkVersion = await text(
+			"/usr/bin/xcrun",
+			["--sdk", "macosx", "--show-sdk-version"],
+			"command-xcrun",
+		),
+		sdkBuild = await text(
+			"/usr/bin/xcrun",
+			["--sdk", "macosx", "--show-sdk-build-version"],
+			"command-xcrun",
+		);
 	need(
 		/^\d+(?:\.\d+){1,2}$/.test(sdkVersion) && /^[A-Za-z0-9.]+$/.test(sdkBuild),
 		"apple-sdk-identity",
@@ -606,17 +679,23 @@ async function apple() {
 	let settingsFile = path.join(sdk, "SDKSettings.json"),
 		settings;
 	try {
-		settings = JSON.parse(await readFile(await ownedSystem(settingsFile), "utf8"));
+		settings = JSON.parse(
+			await readFile(await ownedSystem(settingsFile, false, "sdk-settings-json"), "utf8"),
+		);
 	} catch {
 		settingsFile = path.join(sdk, "SDKSettings.plist");
 		settings = JSON.parse(
-			await text("/usr/bin/plutil", [
-				"-convert",
-				"json",
-				"-o",
-				"-",
-				await ownedSystem(settingsFile),
-			]),
+			await text(
+				"/usr/bin/plutil",
+				[
+					"-convert",
+					"json",
+					"-o",
+					"-",
+					await ownedSystem(settingsFile, false, "sdk-settings-plist"),
+				],
+				"command-plutil",
+			),
 		);
 	}
 	need(
@@ -628,11 +707,17 @@ async function apple() {
 	let installation;
 	if (developer.endsWith(".app/Contents/Developer")) {
 		const app = developer.slice(0, -"/Contents/Developer".length);
-		await run("/usr/bin/codesign", ["--verify", "--strict", "-R", "=anchor apple", app]);
+		await run(
+			"/usr/bin/codesign",
+			["--verify", "--strict", "-R", "=anchor apple", app],
+			false,
+			undefined,
+			"command-codesign",
+		);
 		installation = { kind: "apple-signed-xcode-bundle", path: app };
 	} else {
 		need(developer === "/Library/Developer/CommandLineTools", "unsupported-apple-developer-layout");
-		const ids = (await text("/usr/sbin/pkgutil", ["--pkgs"]))
+		const ids = (await text("/usr/sbin/pkgutil", ["--pkgs"], "command-pkgutil"))
 			.split("\n")
 			.filter((id) =>
 				/^com\.apple\.pkg\.CLTools_(?:Executables|SDK_macOS[A-Za-z0-9._-]*)$/.test(id),
@@ -643,24 +728,34 @@ async function apple() {
 		);
 		const receipts = [];
 		for (const id of ids) {
-			receipts.push(await fileRecord(`/var/db/receipts/${id}.plist`));
-			receipts.push(await fileRecord(`/var/db/receipts/${id}.bom`));
+			receipts.push(await fileRecord(`/var/db/receipts/${id}.plist`, "clt-receipt-plist"));
+			receipts.push(await fileRecord(`/var/db/receipts/${id}.bom`, "clt-receipt-bom"));
 		}
 		installation = { kind: "root-owned-apple-clt-install-receipts", receipts };
 	}
-	const resource = await ownedSystem(await text(compiler.path, ["-print-resource-dir"]), true);
+	const resource = await ownedSystem(
+		await text(compiler.path, ["-print-resource-dir"], "command-compiler"),
+		true,
+		"compiler-resource-directory",
+	);
 	need(resource.startsWith(developer + "/"), "apple-resource-outside-selected-developer");
-	const query = await run(compiler.path, [
-		"-E",
-		"-x",
-		"c++",
-		"-v",
-		"-isysroot",
-		sdk,
-		"-arch",
-		process.arch === "x64" ? "x86_64" : "arm64",
-		"/dev/null",
-	]);
+	const query = await run(
+		compiler.path,
+		[
+			"-E",
+			"-x",
+			"c++",
+			"-v",
+			"-isysroot",
+			sdk,
+			"-arch",
+			process.arch === "x64" ? "x86_64" : "arm64",
+			"/dev/null",
+		],
+		false,
+		undefined,
+		"command-compiler",
+	);
 	const search = /#include <\.\.\.> search starts here:\n([\s\S]*?)End of search list\./.exec(
 		query.stderr.toString("utf8"),
 	);
@@ -675,7 +770,11 @@ async function apple() {
 			excludedDefaultSearch.push(reported);
 			continue;
 		}
-		const directory = await ownedSystem(reported, true);
+		const directory = await ownedSystem(
+			reported,
+			true,
+			framework ? "framework-directory" : "include-directory",
+		);
 		(framework ? frameworkDirectories : includeDirectories).push(directory);
 	}
 	need(
@@ -684,15 +783,28 @@ async function apple() {
 		"apple-libcxx-includes-unavailable",
 	);
 	const linker = await appleSigned(
-		await text("/usr/bin/xcrun", ["--sdk", "macosx", "--find", "ld"]),
+		await text("/usr/bin/xcrun", ["--sdk", "macosx", "--find", "ld"], "command-xcrun"),
+		"linker-file",
 	);
 	const inputs = [
-		...(await hashTree(path.join(resource, "include"), "compilerHeaders")),
-		...(await hashTree(sdk, "sdk")),
+		...(await hashTree(
+			path.join(resource, "include"),
+			"compilerHeaders",
+			undefined,
+			"compiler-header-tree",
+		)),
+		...(await hashTree(sdk, "sdk", undefined, "sdk-tree")),
 	];
 	for (const [index, directory] of includeDirectories.entries())
 		if (!directory.startsWith(sdk + "/") && !directory.startsWith(resource + "/"))
-			inputs.push(...(await hashTree(directory, `toolchainInclude${index}`)));
+			inputs.push(
+				...(await hashTree(
+					directory,
+					`toolchainInclude${index}`,
+					undefined,
+					"additional-include-tree",
+				)),
+			);
 	return {
 		schema: "inventory-posix-toolchain-v1",
 		platform: "darwin",
@@ -711,7 +823,7 @@ async function apple() {
 			installation,
 			sdkVersion,
 			sdkBuild,
-			settings: await fileRecord(settingsFile),
+			settings: await fileRecord(settingsFile, "sdk-settings-final"),
 			trustedSystemGroups: [...trustedSystemGroups],
 			excludedDefaultSearch,
 		},
@@ -756,6 +868,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 	try {
 		await main();
 	} catch (error) {
+		const diagnostic = error instanceof Refusal ? macSystemRefusals.get(error) : undefined;
 		if (output) {
 			try {
 				await writeFile(
@@ -771,6 +884,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 			JSON.stringify({
 				status: "unqualified-installed-posix-toolchain",
 				code: error instanceof Refusal ? error.code : "metadata-operation-unqualified",
+				...(diagnostic === undefined ? {} : diagnostic),
 			}) + "\n",
 		);
 		process.exitCode = 1;

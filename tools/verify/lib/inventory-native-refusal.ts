@@ -55,6 +55,70 @@ const posixCodes = [
 	"toolchain-receipt-bound",
 	"unsupported-posix-host",
 ] as const;
+const posixOwnershipRoles = [
+	"bootstrap-codesign",
+	"bootstrap-xcrun",
+	"bootstrap-xcode-select",
+	"bootstrap-plutil",
+	"bootstrap-pkgutil",
+	"bootstrap-dscl",
+	"command-codesign",
+	"command-xcrun",
+	"command-xcode-select",
+	"command-plutil",
+	"command-pkgutil",
+	"command-dscl",
+	"command-compiler",
+	"developer-directory",
+	"compiler-file",
+	"sdk-directory",
+	"sdk-settings-json",
+	"sdk-settings-plist",
+	"clt-receipt-plist",
+	"clt-receipt-bom",
+	"compiler-resource-directory",
+	"include-directory",
+	"framework-directory",
+	"linker-file",
+	"compiler-header-tree",
+	"sdk-tree",
+	"additional-include-tree",
+	"sdk-settings-final",
+] as const;
+const posixOwnershipStages = ["file", "directory", "ancestor"] as const;
+const posixOwnershipPredicates = [
+	"owner",
+	"other-write",
+	"untrusted-group-write",
+	"symbolic-link",
+] as const;
+const windowsRuntimeConditions = [
+	"root-ordinary",
+	"enumerate",
+	"entry-no-reparse",
+	"row-bound",
+	"file-ordinary",
+	"hash-before",
+	"authenticode-query",
+	"signature-status",
+	"signer-certificate",
+	"microsoft-signer",
+	"eku-cardinality",
+	"code-signing-usage",
+	"hash-after",
+	"byte-stability",
+	"file-receipt",
+	"result",
+] as const;
+const windowsSignatureStatuses = [
+	"valid",
+	"unknown-error",
+	"not-signed",
+	"hash-mismatch",
+	"not-trusted",
+	"not-supported-file-format",
+	"incompatible",
+] as const;
 const windowsStages = [
 	"host",
 	"cache-output",
@@ -130,11 +194,16 @@ export type InventoryNativeToolchainRefusal =
 	| {
 			readonly status: "unqualified-installed-posix-toolchain";
 			readonly code: (typeof posixCodes)[number];
+			readonly role?: (typeof posixOwnershipRoles)[number];
+			readonly stage?: (typeof posixOwnershipStages)[number];
+			readonly failedPredicate?: (typeof posixOwnershipPredicates)[number];
 	  }
 	| {
 			readonly status: "unqualified-installed-windows-toolchain";
 			readonly stage: (typeof windowsStages)[number];
 			readonly query?: InventoryNativeQueryRefusal;
+			readonly runtimeCondition?: (typeof windowsRuntimeConditions)[number];
+			readonly signatureStatus?: (typeof windowsSignatureStatuses)[number];
 	  };
 export interface InventoryNativeRefusalCaptureState {
 	readonly kind?: unknown;
@@ -254,18 +323,76 @@ export function validateInventoryNativeToolchainRefusal(
 	value: unknown,
 ): InventoryNativeToolchainRefusal | undefined {
 	try {
-		const fields = data(value, ["status"], ["code", "stage", "query"]);
+		const fields = data(
+			value,
+			["status"],
+			["code", "stage", "query", "role", "failedPredicate", "runtimeCondition", "signatureStatus"],
+		);
 		if (!fields) return undefined;
 		if (fields.status === "unqualified-installed-posix-toolchain") {
-			if (Object.keys(fields).length !== 2 || !oneOf(fields.code, posixCodes)) return undefined;
-			return Object.freeze({ status: fields.status, code: fields.code });
+			if (
+				!oneOf(fields.code, posixCodes) ||
+				Object.hasOwn(fields, "query") ||
+				Object.hasOwn(fields, "runtimeCondition") ||
+				Object.hasOwn(fields, "signatureStatus")
+			)
+				return undefined;
+			if (
+				!Object.hasOwn(fields, "role") &&
+				!Object.hasOwn(fields, "stage") &&
+				!Object.hasOwn(fields, "failedPredicate")
+			)
+				return Object.freeze({ status: fields.status, code: fields.code });
+			if (
+				fields.code !== "system-owner-or-permissions" ||
+				!oneOf(fields.role, posixOwnershipRoles) ||
+				!oneOf(fields.stage, posixOwnershipStages) ||
+				!oneOf(fields.failedPredicate, posixOwnershipPredicates)
+			)
+				return undefined;
+			return Object.freeze({
+				status: fields.status,
+				code: fields.code,
+				role: fields.role,
+				stage: fields.stage,
+				failedPredicate: fields.failedPredicate,
+			});
 		}
 		if (
 			fields.status !== "unqualified-installed-windows-toolchain" ||
 			!oneOf(fields.stage, windowsStages) ||
-			Object.hasOwn(fields, "code")
+			Object.hasOwn(fields, "code") ||
+			Object.hasOwn(fields, "role") ||
+			Object.hasOwn(fields, "failedPredicate")
 		)
 			return undefined;
+		if (Object.hasOwn(fields, "runtimeCondition")) {
+			if (
+				fields.stage !== "compiler-runtime-signatures" ||
+				Object.hasOwn(fields, "query") ||
+				!oneOf(fields.runtimeCondition, windowsRuntimeConditions)
+			)
+				return undefined;
+			if (Object.hasOwn(fields, "signatureStatus")) {
+				if (
+					fields.runtimeCondition !== "signature-status" ||
+					!oneOf(fields.signatureStatus, windowsSignatureStatuses)
+				)
+					return undefined;
+				return Object.freeze({
+					status: fields.status,
+					stage: fields.stage,
+					runtimeCondition: fields.runtimeCondition,
+					signatureStatus: fields.signatureStatus,
+				});
+			}
+			return Object.freeze({
+				status: fields.status,
+				stage: fields.stage,
+				runtimeCondition: fields.runtimeCondition,
+			});
+		}
+		if (Object.hasOwn(fields, "signatureStatus")) return undefined;
 		if (!queryStages.includes(fields.stage)) {
 			if (Object.hasOwn(fields, "query")) return undefined;
 			return Object.freeze({ status: fields.status, stage: fields.stage });
