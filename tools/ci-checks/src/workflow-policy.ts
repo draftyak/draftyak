@@ -54,6 +54,7 @@ const requiredPrTypes: Readonly<Record<string, readonly string[]>> = {
 const nonDocs = "needs.changes.outputs.docs-only != 'true'";
 const nativeSelected = "needs.changes.outputs.native-transport == 'true'";
 const readyRun = "(github.event_name != 'pull_request' || !github.event.pull_request.draft)";
+const windowsTestJobs = new Set(["windows-tests", "windows-hub-tests"]);
 const ciControls: Readonly<Record<string, YamlMap>> = {
 	changes: {},
 	cheap: { needs: "changes" },
@@ -91,12 +92,26 @@ const ciControls: Readonly<Record<string, YamlMap>> = {
 		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ${nativeSelected}))`,
 	},
 	"windows-tests": {
-		needs: "changes",
-		if: `${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ${nativeSelected}))`,
+		needs: ["changes", "windows"],
+		if: `needs.windows.result == 'success' && ${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ${nativeSelected}))`,
+	},
+	"windows-hub-tests": {
+		needs: ["changes", "windows", "windows-tests"],
+		if: `always() && needs.windows.result == 'success' && (needs.windows-tests.result == 'success' || needs.windows-tests.result == 'failure') && ${nonDocs} && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ${nativeSelected}))`,
 	},
 	macos: { needs: "changes", if: `${nonDocs} && ${readyRun} && ${nativeSelected}` },
 	required: {
-		needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "windows-tests", "macos"],
+		needs: [
+			"changes",
+			"cheap",
+			"full",
+			"spikes",
+			"heavy",
+			"windows",
+			"windows-tests",
+			"windows-hub-tests",
+			"macos",
+		],
 		if: "always()",
 	},
 };
@@ -361,6 +376,11 @@ const ciCommands: Record<string, readonly YamlMap[]> = {
 		{ run: "pnpm install --frozen-lockfile" },
 		windowsDockerWarmup,
 		{ run: "pnpm verify --profile windows-tests", env: { TURBO_CONCURRENCY: "1" } },
+	],
+	"windows-hub-tests": [
+		{ run: "pnpm install --frozen-lockfile" },
+		windowsDockerWarmup,
+		{ run: "pnpm verify --profile windows-hub-tests", env: { TURBO_CONCURRENCY: "1" } },
 	],
 	windows: [
 		{ run: "pnpm install --frozen-lockfile" },
@@ -790,11 +810,10 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 						"must preserve selected Rust setup and cache before install",
 					);
 			}
-			if (job in nativePlatforms || job === "windows-tests") {
-				const platform =
-					job === "windows-tests"
-						? nativePlatforms.windows
-						: nativePlatforms[job as keyof typeof nativePlatforms];
+			if (job in nativePlatforms || windowsTestJobs.has(job)) {
+				const platform = windowsTestJobs.has(job)
+					? nativePlatforms.windows
+					: nativePlatforms[job as keyof typeof nativePlatforms];
 				if (definition["runs-on"] !== platform.runner || definition["timeout-minutes"] !== 30)
 					report(["jobs", job], "must preserve the native runner and time budget");
 				const rustSteps = asList(definition.steps)
@@ -804,7 +823,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 					uses: `dtolnay/rust-toolchain@${actionPins["dtolnay/rust-toolchain"]?.[0]}`,
 					...(job === "full"
 						? { if: "needs.changes.outputs.rust != ''" }
-						: job === "windows" || job === "windows-tests"
+						: job === "windows" || windowsTestJobs.has(job)
 							? {
 									if: "hashFiles('crates/Cargo.toml') != '' || needs.changes.outputs.native-transport == 'true'",
 								}
@@ -813,7 +832,7 @@ export function checkWorkflow(file: string, source: string, rustToolchain: strin
 				};
 				if (rustSteps.length !== 1 || !isDeepStrictEqual(rustSteps[0], expectedRust))
 					report(["jobs", job, "steps"], "must preserve the pinned native Rust setup");
-				if (job === "windows-tests") {
+				if (windowsTestJobs.has(job)) {
 					const steps = asList(definition.steps).map(asMap);
 					const rustAt = steps.findIndex((step) =>
 						String(step.uses).startsWith("dtolnay/rust-toolchain@"),

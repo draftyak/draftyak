@@ -671,6 +671,7 @@ describe("workflow policy", () => {
 			"spikes",
 			"heavy",
 			"windows-tests",
+			"windows-hub-tests",
 			"windows",
 			"macos",
 			"required",
@@ -678,7 +679,17 @@ describe("workflow policy", () => {
 		expect(ci.required).toMatchObject({
 			if: "always()",
 			name: `\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`,
-			needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "windows-tests", "macos"],
+			needs: [
+				"changes",
+				"cheap",
+				"full",
+				"spikes",
+				"heavy",
+				"windows",
+				"windows-tests",
+				"windows-hub-tests",
+				"macos",
+			],
 		});
 		const reportedJobs = files.flatMap((file) =>
 			Object.entries(jobs(path.basename(file))).map(([id, job]) => ({
@@ -785,6 +796,7 @@ describe("workflow policy", () => {
 			"heavy",
 			"windows",
 			"windows-tests",
+			"windows-hub-tests",
 			"macos",
 		]) {
 			const job = ci[name];
@@ -2118,22 +2130,23 @@ describe("Windows verification workload partition", () => {
 	}
 	const jobs = (text: string): Record<string, PartitionJob> =>
 		(parseYaml(text).value as unknown as { jobs: Record<string, PartitionJob> }).jobs;
-	const block = (text: string): string => {
-		const first = text.indexOf("  windows-tests:\n");
-		const last = text.indexOf("  windows:\n", first);
-		expect(first).toBeGreaterThanOrEqual(0);
-		expect(last).toBeGreaterThan(first);
-		return text.slice(first, last);
-	};
+	const testJobs = ["windows-tests", "windows-hub-tests"] as const;
 
-	it("requires both Windows workloads with separate profiles and unchanged native custody", () => {
+	it("requires all Windows workloads in order with separate profiles and unchanged native custody", () => {
 		const current = source();
 		expect(checkWorkflow(file, current, toolchain)).toEqual([]);
 		const ci = jobs(current),
 			tests = ci["windows-tests"],
+			hub = ci["windows-hub-tests"],
 			core = ci.windows;
-		if (!tests || !core) throw new Error("both Windows workloads must exist");
-		expect(tests.if).toBe(core.if);
+		if (!tests || !hub || !core) throw new Error("all Windows workloads must exist");
+		expect(tests.needs).toEqual(["changes", "windows"]);
+		expect(tests.if).toBe("needs.windows.result == 'success' && " + core.if);
+		expect(hub.needs).toEqual(["changes", "windows", "windows-tests"]);
+		expect(hub.if).toBe(
+			"always() && needs.windows.result == 'success' && (needs.windows-tests.result == 'success' || needs.windows-tests.result == 'failure') && " +
+				core.if,
+		);
 		expect(ci.required?.needs).toEqual([
 			"changes",
 			"cheap",
@@ -2142,10 +2155,12 @@ describe("Windows verification workload partition", () => {
 			"heavy",
 			"windows",
 			"windows-tests",
+			"windows-hub-tests",
 			"macos",
 		]);
 		for (const [name, profile] of [
 			["windows-tests", "windows-tests"],
+			["windows-hub-tests", "windows-hub-tests"],
 			["windows", "windows-core"],
 		] as const) {
 			const selected = ci[name];
@@ -2157,9 +2172,14 @@ describe("Windows verification workload partition", () => {
 				selected.steps.find((step) => step.run === "pnpm verify --profile " + profile),
 			).toEqual({ run: "pnpm verify --profile " + profile, env: { TURBO_CONCURRENCY: "1" } });
 		}
-		expect(tests.outputs).toEqual({ source: "$" + "{{ steps.source.outputs.source }}" });
-		expect(tests.steps.some((step) => step.id === "native")).toBe(false);
-		expect(tests.steps.some((step) => String(step.run).includes("events-native-page"))).toBe(false);
+		for (const name of testJobs) {
+			const selected = ci[name];
+			expect(selected?.outputs).toEqual({ source: "$" + "{{ steps.source.outputs.source }}" });
+			expect(selected?.steps.some((step) => step.id === "native")).toBe(false);
+			expect(selected?.steps.some((step) => String(step.run).includes("events-native-page"))).toBe(
+				false,
+			);
+		}
 		const native = core.steps.find((step) => step.id === "native");
 		expect(native).toMatchObject({
 			if: "needs.changes.outputs.native-transport == 'true'",
@@ -2170,17 +2190,55 @@ describe("Windows verification workload partition", () => {
 		).toHaveLength(1);
 	});
 
-	it("refuses to omit the test workload from required dependencies", () => {
+	it.each(testJobs)("refuses to omit %s from required dependencies", (name) => {
 		const current = source();
-		const before = "needs: [changes, cheap, full, spikes, heavy, windows, windows-tests, macos]";
-		expect(current).toContain(before);
-		const mutated = current.replace(
-			before,
-			"needs: [changes, cheap, full, spikes, heavy, windows, macos]",
-		);
+		expect(checkWorkflow(file, current, toolchain)).toEqual([]);
+		const mutated = ciJobChange(current, "required", `, ${name}`, "");
 		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
 			"must preserve required job execution controls",
 		);
+	});
+
+	it.each(testJobs)("refuses an omitted %s job", (name) => {
+		const current = source();
+		expect(checkWorkflow(file, current, toolchain)).toEqual([]);
+		const mutated = current.replace(ciJobSource(current, name), "");
+		expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+			`must preserve ${name} job execution controls`,
+		);
+	});
+
+	it.each(testJobs)("refuses a missing successful Windows prerequisite for %s", (name) => {
+		const current = source();
+		expect(checkWorkflow(file, current, toolchain)).toEqual([]);
+		for (const changed of [
+			ciJobSource(current, name).replace(/^    needs: .+$/m, "    needs: changes"),
+			ciJobSource(current, name).replace("needs.windows.result == 'success' && ", ""),
+		]) {
+			const mutated = current.replace(ciJobSource(current, name), changed);
+			expect(mutated).not.toBe(current);
+			expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+				`must preserve ${name} job execution controls`,
+			);
+		}
+	});
+
+	it("refuses Hub execution without a completed all-other workload", () => {
+		const current = source();
+		expect(checkWorkflow(file, current, toolchain)).toEqual([]);
+		for (const [before, after] of [
+			["needs: [changes, windows, windows-tests]", "needs: [changes, windows]"],
+			["always() && ", ""],
+			[
+				"(needs.windows-tests.result == 'success' || needs.windows-tests.result == 'failure')",
+				"always()",
+			],
+		] as const) {
+			const mutated = ciJobChange(current, "windows-hub-tests", before, after);
+			expect(checkWorkflow(file, mutated, toolchain).join("\n")).toContain(
+				"must preserve windows-hub-tests job execution controls",
+			);
+		}
 	});
 
 	const moveRustAfterInstall = (text: string): string => {
@@ -2195,7 +2253,7 @@ describe("Windows verification workload partition", () => {
 		return without.replace(install, install + rust);
 	};
 	const changes: readonly (readonly [string, (text: string) => string])[] = [
-		["dependency", (text) => text.replace("    needs: changes", "    needs: full")],
+		["dependency", (text) => text.replace(/^    needs: .+$/m, "    needs: changes")],
 		["admission", (text) => text.replace(/^    if: .+$/m, "    if: false")],
 		["runner", (text) => text.replace("runs-on: windows-2025", "runs-on: ubuntu-24.04")],
 		["budget", (text) => text.replace("timeout-minutes: 30", "timeout-minutes: 31")],
@@ -2213,7 +2271,7 @@ describe("Windows verification workload partition", () => {
 			"Docker prerequisite",
 			(text) => text.replace("          Start-Service -Name docker -ErrorAction Stop\n", ""),
 		],
-		["profile", (text) => text.replace("--profile windows-tests", "--profile default")],
+		["profile", (text) => text.replace(/--profile windows-(?:hub-)?tests/, "--profile default")],
 		[
 			"serial package orchestration",
 			(text) => text.replace("TURBO_CONCURRENCY: '1'", "TURBO_CONCURRENCY: '2'"),
@@ -2233,11 +2291,14 @@ describe("Windows verification workload partition", () => {
 		],
 	];
 	it.each(changes)("refuses weakened Windows test %s", (_name, change) => {
-		const current = source(),
-			original = block(current),
-			changed = change(original);
-		expect(changed).not.toBe(original);
-		const mutated = current.replace(original, changed);
-		expect(checkWorkflow(file, mutated, toolchain).length).toBeGreaterThan(0);
+		const current = source();
+		expect(checkWorkflow(file, current, toolchain)).toEqual([]);
+		for (const name of testJobs) {
+			const original = ciJobSource(current, name),
+				changed = change(original);
+			expect(changed, name).not.toBe(original);
+			const mutated = current.replace(original, changed);
+			expect(checkWorkflow(file, mutated, toolchain).length, name).toBeGreaterThan(0);
+		}
 	});
 });

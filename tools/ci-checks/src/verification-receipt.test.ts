@@ -21,7 +21,8 @@ const treeSha = "d".repeat(40);
 const lockfileSha256 = "e".repeat(64);
 const nodeVersion = "26.12.0";
 type JobName = (typeof jobNames)[number];
-const baseRequiredJobNames = ["changes", "cheap", "full", "windows", "windows-tests"] as const;
+const windowsJobNames = ["windows", "windows-tests", "windows-hub-tests"] as const;
+const baseRequiredJobNames = ["changes", "cheap", "full", ...windowsJobNames] as const;
 interface TestJob {
 	result: string;
 	outputs: Record<string, unknown>;
@@ -61,6 +62,7 @@ const needs = (docsOnly = false): Needs => ({
 	heavy: { result: "skipped", outputs: {} },
 	windows: job("win32"),
 	"windows-tests": job("win32"),
+	"windows-hub-tests": job("win32"),
 	macos: { result: "skipped", outputs: {} },
 });
 const input = (extra: Partial<ReceiptInput> = {}, jobs = needs()): ReceiptInput => ({
@@ -100,7 +102,12 @@ const completeSelectedGroups = (jobs: Needs): void => {
 };
 const changeSource = (jobs: Needs, name: JobName, extra: Record<string, unknown>): void => {
 	jobs[name].outputs.source = JSON.stringify({
-		...source({ platform: name === "windows" || name === "windows-tests" ? "win32" : "linux" }),
+		...source({
+			platform:
+				name === "windows" || name === "windows-tests" || name === "windows-hub-tests"
+					? "win32"
+					: "linux",
+		}),
 		...extra,
 	});
 };
@@ -147,6 +154,7 @@ describe("CI verification receipts", () => {
 			"heavy",
 			"windows",
 			"windows-tests",
+			"windows-hub-tests",
 			"macos",
 		]);
 		expect(baseRequiredJobNames.every((name) => receipt.jobResults[name].required)).toBe(true);
@@ -164,14 +172,14 @@ describe("CI verification receipts", () => {
 			label: "draft PR",
 			extra: { draft: true },
 			docs: false,
-			skipped: ["full", "windows", "windows-tests"],
+			skipped: ["full", ...windowsJobNames],
 			coverage: "draft",
 		},
 		{
 			label: "docs PR",
 			extra: {},
 			docs: true,
-			skipped: ["full", "windows", "windows-tests"],
+			skipped: ["full", ...windowsJobNames],
 			coverage: "docs",
 		},
 		{
@@ -185,7 +193,7 @@ describe("CI verification receipts", () => {
 			label: "docs main push",
 			extra: { event: "push", ref: "refs/heads/main" },
 			docs: true,
-			skipped: ["full", "windows", "windows-tests"],
+			skipped: ["full", ...windowsJobNames],
 			coverage: "docs",
 		},
 		{
@@ -199,7 +207,7 @@ describe("CI verification receipts", () => {
 			label: "item dispatch",
 			extra: { event: "workflow_dispatch", ref: "refs/heads/m1", baseSha: null },
 			docs: false,
-			skipped: ["windows", "windows-tests"],
+			skipped: windowsJobNames,
 			coverage: "linux",
 		},
 	] as const)("records the actual job scope for $label", ({ extra, docs, skipped, coverage }) => {
@@ -242,6 +250,7 @@ describe("CI verification receipts", () => {
 		jobs.full = { result, outputs: {} };
 		skip(jobs, "windows");
 		skip(jobs, "windows-tests");
+		skip(jobs, "windows-hub-tests");
 		const receipt = buildReceipt(input({}, jobs));
 		expect(receipt.jobResults.full.required).toBe(false);
 		expect(receipt.passed).toBe(false);
@@ -368,6 +377,7 @@ describe("CI verification receipts", () => {
 		skip(jobs, "full");
 		skip(jobs, "windows");
 		skip(jobs, "windows-tests");
+		skip(jobs, "windows-hub-tests");
 		const summary = renderSummary(buildReceipt(input({}, jobs)));
 		expect(summary).toContain("passed (docs)");
 		expect(summary).toContain(`PR/source head: \`${headSha}\``);
@@ -621,8 +631,7 @@ describe("selected spike and ordinary heavy receipts", () => {
 		(scope) => {
 			const jobs = selectedNeeds();
 			jobs.changes.outputs["docs-only"] = String(scope === "docs");
-			for (const name of ["full", "windows", "windows-tests", ...groupNames] as const)
-				skip(jobs, name);
+			for (const name of ["full", ...windowsJobNames, ...groupNames] as const) skip(jobs, name);
 			const extra = { draft: scope === "draft" };
 			const receipt = buildReceipt(input(extra, jobs));
 			expect(receipt.passed).toBe(true);
@@ -746,25 +755,31 @@ describe("selected three-platform native transport receipts", () => {
 	it("keeps native-required roles restricted to the original three when tests succeeds", () => {
 		const jobs = nativeNeeds();
 		jobs["windows-tests"].outputs["native-transport"] = "passed";
+		jobs["windows-hub-tests"].outputs["native-transport"] = "passed";
 		const receipt = buildReceipt(input({}, jobs));
 		expect(receipt.passed).toBe(true);
 		expect(jobNames.filter((name) => receipt.jobResults[name].nativeRequired)).toEqual(nativeNames);
-		expect(receipt.jobResults["windows-tests"]).toMatchObject({
-			required: true,
-			result: "success",
-			nativeRequired: false,
-			nativeTransport: null,
-		});
+		for (const name of ["windows-tests", "windows-hub-tests"] as const) {
+			expect(receipt.jobResults[name]).toMatchObject({
+				required: true,
+				result: "success",
+				nativeRequired: false,
+				nativeTransport: null,
+			});
+		}
 	});
 	it.each(nativeNames)("cannot substitute test-job output for %s native completion", (name) => {
 		const jobs = nativeNeeds();
 		delete jobs[name].outputs["native-transport"];
 		jobs["windows-tests"].outputs["native-transport"] = "passed";
+		jobs["windows-hub-tests"].outputs["native-transport"] = "passed";
 		const receipt = buildReceipt(input({}, jobs));
 		expect(receipt.passed).toBe(false);
 		expect(receipt.problems).toContain(name + ": missing native transport completion");
 		expect(receipt.jobResults["windows-tests"].nativeRequired).toBe(false);
 		expect(receipt.jobResults["windows-tests"].nativeTransport).toBeNull();
+		expect(receipt.jobResults["windows-hub-tests"].nativeRequired).toBe(false);
+		expect(receipt.jobResults["windows-hub-tests"].nativeTransport).toBeNull();
 	});
 	it.each(["true", "ready", "skipped", 1])("refuses an invented completion %s", (value) => {
 		const jobs = nativeNeeds();
@@ -793,6 +808,7 @@ describe("selected three-platform native transport receipts", () => {
 		jobs.changes.outputs["docs-only"] = String(docs);
 		for (const name of nativeNames) skip(jobs, name);
 		skip(jobs, "windows-tests");
+		skip(jobs, "windows-hub-tests");
 		skip(jobs, "heavy");
 		const receipt = buildReceipt(input({ draft: !docs }, jobs));
 		expect(receipt.passed).toBe(true);
@@ -1313,7 +1329,10 @@ describe("verification receipt CLI", () => {
 			for (const name of baseRequiredJobNames) {
 				jobs[name].outputs.source = JSON.stringify({
 					...captured,
-					platform: name === "windows" || name === "windows-tests" ? "win32" : "linux",
+					platform:
+						name === "windows" || name === "windows-tests" || name === "windows-hub-tests"
+							? "win32"
+							: "linux",
 				});
 			}
 			const runner = path.join(repo.dir, "runner");
@@ -1389,10 +1408,10 @@ describe("verification receipt CLI", () => {
 });
 
 describe("Windows test-workload receipts", () => {
-	it("requires both Windows results with distinct source-bound ordinary completion", () => {
+	it("requires all Windows results with distinct source-bound ordinary completion", () => {
 		const receipt = buildReceipt(input());
 		expect(receipt.passed).toBe(true);
-		for (const name of ["windows", "windows-tests"] as const) {
+		for (const name of windowsJobNames) {
 			expect(receipt.jobResults[name]).toMatchObject({
 				required: true,
 				result: "success",
@@ -1403,7 +1422,7 @@ describe("Windows test-workload receipts", () => {
 		}
 	});
 
-	it.each(["windows", "windows-tests"] as const)("refuses missing required %s metadata", (name) => {
+	it.each(windowsJobNames)("refuses missing required %s metadata", (name) => {
 		const omitted: Partial<Needs> = needs();
 		delete omitted[name];
 		expect(() => buildReceipt(input({ needs: JSON.stringify(omitted) }))).toThrow(UsageError);
@@ -1417,10 +1436,12 @@ describe("Windows test-workload receipts", () => {
 		["platform", "linux", "unexpected runner platform"],
 		["architecture", "arm64", "unexpected runner architecture"],
 	])("independently refuses test-workload %s forgery", (field, value, problem) => {
-		const jobs = needs();
-		changeSource(jobs, "windows-tests", { [field]: value });
-		const receipt = buildReceipt(input({}, jobs));
-		expect(receipt.passed).toBe(false);
-		expect(receipt.problems).toContain("windows-tests: " + problem);
+		for (const name of ["windows-tests", "windows-hub-tests"] as const) {
+			const jobs = needs();
+			changeSource(jobs, name, { [field]: value });
+			const receipt = buildReceipt(input({}, jobs));
+			expect(receipt.passed, name).toBe(false);
+			expect(receipt.problems).toContain(`${name}: ${problem}`);
+		}
 	});
 });
