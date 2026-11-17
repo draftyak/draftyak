@@ -13,6 +13,7 @@ function SignedMicrosoft([string]$target,[bool]$runtime=$false){
   $item=Ordinary $target $false
   if($runtime){$script:runtimeCondition='hash-before'}
   $before=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+  if($runtime -and $null -ne $script:runtimeResource){$script:runtimeResource.sha256Before=$before}
   if($runtime){$script:runtimeCondition='authenticode-query'}
   $signature=Get-AuthenticodeSignature -LiteralPath $target
   if($runtime){
@@ -29,7 +30,13 @@ function SignedMicrosoft([string]$target,[bool]$runtime=$false){
   Require ($null -ne $signature.SignerCertificate)
   $certificate=$signature.SignerCertificate
   if($runtime){$script:runtimeCondition='microsoft-signer'}
-  Require ($certificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName,$false) -ceq 'Microsoft Corporation')
+  if($runtime -and $null -ne $script:runtimeResource){$script:runtimeResource.signerNameRead=$false}
+  $microsoftSigner=($certificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName,$false) -ceq 'Microsoft Corporation')
+  if($runtime -and $null -ne $script:runtimeResource){
+    $script:runtimeResource.signerNameRead=$true
+    $script:runtimeResource.signerNameMatches=$microsoftSigner
+  }
+  Require $microsoftSigner
   if($runtime){$script:runtimeCondition='eku-cardinality'}
   $usage=@($certificate.Extensions|Where-Object {$_.Oid.Value -eq '2.5.29.37'})
   Require ($usage.Count -eq 1)
@@ -99,20 +106,34 @@ function TreeFiles([string]$root,[string]$label){
   return @($rows.ToArray()|Sort-Object input,relative)
 }
 function SignedRuntime([string]$root){
+  $script:runtimeResource=$null;$script:runtimeFailureResource=$null
   $script:runtimeCondition='root-ordinary'
   $todo=New-Object 'System.Collections.Generic.Stack[string]'
   $todo.Push((Ordinary $root $true).FullName)
   $rows=New-Object 'System.Collections.Generic.List[object]'
   while($todo.Count -gt 0){
+    $script:runtimeResource=$null;$script:runtimeFailureResource=$null
     $script:runtimeCondition='enumerate'
     foreach($item in @(Get-ChildItem -LiteralPath $todo.Pop() -Force)){
+      $script:runtimeResource=$null;$script:runtimeFailureResource=$null
       $script:runtimeCondition='entry-no-reparse'
       Require (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0)
       if($item.PSIsContainer){$todo.Push($item.FullName);continue}
       if($item.Extension -in @('.exe','.dll')){
         $script:runtimeCondition='row-bound'
         Require ($rows.Count -lt 10000)
-        $rows.Add((SignedMicrosoft $item.FullName $true))
+        $kind=if($item.Extension -ieq '.exe'){'exe'}else{'dll'}
+        $role=if($kind -ceq 'dll'){'runtime-dll'}elseif($item.Name -ieq 'cl.exe'){'compiler'}elseif($item.Name -ieq 'link.exe'){'linker'}else{'other-exe'}
+        $script:runtimeResource=[ordered]@{ordinal=[int]($rows.Count+1);kind=$kind;role=$role;sha256Before=$null;signerNameRead=$null;signerNameMatches=$null}
+        try{
+          $rows.Add((SignedMicrosoft $item.FullName $true))
+        }catch{
+          $script:runtimeFailureResource=[pscustomobject][ordered]@{
+            ordinal=$script:runtimeResource.ordinal;kind=$script:runtimeResource.kind;role=$script:runtimeResource.role
+            sha256Before=$script:runtimeResource.sha256Before;signerNameRead=$script:runtimeResource.signerNameRead;signerNameMatches=$script:runtimeResource.signerNameMatches
+          }
+          throw
+        }finally{$script:runtimeResource=$null}
       }
     }
   }
@@ -122,6 +143,8 @@ function SignedRuntime([string]$root){
 $stage='host'
 $runtimeCondition=$null
 $runtimeSignatureStatus=$null
+$runtimeResource=$null
+$runtimeFailureResource=$null
 $runtimeConditions=@('root-ordinary','enumerate','entry-no-reparse','row-bound','file-ordinary','hash-before','authenticode-query','signature-status','signer-certificate','microsoft-signer','eku-cardinality','code-signing-usage','hash-after','byte-stability','file-receipt','result')
 $runtimeSignatureStatuses=@('valid','unknown-error','not-signed','hash-mismatch','not-trusted','not-supported-file-format','incompatible')
 $queryFacts=[ordered]@{outcome='not-started';nativeExitCode=$null;timedOut=$false;stdoutWithinLimit=$null;stderrWithinLimit=$null;instanceCount=$null;parsedContainer=$null;candidateExists=$null;candidate=$null;isComplete=$null;isLaunchable=$null;completeCondition=$null;launchableCondition=$null}
@@ -199,6 +222,27 @@ try{
   if($stage -ceq 'compiler-runtime-signatures' -and $runtimeCondition -cin $runtimeConditions){
     $failure.runtimeCondition=$runtimeCondition
     if($runtimeCondition -ceq 'signature-status' -and $runtimeSignatureStatus -cin $runtimeSignatureStatuses){$failure.signatureStatus=$runtimeSignatureStatus}
+    $resource=$runtimeFailureResource
+    $resourceValid=$null -ne $resource
+    if($resourceValid){
+      $resourceValid=($resource.ordinal -is [int] -and $resource.ordinal -ge 1 -and $resource.ordinal -le 10000 -and
+        $resource.kind -is [string] -and $resource.role -is [string] -and
+        (($resource.kind -ceq 'exe' -and $resource.role -cin @('compiler','linker','other-exe')) -or ($resource.kind -ceq 'dll' -and $resource.role -ceq 'runtime-dll')) -and
+        ($null -eq $resource.sha256Before -or ($resource.sha256Before -is [string] -and $resource.sha256Before -cmatch '^[0-9a-f]{64}$')) -and
+        ($null -eq $resource.signerNameRead -or $resource.signerNameRead -is [bool]) -and
+        ($null -eq $resource.signerNameMatches -or $resource.signerNameMatches -is [bool]))
+    }
+    if($resourceValid -and $null -ne $resource.signerNameRead){$resourceValid=$resource.sha256Before -is [string]}
+    if($resourceValid){
+      if($resource.signerNameRead){$resourceValid=$resource.signerNameMatches -is [bool]}
+      else{$resourceValid=$null -eq $resource.signerNameMatches}
+    }
+    if($resourceValid){
+      $failure.runtimeResource=[pscustomobject][ordered]@{
+        ordinal=$resource.ordinal;kind=$resource.kind;role=$resource.role;sha256Before=$resource.sha256Before
+        signerNameRead=$resource.signerNameRead;signerNameMatches=$resource.signerNameMatches
+      }
+    }
   }
   if($stage -in @('vswhere-native','vswhere-json','vswhere-cardinality','vswhere-object','vswhere-complete','vswhere-launchable')){
     if($queryFacts.outcome -cnotin $queryOutcomes){$queryFacts.outcome='unknown'}

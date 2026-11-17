@@ -119,6 +119,8 @@ const windowsSignatureStatuses = [
 	"not-supported-file-format",
 	"incompatible",
 ] as const;
+const windowsRuntimeResourceKinds = ["exe", "dll"] as const;
+const windowsRuntimeResourceRoles = ["compiler", "linker", "other-exe", "runtime-dll"] as const;
 const windowsStages = [
 	"host",
 	"cache-output",
@@ -190,6 +192,15 @@ export interface InventoryNativeQueryRefusal {
 	readonly completeCondition: boolean | null;
 	readonly launchableCondition: boolean | null;
 }
+/** An operation-local occurrence and observed bytes, never an authenticated file identity. */
+export interface InventoryNativeWindowsRuntimeResource {
+	readonly ordinal: number;
+	readonly kind: (typeof windowsRuntimeResourceKinds)[number];
+	readonly role: (typeof windowsRuntimeResourceRoles)[number];
+	readonly sha256Before: string | null;
+	readonly signerNameRead: boolean | null;
+	readonly signerNameMatches: boolean | null;
+}
 export type InventoryNativeToolchainRefusal =
 	| {
 			readonly status: "unqualified-installed-posix-toolchain";
@@ -204,6 +215,7 @@ export type InventoryNativeToolchainRefusal =
 			readonly query?: InventoryNativeQueryRefusal;
 			readonly runtimeCondition?: (typeof windowsRuntimeConditions)[number];
 			readonly signatureStatus?: (typeof windowsSignatureStatuses)[number];
+			readonly runtimeResource?: InventoryNativeWindowsRuntimeResource;
 	  };
 export interface InventoryNativeRefusalCaptureState {
 	readonly kind?: unknown;
@@ -318,6 +330,86 @@ function query(value: unknown): InventoryNativeQueryRefusal | undefined {
 	});
 }
 
+function runtimeResource(
+	value: unknown,
+	condition: (typeof windowsRuntimeConditions)[number],
+): InventoryNativeWindowsRuntimeResource | undefined {
+	const fields = data(value, [
+		"ordinal",
+		"kind",
+		"role",
+		"sha256Before",
+		"signerNameRead",
+		"signerNameMatches",
+	]);
+	if (
+		!fields ||
+		typeof fields.ordinal !== "number" ||
+		!Number.isSafeInteger(fields.ordinal) ||
+		fields.ordinal < 1 ||
+		fields.ordinal > 10000 ||
+		!oneOf(fields.kind, windowsRuntimeResourceKinds) ||
+		!oneOf(fields.role, windowsRuntimeResourceRoles) ||
+		(fields.kind === "dll" ? fields.role !== "runtime-dll" : fields.role === "runtime-dll") ||
+		(fields.sha256Before !== null &&
+			(typeof fields.sha256Before !== "string" ||
+				fields.sha256Before.length !== 64 ||
+				!/^[0-9a-f]{64}$/.test(fields.sha256Before))) ||
+		!nullableBoolean(fields.signerNameRead) ||
+		!nullableBoolean(fields.signerNameMatches)
+	)
+		return undefined;
+	switch (condition) {
+		case "file-ordinary":
+		case "hash-before":
+			if (
+				fields.sha256Before !== null ||
+				fields.signerNameRead !== null ||
+				fields.signerNameMatches !== null
+			)
+				return undefined;
+			break;
+		case "authenticode-query":
+		case "signature-status":
+		case "signer-certificate":
+			if (
+				fields.sha256Before === null ||
+				fields.signerNameRead !== null ||
+				fields.signerNameMatches !== null
+			)
+				return undefined;
+			break;
+		case "microsoft-signer":
+			if (
+				fields.sha256Before === null ||
+				!(
+					(fields.signerNameRead === false && fields.signerNameMatches === null) ||
+					(fields.signerNameRead === true && fields.signerNameMatches === false)
+				)
+			)
+				return undefined;
+			break;
+		case "eku-cardinality":
+		case "code-signing-usage":
+		case "hash-after":
+		case "byte-stability":
+		case "file-receipt":
+			if (fields.sha256Before === null) return undefined;
+			if (fields.signerNameRead !== true || fields.signerNameMatches !== true) return undefined;
+			break;
+		default:
+			return undefined; // Enumeration, row-bound and result failures have no candidate snapshot.
+	}
+	return Object.freeze({
+		ordinal: fields.ordinal,
+		kind: fields.kind,
+		role: fields.role,
+		sha256Before: fields.sha256Before as string | null,
+		signerNameRead: fields.signerNameRead,
+		signerNameMatches: fields.signerNameMatches,
+	});
+}
+
 /** Reconstruct fixed, non-authoritative failure fields; never return the input object. */
 export function validateInventoryNativeToolchainRefusal(
 	value: unknown,
@@ -326,7 +418,16 @@ export function validateInventoryNativeToolchainRefusal(
 		const fields = data(
 			value,
 			["status"],
-			["code", "stage", "query", "role", "failedPredicate", "runtimeCondition", "signatureStatus"],
+			[
+				"code",
+				"stage",
+				"query",
+				"role",
+				"failedPredicate",
+				"runtimeCondition",
+				"signatureStatus",
+				"runtimeResource",
+			],
 		);
 		if (!fields) return undefined;
 		if (fields.status === "unqualified-installed-posix-toolchain") {
@@ -334,7 +435,8 @@ export function validateInventoryNativeToolchainRefusal(
 				!oneOf(fields.code, posixCodes) ||
 				Object.hasOwn(fields, "query") ||
 				Object.hasOwn(fields, "runtimeCondition") ||
-				Object.hasOwn(fields, "signatureStatus")
+				Object.hasOwn(fields, "signatureStatus") ||
+				Object.hasOwn(fields, "runtimeResource")
 			)
 				return undefined;
 			if (
@@ -373,10 +475,15 @@ export function validateInventoryNativeToolchainRefusal(
 				!oneOf(fields.runtimeCondition, windowsRuntimeConditions)
 			)
 				return undefined;
+			const resource = Object.hasOwn(fields, "runtimeResource")
+				? runtimeResource(fields.runtimeResource, fields.runtimeCondition)
+				: undefined;
+			if (Object.hasOwn(fields, "runtimeResource") && !resource) return undefined;
 			if (Object.hasOwn(fields, "signatureStatus")) {
 				if (
 					fields.runtimeCondition !== "signature-status" ||
-					!oneOf(fields.signatureStatus, windowsSignatureStatuses)
+					!oneOf(fields.signatureStatus, windowsSignatureStatuses) ||
+					(resource !== undefined && fields.signatureStatus === "valid")
 				)
 					return undefined;
 				return Object.freeze({
@@ -384,15 +491,18 @@ export function validateInventoryNativeToolchainRefusal(
 					stage: fields.stage,
 					runtimeCondition: fields.runtimeCondition,
 					signatureStatus: fields.signatureStatus,
+					...(resource ? { runtimeResource: resource } : {}),
 				});
 			}
 			return Object.freeze({
 				status: fields.status,
 				stage: fields.stage,
 				runtimeCondition: fields.runtimeCondition,
+				...(resource ? { runtimeResource: resource } : {}),
 			});
 		}
-		if (Object.hasOwn(fields, "signatureStatus")) return undefined;
+		if (Object.hasOwn(fields, "signatureStatus") || Object.hasOwn(fields, "runtimeResource"))
+			return undefined;
 		if (!queryStages.includes(fields.stage)) {
 			if (Object.hasOwn(fields, "query")) return undefined;
 			return Object.freeze({ status: fields.status, stage: fields.stage });

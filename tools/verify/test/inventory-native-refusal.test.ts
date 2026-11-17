@@ -591,3 +591,317 @@ describe("fixed Ubuntu permission context", () => {
 		expect(validateInventoryUbuntuPermissionContext(revoked.proxy)).toBeUndefined();
 	});
 });
+
+describe("fixed Windows runtime resource failure context", () => {
+	const hash = "a".repeat(64);
+	const candidate = () => ({
+		ordinal: 1,
+		kind: "dll",
+		role: "runtime-dll",
+		sha256Before: hash as string | null,
+		signerNameRead: true as boolean | null,
+		signerNameMatches: false as boolean | null,
+	});
+	const frame = (runtimeCondition: string, runtimeResource: unknown) => ({
+		...runtime,
+		runtimeCondition,
+		runtimeResource,
+	});
+	const beforeHash = {
+		...candidate(),
+		sha256Before: null,
+		signerNameRead: null,
+		signerNameMatches: null,
+	};
+	const beforeName = { ...candidate(), signerNameRead: null, signerNameMatches: null };
+	const afterName = { ...candidate(), signerNameMatches: true };
+
+	it.each([
+		["file-ordinary", beforeHash],
+		["hash-before", beforeHash],
+		["authenticode-query", beforeName],
+		["signature-status", beforeName],
+		["signer-certificate", beforeName],
+		["microsoft-signer", { ...candidate(), signerNameRead: false, signerNameMatches: null }],
+		["microsoft-signer", candidate()],
+		["eku-cardinality", afterName],
+		["code-signing-usage", afterName],
+		["hash-after", afterName],
+		["byte-stability", afterName],
+		["file-receipt", afterName],
+	] as const)("accepts the reached candidate state at %s: %j", (condition, resource) => {
+		const input = frame(condition, resource);
+		expect(validateInventoryNativeToolchainRefusal(input)).toEqual(input);
+		expect(parseInventoryNativeToolchainRefusal("windows", closed, bytes(input))).toEqual(input);
+	});
+	it.each([
+		["exe", "compiler"],
+		["exe", "linker"],
+		["exe", "other-exe"],
+		["dll", "runtime-dll"],
+	])("accepts only the fixed candidate kind/role pair %s/%s", (kind, role) => {
+		const input = frame("microsoft-signer", { ...candidate(), kind, role });
+		expect(validateInventoryNativeToolchainRefusal(input)).toEqual(input);
+	});
+	it.each([1, 10000])("accepts operation-local ordinal boundary %s", (ordinal) => {
+		const input = frame("microsoft-signer", { ...candidate(), ordinal });
+		expect(validateInventoryNativeToolchainRefusal(input)).toEqual(input);
+	});
+	it.each([
+		"unknown-error",
+		"not-signed",
+		"hash-mismatch",
+		"not-trusted",
+		"not-supported-file-format",
+		"incompatible",
+	])("retains observed failing signature status %s with the same candidate", (signatureStatus) => {
+		const input = { ...frame("signature-status", beforeName), signatureStatus };
+		expect(validateInventoryNativeToolchainRefusal(input)).toEqual(input);
+	});
+	it("preserves the legacy valid signature-status frame without a candidate snapshot", () => {
+		const input = { ...runtime, signatureStatus: "valid" };
+		expect(validateInventoryNativeToolchainRefusal(input)).toEqual(input);
+		expect(
+			validateInventoryNativeToolchainRefusal({
+				...frame("signature-status", beforeName),
+				signatureStatus: "valid",
+			}),
+		).toBeUndefined();
+	});
+	it("snapshots the candidate without freezing or retaining caller data", () => {
+		const resource = candidate();
+		const input = frame("microsoft-signer", resource);
+		const before = Object.getOwnPropertyDescriptors(resource);
+		const normalized = validateInventoryNativeToolchainRefusal(input);
+		if (
+			normalized?.status !== "unqualified-installed-windows-toolchain" ||
+			!normalized.runtimeResource
+		)
+			throw new Error("expected runtime candidate refusal");
+		expect(normalized).toEqual(input);
+		expect(normalized).not.toBe(input);
+		expect(normalized.runtimeResource).not.toBe(resource);
+		expect(Object.isFrozen(normalized)).toBe(true);
+		expect(Object.isFrozen(normalized.runtimeResource)).toBe(true);
+		expect(Object.isFrozen(resource)).toBe(false);
+		expect(Object.getOwnPropertyDescriptors(resource)).toEqual(before);
+		expect(Object.keys(normalized.runtimeResource).sort()).toEqual([
+			"kind",
+			"ordinal",
+			"role",
+			"sha256Before",
+			"signerNameMatches",
+			"signerNameRead",
+		]);
+		expect(Reflect.set(normalized.runtimeResource, "ordinal", 2)).toBe(false);
+		resource.ordinal = 2;
+		resource.kind = "exe";
+		resource.role = "compiler";
+		resource.sha256Before = "b".repeat(64);
+		resource.signerNameRead = false;
+		resource.signerNameMatches = null;
+		expect(normalized.runtimeResource).toEqual(candidate());
+	});
+	it("reconstructs frozen and null-prototype candidate data", () => {
+		for (const resource of [
+			Object.freeze(candidate()),
+			Object.assign(Object.create(null), candidate()),
+		]) {
+			const normalized = validateInventoryNativeToolchainRefusal(
+				frame("microsoft-signer", resource),
+			);
+			if (
+				normalized?.status !== "unqualified-installed-windows-toolchain" ||
+				!normalized.runtimeResource
+			)
+				throw new Error("expected runtime candidate refusal");
+			expect(normalized.runtimeResource).toEqual(candidate());
+			expect(normalized.runtimeResource).not.toBe(resource);
+			expect(Object.getPrototypeOf(normalized.runtimeResource)).toBe(Object.prototype);
+		}
+	});
+	it.each(["root-ordinary", "enumerate", "entry-no-reparse", "row-bound", "result"])(
+		"rejects a stale candidate snapshot at noncandidate condition %s",
+		(condition) => {
+			expect(
+				validateInventoryNativeToolchainRefusal(frame(condition, candidate())),
+			).toBeUndefined();
+		},
+	);
+	it.each([
+		["file-ordinary", beforeName],
+		["hash-before", beforeName],
+		["authenticode-query", beforeHash],
+		["signature-status", beforeHash],
+		["signer-certificate", beforeHash],
+		["authenticode-query", candidate()],
+		["signature-status", { ...beforeName, signerNameRead: false }],
+		["signer-certificate", afterName],
+		["microsoft-signer", beforeName],
+		["microsoft-signer", beforeHash],
+		["microsoft-signer", afterName],
+		["microsoft-signer", { ...candidate(), signerNameRead: false }],
+		["microsoft-signer", { ...candidate(), signerNameMatches: null }],
+		["microsoft-signer", { ...candidate(), signerNameRead: false, signerNameMatches: true }],
+		["eku-cardinality", beforeHash],
+		["code-signing-usage", beforeName],
+		["hash-after", { ...afterName, signerNameRead: false }],
+		["byte-stability", { ...afterName, sha256Before: null }],
+		["file-receipt", candidate()],
+	] as const)("rejects unreachable candidate state at %s: %j", (condition, resource) => {
+		const input = frame(condition, resource);
+		expect(validateInventoryNativeToolchainRefusal(input)).toBeUndefined();
+		expect(parseInventoryNativeToolchainRefusal("windows", closed, bytes(input))).toBeUndefined();
+	});
+	it("rejects a signer mismatch snapshot after the exact-name check has already passed", () => {
+		expect(
+			validateInventoryNativeToolchainRefusal(frame("eku-cardinality", candidate())),
+		).toBeUndefined();
+	});
+	it.each([
+		{ ordinal: 0 },
+		{ ordinal: -1 },
+		{ ordinal: 10001 },
+		{ ordinal: 1.5 },
+		{ ordinal: Number.NaN },
+		{ ordinal: Infinity },
+		{ ordinal: "1" },
+		{ ordinal: null },
+		{ kind: "EXE" },
+		{ kind: "unknown" },
+		{ kind: 1 },
+		{ role: "unknown" },
+		{ role: "compiler" },
+		{ kind: "exe", role: "runtime-dll" },
+		{ sha256Before: "A".repeat(64) },
+		{ sha256Before: "g".repeat(64) },
+		{ sha256Before: "a".repeat(63) },
+		{ sha256Before: "a".repeat(65) },
+		{ sha256Before: hash + "\n" },
+		{ sha256Before: 1 },
+		{ signerNameRead: "true" },
+		{ signerNameRead: 1 },
+		{ signerNameMatches: "false" },
+		{ signerNameMatches: 0 },
+		{ path: "not-forwarded" },
+		{ filename: "not-forwarded" },
+		{ signerName: "not-forwarded" },
+		{ certificate: "not-forwarded" },
+		{ error: "not-forwarded" },
+	])("rejects malformed or extended candidate fields: %j", (override) => {
+		expect(
+			validateInventoryNativeToolchainRefusal(
+				frame("microsoft-signer", { ...candidate(), ...override }),
+			),
+		).toBeUndefined();
+	});
+	it.each(["ordinal", "kind", "role", "sha256Before", "signerNameRead", "signerNameMatches"])(
+		"requires candidate data field %s even when its observed value can be null",
+		(key) => {
+			const missing: Record<string, unknown> = candidate();
+			delete missing[key];
+			expect(
+				validateInventoryNativeToolchainRefusal(frame("microsoft-signer", missing)),
+			).toBeUndefined();
+			expect(
+				validateInventoryNativeToolchainRefusal(
+					frame("microsoft-signer", { ...candidate(), [key]: undefined }),
+				),
+			).toBeUndefined();
+		},
+	);
+	it("refuses nonrecord, inherited, symbol and hidden extra candidate fields", () => {
+		for (const resource of [
+			undefined,
+			null,
+			true,
+			1,
+			"candidate",
+			[],
+			[candidate()],
+			Object.create(candidate()),
+			{ ...candidate(), [Symbol("extra")]: true },
+			Object.defineProperty(candidate(), "path", { value: "not-forwarded" }),
+			Object.defineProperty(candidate(), "__proto__", { value: null }),
+		])
+			expect(
+				validateInventoryNativeToolchainRefusal(frame("microsoft-signer", resource)),
+			).toBeUndefined();
+	});
+	it("does not invoke accessors on the outer annotation or any candidate data field", () => {
+		let reads = 0;
+		const getter = {
+			enumerable: true,
+			get() {
+				reads++;
+				throw new Error("candidate getter must not run");
+			},
+		};
+		const outer = Object.defineProperty(
+			frame("microsoft-signer", candidate()),
+			"runtimeResource",
+			getter,
+		);
+		expect(validateInventoryNativeToolchainRefusal(outer)).toBeUndefined();
+		for (const key of [
+			"ordinal",
+			"kind",
+			"role",
+			"sha256Before",
+			"signerNameRead",
+			"signerNameMatches",
+		])
+			expect(
+				validateInventoryNativeToolchainRefusal(
+					frame("microsoft-signer", Object.defineProperty(candidate(), key, getter)),
+				),
+			).toBeUndefined();
+		expect(reads).toBe(0);
+	});
+	it("keeps candidate reflection failures opaque without promising trap-free reflection", () => {
+		for (const failingTrap of ["getPrototypeOf", "ownKeys", "getOwnPropertyDescriptor"] as const) {
+			let calls = 0;
+			const resource = new Proxy(candidate(), {
+				[failingTrap]() {
+					calls++;
+					throw new Error("candidate reflection failed");
+				},
+			});
+			expect(
+				validateInventoryNativeToolchainRefusal(frame("microsoft-signer", resource)),
+			).toBeUndefined();
+			expect(calls).toBe(1);
+		}
+		const revoked = Proxy.revocable(candidate(), {});
+		revoked.revoke();
+		expect(
+			validateInventoryNativeToolchainRefusal(frame("microsoft-signer", revoked.proxy)),
+		).toBeUndefined();
+	});
+	it("refuses misplaced resource annotations instead of silently dropping them", () => {
+		for (const input of [
+			{ ...posix, runtimeResource: candidate() },
+			{ ...ownership, runtimeResource: candidate() },
+			{ ...windows, runtimeResource: candidate() },
+			{ ...queryFrame(), runtimeResource: candidate() },
+			{ status: runtime.status, stage: runtime.stage, runtimeResource: candidate() },
+			{ ...frame("microsoft-signer", candidate()), query: facts() },
+			{ ...frame("microsoft-signer", candidate()), signatureStatus: "not-signed" },
+		])
+			expect(validateInventoryNativeToolchainRefusal(input)).toBeUndefined();
+	});
+	it("keeps candidate metadata opaque until the same closed code1 Windows protocol is eligible", () => {
+		const input = frame("microsoft-signer", candidate());
+		for (const capture of [
+			{ ...closed, complete: false },
+			{ ...closed, code: 0 },
+			{ ...closed, code: 2 },
+			{ ...closed, signal: "SIGTERM" },
+			{ ...closed, kind: "metadata" },
+		])
+			expect(
+				parseInventoryNativeToolchainRefusal("windows", capture, bytes(input)),
+			).toBeUndefined();
+		expect(parseInventoryNativeToolchainRefusal("posix", closed, bytes(input))).toBeUndefined();
+	});
+});

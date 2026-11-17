@@ -808,3 +808,264 @@ describe("Ubuntu permission failure context", () => {
 		}),
 	);
 });
+
+type RuntimeResourceLifecycle = {
+	readonly kind: "command" | "metadata";
+	readonly complete: boolean;
+	readonly code: number | null;
+	readonly signal: string | null;
+};
+
+// Generator flags describe this protocol fixture, never physical process closure.
+async function inspectRuntimeResource(
+	owner: HeldCase,
+	refusal: unknown,
+	lifecycle: RuntimeResourceLifecycle = { kind: "command", complete: true, code: 1, signal: null },
+) {
+	let advanced = false;
+	let cleaned = false;
+	const generator: AsyncGenerator<unknown, unknown, void> = (async function* () {
+		try {
+			yield { ...lifecycle, files: [receiptFile], refusal };
+			advanced = true;
+			return { receiptFile, sha256 };
+		} finally {
+			cleaned = true;
+		}
+	})();
+	let draining: Promise<IteratorResult<unknown, unknown>> | undefined;
+	owner.drain(() => {
+		draining ??= generator.return(undefined);
+		return draining;
+	});
+	factories.inspect.mockReturnValue(generator);
+	owner.admit();
+	const pending = runNativePrepare(["--inspect"]);
+	owner.run(pending);
+	const code = await pending;
+	expect(output.join("")).not.toContain("RAW_RUNTIME_RESOURCE_MUST_STAY_PRIVATE");
+	return {
+		code,
+		advanced,
+		cleaned,
+		capture: records().find((record) => record.event === "inventory-native-capture"),
+	};
+}
+
+describe("Windows runtime resource failure diagnostics", () => {
+	// Synthetic failure protocol only; these fields authenticate no file or signer.
+	const resource = {
+		ordinal: 1,
+		kind: "dll",
+		role: "runtime-dll",
+		sha256Before: "a".repeat(64),
+		signerNameRead: true,
+		signerNameMatches: false,
+	};
+	const legacy = {
+		status: "unqualified-installed-windows-toolchain",
+		stage: "compiler-runtime-signatures",
+		runtimeCondition: "microsoft-signer",
+	};
+	const refusal = { ...legacy, runtimeResource: resource };
+	it("preserves the failed original capture and exact six-field projection", () =>
+		heldCase(async (owner) => {
+			const result = await inspectRuntimeResource(owner, refusal);
+			expect(result.capture).toEqual({
+				event: "inventory-native-capture",
+				kind: "command",
+				complete: true,
+				files: [receiptFile],
+				code: 1,
+				signal: null,
+				refusal,
+			});
+			const projected = result.capture?.refusal as { runtimeResource?: Record<string, unknown> };
+			expect(Object.keys(projected.runtimeResource ?? {}).sort()).toEqual([
+				"kind",
+				"ordinal",
+				"role",
+				"sha256Before",
+				"signerNameMatches",
+				"signerNameRead",
+			]);
+			expect({ code: result.code, advanced: result.advanced, cleaned: result.cleaned }).toEqual({
+				code: 1,
+				advanced: false,
+				cleaned: true,
+			});
+			expect(records().some((record) => record.event === "inventory-native-result")).toBe(false);
+		}));
+	it("preserves legacy refusal data when the optional resource is absent", () =>
+		heldCase(async (owner) => {
+			const result = await inspectRuntimeResource(owner, legacy);
+			expect(result.capture?.refusal).toEqual(legacy);
+			expect({ code: result.code, advanced: result.advanced, cleaned: result.cleaned }).toEqual({
+				code: 1,
+				advanced: false,
+				cleaned: true,
+			});
+		}));
+	it.each([
+		[
+			"name call failed",
+			"microsoft-signer",
+			{ ...resource, signerNameRead: false, signerNameMatches: null },
+		],
+		[
+			"before hash",
+			"file-ordinary",
+			{ ...resource, sha256Before: null, signerNameRead: null, signerNameMatches: null },
+		],
+	] as const)(
+		"carries only the complete permitted observation state: %s",
+		(_name, runtimeCondition, runtimeResource) =>
+			heldCase(async (owner) => {
+				const input = { ...legacy, runtimeCondition, runtimeResource };
+				const result = await inspectRuntimeResource(owner, input);
+				expect(result.capture?.refusal).toEqual(input);
+				expect(result.code).toBe(1);
+				expect(result.advanced).toBe(false);
+				expect(result.cleaned).toBe(true);
+			}),
+	);
+	it.each([
+		"ordinal",
+		"kind",
+		"role",
+		"sha256Before",
+		"signerNameRead",
+		"signerNameMatches",
+	] as const)("omits optional refusal data with a partial resource missing %s", (field) =>
+		heldCase(async (owner) => {
+			const value: Record<string, unknown> = { ...resource };
+			delete value[field];
+			const result = await inspectRuntimeResource(owner, { ...legacy, runtimeResource: value });
+			expect(Object.hasOwn(result.capture ?? {}, "refusal")).toBe(false);
+			expect({ code: result.code, advanced: result.advanced, cleaned: result.cleaned }).toEqual({
+				code: 1,
+				advanced: false,
+				cleaned: true,
+			});
+		}),
+	);
+	it.each([
+		["unknown kind", { ...resource, kind: "RAW_RUNTIME_RESOURCE_MUST_STAY_PRIVATE" }],
+		["unknown role", { ...resource, role: "RAW_RUNTIME_RESOURCE_MUST_STAY_PRIVATE" }],
+		["ordinal outside bound", { ...resource, ordinal: 10001 }],
+		["kind/role mismatch", { ...resource, kind: "exe" }],
+		["missing hash after name observation", { ...resource, sha256Before: null }],
+		["unreturned name with comparison", { ...resource, signerNameRead: false }],
+		["returned name without comparison", { ...resource, signerNameMatches: null }],
+		["nonboolean name state", { ...resource, signerNameRead: "true" }],
+	] as const)(
+		"does not forward unknown or malformed resource correlations: %s",
+		(_name, runtimeResource) =>
+			heldCase(async (owner) => {
+				const result = await inspectRuntimeResource(owner, { ...legacy, runtimeResource });
+				expect(Object.hasOwn(result.capture ?? {}, "refusal")).toBe(false);
+				expect(result.code).toBe(1);
+				expect(result.advanced).toBe(false);
+				expect(result.cleaned).toBe(true);
+			}),
+	);
+	it.each([
+		"ordinal",
+		"kind",
+		"role",
+		"sha256Before",
+		"signerNameRead",
+		"signerNameMatches",
+	] as const)("does not invoke a resource %s accessor", (field) =>
+		heldCase(async (owner) => {
+			let reads = 0;
+			const value = { ...resource };
+			Object.defineProperty(value, field, {
+				enumerable: true,
+				get() {
+					reads++;
+					throw new Error("RAW_RUNTIME_RESOURCE_MUST_STAY_PRIVATE");
+				},
+			});
+			const result = await inspectRuntimeResource(owner, { ...legacy, runtimeResource: value });
+			expect(Object.hasOwn(result.capture ?? {}, "refusal")).toBe(false);
+			expect(reads).toBe(0);
+			expect(result.code).toBe(1);
+		}),
+	);
+	it.each([
+		["symbol", { ...resource, [Symbol("fixed-extra")]: true }],
+		[
+			"private fields",
+			{
+				...resource,
+				path: "RAW_RUNTIME_RESOURCE_MUST_STAY_PRIVATE",
+				certificate: "RAW_RUNTIME_RESOURCE_MUST_STAY_PRIVATE",
+				error: "RAW_RUNTIME_RESOURCE_MUST_STAY_PRIVATE",
+			},
+		],
+	] as const)("refuses %s without leaking raw resource data", (_name, runtimeResource) =>
+		heldCase(async (owner) => {
+			const result = await inspectRuntimeResource(owner, { ...legacy, runtimeResource });
+			expect(Object.hasOwn(result.capture ?? {}, "refusal")).toBe(false);
+			expect(result.code).toBe(1);
+		}),
+	);
+	it("does not invoke resource serialization hooks", () =>
+		heldCase(async (owner) => {
+			let calls = 0;
+			const runtimeResource = {
+				...resource,
+				toJSON() {
+					calls++;
+					return { certificate: "RAW_RUNTIME_RESOURCE_MUST_STAY_PRIVATE" };
+				},
+			};
+			const result = await inspectRuntimeResource(owner, { ...legacy, runtimeResource });
+			expect(Object.hasOwn(result.capture ?? {}, "refusal")).toBe(false);
+			expect(calls).toBe(0);
+			expect(result.code).toBe(1);
+		}));
+	it.each([
+		["other stage", { ...refusal, stage: "compiler-signatures" }],
+		["no condition", { status: legacy.status, stage: legacy.stage, runtimeResource: resource }],
+		["enumeration before candidate", { ...refusal, runtimeCondition: "enumerate" }],
+		[
+			"success-name facts at refusal condition",
+			{ ...refusal, runtimeResource: { ...resource, signerNameMatches: true } },
+		],
+	] as const)(
+		"keeps resource context scoped to permitted candidate-failure conditions: %s",
+		(_name, input) =>
+			heldCase(async (owner) => {
+				const result = await inspectRuntimeResource(owner, input);
+				expect(Object.hasOwn(result.capture ?? {}, "refusal")).toBe(false);
+				expect(result.code).toBe(1);
+			}),
+	);
+	it.each([
+		["success", { kind: "command", complete: true, code: 0, signal: null }, 0],
+		["incomplete", { kind: "command", complete: false, code: 1, signal: null }, 1],
+		["other exit", { kind: "command", complete: true, code: 2, signal: null }, 1],
+		["signal", { kind: "command", complete: true, code: 1, signal: "SIGTERM" }, 1],
+		["unknown exit", { kind: "command", complete: true, code: null, signal: null }, 1],
+		["metadata", { kind: "metadata", complete: true, code: 0, signal: null }, 0],
+	] as const)(
+		"drops resource diagnostics outside an eligible closed failed command: %s",
+		(_name, lifecycle, expected) =>
+			heldCase(async (owner) => {
+				const result = await inspectRuntimeResource(owner, refusal, lifecycle);
+				expect(result.capture).toEqual({
+					event: "inventory-native-capture",
+					...lifecycle,
+					files: [receiptFile],
+				});
+				expect(result.code).toBe(expected);
+				expect(result.advanced).toBe(expected === 0);
+				expect(result.cleaned).toBe(true);
+				expect(records().some((record) => record.event === "inventory-native-result")).toBe(
+					expected === 0,
+				);
+			}),
+	);
+});
