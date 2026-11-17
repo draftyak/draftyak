@@ -5,6 +5,10 @@ import {
 	inspectInventoryNativeToolchain,
 	prepareInventoryNativeBuild,
 } from "./lib/inventory-native-build.ts";
+import {
+	type InventoryNativeToolchainRefusal,
+	validateInventoryNativeToolchainRefusal,
+} from "./lib/inventory-native-refusal.ts";
 
 type Action = "acquire-only" | "inspect" | "prepare";
 export interface NativePrepareOptions {
@@ -81,6 +85,38 @@ function writeLine(stream: NodeJS.WriteStream, line: string): Promise<void> {
 const emit = (record: Readonly<Record<string, unknown>>): Promise<void> =>
 	writeLine(process.stdout, JSON.stringify(record));
 
+interface UbuntuInputRefusal {
+	readonly stage: "ubuntu-inputs";
+	readonly code?: string;
+}
+
+function ubuntuInputRefusal(module: object, error: unknown): UbuntuInputRefusal {
+	try {
+		const lookup: unknown = Object.getOwnPropertyDescriptor(
+			module,
+			"getInventoryUbuntuRefusalCode",
+		)?.value;
+		const known: unknown = Object.getOwnPropertyDescriptor(
+			module,
+			"isInventoryUbuntuRefusalCode",
+		)?.value;
+		if (typeof lookup !== "function" || typeof known !== "function")
+			return { stage: "ubuntu-inputs" };
+		const code: unknown = (lookup as (error: unknown) => unknown)(error);
+		if (
+			typeof code === "string" &&
+			code.length <= 96 &&
+			!/[^a-z0-9-]/.test(code) &&
+			/^ubuntu-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(code) &&
+			(known as (value: unknown) => unknown)(code) === true
+		)
+			return { stage: "ubuntu-inputs", code };
+	} catch {
+		// Unrecognized failures stay opaque, including an unavailable code lookup.
+	}
+	return { stage: "ubuntu-inputs" };
+}
+
 function captureRecord(capture: InventoryNativeClosedCaptures) {
 	const { kind, complete, code, signal } = capture;
 	if (
@@ -100,6 +136,15 @@ function captureRecord(capture: InventoryNativeClosedCaptures) {
 	)
 		throw failed();
 	if (kind === "command" && (code === undefined || signal === undefined)) throw failed();
+	let refusal: InventoryNativeToolchainRefusal | undefined;
+	if (kind === "command" && complete && code === 1 && signal === null) {
+		try {
+			const value: unknown = Object.getOwnPropertyDescriptor(capture, "refusal")?.value;
+			refusal = validateInventoryNativeToolchainRefusal(value);
+		} catch {
+			// Optional diagnostics never replace the original lifecycle result.
+		}
+	}
 	return {
 		event: "inventory-native-capture",
 		kind,
@@ -107,6 +152,7 @@ function captureRecord(capture: InventoryNativeClosedCaptures) {
 		complete,
 		code: code ?? null,
 		signal: signal ?? null,
+		...(refusal === undefined ? {} : { refusal }),
 	};
 }
 
@@ -140,7 +186,10 @@ async function consume<T>(
 	}
 }
 
-async function acquireInputs(offline: boolean): Promise<void> {
+async function acquireInputs(
+	offline: boolean,
+	noteRefusal: (refusal: UbuntuInputRefusal) => void,
+): Promise<void> {
 	const node = await acquireInventoryNativeNodeInputs({ offline });
 	await emit({
 		event: "inventory-native-node-inputs",
@@ -165,11 +214,16 @@ async function acquireInputs(offline: boolean): Promise<void> {
 		typeof ubuntu.acquireInventoryUbuntuInputs !== "function"
 	)
 		throw failed();
-	await (
-		ubuntu.acquireInventoryUbuntuInputs as (options: {
-			readonly offline: boolean;
-		}) => Promise<unknown>
-	)({ offline });
+	try {
+		await (
+			ubuntu.acquireInventoryUbuntuInputs as (options: {
+				readonly offline: boolean;
+			}) => Promise<unknown>
+		)({ offline });
+	} catch (error) {
+		noteRefusal(ubuntuInputRefusal(ubuntu, error));
+		throw error;
+	}
 	// The sibling's return metadata is not a permission or a diagnostic stream.
 	await emit({ event: "inventory-native-ubuntu-inputs", platform: "linux", arch: process.arch });
 }
@@ -187,6 +241,7 @@ export async function runNativePrepare(args: readonly string[]): Promise<number>
 		}
 		return 2;
 	}
+	let refusal: UbuntuInputRefusal | undefined;
 	try {
 		if (options.action === "inspect") {
 			const result = await consume(inspectInventoryNativeToolchain());
@@ -198,7 +253,9 @@ export async function runNativePrepare(args: readonly string[]): Promise<number>
 			});
 			return 0;
 		}
-		await acquireInputs(options.offline);
+		await acquireInputs(options.offline, (value) => {
+			refusal = value;
+		});
 		if (options.action === "acquire-only") {
 			await emit({ event: "inventory-native-result", action: "acquire-only" });
 			return 0;
@@ -218,7 +275,11 @@ export async function runNativePrepare(args: readonly string[]): Promise<number>
 		try {
 			await writeLine(
 				process.stderr,
-				JSON.stringify({ event: "inventory-native-failure", action: options.action }),
+				JSON.stringify({
+					event: "inventory-native-failure",
+					action: options.action,
+					...(refusal === undefined ? {} : { refusal }),
+				}),
 			);
 		} catch {
 			// Report failure through the exit code even when the output is closed.

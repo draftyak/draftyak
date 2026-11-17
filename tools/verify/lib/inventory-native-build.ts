@@ -1,10 +1,17 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { writeSync } from "node:fs";
+import { fstatSync, lstatSync, readSync, realpathSync, writeSync } from "node:fs";
 import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rename } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { InventoryCacheOperation } from "./inventory-native-operation.ts";
+import {
+	INVENTORY_NATIVE_REFUSAL_MAX_BYTES,
+	type InventoryNativeToolchainRefusal,
+	parseInventoryNativeToolchainRefusal,
+} from "./inventory-native-refusal.ts";
+
+export type { InventoryNativeToolchainRefusal } from "./inventory-native-refusal.ts";
 
 const verifyRoot = path.resolve(import.meta.dirname, "..");
 const repository = path.resolve(verifyRoot, "..", "..");
@@ -76,6 +83,7 @@ export interface InventoryNativeClosedCaptures {
 	readonly code?: number | null;
 	readonly signal?: NodeJS.Signals | null;
 	readonly complete: boolean;
+	readonly refusal?: InventoryNativeToolchainRefusal;
 }
 export interface InventoryNativeBuild {
 	readonly file: string;
@@ -458,6 +466,77 @@ async function* privateCache(
 		(await readFile(captured.files[0] ?? "")).equals(Buffer.from("INVENTORY_PRIVATE_CACHE_V1\n")),
 	);
 }
+function closedToolchainRefusal(
+	operation: InventoryCacheOperation,
+	directory: string,
+	captured: InventoryNativeClosedCaptures,
+	helper: "posix" | "windows",
+): InventoryNativeToolchainRefusal | undefined {
+	if (
+		captured.kind !== "command" ||
+		captured.complete !== true ||
+		captured.code !== 1 ||
+		captured.signal !== null ||
+		captured.files.length !== 2 ||
+		captured.files[0] !== path.join(directory, "toolchain.stdout.log") ||
+		captured.files[1] !== path.join(directory, "toolchain.stderr.log")
+	)
+		return undefined;
+	const file = path.join(directory, "toolchain.stdout.log");
+	let original: ReturnType<InventoryCacheOperation["openFile"]> | undefined;
+	let bytes: Buffer | undefined,
+		failed = false;
+	try {
+		const named = lstatSync(file, { bigint: true });
+		requireInput(
+			named.isFile() &&
+				!named.isSymbolicLink() &&
+				named.nlink === 1n &&
+				key(realpathSync(file)) === key(file),
+		);
+		original = operation.openFile(file, "r");
+		const before = fstatSync(original.fd, { bigint: true });
+		requireInput(
+			before.isFile() &&
+				before.nlink === 1n &&
+				before.dev === named.dev &&
+				before.ino === named.ino &&
+				before.size >= 0n &&
+				before.size <= BigInt(INVENTORY_NATIVE_REFUSAL_MAX_BYTES),
+		);
+		bytes = Buffer.alloc(Number(before.size));
+		for (let position = 0; position < bytes.length; ) {
+			const count = readSync(original.fd, bytes, position, bytes.length - position, position);
+			requireInput(count > 0);
+			position += count;
+		}
+		requireInput(readSync(original.fd, Buffer.alloc(1), 0, 1, bytes.length) === 0);
+		const after = fstatSync(original.fd, { bigint: true }),
+			final = lstatSync(file, { bigint: true });
+		for (const current of [after, final])
+			requireInput(
+				current.isFile() &&
+					!current.isSymbolicLink() &&
+					current.nlink === 1n &&
+					current.dev === before.dev &&
+					current.ino === before.ino &&
+					current.size === before.size &&
+					current.mtimeNs === before.mtimeNs &&
+					current.ctimeNs === before.ctimeNs,
+			);
+	} catch {
+		failed = true;
+	}
+	if (original) {
+		try {
+			operation.closeFile(original);
+		} catch {
+			failed = true;
+		}
+	}
+	if (failed || bytes === undefined) return undefined;
+	return parseInventoryNativeToolchainRefusal(helper, captured, bytes);
+}
 async function* inspect(
 	operation: InventoryCacheOperation,
 	directory: string,
@@ -490,7 +569,13 @@ async function* inspect(
 		systemEnvironment(directory),
 		"toolchain",
 	);
-	yield captured;
+	const refusal = closedToolchainRefusal(
+		operation,
+		directory,
+		captured,
+		windows ? "windows" : "posix",
+	);
+	yield refusal === undefined ? captured : { ...captured, refusal };
 	commandSucceeded(captured);
 	const response = JSON.parse((await readFile(captured.files[0] ?? "")).toString("utf8")) as Record<
 		string,
@@ -577,6 +662,7 @@ async function sourceHashes(): Promise<Record<string, string>> {
 		path.join(import.meta.dirname, "inventory-release-expiry.ts"),
 		cacheHelper,
 		path.join(import.meta.dirname, "inventory-native-operation.ts"),
+		path.join(import.meta.dirname, "inventory-native-refusal.ts"),
 		policyFile,
 		path.join(import.meta.dirname, "inventory-native-build.ts"),
 		path.join(repository, "tools", "fetch-node", "versions.json"),
