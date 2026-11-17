@@ -38,6 +38,7 @@ describe("required native transport workflow controls", () => {
 			"heavy",
 			"windows",
 			"macos",
+			"inventory-physical-macos",
 		]);
 		expect(workflow.jobs.macos?.["runs-on"]).toBe("macos-15");
 		for (const name of ["full", "windows", "macos"]) {
@@ -76,8 +77,8 @@ describe("required native transport workflow controls", () => {
 		expect(
 			check(
 				source.replace(
-					"needs: [changes, cheap, full, spikes, heavy, windows, macos]",
-					"needs: [changes, cheap, full, spikes, heavy, windows]",
+					"needs: [changes, cheap, full, spikes, heavy, windows, macos, inventory-physical-macos]",
+					"needs: [changes, cheap, full, spikes, heavy, windows, inventory-physical-macos]",
 				),
 			).join("\n"),
 		).toContain("required job execution controls");

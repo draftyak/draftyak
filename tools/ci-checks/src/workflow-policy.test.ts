@@ -203,6 +203,140 @@ const ciJobChange = (source: string, job: string, before: string, after: string)
 	if (changed === block) throw new Error("unchanged CI job mutation");
 	return source.replace(block, changed);
 };
+
+describe("physical inventory CI bootstrap", () => {
+	const file = ".github/workflows/ci.yml";
+	const source = (): string => read(file).replaceAll("\r\n", "\n");
+	const prepare = "node tools/verify/native-prepare.ts --online --prepare";
+	const windowsQuery = "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/verify/test/inventory-native-query.test.ps1";
+	const jobs = ["cheap", "windows", "inventory-physical-macos"] as const;
+	it("runs the pure Windows query check once after install and before preparation", () => {
+		const original = source();
+		const block = ciJobSource(original, "windows");
+		expect(original.split(windowsQuery)).toHaveLength(2);
+		expect(block.indexOf(windowsQuery)).toBeGreaterThan(block.indexOf("pnpm install --frozen-lockfile --ignore-scripts"));
+		expect(block.indexOf(prepare)).toBeGreaterThan(block.indexOf(windowsQuery));
+	});
+	it.each([
+		["missing", "echo query-check-disabled"],
+		["duplicate", `${windowsQuery}\n      - run: ${windowsQuery}`],
+		["another host", windowsQuery.replace("powershell.exe", "pwsh")],
+		["profile", windowsQuery.replace(" -NoProfile", "")],
+		["interactive", windowsQuery.replace(" -NonInteractive", "")],
+		["execution policy", windowsQuery.replace("Bypass", "Unrestricted")],
+		["command mode", windowsQuery.replace("-File", "-Command")],
+		["other test", windowsQuery.replace("inventory-native-query.test.ps1", "another-query.test.ps1")],
+	])("refuses a %s Windows native-query test step", (_label, replacement) => {
+		const changed = ciJobChange(source(), "windows", windowsQuery, replacement);
+		expect(checkWorkflow(file, changed, toolchain).join("\n")).toContain("must preserve windows command");
+	});
+	it("refuses a conditional or late Windows native-query test", () => {
+		const original = source();
+		const step = `      - name: Check pure Windows native-query helpers\n        run: ${windowsQuery}\n`;
+		const removed = ciJobChange(original, "windows", step, "");
+		const block = ciJobSource(removed, "windows");
+		const late = removed.replace(block, `${block.trimEnd()}\n${step}`);
+		const conditional = ciJobChange(original, "windows", `        run: ${windowsQuery}`, `        if: false\n        run: ${windowsQuery}`);
+		for (const changed of [late, conditional]) {
+			expect(checkWorkflow(file, changed, toolchain).join("\n")).toContain("must preserve windows command");
+		}
+	});
+	it.each(jobs)("prepares %s between its frozen install and real filesystem tests", (job) => {
+		const definition = (
+			parseYaml(source()).value as {
+				jobs: Record<string, { steps: Record<string, unknown>[] }>;
+			}
+		).jobs[job];
+		const steps = definition?.steps ?? [];
+		const install = steps.findIndex(
+			(step) => step.run === "pnpm install --frozen-lockfile --ignore-scripts",
+		);
+		const preparation = steps.findIndex((step) => step.run === prepare);
+		const consumer = steps.findIndex((step) =>
+			job === "inventory-physical-macos"
+				? step.id === "physical-test"
+				: step.run === (job === "cheap" ? "pnpm verify --profile cheap" : "pnpm verify"),
+		);
+		expect(install).toBeGreaterThanOrEqual(0);
+		expect(preparation).toBeGreaterThan(install);
+		expect(consumer).toBeGreaterThan(preparation);
+		expect(steps.filter((step) => step.run === prepare)).toHaveLength(1);
+	});
+	it.each(jobs)("refuses missing, duplicate or non-preparing %s bootstrap", (job) => {
+		for (const replacement of [
+			"echo preparation-disabled",
+			"node tools/verify/native-prepare.ts --online --inspect",
+			"node tools/verify/native-prepare.ts --online --acquire-only",
+			"node tools/verify/native-prepare.ts --prepare",
+			`${prepare}\n      - run: ${prepare}`,
+		]) {
+			const changed = ciJobChange(source(), job, prepare, replacement);
+			expect(checkWorkflow(file, changed, toolchain).join("\n")).toContain(
+				`must preserve ${job} command`,
+			);
+		}
+	});
+	it.each(jobs)("refuses %s preparation before install or after its consumer", (job) => {
+		const step = [
+			"      - name: Prepare the current-source filesystem addon",
+			...(job === "cheap" ? ["        if: needs.changes.outputs.docs-only != 'true'"] : []),
+			`        run: ${prepare}`,
+			"",
+		].join("\n");
+		const removed = ciJobChange(source(), job, step, "");
+		const block = ciJobSource(removed, job);
+		const installSetup = block.indexOf("      - uses: pnpm/action-setup@");
+		expect(installSetup).toBeGreaterThanOrEqual(0);
+		for (const reordered of [
+			block.slice(0, installSetup) + step + block.slice(installSetup),
+			`${block.trimEnd()}\n${step}`,
+		]) {
+			const changed = removed.replace(block, reordered);
+			expect(checkWorkflow(file, changed, toolchain).join("\n")).toContain(
+				`must preserve ${job} command`,
+			);
+		}
+	});
+	it("refuses preparation on the cheap docs-only branch", () => {
+		const changed = ciJobChange(source(), "cheap", `if: needs.changes.outputs.docs-only != 'true'\n        run: ${prepare}`, `if: needs.changes.outputs.docs-only == 'true'\n        run: ${prepare}`);
+		expect(checkWorkflow(file, changed, toolchain).join("\n")).toContain("must preserve cheap command");
+	});
+	it.each([
+		["condition", "if: needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)", "if: false"],
+		["runner", "runs-on: macos-15", "runs-on: ubuntu-24.04"],
+		["budget", "timeout-minutes: 30", "timeout-minutes: 5"],
+		["source output", "source: ${{ steps.source.outputs.source }}", "source: unchecked"],
+	])("refuses a changed physical Mac %s", (_label, before, after) => {
+		const changed = ciJobChange(source(), "inventory-physical-macos", before, after);
+		expect(checkWorkflow(file, changed, toolchain).length).toBeGreaterThan(0);
+	});
+	it("requires the physical Mac job and its aggregate dependency", () => {
+		const original = source();
+		const removed = original.replace(ciJobSource(original, "inventory-physical-macos"), "");
+		expect(checkWorkflow(file, removed, toolchain).join("\n")).toContain("must preserve inventory-physical-macos job");
+		const omitted = ciJobChange(original, "required", ", inventory-physical-macos]", "]");
+		expect(checkWorkflow(file, omitted, toolchain).join("\n")).toContain("must preserve required job");
+	});
+	it.each([
+		["default reporter", "--reporter=default ", ""],
+		["JSON reporter", "--reporter=json", ""],
+		["JSON output", "inventory-physical.json", "another-result.json"],
+		["zero-test refusal", "--passWithNoTests=false", "--passWithNoTests=true"],
+		["success", "report?.success !== true", "false"],
+		["eight total", "report.numTotalTests !== 8", "false"],
+		["eight passing", "report.numPassedTests !== 8", "false"],
+		["no failures", "report.numFailedTests !== 0", "false"],
+		["no pending", "report.numPendingTests !== 0", "false"],
+		["no todos", "report.numTodoTests !== 0", "false"],
+		["one file", "report.testResults.length !== 1", "false"],
+		["expected file", "path.resolve(result.name) !== expected", "false"],
+		["eight assertions", "result.assertionResults.length !== 8", "false"],
+		["passing assertions", "assertion?.status === 'passed'", "true"],
+	])("refuses a weakened physical-file %s gate", (_label, before, after) => {
+		const changed = ciJobChange(source(), "inventory-physical-macos", before, after);
+		expect(checkWorkflow(file, changed, toolchain).join("\n")).toContain("must preserve inventory-physical-macos command");
+	});
+});
 const classifierOutputs = [
 	["areas", `\${{ steps.areas.outputs.areas }}`],
 	["docs-only", `\${{ steps.areas.outputs.docs-only }}`],
@@ -525,7 +659,7 @@ describe("workflow policy", () => {
 		["docs condition removal", "        if: needs.changes.outputs.docs-only == 'true'\n", ""],
 		[
 			"cheap install replacement",
-			"run: pnpm install --frozen-lockfile",
+			"run: pnpm install --frozen-lockfile --ignore-scripts",
 			"run: echo install-disabled",
 		],
 		[
@@ -565,8 +699,8 @@ describe("workflow policy", () => {
 		],
 		[
 			"build before install",
-			"      - run: pnpm install --frozen-lockfile\n      - run: pnpm build",
-			"      - run: pnpm build\n      - run: pnpm install --frozen-lockfile",
+			"      - run: pnpm install --frozen-lockfile --ignore-scripts\n      - run: pnpm build",
+			"      - run: pnpm build\n      - run: pnpm install --frozen-lockfile --ignore-scripts",
 		],
 		["heavy condition", "&& needs.changes.outputs.spike-count != '0'", "&& false"],
 		["heavy condition removal", " && needs.changes.outputs.spike-count != '0'", ""],
@@ -672,12 +806,13 @@ describe("workflow policy", () => {
 			"heavy",
 			"windows",
 			"macos",
+			"inventory-physical-macos",
 			"required",
 		]);
 		expect(ci.required).toMatchObject({
 			if: "always()",
 			name: `\${{ github.event.pull_request.draft && 'required (draft)' || 'required' }}`,
-			needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"],
+			needs: ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos", "inventory-physical-macos"],
 		});
 		const reportedJobs = files.flatMap((file) =>
 			Object.entries(jobs(path.basename(file))).map(([id, job]) => ({
@@ -774,7 +909,7 @@ describe("workflow policy", () => {
 		expect(ci.windows?.steps.at(-1)?.run).toBe(
 			"pnpm exec node tools/ci-checks/src/native-transport.ts run",
 		);
-		for (const name of ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"]) {
+		for (const name of ["changes", "cheap", "full", "spikes", "heavy", "windows", "macos", "inventory-physical-macos"]) {
 			const job = ci[name];
 			expect(job?.outputs?.source, name).toBe(`\${{ steps.source.outputs.source }}`);
 			const steps = job?.steps ?? [];

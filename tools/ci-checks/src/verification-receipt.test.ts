@@ -21,7 +21,13 @@ const treeSha = "d".repeat(40);
 const lockfileSha256 = "e".repeat(64);
 const nodeVersion = "26.12.0";
 type JobName = (typeof jobNames)[number];
-const baseRequiredJobNames = ["changes", "cheap", "full", "windows"] as const;
+const baseRequiredJobNames = [
+	"changes",
+	"cheap",
+	"full",
+	"windows",
+	"inventory-physical-macos",
+] as const;
 interface TestJob {
 	result: string;
 	outputs: Record<string, unknown>;
@@ -61,6 +67,12 @@ const needs = (docsOnly = false): Needs => ({
 	heavy: { result: "skipped", outputs: {} },
 	windows: job("win32"),
 	macos: { result: "skipped", outputs: {} },
+	"inventory-physical-macos": docsOnly
+		? { result: "skipped", outputs: {} }
+		: {
+				result: "success",
+				outputs: { source: JSON.stringify(source({ platform: "darwin", architecture: "arm64" })) },
+			},
 });
 const input = (extra: Partial<ReceiptInput> = {}, jobs = needs()): ReceiptInput => ({
 	repository: "example/project",
@@ -99,7 +111,10 @@ const completeSelectedGroups = (jobs: Needs): void => {
 };
 const changeSource = (jobs: Needs, name: JobName, extra: Record<string, unknown>): void => {
 	jobs[name].outputs.source = JSON.stringify({
-		...source({ platform: name === "windows" ? "win32" : "linux" }),
+		...source({
+			platform: name === "windows" ? "win32" : name === "inventory-physical-macos" ? "darwin" : "linux",
+			...(name === "inventory-physical-macos" ? { architecture: "arm64" } : {}),
+		}),
 		...extra,
 	});
 };
@@ -138,7 +153,16 @@ describe("CI verification receipts", () => {
 			event: "pull_request",
 		});
 		expect(Object.keys(receipt.jobResults)).toEqual(jobNames);
-		expect(jobNames).toEqual(["changes", "cheap", "full", "spikes", "heavy", "windows", "macos"]);
+		expect(jobNames).toEqual([
+			"changes",
+			"cheap",
+			"full",
+			"spikes",
+			"heavy",
+			"windows",
+			"macos",
+			"inventory-physical-macos",
+		]);
 		expect(baseRequiredJobNames.every((name) => receipt.jobResults[name].required)).toBe(true);
 		for (const name of ["spikes", "heavy"] as const) {
 			expect(receipt.jobResults[name]).toMatchObject({ required: false, result: "skipped" });
@@ -154,10 +178,16 @@ describe("CI verification receipts", () => {
 			label: "draft PR",
 			extra: { draft: true },
 			docs: false,
-			skipped: ["full", "windows"],
+			skipped: ["full", "windows", "inventory-physical-macos"],
 			coverage: "draft",
 		},
-		{ label: "docs PR", extra: {}, docs: true, skipped: ["full", "windows"], coverage: "docs" },
+		{
+			label: "docs PR",
+			extra: {},
+			docs: true,
+			skipped: ["full", "windows", "inventory-physical-macos"],
+			coverage: "docs",
+		},
 		{
 			label: "main push",
 			extra: { event: "push", ref: "refs/heads/main" },
@@ -169,7 +199,7 @@ describe("CI verification receipts", () => {
 			label: "docs main push",
 			extra: { event: "push", ref: "refs/heads/main" },
 			docs: true,
-			skipped: ["full", "windows"],
+			skipped: ["full", "windows", "inventory-physical-macos"],
 			coverage: "docs",
 		},
 		{
@@ -260,15 +290,39 @@ describe("CI verification receipts", () => {
 		expect(buildReceipt(input({}, jobs)).problems).toContain("windows: unexpected runner platform");
 	});
 
+	it.each([
+		["platform", "linux", "unexpected runner platform"],
+		["architecture", "x64", "unexpected runner architecture"],
+	])("checks the physical Mac job's %s independently", (field, value, problem) => {
+		const jobs = needs();
+		changeSource(jobs, "inventory-physical-macos", { [field]: value });
+		expect(buildReceipt(input({}, jobs)).problems).toContain(`inventory-physical-macos: ${problem}`);
+	});
+
+	it("does not count physical filesystem tests as Native transport qualification", () => {
+		const jobs = needs();
+		jobs["inventory-physical-macos"].outputs["native-transport"] = "passed";
+		const receipt = buildReceipt(input({}, jobs));
+		expect(receipt.passed).toBe(true);
+		expect(receipt.coverage).toBe("linux-and-windows");
+		expect(receipt.jobResults["inventory-physical-macos"]).toMatchObject({
+			required: true,
+			nativeRequired: false,
+			nativeTransport: null,
+		});
+	});
+
 	it.each(["{", "null", "[]", "true", '"metadata"', " ".repeat(64 * 1024 + 1)])(
 		"refuses malformed or oversized job metadata %#",
 		(value) => expect(() => buildReceipt(input({ needs: value }))).toThrow(),
 	);
 
 	it("refuses missing jobs, invalid results and non-object output containers", () => {
-		const omitted: Partial<Needs> = needs();
-		delete omitted.full;
-		expect(() => buildReceipt(input({ needs: JSON.stringify(omitted) }))).toThrow();
+		for (const name of ["full", "inventory-physical-macos"] as const) {
+			const omitted: Partial<Needs> = needs();
+			delete omitted[name];
+			expect(() => buildReceipt(input({ needs: JSON.stringify(omitted) }))).toThrow();
+		}
 		for (const result of ["passed", "neutral", "timed_out", "", null, 0]) {
 			const jobs = needs();
 			const invalid = { ...jobs, cheap: { ...jobs.cheap, result } };
@@ -1224,7 +1278,8 @@ describe("verification receipt CLI", () => {
 			for (const name of baseRequiredJobNames) {
 				jobs[name].outputs.source = JSON.stringify({
 					...captured,
-					platform: name === "windows" ? "win32" : "linux",
+					platform: name === "windows" ? "win32" : name === "inventory-physical-macos" ? "darwin" : "linux",
+					...(name === "inventory-physical-macos" ? { architecture: "arm64" } : {}),
 				});
 			}
 			const runner = path.join(repo.dir, "runner");
