@@ -14,6 +14,7 @@ export const jobNames = [
 	"heavy",
 	"windows",
 	"windows-tests",
+	"windows-hub-tests",
 	"macos",
 ] as const;
 type JobName = (typeof jobNames)[number];
@@ -252,6 +253,7 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 		heavy: full && (selection?.ordinaryHeavy.length ?? 0) > 0,
 		windows,
 		"windows-tests": windows,
+		"windows-hub-tests": windows,
 		macos: native,
 	};
 	const problems: string[] = [];
@@ -310,7 +312,7 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 			const platform =
 				name === "macos"
 					? "darwin"
-					: name === "windows" || name === "windows-tests"
+					: name === "windows" || name === "windows-tests" || name === "windows-hub-tests"
 						? "win32"
 						: "linux";
 			if (source.platform !== platform) problems.push(`${name}: unexpected runner platform`);
