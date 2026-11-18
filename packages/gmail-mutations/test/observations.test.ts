@@ -70,7 +70,9 @@ describe("bounded provider observations", () => {
 		])
 			expect(Object.isFrozen(value)).toBe(true);
 		payload.fill(0);
-		original.messages[0]!.providerId = second;
+		const originalMessage = original.messages[0];
+		if (!originalMessage) throw new Error("Expected requested message");
+		originalMessage.providerId = second;
 		expect(observed.requestedId).toBe(first);
 		expect(observed.provider.labelIds).toEqual(["STARRED"]);
 		expect(JSON.stringify(result)).not.toContain("DYTEST-UNSELECTED");
@@ -103,7 +105,7 @@ describe("bounded provider observations", () => {
 		"accepts a complete valid JSON view of exactly %i bytes",
 		(size) => {
 			const source = JSON.stringify(document());
-			const body = encoder.encode(source + " ".repeat(size - source.length));
+			const body = encoder.encode(`${source}${" ".repeat(size - source.length)}`);
 			expect(body.byteLength).toBe(size);
 			expect(observeGmailMutation(request(), [row(first, body)]).completeObservation).toBe(true);
 		},
@@ -111,7 +113,9 @@ describe("bounded provider observations", () => {
 
 	it("bounds an oversized native view before caller byte properties or iterators", () => {
 		const source = JSON.stringify(document());
-		const body = encoder.encode(source + " ".repeat(MAX_OBSERVATION_BYTES + 1 - source.length));
+		const body = encoder.encode(
+			`${source}${" ".repeat(MAX_OBSERVATION_BYTES + 1 - source.length)}`,
+		);
 		const calls = { length: 0, offset: 0, buffer: 0, iterator: 0 };
 		Object.defineProperties(body, {
 			byteLength: {
@@ -167,7 +171,7 @@ describe("bounded provider observations", () => {
 			"duplicate id",
 			() => encoder.encode('{"id":"a1","id":"a1","threadId":"cafe01","labelIds":[]}'),
 		],
-		["trailing JSON", () => encoder.encode(JSON.stringify(document()) + "{}")],
+		["trailing JSON", () => encoder.encode(`${JSON.stringify(document())}{}`)],
 		[
 			"excess nesting",
 			() =>

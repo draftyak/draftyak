@@ -52,7 +52,7 @@ function exact(value: unknown, bytes: number): string {
 	const text = encode(value),
 		padding = bytes - Buffer.byteLength(text);
 	if (padding < 0) throw new Error("Synthetic fixture unavailable");
-	return text + " ".repeat(padding);
+	return `${text}${" ".repeat(padding)}`;
 }
 function fixed(error: unknown, code: string): boolean {
 	return (
@@ -340,7 +340,7 @@ describe("Gmail sync support reads", () => {
 		}
 	});
 	it("refuses one byte beyond the remaining metadata budget without a partial result", async () => {
-		const text = encode(metadata()) + " ";
+		const text = `${encode(metadata())} `;
 		const f = fixture({ reply: () => new Response(text) });
 		try {
 			expect(
