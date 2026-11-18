@@ -38,6 +38,9 @@ importers:
 
   apps/hub:
     dependencies:
+      '@draftyak/ai-chat-completions':
+        specifier: workspace:*
+        version: link:../../plugins/ai-chat-completions
       '@draftyak/bounded-files':
         specifier: workspace:*
         version: link:../../packages/bounded-files
@@ -53,6 +56,9 @@ importers:
       '@draftyak/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@draftyak/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@modelcontextprotocol/client':
         specifier: 2.3.1
         version: 2.3.1
@@ -72,18 +78,12 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
     devDependencies:
-      '@draftyak/ai-chat-completions':
-        specifier: workspace:*
-        version: link:../../plugins/ai-chat-completions
       '@draftyak/egress-recorder':
         specifier: workspace:*
         version: link:../../tools/egress-recorder
       '@draftyak/fake-commercial':
         specifier: workspace:*
         version: link:../../packages/fake-commercial
-      '@draftyak/sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk
       '@modelcontextprotocol/server':
         specifier: 2.3.1
         version: 2.3.1

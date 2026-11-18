@@ -1,7 +1,10 @@
 import { defineConfig, type UserConfig } from "tsdown";
 
 const config: UserConfig = defineConfig({
-	entry: ["src/index.ts"],
+	entry: {
+		index: "src/index.ts",
+		"ai/compatible-child-entry": "src/ai/compatible-child-entry.ts",
+	},
 	format: "esm",
 	platform: "node",
 	dts: { generator: "oxc" },
