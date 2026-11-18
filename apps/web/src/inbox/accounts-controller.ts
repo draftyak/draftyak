@@ -135,7 +135,7 @@ export function createAccountsController(
 		if (refresh !== undefined) refresh.owned = owned;
 		owned.visible = makeSnapshot({ status: "loading", afterId }, history);
 		publish(owned.visible);
-		if (closed || (refresh !== undefined && canceled(refresh))) {
+		if (!isCurrent(owned)) {
 			finishOwned(owned, false);
 			return;
 		}
@@ -150,9 +150,14 @@ export function createAccountsController(
 		void settle(owned, result, afterId, history);
 	}
 
+	function isCurrent(owned: OwnedRequest): boolean {
+		if (closed || active !== owned) return false;
+		const refreshCanceled = owned.refresh !== undefined && canceled(owned.refresh);
+		return !closed && active === owned && !refreshCanceled;
+	}
+
 	function failed(owned: OwnedRequest, afterId: Cursor, history: readonly Cursor[]): void {
-		if (closed || active !== owned || (owned.refresh !== undefined && canceled(owned.refresh)))
-			return;
+		if (!isCurrent(owned)) return;
 		active = undefined;
 		owned.visible = makeSnapshot(
 			{ status: "error", afterId, error: "Accounts unavailable" },
@@ -170,8 +175,7 @@ export function createAccountsController(
 		let succeeded = false;
 		try {
 			const page = await result;
-			if (closed || active !== owned || (owned.refresh !== undefined && canceled(owned.refresh)))
-				return;
+			if (!isCurrent(owned)) return;
 			const accounts: readonly AccountsRecord[] = Object.freeze(
 				page.accounts.map((record) =>
 					Object.freeze({
@@ -180,24 +184,25 @@ export function createAccountsController(
 					}),
 				),
 			);
-			const historyLimit = history.length === HISTORY_LIMIT && page.nextId !== null;
-			if (closed || active !== owned || (owned.refresh !== undefined && canceled(owned.refresh)))
-				return;
+			const nextId = page.nextId;
+			const historyLimit = history.length === HISTORY_LIMIT && nextId !== null;
+			if (!isCurrent(owned)) return;
 			active = undefined;
 			owned.visible = makeSnapshot(
 				{
 					status: "ready",
 					afterId,
 					accounts,
-					nextId: page.nextId,
+					nextId,
 					canPrevious: history.length > 1,
-					canNext: page.nextId !== null && !historyLimit,
+					canNext: nextId !== null && !historyLimit,
 					historyLimit,
 				},
 				history,
 			);
 			publish(owned.visible);
-			succeeded = !closed && (owned.refresh === undefined || !canceled(owned.refresh));
+			const refreshCanceled = owned.refresh !== undefined && canceled(owned.refresh);
+			succeeded = !closed && !refreshCanceled;
 		} catch {
 			failed(owned, afterId, history);
 		} finally {
@@ -223,7 +228,8 @@ export function createAccountsController(
 		} catch {
 			// A failed listener removal cannot skip the settlement witnesses.
 		}
-		if (succeeded && !closed && !canceled(intent)) intent.resolve();
+		const canResolve = succeeded && !closed && !canceled(intent);
+		if (canResolve && !closed) intent.resolve();
 		else intent.reject(new Error("Accounts unavailable"));
 		intent.finish();
 	}
@@ -297,7 +303,9 @@ export function createAccountsController(
 
 	function refetch(signal: AbortSignal): Promise<void> {
 		try {
-			if (closed || signal.aborted || queued !== undefined)
+			if (closed || queued !== undefined) return Promise.reject(new Error("Accounts unavailable"));
+			const aborted = signal.aborted;
+			if (closed || aborted || queued !== undefined)
 				return Promise.reject(new Error("Accounts unavailable"));
 		} catch {
 			return Promise.reject(new Error("Accounts unavailable"));
