@@ -262,7 +262,7 @@ describe("Gmail bounded default-scope message page DATA", () => {
 			expect(f.requests).toHaveLength(1);
 			const request = f.requests[0],
 				url = new URL(request?.url ?? "");
-			expect(url.origin + url.pathname).toBe(BASE);
+			expect(`${url.origin}${url.pathname}`).toBe(BASE);
 			expect([...url.searchParams]).toEqual([
 				["maxResults", "500"],
 				["pageToken", "literal+/=%?token"],
@@ -289,7 +289,9 @@ describe("Gmail bounded default-scope message page DATA", () => {
 			f = wire(() => reply(encode(document)));
 		try {
 			const result = await fetchGmailMessagePageData(f.context);
-			document.messages[0]!.id = "DYTEST-mutated";
+			const firstMessage = document.messages[0];
+			if (!firstMessage) throw new Error("Expected provider message");
+			firstMessage.id = "DYTEST-mutated";
 			expect(result.messages.map((value) => value.providerId)).toEqual(["DYTEST-z", "DYTEST-a"]);
 			expect(
 				Object.isFrozen(result) &&
