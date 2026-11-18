@@ -48,8 +48,9 @@ it("checks the required assets and migrates all ten namespaces exactly once", as
 		"tickets",
 		"accounts",
 		"gmailcredentials",
+		"gmailpoll",
 	]);
-	expect(new Set(calls).size).toBe(10);
+	expect(new Set(calls).size).toBe(11);
 });
 
 it("refuses a missing revision immutability asset before later namespaces can migrate", async () => {
