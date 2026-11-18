@@ -191,14 +191,17 @@ export function captureAiRequestInputs(
 			["draft", "settings", "endpoint", "authentication", "expectedDestination"],
 			["draft", "settings", "endpoint"],
 		);
-		const authentication = Object.hasOwn(source, "authentication")
-			? source.authentication
-			: "provider-key";
+		const hasAuthentication = Object.hasOwn(source, "authentication");
+		const hasDestination = Object.hasOwn(source, "expectedDestination");
+		const authentication = hasAuthentication ? source.authentication : "provider-key";
 		if (authentication !== "provider-key" && authentication !== "none") refuse();
-		const expectedDestination = Object.hasOwn(source, "expectedDestination")
-			? source.expectedDestination
-			: "cloud";
-		if (!["local", "local-network", "cloud"].includes(expectedDestination as string)) refuse();
+		const expectedDestination = hasDestination ? source.expectedDestination : undefined;
+		if (
+			(hasAuthentication && !hasDestination) ||
+			(hasDestination &&
+				!["local", "local-network", "cloud"].includes(expectedDestination as string))
+		)
+			refuse();
 		const endpoint = text(source.endpoint, 2048);
 		if (text(value.url, 2048) !== endpoint) refuse();
 		const url = new URL(endpoint);
@@ -227,9 +230,7 @@ export function captureAiRequestInputs(
 			settings,
 			endpoint,
 			authentication,
-			expectedDestination: expectedDestination as NonNullable<
-				AiRequestBinding["expectedDestination"]
-			>,
+			expectedDestination: expectedDestination as AiRequestBinding["expectedDestination"],
 		});
 		const snapshot = Object.freeze({
 			method: "POST",
@@ -321,14 +322,13 @@ export function aiRequestEndpoint(handle: CapturedAiRequestInputs): string {
 /** Captured native expectations are data, not a permission to disclose or connect. */
 export function aiRequestTransport(handle: CapturedAiRequestInputs): Readonly<{
 	authentication: "provider-key" | "none";
-	expectedDestination: NonNullable<AiRequestBinding["expectedDestination"]>;
+	expectedDestination: AiRequestBinding["expectedDestination"];
 }> {
 	const source = captured(handle);
 	return Object.freeze({
 		authentication:
 			source.kind === "draft" ? (source.binding.authentication ?? "provider-key") : "provider-key",
-		expectedDestination:
-			source.kind === "draft" ? (source.binding.expectedDestination ?? "cloud") : "cloud",
+		expectedDestination: source.kind === "draft" ? source.binding.expectedDestination : "cloud",
 	});
 }
 

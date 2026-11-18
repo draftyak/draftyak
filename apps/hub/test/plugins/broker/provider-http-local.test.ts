@@ -7,7 +7,12 @@ import { MAX_INLINE_BYTES } from "@draftyak/protocol/normalized-change";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	type AiCandidateRequest,
+	AiVerificationError,
+	aiRequestTransport,
+	captureAiRequestInputs,
 	createBuiltinAiProfileRegistry,
+	snapshotVerifiedAiRequest,
+	verifyCapturedAiRequest,
 } from "../../../src/plugins/broker/ai/index.ts";
 import { compatibleSchema } from "../../../src/plugins/broker/ai/schemas.ts";
 import {
@@ -284,6 +289,59 @@ afterEach(async () => {
 });
 
 describe("compatible loopback provider broker", () => {
+	it("preserves legacy keyed HTTPS local routing when both transport fields are omitted", () => {
+		const data = input("https://models.example:11434");
+		const captured = captureAiRequestInputs(data.candidate, {
+			endpoint: data.binding.endpoint,
+			draft: data.binding.draft,
+			settings: data.binding.settings,
+		});
+		expect(aiRequestTransport(captured).authentication).toBe("provider-key");
+		expect(aiRequestTransport(captured).expectedDestination).toBeUndefined();
+		const registry = createBuiltinAiProfileRegistry();
+		for (const answer of [
+			{ address: "127.0.0.1", family: 4 },
+			{ address: "::1", family: 6 },
+			{ address: "192.168.199.17", family: 4 },
+		] as const) {
+			const verified = verifyCapturedAiRequest(registry, "chat-completions-v1", captured, {
+				answers: [answer],
+				policy,
+			});
+			expect(snapshotVerifiedAiRequest(verified).url).toBe(data.binding.endpoint);
+			expect(snapshotVerifiedAiRequest(verified).body).toEqual(data.candidate.body);
+		}
+	});
+
+	it("requires an explicit destination when provider-key authentication is explicitly supplied", () => {
+		const data = input("https://models.example");
+		expect(() =>
+			captureAiRequestInputs(data.candidate, {
+				endpoint: data.binding.endpoint,
+				draft: data.binding.draft,
+				settings: data.binding.settings,
+				authentication: "provider-key",
+			}),
+		).toThrow(AiVerificationError);
+	});
+
+	it("keeps explicit native destinations captured across caller mutation", async () => {
+		const data = input("https://models.example");
+		for (const expected of ["local", "cloud"] as const) {
+			const native = {
+				endpoint: data.binding.endpoint,
+				draft: data.binding.draft,
+				settings: data.binding.settings,
+				...(expected === "local" ? { authentication: "provider-key" } : {}),
+				expectedDestination: expected,
+			};
+			const captured = captureAiRequestInputs(data.candidate, native);
+			await Promise.resolve();
+			native.expectedDestination = expected === "local" ? "cloud" : "local";
+			expect(aiRequestTransport(captured).expectedDestination).toBe(expected);
+		}
+	});
+
 	it("uses the real broker without a vault or authorization header for explicit no-key loopback HTTP", async () => {
 		const body = "DYTEST-local-response brokered";
 		const target = await peer((response) => response.end(body));
