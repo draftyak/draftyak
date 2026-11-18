@@ -72,6 +72,9 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
     devDependencies:
+      '@draftyak/ai-chat-completions':
+        specifier: workspace:*
+        version: link:../../plugins/ai-chat-completions
       '@draftyak/egress-recorder':
         specifier: workspace:*
         version: link:../../tools/egress-recorder
@@ -335,9 +338,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/protocol
     devDependencies:
-      '@draftyak/hub':
-        specifier: workspace:*
-        version: link:../../apps/hub
       fast-check:
         specifier: 4.10.2
         version: 4.10.2

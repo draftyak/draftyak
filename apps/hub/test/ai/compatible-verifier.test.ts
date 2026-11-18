@@ -1,18 +1,18 @@
 import {
+	type CompatibleFormat,
+	type CompatibleRequest,
+	createCompatibleCore,
+} from "@draftyak/ai-chat-completions";
+import type { DraftRequest } from "@draftyak/protocol/ai-provider-v1";
+import { describe, expect, it } from "vitest";
+import { completion, OUTPUT } from "../../../../plugins/ai-chat-completions/test/helpers.ts";
+import {
 	type AiCandidateRequest,
 	type AiRequestBinding,
 	createBuiltinAiProfileRegistry,
 	snapshotVerifiedAiRequest,
 	verifyAiRequest,
-} from "@draftyak/hub";
-import type { DraftRequest } from "@draftyak/protocol/ai-provider-v1";
-import { describe, expect, it } from "vitest";
-import {
-	type CompatibleFormat,
-	type CompatibleRequest,
-	createCompatibleCore,
-} from "../src/index.ts";
-import { completion, OUTPUT } from "./helpers.ts";
+} from "../../src/plugins/broker/ai/index.ts";
 
 const registry = createBuiltinAiProfileRegistry();
 const encoder = new TextEncoder();
