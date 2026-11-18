@@ -52,13 +52,23 @@ function json(value: unknown, size?: number): HostFetchResult {
 	};
 }
 function profile(historyId = "1000") {
-	return { emailAddress: "synthetic@draftyak.example", messagesTotal: 3, threadsTotal: 3, historyId };
+	return {
+		emailAddress: "synthetic@draftyak.example",
+		messagesTotal: 3,
+		threadsTotal: 3,
+		historyId,
+	};
 }
 function ref(id: string) {
 	return { id, threadId: `thread-${id}` };
 }
 function metadata(id: string, date = SINCE) {
-	return { ...ref(id), labelIds: ["INBOX", "UNREAD"], internalDate: String(date), sizeEstimate: 10 };
+	return {
+		...ref(id),
+		labelIds: ["INBOX", "UNREAD"],
+		internalDate: String(date),
+		sizeEstimate: 10,
+	};
 }
 function fixed(error: unknown, code: string): boolean {
 	return (
@@ -199,51 +209,87 @@ function rewritten(cursor: string, change: (value: Record<string, unknown>) => v
 	) as Record<string, unknown>;
 	change(value);
 	const text = canonicalize(value);
-	const stamp = createHash("sha256").update("gmail-initial-data-v1\0").update(text).digest("base64url");
+	const stamp = createHash("sha256")
+		.update("gmail-initial-data-v1\0")
+		.update(text)
+		.digest("base64url");
 	return `gi1.c.${Buffer.from(text).toString("base64url")}.${stamp}`;
 }
 
 describe("Gmail initial/resync metadata DATA pages", () => {
-	it.each(["initial", "resync"] as const)("hydrates %s metadata with an inclusive window and a pre-read provider position", (mode) =>
-		owned((request) => {
-			const url = new URL(request.url);
-			if (url.pathname === PROFILE) return json(profile("18446744073709551615"));
-			if (url.pathname === LIST) return json({ messages: [ref("old"), ref("edge"), ref("new")] });
-			const id = url.pathname.slice(LIST.length + 1);
-			return json(metadata(id, id === "old" ? SINCE - 1 : id === "edge" ? SINCE : SINCE + 1));
-		}, async (f) => {
-			const page = await f.run({ mode, since: SINCE });
-			expect(page.changes.map((change) => change.kind === "email.message" && change.providerId)).toEqual(["edge", "new"]);
-			expect(page.cursor).toBe("gh1.p.18446744073709551615");
-			expect(page.more).toBe(false);
-			expect(requests.output.safeParse(page).success).toBe(true);
-			expect(Object.isFrozen(page) && Object.isFrozen(page.changes)).toBe(true);
-			expect(Object.keys(page).sort()).toEqual(["changes", "cursor", "more"]);
-			expect(f.calls.every((call) => call.method === "GET")).toBe(true);
-			expect(f.calls.map((call) => new URL(call.url).pathname)).toEqual([PROFILE, LIST, `${LIST}/old`, `${LIST}/edge`, `${LIST}/new`]);
-		}));
+	it.each(["initial", "resync"] as const)(
+		"hydrates %s metadata with an inclusive window and a pre-read provider position",
+		(mode) =>
+			owned(
+				(request) => {
+					const url = new URL(request.url);
+					if (url.pathname === PROFILE) return json(profile("18446744073709551615"));
+					if (url.pathname === LIST)
+						return json({ messages: [ref("old"), ref("edge"), ref("new")] });
+					const id = url.pathname.slice(LIST.length + 1);
+					return json(metadata(id, id === "old" ? SINCE - 1 : id === "edge" ? SINCE : SINCE + 1));
+				},
+				async (f) => {
+					const page = await f.run({ mode, since: SINCE });
+					expect(
+						page.changes.map((change) => change.kind === "email.message" && change.providerId),
+					).toEqual(["edge", "new"]);
+					expect(page.cursor).toBe("gh1.p.18446744073709551615");
+					expect(page.more).toBe(false);
+					expect(requests.output.safeParse(page).success).toBe(true);
+					expect(Object.isFrozen(page) && Object.isFrozen(page.changes)).toBe(true);
+					expect(Object.keys(page).sort()).toEqual(["changes", "cursor", "more"]);
+					expect(f.calls.every((call) => call.method === "GET")).toBe(true);
+					expect(f.calls.map((call) => new URL(call.url).pathname)).toEqual([
+						PROFILE,
+						LIST,
+						`${LIST}/old`,
+						`${LIST}/edge`,
+						`${LIST}/new`,
+					]);
+				},
+			),
+	);
 
-	it.each(["initial", "resync"] as const)("continues %s through empty and old-only pages without certifying the estimate", (mode) =>
-		owned((request) => {
-			const url = new URL(request.url), token = url.searchParams.get("pageToken");
-			if (url.pathname === PROFILE) return json(profile());
-			if (url.pathname === LIST) return json(token === null
-				? { messages: [ref("old")], nextPageToken: "page-one", resultSizeEstimate: 999999 }
-				: token === "page-one" ? { messages: [], nextPageToken: "page-two" }
-					: { messages: [ref("new")] });
-			const id = url.pathname.slice(LIST.length + 1);
-			return json(metadata(id, id === "old" ? SINCE - 1 : SINCE));
-		}, async (f) => {
-			const first = await f.run({ mode, since: SINCE });
-			expect(first.changes).toEqual([]); expect(first.more).toBe(true);
-			const second = await f.run({ mode, since: SINCE, cursor: first.cursor });
-			expect(second.changes).toEqual([]); expect(second.more).toBe(true);
-			const third = await f.run({ mode, since: SINCE, cursor: second.cursor });
-			expect(third.changes).toHaveLength(1); expect(third.more).toBe(false);
-			expect(third.cursor).toBe("gh1.p.1000");
-			expect(f.calls.filter((call) => new URL(call.url).pathname === PROFILE)).toHaveLength(1);
-			expect(f.calls.filter((call) => new URL(call.url).pathname === LIST).map((call) => new URL(call.url).searchParams.get("pageToken"))).toEqual([null, "page-one", "page-two"]);
-		}));
+	it.each(["initial", "resync"] as const)(
+		"continues %s through empty and old-only pages without certifying the estimate",
+		(mode) =>
+			owned(
+				(request) => {
+					const url = new URL(request.url),
+						token = url.searchParams.get("pageToken");
+					if (url.pathname === PROFILE) return json(profile());
+					if (url.pathname === LIST)
+						return json(
+							token === null
+								? { messages: [ref("old")], nextPageToken: "page-one", resultSizeEstimate: 999999 }
+								: token === "page-one"
+									? { messages: [], nextPageToken: "page-two" }
+									: { messages: [ref("new")] },
+						);
+					const id = url.pathname.slice(LIST.length + 1);
+					return json(metadata(id, id === "old" ? SINCE - 1 : SINCE));
+				},
+				async (f) => {
+					const first = await f.run({ mode, since: SINCE });
+					expect(first.changes).toEqual([]);
+					expect(first.more).toBe(true);
+					const second = await f.run({ mode, since: SINCE, cursor: first.cursor });
+					expect(second.changes).toEqual([]);
+					expect(second.more).toBe(true);
+					const third = await f.run({ mode, since: SINCE, cursor: second.cursor });
+					expect(third.changes).toHaveLength(1);
+					expect(third.more).toBe(false);
+					expect(third.cursor).toBe("gh1.p.1000");
+					expect(f.calls.filter((call) => new URL(call.url).pathname === PROFILE)).toHaveLength(1);
+					expect(
+						f.calls
+							.filter((call) => new URL(call.url).pathname === LIST)
+							.map((call) => new URL(call.url).searchParams.get("pageToken")),
+					).toEqual([null, "page-one", "page-two"]);
+				},
+			),
+	);
 
 	it("returns an empty provider page without inventing deletions or whole-scan evidence", () =>
 		owned(standard({ resultSizeEstimate: 100000 }), async (f) => {
@@ -252,47 +298,101 @@ describe("Gmail initial/resync metadata DATA pages", () => {
 			expect(f.calls).toHaveLength(2);
 		}));
 
-	it.each(["mode", "since"] as const)("refuses a continuation with a mismatched %s before I/O", (field) =>
-		owned(standard({ messages: [], nextPageToken: "next" }), async (f) => {
-			const page = await f.run({ mode: "initial", since: SINCE });
-			const count = f.calls.length;
-			await refuses(f.run({ mode: field === "mode" ? "resync" : "initial", since: field === "since" ? SINCE + 1 : SINCE, cursor: page.cursor }), "CURSOR_EXPIRED");
-			expect(f.calls).toHaveLength(count);
-		}));
+	it.each(["mode", "since"] as const)(
+		"refuses a continuation with a mismatched %s before I/O",
+		(field) =>
+			owned(standard({ messages: [], nextPageToken: "next" }), async (f) => {
+				const page = await f.run({ mode: "initial", since: SINCE });
+				const count = f.calls.length;
+				await refuses(
+					f.run({
+						mode: field === "mode" ? "resync" : "initial",
+						since: field === "since" ? SINCE + 1 : SINCE,
+						cursor: page.cursor,
+					}),
+					"CURSOR_EXPIRED",
+				);
+				expect(f.calls).toHaveLength(count);
+			}),
+	);
 
 	it.each([
-		["version", (value: Record<string, unknown>) => { value.v = 2; }],
-		["history leading zero", (value: Record<string, unknown>) => { value.historyId = "01000"; }],
-		["history overflow", (value: Record<string, unknown>) => { value.historyId = "18446744073709551616"; }],
-		["unknown field", (value: Record<string, unknown>) => { value.completeScan = true; }],
-		["control token", (value: Record<string, unknown>) => { value.pageToken = "next\n"; }],
-		["invalid seen value", (value: Record<string, unknown>) => { value.seen = ["not-a-digest"]; }],
-		["oversized seen ledger", (value: Record<string, unknown>) => { value.seen = Array.from({ length: 63 }, (_, i) => String(i).padStart(43, "A")); }],
+		[
+			"version",
+			(value: Record<string, unknown>) => {
+				value.v = 2;
+			},
+		],
+		[
+			"history leading zero",
+			(value: Record<string, unknown>) => {
+				value.historyId = "01000";
+			},
+		],
+		[
+			"history overflow",
+			(value: Record<string, unknown>) => {
+				value.historyId = "18446744073709551616";
+			},
+		],
+		[
+			"unknown field",
+			(value: Record<string, unknown>) => {
+				value.completeScan = true;
+			},
+		],
+		[
+			"control token",
+			(value: Record<string, unknown>) => {
+				value.pageToken = "next\n";
+			},
+		],
+		[
+			"invalid seen value",
+			(value: Record<string, unknown>) => {
+				value.seen = ["not-a-digest"];
+			},
+		],
+		[
+			"oversized seen ledger",
+			(value: Record<string, unknown>) => {
+				value.seen = Array.from({ length: 63 }, (_, i) => String(i).padStart(43, "A"));
+			},
+		],
 	] as const)("rejects canonical but malformed continuation DATA: %s", (_name, change) =>
 		owned(standard({ messages: [], nextPageToken: "next" }), async (f) => {
 			const first = await f.run({ mode: "initial", since: SINCE });
-			await refuses(f.run({ mode: "initial", since: SINCE, cursor: rewritten(first.cursor, change) }), "CURSOR_EXPIRED");
+			await refuses(
+				f.run({ mode: "initial", since: SINCE, cursor: rewritten(first.cursor, change) }),
+				"CURSOR_EXPIRED",
+			);
 			expect(f.calls).toHaveLength(2);
-		}));
+		}),
+	);
 
-	it.each(["digest", "base64", "duplicate", "whitespace"] as const)("rejects noncanonical or inconsistent continuation bytes: %s", (kind) =>
-		owned(standard({ messages: [], nextPageToken: "next" }), async (f) => {
-			const first = await f.run({ mode: "initial", since: SINCE });
-			let cursor = first.cursor;
-			if (kind === "digest") cursor = cursor.slice(0, -1) + (cursor.endsWith("A") ? "B" : "A");
-			else if (kind === "base64") {
-				const parts = cursor.split(".");
-				cursor = `gi1.c.${parts[2]}=.${parts[3]}`;
-			}
-			else {
-				const text = Buffer.from(cursor.split(".")[2] ?? "", "base64url").toString("utf8");
-				const altered = kind === "duplicate" ? text.replace('"v":1', '"v":1,"v":1') : ` ${text}`;
-				const stamp = createHash("sha256").update("gmail-initial-data-v1\0").update(altered).digest("base64url");
-				cursor = `gi1.c.${Buffer.from(altered).toString("base64url")}.${stamp}`;
-			}
-			await refuses(f.run({ mode: "initial", since: SINCE, cursor }), "CURSOR_EXPIRED");
-			expect(f.calls).toHaveLength(2);
-		}));
+	it.each(["digest", "base64", "duplicate", "whitespace"] as const)(
+		"rejects noncanonical or inconsistent continuation bytes: %s",
+		(kind) =>
+			owned(standard({ messages: [], nextPageToken: "next" }), async (f) => {
+				const first = await f.run({ mode: "initial", since: SINCE });
+				let cursor = first.cursor;
+				if (kind === "digest") cursor = cursor.slice(0, -1) + (cursor.endsWith("A") ? "B" : "A");
+				else if (kind === "base64") {
+					const parts = cursor.split(".");
+					cursor = `gi1.c.${parts[2]}=.${parts[3]}`;
+				} else {
+					const text = Buffer.from(cursor.split(".")[2] ?? "", "base64url").toString("utf8");
+					const altered = kind === "duplicate" ? text.replace('"v":1', '"v":1,"v":1') : ` ${text}`;
+					const stamp = createHash("sha256")
+						.update("gmail-initial-data-v1\0")
+						.update(altered)
+						.digest("base64url");
+					cursor = `gi1.c.${Buffer.from(altered).toString("base64url")}.${stamp}`;
+				}
+				await refuses(f.run({ mode: "initial", since: SINCE, cursor }), "CURSOR_EXPIRED");
+				expect(f.calls).toHaveLength(2);
+			}),
+	);
 
 	it.each([
 		{ mode: "delta", cursor: "gh1.p.1000" },
@@ -305,41 +405,73 @@ describe("Gmail initial/resync metadata DATA pages", () => {
 		owned(standard(), async (f) => {
 			await refuses(f.run(request as GmailInitialRequest), "INVALID_INPUT");
 			expect(f.calls).toHaveLength(0);
-		}));
+		}),
+	);
 
 	it("does not invoke request accessors or proxy traps", () =>
 		owned(standard(), async (f) => {
 			let calls = 0;
-			const accessor = { mode: "initial", get since() { calls++; return SINCE; } };
+			const accessor = {
+				mode: "initial",
+				get since() {
+					calls++;
+					return SINCE;
+				},
+			};
 			await refuses(f.run(accessor as GmailInitialRequest), "INVALID_INPUT");
-			const proxy = new Proxy({ mode: "initial", since: SINCE }, { ownKeys() { calls++; return []; } });
+			const proxy = new Proxy(
+				{ mode: "initial", since: SINCE },
+				{
+					ownKeys() {
+						calls++;
+						return [];
+					},
+				},
+			);
 			await refuses(f.run(proxy as GmailInitialRequest), "INVALID_INPUT");
-			expect(calls).toBe(0); expect(f.calls).toHaveLength(0);
+			expect(calls).toBe(0);
+			expect(f.calls).toHaveLength(0);
 		}));
 
 	it("refuses repeated provider tokens before hydrating another message", () =>
-		owned((request) => {
-			const url = new URL(request.url);
-			if (url.pathname === PROFILE) return json(profile());
-			if (url.pathname === LIST) return json({ messages: url.searchParams.has("pageToken") ? [ref("unread")] : [], nextPageToken: "same" });
-			return json(metadata("unread"));
-		}, async (f) => {
-			const first = await f.run({ mode: "initial", since: SINCE });
-			await refuses(f.run({ mode: "initial", since: SINCE, cursor: first.cursor }), "CURSOR_EXPIRED");
-			expect(f.calls.map((call) => new URL(call.url).pathname)).toEqual([PROFILE, LIST, LIST]);
-		}));
+		owned(
+			(request) => {
+				const url = new URL(request.url);
+				if (url.pathname === PROFILE) return json(profile());
+				if (url.pathname === LIST)
+					return json({
+						messages: url.searchParams.has("pageToken") ? [ref("unread")] : [],
+						nextPageToken: "same",
+					});
+				return json(metadata("unread"));
+			},
+			async (f) => {
+				const first = await f.run({ mode: "initial", since: SINCE });
+				await refuses(
+					f.run({ mode: "initial", since: SINCE, cursor: first.cursor }),
+					"CURSOR_EXPIRED",
+				);
+				expect(f.calls.map((call) => new URL(call.url).pathname)).toEqual([PROFILE, LIST, LIST]);
+			},
+		));
 
 	it("refuses a multi-page token cycle", () =>
-		owned((request) => {
-			const url = new URL(request.url);
-			if (url.pathname === PROFILE) return json(profile());
-			return json({ messages: [], nextPageToken: url.searchParams.get("pageToken") === "a" ? "b" : "a" });
-		}, async (f) => {
-			const a = await f.run({ mode: "initial", since: SINCE });
-			const b = await f.run({ mode: "initial", since: SINCE, cursor: a.cursor });
-			await refuses(f.run({ mode: "initial", since: SINCE, cursor: b.cursor }), "CURSOR_EXPIRED");
-			expect(f.calls).toHaveLength(4);
-		}));
+		owned(
+			(request) => {
+				const url = new URL(request.url);
+				if (url.pathname === PROFILE) return json(profile());
+				return json({
+					messages: [],
+					nextPageToken: url.searchParams.get("pageToken") === "a" ? "b" : "a",
+				});
+			},
+			async (f) => {
+				const a = await f.run({ mode: "initial", since: SINCE });
+				const b = await f.run({ mode: "initial", since: SINCE, cursor: a.cursor });
+				await refuses(f.run({ mode: "initial", since: SINCE, cursor: b.cursor }), "CURSOR_EXPIRED");
+				expect(f.calls).toHaveLength(4);
+			},
+		));
 
 	it("refuses a provider continuation that cannot fit the existing protocol cursor", () =>
 		owned(standard({ messages: [ref("unread")], nextPageToken: '"'.repeat(2048) }), async (f) => {
@@ -348,58 +480,85 @@ describe("Gmail initial/resync metadata DATA pages", () => {
 		}));
 
 	it("does not read beyond the bounded provider-page ledger", () =>
-		owned((request) => {
-			const url = new URL(request.url);
-			if (url.pathname === PROFILE) return json(profile());
-			const index = Number(url.searchParams.get("pageToken") ?? 0);
-			return json({ messages: [], nextPageToken: String(index + 1) });
-		}, async (f) => {
-			let cursor: string | undefined;
-			for (let index = 0; index < 63; index++) cursor = (await f.run({ mode: "initial", since: SINCE, ...(cursor ? { cursor } : {}) })).cursor;
-			await refuses(f.run({ mode: "initial", since: SINCE, cursor }), "QUOTA_EXCEEDED");
-			expect(f.calls.filter((call) => new URL(call.url).pathname === LIST)).toHaveLength(64);
-		}));
+		owned(
+			(request) => {
+				const url = new URL(request.url);
+				if (url.pathname === PROFILE) return json(profile());
+				const index = Number(url.searchParams.get("pageToken") ?? 0);
+				return json({ messages: [], nextPageToken: String(index + 1) });
+			},
+			async (f) => {
+				let cursor: string | undefined;
+				for (let index = 0; index < 63; index++)
+					cursor = (await f.run({ mode: "initial", since: SINCE, ...(cursor ? { cursor } : {}) }))
+						.cursor;
+				await refuses(f.run({ mode: "initial", since: SINCE, cursor }), "QUOTA_EXCEEDED");
+				expect(f.calls.filter((call) => new URL(call.url).pathname === LIST)).toHaveLength(64);
+			},
+		));
 
 	it("keeps page wire-byte accounting across filtered and emitted metadata", () => {
 		const list = { messages: [ref("old"), ref("new")] },
 			limit = encoded(list).length + 400;
-		return owned((request) => {
-			const url = new URL(request.url);
-			if (url.pathname === PROFILE) return json(profile());
-			if (url.pathname === LIST) return json(list);
-			const id = url.pathname.slice(LIST.length + 1);
-			return json(metadata(id, id === "old" ? SINCE - 1 : SINCE), 200);
-		}, async (f) => {
-			const page = await f.run({ mode: "initial", since: SINCE }, { maxBytes: limit });
-			expect(page.changes).toHaveLength(1);
-			await refuses(f.run({ mode: "initial", since: SINCE }, { maxBytes: limit - 1 }), "QUOTA_EXCEEDED");
-		});
+		return owned(
+			(request) => {
+				const url = new URL(request.url);
+				if (url.pathname === PROFILE) return json(profile());
+				if (url.pathname === LIST) return json(list);
+				const id = url.pathname.slice(LIST.length + 1);
+				return json(metadata(id, id === "old" ? SINCE - 1 : SINCE), 200);
+			},
+			async (f) => {
+				const page = await f.run({ mode: "initial", since: SINCE }, { maxBytes: limit });
+				expect(page.changes).toHaveLength(1);
+				await refuses(
+					f.run({ mode: "initial", since: SINCE }, { maxBytes: limit - 1 }),
+					"QUOTA_EXCEEDED",
+				);
+			},
+		);
 	});
 
-	it.each([0, -1, 1.5, 4 * 1024 * 1024 + 1])("refuses unavailable or invalid byte capacity before I/O: %s", (maxBytes) =>
-		owned(standard(), async (f) => {
-			await refuses(f.run({ mode: "initial", since: SINCE }, { maxBytes }), maxBytes === 0 ? "QUOTA_EXCEEDED" : "INVALID_INPUT");
-			expect(f.calls).toHaveLength(0);
-		}));
+	it.each([0, -1, 1.5, 4 * 1024 * 1024 + 1])(
+		"refuses unavailable or invalid byte capacity before I/O: %s",
+		(maxBytes) =>
+			owned(standard(), async (f) => {
+				await refuses(
+					f.run({ mode: "initial", since: SINCE }, { maxBytes }),
+					maxBytes === 0 ? "QUOTA_EXCEEDED" : "INVALID_INPUT",
+				);
+				expect(f.calls).toHaveLength(0);
+			}),
+	);
 
 	it("keeps the protocol change bound on the actual list request", () =>
-		owned((request) => {
-			const url = new URL(request.url);
-			if (url.pathname === PROFILE) return json(profile());
-			expect(url.searchParams.get("maxResults")).toBe(String(MAX_CHANGES));
-			return json({ messages: Array.from({ length: MAX_CHANGES + 1 }, (_, index) => ref(`m${index}`)) });
-		}, async (f) => {
-			await refuses(f.run({ mode: "initial", since: SINCE }), "QUOTA_EXCEEDED");
-			expect(f.calls).toHaveLength(2);
-		}));
+		owned(
+			(request) => {
+				const url = new URL(request.url);
+				if (url.pathname === PROFILE) return json(profile());
+				expect(url.searchParams.get("maxResults")).toBe(String(MAX_CHANGES));
+				return json({
+					messages: Array.from({ length: MAX_CHANGES + 1 }, (_, index) => ref(`m${index}`)),
+				});
+			},
+			async (f) => {
+				await refuses(f.run({ mode: "initial", since: SINCE }), "QUOTA_EXCEEDED");
+				expect(f.calls).toHaveLength(2);
+			},
+		));
 
 	it("rejects a metadata/list thread mismatch without returning partial changes", () =>
-		owned((request) => {
-			const url = new URL(request.url);
-			if (url.pathname === PROFILE) return json(profile());
-			if (url.pathname === LIST) return json({ messages: [ref("one")] });
-			return json({ ...metadata("one"), threadId: "different" });
-		}, async (f) => { await refuses(f.run({ mode: "initial", since: SINCE }), "TRANSIENT"); }));
+		owned(
+			(request) => {
+				const url = new URL(request.url);
+				if (url.pathname === PROFILE) return json(profile());
+				if (url.pathname === LIST) return json({ messages: [ref("one")] });
+				return json({ ...metadata("one"), threadId: "different" });
+			},
+			async (f) => {
+				await refuses(f.run({ mode: "initial", since: SINCE }), "TRANSIENT");
+			},
+		));
 
 	it("observes cancellation before any read", () =>
 		owned(standard(), async (f) => {
@@ -409,21 +568,25 @@ describe("Gmail initial/resync metadata DATA pages", () => {
 		}));
 
 	it("joins an originally held DATA response and admits no metadata after cancellation", () => {
-		const entered = deferred(), gate = deferred();
-		return owned(async (request) => {
-			const url = new URL(request.url);
-			if (url.pathname === PROFILE) return json(profile());
-			entered.resolve();
-			await gate.promise;
-			return json({ messages: [ref("unread")] });
-		}, async (f) => {
-			f.releases.push(gate.resolve);
-			const original = f.run({ mode: "initial", since: SINCE });
-			await f.wait(entered.promise);
-			f.controller.abort();
-			gate.resolve();
-			await refuses(original, "TRANSIENT");
-			expect(f.calls.map((call) => new URL(call.url).pathname)).toEqual([PROFILE, LIST]);
-		});
+		const entered = deferred(),
+			gate = deferred();
+		return owned(
+			async (request) => {
+				const url = new URL(request.url);
+				if (url.pathname === PROFILE) return json(profile());
+				entered.resolve();
+				await gate.promise;
+				return json({ messages: [ref("unread")] });
+			},
+			async (f) => {
+				f.releases.push(gate.resolve);
+				const original = f.run({ mode: "initial", since: SINCE });
+				await f.wait(entered.promise);
+				f.controller.abort();
+				gate.resolve();
+				await refuses(original, "TRANSIENT");
+				expect(f.calls.map((call) => new URL(call.url).pathname)).toEqual([PROFILE, LIST]);
+			},
+		);
 	});
 });

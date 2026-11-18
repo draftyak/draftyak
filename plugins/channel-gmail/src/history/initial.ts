@@ -1,11 +1,6 @@
 import { isUtf8 } from "node:buffer";
 import { createHash } from "node:crypto";
-import {
-	Cursor,
-	channelV1,
-	type SyncPage,
-	type SyncRequest,
-} from "@draftyak/protocol/channel-v1";
+import { Cursor, channelV1, type SyncPage, type SyncRequest } from "@draftyak/protocol/channel-v1";
 import { canonicalize } from "@draftyak/protocol/jcs";
 import { type EmailMessageChange, MAX_CHANGES } from "@draftyak/protocol/normalized-change";
 import { type PluginContext, PluginError } from "@draftyak/sdk";
