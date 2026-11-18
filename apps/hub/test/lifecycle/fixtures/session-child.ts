@@ -19,7 +19,7 @@ const masterKey = new MasterKey(Buffer.alloc(32, 0x0b));
 try {
 	const session = await openHubSession({ folder, nativeBinding, masterKey });
 	process.stdout.write(`${JSON.stringify({ opened: session.hubId })}\n`);
-	session.close();
+	await session.close();
 } catch (error) {
 	const code = error instanceof HubSessionError ? error.code : "unexpected";
 	process.stdout.write(`${JSON.stringify({ refused: code })}\n`);

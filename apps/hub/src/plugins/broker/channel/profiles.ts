@@ -42,6 +42,7 @@ const GMAIL_HOSTS: readonly string[] = Object.freeze([
 	"gmail.googleapis.com",
 	"www.googleapis.com",
 ]);
+const GMAIL_PROFILE = templates("/gmail/v1/users/me/profile");
 const GMAIL_READ = templates(
 	"/gmail/v1/users/{user}/messages",
 	"/gmail/v1/users/{user}/messages/{id}",
@@ -101,6 +102,12 @@ function gmailClass(method: ChannelMethod, url: ChannelUrl): ChannelClassificati
 	const lower = url.segments.map((segment) => segment.toLowerCase());
 	if (lower[0] === "batch") return denied("gmail_batch");
 	if (GMAIL_SEND.some((template) => fits(lower, template))) return SEND;
+	if (
+		method === "GET" &&
+		GMAIL_PROFILE.some((template) => fits(url.segments, template)) &&
+		new URL(url.href).search === ""
+	)
+		return READ;
 	if (method === "GET" && GMAIL_READ.some((template) => fits(url.segments, template))) return READ;
 	if (method === "POST" && GMAIL_ORGANIZE.some((template) => fits(url.segments, template)))
 		return ORGANIZE;

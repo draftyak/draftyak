@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { TLSSocket } from "node:tls";
+import type { PairingRefusalCode } from "@draftyak/protocol/pairing";
 import { afterEach, expect, it, vi } from "vitest";
 import type { NativeDevicePeer } from "../../src/authz/native-peer.ts";
 import type { VerifiedCandidate } from "../../src/identity/devices-pairing.ts";
@@ -13,6 +14,7 @@ const { NativeDeviceTls, nativePeerEkm, nativePeerSpki } = await import(
 	"../../src/authz/native-peer.ts"
 );
 const { DeviceRegistry, advanceEpochForRestore } = await import("../../src/identity/devices.ts");
+const { DevicePairingRefusal } = await import("../../src/identity/devices-pairing.ts");
 const { HubIdentity } = await import("../../src/identity/hub-key.ts");
 const { makePairingClaim, pairingEkm, sidecarWindowSecrets } = await import(
 	"@draftyak/protocol/pairing"
@@ -39,6 +41,20 @@ function refusal(work: () => unknown, expected: string): void {
 		code = error instanceof AuthzError ? error.code : "UNEXPECTED_ERROR";
 	}
 	expect(code).toBe(expected);
+}
+
+function pairingRefusal(work: () => unknown, expected: PairingRefusalCode): void {
+	let failure: unknown;
+	try {
+		work();
+	} catch (error) {
+		failure = error;
+	}
+	expect(failure).toBeInstanceOf(DevicePairingRefusal);
+	if (!(failure instanceof DevicePairingRefusal)) throw new Error("Expected pairing refusal");
+	expect(failure.code).toBe(expected);
+	expect(failure.message).toBe(expected);
+	expect(Object.hasOwn(failure, "cause")).toBe(false);
 }
 
 async function bounded<T>(work: Promise<T>): Promise<T> {
@@ -218,9 +234,9 @@ it("refuses a valid wire claim after its actual native TLS peer closes", async (
 	await bounded(serverClosed);
 	try {
 		expect(server(client).destroyed).toBe(true);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => current.pairer.claim(tx, client.peer, bytes)),
-			"PEER_REFUSED",
+			"PAIR_WINDOW_CLOSED",
 		);
 		expect(snapshot(f)).toEqual(before);
 	} finally {
@@ -302,14 +318,14 @@ it("binds a valid sidecar claim to the actual exporter and client SPKI", async (
 	const bytes = exchange.claim;
 	const before = snapshot(f);
 	try {
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => current.pairer.claim(tx, first.peer, wrongSpki)),
-			"CANDIDATE_INVALID",
+			"PAIR_PROOF_INVALID",
 		);
 		expect(snapshot(f)).toEqual(before);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => current.pairer.claim(tx, second.peer, bytes)),
-			"CANDIDATE_INVALID",
+			"PAIR_PROOF_INVALID",
 		);
 		expect(snapshot(f)).toEqual(before);
 		const answer = f.store.write((tx) => current.pairer.claim(tx, first.peer, bytes));
@@ -339,14 +355,14 @@ it("retires the old sidecar window before accepting a new window claim", async (
 	const current = window(f);
 	const before = snapshot(f);
 	try {
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => old.pairer.claim(tx, client.peer, bytes)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
 		expect(snapshot(f)).toEqual(before);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => current.pairer.claim(tx, client.peer, bytes)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
 		expect(snapshot(f)).toEqual(before);
 		record(f, client, current);
@@ -368,14 +384,14 @@ it("keeps a held claim after malformed, wrong-window and other-connection reveal
 		const before = snapshot(f);
 		const answer = f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim));
 		expect(snapshot(f)).toEqual(before);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
 		for (const malformed of [Buffer.from("{"), Buffer.alloc(1025), Buffer.from([0xc3])]) {
-			refusal(
+			pairingRefusal(
 				() => f.store.write((tx) => current.pairer.reveal(tx, client.peer, malformed)),
-				"CANDIDATE_INVALID",
+				"PAIR_REVEAL_INVALID",
 			);
 			expect(snapshot(f)).toEqual(before);
 		}
@@ -385,7 +401,7 @@ it("keeps a held claim after malformed, wrong-window and other-connection reveal
 		};
 		const wrongPid = Buffer.from(reveal.pid, "base64url");
 		wrongPid[0] = (wrongPid[0] ?? 0) ^ 1;
-		refusal(
+		pairingRefusal(
 			() =>
 				f.store.write((tx) =>
 					current.pairer.reveal(
@@ -394,20 +410,20 @@ it("keeps a held claim after malformed, wrong-window and other-connection reveal
 						Buffer.from(JSON.stringify({ ...reveal, pid: wrongPid.toString("base64url") })),
 					),
 				),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => current.pairer.reveal(tx, otherConnection.peer, exchange.reveal)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
 		expect(snapshot(f)).toEqual(before);
 		const recorded = f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal));
 		expect(recorded).toEqual({ deviceId: answer.deviceId, epoch: answer.epoch });
 		expect(snapshot(f).devices).toBe(1);
 		const after = snapshot(f);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
 		expect(snapshot(f)).toEqual(after);
 	} finally {
@@ -433,23 +449,23 @@ it("consumes a held claim on its first commitment comparison, including a mismat
 		const wrongReveal = Buffer.from(
 			JSON.stringify({ ...reveal, nd: wrongNonce.toString("base64url") }),
 		);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => current.pairer.reveal(tx, client.peer, wrongReveal)),
-			"CANDIDATE_INVALID",
+			"PAIR_COMMITMENT_MISMATCH",
 		);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
 		window(f);
 		const replacement = sidecar(f, current.secret);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => replacement.claim(tx, client.peer, exchange.claim)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
 		expect(snapshot(f)).toEqual(before);
 		wrongNonce.fill(0);
@@ -470,13 +486,13 @@ it("does not reopen or transfer a held claim when the same bootstrap secret is r
 		f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim));
 		const replacement = sidecar(f, current.secret);
 		for (const authority of [current.pairer, replacement]) {
-			refusal(
+			pairingRefusal(
 				() => f.store.write((tx) => authority.claim(tx, client.peer, exchange.claim)),
-				"CANDIDATE_INVALID",
+				"PAIR_WINDOW_CLOSED",
 			);
-			refusal(
+			pairingRefusal(
 				() => f.store.write((tx) => authority.reveal(tx, client.peer, exchange.reveal)),
-				"CANDIDATE_INVALID",
+				"PAIR_WINDOW_CLOSED",
 			);
 		}
 		expect(snapshot(f)).toEqual(before);
@@ -496,15 +512,15 @@ it("refuses a claim at the original window deadline without reopening that boots
 	try {
 		const before = snapshot(f);
 		clock.mockReturnValue(started + 300_000);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => current.pairer.claim(tx, client.peer, exchange.claim)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
 		clock.mockRestore();
 		const replacement = sidecar(f, current.secret);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => replacement.claim(tx, client.peer, exchange.claim)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
 		expect(snapshot(f)).toEqual(before);
 	} finally {
@@ -536,19 +552,21 @@ it.each(["closed", "replaced", "epoch", "expired", "disconnected"])(
 				await bounded(Promise.all([closed(client.socket), closed(native)]));
 			}
 			const before = snapshot(f);
-			expect(() =>
-				f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal)),
-			).toThrow(AuthzError);
+			pairingRefusal(
+				() => f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal)),
+				"PAIR_WINDOW_CLOSED",
+			);
 			const replacement = sidecar(f, current.secret);
-			refusal(
+			pairingRefusal(
 				() => f.store.write((tx) => replacement.claim(tx, client.peer, exchange.claim)),
-				"CANDIDATE_INVALID",
+				"PAIR_WINDOW_CLOSED",
 			);
 			clock?.mockRestore();
 			clock = undefined;
-			expect(() =>
-				f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal)),
-			).toThrow(AuthzError);
+			pairingRefusal(
+				() => f.store.write((tx) => current.pairer.reveal(tx, client.peer, exchange.reveal)),
+				"PAIR_WINDOW_CLOSED",
+			);
 			expect(snapshot(f)).toEqual(before);
 		} finally {
 			clock?.mockRestore();
@@ -568,15 +586,15 @@ it("refuses an unused old-window wire claim after an actual epoch advance", asyn
 	const before = snapshot(f);
 	expect(nativePeerSpki(f.registry, client.peer) === client.transportSpkiSha256).toBe(true);
 	try {
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => old.pairer.claim(tx, client.peer, bytes)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
 		expect(snapshot(f)).toEqual(before);
 		const sameWindow = sidecar(f, old.secret);
-		refusal(
+		pairingRefusal(
 			() => f.store.write((tx) => sameWindow.claim(tx, client.peer, bytes)),
-			"CANDIDATE_INVALID",
+			"PAIR_WINDOW_CLOSED",
 		);
 		expect(snapshot(f)).toEqual(before);
 		const candidate = record(f, client, window(f));

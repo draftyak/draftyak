@@ -1,15 +1,28 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
+import { DecompressionStream, ReadableStream as NodeReadableStream } from "node:stream/web";
 import { types } from "node:util";
 import type { Fake } from "@draftyak/fakes";
+import {
+	admitJsonMemberFetch,
+	createJsonMemberDecoder,
+	createJsonMemberErrorBody,
+	type JsonMember,
+	JsonMemberRefusal,
+	type JsonMemberWriter,
+	writeJsonMember,
+} from "@draftyak/json-member";
+import { CHANNEL_V1, channelV1 } from "@draftyak/protocol/channel-v1";
 import { type HeaderList, headersSha256, sha256Hex } from "@draftyak/protocol/hash";
 import {
+	HOST_JSON_MEMBER_MAX_DECODED_BYTES,
+	HOST_JSON_MEMBER_MAX_ENTITY_BYTES,
 	HOST_MAX_ACTIVE_REQUESTS,
 	HOST_MAX_STREAM_BYTES,
 	HOST_METHOD_SCHEMAS,
 	HOST_REQUEST_TIMEOUT_MS,
 	type HostErrorCode,
-	type HostFetchParams,
+	HostFetchParams,
 	type HostFetchResult,
 	HostHeaders,
 	type HostMethod,
@@ -43,8 +56,26 @@ import {
 	toolKindsV1,
 } from "@draftyak/protocol/tool-v1";
 import { HostError, type HostRequestOptions, memoryHost } from "@draftyak/sdk";
+import {
+	type CompatibleHttpBinding,
+	type CompatibleHttpBindingInput,
+	createCompatibleHttpBinding,
+} from "./compatible-http.ts";
+import {
+	createMessagesHttpBinding,
+	type MessagesHttpBinding,
+	type MessagesHttpBindingInput,
+} from "./messages-http.ts";
+import {
+	copyMockSocketUpstreams,
+	createMockSocketManager,
+	type MockSocketManager,
+	type MockSocketUpstream,
+} from "./mock-socket-upstream.ts";
 import { matchRequest } from "./policy.ts";
 import {
+	copyCompatibleHttpInputs,
+	copyMessagesHttpInputs,
 	copyResponsesHttpInputs,
 	type Denial,
 	type MockAccount,
@@ -61,11 +92,51 @@ interface Lookup {
 	readonly kind: ToolKind | undefined;
 	readonly argumentsDigest: string;
 	readonly controller: AbortController;
+	readonly startedAt: number;
 	readonly deadline: number;
 	readonly permit: string | undefined;
 	active: boolean;
 	requests: number;
 	pending: number;
+}
+/** Private constructor plumbing for work owned by one actual channel-listen call. */
+export interface ProcessLease {
+	readonly signal: AbortSignal;
+	readonly deadline: number;
+	run<T>(action: () => T): T;
+	accepts(method: HostMethod, params: unknown): boolean;
+	commit(result: unknown): boolean;
+	close(): void;
+}
+const processLeaseFactories = new WeakMap<
+	MockHost,
+	{
+		readonly plugin: string;
+		readonly instance: string;
+		readonly begin: (method: string, params: Record<string, unknown>) => ProcessLease | undefined;
+	}
+>();
+/** Resolve constructor-issued plumbing; structural hosts cannot issue background authority. */
+export function getProcessLeaseFactory(
+	host: MockHost,
+	identity: { readonly plugin: string; readonly instance: string },
+): ((method: string, params: Record<string, unknown>) => ProcessLease | undefined) | undefined {
+	const issued = processLeaseFactories.get(host);
+	return issued?.plugin === identity.plugin && issued.instance === identity.instance
+		? issued.begin
+		: undefined;
+}
+interface ChannelLease {
+	readonly scope: Lookup;
+	readonly sockets: Map<string, string>;
+	readonly urls: Set<string>;
+	readonly reconnects: Set<string>;
+	reconnectOpens: number;
+	reconnectFetches: number;
+	committed: boolean;
+	transferred: boolean;
+	accepts(method: HostMethod, params: unknown): boolean;
+	close(): void;
 }
 interface Attempt {
 	scope?: Lookup;
@@ -91,7 +162,7 @@ const streamLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, "byteL
 const validateStreamView = Uint8Array.prototype.values;
 const copyStreamBytes = Uint8Array.prototype.set;
 
-function captureStreamChunk(value: unknown, remaining: number): Uint8Array {
+function captureStreamChunk(value: unknown, remaining: number): Uint8Array<ArrayBuffer> {
 	try {
 		if (types.isProxy(value) || !types.isUint8Array(value)) throw new HostError("BAD_REQUEST");
 		// Iterator creation validates detached and out-of-bounds views without reading caller fields.
@@ -160,19 +231,59 @@ export function createMockHost(
 		readonly account?: MockAccount;
 		readonly instance: string;
 		readonly upstreams: readonly Fake[];
+		readonly socketUpstreams?: readonly MockSocketUpstream[];
 		readonly secrets?: Readonly<Record<string, string>>;
 		readonly responsesHttp?: readonly ResponsesHttpBindingInput[];
+		readonly compatibleHttp?: readonly CompatibleHttpBindingInput[];
+		readonly messagesHttp?: readonly MessagesHttpBindingInput[];
 	},
 	controls: { readonly entropy?: () => Uint8Array } = {},
 ): {
 	readonly host: MockHost;
+	settled(): Promise<void>;
+	beginProcessLease(method: string, params: Record<string, unknown>): ProcessLease | undefined;
 	lookup<T>(
 		action: (signal: AbortSignal, permit?: string) => Promise<T>,
 		kind?: ToolKind,
 		args?: unknown,
 	): Promise<T>;
 } {
+	if (types.isProxy(options)) throw new MockHubError("INVALID_MESSAGES_BINDINGS");
+	const messagesSlot = Object.getOwnPropertyDescriptor(options, "messagesHttp");
+	if (messagesSlot && (!messagesSlot.enumerable || !Object.hasOwn(messagesSlot, "value")))
+		throw new MockHubError("INVALID_MESSAGES_BINDINGS");
+	const messagesInputs =
+		messagesSlot?.value === undefined ? [] : copyMessagesHttpInputs(messagesSlot.value);
+	const messagesBindings: MessagesHttpBinding[] = [];
+	for (const input of messagesInputs) {
+		const issued = createMessagesHttpBinding(input);
+		if (!issued.ok) throw new MockHubError("INVALID_MESSAGES_BINDINGS");
+		messagesBindings.push(issued.binding);
+	}
+	Object.freeze(messagesBindings);
+	const compatibleSlot = Object.getOwnPropertyDescriptor(options, "compatibleHttp");
+	if (compatibleSlot && (!compatibleSlot.enumerable || !Object.hasOwn(compatibleSlot, "value")))
+		throw new MockHubError("INVALID_COMPATIBLE_BINDINGS");
+	const compatibleInputs =
+		compatibleSlot?.value === undefined ? [] : copyCompatibleHttpInputs(compatibleSlot.value);
+	const compatibleBindings: CompatibleHttpBinding[] = [];
+	for (const input of compatibleInputs) {
+		const issued = createCompatibleHttpBinding(input);
+		if (!issued.ok) throw new MockHubError("INVALID_COMPATIBLE_BINDINGS");
+		compatibleBindings.push(issued.binding);
+	}
+	Object.freeze(compatibleBindings);
 	const manifest = options.manifest;
+	if (
+		messagesBindings.length > 0 &&
+		(manifest.kind !== "ai-provider" || manifest.egress.profile !== "messages-api-v1")
+	)
+		throw new MockHubError("INVALID_MESSAGES_BINDINGS");
+	if (
+		compatibleBindings.length > 0 &&
+		(manifest.kind !== "ai-provider" || manifest.egress.profile !== "chat-completions-v1")
+	)
+		throw new MockHubError("INVALID_COMPATIBLE_BINDINGS");
 	const bindingSlot = Object.getOwnPropertyDescriptor(options, "responsesHttp");
 	if (bindingSlot && !Object.hasOwn(bindingSlot, "value"))
 		throw new MockHubError("INVALID_RESPONSES_BINDINGS");
@@ -189,6 +300,19 @@ export function createMockHost(
 		responsesBindings.push(issued.binding);
 	}
 	Object.freeze(responsesBindings);
+	const socketSlot = Object.getOwnPropertyDescriptor(options, "socketUpstreams");
+	if (socketSlot && (!socketSlot.enumerable || !Object.hasOwn(socketSlot, "value")))
+		throw new MockHubError("INVALID_SOCKET_UPSTREAM");
+	const socketInputs =
+		socketSlot?.value === undefined ? undefined : copyMockSocketUpstreams(socketSlot.value);
+	if (
+		socketInputs !== undefined &&
+		socketInputs.length > 0 &&
+		(manifest.kind !== "channel" ||
+			!("profile" in manifest.egress) ||
+			manifest.egress.profile !== "slack-v1")
+	)
+		throw new MockHubError("INVALID_SOCKET_PROFILE");
 	const generation = Symbol();
 	const account = options.account ? Object.freeze({ ...options.account }) : undefined;
 	if (!Ulid.safeParse(options.instance).success) throw new MockHubError("INVALID_INSTANCE");
@@ -206,10 +330,15 @@ export function createMockHost(
 	const scopes = new AsyncLocalStorage<Lookup>();
 	const attempts = new AsyncLocalStorage<Attempt>();
 	const retained = new Set<Lookup>();
+	const ownedWork = new Set<Promise<unknown>>();
+	const channelLeases = new WeakMap<Lookup, ChannelLease>();
+	const retainedLeases = new Set<ChannelLease>();
 	const grants = new Map<string, Lookup>();
 	const reserved = new Set<string>();
 	const tickets = new Map<string, { ticket: SendTicket; headers: HeaderList }>();
 	const blobs = new Map<string, Uint8Array>();
+	let stagedBlobBytes = 0;
+	let stagedBlobCount = 0;
 	const kv = new Map<string, unknown>();
 	const denials: Denial[] = [];
 	const alerts: { readonly reason: TicketMismatch }[] = [];
@@ -225,13 +354,19 @@ export function createMockHost(
 	const elapsed = (): number => performance.now();
 	const release = (scope: Lookup): void => {
 		if (scope.active || scope.pending !== 0) return;
+		const lease = channelLeases.get(scope);
+		if (lease?.transferred) lease.close();
+		if (scope.pending !== 0) return;
+		if (lease) retainedLeases.delete(lease);
 		retained.delete(scope);
 		if (scope.permit !== undefined) reserved.delete(scope.permit);
 	};
 	const own = <T>(scope: Lookup | undefined, work: Promise<T>): Promise<T> => {
 		if (!scope) return work;
 		scope.pending++;
+		ownedWork.add(work);
 		const settled = (): void => {
+			ownedWork.delete(work);
 			scope.pending--;
 			release(scope);
 		};
@@ -246,7 +381,11 @@ export function createMockHost(
 	};
 	const disable = (): void => {
 		disabled = true;
-		for (const scope of retained) retire(scope, new HostError("DENIED"));
+		for (const scope of retained) {
+			const lease = channelLeases.get(scope);
+			if (lease) lease.close();
+			else retire(scope, new HostError("DENIED"));
+		}
 	};
 	const recordDenial = (method: HostMethod, reason: string, scope?: Lookup): void => {
 		if (denials.length < 4096)
@@ -273,8 +412,8 @@ export function createMockHost(
 			closed ||
 			!(bytes instanceof Uint8Array) ||
 			bytes.byteLength > BODY_LIMIT ||
-			blobs.size >= STATE_LIMIT ||
-			bytes.byteLength > STATE_BYTES - blobBytes
+			blobs.size + stagedBlobCount >= STATE_LIMIT ||
+			bytes.byteLength > STATE_BYTES - blobBytes - stagedBlobBytes
 		)
 			throw new MockHubError("BLOB_LIMIT");
 		const ref = id();
@@ -397,8 +536,6 @@ export function createMockHost(
 		const foundTicket = takeTicket(params);
 		if (manifest.kind !== "tool" && params.lookupPermit !== undefined)
 			return deny("LOOKUP_PERMIT_FORBIDDEN");
-		if (params.saveAs !== undefined && params.saveAs !== "blob")
-			return deny("STORAGE_MODE_UNSUPPORTED", "UNSUPPORTED");
 		if (manifest.kind === "tool") {
 			if (
 				!["GET", "HEAD"].includes(params.method) ||
@@ -411,13 +548,30 @@ export function createMockHost(
 		// Presented tickets are consumed even when a subsequent policy check refuses the request.
 		let ticketHeaders =
 			params.sendTicket === undefined ? undefined : consumeTicket(params, body, foundTicket);
-		const matched = matchRequest(manifest, params.url, params.method, secrets, {
-			bindings: responsesBindings,
-			headers: params.headers,
-			body,
-		});
+		const matched = matchRequest(
+			manifest,
+			params.url,
+			params.method,
+			secrets,
+			{ bindings: responsesBindings, headers: params.headers, body },
+			{ bindings: compatibleBindings, headers: params.headers, body },
+			{ bindings: messagesBindings, headers: params.headers, body },
+		);
 		if (!matched) return deny("OFF_RULE");
 		const { rule, url } = matched;
+		let member: JsonMember | undefined;
+		if (params.saveAs !== undefined && params.saveAs !== "blob") {
+			try {
+				member = admitJsonMemberFetch({
+					pluginKind: manifest.kind,
+					requestClass: rule.class,
+					params,
+				});
+			} catch (error) {
+				if (error instanceof JsonMemberRefusal) return deny(error.code, error.hostError);
+				throw error;
+			}
+		}
 		if (rule.class === "organize" && account?.mode !== "full") return deny("FULL_MODE_REQUIRED");
 		if (rule.class === "send") {
 			if (manifest.kind !== "channel" || !manifest.send) return deny("RENDERER_REQUIRED");
@@ -483,7 +637,9 @@ export function createMockHost(
 					? TOOL_REQUEST_HEADERS
 					: ["accept", "content-type", "if-none-match", "if-modified-since"];
 			const headers =
-				manifest.kind === "ai-provider" && manifest.egress.profile === "responses-api-v1"
+				manifest.kind === "ai-provider" &&
+				(manifest.egress.profile === "responses-api-v1" ||
+					manifest.egress.profile === "messages-api-v1")
 					? params.headers
 					: (ticketHeaders ?? keepToolHeaders(params.headers, allowed));
 			admit();
@@ -521,6 +677,162 @@ export function createMockHost(
 			const common = { status: response.status, headers: responseHeaders };
 			if (!representable(common)) return deny("RESPONSE_INVALID", "BAD_REQUEST");
 			admit();
+			if (member !== undefined) {
+				const limit = Math.min(rule.maxBytes, HOST_JSON_MEMBER_MAX_ENTITY_BYTES);
+				const limits = { compressedEntityBytes: limit, decompressedEntityBytes: limit };
+				const success = response.status >= 200 && response.status < 300;
+				const decoder = success
+					? createJsonMemberDecoder(member, {
+							...limits,
+							decodedBytes: Math.min(rule.maxBytes, HOST_JSON_MEMBER_MAX_DECODED_BYTES),
+						})
+					: undefined;
+				const errorBody = success ? undefined : createJsonMemberErrorBody(limits);
+				const counter = decoder ?? errorBody;
+				if (!counter) return deny("RESPONSE_INVALID", "BAD_REQUEST");
+				const upstreamReader = reader;
+				let transportFailure: unknown;
+				// Fake transports supply wire bytes. Count them before Content-Encoding is removed.
+				const raw = new NodeReadableStream<NodeJS.BufferSource>(
+					{
+						async pull(controller) {
+							try {
+								admit();
+								const next = upstreamReader
+									? await interrupted(track(upstreamReader.read()), signal)
+									: { done: true as const, value: undefined };
+								admit();
+								if (next.done) controller.close();
+								else {
+									const chunk = captureStreamChunk(next.value, limit);
+									counter.countCompressed(chunk.byteLength);
+									controller.enqueue(chunk);
+								}
+							} catch (error) {
+								transportFailure ??= error;
+								controller.error(error);
+							}
+						},
+						cancel() {
+							return track(upstreamReader?.cancel().catch(() => {}) ?? Promise.resolve());
+						},
+					},
+					{ highWaterMark: 0 },
+				);
+				const encoding = response.headers.get("content-encoding")?.trim().toLowerCase();
+				const format =
+					encoding === "gzip" || encoding === "deflate"
+						? encoding
+						: encoding === "br"
+							? "brotli"
+							: undefined;
+				if (encoding && encoding !== "identity" && format === undefined)
+					return deny("CONTENT_ENCODING_UNSUPPORTED", "UNSUPPORTED");
+				const entityReader = (
+					format ? raw.pipeThrough(new DecompressionStream(format)) : raw
+				).getReader();
+				const entity = async function* (): AsyncGenerator<Uint8Array> {
+					for (;;) {
+						const next = await interrupted(track(entityReader.read()), signal);
+						admit();
+						if (next.done) return;
+						if (!types.isUint8Array(next.value)) throw new JsonMemberRefusal("ENTITY_FAILED");
+						yield next.value;
+					}
+				};
+				try {
+					if (errorBody) {
+						for await (const chunk of entity()) errorBody.push(chunk);
+						admit();
+						return {
+							...common,
+							body: { base64: Buffer.from(errorBody.end()).toString("base64url") },
+						};
+					}
+					if (!decoder) return deny("RESPONSE_INVALID", "BAD_REQUEST");
+					if (blobs.size + stagedBlobCount >= STATE_LIMIT) return deny("BLOB_LIMIT", "TOO_LARGE");
+					stagedBlobCount++;
+					const chunks: Uint8Array[] = [];
+					let bytes = 0;
+					let staging = true;
+					let committed: string | undefined;
+					const release = (): void => {
+						if (!staging) return;
+						staging = false;
+						stagedBlobCount--;
+						stagedBlobBytes -= bytes;
+						for (const chunk of chunks) chunk.fill(0);
+						chunks.length = 0;
+					};
+					const writer: JsonMemberWriter = {
+						async write(chunk) {
+							admit();
+							if (!staging) throw new JsonMemberRefusal("STORAGE_FAILED");
+							if (chunk.byteLength > STATE_BYTES - blobBytes - stagedBlobBytes)
+								throw new JsonMemberRefusal("DECODED_TOO_LARGE");
+							// Coalesce tiny transport writes into bounded 64 KiB storage blocks.
+							for (let offset = 0; offset < chunk.byteLength; ) {
+								const used = bytes % MAX_INLINE_BYTES;
+								if (used === 0) chunks.push(new Uint8Array(MAX_INLINE_BYTES));
+								const tail = chunks[chunks.length - 1];
+								if (!tail) throw new JsonMemberRefusal("STORAGE_FAILED");
+								const size = Math.min(chunk.byteLength - offset, MAX_INLINE_BYTES - used);
+								tail.set(chunk.subarray(offset, offset + size), used);
+								offset += size;
+								bytes += size;
+								stagedBlobBytes += size;
+							}
+						},
+						async commit() {
+							admit();
+							if (!staging) throw new JsonMemberRefusal("STORAGE_FAILED");
+							const body = Buffer.concat(chunks, bytes);
+							// Release this reservation and publish synchronously, without an intervening await.
+							release();
+							try {
+								const result = putBlob(body);
+								committed = result.ref;
+								admit();
+								return result;
+							} finally {
+								body.fill(0);
+							}
+						},
+						async abort() {
+							release();
+							const stored = committed === undefined ? undefined : blobs.get(committed);
+							if (committed !== undefined && stored) {
+								blobs.delete(committed);
+								blobBytes -= stored.byteLength;
+								stored.fill(0);
+							}
+						},
+					};
+					try {
+						const body = await writeJsonMember(decoder, entity(), writer, signal);
+						admit();
+						return { ...common, body };
+					} catch (error) {
+						await writer.abort();
+						throw error;
+					}
+				} catch (error) {
+					if (transportFailure instanceof HostError)
+						return deny(
+							transportFailure.code === "TOO_LARGE" ? "RESPONSE_TOO_LARGE" : "ENTITY_FAILED",
+							transportFailure.code,
+						);
+					if (transportFailure instanceof JsonMemberRefusal)
+						return deny(transportFailure.code, transportFailure.hostError);
+					if (error instanceof JsonMemberRefusal) return deny(error.code, error.hostError);
+					throw error;
+				} finally {
+					// Also release the entity reader when quota refuses before iteration starts.
+					void track(entityReader.cancel().catch(() => {}))
+						.then(() => entityReader.releaseLock())
+						.catch(() => {});
+				}
+			}
 			if (reservation) {
 				const streamId = id();
 				const ownedReader = reader;
@@ -662,13 +974,31 @@ export function createMockHost(
 				const ownedReader = reader;
 				if (ownedReader) {
 					const cancellation = track(ownedReader.cancel().catch(() => {}));
-					if (reservation) void cancellation.then(() => ownedReader.releaseLock());
+					if (reservation || member !== undefined)
+						void cancellation.then(() => ownedReader.releaseLock()).catch(() => {});
 					else ownedReader.releaseLock();
 				}
 				retired = true;
 				releaseStream();
 			}
 		}
+	};
+	let socketManager: MockSocketManager | undefined;
+	const reconnectRequest = (params: HostFetchParams): string | undefined => {
+		if (
+			manifest.kind !== "channel" ||
+			!("profile" in manifest.egress) ||
+			manifest.egress.profile !== "slack-v1" ||
+			params.method !== "POST" ||
+			params.url !== "https://slack.com/api/apps.connections.open" ||
+			params.lookupPermit !== undefined ||
+			params.sendTicket !== undefined ||
+			params.saveAs !== undefined ||
+			params.stream === true ||
+			(params.body !== undefined && (!("base64" in params.body) || params.body.base64 !== ""))
+		)
+			return undefined;
+		return JSON.stringify(jsonCopy(params));
 	};
 	const base = memoryHost(async (method, params, signal) => {
 		if (closed) return deny("HOST_CLOSED");
@@ -678,9 +1008,45 @@ export function createMockHost(
 			!["host/fetch", "host/log", "host/kv.get", "host/kv.set", "host/kv.delete"].includes(method)
 		)
 			return deny("TOOL_METHOD_FORBIDDEN");
+		const scope = scopes.getStore();
+		const lease = scope && channelLeases.get(scope);
 		switch (method) {
+			case "host/ws.open": {
+				if (!socketManager) return deny("METHOD_UNSUPPORTED", "UNSUPPORTED");
+				if (lease?.committed && ++lease.reconnectOpens > 3) return deny("LEASE_RECONNECT_LIMIT");
+				const url = (params as { url: string }).url;
+				const result = await own(
+					lease?.scope,
+					socketManager.open(
+						url,
+						signal,
+						lease?.scope.controller.signal ?? attempts.getStore()?.signal,
+					),
+				);
+				if (lease) {
+					if (!lease.scope.active || lease.scope.controller.signal.aborted) {
+						await own(lease.scope, socketManager.closeSocket(result.socketId));
+						return deny("LOOKUP_ENDED");
+					}
+					lease.sockets.set(result.socketId, url);
+					lease.urls.add(url);
+				}
+				return result;
+			}
+			case "host/ws.send": {
+				if (!socketManager) return deny("METHOD_UNSUPPORTED", "UNSUPPORTED");
+				const request = params as { socketId: string; envelopeId: string };
+				return own(lease?.scope, socketManager.ack(request.socketId, request.envelopeId, signal));
+			}
+			case "host/ws.close":
+				if (!socketManager) return deny("METHOD_UNSUPPORTED", "UNSUPPORTED");
+				return own(
+					lease?.scope,
+					socketManager.closeSocket((params as { socketId: string }).socketId),
+				);
 			case "host/fetch": {
 				const request = params as HostFetchParams;
+				if (lease?.committed && ++lease.reconnectFetches > 3) return deny("LEASE_RECONNECT_LIMIT");
 				const scope =
 					manifest.kind === "tool"
 						? request.lookupPermit === undefined
@@ -699,7 +1065,17 @@ export function createMockHost(
 					}
 					if (++scope.requests > TOOL_REQUESTS_PER_LOOKUP) return deny("LOOKUP_REQUEST_LIMIT");
 				}
-				return own(scope, fetch(request, signal, scope));
+				const result = await own(scope, fetch(request, signal, scope));
+				const fingerprint = reconnectRequest(request);
+				if (
+					lease &&
+					!lease.committed &&
+					fingerprint !== undefined &&
+					result.status >= 200 &&
+					result.status < 300
+				)
+					lease.reconnects.add(fingerprint);
+				return result;
 			}
 			case "host/log": {
 				if (logs.length >= STATE_LIMIT) return deny("LOG_LIMIT", "TOO_LARGE");
@@ -732,40 +1108,56 @@ export function createMockHost(
 				return deny("METHOD_UNSUPPORTED", "UNSUPPORTED");
 		}
 	});
+	try {
+		socketManager = createMockSocketManager(socketInputs, upstreams, (message) =>
+			base.notify(message),
+		);
+	} catch (error) {
+		base.close();
+		throw error;
+	}
 	const host: MockHost = {
-		async request<M extends HostMethod>(
+		request<M extends HostMethod>(
 			method: M,
 			params: HostMethods[M]["params"],
 			requestOptions?: HostRequestOptions,
 		): Promise<HostMethods[M]["result"]> {
-			const startedAt = elapsed();
-			const attempt: Attempt = {};
-			if (manifest.kind !== "tool" || method !== "host/fetch") attempt.scope = scopes.getStore();
-			try {
-				const signal = requestOptions?.signal;
-				const timeoutMs = requestOptions?.timeoutMs;
-				attempt.signal = signal;
-				const budget = timeoutMs ?? HOST_REQUEST_TIMEOUT_MS;
-				// Invalid options remain the memory host's refusal, without coercing caller values here.
-				if (Number.isFinite(budget) && budget > 0 && budget <= HOST_REQUEST_TIMEOUT_MS)
-					attempt.deadline = startedAt + budget;
-				return await attempts.run(attempt, () =>
-					base.request(
+			const owner = scopes.getStore();
+			const work = (async (): Promise<HostMethods[M]["result"]> => {
+				const startedAt = elapsed();
+				const attempt: Attempt = {};
+				if (manifest.kind !== "tool" || method !== "host/fetch") attempt.scope = scopes.getStore();
+				try {
+					const lease = attempt.scope && channelLeases.get(attempt.scope);
+					if (lease && !lease.accepts(method, params)) return deny("LEASE_OPERATION_REFUSED");
+					const signal = requestOptions?.signal;
+					const timeoutMs = requestOptions?.timeoutMs;
+					attempt.signal = signal;
+					const budget = timeoutMs ?? HOST_REQUEST_TIMEOUT_MS;
+					// Invalid options remain the memory host's refusal, without coercing caller values here.
+					if (Number.isFinite(budget) && budget > 0 && budget <= HOST_REQUEST_TIMEOUT_MS)
+						attempt.deadline = startedAt + budget;
+					return await attempts.run(attempt, () =>
+						base.request(
+							method,
+							params,
+							requestOptions === undefined ? undefined : { signal, timeoutMs },
+						),
+					);
+				} catch (error) {
+					const failure = error instanceof HostError ? error : new HostError("BAD_REQUEST");
+					recordDenial(
 						method,
-						params,
-						requestOptions === undefined ? undefined : { signal, timeoutMs },
-					),
-				);
-			} catch (error) {
-				const failure = error instanceof HostError ? error : new HostError("BAD_REQUEST");
-				recordDenial(
-					method,
-					attempt.reason ??
-						(error instanceof Refusal ? error.reason : closed ? "HOST_CLOSED" : failure.code),
-					attempt.scope,
-				);
-				throw failure;
-			}
+						attempt.reason ??
+							(error instanceof Refusal ? error.reason : closed ? "HOST_CLOSED" : failure.code),
+						attempt.scope,
+					);
+					throw failure;
+				}
+			})();
+			// A transferred scope may release its controller only after the complete
+			// host reply has settled, including the memory host's signal arbitration.
+			return own(owner, work);
 		},
 		subscribe: base.subscribe,
 		get denials() {
@@ -827,6 +1219,7 @@ export function createMockHost(
 			for (const scope of retained) retire(scope, new HostError("DENIED"));
 			for (const cancel of streams) cancel();
 			streams.clear();
+			socketManager?.abort();
 			base.close();
 			kv.clear();
 			tickets.clear();
@@ -836,8 +1229,207 @@ export function createMockHost(
 			blobBytes = 0;
 		},
 	};
-	return {
+	const bridge: ReturnType<typeof createMockHost> = {
 		host,
+		async settled() {
+			const results = await Promise.allSettled([
+				socketManager?.settled() ?? Promise.resolve(),
+				(async () => {
+					while (ownedWork.size) await Promise.allSettled([...ownedWork]);
+				})(),
+			]);
+			while (ownedWork.size) await Promise.allSettled([...ownedWork]);
+			for (const result of results) if (result.status === "rejected") throw result.reason;
+		},
+		beginProcessLease(method, params) {
+			const origin = scopes.getStore();
+			if (
+				method !== "tools/call" ||
+				params.name !== "channel_listen" ||
+				manifest.kind !== "channel" ||
+				manifest.contract.extension !== CHANNEL_V1 ||
+				manifest.contract.version !== 1 ||
+				!socketManager ||
+				!origin ||
+				origin.generation !== generation ||
+				origin.instance !== options.instance ||
+				origin.account !== account ||
+				!origin.active ||
+				origin.controller.signal.aborted ||
+				closed ||
+				disabled ||
+				elapsed() >= origin.deadline
+			)
+				return undefined;
+			const input = channelV1.tools.channel_listen.input.safeParse(params.arguments);
+			if (
+				!input.success ||
+				sha256Hex(Buffer.from(JSON.stringify(jsonCopy(params.arguments)))) !==
+					origin.argumentsDigest
+			)
+				return undefined;
+			if (retained.size >= 16) throw new MockHubError("LOOKUP_LIMIT");
+			let leaseDeadline = origin.deadline;
+			let timer: NodeJS.Timeout | undefined;
+			let disposing = false;
+			const scope: Lookup = {
+				id: origin.id,
+				generation,
+				instance: origin.instance,
+				account: origin.account,
+				kind: undefined,
+				argumentsDigest: origin.argumentsDigest,
+				controller: new AbortController(),
+				startedAt: origin.startedAt,
+				get deadline() {
+					return leaseDeadline;
+				},
+				permit: undefined,
+				active: true,
+				requests: 0,
+				pending: 0,
+			};
+			const revoke = (): void => {
+				if (disposing) return;
+				disposing = true;
+				if (timer) clearTimeout(timer);
+				origin.controller.signal.removeEventListener("abort", revoke);
+				for (const socketId of lease.sockets.keys())
+					own(scope, socketManager?.closeSocket(socketId).catch(() => {}) ?? Promise.resolve());
+				retire(scope, new HostError("DENIED"));
+			};
+			const accepts = (method: HostMethod, params: unknown): boolean => {
+				if (closed || disabled || !scope.active || scope.controller.signal.aborted) return false;
+				if (elapsed() >= scope.deadline) {
+					revoke();
+					return false;
+				}
+				if (!lease.committed)
+					return origin.active && !origin.controller.signal.aborted && elapsed() < origin.deadline;
+				if (!params || typeof params !== "object" || Array.isArray(params)) return false;
+				const data = params as Record<string, unknown>;
+				switch (method) {
+					case "host/ws.send":
+					case "host/ws.close":
+						return typeof data.socketId === "string" && lease.sockets.has(data.socketId);
+					case "host/ws.open":
+						return (
+							lease.reconnectOpens < 3 && typeof data.url === "string" && lease.urls.has(data.url)
+						);
+					case "host/changed":
+						return lease.sockets.size > 0;
+					case "host/fetch": {
+						const parsed = HostFetchParams.safeParse(params);
+						if (!parsed.success) return false;
+						const fingerprint = reconnectRequest(parsed.data);
+						return (
+							lease.reconnectFetches < 3 &&
+							fingerprint !== undefined &&
+							lease.reconnects.has(fingerprint)
+						);
+					}
+					default:
+						return false;
+				}
+			};
+			const lease: ChannelLease = {
+				scope,
+				sockets: new Map(),
+				urls: new Set(),
+				reconnects: new Set(),
+				reconnectOpens: 0,
+				reconnectFetches: 0,
+				committed: false,
+				transferred: false,
+				accepts,
+				close: revoke,
+			};
+			channelLeases.set(scope, lease);
+			retainedLeases.add(lease);
+			retained.add(scope);
+			origin.controller.signal.addEventListener("abort", revoke, { once: true });
+			scope.controller.signal.addEventListener("abort", revoke, { once: true });
+			return Object.freeze({
+				signal: scope.controller.signal,
+				get deadline() {
+					return scope.deadline;
+				},
+				run<T>(action: () => T): T {
+					if (!scope.active || scope.controller.signal.aborted || elapsed() >= scope.deadline)
+						throw new HostError("DENIED");
+					return scopes.run(scope, action);
+				},
+				accepts,
+				commit(result: unknown): boolean {
+					if (lease.committed) return scope.active && !scope.controller.signal.aborted;
+					const body =
+						result && typeof result === "object" && !Array.isArray(result)
+							? (result as Record<string, unknown>)
+							: undefined;
+					const output = channelV1.tools.channel_listen.output.safeParse(body?.structuredContent);
+					if (
+						!body ||
+						(body.isError !== undefined && body.isError !== false) ||
+						(body.resultType !== undefined && body.resultType !== "complete") ||
+						!output.success ||
+						output.data.leaseMs > input.data.leaseMs ||
+						!origin.active ||
+						origin.controller.signal.aborted ||
+						!scope.active ||
+						scope.controller.signal.aborted ||
+						closed ||
+						disabled ||
+						elapsed() >= origin.deadline ||
+						elapsed() >= origin.startedAt + output.data.leaseMs
+					) {
+						revoke();
+						return false;
+					}
+					if (!lease.sockets.size) {
+						const previous = [...retainedLeases].filter(
+							(candidate) =>
+								candidate !== lease &&
+								candidate.committed &&
+								candidate.scope.active &&
+								!candidate.scope.controller.signal.aborted &&
+								elapsed() < candidate.scope.deadline,
+						);
+						if (previous.length !== 1) {
+							revoke();
+							return false;
+						}
+						const old = previous[0]!;
+						const moved = socketManager?.retarget(
+							[...old.sockets.keys()],
+							old.scope.controller.signal,
+							scope.controller.signal,
+						);
+						if (!moved?.length) {
+							revoke();
+							return false;
+						}
+						for (const socketId of moved) {
+							const url = old.sockets.get(socketId)!;
+							lease.sockets.set(socketId, url);
+							lease.urls.add(url);
+							old.sockets.delete(socketId);
+						}
+						for (const fingerprint of old.reconnects) lease.reconnects.add(fingerprint);
+						// Invalidate old authority now. In-flight work keeps its original deadline
+						// and capacity until it settles; aborting it here could kill a transferred socket.
+						old.transferred = true;
+						old.scope.active = false;
+						release(old.scope);
+					}
+					leaseDeadline = origin.startedAt + output.data.leaseMs;
+					lease.committed = true;
+					origin.controller.signal.removeEventListener("abort", revoke);
+					timer = setTimeout(revoke, Math.max(0, leaseDeadline - elapsed()));
+					return true;
+				},
+				close: revoke,
+			});
+		},
 		async lookup<T>(
 			action: (signal: AbortSignal, permit?: string) => Promise<T>,
 			kind?: ToolKind,
@@ -869,6 +1461,7 @@ export function createMockHost(
 				: manifest.kind === "tool"
 					? 15_000
 					: 30_000;
+			const startedAt = elapsed();
 			const scope: Lookup = {
 				id: ++nextLookup,
 				generation,
@@ -877,7 +1470,8 @@ export function createMockHost(
 				kind,
 				argumentsDigest: sha256Hex(Buffer.from(JSON.stringify(jsonCopy(args ?? null)))),
 				controller: new AbortController(),
-				deadline: elapsed() + budget,
+				startedAt,
+				deadline: startedAt + budget,
 				permit,
 				active: true,
 				requests: 0,
@@ -917,4 +1511,10 @@ export function createMockHost(
 			}
 		},
 	};
+	processLeaseFactories.set(host, {
+		plugin: manifest.id,
+		instance: options.instance,
+		begin: bridge.beginProcessLease,
+	});
+	return bridge;
 }

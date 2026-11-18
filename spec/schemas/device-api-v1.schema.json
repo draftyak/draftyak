@@ -259,6 +259,9 @@
       "additionalProperties": false
     },
     {
+      "$ref": "#/$defs/draftyak.device-api.AdminAccountConnectSubject"
+    },
+    {
       "$ref": "#/$defs/draftyak.device-api.AdminAccountSubject"
     },
     {
@@ -266,6 +269,12 @@
     },
     {
       "$ref": "#/$defs/draftyak.device-api.AdminDataBackupSubject"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.AdminPluginInstallSubject"
+    },
+    {
+      "$ref": "#/$defs/draftyak.device-api.AdminPluginUpgradeSubject"
     },
     {
       "$ref": "#/$defs/draftyak.device-api.ChallengeRequest"
@@ -442,9 +451,6 @@
             "kind": {
               "type": "string",
               "enum": [
-                "plugin.install",
-                "plugin.upgrade",
-                "account.connect",
                 "policy.routing-loosen",
                 "policy.auto-draft-enable",
                 "tool.instance-create",
@@ -489,6 +495,37 @@
             "kind": {
               "type": "string",
               "enum": [
+                "plugin.install",
+                "plugin.upgrade"
+              ]
+            },
+            "ids": {
+              "minItems": 2,
+              "maxItems": 2,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 26,
+                "maxLength": 26,
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                "description": "A ULID: 26 upper-case Crockford base32 characters."
+              },
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "kind",
+            "ids"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "account.connect",
                 "account.disconnect",
                 "account.mode-full",
                 "security.device-capabilities"
@@ -2064,6 +2101,144 @@
             },
             "kind": {
               "type": "string",
+              "const": "plugin.install"
+            },
+            "digest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "subject": {
+              "$ref": "#/$defs/draftyak.device-api.AdminPluginInstallSubject"
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "remainingMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 120000
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "digest",
+            "subject",
+            "expiresAt",
+            "remainingMs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "kind": {
+              "type": "string",
+              "const": "plugin.upgrade"
+            },
+            "digest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "subject": {
+              "$ref": "#/$defs/draftyak.device-api.AdminPluginUpgradeSubject"
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "remainingMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 120000
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "digest",
+            "subject",
+            "expiresAt",
+            "remainingMs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "kind": {
+              "type": "string",
+              "const": "account.connect"
+            },
+            "digest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "subject": {
+              "$ref": "#/$defs/draftyak.device-api.AdminAccountConnectSubject"
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "remainingMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 120000
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "digest",
+            "subject",
+            "expiresAt",
+            "remainingMs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "kind": {
+              "type": "string",
               "const": "account.disconnect"
             },
             "digest": {
@@ -2237,6 +2412,685 @@
           "additionalProperties": false
         }
       ]
+    },
+    "draftyak.device-api.AdminPluginInstallSubject": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "type": "number",
+              "const": 1
+            },
+            "registryId": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "pluginId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "ownerUserId": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "epoch": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "to": {
+              "type": "object",
+              "properties": {
+                "versionId": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "registryGeneration": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "appVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "inventoryDigest": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "manifestDigest": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "egressDigest": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "sendDigest": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 64,
+                      "maxLength": 64,
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                      "description": "A SHA-256 digest as 64 lower-case hex characters."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "surfaceDigest": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                }
+              },
+              "required": [
+                "versionId",
+                "version",
+                "registryGeneration",
+                "appVersion",
+                "inventoryDigest",
+                "manifestDigest",
+                "egressDigest",
+                "sendDigest",
+                "surfaceDigest"
+              ],
+              "additionalProperties": false
+            },
+            "intent": {
+              "type": "string",
+              "const": "install"
+            },
+            "from": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "versionId": {
+                      "type": "string",
+                      "minLength": 26,
+                      "maxLength": 26,
+                      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                      "description": "A ULID: 26 upper-case Crockford base32 characters."
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "registryGeneration": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740990
+                    },
+                    "state": {
+                      "type": "string",
+                      "const": "staged"
+                    }
+                  },
+                  "required": [
+                    "versionId",
+                    "version",
+                    "registryGeneration",
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "v",
+            "registryId",
+            "pluginId",
+            "ownerUserId",
+            "epoch",
+            "to",
+            "intent",
+            "from"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "type": "number",
+              "const": 1
+            },
+            "registryId": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "pluginId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "ownerUserId": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "epoch": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+            },
+            "to": {
+              "type": "object",
+              "properties": {
+                "versionId": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "registryGeneration": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "appVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "inventoryDigest": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "manifestDigest": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "egressDigest": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                "sendDigest": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 64,
+                      "maxLength": 64,
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                      "description": "A SHA-256 digest as 64 lower-case hex characters."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "surfaceDigest": {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                }
+              },
+              "required": [
+                "versionId",
+                "version",
+                "registryGeneration",
+                "appVersion",
+                "inventoryDigest",
+                "manifestDigest",
+                "egressDigest",
+                "sendDigest",
+                "surfaceDigest"
+              ],
+              "additionalProperties": false
+            },
+            "intent": {
+              "type": "string",
+              "const": "re-enable"
+            },
+            "from": {
+              "type": "object",
+              "properties": {
+                "versionId": {
+                  "type": "string",
+                  "minLength": 26,
+                  "maxLength": 26,
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+                  "description": "A ULID: 26 upper-case Crockford base32 characters."
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "registryGeneration": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740990
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "disabled",
+                    "quarantined"
+                  ]
+                }
+              },
+              "required": [
+                "versionId",
+                "version",
+                "registryGeneration",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "v",
+            "registryId",
+            "pluginId",
+            "ownerUserId",
+            "epoch",
+            "to",
+            "intent",
+            "from"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Plugin install or re-enable DATA: the actual absent or selected prior state and the retained candidate bindings. Existing selection is never treated as absent. Candidate provenance, surface validation and accepted-operation authority belong to the original producer; these fields grant none. Version/generation relations and UTF-8 byte bounds are also checked at runtime."
+    },
+    "draftyak.device-api.AdminPluginUpgradeSubject": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "number",
+          "const": 1
+        },
+        "registryId": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "pluginId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "ownerUserId": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26,
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+          "description": "A ULID: 26 upper-case Crockford base32 characters."
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "An instant as UTC milliseconds since the epoch, a safe integer."
+        },
+        "to": {
+          "type": "object",
+          "properties": {
+            "versionId": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "registryGeneration": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "appVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "inventoryDigest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "manifestDigest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "egressDigest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            },
+            "sendDigest": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 64,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+                  "description": "A SHA-256 digest as 64 lower-case hex characters."
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "surfaceDigest": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])",
+              "description": "A SHA-256 digest as 64 lower-case hex characters."
+            }
+          },
+          "required": [
+            "versionId",
+            "version",
+            "registryGeneration",
+            "appVersion",
+            "inventoryDigest",
+            "manifestDigest",
+            "egressDigest",
+            "sendDigest",
+            "surfaceDigest"
+          ],
+          "additionalProperties": false
+        },
+        "intent": {
+          "type": "string",
+          "const": "upgrade"
+        },
+        "from": {
+          "type": "object",
+          "properties": {
+            "versionId": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "registryGeneration": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740990
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "staged",
+                "disabled",
+                "quarantined"
+              ]
+            }
+          },
+          "required": [
+            "versionId",
+            "version",
+            "registryGeneration",
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "v",
+        "registryId",
+        "pluginId",
+        "ownerUserId",
+        "epoch",
+        "to",
+        "intent",
+        "from"
+      ],
+      "additionalProperties": false,
+      "description": "Plugin upgrade DATA binds the exact current selection and a different retained candidate at the next generation. It neither switches the selection nor supplies candidate, native or accepted-operation authority. Version/generation relations and UTF-8 byte bounds are also checked at runtime."
+    },
+    "draftyak.device-api.AdminAccountConnectSubject": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "type": "number",
+              "const": 1
+            },
+            "account": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "ownerUserId": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "alias": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
+              "description": "An owner-chosen account alias.",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "mode": {
+              "$ref": "#/$defs/draftyak.entities.AccountMode"
+            },
+            "historyLimitDays": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 365,
+              "description": "How many days back the first sync reaches."
+            },
+            "disclosureVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "description": "The version of the disclosure the owner agreed to for it."
+            },
+            "pluginInstanceId": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "channel": {
+              "type": "string",
+              "const": "email"
+            },
+            "address": {
+              "$ref": "#/$defs/draftyak.entities.EmailAddress"
+            }
+          },
+          "required": [
+            "v",
+            "account",
+            "ownerUserId",
+            "alias",
+            "mode",
+            "historyLimitDays",
+            "disclosureVersion",
+            "pluginInstanceId",
+            "channel",
+            "address"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "v": {
+              "type": "number",
+              "const": 1
+            },
+            "account": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "ownerUserId": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "alias": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,31}$(?![\\s\\S])",
+              "description": "An owner-chosen account alias.",
+              "not": {
+                "pattern": "\\n"
+              }
+            },
+            "mode": {
+              "$ref": "#/$defs/draftyak.entities.AccountMode"
+            },
+            "historyLimitDays": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 365,
+              "description": "How many days back the first sync reaches."
+            },
+            "disclosureVersion": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "description": "The version of the disclosure the owner agreed to for it."
+            },
+            "pluginInstanceId": {
+              "type": "string",
+              "minLength": 26,
+              "maxLength": 26,
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$(?![\\s\\S])",
+              "description": "A ULID: 26 upper-case Crockford base32 characters."
+            },
+            "channel": {
+              "type": "string",
+              "const": "chat"
+            },
+            "teamId": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "selfUserId": {
+              "$ref": "#/$defs/draftyak.normalized-change.ProviderId"
+            }
+          },
+          "required": [
+            "v",
+            "account",
+            "ownerUserId",
+            "alias",
+            "mode",
+            "historyLimitDays",
+            "disclosureVersion",
+            "pluginInstanceId",
+            "channel",
+            "teamId",
+            "selfUserId"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Account enrollment DATA: the reserved account, owner choices, plugin instance and provider identity checked by the hub. The original issuer retains and rechecks the disclosure, selected plugin version, credentials and current native operation; this record supplies no credential, selection or accepted-operation authority."
+    },
+    "draftyak.entities.AccountMode": {
+      "type": "string",
+      "enum": [
+        "full",
+        "read_only"
+      ],
+      "description": "read_only has no send or organize path."
     },
     "draftyak.device-api.AdminAccountSubject": {
       "oneOf": [

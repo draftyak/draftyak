@@ -37,6 +37,7 @@ import {
 	openPluginStdio,
 	type PluginProcessIo,
 	type PluginStdio,
+	type PluginStdioResult,
 } from "@draftyak/protocol/plugin-stdio";
 import { HostError } from "@draftyak/sdk";
 import { Client } from "@modelcontextprotocol/client";
@@ -46,13 +47,16 @@ import {
 	parseJSONRPCMessage,
 	type Transport,
 } from "@modelcontextprotocol/server";
+import { getProcessLeaseFactory, type ProcessLease } from "./host.ts";
 import { MCP_VERSION } from "./in-memory.ts";
+import { createProcessLeases } from "./process-lease.ts";
 import {
 	copyMockCallOptions,
 	type MockCallOptions,
 	type MockHost,
 	MockHubError,
 	type MockPlugin,
+	type MockProcessObservation,
 	type MockProgressNotification,
 } from "./types.ts";
 
@@ -272,6 +276,8 @@ export function createProcess(
 		signal?: AbortSignal,
 		options?: MockCallOptions,
 	): Promise<Record<string, unknown>>;
+	endInput(): Promise<MockProcessObservation>;
+	readonly whenClosed: Promise<MockProcessObservation>;
 	close(): Promise<void>;
 } {
 	const checked = validateManifest(plugin.manifest);
@@ -296,6 +302,84 @@ export function createProcess(
 	let discovery: Record<string, unknown> | undefined;
 	let discoveryId: string | number | undefined;
 	let scope: (<T>(action: () => T) => T) | undefined;
+	let scopeLease: ProcessLease | undefined;
+	let inputEnding = false;
+	let inputFinished = false;
+	let inputEndIssued = false;
+	let inputEndingWork: Promise<MockProcessObservation> | undefined;
+	let observationSettled = false;
+	let observationFailure: string | undefined;
+	let neverStartedWork: Promise<void> | undefined;
+	const forcedSignals: NodeJS.Signals[] = [];
+	const outputEnd: [boolean, boolean] = [false, false];
+	const outputEvents = [Promise.withResolvers<void>(), Promise.withResolvers<void>()] as const;
+	let originalExit: MockProcessObservation["originalExit"] = {
+		observed: false,
+		code: null,
+		signal: null,
+	};
+	let originalClose: MockProcessObservation["originalClose"] = {
+		observed: false,
+		code: null,
+		signal: null,
+	};
+	const attached = Promise.withResolvers<void>();
+	const observedClose = Promise.withResolvers<MockProcessObservation>();
+	const processJoined = Promise.withResolvers<void>();
+	const cleanupClosed = Promise.withResolvers<void>();
+	// Observation failure remains visible to consumers without an unhandled rejection.
+	void observedClose.promise.catch(() => {});
+	void cleanupClosed.promise.catch(() => {});
+	function observation(result: PluginStdioResult | null): MockProcessObservation {
+		return frozenReceipt({
+			started: child !== undefined,
+			inputEndRequested: inputEnding,
+			inputFinished,
+			kind: stdio?.kind ?? null,
+			originalExit: { ...originalExit },
+			originalClose: { ...originalClose },
+			outputEnd: [...outputEnd] as [boolean, boolean],
+			stdio: result,
+			forcedSignals: [...forcedSignals],
+		});
+	}
+	async function observeOriginalClose(): Promise<void> {
+		try {
+			await attached.promise;
+			if (!io) fail("PROCESS_OBSERVATION_FAILED");
+			const result = await io.completion;
+			processJoined.resolve();
+			await Promise.all(outputEvents.map((event) => event.promise));
+			// Fulfilled completion joins descriptors even when its error DATA reports forced cleanup.
+			cleanupClosed.resolve();
+			if (observationFailure) fail(observationFailure);
+			if (observationSettled) return;
+			observationSettled = true;
+			observedClose.resolve(observation(result));
+		} catch {
+			observationSettled = true;
+			cleanupClosed.reject(new MockHubError("PROCESS_CLEANUP_FAILED"));
+			observedClose.reject(new MockHubError("PROCESS_OBSERVATION_FAILED"));
+		}
+	}
+	function sealNeverStarted(): void {
+		if (neverStartedWork) return;
+		neverStartedWork = Promise.resolve()
+			.then(async () => {
+				// Wait outside startup's own catch path; never resolve before startup is sealed.
+				await startup?.catch(() => {});
+				if (child || observationSettled || (!closed && !inputEnding)) return;
+				await stdio?.destroy();
+				cleanupClosed.resolve();
+				observationSettled = true;
+				observedClose.resolve(observation(null));
+			})
+			.catch(() => {
+				observationSettled = true;
+				cleanupClosed.reject(new MockHubError("PROCESS_CLEANUP_FAILED"));
+				observedClose.reject(new MockHubError("PROCESS_OBSERVATION_FAILED"));
+			});
+	}
 	let progressObserver:
 		| {
 				readonly token: string | number;
@@ -304,12 +388,16 @@ export function createProcess(
 		  }
 		| undefined;
 	const stop = new AbortController();
-	// Records live only while their call runs, so the call's earlier deadline bounds each of them.
+	// Pending host work retains capacity; committed owners can outlive their originating call.
 	const activeHosts = new Map<
 		string,
 		{
 			readonly controller: AbortController;
 			readonly fetch: boolean;
+			readonly owner: ProcessLease | undefined;
+			readonly method: HostMethod;
+			readonly params: unknown;
+			leased: boolean;
 			streamId?: string;
 			retired: boolean;
 			settled: boolean;
@@ -327,12 +415,42 @@ export function createProcess(
 		if (!unresolvedFetches()) earlyTerminals.clear();
 		if (abort) record.controller.abort(new HostError("DENIED"));
 	};
+	const leases = createProcessLeases(
+		getProcessLeaseFactory(host, {
+			plugin: checked.manifest.id,
+			instance: identity.instance,
+		}),
+	);
 	let unsubscribe: (() => void) | undefined;
 	const waiting = new Map<
 		string | number,
 		{ resolve(value: Record<string, unknown>): void; reject(error: Error): void }
 	>();
 	const clientPending = new Set<string | number>();
+	interface Origin {
+		readonly method: string;
+		readonly terminal: PromiseWithResolvers<void>;
+		wireId?: string | number;
+		written: boolean;
+		cancelled: boolean;
+		cancellationSent: boolean;
+		terminalSeen: boolean;
+		cancel(): void;
+	}
+	let activeOrigin: Origin | undefined;
+	const wireOrigins = new Map<string | number, Origin>();
+	const trackOrigin = (method: string, id: string | number): Origin | undefined => {
+		const origin = activeOrigin;
+		if (!origin || origin.method !== method) return undefined;
+		if (origin.wireId !== undefined) fail("PROCESS_FRAME_INVALID");
+		origin.wireId = id;
+		wireOrigins.set(id, origin);
+		return origin;
+	};
+	const releaseOrigin = (origin: Origin): void => {
+		if (activeOrigin === origin) activeOrigin = undefined;
+		if (origin.wireId !== undefined) wireOrigins.delete(origin.wireId);
+	};
 	let sequence = 0;
 	const requestPrefix = `testkit-${randomUUID()}-`;
 	let tail = Promise.resolve();
@@ -341,9 +459,11 @@ export function createProcess(
 		progressObserver = undefined;
 		if (closing) return closing;
 		closed = true;
+		sealNeverStarted();
 		closing = Promise.resolve()
 			.then(async () => {
 				stop.abort(new MockHubError("PROCESS_CLOSED"));
+				leases.close();
 				unsubscribe?.();
 				for (const id of activeHosts.keys()) retireHost(id, true);
 				activeHosts.clear();
@@ -372,6 +492,7 @@ export function createProcess(
 							running.once("exit", onExit);
 							running.on("error", onError);
 							const terminate = (signal?: NodeJS.Signals): void => {
+								forcedSignals.push(signal ?? "SIGTERM");
 								try {
 									running.kill(signal);
 								} catch {
@@ -396,7 +517,7 @@ export function createProcess(
 				}
 				await io?.destroy();
 				await stdio?.destroy();
-				if (terminationFailed) fail("PROCESS_CLEANUP_FAILED");
+				if (terminationFailed || leases.closeFailed) fail("PROCESS_CLEANUP_FAILED");
 				if (staging) {
 					try {
 						rmSync(staging, { recursive: true, force: true });
@@ -412,6 +533,8 @@ export function createProcess(
 	const failed = (code: string): void => {
 		progressObserver = undefined;
 		if (closed) return;
+		if (inputEnding && (code === "PROCESS_EXITED" || code === "PROCESS_INPUT_ENDED")) return;
+		if (code !== "PROCESS_EXITED") observationFailure ??= code;
 		const error = new MockHubError(code);
 		stop.abort(error);
 		try {
@@ -422,7 +545,25 @@ export function createProcess(
 		for (const pending of waiting.values()) pending.reject(error);
 		void teardown().catch(() => {});
 	};
+	const retainCancelled = async (origin: Origin, deadline: number): Promise<void> => {
+		const remaining = deadline - performance.now();
+		const timer =
+			remaining > 0 ? setTimeout(() => failed("PROCESS_REQUEST_TIMEOUT"), remaining) : undefined;
+		if (remaining <= 0) failed("PROCESS_REQUEST_TIMEOUT");
+		try {
+			// Neither cancellation delivery nor a Client promise rejection proves retirement.
+			await Promise.race([origin.terminal.promise, processJoined.promise]);
+		} finally {
+			if (timer) clearTimeout(timer);
+		}
+	};
+	const writeFailed = (error: unknown): void => {
+		if (inputEnding && error instanceof MockHubError && error.code === "PROCESS_INPUT_ENDED")
+			return;
+		failed("PROCESS_CLOSED");
+	};
 	const write = async (value: unknown, tagged: boolean): Promise<void> => {
+		if (inputEnding) fail("PROCESS_INPUT_ENDED");
 		if (closed || !io || writes >= HOST_MAX_ACTIVE_REQUESTS * 2) fail("PROCESS_CLOSED");
 		const line = `${tagged ? HOST_FRAME_TAG : ""}${canonicalize(parseStrict(JSON.stringify(value)))}\n`;
 		if (Buffer.byteLength(line) > HOST_MAX_FRAME_BYTES + (tagged ? 2 : 1))
@@ -439,6 +580,7 @@ export function createProcess(
 		}
 	};
 	const hostRequest = (value: unknown): void => {
+		if (inputEnding) return;
 		const message = HostMessage.parse(value);
 		if ("method" in message && message.method === "host/cancel") {
 			retireHost(message.params.requestId, true);
@@ -453,11 +595,20 @@ export function createProcess(
 					error: { code: -32000, message: "Host request refused", data: { code } },
 				},
 				true,
-			).catch(() => failed("PROCESS_CLOSED"));
+			).catch(writeFailed);
 		};
-		if (!scope) {
+		const selected = leases.find(message.method as HostMethod, message.params);
+		if (selected.ambiguous) {
 			refuse("DENIED");
 			return;
+		}
+		const owned = selected.owner;
+		const owner = owned ?? scopeLease;
+		if (!scope) {
+			if (!owned) {
+				refuse("DENIED");
+				return;
+			}
 		}
 		// Cancelled requests keep capacity until settled but no longer count against the child.
 		const live = [...activeHosts.values()].filter((record) => !record.retired).length;
@@ -471,6 +622,10 @@ export function createProcess(
 		const record = {
 			controller,
 			fetch: message.method === "host/fetch",
+			owner,
+			method: message.method as HostMethod,
+			params: message.params,
+			leased: owned !== undefined,
 			streamId: undefined as string | undefined,
 			retired: false,
 			settled: false,
@@ -479,7 +634,11 @@ export function createProcess(
 		const execute = (): void => {
 			void host
 				.request(message.method as HostMethod, message.params as never, {
-					signal: AbortSignal.any([controller.signal, stop.signal]),
+					signal: AbortSignal.any([
+						controller.signal,
+						stop.signal,
+						...(owner ? [owner.signal] : []),
+					]),
 				})
 				.then(
 					(result) => {
@@ -515,13 +674,22 @@ export function createProcess(
 						);
 					},
 				)
-				.catch(() => failed("PROCESS_CLOSED"))
+				.catch(writeFailed)
 				.finally(() => {
 					record.settled = true;
 					if (record.retired) activeHosts.delete(message.id);
 				});
 		};
-		scope(execute);
+		try {
+			if (owned) owned.run(execute);
+			else scope!(execute);
+		} catch (error) {
+			// A producer can expire between acceptance and restoring its scope.
+			record.settled = true;
+			retireHost(message.id, true);
+			if (error instanceof HostError) refuse("DENIED");
+			else throw error;
+		}
 	};
 	const line = (raw: Buffer): void => {
 		const tagged = raw[0] === 0x1e;
@@ -569,6 +737,12 @@ export function createProcess(
 			}
 		}
 		if ("id" in message && message.id !== undefined && !("method" in message)) {
+			const origin = wireOrigins.get(message.id);
+			if (origin) {
+				origin.terminalSeen = true;
+				wireOrigins.delete(message.id);
+				origin.terminal.resolve();
+			}
 			if (progressObserver?.requestId === message.id) progressObserver = undefined;
 			const pending = waiting.get(message.id);
 			if (pending) {
@@ -610,6 +784,10 @@ export function createProcess(
 					fail("PROCESS_REQUEST_LIMIT");
 				clientPending.add(requestId);
 			}
+			const origin =
+				requestId !== undefined && "method" in message
+					? trackOrigin(message.method, requestId)
+					: undefined;
 			if ("method" in message && message.method === "server/discover" && "id" in message)
 				discoveryId = message.id;
 			if (
@@ -621,6 +799,10 @@ export function createProcess(
 				progressObserver.requestId = requestId;
 			try {
 				await write(message, false);
+				if (origin) {
+					origin.written = true;
+					origin.cancel();
+				}
 			} catch (error) {
 				if (requestId !== undefined) clientPending.delete(requestId);
 				throw error;
@@ -635,6 +817,7 @@ export function createProcess(
 		params: Record<string, unknown>,
 	): Promise<Record<string, unknown>> => {
 		const id = `${requestPrefix}${++sequence}`;
+		const origin = trackOrigin(method, id);
 		const result = new Promise<Record<string, unknown>>((resolve, reject) =>
 			waiting.set(id, { resolve, reject }),
 		);
@@ -657,12 +840,17 @@ export function createProcess(
 				},
 				false,
 			);
+			if (origin) {
+				origin.written = true;
+				origin.cancel();
+			}
 			return await result;
 		} finally {
 			waiting.delete(id);
 		}
 	};
 	const ready = async (): Promise<void> => {
+		if (inputEnding || closed) fail("PROCESS_CLOSED");
 		if (startup) return startup;
 		startup = (async () => {
 			if (!isPluginNodeVersionSupported(process.versions.node)) fail("PROCESS_NODE_UNSUPPORTED");
@@ -670,7 +858,7 @@ export function createProcess(
 				const contents = packed(source.directory, [...source.hashes.keys()]);
 				for (const [name, content] of contents)
 					if (sha256Hex(content) !== source.hashes.get(name)) fail("PROCESS_FILES_CHANGED");
-				if (closed) fail("PROCESS_CLOSED");
+				if (closed || inputEnding) fail("PROCESS_CLOSED");
 				staging = mkdtempSync(path.join(os.tmpdir(), "draftyak-plugin-"));
 				pluginDir = path.join(staging, "plugin");
 				mkdirSync(pluginDir, { mode: 0o700 });
@@ -690,11 +878,11 @@ export function createProcess(
 					...(source.data ? { dataDir: data } : {}),
 				});
 				const opened = await openPluginStdio();
-				if (closed) {
+				stdio = opened;
+				if (closed || inputEnding) {
 					await opened.destroy();
 					fail("PROCESS_CLOSED");
 				}
-				stdio = opened;
 				const env: NodeJS.ProcessEnv = {
 					DRAFTYAK_PLUGIN_ID: identity.plugin,
 					DRAFTYAK_INSTANCE_ID: identity.instance,
@@ -713,7 +901,18 @@ export function createProcess(
 					windowsHide: true,
 					shell: false,
 				});
-				io = stdio.attach(child);
+				child.once("exit", (code, signal) => {
+					originalExit = { observed: true, code, signal };
+				});
+				child.once("close", (code, signal) => {
+					originalClose = { observed: true, code, signal };
+					void observeOriginalClose();
+				});
+				try {
+					io = stdio.attach(child);
+				} finally {
+					attached.resolve();
+				}
 				io.outputs[0].on("data", (incoming: Buffer) => {
 					if (closed) return;
 					let start = 0;
@@ -735,18 +934,33 @@ export function createProcess(
 						failed(error instanceof MockHubError ? error.code : "PROCESS_FRAME_INVALID");
 					}
 				});
-				io.outputs[0].once("end", () =>
-					failed(bytes.length ? "PROCESS_FRAME_INVALID" : "PROCESS_EXITED"),
-				);
+				io.outputs[0].once("end", () => {
+					outputEnd[0] = true;
+					outputEvents[0].resolve();
+					if (bytes.length) failed("PROCESS_FRAME_INVALID");
+					else if (!inputEnding) failed("PROCESS_EXITED");
+				});
+				io.outputs[0].once("close", () => {
+					outputEvents[0].resolve();
+				});
 				io.outputs[0].on("error", () => failed("PROCESS_FRAME_INVALID"));
 				io.outputs[1].on("data", (chunk: Buffer) => {
 					stderrBytes += chunk.length;
 					if (stderrBytes > HOST_MAX_FRAME_BYTES) failed("PROCESS_STDERR_LIMIT");
 				});
 				io.outputs[1].on("error", () => failed("PROCESS_FRAME_INVALID"));
+				io.outputs[1].once("end", () => {
+					outputEnd[1] = true;
+					outputEvents[1].resolve();
+				});
+				io.outputs[1].once("close", () => {
+					outputEvents[1].resolve();
+				});
 				void io.completion.then(
-					() => failed("PROCESS_EXITED"),
-					() => failed("PROCESS_EXITED"),
+					() => {
+						if (!inputEnding) failed("PROCESS_EXITED");
+					},
+					() => failed("PROCESS_IO_FAILED"),
 				);
 				unsubscribe = host.subscribe(
 					(notification) => {
@@ -765,14 +979,14 @@ export function createProcess(
 								else if (unresolvedFetches() && earlyTerminals.size < HOST_MAX_ACTIVE_REQUESTS)
 									earlyTerminals.add(streamId);
 							}
-							void write(checked, true).catch(() => failed("PROCESS_CLOSED"));
+							void write(checked, true).catch(writeFailed);
 						} catch {
 							// An invalid host notification is never forwarded to the plugin.
 							failed("PROCESS_CLOSED");
 						}
 					},
 					() => {
-						void teardown().catch(() => {});
+						if (!inputEnding) void teardown().catch(() => {});
 					},
 				);
 				client = new Client(
@@ -783,7 +997,12 @@ export function createProcess(
 				if (client.getNegotiatedProtocolVersion() !== MCP_VERSION || !discovery)
 					fail("PROCESS_REQUEST_REFUSED");
 			} catch (error) {
-				await teardown();
+				const expectedEnd =
+					inputEnding &&
+					error instanceof MockHubError &&
+					(error.code === "PROCESS_INPUT_ENDED" || (!child && error.code === "PROCESS_CLOSED"));
+				if (expectedEnd) sealNeverStarted();
+				else await teardown();
 				if (error instanceof MockHubError) throw error;
 				fail("PROCESS_START_FAILED");
 			}
@@ -802,9 +1021,7 @@ export function createProcess(
 		const deadline = performance.now() + budget;
 		try {
 			const refusal = (): Error =>
-				stop.signal.aborted
-					? (stop.signal.reason as MockHubError)
-					: new HostError(signal?.reason instanceof HostError ? signal.reason.code : "DENIED");
+				stop.signal.aborted ? (stop.signal.reason as MockHubError) : new HostError("DENIED");
 			if (cancelled.aborted) throw refusal();
 			if (budget <= 0) fail(code);
 			const result = await Promise.race([
@@ -824,8 +1041,48 @@ export function createProcess(
 		}
 	}
 	return {
+		whenClosed: observedClose.promise,
+		endInput() {
+			if (inputEndingWork) return inputEndingWork;
+			if (observationSettled) return observedClose.promise;
+			const outcome = Promise.withResolvers<MockProcessObservation>();
+			inputEndingWork = outcome.promise;
+			inputEnding = true;
+			stop.abort(new MockHubError("PROCESS_INPUT_ENDED"));
+			leases.close();
+			if (leases.closeFailed) observationFailure ??= "PROCESS_LEASE_CLOSE_FAILED";
+			progressObserver = undefined;
+			scope = undefined;
+			scopeLease = undefined;
+			unsubscribe?.();
+			unsubscribe = undefined;
+			for (const id of activeHosts.keys()) retireHost(id, true);
+			for (const pending of waiting.values())
+				pending.reject(new MockHubError("PROCESS_INPUT_ENDED"));
+			waiting.clear();
+			clientPending.clear();
+			void (async () => {
+				try {
+					// Startup can only finish or refuse after inputEnding seals future spawn.
+					await startup?.catch(() => {});
+					if (!child) sealNeverStarted();
+					else if (io && !originalClose.observed && !inputEndIssued) {
+						inputEndIssued = true;
+						inputFinished = io.input.writableFinished;
+						io.input.once("finish", () => {
+							inputFinished = true;
+						});
+						io.input.end();
+					}
+					outcome.resolve(await observedClose.promise);
+				} catch {
+					outcome.reject(new MockHubError("PROCESS_INPUT_END_FAILED"));
+				}
+			})();
+			return inputEndingWork;
+		},
 		async request(method, params = {}, signal, optionsForCall) {
-			if (closed) fail("PROCESS_CLOSED");
+			if (closed || inputEnding) fail("PROCESS_CLOSED");
 			if (signal?.aborted) throw new HostError("DENIED");
 			if (!["server/discover", "tools/list", "tools/call"].includes(method))
 				fail("PROCESS_REQUEST_REFUSED");
@@ -853,7 +1110,7 @@ export function createProcess(
 			let connected: Client;
 			try {
 				await ready();
-				if (closed) fail("PROCESS_CLOSED");
+				if (closed || inputEnding) fail("PROCESS_CLOSED");
 				if (signal?.aborted) throw new HostError("DENIED");
 				if (!client) fail("PROCESS_START_FAILED");
 				connected = client;
@@ -865,24 +1122,95 @@ export function createProcess(
 			const released = Promise.withResolvers<void>();
 			tail = prior.then(() => released.promise);
 			let running = false;
+			let candidate: ProcessLease | undefined;
+			let promoted = false;
+			let origin: Origin | undefined;
+			let cancelled = false;
 			try {
 				await bounded(prior, deadline - performance.now(), "PROCESS_REQUEST_TIMEOUT", signal);
-				if (closed) fail("PROCESS_CLOSED");
+				if (closed || inputEnding) fail("PROCESS_CLOSED");
 				if (signal?.aborted) throw new HostError("DENIED");
 				if (performance.now() >= deadline) fail("PROCESS_REQUEST_TIMEOUT");
 				running = true;
-				scope = snapshot;
+				candidate = snapshot(() => leases.begin(method, copied));
+				const owner = candidate;
+				scope = owner ? <T>(action: () => T): T => owner.run(action) : snapshot;
+				scopeLease = owner;
+				const call: Origin = {
+					method,
+					terminal: Promise.withResolvers<void>(),
+					written: false,
+					cancelled: false,
+					cancellationSent: false,
+					terminalSeen: false,
+					cancel() {
+						if (
+							!call.cancelled ||
+							!call.written ||
+							call.wireId === undefined ||
+							call.cancellationSent ||
+							call.terminalSeen ||
+							closed ||
+							inputEnding
+						)
+							return;
+						call.cancellationSent = true;
+						try {
+							void connected
+								.notification({
+									method: "notifications/cancelled",
+									params: { requestId: call.wireId },
+								})
+								.catch(writeFailed);
+						} catch {
+							failed("PROCESS_CLOSED");
+						}
+					},
+				};
+				origin = call;
+				activeOrigin = call;
 				progressObserver = observer;
 				const result =
 					method === "tools/call"
 						? connected.callTool(copied as { name: string; arguments?: Record<string, unknown> })
 						: rawRequest(method, copied);
-				return jsonCopy(
+				const response = jsonCopy(
 					await bounded(result, deadline - performance.now(), "PROCESS_REQUEST_TIMEOUT", signal),
 				) as Record<string, unknown>;
+				if (candidate) {
+					promoted = leases.commit(candidate, response);
+					if (!promoted && response.isError !== true) fail("PROCESS_LEASE_REFUSED");
+					if (promoted)
+						for (const record of activeHosts.values()) {
+							if (
+								record.owner === candidate &&
+								leases.accepts(candidate, record.method, record.params)
+							)
+								record.leased = true;
+						}
+				}
+				return response;
 			} catch (error) {
 				if (progressObserver === observer) progressObserver = undefined;
-				if (running) await teardown();
+				if (
+					origin &&
+					callOptions?.signal?.aborted &&
+					signal?.aborted &&
+					!stop.signal.aborted &&
+					!closed &&
+					!inputEnding &&
+					performance.now() < deadline
+				) {
+					cancelled = true;
+					origin.cancelled = true;
+					origin.cancel();
+					throw new HostError("DENIED");
+				}
+				if (
+					running &&
+					!(inputEnding && error instanceof MockHubError && error.code === "PROCESS_INPUT_ENDED")
+				)
+					await teardown();
 				if (error instanceof MockHubError) throw error;
 				if (error instanceof HostError) throw error;
 				return fail("PROCESS_REQUEST_REFUSED");
@@ -890,10 +1218,19 @@ export function createProcess(
 				if (running) {
 					if (progressObserver === observer) progressObserver = undefined;
 					scope = undefined;
-					for (const id of activeHosts.keys()) retireHost(id, true);
+					scopeLease = undefined;
+					if (candidate && !promoted) leases.discard(candidate);
+					for (const [id, record] of activeHosts) {
+						// Already admitted lease work keeps its original signal/deadline until settled.
+						if (!record.leased) retireHost(id, true);
+					}
 				}
 				// A cancelled queued call retains its place until predecessors settle, bounding tombstones.
-				void prior.then(() => {
+				const retirement =
+					cancelled && origin ? retainCancelled(origin, deadline) : Promise.resolve();
+				void prior.then(async () => {
+					await retirement;
+					if (origin) releaseOrigin(origin);
 					admitted--;
 					released.resolve();
 				});
@@ -904,6 +1241,7 @@ export function createProcess(
 			await startup?.catch(() => {});
 			await tail;
 			await client?.close();
+			await cleanupClosed.promise;
 		},
 	};
 }

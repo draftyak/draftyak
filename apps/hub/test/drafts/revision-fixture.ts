@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { DraftAuthor, DraftContent } from "@draftyak/protocol/entities/draft";
@@ -45,7 +45,10 @@ export interface RevisionFixture {
 	snapshot(current: NativeRevision): CurrentSendSnapshotV1;
 	reopen(): ReopenedRevisionFixture;
 }
-export async function revisionFixture(): Promise<RevisionFixture> {
+const setupDebts = new Map<string, readonly (() => void)[]>();
+
+export async function revisionFixture(masterBytes?: Uint8Array): Promise<RevisionFixture> {
+	if (setupDebts.size) throw new Error("DYTEST previous revision setup debt retained");
 	const dir = mkdtempSync(path.join(os.tmpdir(), "draftyak-native-revisions-")),
 		filename = path.join(dir, "hub.db"),
 		fault = path.join(dir, "fault");
@@ -54,7 +57,7 @@ export async function revisionFixture(): Promise<RevisionFixture> {
 		path.join(fault, "0001_fault.sql"),
 		"CREATE TABLE revision_parent(id INTEGER PRIMARY KEY); CREATE TABLE revision_child(id INTEGER REFERENCES revision_parent(id) DEFERRABLE INITIALLY DEFERRED);",
 	);
-	const key = new MasterKey(randomBytes(32)),
+	const key = new MasterKey(masterBytes ?? randomBytes(32)),
 		auditKey = key.derive("audit"),
 		audit = new AuditChain(auditKey);
 	auditKey.fill(0);
@@ -69,11 +72,40 @@ export async function revisionFixture(): Promise<RevisionFixture> {
 			fault,
 		},
 	};
-	const store = new HubStore({ ...options, create: true });
-	await store.migrate("audit");
-	await store.migrate("core");
-	await store.migrate("revisions");
-	await store.migrate("fault");
+	let acquired: HubStore | undefined;
+	try {
+		acquired = new HubStore({ ...options, create: true });
+		await acquired.migrate("audit");
+		await acquired.migrate("core");
+		await acquired.migrate("revisions");
+		await acquired.migrate("fault");
+	} catch (error) {
+		let cleanupFailed = false;
+		const closers = [() => acquired?.close(), () => audit.destroy(), () => key.destroy()];
+		for (const close of closers) {
+			try {
+				close();
+			} catch {
+				cleanupFailed = true;
+			}
+		}
+		if (cleanupFailed) setupDebts.set(dir, closers);
+		if (!cleanupFailed) {
+			try {
+				rmSync(dir, { recursive: true, force: true });
+				cleanupFailed = existsSync(dir);
+			} catch {
+				cleanupFailed = true;
+			}
+		}
+		throw new AggregateError(
+			[error],
+			cleanupFailed
+				? "DYTEST revision setup cleanup debt retained"
+				: "DYTEST revision fixture setup failed",
+		);
+	}
+	const store = acquired;
 	const time = { now: 1_800_000_000_000 },
 		clock = { wallMs: () => time.now, monotonicMs: () => 10_000 },
 		revisions = new NativeDraftRevisions(store, audit, key, clock),

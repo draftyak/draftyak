@@ -568,7 +568,7 @@ function hostSuite(label: string, capTag: string, platform: NodeJS.Platform): vo
 		});
 
 		it("holds cold start, idle RSS and the 1 MiB round trip to the budgets", {
-			tags: [`requires:${capTag}`],
+			tags: [`requires:${capTag}`, "requires:s11-timing-context"],
 			timeout: benchTimeout(TIMING_WORK_MS) + PROVISIONAL_LOCK_MS,
 		}, async (ctx: TestContext) => {
 			if (process.env.CI && !strictSkips()) {

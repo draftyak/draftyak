@@ -27,8 +27,8 @@ try {
 		await store.migrate("pluginregistry");
 		checkpoint = 3;
 		const inspect = () => store.read((sql) => {
-			assert.equal(sql.get("SELECT count(*) AS n FROM _migrations_pluginregistry").n, 1);
-			for (const name of ["plugin_versions", "plugin_generations"])
+			assert.equal(sql.get("SELECT count(*) AS n FROM _migrations_pluginregistry").n, 2);
+			for (const name of ["plugin_versions", "plugin_generations", "plugin_registry_identities", "plugin_candidates"])
 				assert.equal(sql.get("SELECT count(*) AS n FROM sqlite_schema WHERE type='table' AND name=?", [name]).n, 1);
 		});
 		inspect();
@@ -38,7 +38,7 @@ try {
 		inspect();
 		checkpoint = 4;
 	} finally { store?.close(); masterKey.destroy(); }
-	process.stdout.write(JSON.stringify({ ok: true, network: false, child: false, schemas: 2 }));
+	process.stdout.write(JSON.stringify({ ok: true, network: false, child: false, schemas: 4 }));
 } catch {
 	process.stdout.write(JSON.stringify({ ok: false, checkpoint }));
 	process.exitCode = 1;

@@ -1,8 +1,14 @@
 import { rmSync } from "node:fs";
-import { ackRequired, type Flag, flagsHash } from "@draftyak/protocol/flags";
+import { ackRequired, type Flag, Flags, flagsHash } from "@draftyak/protocol/flags";
 import { jcsSha256 } from "@draftyak/protocol/hash";
+import { canonicalize } from "@draftyak/protocol/jcs";
+import { contentHash } from "@draftyak/protocol/snapshot";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ModelBodyAppend, NativeRevision } from "../../src/drafts/revisions.ts";
+import {
+	captureDraftData,
+	type ModelBodyAppend,
+	type NativeRevision,
+} from "../../src/drafts/revisions.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import { revisionFixture } from "./revision-fixture.ts";
 
@@ -157,17 +163,90 @@ describe("complete current flags on model body revisions", () => {
 		]);
 	});
 
-	it("replaces a full 128-flag prior set with a disjoint current set without union overflow", async () => {
+	it("persists 129 distinct flags through creation and reopened history", async () => {
+		const f = await fixture();
+		const input = { ...f.make(), flags: links("current", 129) };
+		expect(Flags.safeParse(input.flags).success).toBe(true);
+		const one = f.create(input);
+		expectFlags(one, input.flags);
+		expect(ackRequired(one.revision.flags)).toBe(true);
+		expect(f.revisions.current(f.bind(input))).toEqual(one);
+		const reopened = f.reopen();
+		expect(reopened.revisions.current(f.bind(input))).toEqual(one);
+		expect(reopened.revisions.history(f.bind(input))).toEqual([one.revision]);
+	});
+
+	it("preserves 300 recipient flags through native edits, model replacement and a frozen data lock", async () => {
 		const f = await fixture();
 		const original = f.make();
-		const previousFlags = links("retired", 128);
+		if (original.content.channel !== "email") throw new Error("Expected email fixture");
+		const recipients = Array.from({ length: 300 }, (_, index) => `recipient${index}@example.test`);
+		const recipientFlags: Flag[] = recipients.map((detail) => ({
+			code: "NEW_RECIPIENT",
+			severity: "ack",
+			detail,
+		}));
+		const input = {
+			...original,
+			content: {
+				...original.content,
+				to: recipients.slice(0, 100),
+				cc: recipients.slice(100, 200),
+				bcc: recipients.slice(200, 300),
+			},
+			flags: recipientFlags,
+		};
+		const bound = f.bind(input);
+		const one = f.create(input);
+		expectFlags(one, recipientFlags);
+		const retiredBodyFlag: Flag = {
+			code: "EXTERNAL_LINK",
+			severity: "ack",
+			detail: "https://retired.example.test/a",
+		};
+		const ownerFlags = [...recipientFlags, retiredBodyFlag];
+		const two = f.store.write((tx) =>
+			f.revisions.appendInTransaction(tx, {
+				...input,
+				expectedRev: one.revision.rev,
+				content: { ...input.content, body: "Owner edit https://retired.example.test/a" },
+				flags: ownerFlags,
+			}),
+		);
+		expectFlags(two, ownerFlags);
+		const three = append(f, request(two, "Replacement body", recipientFlags));
+		expectFlags(three, recipientFlags);
+		expect(three.revision.content).toEqual({ ...two.revision.content, body: "Replacement body" });
+		expect(three.revision.flags).not.toContainEqual(retiredBodyFlag);
+		expect(f.revisions.current(bound)).toEqual(three);
+		const history = [one.revision, two.revision, three.revision];
+		expect(f.revisions.history(bound)).toEqual(history);
+		const reopened = f.reopen();
+		expect(reopened.revisions.current(bound)).toEqual(three);
+		expect(reopened.revisions.history(bound)).toEqual(history);
+		const snapshot = f.snapshot(three);
+		const proof = reopened.store.write((tx) =>
+			reopened.freeze.freezeInTransaction(tx, bound, three.revision.rev, snapshot),
+		);
+		const facts = reopened.store.write((tx) => reopened.freeze.consumeInTransaction(tx, proof));
+		expect(facts.flagsHash).toBe(flagsHash(recipientFlags));
+		expect(facts.snapshot).toEqual(snapshot);
+		expect(facts.snapshotHash).toBe(contentHash(snapshot));
+		expect(facts.revisionContentHash).toBe(three.revision.contentSha256);
+		expect(reopened.revisions.history(bound)).toEqual(history);
+	});
+
+	it("replaces a full 1000-flag prior set with a disjoint current set without union overflow", async () => {
+		const f = await fixture();
+		const original = f.make();
+		const previousFlags = links("retired", 1000);
 		const input = {
 			...original,
 			flags: previousFlags,
 			content: { ...original.content, body: previousFlags.map((flag) => flag.detail).join("\n") },
 		};
 		const one = f.create(input);
-		const currentFlags = links("current", 128);
+		const currentFlags = links("current", 1000);
 		const two = append(
 			f,
 			request(one, currentFlags.map((flag) => flag.detail).join("\n"), currentFlags),
@@ -175,10 +254,42 @@ describe("complete current flags on model body revisions", () => {
 		expectFlags(two, currentFlags);
 		expect(two.revision.rev).toBe(2);
 		expect(f.revisions.history(f.bind(input))[0]).toEqual(one.revision);
+		const reopened = f.reopen();
+		expect(reopened.revisions.current(f.bind(input))).toEqual(two);
+		expect(reopened.revisions.history(f.bind(input))).toEqual([one.revision, two.revision]);
+	});
+
+	it("refuses 1001 schema-valid flags at creation and model intake without changing stored data", async () => {
+		const f = await fixture();
+		const one = f.create();
+		const oversized = links("over-budget", 1001);
+		expect(Flags.safeParse(oversized).success).toBe(true);
+		const next = request(one, "Attempted replacement", oversized);
+		const before = checkpoint(f, next);
+		expect(() => f.create({ ...f.make(), flags: oversized })).toThrow("Draft revision unavailable");
+		expect(checkpoint(f, next)).toEqual(before);
+		expect(() => append(f, next)).toThrow("Draft revision unavailable");
+		expect(checkpoint(f, next)).toEqual(before);
+	});
+
+	it("refuses schema-valid multibyte flags above the serialized byte budget without changing stored data", async () => {
+		const f = await fixture();
+		const one = f.create();
+		const oversized: Flag[] = Array.from({ length: 750 }, (_, index) => ({
+			code: "EXTERNAL_LINK",
+			severity: "ack",
+			detail: `${"\u754c".repeat(995)}${String(index).padStart(3, "0")}`,
+		}));
+		const next = request(one, "Attempted replacement", oversized);
+		expect(Flags.safeParse(oversized).success).toBe(true);
+		expect(() => captureDraftData(next)).not.toThrow();
+		expect(Buffer.byteLength(canonicalize(oversized))).toBeGreaterThan(2_097_152);
+		const before = checkpoint(f, next);
+		expect(() => append(f, next)).toThrow("Draft revision unavailable");
+		expect(checkpoint(f, next)).toEqual(before);
 	});
 
 	it.each([
-		["129 current flags", links("oversized", 129)],
 		["duplicate flags", [staleFlags[0], staleFlags[0]]],
 		["wrong severity", [{ code: "EXTERNAL_LINK", severity: "info" }]],
 		["unknown code", [{ code: "UNKNOWN_BODY_FLAG", severity: "ack" }]],

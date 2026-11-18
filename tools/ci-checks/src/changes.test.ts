@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -9,6 +17,7 @@ import {
 	classify,
 	consumingSpikes,
 	rustWorkspace,
+	type SelectionOrigin,
 	untestedRust,
 	type WorkspacePackage,
 	workspacePackages,
@@ -177,6 +186,182 @@ describe("lockfile workspace metadata", () => {
 	])("refuses %s", (_, before, after) => {
 		expect(() => workspacePackages(lock.replace(before, after))).toThrow();
 	});
+});
+
+describe("pilot S12 heavy selection", () => {
+	const pilotRoot = path.join(root, "pilot-selection");
+	const retainedRust = "spikes/s05-desktop/rust/Cargo.toml";
+	mkdirSync(path.dirname(path.join(pilotRoot, retainedRust)), { recursive: true });
+	writeFileSync(path.join(pilotRoot, retainedRust), "[workspace]\n");
+	// Importer and changed-path metadata only: no postponed implementation is read or created.
+	const graph: readonly WorkspacePackage[] = [
+		{ folder: "spikes/kit", dependencies: [] },
+		{ folder: "spikes/s02-plugin-sandbox", dependencies: ["spikes/kit"] },
+		{ folder: "spikes/s05-desktop", dependencies: ["spikes/s02-plugin-sandbox"] },
+		{ folder: "spikes/s11-python-runtime", dependencies: ["spikes/s02-plugin-sandbox"] },
+		{ folder: "spikes/s12-sms", dependencies: ["spikes/kit"] },
+		{ folder: "tools/bridge", dependencies: ["spikes/s12-sms"] },
+		{ folder: "spikes/retained-downstream", dependencies: ["tools/bridge"] },
+		{ folder: "spikes/s12-sms-neighbor", dependencies: ["spikes/kit"] },
+		{ folder: "spikes/unrelated", dependencies: [] },
+	];
+	const retained = [
+		"spikes/kit",
+		"spikes/retained-downstream",
+		"spikes/s02-plugin-sandbox",
+		"spikes/s05-desktop",
+		"spikes/s11-python-runtime",
+		"spikes/s12-sms-neighbor",
+		"spikes/unrelated",
+	];
+	const select = (files: readonly string[], origin: SelectionOrigin = "diff") =>
+		classify(
+			files,
+			pilotRoot,
+			() => [retainedRust],
+			() => graph,
+			origin,
+		);
+
+	it.each(["pnpm-lock.yaml", ".github/workflows/ci.yml", "vitest.shared.ts"])(
+		"omits only S12 heavy for a shared %s change",
+		(file) => {
+			const selected = select([file]);
+			expect(selected.spikes).toEqual(retained);
+			expect(selected.rust).toEqual(["spikes/s05-desktop/rust"]);
+			expect(selected.docsOnly).toBe(false);
+			expect(selected.workflows).toBe(file === ".github/workflows/ci.yml");
+			expect(areaNames(selected)).not.toContain("spikes/s12-sms");
+		},
+	);
+
+	it("retains consumers reached through S12 without making S12 heavy eligible", () => {
+		const selected = select(["spikes/kit/run.ts"]);
+		expect(selected.spikes).toEqual(retained.filter((folder) => folder !== "spikes/unrelated"));
+		expect(selected.rust).toEqual(["spikes/s05-desktop/rust"]);
+		// The underlying dependency traversal remains generic and preserves the postponed node.
+		expect(consumingSpikes(["spikes/kit"], graph)).toContain("spikes/s12-sms");
+		expect(consumingSpikes(["spikes/kit"], graph)).toContain("spikes/retained-downstream");
+	});
+
+	it("retains conservative unknown-package fallback and malformed-metadata refusal", () => {
+		expect(select(["spikes/deleted/src/synthetic.ts"]).spikes).toEqual(retained);
+		expect(() =>
+			classify(
+				["pnpm-lock.yaml"],
+				pilotRoot,
+				() => [],
+				() => [...graph, { folder: "spikes/kit", dependencies: [] }],
+			),
+		).toThrow("invalid or ambiguous workspace selection metadata");
+	});
+
+	it.each([
+		"spikes/s12-sms/src/synthetic.ts",
+		"spikes/s12-sms/test/synthetic.heavy.test.ts",
+		"spikes/s12-sms/package.json",
+		"spikes/s12-sms/vitest.config.ts",
+	])("refuses a direct postponed implementation change %#", (file) => {
+		expect(() => select([file])).toThrow(
+			"postponed spike implementation requires a separate disposition: spikes/s12-sms",
+		);
+	});
+
+	it.each(["spikes/s12-sms/README.md", "spikes/s12-sms/evidence/synthetic.json"])(
+		"keeps documentation and evidence disposition unchanged %#",
+		(file) => {
+			const selected = select([file]);
+			expect(selected.docsOnly).toBe(true);
+			expect(areaNames(selected)).toEqual(["docs-only"]);
+			expect(selected.spikes).toEqual([]);
+		},
+	);
+
+	it("classifies preserved tracked implementation as metadata without granting a heavy pass", () => {
+		const selected = select(
+			["pnpm-lock.yaml", "spikes/s12-sms/src/synthetic.ts", retainedRust],
+			"tracked-fallback",
+		);
+		expect(selected.spikes).toEqual(retained);
+		expect(selected.rust).toEqual(["spikes/s05-desktop/rust"]);
+		expect(selected.ts).toBe(true);
+		expect(selected.docsOnly).toBe(false);
+		expect(untestedRust(selected)).toEqual([]);
+	});
+
+	it("refuses an unknown classification origin at runtime", () => {
+		expect(() => select(["pnpm-lock.yaml"], "unrecognized" as SelectionOrigin)).toThrow();
+	});
+
+	it.each(["no-base", "diff-failure"] as const)(
+		"the actual CLI preserves postponed files during %s fallback",
+		(mode) => {
+			const cliRoot = path.join(pilotRoot, `cli-${mode}`);
+			mkdirSync(cliRoot, { recursive: true });
+			writeFileSync(
+				path.join(cliRoot, "pnpm-lock.yaml"),
+				"lockfileVersion: '9.0'\nimporters:\n  .: {}\n  spikes/kit: {}\n  spikes/retained: {}\n  spikes/s12-sms: {}\n",
+			);
+			const tracked = [
+				"README.md",
+				"pnpm-lock.yaml",
+				"apps/hub/src/synthetic.ts",
+				"spikes/s12-sms/src/preserved.ts",
+			];
+			const bootstrap = `
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+childProcess.spawnSync = (command, args) => {
+	if (command !== "git") throw new Error("Unexpected external command");
+	let stdout = "", stderr = "", status = 0;
+	if (args[0] === "rev-parse") stdout = ${JSON.stringify(cliRoot)} + "\\n";
+	else if (args[0] === "ls-files") stdout = ${JSON.stringify(tracked.join("\0"))};
+	else if (args[0] === "diff") { status = 1; stderr = "Synthetic diff unavailable"; }
+	else throw new Error("Unexpected git operation");
+	return { stdout, stderr, status, signal: null };
+};
+syncBuiltinESMExports();
+`;
+			const output = path.join(cliRoot, "outputs");
+			const summary = path.join(cliRoot, "summary");
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--import",
+					`data:text/javascript;base64,${Buffer.from(bootstrap).toString("base64")}`,
+					path.join(import.meta.dirname, "changes.ts"),
+				],
+				{
+					cwd: cliRoot,
+					encoding: "utf8",
+					windowsHide: true,
+					timeout: 10_000,
+					maxBuffer: 1024 * 1024,
+					env: {
+						...process.env,
+						BASE_SHA: mode === "no-base" ? "" : "synthetic-base",
+						HEAD_SHA: "HEAD",
+						GITHUB_OUTPUT: output,
+						GITHUB_STEP_SUMMARY: summary,
+					},
+				},
+			);
+			expect(result.error).toBeUndefined();
+			expect(result.signal).toBeNull();
+			expect(result.status, result.stderr).toBe(0);
+			expect(result.stdout).toContain("so every retained area");
+			const disposition =
+				"spikes/s12-sms test:heavy is postponed and not run for the desktop pilot.";
+			expect(result.stdout).toContain(disposition);
+			const text = readFileSync(output, "utf8");
+			expect(text).toContain("docs-only=false");
+			expect(text).toContain("spikes/kit\nspikes/retained\n");
+			expect(text).not.toContain("spikes/s12-sms");
+			const reported = readFileSync(summary, "utf8");
+			expect(reported).toContain(disposition);
+			expect(reported).not.toContain("- spikes/s12-sms");
+		},
+	);
 });
 
 describe("changed areas", () => {
@@ -525,5 +710,299 @@ describe("heavy selection for full", () => {
 		} finally {
 			repo.remove();
 		}
+	});
+});
+
+describe("explicit external crates workspace members", () => {
+	const member = "apps/app/src-tauri";
+	const packageSource = "[package]\nname = 'external-app'\nworkspace = '../../../crates'\n";
+	const workspaceSource = "[workspace]\nmembers = ['native-core', '../apps/app/src-tauri']\n";
+	const files: Record<string, string> = {
+		"crates/Cargo.toml": workspaceSource,
+		"crates/native-core/Cargo.toml": "[package]\nname = 'native-core'\n",
+		"crates/native-core/src/lib.rs": "",
+		[`${member}/Cargo.toml`]: packageSource,
+		[`${member}/src/lib.rs`]: "",
+		[`${member}/build.rs`]: "fn main() {}\n",
+		[`${member}/tauri.conf.json`]: "{}",
+	};
+	const fixture = <T>(
+		tree: Record<string, string>,
+		check: (dir: string, select: (changed: string[]) => ReturnType<typeof classify>) => T,
+	): T => {
+		const dir = mkdtempSync(path.join(tmpdir(), "draftyak-external-workspace-"));
+		try {
+			for (const [file, content] of Object.entries(tree)) {
+				mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+				writeFileSync(path.join(dir, file), content);
+			}
+			return check(dir, (changed) =>
+				classify(
+					changed,
+					dir,
+					() => Object.keys(tree).filter((file) => path.posix.basename(file) === "Cargo.toml"),
+					() =>
+						Object.keys(tree)
+							.filter((file) => file.endsWith("/package.json"))
+							.map((file) => ({ folder: path.posix.dirname(file), dependencies: [] })),
+				),
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	};
+
+	it.each(["src/lib.rs", "build.rs", "Cargo.toml", "tauri.conf.json"])(
+		"selects the real crates build for the explicitly declared external %s",
+		(file) =>
+			fixture(files, (dir, select) => {
+				expect(rustWorkspace(dir, `${member}/${file}`)).toBe("crates");
+				const selected = select([`${member}/${file}`]);
+				expect(selected.rust).toEqual(["crates"]);
+				expect(untestedRust(selected)).toEqual([]);
+				expect(selected.strayRust).toEqual([]);
+			}),
+	);
+
+	it.each([
+		["declared", workspaceSource, 0],
+		["undeclared", "[workspace]\nmembers = ['native-core']\n", 1],
+	] as const)(
+		"the actual CLI requires reciprocal membership for a %s external member",
+		(_, workspace, code) => {
+			const repo = tempRepo();
+			try {
+				for (const [file, content] of Object.entries(files)) repo.write(file, content);
+				repo.write("crates/Cargo.toml", workspace);
+				repo.write("pnpm-lock.yaml", "lockfileVersion: '9.0'\nimporters:\n  .: {}\n");
+				const base = repo.commit("chore: external member fixture");
+				repo.write(`${member}/src/lib.rs`, "pub fn changed() {}\n");
+				const head = repo.commit("feat: change external member");
+				const output = path.join(repo.dir, "..", "github-output");
+				const summary = path.join(repo.dir, "..", "github-summary");
+				const config = path.join(repo.dir, "..", "child-gitconfig");
+				writeFileSync(output, "");
+				writeFileSync(summary, "");
+				writeFileSync(config, "[maintenance]\n\tauto = false\n");
+				const result = spawnSync(process.execPath, [path.join(import.meta.dirname, "changes.ts")], {
+					cwd: repo.dir,
+					encoding: "utf8",
+					windowsHide: true,
+					timeout: 10_000,
+					maxBuffer: 1024 * 1024,
+					env: {
+						...process.env,
+						BASE_SHA: base,
+						HEAD_SHA: head,
+						GITHUB_OUTPUT: output,
+						GITHUB_STEP_SUMMARY: summary,
+						GIT_CONFIG_GLOBAL: config,
+						GIT_CONFIG_NOSYSTEM: "1",
+					},
+				});
+				expect(result.error).toBeUndefined();
+				expect(result.signal).toBeNull();
+				expect(result.status, result.stderr).toBe(code);
+				const outputs = readFileSync(output, "utf8");
+				const reported = readFileSync(summary, "utf8");
+				if (code === 0) {
+					expect(outputs).toContain('areas=["rust:crates"]\n');
+					expect(outputs).toMatch(/^rust=crates\n/m);
+					expect(outputs).toContain("template-smoke=false\n");
+					expect(reported).toContain("- rust:crates");
+				} else {
+					expect(result.stdout).toContain(
+						`no spike package's test:heavy or crates/ runs ${member}`,
+					);
+					expect(outputs).toBe("");
+					expect(reported).toBe("");
+				}
+			} finally {
+				repo.remove();
+			}
+		},
+	);
+
+	it("normalizes reciprocal paths and accepts comments, quoted keys and multiline literal members", () => {
+		fixture(
+			{
+				...files,
+				[`${member}/Cargo.toml`]:
+					'[package]\nname = "external-app"\n"workspace" = "../../.././crates/" # owner\n',
+				"crates/Cargo.toml":
+					'[workspace]\n"members" = [\n  "native-core",\n  "../apps/./app/src-tauri/", # external member\n]\nexclude = ["../apps/unrelated"]\n',
+			},
+			(dir, select) => {
+				expect(rustWorkspace(dir, `${member}/src/lib.rs`)).toBe("crates");
+				expect(untestedRust(select([`${member}/src/lib.rs`]))).toEqual([]);
+			},
+		);
+	});
+
+	it.each([
+		["undeclared member", packageSource, "[workspace]\nmembers = ['native-core']\n"],
+		["missing members", packageSource, "[workspace]\n"],
+		["non-workspace target", packageSource, "[package]\nname = 'not-a-workspace'\n"],
+		["excluded member", packageSource, `${workspaceSource}exclude = ['../apps/app/src-tauri']\n`],
+		["excluded parent", packageSource, `${workspaceSource}exclude = ['../apps']\n`],
+		["ambiguous members", packageSource, `${workspaceSource}members = ['../apps/app/src-tauri']\n`],
+		[
+			"duplicate member aliases",
+			packageSource,
+			"[workspace]\nmembers = ['../apps/app/src-tauri', '../apps/./app/src-tauri']\n",
+		],
+		[
+			"case aliases",
+			packageSource,
+			"[workspace]\nmembers = ['../apps/app/src-tauri', '../Apps/App/src-tauri']\n",
+		],
+		["duplicate workspace table", packageSource, `${workspaceSource}${workspaceSource}`],
+		["ambiguous pointer", `${packageSource}workspace = '../../../crates'\n`, workspaceSource],
+		[
+			"escaping pointer",
+			packageSource.replace("../../../crates", "../../../../outside"),
+			workspaceSource,
+		],
+		["absolute pointer", packageSource.replace("../../../crates", "/crates"), workspaceSource],
+		["Windows pointer", packageSource.replace("../../../crates", "C:/crates"), workspaceSource],
+		[
+			"cyclic root pointer",
+			packageSource,
+			`${workspaceSource}[package]\nname = 'root'\nworkspace = '../apps/app/src-tauri'\n`,
+		],
+		[
+			"metadata lookalike",
+			"[package]\nname = 'external-app'\n[package.metadata]\nworkspace = '../../../crates'\n",
+			workspaceSource,
+		],
+		["unsupported wildcard", packageSource, "[workspace]\nmembers = ['../apps/*/src-tauri']\n"],
+	])("keeps %s untested instead of claiming crates coverage", (_, source, workspace) => {
+		fixture(
+			{ ...files, [`${member}/Cargo.toml`]: source, "crates/Cargo.toml": workspace },
+			(dir, select) => {
+				expect(rustWorkspace(dir, `${member}/src/lib.rs`)).toBe(member);
+				const selected = select([`${member}/src/lib.rs`]);
+				expect(selected.rust).toEqual([member]);
+				expect(untestedRust(selected)).toEqual([member]);
+			},
+		);
+	});
+
+	it("does not follow a nested crates workspace or inherit the outer member's pointer", () => {
+		fixture(
+			{
+				...files,
+				[`${member}/Cargo.toml`]: packageSource.replace(
+					"../../../crates",
+					"../../../crates/nested",
+				),
+				"crates/nested/Cargo.toml": "[workspace]\nmembers = ['../../apps/app/src-tauri']\n",
+			},
+			(_, select) => {
+				expect(untestedRust(select([`${member}/src/lib.rs`]))).toEqual([member]);
+			},
+		);
+		fixture(
+			{
+				...files,
+				[`${member}/nested/Cargo.toml`]: "[package]\nname = 'nested'\n",
+				[`${member}/nested/src/lib.rs`]: "",
+			},
+			(_, select) => {
+				expect(untestedRust(select([`${member}/nested/src/lib.rs`]))).toEqual([`${member}/nested`]);
+			},
+		);
+	});
+
+	it("keeps an ancestor workspace authoritative rather than resolving a second claim", () => {
+		fixture(
+			{ ...files, "apps/Cargo.toml": "[workspace]\nmembers = ['app/src-tauri']\n" },
+			(dir, select) => {
+				expect(rustWorkspace(dir, `${member}/src/lib.rs`)).toBe("apps");
+				expect(untestedRust(select([`${member}/src/lib.rs`]))).toEqual(["apps"]);
+			},
+		);
+	});
+
+	it("refuses a physically escaping crates manifest before accepting the association", () => {
+		const outside = mkdtempSync(path.join(tmpdir(), "draftyak-external-cargo-target-"));
+		try {
+			writeFileSync(path.join(outside, "Cargo.toml"), workspaceSource);
+			const withoutCrates = Object.fromEntries(
+				Object.entries(files).filter(([file]) => !file.startsWith("crates/")),
+			);
+			fixture(withoutCrates, (dir, select) => {
+				symlinkSync(
+					outside,
+					path.join(dir, "crates"),
+					process.platform === "win32" ? "junction" : "dir",
+				);
+				expect(rustWorkspace(dir, `${member}/src/lib.rs`)).toBe(member);
+				expect(untestedRust(select([`${member}/src/lib.rs`]))).toEqual([member]);
+			});
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses an aliased crates manifest even when its physical target stays inside the repository", () => {
+		const withoutCrates = Object.fromEntries(
+			Object.entries(files).filter(([file]) => !file.startsWith("crates/")),
+		);
+		fixture(
+			{
+				...withoutCrates,
+				"native-cargo-target/Cargo.toml": workspaceSource,
+				"native-cargo-target/native-core/Cargo.toml": "[package]\nname = 'native-core'\n",
+				"native-cargo-target/native-core/src/lib.rs": "",
+			},
+			(dir, select) => {
+				symlinkSync(
+					path.join(dir, "native-cargo-target"),
+					path.join(dir, "crates"),
+					process.platform === "win32" ? "junction" : "dir",
+				);
+				expect(
+					path.relative(realpathSync(dir), realpathSync(path.join(dir, "crates", "Cargo.toml"))),
+				).toBe(path.join("native-cargo-target", "Cargo.toml"));
+				expect(rustWorkspace(dir, `${member}/src/lib.rs`)).toBe(member);
+				expect(untestedRust(select([`${member}/src/lib.rs`]))).toEqual([member]);
+			},
+		);
+	});
+
+	it("retains ignored external locks, renamed manifests and stray source refusals", () => {
+		fixture(
+			{
+				...files,
+				[`${member}/Cargo.lock`]: "version = 4\n",
+				[`${member}/extra.toml`]: "[package]\nname = 'not-built'\n",
+				"tools/stray/src/lib.rs": "",
+			},
+			(_, select) => {
+				expect(untestedRust(select([`${member}/Cargo.lock`]))).toEqual([member]);
+				expect(select([`${member}/extra.toml`]).strayRust).toEqual([`${member}/extra.toml`]);
+				expect(select(["tools/stray/src/lib.rs"]).strayRust).toEqual(["tools/stray/src/lib.rs"]);
+			},
+		);
+	});
+
+	it("preserves ordinary spike ancestry and coarse crates classification", () => {
+		fixture(
+			{
+				...files,
+				"spikes/synthetic/package.json": "{}",
+				"spikes/synthetic/rust/Cargo.toml": "[workspace]\nmembers = ['member']\n",
+				"spikes/synthetic/rust/member/Cargo.toml": "[package]\nname = 'spike-member'\n",
+				"spikes/synthetic/rust/member/src/lib.rs": "",
+			},
+			(dir, select) => {
+				expect(rustWorkspace(dir, "spikes/synthetic/rust/member/src/lib.rs")).toBe(
+					"spikes/synthetic/rust",
+				);
+				expect(untestedRust(select(["spikes/synthetic/rust/member/src/lib.rs"]))).toEqual([]);
+				expect(select(["crates/native-core/src/lib.rs"]).rust).toEqual(["crates"]);
+			},
+		);
 	});
 });

@@ -1,5 +1,5 @@
-import { constants, createHash } from "node:crypto";
-import { createServer, type Server, type TLSSocket } from "node:tls";
+import { constants, createHash, X509Certificate } from "node:crypto";
+import { createServer, type Server, TLSSocket } from "node:tls";
 import { types } from "node:util";
 import { exportSpki } from "@draftyak/protocol/sign";
 import { DeviceRegistry, isDeviceRegistry } from "../identity/devices.ts";
@@ -18,6 +18,8 @@ interface Connection {
 }
 const peers = new WeakMap<NativeDevicePeer, Connection>();
 const tlsKey = HubIdentity.prototype.tlsPrivateKey;
+const socketAddress = TLSSocket.prototype.address;
+const socketCertificate = TLSSocket.prototype.getCertificate;
 const refused = (): never => {
 	throw new AuthzError("PEER_REFUSED");
 };
@@ -51,6 +53,48 @@ export function nativePeerEkm(
 		"EXPERIMENTAL-draftyak-pair-v1",
 		Buffer.from(pid),
 	);
+}
+
+/** Public endpoint DATA from this exact live server connection; no listener or peer is adopted. */
+export interface NativePeerEndpoint {
+	readonly address: "127.0.0.1";
+	readonly port: number;
+	readonly hid: string;
+}
+export function nativePeerEndpoint(
+	registry: DeviceRegistry,
+	peer: NativeDevicePeer,
+): NativePeerEndpoint {
+	try {
+		const bound = connection(registry, peer);
+		const address = Reflect.apply(socketAddress, bound.socket, []);
+		if (
+			address === null ||
+			typeof address !== "object" ||
+			types.isProxy(address) ||
+			!("address" in address) ||
+			address.address !== "127.0.0.1" ||
+			!("family" in address) ||
+			address.family !== "IPv4" ||
+			!("port" in address) ||
+			typeof address.port !== "number" ||
+			!Number.isSafeInteger(address.port) ||
+			address.port < 1 ||
+			address.port > 65535
+		)
+			return refused();
+		const certificate = Reflect.apply(socketCertificate, bound.socket, []);
+		const raw = Object.getOwnPropertyDescriptor(certificate, "raw")?.value;
+		if (!types.isUint8Array(raw) || raw.byteLength < 1 || raw.byteLength > 16384) return refused();
+		const publicKey = new X509Certificate(raw).publicKey;
+		const hid = createHash("sha256")
+			.update(Buffer.from(exportSpki(publicKey), "base64url"))
+			.digest("hex");
+		if (connection(registry, peer) !== bound) return refused();
+		return Object.freeze({ address: "127.0.0.1", port: address.port, hid });
+	} catch {
+		return refused();
+	}
 }
 
 /** The retained local sidecar transport. LAN listeners require their separate bind policy. */

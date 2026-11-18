@@ -77,6 +77,7 @@ describe("mail review boundaries", () => {
 			removals: { hidden: 0, invisible: 0, quoted: 0, truncated: 0, uris: 0 },
 		});
 		expect(mail.bodyRefusal).toBe("STRUCTURE_LIMIT");
+		expect(Object.hasOwn(mail, "untrustedHtml")).toBe(false);
 		expect(mail.attachments).toEqual([
 			{
 				filename: "fixture.bin",
@@ -101,6 +102,7 @@ describe("mail review boundaries", () => {
 			expect(mail.auth.dmarc).toBe("pass");
 			expect(mail.body.text).toBe("");
 			expect(mail.bodyRefusal).toBe("INPUT_LIMIT");
+			expect(Object.hasOwn(mail, "untrustedHtml")).toBe(false);
 		},
 	);
 
@@ -198,6 +200,8 @@ describe("mail review boundaries", () => {
 		expect(mail.body.text).toBe("");
 		expect(mail.bodyRefusal).toBeUndefined();
 		expect(JSON.stringify(mail)).not.toContain("UNSEEN_CANARY");
+		expect(Object.hasOwn(mail, "untrustedHtml")).toBe(true);
+		expect(mail.untrustedHtml).toBe("");
 	});
 
 	it("keeps an HTML attachment out of body selection", async () => {
@@ -211,6 +215,7 @@ describe("mail review boundaries", () => {
 		expect(mail.body.text).toBe("visible");
 		expect(mail.attachments[0]?.filename).toBe("note.html");
 		expect(mail.bodyRefusal).toBeUndefined();
+		expect(Object.hasOwn(mail, "untrustedHtml")).toBe(false);
 	});
 
 	it("withholds only the body if pinned HTML-presence metadata becomes unavailable", async () => {
@@ -228,6 +233,7 @@ describe("mail review boundaries", () => {
 		expect(mail.auth.dmarc).toBe("pass");
 		expect(mail.bodyRefusal).toBe("INVALID_INPUT");
 		expect(mail.body.text).toBe("");
+		expect(Object.hasOwn(mail, "untrustedHtml")).toBe(false);
 	});
 
 	it.each(['"Team <Sales>"', '"A > B"', '"Quoted \\"nickname\\""'])(

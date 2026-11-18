@@ -18,7 +18,9 @@ import {
 	openPluginInstaller,
 	type PluginInstaller,
 } from "../../src/plugins/installer/index.ts";
+import { INSTALLER_MUTEX_FILE } from "../../src/plugins/installer/mutex.ts";
 import { makePinnedPackage, packageEntries, type TarEntry } from "../artifacts/fixtures.ts";
+import { nativeBinding } from "../store/helpers.ts";
 
 const temporaryRoot = realpathSync.native(os.tmpdir());
 const PREFIX = "draftyak-installer-";
@@ -115,7 +117,11 @@ export interface Fixture {
 	readonly dir: string;
 	readonly root: string;
 	readonly installers: PluginInstaller[];
-	options(bundles: readonly Bundle[]): { directory: string; bundles: BundledPluginPin[] };
+	options(bundles: readonly Bundle[]): {
+		directory: string;
+		bundles: BundledPluginPin[];
+		nativeBinding: string;
+	};
 	open(bundles: readonly Bundle[]): Promise<PluginInstaller>;
 }
 
@@ -132,7 +138,11 @@ export function fixture(): Fixture {
 		root,
 		installers,
 		options(bundles) {
-			return { directory: root, bundles: bundles.map(({ id, lock }) => ({ id, package: lock })) };
+			return {
+				directory: root,
+				bundles: bundles.map(({ id, lock }) => ({ id, package: lock })),
+				nativeBinding,
+			};
 		},
 		async open(bundles) {
 			const installer = await openPluginInstaller(f.options(bundles));
@@ -143,6 +153,25 @@ export function fixture(): Fixture {
 	const birth = lstatSync(dir);
 	fixtures.push({ fixture: f, ino: birth.ino, dev: birth.dev });
 	return f;
+}
+
+/** Validate the permanent root control entry using metadata only, without opening its inode. */
+export function expectInstallerMutex(root: string): void {
+	const stat = lstatSync(path.join(root, INSTALLER_MUTEX_FILE));
+	expect(stat.isFile()).toBe(true);
+	expect(stat.isSymbolicLink()).toBe(false);
+	expect(stat.nlink).toBe(1);
+	expect(stat.size).toBe(0);
+	if (process.platform !== "win32") {
+		expect(stat.mode & 0o777).toBe(0o600);
+		expect(stat.uid).toBe(process.geteuid?.());
+	}
+}
+
+/** All artifact/staging names, permitting only the exact validated root coordination entry. */
+export function artifactNames(root: string): string[] {
+	expectInstallerMutex(root);
+	return readdirSync(root).filter((name) => name !== INSTALLER_MUTEX_FILE);
 }
 
 function writable(name: string): void {

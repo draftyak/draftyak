@@ -150,15 +150,45 @@ subjects by their own contract items. The consent extension adds its own members
 when its contract exists. Catalogue literals do not create
 those subjects or allow an unknown statement body. Unavailable types fail closed.
 
-Admin reviews exist only for `ADMIN_REVIEW_KINDS`: `account.disconnect`,
-`account.mode-full`, `security.device-capabilities` and `data.backup`. Each is an
+Admin reviews exist only for `ADMIN_REVIEW_KINDS`: `plugin.install`,
+`plugin.upgrade`, `account.disconnect`, `account.mode-full`,
+`security.device-capabilities` and `data.backup`. Each is an
 OperationReview member of that kind with the digest and remainingMs rules above.
 Its subject is the immutable pending record that `admin.v1` binds through
 `digest`, built from the hub's own records when the operation is created. The
-request's IDs are `[account]` for the account kinds, `[device]` for
+request's IDs are `[registryId,to.versionId]` for both plugin kinds,
+`[account]` for the account kinds, `[device]` for
 `security.device-capabilities` and `[]` for `data.backup`. OperationRequest
 refuses any other count for these kinds, so the hub answers `INVALID_REQUEST`.
 
+- Plugin kinds have the closed subject
+  `{v:1,intent,registryId,pluginId,ownerUserId,epoch,from,to}`.
+  The registry, owner and version ids are ULIDs; request ids are exactly two
+  distinct ULIDs in registry/candidate order. They select DATA for the original
+  producer to retain and compare, not permission or a candidate grant.
+  `pluginId` is nonempty well-formed UTF-8 text of at most64 bytes; version and
+  App-version text have the same rule with128 bytes. Epoch is a nonnegative
+  safe integer. The original producer retains its own plugin allowlist.
+  `from` is null or the exact selected
+  `{versionId,version,registryGeneration,state}`, with state
+  staged/disabled/quarantined and generation1 through MAX_SAFE_INTEGER-1.
+  `to` is `{versionId,version,registryGeneration,appVersion,inventoryDigest,
+  manifestDigest,egressDigest,sendDigest,surfaceDigest}`. Its prospective
+  generation is a positive safe integer; each digest is lower-case SHA256 hex,
+  except required `sendDigest` may be null when the genuine kind permits it.
+  No member may be omitted or defaulted, including `surfaceDigest`.
+  For `plugin.install`, intent install with null from proposes generation1;
+  intent install with an actual staged from keeps its version id/version and
+  proposes g+1. Intent re-enable instead requires disabled or quarantined from,
+  keeps its version id/version and proposes g+1. For `plugin.upgrade`, intent
+  is upgrade, from is required, both candidate version id and version differ,
+  and the prospective generation is g+1. Registry id differs from candidate
+  version id. Existing staged selection is never described as absence.
+  The complete subject, including intent and both selections, is digest-bound;
+  its epoch must equal the signed admin statement's epoch. Its authentic
+  candidate/surface provenance, owner/current-state checks and accepted-operation
+  transaction remain obligations of the original producer. Parsing this DATA
+  supplies none of them and adds no plugin.enable kind or running authority.
 - Account kinds: `{channel:'email',account,alias,address,createdAt}` or
   `{channel:'chat',account,alias,teamId,selfUserId,createdAt}`, copied from the
   account; a chat `teamId` is null when the account has none. The owner can

@@ -12,14 +12,23 @@ async function run() {
 	assert.equal(process.permission.has("fs.read", process.argv[5]), false);
 	assert.equal(process.permission.has("fs.read", process.argv[6]), false);
 	assert.equal(process.permission.has("fs.read", process.argv[7]), false);
+	assert.equal(process.permission.has("fs.read", process.argv[8]), false);
 	assert.ok(process.execArgv.includes("--allow-addons"));
 	checkpoint = 2;
 	const { openNativeStorage, HubStore, MasterKey, AuditChain } = await import("./index.mjs");
 	assert.equal(typeof openNativeStorage, "function", "Built root must export openNativeStorage");
 	const mode = process.argv[3];
-	assert.ok(["healthy", "missing-asset", "invalid-sql"].includes(mode));
+	assert.ok(["healthy", "missing-asset", "invalid-sql", "refused-schema"].includes(mode));
 	checkpoint = 3;
-	const namespaces = ["audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets", "accounts"];
+	const namespaces = [
+		"audit", "core", "devices", "jobs", "events", "revisions", "credentials", "tickets", "accounts", "pluginregistry",
+		"outbox", "challenges", "verifier", "admin", "adminchallenges", "backup",
+		"backupops", "backupchallenges",
+	];
+	const approvalTables = [
+		"outbox", "approval_challenges", "pair_confirm_operations", "approvals", "native_admin_operations", "native_admin_challenges",
+		"native_backup_operations", "native_backup_challenges",
+	];
 	const filename = path.join(import.meta.dirname, "native-storage.db");
 	const bytes = randomBytes(32);
 	const masterKey = new MasterKey(bytes);
@@ -34,7 +43,50 @@ async function run() {
 	let closeCalls = 0;
 	let originalCloseReturned = false;
 	try {
-		if (mode !== "healthy") {
+		if (mode === "refused-schema") {
+			// An applied namespace whose delivered asset is missing refuses before any migration.
+			store = await openNativeStorage({ ...options, create: true });
+			store.close();
+			store = undefined;
+			const asset = path.join(import.meta.dirname, "events-migrations/0001_events.sql");
+			const delivered = readFileSync(asset);
+			const originalMigrate = HubStore.prototype.migrate;
+			let migrations = 0;
+			HubStore.prototype.migrate = function (namespace) {
+				migrations++;
+				return Reflect.apply(originalMigrate, this, [namespace]);
+			};
+			try {
+				unlinkSync(asset);
+				checkpoint = 13;
+				await assert.rejects(() => openNativeStorage(options), /^Error: Database schema is not recognized$/);
+				assert.throws(() => new HubStore(options), /^Error: Database schema is not recognized$/);
+				assert.equal(migrations, 0, "A refused schema must not reach migration bookkeeping");
+			} finally {
+				HubStore.prototype.migrate = originalMigrate;
+				writeFileSync(asset, delivered);
+			}
+			// A namespace the build does not deliver needs its composition's trusted folder.
+			const other = path.join(import.meta.dirname, "other.db");
+			const callerSql = path.join(import.meta.dirname, "caller-sql");
+			mkdirSync(callerSql);
+			writeFileSync(path.join(callerSql, "0001_caller.sql"), "CREATE TABLE caller_rows(id INTEGER);");
+			checkpoint = 14;
+			const custom = new HubStore({ ...options, filename: other, create: true, migrations: { caller: callerSql } });
+			try {
+				assert.deepEqual(await custom.migrate("caller"), ["0001_caller"]);
+			} finally {
+				custom.close();
+			}
+			checkpoint = 15;
+			await assert.rejects(
+				() => openNativeStorage({ ...options, filename: other }),
+				/^Error: Database schema is not recognized$/,
+			);
+			new HubStore({ ...options, filename: other, migrations: { caller: callerSql } }).close();
+			checkpoint = 16;
+			store = await openNativeStorage(options);
+		} else if (mode !== "healthy") {
 			const asset = path.join(import.meta.dirname, "credentials/migrations/0001_credentials.sql");
 			const delivered = readFileSync(asset);
 			HubStore.prototype.close = function () {
@@ -89,6 +141,8 @@ async function run() {
 				for (const name of [
 					"device_authority", "devices", "jobs", "jobs_meta", "events", "event_meta", "native_drafts",
 					"native_draft_revisions", "native_draft_locks", "credentials", "native_send_attempts", "accounts",
+					"plugin_versions", "plugin_generations", "plugin_registry_identities", "plugin_candidates", "native_backup_recovery",
+					...approvalTables,
 				]) {
 					assert.ok(ordinal("audit_meta") < ordinal(name), "Audit schema must migrate first");
 					assert.ok(ordinal("audit_events") < ordinal(name), "Audit events must migrate first");
@@ -96,10 +150,28 @@ async function run() {
 						assert.ok(ordinal(coreTable) < ordinal(name), "Core schema must precede component schemas");
 					}
 				}
+				assert.equal(namespaces.length, 18);
+				assert.deepEqual(
+					rows.map(({ name }) => name).filter((name) => name.startsWith("_migrations_")).sort(),
+					namespaces.flatMap((namespace) => [`_migrations_${namespace}`, `_migrations_${namespace}_lock`]).sort(),
+				);
+				let appliedMigrations = 0;
 				for (const namespace of namespaces) {
-					assert.equal(sql.get(`SELECT count(*) AS n FROM _migrations_${namespace}`).n,
-						namespace === "credentials" || namespace === "revisions" ? 2 : 1);
+					if (namespace !== "audit" && namespace !== "core") {
+						for (const ledger of [`_migrations_${namespace}`, `_migrations_${namespace}_lock`]) {
+							assert.ok(ordinal("audit_meta") < ordinal(ledger), "Audit schema must precede component ledgers");
+							assert.ok(ordinal("audit_events") < ordinal(ledger), "Audit events must precede component ledgers");
+							for (const table of coreTables) {
+								assert.ok(ordinal(table) < ordinal(ledger), "Core schema must precede component ledgers");
+							}
+						}
+					}
+					const applied = sql.get(`SELECT count(*) AS n FROM _migrations_${namespace}`).n;
+					assert.equal(applied,
+						namespace === "credentials" || namespace === "revisions" || namespace === "pluginregistry" ? 2 : 1);
+					appliedMigrations += applied;
 				}
+				assert.equal(appliedMigrations, 21);
 				assert.equal(sql.get("SELECT count(*) AS n FROM audit_meta").n, 1);
 				assert.equal(sql.get("SELECT count(*) AS n FROM hub_meta").n, 1);
 				const core = sql.get("SELECT singleton,identity_wrapped,statement_wrapped,identity_cert FROM hub_meta");
@@ -109,6 +181,14 @@ async function run() {
 				assert.deepEqual(sql.get("SELECT singleton,epoch,bootstrap_done,owner_user_id FROM device_authority"),
 					{ singleton: 1, epoch: 0, bootstrap_done: 0, owner_user_id: null });
 				assert.equal(sql.get("SELECT count(*) AS n FROM devices").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_versions").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_generations").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_registry_identities").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_candidates").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM native_backup_recovery").n, 0);
+				for (const table of approvalTables) {
+					assert.equal(sql.get(`SELECT count(*) AS n FROM ${table}`).n, 0);
+				}
 				const genesis = sql.get("SELECT audit_seq,audit_head,audit_tag FROM audit_meta");
 				assert.match(genesis.audit_tag, /^[0-9a-f]{64}$/);
 				audit.verify(sql);
@@ -134,6 +214,10 @@ async function run() {
 		store = undefined;
 		assert.notEqual(readFileSync(filename).subarray(0, 16).toString(), "SQLite format 3\0");
 		checkpoint = 12;
+		store = new HubStore(options);
+		assert.deepEqual(inspect(), populated, "Bare reopen must recognize every delivered schema without registration");
+		store.close();
+		store = undefined;
 		store = await openNativeStorage(options);
 		assert.deepEqual(inspect(), populated, "Reopen must retain schema and authenticated audit head");
 		return {

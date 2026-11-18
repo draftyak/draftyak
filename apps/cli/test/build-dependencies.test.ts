@@ -1,4 +1,5 @@
 import { type SpawnSyncReturns, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	cpSync,
 	existsSync,
@@ -110,6 +111,7 @@ function fixture(): Fixture {
 		path.join(workspaceRoot, "tsconfig.base.json"),
 		path.join(workspace, "tsconfig.base.json"),
 	);
+	cpSync(path.join(workspaceRoot, "pnpm-lock.yaml"), path.join(workspace, "pnpm-lock.yaml"));
 	put(workspace, "package.json", '{"private":true,"type":"module"}\n');
 	put(workspace, "pnpm-workspace.yaml", "packages:\n  - apps/*\n  - packages/*\n");
 	const require = createRequire(import.meta.url);
@@ -489,6 +491,37 @@ it("builds and runs a typed workspace facade with the real pinned Zod dependency
 		'import { validated } from "@draftyak/build-fixture";',
 	);
 	const staged = built(f);
+	const buildInputs = JSON.parse(
+		readFileSync(path.join(staged, "cli-build-inputs.json"), "utf8"),
+	) as {
+		readonly chunks: readonly { readonly compilerHelpers: readonly unknown[] }[];
+		readonly components: readonly { readonly name: string }[];
+		readonly sources: readonly { readonly path: string }[];
+	};
+	const compilerManifest = readFileSync(
+		createRequire(import.meta.url).resolve("rolldown/package.json"),
+	);
+	const compilerMetadata = JSON.parse(compilerManifest.toString("utf8"));
+	expect({ name: compilerMetadata.name, version: compilerMetadata.version }).toEqual({
+		name: "rolldown",
+		version: "1.2.14",
+	});
+	const helpers = buildInputs.chunks.flatMap((chunk) => chunk.compilerHelpers);
+	expect(helpers.length > 0, "real Zod build emitted compiler helper metadata").toBe(true);
+	for (const helper of helpers) {
+		expect(helper).toEqual({
+			name: "rolldown/runtime.js",
+			compilerName: "rolldown",
+			compilerVersion: "1.2.14",
+			compilerManifestSha256: createHash("sha256").update(compilerManifest).digest("hex"),
+		});
+	}
+	expect(buildInputs.components.some((component) => component.name === "rolldown")).toBe(false);
+	expect(
+		buildInputs.sources.some(
+			(source) => source.path.includes("\0") || source.path === "rolldown/runtime.js",
+		),
+	).toBe(false);
 	assertClosedImports(f, staged);
 	const result = invoke(staged, ["dependency"]);
 	expect({ status: result.status, stdout: result.stdout, stderr: result.stderr }).toEqual({
