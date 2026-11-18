@@ -359,6 +359,17 @@ export {
 	type PluginRegistryOptions,
 } from "./plugins/registry/index.ts";
 export {
+	captureProviderConsentTarget,
+	NativeProviderConsent,
+	PROVIDER_CONSENT_MIGRATIONS,
+	PROVIDER_CONSENT_VERSION,
+	type ProviderConsentAcknowledgement,
+	type ProviderConsentTarget,
+	ProviderPolicyError,
+	providerConsentPinScope,
+	providerRouteNeedsConsent,
+} from "./policy/consent.ts";
+export {
 	closeNativeBackupPreparation,
 	type NativeBackupPreparation,
 	type NativeBackupPreparationInput,
