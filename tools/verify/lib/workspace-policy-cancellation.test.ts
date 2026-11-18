@@ -7,6 +7,7 @@ import {
 	type ReadDirectory,
 	type StatPath,
 } from "./workspace-policy.ts";
+import { createInventoryHost, inventoryWorktrees } from "./worktree-inventory.ts";
 
 const timerProbe = vi.hoisted(() => ({
 	observe: undefined as
@@ -317,103 +318,139 @@ describe("injected inventory cancellation", () => {
 		expect(stats).toEqual([child("failed")]);
 	});
 
-	it("cancels the original native backoff while retaining another admitted read", async () => {
-		const owned = ownedPromises(),
-			controller = new AbortController();
-		const held = deferred<readonly Entry[]>(),
-			failed = deferred<readonly Entry[]>();
-		const heldEntered = deferred<void>(),
-			failedEntered = deferred<void>(),
-			delayEntered = deferred<void>();
-		const reads: string[] = [],
-			stats: string[] = [];
-		const delays: {
-			signal: unknown;
-			original: Promise<unknown>;
-			observed: ReturnType<typeof observe>;
-		}[] = [];
-		const previous = timerProbe.observe,
-			previousInvalid = timerProbe.invalid;
-		timerProbe.invalid = false;
-		timerProbe.observe = (args, original) => {
-			if (args[0] !== 100) return;
-			const options = args[2] as { signal?: unknown } | undefined;
-			delays.push({ signal: options?.signal, original, observed: observe(owned.retain(original)) });
-			delayEntered.resolve();
-		};
-		const readDirectory: ReadDirectory = (target) => {
-			reads.push(target);
-			if (target === root) return owned.retain(Promise.resolve([entry("held"), entry("failed")]));
-			if (target === child("held")) {
-				heldEntered.resolve();
-				return owned.retain(held.promise);
+	it.each(["policy", "inventory host"] as const)(
+		"cancels the original backoff through %s while retaining another admitted read",
+		async (entryPoint) => {
+			const owned = ownedPromises(),
+				controller = new AbortController();
+			const held = deferred<readonly Entry[]>(),
+				failed = deferred<readonly Entry[]>();
+			const heldEntered = deferred<void>(),
+				failedEntered = deferred<void>(),
+				delayEntered = deferred<void>();
+			const reads: string[] = [],
+				stats: string[] = [];
+			const delays: {
+				signal: unknown;
+				original: Promise<unknown>;
+				observed: ReturnType<typeof observe>;
+			}[] = [];
+			const previous = timerProbe.observe,
+				previousInvalid = timerProbe.invalid;
+			timerProbe.invalid = false;
+			timerProbe.observe = (args, original) => {
+				if (args[0] !== 100) return;
+				const options = args[2] as { signal?: unknown } | undefined;
+				delays.push({
+					signal: options?.signal,
+					original,
+					observed: observe(owned.retain(original)),
+				});
+				delayEntered.resolve();
+			};
+			const readDirectory: ReadDirectory = (target) => {
+				reads.push(target);
+				if (target === root) return owned.retain(Promise.resolve([entry("held"), entry("failed")]));
+				if (target === child("held")) {
+					heldEntered.resolve();
+					return owned.retain(held.promise);
+				}
+				if (target === child("failed") && reads.filter((value) => value === target).length === 1) {
+					failedEntered.resolve();
+					return owned.retain(failed.promise);
+				}
+				return owned.retain(Promise.resolve([]));
+			};
+			const statPath: StatPath = (target) => {
+				stats.push(target);
+				return owned.retain(Promise.resolve(directoryKind));
+			};
+			const main = path.resolve("synthetic-inventory-cancellation-main");
+			const gitCalls: (readonly string[])[] = [];
+			const host =
+				entryPoint === "inventory host"
+					? createInventoryHost(root, {
+							readDirectory,
+							statPath,
+							spawnGit: () => {
+								throw new Error("Git uses synthetic listing metadata");
+							},
+							write: () => {
+								throw new Error("No successful completion is expected");
+							},
+						})
+					: undefined;
+			const signal = host?.signal ?? controller.signal;
+			const stop = host?.stop ?? (() => controller.abort());
+			const original: Promise<unknown> = host
+				? inventoryWorktrees(root, {
+						...host,
+						async git(args) {
+							gitCalls.push(args);
+							if (args[0] === "rev-parse")
+								return { code: 0, stdout: `${path.join(main, ".git")}\n` };
+							if (args[0] === "worktree")
+								return { code: 0, stdout: `worktree ${main}\0\0worktree ${root}\0\0` };
+							throw new Error("Unexpected Git metadata request");
+						},
+					})
+				: namedFiles("needle.txt", root, false, readDirectory, statPath, () => 2, signal);
+			const walk = observe(original);
+			let initialReadsAdmitted = false,
+				delayAdmitted = false,
+				pendingBeforeRelease = false;
+			let timerResult: Outcome<unknown> | undefined,
+				observedSignal: unknown,
+				observerInvalid = false;
+			try {
+				initialReadsAdmitted = await owned.reached(
+					Promise.all([heldEntered.promise, failedEntered.promise]),
+					walk,
+				);
+				failed.reject(new Error("synthetic read refusal"));
+				delayAdmitted = await owned.reached(delayEntered.promise, walk);
+				stop();
+				const delay = delays[0];
+				if (delay) {
+					observedSignal = delay.signal;
+					timerResult = await delay.observed.done;
+				}
+				await owned.turn();
+				pendingBeforeRelease =
+					walk.state() === "pending" && (host?.snapshot().pendingFs ?? 1) === 1;
+				observerInvalid = timerProbe.invalid;
+			} finally {
+				stop();
+				failed.reject(new Error("synthetic read refusal"));
+				held.resolve([]);
+				await walk.done;
+				await owned.join();
+				timerProbe.observe = previous;
+				timerProbe.invalid = previousInvalid;
 			}
-			if (target === child("failed") && reads.filter((value) => value === target).length === 1) {
-				failedEntered.resolve();
-				return owned.retain(failed.promise);
+			// Omitting the signal eventually gives the same walk refusal, but its ORIGINAL
+			// 100 ms timer fulfills. Compare the actual outcome, never an elapsed-time threshold.
+			expect(timerResult?.kind).toBe("rejected");
+			if (timerResult?.kind === "rejected")
+				expect(timerResult.error).toMatchObject({ name: "AbortError", code: "ABORT_ERR" });
+			expect(observedSignal).toBe(signal);
+			expect(initialReadsAdmitted).toBe(true);
+			expect(delayAdmitted).toBe(true);
+			expect(observerInvalid).toBe(false);
+			expect(delays).toHaveLength(1);
+			expect(pendingBeforeRelease).toBe(true);
+			expectRefusal(await walk.done);
+			expect(reads).toEqual([root, child("held"), child("failed")]);
+			expect(stats).toEqual([child("failed")]);
+			if (host) {
+				expect(host.drained()).toBe(true);
+				expect(gitCalls).toEqual([
+					["rev-parse", "--path-format=absolute", "--git-common-dir"],
+					["worktree", "list", "--porcelain", "-z"],
+				]);
 			}
-			return owned.retain(Promise.resolve([]));
-		};
-		const statPath: StatPath = (target) => {
-			stats.push(target);
-			return owned.retain(Promise.resolve(directoryKind));
-		};
-		const original = namedFiles(
-			"needle.txt",
-			root,
-			false,
-			readDirectory,
-			statPath,
-			() => 2,
-			controller.signal,
-		);
-		const walk = observe(original);
-		let initialReadsAdmitted = false,
-			delayAdmitted = false,
-			pendingBeforeRelease = false;
-		let timerResult: Outcome<unknown> | undefined,
-			observedSignal: unknown,
-			observerInvalid = false;
-		try {
-			initialReadsAdmitted = await owned.reached(
-				Promise.all([heldEntered.promise, failedEntered.promise]),
-				walk,
-			);
-			failed.reject(new Error("synthetic read refusal"));
-			delayAdmitted = await owned.reached(delayEntered.promise, walk);
-			controller.abort();
-			const delay = delays[0];
-			if (delay) {
-				observedSignal = delay.signal;
-				timerResult = await delay.observed.done;
-			}
-			await owned.turn();
-			pendingBeforeRelease = walk.state() === "pending";
-			observerInvalid = timerProbe.invalid;
-		} finally {
-			controller.abort();
-			failed.reject(new Error("synthetic read refusal"));
-			held.resolve([]);
-			await walk.done;
-			await owned.join();
-			timerProbe.observe = previous;
-			timerProbe.invalid = previousInvalid;
-		}
-		// Omitting the signal eventually gives the same walk refusal, but its ORIGINAL
-		// 100 ms timer fulfills. Compare the actual outcome, never an elapsed-time threshold.
-		expect(timerResult?.kind).toBe("rejected");
-		if (timerResult?.kind === "rejected")
-			expect(timerResult.error).toMatchObject({ name: "AbortError", code: "ABORT_ERR" });
-		expect(observedSignal).toBe(controller.signal);
-		expect(initialReadsAdmitted).toBe(true);
-		expect(delayAdmitted).toBe(true);
-		expect(observerInvalid).toBe(false);
-		expect(delays).toHaveLength(1);
-		expect(pendingBeforeRelease).toBe(true);
-		expectRefusal(await walk.done);
-		expect(reads).toEqual([root, child("held"), child("failed")]);
-		expect(stats).toEqual([child("failed")]);
-	});
+		},
+	);
 
 	it("joins the admitted worktree root stat without starting absence or refresh after abort", async () => {
 		const owned = ownedPromises(),
