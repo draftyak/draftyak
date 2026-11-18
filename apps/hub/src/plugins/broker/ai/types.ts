@@ -1,6 +1,7 @@
 import type { DraftRequest } from "@draftyak/protocol/ai-provider-v1";
 import type { HeaderList } from "@draftyak/protocol/hash";
 import type { AiProfile } from "@draftyak/protocol/manifest/ai-http";
+import type { EndpointClassification } from "../network/endpoint.ts";
 import type { EgressPolicy, PinnedAddress } from "../network/index.ts";
 
 export type AiProviderSettings =
@@ -26,6 +27,8 @@ export interface AiRequestBinding {
 	readonly draft: DraftRequest;
 	readonly settings: AiProviderSettings;
 	readonly endpoint: string;
+	readonly authentication?: "provider-key" | "none";
+	readonly expectedDestination?: EndpointClassification["destination"];
 	readonly answers: readonly PinnedAddress[];
 	readonly policy: EgressPolicy;
 }

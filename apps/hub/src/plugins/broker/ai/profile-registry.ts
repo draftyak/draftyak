@@ -186,7 +186,19 @@ export function captureAiRequestInputs(
 				: captureResponsesMetadataInputs(candidate, binding);
 		const value = fields(candidate, ["method", "url", "headers", "body"]);
 		if (value.method !== "POST") refuse();
-		const source = fields(binding, ["draft", "settings", "endpoint"]);
+		const source = fields(
+			binding,
+			["draft", "settings", "endpoint", "authentication", "expectedDestination"],
+			["draft", "settings", "endpoint"],
+		);
+		const authentication = Object.hasOwn(source, "authentication")
+			? source.authentication
+			: "provider-key";
+		if (authentication !== "provider-key" && authentication !== "none") refuse();
+		const expectedDestination = Object.hasOwn(source, "expectedDestination")
+			? source.expectedDestination
+			: "cloud";
+		if (!["local", "local-network", "cloud"].includes(expectedDestination as string)) refuse();
 		const endpoint = text(source.endpoint, 2048);
 		if (text(value.url, 2048) !== endpoint) refuse();
 		const url = new URL(endpoint);
@@ -201,13 +213,23 @@ export function captureAiRequestInputs(
 			{ jitless: true },
 		);
 		if (!parsed.success) refuse();
+		const settings = captureSettings(source.settings);
+		if (
+			authentication === "none" &&
+			(settings.kind !== "compatible" || expectedDestination !== "local")
+		)
+			refuse();
 		const capturedBinding = Object.freeze({
 			draft: Object.freeze({
 				...parsed.data,
 				contextIds: Object.freeze([...parsed.data.contextIds]),
 			}),
-			settings: captureSettings(source.settings),
+			settings,
 			endpoint,
+			authentication,
+			expectedDestination: expectedDestination as NonNullable<
+				AiRequestBinding["expectedDestination"]
+			>,
 		});
 		const snapshot = Object.freeze({
 			method: "POST",
@@ -294,6 +316,20 @@ export function aiRequestEndpoint(handle: CapturedAiRequestInputs): string {
 		: source.kind === "metadata"
 			? responsesMetadataEndpoint(source.binding)
 			: source.reservation.url;
+}
+
+/** Captured native expectations are data, not a permission to disclose or connect. */
+export function aiRequestTransport(handle: CapturedAiRequestInputs): Readonly<{
+	authentication: "provider-key" | "none";
+	expectedDestination: NonNullable<AiRequestBinding["expectedDestination"]>;
+}> {
+	const source = captured(handle);
+	return Object.freeze({
+		authentication:
+			source.kind === "draft" ? (source.binding.authentication ?? "provider-key") : "provider-key",
+		expectedDestination:
+			source.kind === "draft" ? (source.binding.expectedDestination ?? "cloud") : "cloud",
+	});
 }
 
 function routing(
@@ -403,11 +439,19 @@ export function verifyAiRequest(
 	candidate: AiCandidateRequest,
 	binding: AiRequestBinding,
 ): VerifiedAiRequest {
-	const input = fields(binding, ["draft", "settings", "endpoint", "answers", "policy"]);
+	const input = fields(
+		binding,
+		["draft", "settings", "endpoint", "answers", "policy", "authentication", "expectedDestination"],
+		["draft", "settings", "endpoint", "answers", "policy"],
+	);
 	const capture = captureAiRequestInputs(candidate, {
 		draft: input.draft,
 		settings: input.settings,
 		endpoint: input.endpoint,
+		...(Object.hasOwn(input, "authentication") ? { authentication: input.authentication } : {}),
+		...(Object.hasOwn(input, "expectedDestination")
+			? { expectedDestination: input.expectedDestination }
+			: {}),
 	});
 	return verifyCapturedAiRequest(registry, id, capture, {
 		answers: input.answers as readonly PinnedAddress[],
