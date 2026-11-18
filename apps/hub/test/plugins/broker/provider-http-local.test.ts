@@ -289,6 +289,139 @@ afterEach(async () => {
 });
 
 describe("compatible loopback provider broker", () => {
+	it.each(["caller abort", "broker close"] as const)(
+		"honors %s performed by the initial native fence before DNS or transport",
+		async (action) => {
+			const target = await peer((response) => response.end("would-succeed"));
+			const value = broker(),
+				controller = signal();
+			let fenceCalls = 0,
+				resolves = 0,
+				dials = 0;
+			const fence = (): undefined => {
+				if (++fenceCalls === 1) {
+					if (action === "caller abort") controller.abort();
+					else value.close();
+				}
+				return undefined;
+			};
+			await withNetworkTestHooks(
+				{
+					resolve: async () => {
+						resolves++;
+						return loopback;
+					},
+					dial: (pin, port) => {
+						dials++;
+						return { ...pin, port };
+					},
+				},
+				async () => {
+					const outcome = await withFence(
+						value,
+						input(`http://models.example:${target.port}`),
+						fence,
+						controller,
+					).then(
+						() => "fulfilled",
+						(error) => (error instanceof ProviderHttpError ? "refused" : "other"),
+					);
+					expect(outcome).toBe("refused");
+				},
+			);
+			expect(fenceCalls).toBe(1);
+			expect(resolves).toBe(0);
+			expect(dials).toBe(0);
+			expect(target.received).toEqual([]);
+			expect(target.inboundBytes).toBe(0);
+			if (action === "caller abort") expect(controller.signal.aborted).toBe(true);
+		},
+	);
+
+	it("withholds stream content when its native fence aborts the caller before sink delivery", async () => {
+		const target = await peer((response) => response.end("must-not-be-delivered"));
+		const data = input(target.origin),
+			controller = signal();
+		const notifications: HostNotification[] = [];
+		let armed = false,
+			triggered = 0;
+		const fence = (): undefined => {
+			if (armed && triggered++ === 0) controller.abort();
+			return undefined;
+		};
+		const stream = broker().stream(
+			"chat-completions-v1",
+			data.candidate,
+			data.binding,
+			undefined,
+			undefined,
+			controller.signal,
+			async (notification) => {
+				notifications.push(notification);
+			},
+			fence,
+		);
+		own(stream.response);
+		own(stream.completion);
+		await stream.response;
+		armed = true;
+		stream.start();
+		const completion = await stream.completion.then(
+			() => "fulfilled",
+			() => "refused",
+		);
+		expect(completion).toBe("refused");
+		expect(triggered).toBe(1);
+		const chunks = notifications.map((notification) => HostStreamChunk.parse(notification.params));
+		expect(
+			chunks.every((chunk) => chunk.base64 === "" && chunk.done && chunk.error === "DENIED"),
+		).toBe(true);
+	});
+
+	it("uses the genuine Ollama request contract for explicit no-key loopback HTTP", async () => {
+		const responseBody = JSON.stringify({ message: { content: "local-result" }, done: true });
+		const target = await peer((response) => response.end(responseBody));
+		const data = input(target.origin);
+		const endpoint = `${target.origin}/api/chat`;
+		const body = encoder.encode(
+			JSON.stringify({
+				model: data.binding.draft.model,
+				messages: [
+					{ role: "system", content: data.binding.draft.system },
+					{ role: "user", content: data.binding.draft.prompt },
+				],
+				format: compatibleSchema(),
+				stream: false,
+			}),
+		);
+		const result = await own(
+			broker().execute(
+				"chat-completions-v1",
+				{
+					...data.candidate,
+					url: endpoint,
+					body,
+				},
+				{
+					...data.binding,
+					endpoint,
+					settings: { ...data.binding.settings, format: "ollama" },
+				},
+				undefined,
+				undefined,
+				signal().signal,
+			),
+		);
+		expect(result.body).toEqual({ base64: Buffer.from(responseBody).toString("base64url") });
+		expect(target.received).toHaveLength(1);
+		expect(target.received[0]).toMatchObject({
+			url: "/api/chat",
+			authorization: undefined,
+			apiKey: undefined,
+		});
+		expect(target.received[0]?.body).toEqual(Buffer.from(body));
+	});
+
 	it("preserves legacy keyed HTTPS local routing when both transport fields are omitted", () => {
 		const data = input("https://models.example:11434");
 		const captured = captureAiRequestInputs(data.candidate, {

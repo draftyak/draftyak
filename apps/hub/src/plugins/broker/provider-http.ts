@@ -150,7 +150,11 @@ async function streamResponse(
 		});
 		busy = true;
 		const pending = Promise.resolve().then(() => {
-			if (!control) assertNativeCurrent();
+			if (!control) {
+				transportSignal.throwIfAborted();
+				assertNativeCurrent();
+				transportSignal.throwIfAborted();
+			}
 			return delivery.sink(notification, signal);
 		});
 		// Observe the actual sink acknowledgment even if cancellation stops waiting for it.
@@ -319,6 +323,7 @@ function fetchPinned(
 		try {
 			signal.throwIfAborted();
 			assertNativeCurrent();
+			signal.throwIfAborted();
 			signal.addEventListener("abort", fail, { once: true });
 			req = request({
 				...connection.options,
@@ -337,6 +342,7 @@ function fetchPinned(
 					try {
 						if (signal.aborted || settled) return fail();
 						assertNativeCurrent();
+						if (signal.aborted || settled) return fail();
 						req?.end(verified.body);
 					} catch {
 						fail();
@@ -349,6 +355,7 @@ function fetchPinned(
 				try {
 					if (settled || signal.aborted) return response.destroy();
 					assertNativeCurrent();
+					signal.throwIfAborted();
 					const status = response.statusCode;
 					if (
 						status === undefined ||
@@ -419,6 +426,7 @@ function fetchPinned(
 						try {
 							if (!response.complete || signal.aborted) throw refused();
 							assertNativeCurrent();
+							signal.throwIfAborted();
 							body = Buffer.concat(chunks, length);
 							if (key !== undefined && body.includes(key)) throw refused();
 							observation?.complete(status, body);
@@ -476,12 +484,20 @@ export function createProviderHttpBroker(options: {
 		let lifecycle: AiRequestLifecycle | undefined;
 		try {
 			if (nativeFence !== undefined && typeof nativeFence !== "function") throw refused();
+			const assertRequestActive = (): void => {
+				if (closed) throw refused();
+				signal.throwIfAborted();
+				controller.signal.throwIfAborted();
+			};
 			const assertNativeCurrent = (): void => {
-				if (nativeFence === undefined) return;
-				const result: unknown = Reflect.apply(nativeFence, undefined, []);
-				if (result instanceof Promise)
-					void Promise.prototype.then.call(result, undefined, () => undefined);
-				if (result !== undefined) throw refused();
+				assertRequestActive();
+				if (nativeFence !== undefined) {
+					const result: unknown = Reflect.apply(nativeFence, undefined, []);
+					if (result instanceof Promise)
+						void Promise.prototype.then.call(result, undefined, () => undefined);
+					if (result !== undefined) throw refused();
+				}
+				assertRequestActive();
 			};
 			if (closed || active.size >= HOST_MAX_ACTIVE_REQUESTS) throw refused();
 			signal.throwIfAborted();
