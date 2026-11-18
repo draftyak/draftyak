@@ -493,6 +493,7 @@ describe("plain Node worktree inventory", () => {
 		child.failKill = true;
 		let reads = 0,
 			spawns = 0,
+			stopNotifications = 0,
 			drained = false;
 		const io: InventoryIo = {
 			readDirectory: () => {
@@ -506,12 +507,18 @@ describe("plain Node worktree inventory", () => {
 			},
 			write: (_bytes, ack) => ack(),
 		};
-		const host = createInventoryHost(path.resolve("dytest-owned"), io);
+		const host = createInventoryHost(path.resolve("dytest-owned"), io, () => {
+			stopNotifications++;
+		});
 		const reading = host.readDirectory("DYTEST"),
 			statting = host.statPath("DYTEST"),
 			git = host.git(["worktree", "list", "--porcelain", "-z"]);
 		void git.catch(() => {});
+		const signal = host.signal;
+		const wasAborted = signal.aborted;
 		expect(() => host.stop()).not.toThrow();
+		host.stop();
+		const isAborted = signal.aborted;
 		const drain = host.drain().then(() => {
 			drained = true;
 		});
@@ -531,5 +538,8 @@ describe("plain Node worktree inventory", () => {
 		await Promise.allSettled([git]);
 		await drain;
 		expect(host.drained()).toBe(true);
+		expect(wasAborted).toBe(false);
+		expect(isAborted).toBe(true);
+		expect(stopNotifications).toBe(1);
 	});
 });
