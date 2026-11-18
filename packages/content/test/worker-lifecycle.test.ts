@@ -150,6 +150,28 @@ it("honors cancellation during startup without posting input", async () => {
 	expect(current.terminate).toHaveBeenCalledOnce();
 });
 
+it("releases capacity when input preparation fails before creating a worker", async () => {
+	const first = cleanInWorker("text", "synthetic");
+	const a = worker();
+	const rejectedOptions = new Error("Could not prepare the fixture options");
+	await expect(
+		cleanInWorker("text", "synthetic", {
+			get maxChars(): number {
+				throw rejectedOptions;
+			},
+		}),
+	).rejects.toBe(rejectedOptions);
+	expect(state.workers).toHaveLength(1);
+
+	const second = cleanInWorker("text", "synthetic");
+	const b = worker();
+	expect(state.workers).toHaveLength(2);
+	await expect(cleanInWorker("text", "third")).rejects.toMatchObject({ code: "BUSY" });
+	complete(a);
+	complete(b);
+	await expect(Promise.all([first, second])).resolves.toEqual([result, result]);
+});
+
 it("keeps capacity reserved until worker termination finishes", async () => {
 	const first = cleanInWorker("text", "synthetic");
 	const a = worker();
