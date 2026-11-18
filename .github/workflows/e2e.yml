@@ -28,6 +28,11 @@ jobs:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright@sha256:ee15712262f017b8157421b212b12099146645f44b1bc5c0514cbbe6a229b1d0 # v1.64.1-noble, linux/amd64
+      options: --init --ipc=host
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,18 +45,7 @@ jobs:
         with:
           cache: true
       - run: pnpm install --frozen-lockfile
-      - name: Cache Playwright browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/draftyak-playwright
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Install Chromium and WebKit prerequisites
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/draftyak-playwright
-        run: node apps/web/e2e/install.ts chromium webkit
       - name: Test Chromium and WebKit
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/draftyak-playwright
         run: pnpm --filter @draftyak/web test:e2e -- --project=chromium --project=webkit
 
   macos:
