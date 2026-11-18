@@ -59,6 +59,7 @@ const namespaces = [
 	"tickets",
 	"accounts",
 	"gmailcredentials",
+	"gmailpoll",
 ] as const;
 const sqlAssets = [
 	"store/migrations/audit/0001_chain.sql",
@@ -73,6 +74,7 @@ const sqlAssets = [
 	"outbox/migrations/0001_send_attempts.sql",
 	"accounts/migrations/0001_accounts.sql",
 	"credential-migrations/0001_credentials.sql",
+	"poll-journal-migrations/0001_poll_journal.sql",
 ] as const;
 let built: BuiltCopy | undefined;
 let copyLocation: { directory: string; parent: string } | undefined;

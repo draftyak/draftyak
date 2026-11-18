@@ -21,7 +21,8 @@ type HubNamespace =
 	| "credentials"
 	| "tickets"
 	| "gmailcredentials"
-	| "accounts";
+	| "accounts"
+	| "gmailpoll";
 
 /** The current fixed native schema inventory; callers cannot substitute migration folders. */
 export const HUB_NAMESPACES: Readonly<Record<HubNamespace, string>> = Object.freeze({
@@ -39,6 +40,11 @@ export const HUB_NAMESPACES: Readonly<Record<HubNamespace, string>> = Object.fre
 			? "channels/gmail/connection/credential-migrations"
 			: "credential-migrations",
 	),
+	gmailpoll: bundled(
+		import.meta.url.endsWith(".ts")
+			? "channels/gmail/poll-journal-migrations"
+			: "poll-journal-migrations",
+	),
 });
 
 const SCHEMAS = Object.freeze([
@@ -54,6 +60,7 @@ const SCHEMAS = Object.freeze([
 	["tickets", "0001_send_attempts.sql"],
 	["accounts", "0001_accounts.sql"],
 	["gmailcredentials", "0001_credentials.sql"],
+	["gmailpoll", "0001_poll_journal.sql"],
 ] as const);
 
 /** Migrate the registered native schemas in order; the caller retains store and key cleanup. */

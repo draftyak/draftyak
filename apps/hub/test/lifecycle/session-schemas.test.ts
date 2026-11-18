@@ -14,6 +14,7 @@ const EXPECTED = [
 	["tickets", ["0001_send_attempts"]],
 	["accounts", ["0001_accounts"]],
 	["gmailcredentials", ["0001_credentials"]],
+	["gmailpoll", ["0001_poll_journal"]],
 ] as const;
 const DOMAIN_TABLES = [
 	"accounts",
@@ -26,6 +27,7 @@ const DOMAIN_TABLES = [
 	"event_meta",
 	"events",
 	"gmail_credentials",
+	"gmail_poll_journal",
 	"hub_meta",
 	"jobs",
 	"jobs_meta",

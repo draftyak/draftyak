@@ -52,6 +52,10 @@ const assets = [
 		"channels/gmail/connection/credential-migrations/0001_credentials.sql",
 		"credential-migrations/0001_credentials.sql",
 	],
+	[
+		"channels/gmail/poll-journal-migrations/0001_poll_journal.sql",
+		"poll-journal-migrations/0001_poll_journal.sql",
+	],
 ] as const;
 
 function checkRuntimeNames(directory: string): void {
