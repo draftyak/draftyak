@@ -183,19 +183,48 @@ function fixture(settings: FixtureOptions = {}): Fixture {
 	};
 }
 
-async function refused(operation: () => Promise<unknown>, code: string): Promise<boolean> {
+async function refused(
+	operation: () => Promise<unknown>,
+	code: string,
+	retryAfter?: number | ((milliseconds: number) => boolean),
+): Promise<boolean> {
 	return operation().then(
 		() => false,
-		(error: unknown) =>
-			error instanceof PluginError &&
-			error.message === code &&
-			error.result.code === code &&
-			!Object.hasOwn(error, "cause") &&
-			!Object.hasOwn(error.result, "detail"),
+		(error: unknown) => {
+			if (!(error instanceof PluginError)) return false;
+			const value = error.result.retryAfterMs;
+			const matches =
+				retryAfter === undefined
+					? !Object.hasOwn(error.result, "retryAfterMs")
+					: typeof value === "number" &&
+						Object.hasOwn(error.result, "retryAfterMs") &&
+						(typeof retryAfter === "number" ? value === retryAfter : retryAfter(value));
+			return (
+				error.message === code &&
+				error.result.code === code &&
+				matches &&
+				!Object.hasOwn(error, "retryAfterMs") &&
+				!Object.hasOwn(error, "cause") &&
+				!Object.hasOwn(error.result, "detail") &&
+				Object.keys(error.result).every((key) => key === "code" || key === "retryAfterMs")
+			);
+		},
 	);
 }
 async function direct(f: Fixture): Promise<HistoryReduction> {
 	return readHistoryPage(f.context, f.options);
+}
+function httpDate(date: Date, format: "imf" | "rfc850" | "asctime"): string {
+	const text = date.toUTCString();
+	if (format === "imf") return text;
+	const [weekday, day, month, year, time] = text.split(" ");
+	if (format === "rfc850") {
+		const full = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][
+			date.getUTCDay()
+		];
+		return `${full}, ${day}-${month}-${year?.slice(-2)} ${time} GMT`;
+	}
+	return `${weekday?.slice(0, 3)} ${month} ${String(date.getUTCDate()).padStart(2, " ")} ${time} ${year}`;
 }
 function seeded(backend: GmailFake, id = "m1", labels = ["INBOX"]): void {
 	backend.addMessage({
@@ -389,12 +418,14 @@ describe("Gmail history transport", () => {
 				reply: (request) => {
 					const history = new URL(request.url).pathname === HISTORY;
 					return (where === "history") === history
-						? new Response("synthetic upstream detail", { status })
+						? new Response("synthetic upstream detail", { status, headers: { "retry-after": "2" } })
 						: json(addedPage());
 				},
 			});
 			try {
-				expect(await refused(() => direct(f), code)).toBe(true);
+				expect(
+					await refused(() => direct(f), code, code === "RATE_LIMITED" ? 2000 : undefined),
+				).toBe(true);
 				expect(f.count()).toBe(where === "history" ? 1 : 2);
 			} finally {
 				await f.close();
@@ -416,18 +447,21 @@ describe("Gmail history transport", () => {
 					if (
 						(where === "history" && pathname === HISTORY) ||
 						(where === "hydration" && pathname === `${MESSAGES}m1`)
-					)
-						return json(
+					) {
+						const response = json(
 							{ error: { message: "DYTEST-provider-private-text", errors: [{ reason }] } },
 							403,
 						);
+						response.headers.set("retry-after", "3");
+						return response;
+					}
 					return pathname === HISTORY
 						? json(addedPage(3))
 						: json(metadata(pathname.slice(MESSAGES.length)));
 				},
 			});
 			try {
-				expect(await refused(() => direct(f), "RATE_LIMITED")).toBe(true);
+				expect(await refused(() => direct(f), "RATE_LIMITED", 3000)).toBe(true);
 				expect(f.requests().map((request) => request.path)).toEqual(
 					where === "history" ? [HISTORY] : [HISTORY, `${MESSAGES}m0`, `${MESSAGES}m1`],
 				);
@@ -449,9 +483,222 @@ describe("Gmail history transport", () => {
 			'{"error":{"errors":[{"reason":"rateLimitExceeded","reason":"userRateLimitExceeded"}]}}',
 		],
 	] as const)("keeps %s HTTP 403 bodies a fixed permission refusal", async (_name, body) => {
-		const f = fixture({ reply: () => new Response(body, { status: 403 }) });
+		const f = fixture({
+			reply: () => new Response(body, { status: 403, headers: { "retry-after": "0" } }),
+		});
 		try {
 			expect(await refused(() => direct(f), "PERMISSION_DENIED")).toBe(true);
+			expect(f.count()).toBe(1);
+		} finally {
+			await f.close();
+		}
+	});
+
+	it.each([
+		["zero", "0", 0],
+		["leading zeroes", "000002", 2000],
+		["OWS", " \t2\t ", 2000],
+		["long leading zeroes", `${"0".repeat(8000)}1`, 1000],
+		[
+			"largest safe whole-second milliseconds",
+			String(Math.floor(Number.MAX_SAFE_INTEGER / 1000)),
+			Math.floor(Number.MAX_SAFE_INTEGER / 1000) * 1000,
+		],
+		["overflowing milliseconds", String(Math.floor(Number.MAX_SAFE_INTEGER / 1000) + 1), undefined],
+		["huge decimal", "9".repeat(1000), undefined],
+		["negative", "-1", undefined],
+		["sign", "+1", undefined],
+		["fraction", "1.5", undefined],
+		["exponent", "1e3", undefined],
+		["list", "1, 2", undefined],
+		["empty", "", undefined],
+		["unavailable", undefined, undefined],
+	] as const)(
+		"keeps canonical retry metadata or absence for %s delay DATA",
+		async (_name, header, expected) => {
+			for (const where of ["history", "hydration"] as const) {
+				const f = fixture({
+					reply: (request) => {
+						const history = new URL(request.url).pathname === HISTORY;
+						if ((where === "history") !== history) return json(addedPage());
+						return new Response("DYTEST-private-upstream", {
+							status: 429,
+							headers: header === undefined ? {} : { "retry-after": header },
+						});
+					},
+				});
+				try {
+					expect(await refused(() => direct(f), "RATE_LIMITED", expected)).toBe(true);
+					expect(f.count()).toBe(where === "history" ? 1 : 2);
+				} finally {
+					await f.close();
+				}
+			}
+		},
+	);
+
+	it.each(["imf", "rfc850", "asctime"] as const)(
+		"accepts future %s dates relative to the real system clock",
+		async (format) => {
+			for (const where of ["history", "hydration"] as const) {
+				const target = new Date(Math.floor((Date.now() + 86_400_000) / 1000) * 1000);
+				const f = fixture({
+					reply: (request) => {
+						const history = new URL(request.url).pathname === HISTORY;
+						return (where === "history") === history
+							? new Response(null, {
+									status: 429,
+									headers: { "retry-after": httpDate(target, format) },
+								})
+							: json(addedPage());
+					},
+				});
+				try {
+					const before = Date.now();
+					expect(
+						await refused(
+							() => direct(f),
+							"RATE_LIMITED",
+							(milliseconds) =>
+								milliseconds >= Math.max(0, target.getTime() - Date.now()) &&
+								milliseconds <= target.getTime() - before,
+						),
+					).toBe(true);
+					expect(f.count()).toBe(where === "history" ? 1 : 2);
+				} finally {
+					await f.close();
+				}
+			}
+		},
+	);
+
+	it.each(["imf", "rfc850", "asctime"] as const)(
+		"keeps a past %s date as present zero metadata",
+		async (format) => {
+			const past = new Date(Date.now() - 86_400_000);
+			const f = fixture({
+				reply: () =>
+					new Response(null, { status: 429, headers: { "retry-after": httpDate(past, format) } }),
+			});
+			try {
+				expect(await refused(() => direct(f), "RATE_LIMITED", 0)).toBe(true);
+			} finally {
+				await f.close();
+			}
+		},
+	);
+
+	it("applies the RFC850 fifty-year boundary using the full UTC date", async () => {
+		const near = new Date(Date.now());
+		near.setUTCFullYear(near.getUTCFullYear() + 50);
+		near.setUTCDate(near.getUTCDate() - 2);
+		near.setUTCMilliseconds(0);
+		const past = new Date(Date.now());
+		past.setUTCFullYear(past.getUTCFullYear() + 50);
+		past.setUTCDate(past.getUTCDate() + 2);
+		past.setUTCFullYear(past.getUTCFullYear() - 100);
+		for (const target of [near, past]) {
+			const f = fixture({
+				reply: () =>
+					new Response(null, {
+						status: 429,
+						headers: { "retry-after": httpDate(target, "rfc850") },
+					}),
+			});
+			try {
+				const before = Date.now();
+				expect(
+					await refused(
+						() => direct(f),
+						"RATE_LIMITED",
+						target === past
+							? 0
+							: (milliseconds) =>
+									milliseconds >= target.getTime() - Date.now() &&
+									milliseconds <= target.getTime() - before,
+					),
+				).toBe(true);
+			} finally {
+				await f.close();
+			}
+		}
+	});
+
+	it("accepts the UTC leap-second spelling without using local-time normalization", async () => {
+		const f = fixture({
+			reply: () =>
+				new Response(null, {
+					status: 429,
+					headers: { "retry-after": "Sat, 31 Dec 2016 23:59:60 GMT" },
+				}),
+		});
+		try {
+			expect(await refused(() => direct(f), "RATE_LIMITED", 0)).toBe(true);
+		} finally {
+			await f.close();
+		}
+	});
+
+	it.each([
+		"2026-11-18T00:00:00Z",
+		"Sun, 31 Feb 2027 00:00:00 GMT",
+		"Sun, 00 Nov 2026 00:00:00 GMT",
+		"Sun, 06 Nov 1994 24:00:00 GMT",
+		"Sun, 06 Nov 1994 08:60:00 GMT",
+		"Sun, 06 Nov 1994 08:49:61 GMT",
+		"Sun, 06 Nov 1994 08:49:60 GMT",
+		"Mon, 06 Nov 1994 08:49:37 GMT",
+		"Sun, 06 Nov 1994 08:49:37 UTC",
+		"sun, 06 Nov 1994 08:49:37 GMT",
+		"Sun Nov 6 08:49:37 1994",
+		"Sun, 06 Nov 1994 08:49:37 GMT, 2",
+	])("ignores malformed HTTP-date hint %# without exposing it", async (header) => {
+		const f = fixture({
+			reply: () => new Response(null, { status: 429, headers: { "retry-after": header } }),
+		});
+		try {
+			expect(await refused(() => direct(f), "RATE_LIMITED")).toBe(true);
+		} finally {
+			await f.close();
+		}
+	});
+
+	it.each(["rateLimitExceeded", "userRateLimitExceeded"] as const)(
+		"keeps %s classification when retry metadata is invalid",
+		async (reason) => {
+			const f = fixture({
+				reply: () => {
+					const response = json(
+						{ error: { message: "DYTEST-private-reason", errors: [{ reason }] } },
+						403,
+					);
+					response.headers.set("retry-after", "-1");
+					return response;
+				},
+			});
+			try {
+				expect(await refused(() => direct(f), "RATE_LIMITED")).toBe(true);
+				expect(f.count()).toBe(1);
+			} finally {
+				await f.close();
+			}
+		},
+	);
+
+	it("retains quota precedence over a rate reason and a valid zero hint", async () => {
+		const f = fixture({
+			reply: () => {
+				const response = padded(
+					{ error: { errors: [{ reason: "rateLimitExceeded" }] } },
+					MAX_BYTES + 1,
+					403,
+				);
+				response.headers.set("retry-after", "0");
+				return response;
+			},
+		});
+		try {
+			expect(await refused(() => direct(f), "QUOTA_EXCEEDED")).toBe(true);
 			expect(f.count()).toBe(1);
 		} finally {
 			await f.close();
