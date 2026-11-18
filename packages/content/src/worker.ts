@@ -84,7 +84,24 @@ function copiedEvidence(value: MailEvidence): MailEvidence {
 	});
 }
 
-// Every job gets a fresh heap; no content, attachment bytes or parser state survives it.
+function copyJob(job: ContentJob): ContentJob {
+	if (job.kind === "mail") {
+		// Copy the exact view, never its possibly much larger backing buffer or shared memory.
+		return { kind: "mail", raw: copiedMailBytes(job.raw), evidence: copiedEvidence(job.evidence) };
+	}
+	boundedText(job.source);
+	return {
+		kind: job.kind,
+		source: job.source,
+		options: job.options
+			? {
+					maxChars: job.options.maxChars,
+					quotedHistoryChars: job.options.quotedHistoryChars,
+				}
+			: undefined,
+	};
+}
+
 async function runJob(job: ContentJob, options: WorkerOptions): Promise<unknown> {
 	// Large attachment-bearing raw mail has a larger, still bounded decode budget.
 	const maximumTimeoutMs = job.kind === "mail" ? 10_000 : 2_000;
@@ -94,23 +111,21 @@ async function runJob(job: ContentJob, options: WorkerOptions): Promise<unknown>
 	}
 	if (options.signal?.aborted) throw new ContentError("ABORTED");
 	if (active >= MAX_CONTENT_WORKERS) throw new ContentError("BUSY");
-	if (job.kind === "mail") {
-		// Copy the exact view, never its possibly much larger backing buffer or shared memory.
-		job = { kind: "mail", raw: copiedMailBytes(job.raw), evidence: copiedEvidence(job.evidence) };
-	} else {
-		boundedText(job.source);
-		job = {
-			kind: job.kind,
-			source: job.source,
-			options: job.options
-				? {
-						maxChars: job.options.maxChars,
-						quotedHistoryChars: job.options.quotedHistoryChars,
-					}
-				: undefined,
-		};
-	}
+	// Input preparation may call getters, so reserve capacity before it begins.
 	active++;
+	try {
+		return await runWorker(copyJob(job), options, timeoutMs);
+	} finally {
+		active--;
+	}
+}
+
+// Every job gets a fresh heap; no content, attachment bytes or parser state survives it.
+async function runWorker(
+	job: ContentJob,
+	options: WorkerOptions,
+	timeoutMs: number,
+): Promise<unknown> {
 	let worker: Worker | undefined;
 	try {
 		const extension = import.meta.url.endsWith(".ts") ? "ts" : "mjs";
@@ -174,11 +189,7 @@ async function runJob(job: ContentJob, options: WorkerOptions): Promise<unknown>
 	} catch (error) {
 		throw error instanceof ContentError ? error : new ContentError("WORKER_FAILED");
 	} finally {
-		try {
-			await worker?.terminate();
-		} finally {
-			active--;
-		}
+		await worker?.terminate();
 	}
 }
 
