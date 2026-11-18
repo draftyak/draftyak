@@ -150,6 +150,37 @@ it("honors cancellation during startup without posting input", async () => {
 	expect(current.terminate).toHaveBeenCalledOnce();
 });
 
+it("refuses admission at capacity while another job is preparing", async () => {
+	const first = cleanInWorker("text", "synthetic");
+	const attempts: Promise<unknown>[] = [];
+	const prepareNewJob = vi.fn(() => {
+		// Even when the admission check fails, this fixture cannot start a worker.
+		throw new Error("Unexpected preparation of the new job");
+	});
+	const second = cleanInWorker("text", "synthetic", {
+		get maxChars(): number {
+			const attempt = cleanInWorker("text", "synthetic", {
+				get maxChars(): number {
+					return prepareNewJob();
+				},
+			});
+			attempts.push(attempt.catch((error: unknown) => error));
+			return 100;
+		},
+	});
+
+	for (const current of state.workers) complete(current);
+	const completed = await Promise.allSettled([first, second]);
+	const refused = await Promise.all(attempts);
+	expect(completed).toEqual([
+		{ status: "fulfilled", value: result },
+		{ status: "fulfilled", value: result },
+	]);
+	expect(state.workers).toHaveLength(2);
+	expect(refused).toMatchObject([{ code: "BUSY" }]);
+	expect(prepareNewJob).not.toHaveBeenCalled();
+});
+
 it("releases capacity when input preparation fails before creating a worker", async () => {
 	const first = cleanInWorker("text", "synthetic");
 	const a = worker();
