@@ -554,9 +554,12 @@ describe("native sync page associations", () => {
 	);
 
 	it("refuses a genuine lease from another account while this exact job stays running", async () => {
+		console.info("DYTEST sync pages-foreign-account-lease setup:before");
 		const test = await nativePages();
+		console.info("DYTEST sync pages-foreign-account-lease setup:after");
 		const account = test.f.email();
 		const another = newId();
+		console.info("DYTEST sync pages-foreign-account-lease second-account-write:before");
 		const lease = test.f.database.write((scope) => {
 			test.f.accounts.create(scope, account);
 			test.f.jobs.enqueue(scope, {
@@ -570,6 +573,7 @@ describe("native sync page associations", () => {
 			if (!claimed) throw new Error("Expected another native job");
 			return claimed;
 		});
+		console.info("DYTEST sync pages-foreign-account-lease second-account-write:after");
 		expect(() => record(test, test.scan, lease, page())).toThrow(NativeSyncError);
 		expect(test.f.database.write((scope) => test.f.jobs.get(scope, test.scan.jobId)?.state)).toBe(
 			"RUNNING",
@@ -578,6 +582,7 @@ describe("native sync page associations", () => {
 			cursor: null,
 			revision: 0,
 		});
+		console.info("DYTEST sync pages-foreign-account-lease body:after-assertions");
 	});
 
 	it("refuses a terminal cursor cycle and rolls back its metadata page", async () => {
