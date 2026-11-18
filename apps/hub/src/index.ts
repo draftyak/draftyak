@@ -368,6 +368,7 @@ export {
 } from "./recovery/backup-restore.ts";
 export { HubStore, type SqlReader, type SqlTransaction, type StoreOptions } from "./store/store.ts";
 export * from "./sync/apply.ts";
+export * from "./sync/chat-store.ts";
 export * from "./sync/cursors.ts";
 export * from "./sync/engine.ts";
 export * from "./sync/pages.ts";
