@@ -148,7 +148,7 @@ function capturedAnswers(raw: readonly PinnedAddress[]): readonly PinnedAddress[
 	}
 	return Object.freeze(answers);
 }
-function checkedEgressAnswers(
+export function checkedEgressAnswers(
 	answers: readonly PinnedAddress[],
 	policy: EgressPolicy,
 ): readonly PinnedAddress[] {

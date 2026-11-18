@@ -1,6 +1,6 @@
 import { addAbortListener } from "node:events";
-import type { ClientRequest, IncomingMessage } from "node:http";
-import { request } from "node:https";
+import { type ClientRequest, request as httpRequest, type IncomingMessage } from "node:http";
+import { request as httpsRequest } from "node:https";
 import {
 	HOST_MAX_ACTIVE_REQUESTS,
 	HOST_MAX_HEADER_BYTES,
@@ -22,19 +22,21 @@ import {
 	type AiRequestLifecycle,
 	type AiRequestSnapshot,
 	aiRequestEndpoint,
+	aiRequestTransport,
 	captureAiRequestInputs,
 	failAiRequestCapture,
 	snapshotVerifiedAiRequest,
 	verifiedAiRequestLifecycle,
 	verifyCapturedAiRequest,
 } from "./ai/index.ts";
+import { classifyResolvedEndpoint } from "./network/endpoint.ts";
 import {
 	captureEgressPolicy,
+	createPinnedHttpConnection,
 	createPinnedHttpsConnection,
 	type EgressPolicy,
 	type PinnedAddress,
 	resolveEgressAnswers,
-	validateEgressAnswers,
 } from "./network/index.ts";
 
 export class ProviderHttpError extends Error {
@@ -51,6 +53,8 @@ export type ProviderStreamSink = (
 	notification: HostNotification,
 	signal: AbortSignal,
 ) => Promise<void>;
+/** Synchronous denial check. The native caller owns any asynchronous work it starts. */
+export type ProviderNativeCurrentnessFence = () => undefined;
 export interface ProviderHttpStream {
 	readonly response: Promise<HostFetchResult>;
 	readonly completion: Promise<void>;
@@ -76,18 +80,20 @@ export interface ProviderHttpBroker {
 		profile: AiProfile,
 		candidate: unknown,
 		binding: unknown,
-		reference: string,
-		credential: CredentialBinding,
+		reference: string | undefined,
+		credential: CredentialBinding | undefined,
 		signal: AbortSignal,
+		assertNativeCurrent?: ProviderNativeCurrentnessFence,
 	): Promise<HostFetchResult>;
 	stream(
 		profile: AiProfile,
 		candidate: unknown,
 		binding: unknown,
-		reference: string,
-		credential: CredentialBinding,
+		reference: string | undefined,
+		credential: CredentialBinding | undefined,
 		signal: AbortSignal,
 		sink: ProviderStreamSink,
+		assertNativeCurrent?: ProviderNativeCurrentnessFence,
 	): ProviderHttpStream;
 	close(): void;
 }
@@ -112,13 +118,14 @@ function untilAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 async function streamResponse(
 	response: IncomingMessage,
 	delivery: StreamDelivery,
-	key: string,
+	key: string | undefined,
 	signal: AbortSignal,
 	transportSignal: AbortSignal,
 	status: number,
+	assertNativeCurrent: () => void,
 	observation?: ResponseObservation,
 ): Promise<void> {
-	const keyBytes = Buffer.from(key, "ascii");
+	const keyBytes = key === undefined ? undefined : Buffer.from(key, "ascii");
 	const observed: Buffer[] = [];
 	const maxBytes = observation?.maxResponseBytes ?? HOST_MAX_STREAM_BYTES;
 	let tail: Buffer = Buffer.alloc(0),
@@ -142,7 +149,10 @@ async function streamResponse(
 			params: Object.freeze(params),
 		});
 		busy = true;
-		const pending = Promise.resolve().then(() => delivery.sink(notification, signal));
+		const pending = Promise.resolve().then(() => {
+			if (!control) assertNativeCurrent();
+			return delivery.sink(notification, signal);
+		});
 		// Observe the actual sink acknowledgment even if cancellation stops waiting for it.
 		pending.then(
 			() => {
@@ -166,9 +176,12 @@ async function streamResponse(
 			const joined = Buffer.concat([tail, raw]);
 			tail.fill(0);
 			try {
-				if (joined.includes(keyBytes)) throw refused();
+				if (keyBytes !== undefined && joined.includes(keyBytes)) throw refused();
 				// Keep enough suffix to detect a key spanning any later TCP/notification boundary.
-				const safe = Math.max(0, joined.length - (keyBytes.length - 1));
+				const safe = Math.max(
+					0,
+					joined.length - (keyBytes === undefined ? 0 : keyBytes.length - 1),
+				);
 				for (let offset = 0; offset < safe; offset += MAX_INLINE_BYTES)
 					await notify(joined.subarray(offset, Math.min(safe, offset + MAX_INLINE_BYTES)), false);
 				tail = Buffer.from(joined.subarray(safe));
@@ -177,6 +190,7 @@ async function streamResponse(
 			}
 		}
 		if (!response.complete) throw refused();
+		assertNativeCurrent();
 		if (observation) {
 			const body = Buffer.concat(observed, total);
 			try {
@@ -213,16 +227,26 @@ async function streamResponse(
 		for (const bytes of observed) bytes.fill(0);
 		observed.length = 0;
 		tail.fill(0);
-		keyBytes.fill(0);
+		keyBytes?.fill(0);
 		response.destroy();
 	}
 }
 
-function outboundHeaders(verified: AiRequestSnapshot, key: string): Record<string, string> {
-	if (!key || key.length > 8192 || !/^[!-~]+$/.test(key)) throw refused();
+function outboundHeaders(
+	verified: AiRequestSnapshot,
+	key: string | undefined,
+): Record<string, string> {
+	if (key !== undefined && (!key || key.length > 8192 || !/^[!-~]+$/.test(key))) throw refused();
 	const headers: Record<string, string> = Object.create(null);
 	for (const [name, value] of verified.headers) headers[name.toLowerCase()] = value;
-	if (verified.profile === "messages-api-v1") {
+	if (key === undefined) {
+		if (
+			verified.profile !== "chat-completions-v1" ||
+			headers.authorization !== undefined ||
+			headers["x-api-key"] !== undefined
+		)
+			throw refused();
+	} else if (verified.profile === "messages-api-v1") {
 		if (headers["x-api-key"] !== "brokered" || headers.authorization !== undefined) throw refused();
 		headers["x-api-key"] = key;
 	} else if (verified.profile === "responses-api-v1" || verified.profile === "responses-plan-v1") {
@@ -243,15 +267,27 @@ function fetchPinned(
 	host: string,
 	pin: PinnedAddress,
 	policy: EgressPolicy,
-	key: string,
+	key: string | undefined,
 	signal: AbortSignal,
+	assertNativeCurrent: () => void,
 	delivery?: StreamDelivery,
 	observation?: ResponseObservation,
 ): Promise<HostFetchResult> {
 	const url = new URL(verified.url);
-	if (url.protocol !== "https:" || url.username || url.password || url.hash) throw refused();
+	if (
+		(url.protocol !== "https:" && url.protocol !== "http:") ||
+		url.username ||
+		url.password ||
+		url.hash
+	)
+		throw refused();
+	if (url.protocol === "http:" && key !== undefined) throw refused();
 	const headers = outboundHeaders(verified, key);
-	const connection = createPinnedHttpsConnection(host, Number(url.port || 443), pin, policy);
+	const plaintext = url.protocol === "http:";
+	const connection = plaintext
+		? createPinnedHttpConnection(host, Number(url.port || 80), pin, policy)
+		: createPinnedHttpsConnection(host, Number(url.port || 443), pin, policy);
+	const request = plaintext ? httpRequest : httpsRequest;
 	return new Promise((resolve, reject) => {
 		let settled = false;
 		let req: ClientRequest | undefined;
@@ -282,6 +318,7 @@ function fetchPinned(
 		}
 		try {
 			signal.throwIfAborted();
+			assertNativeCurrent();
 			signal.addEventListener("abort", fail, { once: true });
 			req = request({
 				...connection.options,
@@ -292,10 +329,18 @@ function fetchPinned(
 			req.once("error", fail);
 			connection.guard(
 				req,
-				() => signal.aborted || settled,
 				() => {
-					if (signal.aborted || settled) return fail();
-					req?.end(verified.body);
+					assertNativeCurrent();
+					return signal.aborted || settled;
+				},
+				() => {
+					try {
+						if (signal.aborted || settled) return fail();
+						assertNativeCurrent();
+						req?.end(verified.body);
+					} catch {
+						fail();
+					}
 				},
 				fail,
 			);
@@ -303,6 +348,7 @@ function fetchPinned(
 				incoming = response;
 				try {
 					if (settled || signal.aborted) return response.destroy();
+					assertNativeCurrent();
 					const status = response.statusCode;
 					if (
 						status === undefined ||
@@ -326,7 +372,8 @@ function fetchPinned(
 					for (let i = 0; i < response.rawHeaders.length; i += 2) {
 						const name = response.rawHeaders[i]?.toLowerCase();
 						const value = response.rawHeaders[i + 1];
-						if (!name || value === undefined || value.includes(key)) throw refused();
+						if (!name || value === undefined || (key !== undefined && value.includes(key)))
+							throw refused();
 						if (name !== "content-type" && name !== "retry-after") continue;
 						if (names.has(name)) throw refused();
 						names.add(name);
@@ -351,6 +398,7 @@ function fetchPinned(
 							signal,
 							AbortSignal.any([signal, transportAbort.signal]),
 							status,
+							assertNativeCurrent,
 							observation,
 						).then(
 							() => finish(result),
@@ -370,8 +418,9 @@ function fetchPinned(
 						let body: Buffer | undefined;
 						try {
 							if (!response.complete || signal.aborted) throw refused();
+							assertNativeCurrent();
 							body = Buffer.concat(chunks, length);
-							if (body.includes(key)) throw refused();
+							if (key !== undefined && body.includes(key)) throw refused();
 							observation?.complete(status, body);
 							observation?.acknowledge();
 							finish({
@@ -402,7 +451,7 @@ function fetchPinned(
  */
 export function createProviderHttpBroker(options: {
 	readonly registry: AiProfileRegistry;
-	readonly vault: CredentialVault;
+	readonly vault?: CredentialVault;
 	readonly networkPolicy: EgressPolicy;
 }): ProviderHttpBroker {
 	const policy = captureEgressPolicy(options.networkPolicy);
@@ -414,9 +463,10 @@ export function createProviderHttpBroker(options: {
 		profile: AiProfile,
 		candidate: unknown,
 		binding: unknown,
-		reference: string,
-		credential: CredentialBinding,
+		reference: string | undefined,
+		credential: CredentialBinding | undefined,
 		signal: AbortSignal,
+		nativeFence?: ProviderNativeCurrentnessFence,
 		delivery?: StreamDelivery,
 		originalCallSignal: AbortSignal = signal,
 	): Promise<HostFetchResult> => {
@@ -425,49 +475,97 @@ export function createProviderHttpBroker(options: {
 		const abort = (): void => controller.abort();
 		let lifecycle: AiRequestLifecycle | undefined;
 		try {
+			if (nativeFence !== undefined && typeof nativeFence !== "function") throw refused();
+			const assertNativeCurrent = (): void => {
+				if (nativeFence === undefined) return;
+				const result: unknown = Reflect.apply(nativeFence, undefined, []);
+				if (result instanceof Promise)
+					void Promise.prototype.then.call(result, undefined, () => undefined);
+				if (result !== undefined) throw refused();
+			};
 			if (closed || active.size >= HOST_MAX_ACTIVE_REQUESTS) throw refused();
 			signal.throwIfAborted();
+			assertNativeCurrent();
 			// Capture all request and pinned prompt bytes before the first DNS/vault await.
 			const captured = captureAiRequestInputs(candidate, binding);
+			const transport = aiRequestTransport(captured);
 			const url = new URL(aiRequestEndpoint(captured));
-			if (url.protocol !== "https:") throw refused();
+			if (url.protocol !== "https:" && url.protocol !== "http:") throw refused();
+			if (url.protocol === "http:" && transport.authentication !== "none") throw refused();
 			// URL keeps IPv6 authority brackets; DNS and TLS require the canonical bare IP.
 			const host =
 				url.hostname.startsWith("[") && url.hostname.endsWith("]")
 					? url.hostname.slice(1, -1)
 					: url.hostname;
-			const selectedCredential = fields(credential, ["ownerKind", "ownerId", "kind"]);
-			if (
-				selectedCredential.kind !== "provider-key" ||
-				selectedCredential.ownerKind !== "provider" ||
-				!Ulid.safeParse(selectedCredential.ownerId).success
-			)
-				throw refused();
-			const capturedCredential: CredentialBinding = Object.freeze({
-				ownerKind: "provider",
-				ownerId: selectedCredential.ownerId as string,
-				kind: "provider-key",
-			});
+			let keyed: Readonly<{ reference: string; binding: CredentialBinding }> | undefined;
+			if (transport.authentication === "none") {
+				if (
+					profile !== "chat-completions-v1" ||
+					transport.expectedDestination !== "local" ||
+					reference !== undefined ||
+					credential !== undefined
+				)
+					throw refused();
+			} else {
+				if (vault === undefined || typeof reference !== "string" || reference.length === 0)
+					throw refused();
+				const selected = fields(credential, ["ownerKind", "ownerId", "kind"]);
+				if (
+					selected.kind !== "provider-key" ||
+					selected.ownerKind !== "provider" ||
+					!Ulid.safeParse(selected.ownerId).success
+				)
+					throw refused();
+				keyed = Object.freeze({
+					reference,
+					binding: Object.freeze({
+						ownerKind: "provider",
+						ownerId: selected.ownerId as string,
+						kind: "provider-key",
+					}),
+				});
+			}
 			active.add(controller);
 			signal.addEventListener("abort", abort, { once: true });
 			timer = setTimeout(abort, HOST_REQUEST_TIMEOUT_MS);
 			const answers = await resolveEgressAnswers(
 				host,
-				Number(url.port || 443),
+				Number(url.port || (url.protocol === "https:" ? 443 : 80)),
 				policy,
 				controller.signal,
 			);
 			controller.signal.throwIfAborted();
+			assertNativeCurrent();
+			const classification = classifyResolvedEndpoint(url.origin, answers, policy);
+			if (classification.destination !== transport.expectedDestination) throw refused();
+			const pin = classification.addresses[0];
+			if (pin === undefined) throw refused();
 			const verified = verifyCapturedAiRequest(registry, profile, captured, { answers, policy });
 			lifecycle = verifiedAiRequestLifecycle(verified);
 			const snapshot = snapshotVerifiedAiRequest(verified);
-			const pin = validateEgressAnswers(answers, policy);
+			if (transport.authentication === "none") {
+				if (classification.destination !== "local" || lifecycle !== undefined) throw refused();
+				return HostFetchResult.parse(
+					await fetchPinned(
+						snapshot,
+						host,
+						pin,
+						policy,
+						undefined,
+						controller.signal,
+						assertNativeCurrent,
+						delivery,
+					),
+				);
+			}
+			if (keyed === undefined || vault === undefined) throw refused();
 			const result = await useCredential.call(
 				vault,
-				reference,
-				capturedCredential,
+				keyed.reference,
+				keyed.binding,
 				{ requestClass: "read", signal: controller.signal },
 				async (value, use) => {
+					assertNativeCurrent();
 					if (value.kind !== "provider-key") throw refused();
 					const observer = lifecycle;
 					observer?.bindCredential(vault, use, originalCallSignal);
@@ -499,6 +597,7 @@ export function createProviderHttpBroker(options: {
 							use.signal,
 							...(observer ? [observer.signal] : []),
 						]),
+						assertNativeCurrent,
 						delivery,
 						observation,
 					);
@@ -518,7 +617,7 @@ export function createProviderHttpBroker(options: {
 	};
 	return Object.freeze<ProviderHttpBroker>({
 		execute: invoke,
-		stream(profile, candidate, binding, reference, credential, signal, sink) {
+		stream(profile, candidate, binding, reference, credential, signal, sink, nativeFence) {
 			const cancel = new AbortController();
 			let resolveResponse: (result: HostFetchResult) => void = () => undefined;
 			let rejectResponse: (error: Error) => void = () => undefined;
@@ -540,6 +639,7 @@ export function createProviderHttpBroker(options: {
 						reference,
 						credential,
 						AbortSignal.any([signal, cancel.signal]),
+						nativeFence,
 						{ streamId: newId(), started, sink, open: resolveResponse },
 						signal,
 					);

@@ -10,6 +10,7 @@ export {
 	type AiProfileRegistry,
 	type AiVerifierInput,
 	aiRequestEndpoint,
+	aiRequestTransport,
 	captureAiRequestInputs,
 	captureMessagesMetadataInputs,
 	captureResponsesMetadataInputs,
