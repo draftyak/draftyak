@@ -537,7 +537,11 @@ export function createProviderHttpBroker(options: {
 			controller.signal.throwIfAborted();
 			assertNativeCurrent();
 			const classification = classifyResolvedEndpoint(url.origin, answers, policy);
-			if (classification.destination !== transport.expectedDestination) throw refused();
+			if (
+				transport.expectedDestination !== undefined &&
+				classification.destination !== transport.expectedDestination
+			)
+				throw refused();
 			const pin = classification.addresses[0];
 			if (pin === undefined) throw refused();
 			const verified = verifyCapturedAiRequest(registry, profile, captured, { answers, policy });
