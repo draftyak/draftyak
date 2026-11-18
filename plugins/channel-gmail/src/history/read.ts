@@ -1,3 +1,5 @@
+import { PluginErrorResult } from "@draftyak/protocol/errors";
+import { HOST_MAX_HEADER_BYTES } from "@draftyak/protocol/host-channel";
 import { parseStrict } from "@draftyak/protocol/jcs";
 import { type PluginContext, PluginError } from "@draftyak/sdk";
 import { GMAIL_API_BASE, GMAIL_JSON_MAX_CHUNKS, gmailMessageUrl } from "../boundary.ts";
@@ -12,6 +14,130 @@ import { type HistoryReduction, reduceHistoryPage } from "./reduce.ts";
 
 const MAX_BYTES = 4 * 1024 * 1024;
 const MAX_IDS = 500;
+
+/** RFC 9110 recipient dates, using UTC and its rolling 50-year rule for RFC 850. */
+function retryDate(value: string, now: number): number | undefined {
+	const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+	const longDays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+	const months = [
+		"Jan",
+		"Feb",
+		"Mar",
+		"Apr",
+		"May",
+		"Jun",
+		"Jul",
+		"Aug",
+		"Sep",
+		"Oct",
+		"Nov",
+		"Dec",
+	];
+	const reference = new Date(now);
+	const ceiling = reference.getUTCFullYear() + 50;
+	let day: number, month: number, year: number, hour: number, minute: number, second: number;
+	let weekday: number;
+	let obsolete = false;
+	const imf =
+		/^([A-Z][a-z]{2}), ([0-9]{2}) ([A-Z][a-z]{2}) ([0-9]{4}) ([0-9]{2}):([0-9]{2}):([0-9]{2}) GMT$/.exec(
+			value,
+		);
+	const rfc850 =
+		/^([A-Z][a-z]+), ([0-9]{2})-([A-Z][a-z]{2})-([0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2}) GMT$/.exec(
+			value,
+		);
+	const asctime =
+		/^([A-Z][a-z]{2}) ([A-Z][a-z]{2}) ( [0-9]|[0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2}) ([0-9]{4})$/.exec(
+			value,
+		);
+	if (imf || rfc850) {
+		const fields = imf ?? rfc850;
+		if (!fields) return undefined;
+		weekday = (imf ? days : longDays).indexOf(fields[1] ?? "");
+		day = Number(fields[2]);
+		month = months.indexOf(fields[3] ?? "");
+		year = Number(fields[4]);
+		hour = Number(fields[5]);
+		minute = Number(fields[6]);
+		second = Number(fields[7]);
+		if (rfc850) {
+			obsolete = true;
+			year += Math.floor(ceiling / 100) * 100;
+			if (year > ceiling) year -= 100;
+		}
+	} else if (asctime) {
+		weekday = days.indexOf(asctime[1] ?? "");
+		month = months.indexOf(asctime[2] ?? "");
+		day = Number(asctime[3]);
+		hour = Number(asctime[4]);
+		minute = Number(asctime[5]);
+		second = Number(asctime[6]);
+		year = Number(asctime[7]);
+	} else return undefined;
+	if (
+		weekday < 0 ||
+		month < 0 ||
+		day < 1 ||
+		day > 31 ||
+		year < 0 ||
+		year > 9999 ||
+		hour > 23 ||
+		minute > 59 ||
+		second > 60 ||
+		(second === 60 && (hour !== 23 || minute !== 59))
+	)
+		return undefined;
+	// setUTCFullYear avoids Date.UTC's special interpretation of years 00..99.
+	const date = new Date(0);
+	date.setUTCFullYear(year, month, day);
+	date.setUTCHours(hour, minute, Math.min(second, 59), 0);
+	const leap = second === 60 ? 1000 : 0;
+	if (obsolete) {
+		const limit = new Date(now);
+		limit.setUTCFullYear(ceiling);
+		if (date.getTime() + leap > limit.getTime()) {
+			year -= 100;
+			date.setUTCFullYear(year, month, day);
+		}
+	}
+	if (
+		date.getUTCFullYear() !== year ||
+		date.getUTCMonth() !== month ||
+		date.getUTCDate() !== day ||
+		date.getUTCHours() !== hour ||
+		date.getUTCMinutes() !== minute ||
+		date.getUTCDay() !== weekday
+	)
+		return undefined;
+	// JavaScript has no distinct leap-second instant: map 23:59:60 to the following midnight.
+	return date.getTime() + leap;
+}
+
+function rateLimitError(response: Response): PluginError {
+	try {
+		const raw = response.headers.get("retry-after");
+		// Use the existing host header bound, not a new retry-duration policy or raw diagnostic.
+		if (raw !== null && raw.length <= HOST_MAX_HEADER_BYTES && /^[\t\x20-\x7e]*$/.test(raw)) {
+			const value = raw.replace(/^[ \t]+|[ \t]+$/g, "");
+			let retryAfterMs: number | undefined;
+			if (/^[0-9]+$/.test(value)) retryAfterMs = Number(value) * 1000;
+			else {
+				// Compare absolute dates with one system time sampled while converting the error.
+				const now = Date.now();
+				if (Number.isSafeInteger(now) && Number.isFinite(new Date(now).getTime())) {
+					const date = retryDate(value, now);
+					if (date !== undefined) retryAfterMs = Math.max(0, date - now);
+				}
+			}
+			const parsed = PluginErrorResult.safeParse({ code: "RATE_LIMITED", retryAfterMs });
+			if (parsed.success && parsed.data.retryAfterMs !== undefined)
+				return new PluginError("RATE_LIMITED", { retryAfterMs: parsed.data.retryAfterMs });
+		}
+	} catch {
+		// Missing, invalid, overflowing or unavailable hints never replace rate classification.
+	}
+	return new PluginError("RATE_LIMITED");
+}
 
 function live(signal: AbortSignal): void {
 	if (signal.aborted) throw new PluginError("TRANSIENT");
@@ -137,12 +263,12 @@ export async function readHistoryPage(
 					cancel(response.body);
 				}
 				live(signal);
-				throw new PluginError(rateLimited ? "RATE_LIMITED" : "PERMISSION_DENIED");
+				throw rateLimited ? rateLimitError(response) : new PluginError("PERMISSION_DENIED");
 			}
 			cancel(response.body);
 			if (response.status === 404 && history) throw new PluginError("CURSOR_EXPIRED");
 			if (response.status === 401) throw new PluginError("AUTH_EXPIRED");
-			if (response.status === 429) throw new PluginError("RATE_LIMITED");
+			if (response.status === 429) throw rateLimitError(response);
 			throw new PluginError("TRANSIENT");
 		}
 		return jsonBody(response, signal, budget);
