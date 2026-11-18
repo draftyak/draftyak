@@ -2,6 +2,7 @@ import type { UserConfig } from "tsdown";
 
 const config: UserConfig = {
 	entry: [
+		"src/history/initial.ts",
 		"src/history/page.ts",
 		"src/history/reduce.ts",
 		"src/history/read.ts",
