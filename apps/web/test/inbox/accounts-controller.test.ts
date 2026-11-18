@@ -633,6 +633,135 @@ async function completeRefetch(h: Harness, result: RefetchResult, value: Page): 
 }
 
 describe("account directory event refetch", () => {
+	it.each(["user", "refetch"] as const)(
+		"keeps the %s read closed when the page cursor getter closes its controller",
+		async (mode) => {
+			const h = harness();
+			const initial = h.controller.getSnapshot();
+			const close = h.controller.close;
+			let result: RefetchResult | undefined;
+			if (mode === "user") initial.loadFirst();
+			else result = observeRefetch(h, new AbortController().signal);
+			await yieldEventLoop();
+			const loading = h.controller.getSnapshot();
+			const signal = signalOf(h);
+			let reads = 0;
+			let fromGetter: Promise<void> | undefined;
+			request(h).resolve({
+				accounts: [record(1)],
+				get nextId() {
+					reads += 1;
+					fromGetter = close();
+					return CURSOR;
+				},
+			});
+			await yieldEventLoop();
+			const closing = fromGetter;
+			expect(closing).toBeDefined();
+			if (closing === undefined) throw new Error("Expected the page cursor getter to close");
+			await closing;
+			if (result !== undefined) await result.settled;
+			const closed = h.controller.getSnapshot();
+			expect(closed.status).toBe("closed");
+			expect(close()).toBe(closing);
+			expect(signal.aborted).toBe(true);
+			expect(reads).toBe(1);
+			if (result !== undefined) await expectRefetchFailure(result);
+			for (const snapshot of [initial, loading, closed]) {
+				snapshot.loadFirst();
+				snapshot.loadNext();
+				snapshot.loadPrevious();
+				snapshot.retry();
+			}
+			await yieldEventLoop();
+			expect(h.pageAccounts).toHaveBeenCalledTimes(1);
+			expect(h.controller.getSnapshot()).toBe(closed);
+		},
+	);
+
+	it("uses one coherent cursor value when the page getter changes on a second read", async () => {
+		const h = harness();
+		h.controller.getSnapshot().loadFirst();
+		let reads = 0;
+		const first = await complete(h, {
+			accounts: [record(1)],
+			get nextId() {
+				reads += 1;
+				return reads === 1 ? CURSOR : null;
+			},
+		});
+		expect(first.nextId).toBe(CURSOR);
+		expect(first.canNext).toBe(true);
+		expect(reads).toBe(1);
+		first.loadNext();
+		expect(h.requests).toHaveLength(2);
+		expect(request(h).afterId).toBe(CURSOR);
+		await complete(h, page([record(2)]));
+	});
+
+	it("rejects a refetch closed by its caller signal getter before admitting IO", async () => {
+		const h = harness();
+		const caller = new AbortController();
+		const close = h.controller.close;
+		let fromGetter: Promise<void> | undefined;
+		Object.defineProperty(caller.signal, "aborted", {
+			configurable: true,
+			get() {
+				fromGetter = close();
+				return false;
+			},
+		});
+		try {
+			const result = observeRefetch(h, caller.signal);
+			await yieldEventLoop();
+			const closing = fromGetter;
+			expect(closing).toBeDefined();
+			if (closing === undefined) throw new Error("Expected the caller signal getter to close");
+			await closing;
+			expect(result.state).toBe("rejected");
+			await expectRefetchFailure(result);
+			expect(h.pageAccounts).not.toHaveBeenCalled();
+			expect(h.controller.getSnapshot().status).toBe("closed");
+			expect(close()).toBe(closing);
+		} finally {
+			Reflect.deleteProperty(caller.signal, "aborted");
+		}
+	});
+
+	it("keeps refetch closed when its caller signal getter closes during failure publication", async () => {
+		const h = harness();
+		const caller = new AbortController();
+		const close = h.controller.close;
+		let closeOnRead = false;
+		let fromGetter: Promise<void> | undefined;
+		Object.defineProperty(caller.signal, "aborted", {
+			configurable: true,
+			get() {
+				if (closeOnRead) fromGetter = close();
+				return false;
+			},
+		});
+		try {
+			const result = observeRefetch(h, caller.signal);
+			await yieldEventLoop();
+			expect(h.pageAccounts).toHaveBeenCalledTimes(1);
+			closeOnRead = true;
+			request(h).reject(new Error("REFETCH_FAILURE_CANARY"));
+			await yieldEventLoop();
+			const closing = fromGetter;
+			expect(closing).toBeDefined();
+			if (closing === undefined) throw new Error("Expected the caller signal getter to close");
+			await closing;
+			await expectRefetchFailure(result);
+			expect(h.controller.getSnapshot().status).toBe("closed");
+			expect(close()).toBe(closing);
+			expect(h.pageAccounts).toHaveBeenCalledTimes(1);
+		} finally {
+			closeOnRead = false;
+			Reflect.deleteProperty(caller.signal, "aborted");
+		}
+	});
+
 	it("reads the current cursor again without advancing or resetting its history", async () => {
 		const h = harness();
 		h.controller.getSnapshot().loadFirst();
