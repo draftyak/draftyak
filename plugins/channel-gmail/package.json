@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./history/initial": "./src/history/initial.ts",
     "./history/page": "./src/history/page.ts",
     "./history/reduce": "./src/history/reduce.ts",
     "./history/read": "./src/history/read.ts",
@@ -13,6 +14,10 @@
   },
   "publishConfig": {
     "exports": {
+      "./history/initial": {
+        "types": "./dist/history/initial.d.mts",
+        "default": "./dist/history/initial.mjs"
+      },
       "./history/page": {
         "types": "./dist/history/page.d.mts",
         "default": "./dist/history/page.mjs"
