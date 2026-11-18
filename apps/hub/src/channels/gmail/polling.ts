@@ -124,6 +124,7 @@ function snapshot(value: unknown): GmailPollingSnapshot {
 	const version = input.version;
 	const revision = integer(input.revision);
 	const attempt = integer(input.attempt);
+	if (attempt > revision) fail();
 	const deliverByMs = Object.hasOwn(input, "deliverByMs") ? integer(input.deliverByMs) : undefined;
 	if (version !== 1) fail();
 	const parsed: PollingBase = {
@@ -153,6 +154,7 @@ function snapshot(value: unknown): GmailPollingSnapshot {
 	if (
 		runRevision > revision ||
 		runAttempt !== attempt ||
+		runAttempt > runRevision ||
 		(deliverByMs !== undefined && startedAtMs >= deliverByMs) ||
 		(suppliedStop === "deadline" && deliverByMs === undefined) ||
 		suppliedStop === "policy-stop"
