@@ -259,6 +259,38 @@ describe("Gmail polling cadence journal DATA", () => {
 		}
 	});
 
+	it("refuses restored attempt counts beyond the journal revision", () => {
+		const state = Object.freeze({
+			version: 1,
+			revision: 0,
+			attempt: 42,
+			phase: "waiting",
+			nextDueMs: 30_000,
+		});
+		expect(() => restoreGmailPollingState(state)).toThrowError(new TypeError(invalidMessage));
+		invalid(state, { kind: "tick", nowMs: 30_000 });
+		expect(state).toEqual({
+			version: 1,
+			revision: 0,
+			attempt: 42,
+			phase: "waiting",
+			nextDueMs: 30_000,
+		});
+	});
+
+	it("refuses an active attempt beyond its stable starting revision", () => {
+		const state = Object.freeze({
+			version: 1,
+			revision: 99,
+			attempt: 42,
+			phase: "running",
+			active: Object.freeze({ runRevision: 1, attempt: 42, startedAtMs: 30_000 }),
+		});
+		expect(() => restoreGmailPollingState(state)).toThrowError(new TypeError(invalidMessage));
+		invalid(state, { kind: "tick", nowMs: 40_000 });
+		expect(state.active).toEqual({ runRevision: 1, attempt: 42, startedAtMs: 30_000 });
+	});
+
 	it("ignores replayed completion after the first accepted outcome without moving any state field", () => {
 		const running = started(30_000, 200_000);
 		const next = complete(running, 40_000, { kind: "success" });
@@ -345,16 +377,25 @@ describe("Gmail polling cadence journal DATA", () => {
 		const initial = createGmailPollingState(0);
 		for (const state of [
 			{ ...initial, revision: Number.MAX_SAFE_INTEGER },
-			{ ...initial, attempt: Number.MAX_SAFE_INTEGER },
+			{ ...initial, revision: Number.MAX_SAFE_INTEGER, attempt: Number.MAX_SAFE_INTEGER },
 		]) {
 			const before = JSON.stringify(state);
 			invalid(state, { kind: "tick", nowMs: 30_000 });
 			expect(JSON.stringify(state)).toBe(before);
 		}
-		const near = { ...initial, revision: Number.MAX_SAFE_INTEGER - 1 };
+		const near = {
+			...initial,
+			revision: Number.MAX_SAFE_INTEGER - 1,
+			attempt: Number.MAX_SAFE_INTEGER - 1,
+		};
 		const running = changed(advanceGmailPolling(near, { kind: "tick", nowMs: 30_000 }));
 		expect(running.revision).toBe(Number.MAX_SAFE_INTEGER);
-		invalid(running, { kind: "uncertain", runRevision: Number.MAX_SAFE_INTEGER, attempt: 1 });
+		expect(running.attempt).toBe(Number.MAX_SAFE_INTEGER);
+		invalid(running, {
+			kind: "uncertain",
+			runRevision: Number.MAX_SAFE_INTEGER,
+			attempt: Number.MAX_SAFE_INTEGER,
+		});
 	});
 
 	it("copies and freezes returned snapshots without freezing caller objects or reading fields twice", () => {
