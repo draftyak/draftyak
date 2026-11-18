@@ -902,15 +902,20 @@ describe("native sync job engine", () => {
 	});
 
 	it("keeps different genuine accounts independent", async () => {
+		console.info("DYTEST sync engine-account-independence setup:before");
 		const s = await setup();
+		console.info("DYTEST sync engine-account-independence setup:after");
 		const second = s.f.email();
+		console.info("DYTEST sync engine-account-independence second-account-write:before");
 		s.f.database.write((scope) => s.f.accounts.create(scope, second));
+		console.info("DYTEST sync engine-account-independence second-account-write:after");
 		const first = start(s);
 		const secondRef = s.f.ref({ accountId: second.id, pluginInstanceId: second.pluginInstanceId });
 		const secondScan = s.engine.enqueue(secondRef, { scanId: newId(), jobId: newId() });
 		const secondScanRef = { ...secondRef, scanId: secondScan.scanId };
 		expect(claim(s, first.ref, first.scan).lease.job.accountId).toBe(s.f.account.id);
 		expect(claim(s, secondScanRef, secondScan).lease.job.accountId).toBe(second.id);
+		console.info("DYTEST sync engine-account-independence body:after-assertions");
 	});
 
 	it("renews through the original queue and never revives the retired lease", async () => {
