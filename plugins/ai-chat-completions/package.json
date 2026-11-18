@@ -33,7 +33,6 @@
     "@draftyak/protocol": "workspace:*"
   },
   "devDependencies": {
-    "@draftyak/hub": "workspace:*",
     "fast-check": "4.10.2",
     "tsdown": "0.23.1"
   }

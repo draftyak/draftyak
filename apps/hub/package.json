@@ -28,6 +28,7 @@
     "ws": "8.22.0"
   },
   "devDependencies": {
+    "@draftyak/ai-chat-completions": "workspace:*",
     "@draftyak/egress-recorder": "workspace:*",
     "@draftyak/fake-commercial": "workspace:*",
     "@draftyak/sdk": "workspace:*",
