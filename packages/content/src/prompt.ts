@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
+import { types } from "node:util";
 import { type DraftRequest, ModelId } from "@draftyak/protocol/ai-provider-v1";
 import { DmarcResult, MessageDirection } from "@draftyak/protocol/entities/common";
-import { Ulid } from "@draftyak/protocol/scalars";
+import { ChatMessageChange, ProviderId } from "@draftyak/protocol/normalized-change";
+import { Ulid, UtcMs } from "@draftyak/protocol/scalars";
 import { cleanText, type HygieneResult, hygienePrefix } from "./hygiene.ts";
 import { boundedText, ContentError, MAX_TEXT_BYTES, MAX_TEXT_CHARS } from "./limits.ts";
 
@@ -27,6 +29,24 @@ export interface DraftPromptInput {
 	};
 }
 
+/** Hygienic chat DATA only; it grants no account, thread, provider or send rights. */
+export interface HygienicChatPromptMessage {
+	readonly channelId: string;
+	readonly ts: string;
+	readonly threadTs?: string;
+	readonly sentAt: number;
+	readonly author: { readonly kind: "user" | "bot"; readonly id: string };
+	readonly body: HygieneResult;
+}
+
+export interface ChatDraftPromptInput {
+	readonly model: string;
+	readonly conversation: { readonly channelId: string; readonly threadTs: string };
+	// Oldest first, within this one explicitly selected thread, from current chat DATA.
+	readonly messages: readonly HygienicChatPromptMessage[];
+	readonly owner?: DraftPromptInput["owner"];
+}
+
 export interface PreparedDraft {
 	readonly request: DraftRequest;
 	readonly promptSha256: string;
@@ -39,6 +59,15 @@ export interface PreparedDraft {
 
 export const MAX_THREAD_CHARS = 40_000;
 export const MAX_THREAD_MESSAGES = 100;
+
+interface PromptMessageData {
+	text: string;
+}
+interface FramedMessage {
+	readonly data: PromptMessageData;
+	readonly body: HygieneResult;
+	readonly truncated: number;
+}
 
 export const DRAFTING_INSTRUCTIONS: string = [
 	"Draft a reply for the owner. Return only the DraftOutput v1 object.",
@@ -69,7 +98,8 @@ function metadata(
 	return result.text;
 }
 
-function checkedBody(body: HygieneResult): HygieneResult {
+function checkedBody(input: unknown): HygieneResult {
+	const body = input as HygieneResult;
 	if (
 		!body ||
 		typeof body !== "object" ||
@@ -143,11 +173,9 @@ export function buildDraftRequest(input: DraftPromptInput): PreparedDraft {
 	)
 		throw new ContentError("INVALID_INPUT");
 	const seen = new Set<string>();
-	const truncations = new Map<string, number>();
-	const bodies = new Map<string, HygieneResult>();
 	const metadataRemovals = { hidden: 0, invisible: 0, quoted: 0, truncated: 0, uris: 0 };
 	let inputBytes = 0;
-	const messages = input.messages.map((message) => {
+	const messages: FramedMessage[] = input.messages.map((message) => {
 		if (
 			!message ||
 			!Ulid.safeParse(message.id).success ||
@@ -161,17 +189,31 @@ export function buildDraftRequest(input: DraftPromptInput): PreparedDraft {
 		const body = checkedBody(message.body);
 		inputBytes += Buffer.byteLength(body.text, "utf8");
 		if (inputBytes > MAX_TEXT_BYTES) throw new ContentError("INPUT_LIMIT");
-		truncations.set(message.id, body.removals.truncated);
-		bodies.set(message.id, body);
+		const truncated = body.removals.truncated;
 		return {
-			id: message.id,
-			direction: message.direction,
-			dmarc: message.dmarc,
-			subject: metadata(message.subject, metadataRemovals),
-			sender: metadata(message.sender, metadataRemovals),
-			text: body.text,
+			body,
+			truncated,
+			data: {
+				id: message.id,
+				direction: message.direction,
+				dmarc: message.dmarc,
+				subject: metadata(message.subject, metadataRemovals),
+				sender: metadata(message.sender, metadataRemovals),
+				text: body.text,
+			},
 		};
 	});
+	return finishDraft(input, messages, metadataRemovals);
+}
+
+/** The single framing/budget codec for normalized mail and chat rows. */
+function finishDraft(
+	input: Pick<DraftPromptInput, "model" | "owner">,
+	framed: readonly FramedMessage[],
+	metadataRemovals: HygieneResult["removals"],
+): PreparedDraft {
+	const messages = framed.map((message) => message.data);
+	const sources = new Map(framed.map((message) => [message.data, message]));
 	let omitted = 0;
 	while (messages.length > 1 && dataJson(messages).length > MAX_THREAD_CHARS) {
 		messages.shift();
@@ -180,14 +222,15 @@ export function buildDraftRequest(input: DraftPromptInput): PreparedDraft {
 	const last = messages[0];
 	if (!last) throw new ContentError("INVALID_INPUT");
 	const overhead = dataJson([{ ...last, text: "" }]).length;
+	if (overhead > MAX_THREAD_CHARS) throw new ContentError("OUTPUT_LIMIT");
 	let truncatedCharacters = messages.reduce(
-		(sum, message) => sum + (truncations.get(message.id) ?? 0),
+		(sum, message) => sum + (sources.get(message)?.truncated ?? 0),
 		0,
 	);
 	if (messages.length === 1 && dataJson(messages).length > MAX_THREAD_CHARS) {
 		// JSON escapes can be longer than the original text; choose a fitting prefix by binary search.
 		const points = [...last.text];
-		const body = bodies.get(last.id);
+		const body = sources.get(last)?.body;
 		if (!body) throw new ContentError("INVALID_INPUT");
 		const prefix = (count: number): string =>
 			hygienePrefix(last.text, points.slice(0, count).join("").length, body.links);
@@ -226,4 +269,164 @@ export function buildDraftRequest(input: DraftPromptInput): PreparedDraft {
 		truncatedCharacters,
 		metadataRemovals,
 	};
+}
+
+/** Pure normalization of the merged provider chat DATA shape, with one hygiene pass. */
+export function prepareChatPromptMessage(change: ChatMessageChange): HygienicChatPromptMessage {
+	try {
+		const raw = chatData(change, [
+			"kind",
+			"channelId",
+			"ts",
+			"threadTs",
+			"sentAt",
+			"author",
+			"subtype",
+			"text",
+			"editedAt",
+			"files",
+		]);
+		raw.author = chatData(raw.author, ["kind", "id"]);
+		if (raw.files !== undefined)
+			raw.files = chatArray(raw.files, 20).map((file) =>
+				chatData(file, ["id", "name", "contentType", "size"]),
+			);
+		const parsed = ChatMessageChange.safeParse(raw);
+		if (!parsed.success) throw new ContentError("INVALID_INPUT");
+		const message = parsed.data;
+		const cleaned = cleanText(message.text);
+		const body: HygieneResult = Object.freeze({
+			text: cleaned.text,
+			removals: Object.freeze({ ...cleaned.removals }),
+			links: Object.freeze(cleaned.links.map((link) => Object.freeze({ ...link }))),
+			suspectedInstructions: cleaned.suspectedInstructions,
+		});
+		return Object.freeze({
+			channelId: message.channelId,
+			ts: message.ts,
+			...(message.threadTs === undefined ? {} : { threadTs: message.threadTs }),
+			sentAt: message.sentAt,
+			author: Object.freeze({ kind: message.author.kind, id: message.author.id }),
+			body,
+		});
+	} catch (error) {
+		if (error instanceof ContentError) throw error;
+		throw new ContentError("INVALID_INPUT");
+	}
+}
+
+// Chat input is DATA: snapshot own values once rather than repeatedly invoking caller getters.
+function chatData(input: unknown, keys: readonly string[]): Record<string, unknown> {
+	if (!input || typeof input !== "object" || types.isProxy(input) || Array.isArray(input))
+		throw new ContentError("INVALID_INPUT");
+	const prototype: unknown = Object.getPrototypeOf(input);
+	if (prototype !== Object.prototype && prototype !== null) throw new ContentError("INVALID_INPUT");
+	const result: Record<string, unknown> = Object.create(null);
+	for (const key of Reflect.ownKeys(input)) {
+		if (typeof key !== "string" || !keys.includes(key)) throw new ContentError("INVALID_INPUT");
+		const property = Object.getOwnPropertyDescriptor(input, key);
+		if (!property?.enumerable || !("value" in property)) throw new ContentError("INVALID_INPUT");
+		result[key] = property.value;
+	}
+	return result;
+}
+
+function chatArray(input: unknown, maximum: number): unknown[] {
+	if (
+		!Array.isArray(input) ||
+		types.isProxy(input) ||
+		Object.getPrototypeOf(input) !== Array.prototype
+	)
+		throw new ContentError("INVALID_INPUT");
+	const count: unknown = Object.getOwnPropertyDescriptor(input, "length")?.value;
+	if (
+		typeof count !== "number" ||
+		!Number.isSafeInteger(count) ||
+		count > maximum ||
+		Reflect.ownKeys(input).length !== count + 1
+	)
+		throw new ContentError("INVALID_INPUT");
+	const result: unknown[] = [];
+	for (let index = 0; index < count; index++) {
+		const property = Object.getOwnPropertyDescriptor(input, String(index));
+		if (!property?.enumerable || !("value" in property)) throw new ContentError("INVALID_INPUT");
+		result.push(property.value);
+	}
+	return result;
+}
+
+function chatBody(input: unknown): HygieneResult {
+	const body = chatData(input, ["text", "removals", "links", "suspectedInstructions"]);
+	body.removals = chatData(body.removals, ["hidden", "invisible", "quoted", "truncated", "uris"]);
+	body.links = chatArray(body.links, 512).map((link) => chatData(link, ["index", "host"]));
+	return checkedBody(body);
+}
+
+/** Framing only: selection DATA and a hygienic body do not establish native provenance. */
+export function buildChatDraftRequest(input: ChatDraftPromptInput): PreparedDraft {
+	const raw = chatData(input, ["model", "conversation", "messages", "owner"]);
+	const conversation = chatData(raw.conversation, ["channelId", "threadTs"]);
+	const model = ModelId.safeParse(raw.model);
+	const selectedChannel = ProviderId.safeParse(conversation.channelId);
+	const selectedThread = ProviderId.safeParse(conversation.threadTs);
+	const rows = chatArray(raw.messages, MAX_THREAD_MESSAGES);
+	if (!model.success || !selectedChannel.success || !selectedThread.success || rows.length < 1)
+		throw new ContentError("INVALID_INPUT");
+	const channelId = selectedChannel.data,
+		threadTs = selectedThread.data;
+	const seen = new Set<string>();
+	let previousTime = -Infinity;
+	let inputBytes = 0;
+	const messages: FramedMessage[] = rows.map((row) => {
+		const message = chatData(row, ["channelId", "ts", "threadTs", "sentAt", "author", "body"]);
+		const author = chatData(message.author, ["kind", "id"]);
+		const timestamp = ProviderId.safeParse(message.ts);
+		const sender = ProviderId.safeParse(author.id);
+		const sentAt = UtcMs.safeParse(message.sentAt);
+		if (
+			message.channelId !== channelId ||
+			!timestamp.success ||
+			!sender.success ||
+			!sentAt.success ||
+			seen.has(timestamp.data) ||
+			(timestamp.data === threadTs
+				? message.threadTs !== undefined && message.threadTs !== threadTs
+				: message.threadTs !== threadTs) ||
+			sentAt.data < previousTime ||
+			(author.kind !== "user" && author.kind !== "bot")
+		)
+			throw new ContentError("INVALID_INPUT");
+		seen.add(timestamp.data);
+		previousTime = sentAt.data;
+		const body = chatBody(message.body);
+		inputBytes += Buffer.byteLength(body.text, "utf8");
+		if (inputBytes > MAX_TEXT_BYTES) throw new ContentError("INPUT_LIMIT");
+		return {
+			body,
+			truncated: body.removals.truncated,
+			data: {
+				channelId,
+				ts: timestamp.data,
+				threadTs: message.threadTs,
+				sentAt: sentAt.data,
+				author: { kind: author.kind, id: sender.data },
+				text: body.text,
+			},
+		};
+	});
+	if (!seen.has(threadTs)) throw new ContentError("INVALID_INPUT");
+	const owner =
+		raw.owner === undefined
+			? undefined
+			: chatData(raw.owner, ["instruction", "styleNotes", "signature"]);
+	if (owner && Object.values(owner).some((value) => typeof value !== "string"))
+		throw new ContentError("INVALID_INPUT");
+	return finishDraft(
+		{
+			model: model.data,
+			...(owner === undefined ? {} : { owner: owner as NonNullable<DraftPromptInput["owner"]> }),
+		},
+		messages,
+		{ hidden: 0, invisible: 0, quoted: 0, truncated: 0, uris: 0 },
+	);
 }
