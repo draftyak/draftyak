@@ -58,11 +58,16 @@ const STORE_ROWS: [(&str, &str); 4] = [
 ];
 const MEMBERS: &str =
     "members = [\"draftyak-protocol\", \"draftyak-transport\", \"draftyak-desktop-pairing\"]";
-const SOURCE_FILES: [&str; 13] = [
+const SOURCE_FILES: [&str; 18] = [
+    "key_store/forget_tests.rs",
     "key_store/linux_environment.rs",
+    "key_store/master_key.rs",
+    "key_store/master_key/tests.rs",
     "key_store/mod.rs",
     "key_store/platform.rs",
     "key_store/platform_controls.rs",
+    "key_store/profile_scope.rs",
+    "key_store/profile_scope/tests.rs",
     "key_store/testing.rs",
     "lib.rs",
     "pairing.rs",

@@ -641,6 +641,8 @@ importers:
         specifier: npm:typescript@5.9.3
         version: 5.9.3
 
+  tools/transport-tests: {}
+
   tools/vendor-guard: {}
 
   tools/verify: {}

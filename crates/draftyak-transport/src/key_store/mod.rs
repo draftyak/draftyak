@@ -17,12 +17,19 @@ use crate::{
     tls::{Identity, PinnedConnection},
 };
 
+#[cfg(test)]
+mod forget_tests;
 #[cfg(all(test, feature = "native-store", not(feature = "mock-store")))]
 mod linux_environment;
+mod master_key;
 #[cfg(feature = "native-store")]
 mod platform;
+mod profile_scope;
 #[cfg(any(test, feature = "mock-store"))]
 pub mod testing;
+
+pub use master_key::{NativeHubMasterKey, NativeHubMasterKeyStore};
+pub use profile_scope::NativeProfileScope;
 
 const SERVICE: &str = "com.draftyak.transport.device.v1";
 const MAX_RECORD_BYTES: usize = 2048;
@@ -223,6 +230,40 @@ impl NativeStore {
             Err(StoreError::Unavailable)
         }
     }
+    /// Opens the native identity record for an explicitly selected profile scope.
+    /// The scope identifies a record only; it supplies no admission or pairing authority.
+    pub fn open_profile(scope: &NativeProfileScope) -> Result<Self, StoreError> {
+        let account = scope.backend_record_name();
+        #[cfg(feature = "native-store")]
+        {
+            Ok(Self {
+                record: platform::open(SERVICE, account)?,
+            })
+        }
+        #[cfg(not(feature = "native-store"))]
+        {
+            let _ = (SERVICE, account);
+            Err(StoreError::Unavailable)
+        }
+    }
+    /// Opens this profile's distinct OS keychain service and scoped record.
+    /// The existing record-only API and its persisted namespace stay unchanged.
+    /// Callers must still hold their original native admission and lifetime.
+    pub fn open_profile_service(scope: &NativeProfileScope) -> Result<Self, StoreError> {
+        let service = scope.backend_service_name();
+        let account = scope.backend_record_name();
+        #[cfg(feature = "native-store")]
+        {
+            Ok(Self {
+                record: platform::open(service, account)?,
+            })
+        }
+        #[cfg(not(feature = "native-store"))]
+        {
+            let _ = (service, account);
+            Err(StoreError::Unavailable)
+        }
+    }
     fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, StoreError> {
         let bytes = self.record.read()?;
         if bytes
@@ -263,8 +304,10 @@ impl NativeStore {
         }
         Ok(identity)
     }
-    /// Removes only this profile's persisted identity and verifies its absence.
-    /// Already-loaded identities and transports must be disposed of separately by the caller.
+    /// Deletes only this profile's exact persisted identity record and verifies its absence.
+    /// The native caller must authorize forgetting, retire the paired session,
+    /// and join its original consumers before deleting their stored keys.
+    /// Existing in-memory identities are not revoked or erased by this call.
     /// The process operation lock does not provide a cross-process lifecycle lease.
     pub fn forget_identity(&self) -> Result<(), StoreError> {
         let _guard = OPERATIONS.lock().map_err(|_| StoreError::Unavailable)?;

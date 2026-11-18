@@ -1,0 +1,10 @@
+{
+  "name": "@draftyak/transport-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:heavy": "vitest run --mode heavy"
+  }
+}

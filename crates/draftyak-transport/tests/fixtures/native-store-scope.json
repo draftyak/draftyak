@@ -2,7 +2,7 @@
   "version": 1,
   "source": "registry+https://github.com/rust-lang/crates.io-index",
   "expiresAt": "2026-11-19T13:15:04Z",
-  "reviewedAt": "2026-10-30T12:08:26Z",
+  "reviewedAt": "2026-11-12T19:11:11Z",
   "reviewer": "nicksavov",
   "advisories": [
     {
