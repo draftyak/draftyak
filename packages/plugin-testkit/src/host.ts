@@ -672,7 +672,13 @@ export function createMockHost(
 				[...response.headers.entries()],
 				manifest.kind === "tool"
 					? TOOL_RESPONSE_HEADERS
-					: ["content-type", "etag", "last-modified", "content-length"],
+					: [
+							"content-type",
+							"etag",
+							"last-modified",
+							"content-length",
+							...(manifest.kind === "channel" ? ["retry-after"] : []),
+						],
 			);
 			const common = { status: response.status, headers: responseHeaders };
 			if (!representable(common)) return deny("RESPONSE_INVALID", "BAD_REQUEST");
