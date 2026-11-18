@@ -2167,7 +2167,7 @@ function nonPositive(value: string, context: Context): boolean {
 	return amount !== undefined && (amount.exact ? !(amount.lo > 0) : amount.hi <= 0);
 }
 
-function fontValue(value: string, property: "font-size" | "line-height"): string | undefined {
+function fontSize(value: string): string | undefined {
 	const keyword = comparisonValue(value);
 	if (/^(?:inherit|initial|unset)$/.test(keyword)) return keyword;
 	try {
@@ -2175,10 +2175,10 @@ function fontValue(value: string, property: "font-size" | "line-height"): string
 		if (ast.type !== "Value") return undefined;
 		const match = lexer.matchProperty("font", ast);
 		if (!matches(match)) return undefined;
-		// The grammar distinguishes size and line height from angle, weight and
-		// family, including when either metric uses calc().
+		// The grammar distinguishes size from an oblique angle, weight, line
+		// height or family name, including when the size itself is calc().
 		for (const node of ast.children)
-			if (match.isProperty(node, property) && node.loc)
+			if (match.isProperty(node, "font-size") && node.loc)
 				return value.slice(node.loc.start.offset, node.loc.end.offset);
 	} catch (error) {
 		if (error instanceof ContentError) throw error;
@@ -2225,7 +2225,7 @@ function appearance(
 	if (font) {
 		const value = computedInheritedValue(font, variables, spend);
 		if (value !== undefined) {
-			const size = font.property === "font" ? fontValue(value, "font-size") : value;
+			const size = font.property === "font" ? fontSize(value) : value;
 			const compared = size === undefined ? undefined : comparisonValue(size);
 			if (size !== undefined && compared !== undefined && !/^(?:inherit|unset)$/.test(compared))
 				fontZero =
@@ -2239,12 +2239,12 @@ function appearance(
 	let fill = inherited.colors.fill;
 	let background = inherited.colors.background;
 	for (const [key, { property, value: original }] of chosen) {
+		// A shorthand can supersede a line-height longhand. Its own line height
+		// is not evidence that the font size or the text is hidden.
+		if (key === "line-height" && property === "font") continue;
 		const raw = resolved(original, variables, spend);
 		if (raw === undefined) continue;
 		const value = comparisonValue(raw);
-		// A winning font shorthand without line height resets it to normal.
-		const lineHeight =
-			key === "line-height" ? (property === "font" ? fontValue(raw, key) : raw) : undefined;
 		const offset = /^(left|right|top|bottom|text-indent)$/.test(property)
 			? measure(raw, OFFSET)?.term
 			: undefined;
@@ -2254,7 +2254,7 @@ function appearance(
 			(property === "mso-hide" && value === "all") ||
 			(property === "opacity" && nonPositive(raw, FRACTION)) ||
 			(/^(?:max-)?(?:width|height)$/.test(property) && nonPositive(raw, LENGTH)) ||
-			(lineHeight !== undefined && nonPositive(lineHeight, LINE_HEIGHT)) ||
+			(property === "line-height" && nonPositive(raw, LINE_HEIGHT)) ||
 			(property === "transform" && zeroScale(value)) ||
 			(offset && /^(?:px|em|rem|vw|vh|%)$/.test(offset.unit) && offset.number <= -100) ||
 			(property === "clip-path" && value !== "none" && !/\b(?:calc|var|env)\(/.test(value)) ||

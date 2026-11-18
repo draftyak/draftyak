@@ -191,8 +191,9 @@ describe("reviewed static email CSS", () => {
 	it.each([
 		"line-height:0;font:14px serif",
 		"line-height:0;font:14px/1.2 serif",
+		"line-height:0;font:14px/0 serif",
 		"line-height:0;font:var(--body);--body:14px serif",
-	])("uses the later font shorthand's line height in %s", (style) => {
+	])("lets the later font shorthand supersede line height in %s", (style) => {
 		const result = cleanHtml(`<span style='${style}'>Visible</span>`);
 		expect(result.text).toBe("Visible");
 		expect(result.removals.hidden).toBe(0);
@@ -201,11 +202,19 @@ describe("reviewed static email CSS", () => {
 		"font:14px serif;line-height:0",
 		"line-height:0!important;font:14px serif",
 		"line-height:0;font:14px",
-		"font:14px/0 serif",
 	])("retains a winning zero line height in %s", (style) => {
 		const result = cleanHtml(`<span style='${style}'>Sample</span>Visible`);
 		expect(result.text).toBe("Visible");
 		expect(result.removals.hidden).toBe(6);
+	});
+	it.each([
+		["calc(1s)/0 serif", "Visible", 0],
+		["calc(14px)/0 serif", "Visible", 0],
+		["calc(0px)/1 serif", "", 7],
+	])("uses the computed font size from %s for visibility", (value, text, hidden) => {
+		const result = cleanHtml(`<span style='font:var(--body);--body:${value}'>Visible</span>`);
+		expect(result.text).toBe(text);
+		expect(result.removals.hidden).toBe(hidden);
 	});
 	it.each(["display:none;display:var(--missing)", "font-size:0;font-size:var(--missing)"])(
 		"does not revive an earlier winner after computed-invalid %s",
