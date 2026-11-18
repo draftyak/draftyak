@@ -188,6 +188,25 @@ describe("reviewed static email CSS", () => {
 	])("keeps a valid visible overriding declaration in %s", (style) => {
 		expect(cleanHtml(`<span style='${style}'>Visible</span>`).text).toBe("Visible");
 	});
+	it.each([
+		"line-height:0;font:14px serif",
+		"line-height:0;font:14px/1.2 serif",
+		"line-height:0;font:var(--body);--body:14px serif",
+	])("uses the later font shorthand's line height in %s", (style) => {
+		const result = cleanHtml(`<span style='${style}'>Visible</span>`);
+		expect(result.text).toBe("Visible");
+		expect(result.removals.hidden).toBe(0);
+	});
+	it.each([
+		"font:14px serif;line-height:0",
+		"line-height:0!important;font:14px serif",
+		"line-height:0;font:14px",
+		"font:14px/0 serif",
+	])("retains a winning zero line height in %s", (style) => {
+		const result = cleanHtml(`<span style='${style}'>Sample</span>Visible`);
+		expect(result.text).toBe("Visible");
+		expect(result.removals.hidden).toBe(6);
+	});
 	it.each(["display:none;display:var(--missing)", "font-size:0;font-size:var(--missing)"])(
 		"does not revive an earlier winner after computed-invalid %s",
 		(style) => {

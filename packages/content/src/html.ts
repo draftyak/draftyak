@@ -1187,17 +1187,22 @@ function winning(
 	spend: (count: number) => void,
 ): Map<string, Declaration> {
 	const groups = new Map<string, Declaration[]>();
-	for (const declaration of values) {
+	const add = (key: string, declaration: Declaration): void => {
 		spend(1);
-		const key =
-			declaration.property === "background"
-				? "background-color"
-				: declaration.property === "font"
-					? "font-size"
-					: declaration.property;
 		const group = groups.get(key) ?? [];
 		group.push(declaration);
 		groups.set(key, group);
+	};
+	for (const declaration of values) {
+		if (declaration.property === "font") {
+			add("font-size", declaration);
+			add("line-height", declaration);
+		} else {
+			add(
+				declaration.property === "background" ? "background-color" : declaration.property,
+				declaration,
+			);
+		}
 	}
 	const result = new Map<string, Declaration>();
 	for (const [key, group] of groups) {
@@ -2162,7 +2167,7 @@ function nonPositive(value: string, context: Context): boolean {
 	return amount !== undefined && (amount.exact ? !(amount.lo > 0) : amount.hi <= 0);
 }
 
-function fontSize(value: string): string | undefined {
+function fontValue(value: string, property: "font-size" | "line-height"): string | undefined {
 	const keyword = comparisonValue(value);
 	if (/^(?:inherit|initial|unset)$/.test(keyword)) return keyword;
 	try {
@@ -2170,10 +2175,10 @@ function fontSize(value: string): string | undefined {
 		if (ast.type !== "Value") return undefined;
 		const match = lexer.matchProperty("font", ast);
 		if (!matches(match)) return undefined;
-		// The grammar distinguishes size from an oblique angle, weight, line
-		// height or family name, including when the size itself is calc().
+		// The grammar distinguishes size and line height from angle, weight and
+		// family, including when either metric uses calc().
 		for (const node of ast.children)
-			if (match.isProperty(node, "font-size") && node.loc)
+			if (match.isProperty(node, property) && node.loc)
 				return value.slice(node.loc.start.offset, node.loc.end.offset);
 	} catch (error) {
 		if (error instanceof ContentError) throw error;
@@ -2220,7 +2225,7 @@ function appearance(
 	if (font) {
 		const value = computedInheritedValue(font, variables, spend);
 		if (value !== undefined) {
-			const size = font.property === "font" ? fontSize(value) : value;
+			const size = font.property === "font" ? fontValue(value, "font-size") : value;
 			const compared = size === undefined ? undefined : comparisonValue(size);
 			if (size !== undefined && compared !== undefined && !/^(?:inherit|unset)$/.test(compared))
 				fontZero =
@@ -2233,10 +2238,13 @@ function appearance(
 	let opaqueCurrent = inherited.colors.opaqueCurrent;
 	let fill = inherited.colors.fill;
 	let background = inherited.colors.background;
-	for (const { property, value: original } of chosen.values()) {
+	for (const [key, { property, value: original }] of chosen) {
 		const raw = resolved(original, variables, spend);
 		if (raw === undefined) continue;
 		const value = comparisonValue(raw);
+		// A winning font shorthand without line height resets it to normal.
+		const lineHeight =
+			key === "line-height" ? (property === "font" ? fontValue(raw, key) : raw) : undefined;
 		const offset = /^(left|right|top|bottom|text-indent)$/.test(property)
 			? measure(raw, OFFSET)?.term
 			: undefined;
@@ -2246,7 +2254,7 @@ function appearance(
 			(property === "mso-hide" && value === "all") ||
 			(property === "opacity" && nonPositive(raw, FRACTION)) ||
 			(/^(?:max-)?(?:width|height)$/.test(property) && nonPositive(raw, LENGTH)) ||
-			(property === "line-height" && nonPositive(raw, LINE_HEIGHT)) ||
+			(lineHeight !== undefined && nonPositive(lineHeight, LINE_HEIGHT)) ||
 			(property === "transform" && zeroScale(value)) ||
 			(offset && /^(?:px|em|rem|vw|vh|%)$/.test(offset.unit) && offset.number <= -100) ||
 			(property === "clip-path" && value !== "none" && !/\b(?:calc|var|env)\(/.test(value)) ||
