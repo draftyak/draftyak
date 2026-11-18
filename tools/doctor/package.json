@@ -24,6 +24,7 @@
     "test:heavy": "vitest run --mode heavy"
   },
   "dependencies": {
+    "@draftyak/bounded-files": "workspace:*",
     "@draftyak/fetch-node": "workspace:*",
     "@draftyak/protocol": "workspace:*"
   }

@@ -7,6 +7,7 @@
         "$TURBO_ROOT$/.github/workflows/**",
         "$TURBO_ROOT$/apps/cli/package.json",
         "$TURBO_ROOT$/apps/hub/package.json",
+        "$TURBO_ROOT$/tools/doctor/package.json",
         "$TURBO_ROOT$/spikes/*/ci.json",
         "$TURBO_ROOT$/spikes/*/package.json",
         "$TURBO_ROOT$/spikes/*/**/Cargo.toml"
