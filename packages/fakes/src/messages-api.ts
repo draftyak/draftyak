@@ -38,6 +38,8 @@ export interface MessagesApiOptions {
 }
 
 export interface MessagesApiFake extends Fake {
+	/** The same application handler, without the shared intake, recording or fault wrapper. */
+	readonly handler: (request: Request) => Promise<Response>;
 	/** Atomically encodes and detaches trusted fixtures from subsequent caller mutations. */
 	enqueue(...steps: readonly MessagesApiStep[]): void;
 	pending(): number;
@@ -262,21 +264,15 @@ function draftShape(value: unknown): boolean {
 	return true;
 }
 
-async function acceptsDraft(request: Request): Promise<boolean> {
-	if (
-		!/^\s*application\/json\s*(?:;\s*charset\s*=\s*(?:utf-8|"utf-8")\s*)?$/i.test(
-			request.headers.get("content-type") ?? "",
-		)
-	)
-		return false;
+async function readBody(request: Request): Promise<Uint8Array | undefined> {
 	request.signal.throwIfAborted();
-	if (!request.body) return false;
+	if (!request.body) return new Uint8Array(0);
 	const reader = request.body.getReader();
 	let canceled = false;
 	const cancel = (): void => {
 		if (canceled) return;
 		canceled = true;
-		// Shared bounded intake has already replaced the original upload.
+		// A caller's tee may have another reader; never wait for its cancellation here.
 		void reader.cancel(request.signal.reason).catch(() => {});
 	};
 	request.signal.addEventListener("abort", cancel, { once: true });
@@ -289,9 +285,10 @@ async function acceptsDraft(request: Request): Promise<boolean> {
 			const next = await reader.read();
 			request.signal.throwIfAborted();
 			if (next.done) break;
+			if (!(next.value instanceof Uint8Array)) throw new TypeError("Invalid request body chunk");
 			if (++chunks > MAX_CHUNKS || next.value.byteLength > MAX_REQUEST_BYTES - size) {
 				cancel();
-				return false;
+				return undefined;
 			}
 			const needed = size + next.value.byteLength;
 			if (needed > bytes.byteLength) {
@@ -304,14 +301,27 @@ async function acceptsDraft(request: Request): Promise<boolean> {
 			bytes.set(next.value, size);
 			size = needed;
 		}
+	} catch (error) {
+		cancel();
+		throw error;
 	} finally {
 		request.signal.removeEventListener("abort", cancel);
 		reader.releaseLock();
 	}
+	return bytes.subarray(0, size);
+}
+
+async function acceptsDraft(request: Request): Promise<boolean> {
+	if (
+		!/^\s*application\/json\s*(?:;\s*charset\s*=\s*(?:utf-8|"utf-8")\s*)?$/i.test(
+			request.headers.get("content-type") ?? "",
+		)
+	)
+		return false;
+	const bytes = await readBody(request);
+	if (bytes === undefined) return false;
 	try {
-		return draftShape(
-			JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size))),
-		);
+		return draftShape(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
 	} catch {
 		return false;
 	}
@@ -321,8 +331,8 @@ async function acceptsDraft(request: Request): Promise<boolean> {
  * A finite scripted Messages endpoint. Its vendor-shaped host is logical: fetch stays in memory,
  * and listen binds only the shared fake's ephemeral 127.0.0.1 server. Nothing calls a vendor.
  * Exact POST /v1/messages and /v1/messages?beta=true, and the client's GET model-list/page/retrieve
- * targets reserve the same next step at app admission,
- * after shared bounded intake. Pre-app Faults may bypass or delay admission; recorder order
+ * targets reserve the same next step at app admission. Wrapped calls first pass shared bounded
+ * intake. Pre-app Faults may bypass or delay admission; recorder order
  * remains original arrival order. Scripts produce wire fixtures, never native authorization.
  */
 export function createMessagesApiFake(options: MessagesApiOptions = {}): MessagesApiFake {
@@ -335,8 +345,9 @@ export function createMessagesApiFake(options: MessagesApiOptions = {}): Message
  * is checked. Matching POSTs reserve a step before validation; invalid input returns a fixed 400.
  * Model GETs retain arbitrary scripted replies and do not run the draft-body validator.
  * JSON accepts only an optional UTF-8 charset; decoding is fatal, with JSON.parse's last-member
- * semantics. Both factories use shared 1 MiB intake before redirect/application cloning.
- * The app's chunk check is defensive after buffering, not an original-ingress chunk limit.
+ * semantics. Both wrapped factories use shared 1 MiB intake before redirect/application cloning.
+ * Direct handlers also cap actual bytes at 1 MiB and yielded chunks at 65536, including empty
+ * chunks. After shared buffering the app cannot count original-ingress chunks.
  * Source failures and aborts reject normally. The generic factory remains script-only.
  */
 export function createMessagesApiDraftFake(options: MessagesApiOptions = {}): MessagesApiFake {
@@ -388,63 +399,63 @@ function createMessagesApi(options: MessagesApiOptions, strict: boolean): Messag
 			}
 		},
 	};
+	const handler = async (request: Request): Promise<Response> => {
+		const target = rawTarget(request);
+		const draft = target === "/v1/messages" || target === "/v1/messages?beta=true";
+		const method = draft ? "POST" : metadataTarget(target) ? "GET" : undefined;
+		if (method === undefined) {
+			return Response.json(
+				{
+					type: "error",
+					error: { type: "not_found_error", message: "Synthetic route missing" },
+				},
+				{ status: 404 },
+			);
+		}
+		if (request.method !== method) {
+			return Response.json(
+				{
+					type: "error",
+					error: { type: "invalid_request_error", message: `Synthetic ${method} only` },
+				},
+				{ status: 405, headers: { allow: method } },
+			);
+		}
+		const step = queue.shift();
+		if (step === undefined) {
+			return Response.json(
+				{
+					type: "error",
+					error: { type: "overloaded_error", message: "Synthetic script exhausted" },
+				},
+				{ status: 503 },
+			);
+		}
+		queuedBytes -= step.bytes.byteLength;
+		if (strict && draft) {
+			if (!(await acceptsDraft(request))) {
+				return Response.json(
+					{
+						type: "error",
+						error: { type: "invalid_request_error", message: "Synthetic request refused" },
+					},
+					{ status: 400 },
+				);
+			}
+		} else {
+			if ((await readBody(request)) === undefined)
+				return Response.json({ error: "request_body_too_large" }, { status: 413 });
+		}
+		request.signal.throwIfAborted();
+		if (step.delayMs !== 0) await wait(step.delayMs, request.signal);
+		request.signal.throwIfAborted();
+		return new Response(step.streamed ? body(step, request.signal) : step.bytes, {
+			status: step.status,
+			headers: [...step.headers],
+		});
+	};
 	const fake = createFake(
-		{
-			async fetch(request) {
-				const target = rawTarget(request);
-				const draft = target === "/v1/messages" || target === "/v1/messages?beta=true";
-				const method = draft ? "POST" : metadataTarget(target) ? "GET" : undefined;
-				if (method === undefined) {
-					return Response.json(
-						{
-							type: "error",
-							error: { type: "not_found_error", message: "Synthetic route missing" },
-						},
-						{ status: 404 },
-					);
-				}
-				if (request.method !== method) {
-					return Response.json(
-						{
-							type: "error",
-							error: { type: "invalid_request_error", message: `Synthetic ${method} only` },
-						},
-						{ status: 405, headers: { allow: method } },
-					);
-				}
-				const step = queue.shift();
-				if (step === undefined) {
-					return Response.json(
-						{
-							type: "error",
-							error: { type: "overloaded_error", message: "Synthetic script exhausted" },
-						},
-						{ status: 503 },
-					);
-				}
-				queuedBytes -= step.bytes.byteLength;
-				if (strict && draft) {
-					if (!(await acceptsDraft(request))) {
-						return Response.json(
-							{
-								type: "error",
-								error: { type: "invalid_request_error", message: "Synthetic request refused" },
-							},
-							{ status: 400 },
-						);
-					}
-				} else {
-					await request.arrayBuffer();
-				}
-				request.signal.throwIfAborted();
-				if (step.delayMs !== 0) await wait(step.delayMs, request.signal);
-				request.signal.throwIfAborted();
-				return new Response(step.streamed ? body(step, request.signal) : step.bytes, {
-					status: step.status,
-					headers: [...step.headers],
-				});
-			},
-		},
+		{ fetch: handler },
 		{
 			host: "api.anthropic.com",
 			recorder: options.recorder,
@@ -452,5 +463,5 @@ function createMessagesApi(options: MessagesApiOptions, strict: boolean): Messag
 			maxRequestBodyBytes: MAX_REQUEST_BYTES,
 		},
 	);
-	return { ...fake, enqueue, pending: () => queue.length };
+	return { ...fake, handler, enqueue, pending: () => queue.length };
 }
