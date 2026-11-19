@@ -283,6 +283,67 @@ afterEach(async () => {
 });
 
 describe("application controller with the real metadata client, Query and both controllers", () => {
+	it("exposes one frozen directory view with original snapshots, actions and closed notification", async () => {
+		const input = fixture();
+		const application = input.application;
+		const view = application.accountDirectory;
+		expect(view).toBeDefined();
+		expect(Object.isFrozen(view)).toBe(true);
+		expect(Object.keys(view).sort()).toEqual(["getSnapshot", "subscribe"]);
+		expect(view.getSnapshot()).toBe(accounts(application));
+		expect(application.accountDirectory).toBe(view);
+		const notifications: ReturnType<typeof view.getSnapshot>[] = [];
+		const unsubscribe = view.subscribe(() => {
+			notifications.push(view.getSnapshot());
+		});
+		try {
+			expect(input.exchanges).toHaveLength(0);
+			await startReady(input);
+			const first = readyAccounts(application);
+			expect(view.getSnapshot()).toBe(first);
+			expect(notifications.at(-1)).toBe(first);
+			expect(application.accountDirectory).toBe(view);
+			const loadNext = first.loadNext;
+			expect(view.getSnapshot().loadNext).toBe(loadNext);
+			application.navigate("inbox");
+			expect(view.getSnapshot()).toBe(first);
+			expect(input.exchanges).toHaveLength(2);
+			loadNext();
+			const nextPath = `${accountsPath}?afterId=${cursor}`;
+			(await actualCall(input, nextPath)).respond(page([record(2, 8)]));
+			await vi.waitFor(() => expect(view.getSnapshot().status).toBe("ready"));
+			const second = readyAccounts(application);
+			expect(view.getSnapshot()).toBe(second);
+			expect(second).not.toBe(first);
+			expect(notifications.at(-1)).toBe(second);
+			expect(application.accountDirectory).toBe(view);
+			const closed = observe(input, application.close());
+			await closed.done;
+			expect(closed.state).toBe("fulfilled");
+			const terminal = view.getSnapshot();
+			expect(terminal.status).toBe("closed");
+			expect(notifications.at(-1)).toBe(terminal);
+			expect(notifications.map((snapshot) => snapshot.status)).toEqual([
+				"loading",
+				"ready",
+				"loading",
+				"ready",
+				"closed",
+			]);
+			expect(application.accountDirectory).toBe(view);
+			first.loadNext();
+			terminal.loadFirst();
+			terminal.loadNext();
+			terminal.loadPrevious();
+			terminal.retry();
+			await nextTurn();
+			expect(view.getSnapshot()).toBe(terminal);
+			expect(input.exchanges).toHaveLength(3);
+		} finally {
+			unsubscribe();
+		}
+	});
+
 	it("joins both startup reads and follows real cursor, failure, retry and previous wire requests", async () => {
 		const input = fixture();
 		expect(input.exchanges).toHaveLength(0);
