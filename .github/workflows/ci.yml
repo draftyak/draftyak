@@ -399,7 +399,7 @@ jobs:
     outputs:
       source: ${{ steps.source.outputs.source }}
       native-transport: ${{ steps.native.outputs.native-transport }}
-    if: needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && needs.changes.outputs.native-transport == 'true'))
+    if: needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && (needs.changes.outputs.native-transport == 'true' || (contains(fromJSON(needs.changes.outputs.areas), 'heavy:...{./apps/hub}') || contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/hub')))))
     runs-on: windows-2025
     timeout-minutes: 30
     steps:
@@ -451,6 +451,18 @@ jobs:
         env:
           # Package suites each start their own test workers on this runner.
           TURBO_CONCURRENCY: '1'
+      - name: Recover Hub store after process interruption
+        id: store-crash
+        if: (contains(fromJSON(needs.changes.outputs.areas), 'heavy:...{./apps/hub}') || contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/hub'))
+        working-directory: apps/hub
+        env:
+          DRAFTYAK_STRICT_SKIPS: '1'
+        run: |
+          node "$GITHUB_WORKSPACE/node_modules/vitest/vitest.mjs" run \
+            test/model/store-crash-recovery.heavy.test.ts \
+            --mode heavy --maxWorkers=1 --reporter=default --passWithNoTests=false \
+            --exclude '**/*siwc*/**' --exclude '**/*siwc*' \
+            --exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'
       - name: Run native transport checks
         id: native
         if: needs.changes.outputs.native-transport == 'true'
@@ -464,7 +476,7 @@ jobs:
     outputs:
       source: ${{ steps.source.outputs.source }}
       native-transport: ${{ steps.native.outputs.native-transport }}
-    if: needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.native-transport == 'true'
+    if: needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.changes.outputs.native-transport == 'true' || (contains(fromJSON(needs.changes.outputs.areas), 'heavy:...{./apps/hub}') || contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/hub')))
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -478,6 +490,7 @@ jobs:
       - id: source
         run: node tools/ci-checks/src/verification-receipt.ts capture
       - name: Require the selected native platform
+        if: needs.changes.outputs.native-transport == 'true'
         env:
           NATIVE_PLATFORM: darwin
           NATIVE_ARCHITECTURE: arm64
@@ -486,14 +499,29 @@ jobs:
         with:
           cache: true
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master on 2026-10-16
+        if: needs.changes.outputs.native-transport == 'true'
         with:
           toolchain: 1.95.0
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: needs.changes.outputs.native-transport == 'true'
         with:
           workspaces: crates
       - run: pnpm install --frozen-lockfile
+      - name: Recover Hub store after process interruption
+        id: store-crash
+        if: (contains(fromJSON(needs.changes.outputs.areas), 'heavy:...{./apps/hub}') || contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/hub'))
+        working-directory: apps/hub
+        env:
+          DRAFTYAK_STRICT_SKIPS: '1'
+        run: |
+          node "$GITHUB_WORKSPACE/node_modules/vitest/vitest.mjs" run \
+            test/model/store-crash-recovery.heavy.test.ts \
+            --mode heavy --maxWorkers=1 --reporter=default --passWithNoTests=false \
+            --exclude '**/*siwc*/**' --exclude '**/*siwc*' \
+            --exclude '**/*dynamic-agent*' --exclude '**/*dynamic_agent*'
       - name: Run native transport checks
+        if: needs.changes.outputs.native-transport == 'true'
         id: native
         env:
           NATIVE_PLATFORM: darwin
@@ -515,6 +543,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      - name: Require selected Hub crash recovery on Windows and macOS
+        if: needs.changes.outputs.docs-only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (contains(fromJSON(needs.changes.outputs.areas), 'heavy:...{./apps/hub}') || contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/hub'))
+        env:
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          MACOS_RESULT: ${{ needs.macos.result }}
+        run: node --input-type=module -e 'if (process.env.WINDOWS_RESULT !== "success" || process.env.MACOS_RESULT !== "success") process.exit(1)'
       - name: Write verification receipt and enforce required jobs
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
