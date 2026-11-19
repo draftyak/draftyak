@@ -51,7 +51,7 @@ The hub reads only a result's `structuredContent`: on success it must match the 
 |---|---|---|---|
 | `channel_describe` | yes | `{}` | `{channel, mutations, attachments, listen}` |
 | `channel_probe` | yes | `{}` | `{status: "ok" \| "degraded", detail?}` |
-| `channel_sync` | yes | `{mode: "initial" \| "resync", since, cursor?}` or `{mode: "delta", cursor}` | `{changes, cursor, more}` |
+| `channel_sync` | yes | `{mode: "initial" \| "resync", since, cursor?}`, `{mode: "delta", cursor}`, or selected work below | ordinary `{changes, cursor, more}`, selected messages `{work, changes, replyCounts, continuation}`, or selected catalog/info below |
 | `channel_body_fetch` | yes | `{message}` | `{message}` with its body |
 | `channel_attachment_fetch` | no | `{message, attachmentId}` | `{contentType, size, content}` |
 | `channel_mutate` | no | `{op, messages, labelIds?}` | `{}` |
@@ -83,10 +83,50 @@ The hub reads only a result's `structuredContent`: on success it must match the 
 
 ### Sync
 
+The ordinary `SyncRequest` and `SyncPage` forms remain unchanged:
+
 - `initial` reads the account from `since` on; `resync` does the same after the hub lost its place.
 - While `more` is true, the hub calls again with the returned `cursor` and the same mode. The cursor of the page with `more: false` is where `delta` continues, and `delta` returns the same cursor when nothing changed.
 - A cursor is the plugin's own string, visible ASCII up to 4,096 characters. When the provider no longer accepts it, the tool fails with `CURSOR_EXPIRED`, and the hub resyncs.
 - A page holds at most 500 changes; the hub applies each page in one transaction, idempotently on the provider ids.
+
+### Selected Slack sync work
+
+`{mode: "selected", work, cursor?}` reads one explicitly selected work unit. It is a separate request form, not an ordinary cursor, configuration value, key/value row or MCP metadata member. A plugin that does not implement selected work returns `UNSUPPORTED` before invoking its ordinary sync handler. Existing ordinary handlers keep their `SyncRequest` input and `SyncPage` output; SDK definitions expose selected work through a separate optional handler.
+
+The closed work forms are:
+
+- `{kind: "slack.history", channelId, window}`;
+- `{kind: "slack.replies", channelId, threadTs, window}`.
+
+`window` is exactly `{oldest, latest, inclusive}`. Channel and root IDs and both provider boundary strings use the existing 1 to 256 character visible-ASCII ID limits. Their bytes are preserved exactly, including timestamp precision; they are not rounded into UTC milliseconds. The provider reader validates its timestamp grammar, ordering and supported range before requesting data. `inclusive` is a required boolean, not an inferred default. Discovery and hydration, native thread eligibility, owner participation, retention, budgets and current account/epoch authority are not supplied by this work object. An observed count is not a grant or evidence of coverage.
+
+A selected success is `{work, changes, replyCounts, continuation}` with at most 500 ordinary `chat.message` changes. It never mixes in an ordinary result's top-level `cursor` or `more`. `replyCounts` is a required array of at most 500 strict `{ts, count}` observations, with `ts` under the existing ID bounds and `count` a safe integer from zero through 9,007,199,254,740,991. An empty array or a missing timestamp means no observation, never an invented zero; an explicit zero is preserved. `continuation` is exactly one of:
+
+| Form | Meaning |
+|---|---|
+| `{state: "more", cursor}` | A validated continuation is available. The cursor uses the existing 1 to 4,096 character visible-ASCII limits. |
+| `{state: "complete"}` | This exact work unit and provider window were exhausted honestly; no cursor is manufactured. This does not establish account, eligibility or native retention-policy coverage. |
+| `{state: "truncated", cursor?}` | The selected work remains incomplete, for example because a finite component bound was reached or the provider omitted needed continuation. A cursor is included only when a genuine resume point is available. |
+
+Missing continuation, a page/work bound, an observed reply count or an ordinary `more: false` never proves selected completion. Transport failures, refusal and cancellation remain error results, not successful completeness acknowledgements.
+
+Count observations are correlated with the same returned page by `selectedSlackReplyCountsMatch` after structural validation. Every observed timestamp must be unique and name exactly one returned message with that timestamp and the work's channel. Its root metadata is absent or equals its own timestamp; a reply cannot be reclassified as a root. For selected replies, any observation must name the selected `threadTs` itself. Duplicate observations, duplicate returned timestamps for an observation, dangling observations and cross-channel or conflicting-root observations refuse. Counts remain advisory even when the thread later grows; they are never eligibility, a fetch quota or completeness evidence. These relational checks are explicit semantic rules, not a runtime-only schema refinement silently omitted from the exported JSON Schema. Both structural validators accept the same individual fields; SDK and native consumers enforce the separate helper before using the observations.
+
+Every resumed call repeats the exact work tuple and uses a plugin-issued cursor bound to that tuple. The child must bind its stored continuation to the selected channel, root and unchanged window; an old binding of only ordinary mode and `since` is insufficient. The native parent compares the returned work with its requested work before separately authorized validation, application and checkpoint commit. `selectedSlackWorkEqual` compares already validated work scalars byte for byte; it neither authenticates a cursor nor grants read authority.
+
+An isolated output schema cannot correlate a response with its request. SDK dispatch and native consumers must reject an ordinary result for a selected call, a selected result for an ordinary call, and a selected result whose echoed work differs. The native consumer also checks that returned rows belong to the selected channel, root and window using its actual provider semantics. The parent retains eligibility, current owner/account/generation/epoch, budget, lease/cancellation, validated application and apply-before-cursor-advance responsibilities. No selected field or plugin success creates those rights or an apply acknowledgement.
+
+### Selected Slack discovery and conversation info
+
+The same `channel_sync` tool also accepts two independent selected calls. They do not change `SyncRequest`/`SyncPage`, the selected history/replies aliases, or the SDK's existing `syncSelected` handler. SDK definitions provide a separate optional `syncSelectedCatalog`; an absent handler refuses with `UNSUPPORTED` before ordinary or selected-message work is invoked.
+
+- `{mode: "selected", work: {kind: "slack.catalog"}, cursor?}` discovers one page of conversation summaries. Its work has no filter, limit, channel, time window or membership selector: the provider reader uses its fixed discovery query. Success is exactly `{work, conversations, continuation}`. Each summary is `{channelId, type, name?}`, with the existing provider-ID and four chat-channel types and at most 256 code points in `name`. A page contains at most 999 summaries with unique `channelId` values. Summaries have no member, archive, count, external or shared facts and cannot substitute for hydrated conversation facts.
+- `{mode: "selected", work: {kind: "slack.info", channelId}}` independently selects one conversation for hydration. It accepts no cursor. Success is exactly `{work, conversation, continuation: {state: "complete"}}`, with one existing `chat.conversation` fact for that exact `channelId`. Empty, multiple, partial or truncated info success is not defined; provider failures, missing facts and cancellation remain errors.
+
+Catalog continuation uses the same explicit `more`, `complete` and `truncated` forms as selected message work. Completion refers only to this discovery pass; a finite bound, missing continuation or empty summary list never establishes complete account or message synchronization. Every resumed catalog call repeats its work and supplies a genuine cursor bound by the child to the actual account, scope, kind and provider position. Info completion refers only to the one requested hydration, never a message scan or permission to read it. A catalog-only result must not be returned as an ordinary initial/resync terminal cursor.
+
+Structural runtime and exported schemas enforce the same fields and bounds. After parsing, `selectedSlackCatalogPageMatches` enforces unique catalog IDs and the hydrated fact's channel binding. `selectedSlackCatalogWorkEqual` compares the validated requested and echoed kind/channel; it cannot authenticate a cursor. The SDK captures the expected selector separately before invoking the handler, copies the handler's result as plain DATA, and enforces both helpers. Native consumers retain those correlations and their own admission, current owner/account/generation/epoch, budget, cancellation, validated application and checkpoint responsibilities. Returned summaries never authorize an info call, history, replies or a durable write.
 
 ### Sending
 

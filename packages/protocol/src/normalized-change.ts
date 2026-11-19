@@ -177,6 +177,7 @@ const chatConversation = z.strictObject({
 	archived: z.boolean(),
 	member: z.boolean(),
 });
+export const ChatConversationChange: z.ZodType<ChatConversationChange> = chatConversation;
 
 export type PluginChange =
 	| EmailMessageChange

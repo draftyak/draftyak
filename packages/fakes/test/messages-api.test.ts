@@ -12,6 +12,123 @@ import {
 import { createRecorder } from "../src/recorder.ts";
 
 const START = Date.UTC(2026, 9, 19, 8);
+
+describe.each([
+	["generic", createMessagesApiFake],
+	["draft", createMessagesApiDraftFake],
+] as const)("Messages metadata routes (%s)", (_name, create) => {
+	it.each([
+		"/v1/models?limit=100",
+		"/v1/models?limit=100&after_id=claude-model-1",
+		"/v1/models?after_id=opaque%2Fcursor%2Bvalue&limit=100",
+		"/v1/models/claude-model-1",
+		"/v1/models/opaque:@!$&'()*+,;=",
+		"/v1/models/opaque%2F%3F%25%23%2B",
+	])("serves a scripted GET %s from the existing queue", async (target) => {
+		const expected = { deliberately: "opaque metadata fixture" };
+		const fake = create({ steps: [{ kind: "json", body: expected }] });
+		const response = await fake.fetch(target);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual(expected);
+		expect(fake.pending()).toBe(0);
+		expect(fake.recorder.takeRequests()).toMatchObject([{ method: "GET", target, bodyLength: 0 }]);
+	});
+
+	it.each([
+		"/v1/models",
+		"/v1/models?limit=99",
+		"/v1/models?limit=100&limit=100",
+		"/v1/models?limit=100&after_id=",
+		"/v1/models?limit=100&after_id=x&after_id=y",
+		"/v1/models?limit=100&unknown=x",
+		"/v1/models?%6cimit=100",
+		"/v1/%6dodels?limit=100",
+		"/v1/extra/../models?limit=100",
+		"/v1/models/",
+		"/v1/models/.",
+		"/v1/models/%2e%2e",
+		"/v1/models/a/b",
+		"/v1/models/a\\b",
+		"/v1/models/a?extra=1",
+		"/v1/models/a#fragment",
+		"/v1/models/a%GG",
+		"/v1/models/a%FF",
+		`/v1/models/${"a".repeat(4096)}`,
+	])("refuses raw target %s before reserving a step", async (target) => {
+		const fake = create({ steps: [{ kind: "json", body: { slot: 1 } }] });
+		expect((await fake.fetch(target)).status).toBe(404);
+		expect(fake.pending()).toBe(1);
+		expect(await (await fake.fetch("/v1/models?limit=100")).json()).toEqual({ slot: 1 });
+	});
+
+	it.each(["POST", "PUT", "DELETE"])(
+		"refuses metadata method %s before dequeue",
+		async (method) => {
+			const fake = create({ steps: [{ kind: "json", body: { slot: 1 } }] });
+			const response = await fake.fetch("/v1/models?limit=100", { method });
+			expect([response.status, response.headers.get("allow"), fake.pending()]).toEqual([
+				405,
+				"GET",
+				1,
+			]);
+		},
+	);
+
+	it("shares one ordered GET/POST queue and preserves deliberately malformed metadata", async () => {
+		const fake = create({
+			steps: [
+				{ kind: "json", body: { slot: 1 } },
+				{ kind: "json", body: { slot: 2 } },
+				{ kind: "raw", body: '{"broken":', contentType: "application/json" },
+			],
+		});
+		expect(await (await fake.fetch("/v1/models?limit=100")).json()).toEqual({ slot: 1 });
+		const request = {
+			...REQUEST,
+			output_config: { effort: "high", format: { type: "json_schema", schema: {} } },
+		};
+		expect(
+			await (
+				await fake.fetch("/v1/messages?beta=true", post({ body: JSON.stringify(request) }))
+			).json(),
+		).toEqual({ slot: 2 });
+		expect(await (await fake.fetch("/v1/models/claude-model-1")).text()).toBe('{"broken":');
+		expect(fake.pending()).toBe(0);
+		expect((await fake.fetch("/v1/models?limit=100")).status).toBe(503);
+	});
+
+	it("reserves a metadata step before its delay while POST takes the following step", async () => {
+		const controller = new AbortController();
+		const fake = create({
+			steps: [
+				{ kind: "json", body: { slot: 1 }, delayMs: Infinity },
+				{ kind: "json", body: { slot: 2 } },
+			],
+		});
+		const first = fake.fetch("/v1/models?limit=100", { signal: controller.signal }).then(
+			() => ({ kind: "returned" }),
+			() => ({ kind: "aborted" }),
+		);
+		try {
+			await setImmediate();
+			expect(fake.pending()).toBe(1);
+			const request = {
+				...REQUEST,
+				output_config: { effort: "high", format: { type: "json_schema", schema: {} } },
+			};
+			expect(
+				await (await fake.fetch("/v1/messages", post({ body: JSON.stringify(request) }))).json(),
+			).toEqual({ slot: 2 });
+			expect(fake.pending()).toBe(0);
+			controller.abort();
+			expect(await first).toEqual({ kind: "aborted" });
+		} finally {
+			controller.abort();
+			await first;
+		}
+	});
+});
+
 const DRAFT = {
 	body: "Synthetic reply with café and 🦬.",
 	ownerNotes: "Synthetic note.",
@@ -95,6 +212,200 @@ function post(extra: RequestInit = {}): RequestInit {
 		...extra,
 	};
 }
+
+describe.each([
+	["generic", createMessagesApiFake],
+	["draft", createMessagesApiDraftFake],
+] as const)("Messages direct handler (%s)", (mode, create) => {
+	const cap = 1_048_576;
+	const valid = {
+		...REQUEST,
+		output_config: { effort: "medium", format: { type: "json_schema", schema: {} } },
+	};
+	const raw = ` ${JSON.stringify(valid)} `;
+	const steps = (): MessagesApiStep[] => [
+		{ kind: "json", body: { slot: 1 } },
+		{ kind: "json", body: { slot: 2 } },
+	];
+	const request = (
+		body: string | ReadableStream<Uint8Array>,
+		signal?: AbortSignal,
+		length?: string,
+	): Request =>
+		new Request(
+			"https://api.anthropic.com/v1/messages?beta=true",
+			post({
+				body,
+				signal,
+				headers: {
+					"content-type": "application/json",
+					...(length === undefined ? {} : { "content-length": length }),
+				},
+				duplex: "half",
+			} as RequestInit),
+		);
+
+	it("uses the original request without consuming shared recorder or fault wrapping", async () => {
+		const recorder = createRecorder({ maxBodyBytes: 7 });
+		const fake = create({ recorder, steps: steps() });
+		fake.faults.add({ kind: "rate-limit", retryAfter: 2 });
+		const original = request(raw);
+		const clone = vi.spyOn(original, "clone").mockImplementation(() => {
+			throw new Error("DYTEST direct handler cloned its request");
+		});
+		try {
+			const response = await fake.handler(original);
+			expect(response.status).toBe(200);
+			expect(await response.json()).toEqual({ slot: 1 });
+			expect(original.bodyUsed).toBe(true);
+			expect(original.body?.locked).toBe(false);
+			expect(clone).not.toHaveBeenCalled();
+			expect(fake.pending()).toBe(1);
+			expect(recorder.takeRequests()).toEqual([]);
+			expect((await fake.fetch(request(raw))).status).toBe(429);
+			expect(fake.pending()).toBe(1);
+			expect(recorder.takeRequests()).toHaveLength(1);
+			expect(await (await fake.fetch(request(raw))).json()).toEqual({ slot: 2 });
+			const records = recorder.takeRequests();
+			expect(records).toHaveLength(1);
+			expect(records[0]?.body).toEqual(new TextEncoder().encode(raw).slice(0, 7));
+			expect(records[0]?.bodySha256).toBe(createHash("sha256").update(raw).digest("hex"));
+		} finally {
+			clone.mockRestore();
+		}
+	});
+
+	it("keeps direct route, method, shape and exhaustion reservation ordering", async () => {
+		const fake = create({ steps: steps() });
+		expect(
+			(await fake.handler(new Request("https://api.anthropic.com/v1/messages?beta=false"))).status,
+		).toBe(404);
+		expect((await fake.handler(new Request("https://api.anthropic.com/v1/messages"))).status).toBe(
+			405,
+		);
+		expect(fake.pending()).toBe(2);
+		const invalid = await fake.handler(request('{"extra":true}'));
+		expect(invalid.status).toBe(mode === "draft" ? 400 : 200);
+		await invalid.json();
+		expect(fake.pending()).toBe(1);
+		expect(await (await fake.handler(request(raw))).json()).toEqual({ slot: 2 });
+		expect((await fake.handler(request("{"))).status).toBe(503);
+		expect(fake.recorder.takeRequests()).toEqual([]);
+	});
+
+	it.each([
+		["exact cap without a length", 0, undefined],
+		["overflow without a length", 1, undefined],
+		["overflow with a smaller declared length", 1, "1"],
+	] as const)("bounds actual direct bytes: %s", async (_name, overflow, length) => {
+		const empty = { ...valid, system: "" };
+		const prefixBytes = new TextEncoder().encode(JSON.stringify(empty)).byteLength;
+		const bytes = new TextEncoder().encode(
+			JSON.stringify({ ...empty, system: "x".repeat(cap - prefixBytes + overflow) }),
+		);
+		const chunks = [bytes.subarray(0, cap - 1), bytes.subarray(cap - 1)];
+		let pulls = 0;
+		let canceled = 0;
+		const upload = new ReadableStream<Uint8Array>(
+			{
+				pull(controller) {
+					const chunk = chunks[pulls++];
+					if (chunk) controller.enqueue(chunk);
+					else controller.close();
+				},
+				cancel() {
+					canceled++;
+				},
+			},
+			{ highWaterMark: 0 },
+		);
+		const original = request(upload, undefined, length);
+		const listeners = getEventListeners(original.signal, "abort").length;
+		const fake = create({ steps: steps() });
+		const response = await fake.handler(original);
+		expect(response.status).toBe(overflow ? (mode === "draft" ? 400 : 413) : 200);
+		await response.json();
+		expect(pulls).toBe(overflow ? 2 : 3);
+		expect(canceled).toBe(overflow ? 1 : 0);
+		expect(upload.locked).toBe(false);
+		expect(getEventListeners(original.signal, "abort")).toHaveLength(listeners);
+		expect(fake.pending()).toBe(1);
+		expect(await (await fake.handler(request(raw))).json()).toEqual({ slot: 2 });
+		expect(fake.recorder.takeRequests()).toEqual([]);
+	});
+
+	it.each([65_536, 65_537])("bounds directly yielded empty chunks (%i)", async (count) => {
+		let emitted = 0;
+		let canceled = 0;
+		const bytes = new TextEncoder().encode(raw);
+		const upload = new ReadableStream<Uint8Array>(
+			{
+				pull(controller) {
+					if (emitted === count) controller.close();
+					else controller.enqueue(emitted++ === 0 ? bytes : new Uint8Array());
+				},
+				cancel() {
+					canceled++;
+				},
+			},
+			{ highWaterMark: 0 },
+		);
+		const fake = create({ steps: steps() });
+		const response = await fake.handler(request(upload));
+		const overflow = count > 65_536;
+		expect(response.status).toBe(overflow ? (mode === "draft" ? 400 : 413) : 200);
+		await response.json();
+		expect(emitted).toBe(count);
+		expect(canceled).toBe(overflow ? 1 : 0);
+		expect(upload.locked).toBe(false);
+		expect(fake.pending()).toBe(1);
+	});
+
+	it.each(["abort", "source-error", "non-byte"] as const)(
+		"releases direct input ownership after %s without returning a scripted success",
+		async (kind) => {
+			const fake = create({ steps: steps() });
+			const controller = new AbortController();
+			let input!: ReadableStreamDefaultController<Uint8Array>;
+			let canceled = 0;
+			const upload = new ReadableStream<Uint8Array>(
+				{
+					start(value) {
+						input = value;
+					},
+					cancel() {
+						canceled++;
+					},
+				},
+				{ highWaterMark: 0 },
+			);
+			const original = request(upload, controller.signal);
+			const listeners = getEventListeners(original.signal, "abort").length;
+			const reason = new Error(`DYTEST direct ${kind}`);
+			const pending = fake.handler(original);
+			const rejection =
+				kind === "non-byte"
+					? expect(pending).rejects.toBeInstanceOf(TypeError)
+					: expect(pending).rejects.toBe(reason);
+			try {
+				await setImmediate();
+				if (kind === "abort") controller.abort(reason);
+				else if (kind === "source-error") input.error(reason);
+				else input.enqueue("DYTEST non-byte" as unknown as Uint8Array);
+				await rejection;
+				expect(upload.locked).toBe(false);
+				expect(getEventListeners(original.signal, "abort")).toHaveLength(listeners);
+				if (kind !== "source-error") expect(canceled).toBe(1);
+				expect(fake.pending()).toBe(1);
+				expect(await (await fake.handler(request(raw))).json()).toEqual({ slot: 2 });
+				expect(fake.recorder.takeRequests()).toEqual([]);
+			} finally {
+				controller.abort(reason);
+				await Promise.allSettled([pending, rejection]);
+			}
+		},
+	);
+});
 
 describe("Messages reply kind snapshots", () => {
 	const body = "DYTEST reply body";

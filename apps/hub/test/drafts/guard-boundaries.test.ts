@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { NativeDraftRevisions } from "../../src/drafts/revisions.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import { MasterKey } from "../../src/kernel/master-key.ts";
-import { corruptRevisionStorage } from "./revision-corruption.ts";
+import { corruptRevisionStorage, signFixtureDraftRow } from "./revision-corruption.ts";
 import { revisionFixture } from "./revision-fixture.ts";
 
 const fixtures: Awaited<ReturnType<typeof revisionFixture>>[] = [];
@@ -58,7 +58,13 @@ describe("independent native revision guard boundaries", () => {
 		const f = await fixture();
 		const input = f.make();
 		f.store.write((tx) =>
-			f.revisions.auditInTransaction(tx, "draft.created", { draft: input.draftId }),
+			f.audit.append(tx, {
+				id: newId(f.time.now),
+				at: f.time.now,
+				action: "draft.created",
+				actor: { kind: "hub", id: null },
+				refs: { draft: input.draftId },
+			}),
 		);
 		const before = rows(f);
 		expect(() => f.create(input)).toThrow("Draft revision unavailable");
@@ -183,10 +189,7 @@ describe("independent native revision guard boundaries", () => {
 			const previous = "0".repeat(64);
 			expect(stored.previous).not.toBe(previous);
 			const signed = { ...stored, previous };
-			const mac = f.revisions.sign("revision", { binding: bound, ...signed });
-			expect(() =>
-				f.revisions.checkMac("revision", { binding: bound, ...signed }, mac),
-			).not.toThrow();
+			const mac = signFixtureDraftRow(f, "revision", { binding: bound, ...signed });
 			database
 				.prepare("UPDATE native_draft_revisions SET previous=?,mac=? WHERE draft_id=? AND rev=2")
 				.run(previous, mac, input.draftId);

@@ -6,6 +6,8 @@ import type { PluginManifestV1 } from "@draftyak/protocol/manifest";
 import type { ResponsesHttpBindingInput } from "@draftyak/protocol/manifest/responses-http";
 import type { SendTicket, TicketMismatch } from "@draftyak/protocol/send-ticket";
 import type { HostChannel, PluginEntry } from "@draftyak/sdk";
+import { type CompatibleHttpBindingInput, snapshotCompatibleHttpInput } from "./compatible-http.ts";
+import { type MessagesHttpBindingInput, snapshotMessagesHttpInput } from "./messages-http.ts";
 
 export interface MockPlugin {
 	readonly manifest: unknown;
@@ -26,6 +28,10 @@ export interface MockHubOptions {
 	readonly secrets?: Readonly<Record<string, string>>;
 	/** Trusted constructor inputs for the Responses fixture comparison; never call metadata. */
 	readonly responsesHttp?: readonly ResponsesHttpBindingInput[];
+	/** Independent completed-response fixture inputs; never call metadata or native authority. */
+	readonly compatibleHttp?: readonly CompatibleHttpBindingInput[];
+	/** Original Messages SDK request comparisons from independent constructor fixture DATA. */
+	readonly messagesHttp?: readonly MessagesHttpBindingInput[];
 }
 export interface RenderedRequest {
 	readonly outboxId: string;
@@ -134,6 +140,63 @@ export function copyResponsesHttpInputs(value: unknown): readonly ResponsesHttpB
 	}
 	return Object.freeze(inputs);
 }
+
+/** Capture the independent fixture DATA before other option reads can change it. */
+export function copyCompatibleHttpInputs(value: unknown): readonly CompatibleHttpBindingInput[] {
+	const invalid: () => never = () => {
+		throw new MockHubError("INVALID_COMPATIBLE_BINDINGS");
+	};
+	if (isProxy(value) || !Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype)
+		invalid();
+	const length: unknown = Object.getOwnPropertyDescriptor(value, "length")?.value;
+	if (
+		typeof length !== "number" ||
+		!Number.isSafeInteger(length) ||
+		length < 0 ||
+		length > HOST_MAX_ACTIVE_REQUESTS ||
+		Reflect.ownKeys(value).length !== length + 1
+	)
+		invalid();
+	const inputs: CompatibleHttpBindingInput[] = [];
+	for (let index = 0; index < length; index++) {
+		const slot = Object.getOwnPropertyDescriptor(value, String(index));
+		if (!slot?.enumerable || !Object.hasOwn(slot, "value")) invalid();
+		try {
+			inputs.push(snapshotCompatibleHttpInput(slot.value));
+		} catch {
+			invalid();
+		}
+	}
+	return Object.freeze(inputs);
+}
+export function copyMessagesHttpInputs(value: unknown): readonly MessagesHttpBindingInput[] {
+	const invalid: () => never = () => {
+		throw new MockHubError("INVALID_MESSAGES_BINDINGS");
+	};
+	if (isProxy(value) || !Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype)
+		invalid();
+	const length: unknown = Object.getOwnPropertyDescriptor(value, "length")?.value;
+	if (
+		typeof length !== "number" ||
+		!Number.isSafeInteger(length) ||
+		length < 0 ||
+		length > HOST_MAX_ACTIVE_REQUESTS ||
+		Reflect.ownKeys(value).length !== length + 1
+	)
+		invalid();
+	const inputs: MessagesHttpBindingInput[] = [];
+	for (let index = 0; index < length; index++) {
+		const slot = Object.getOwnPropertyDescriptor(value, String(index));
+		if (!slot?.enumerable || !Object.hasOwn(slot, "value")) invalid();
+		try {
+			inputs.push(snapshotMessagesHttpInput(slot.value));
+		} catch {
+			invalid();
+		}
+	}
+	return Object.freeze(inputs);
+}
+
 export class MockHubError extends Error {
 	readonly code: string;
 	constructor(code: string) {

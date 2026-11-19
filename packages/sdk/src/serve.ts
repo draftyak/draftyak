@@ -1,8 +1,10 @@
+import { types } from "node:util";
 import {
 	HOST_MAX_FRAME_BYTES,
 	jsonCopy,
 	LOOKUP_PERMIT_META_KEY,
 	LookupPermit,
+	PLUGIN_BOOTSTRAP_MAX_BYTES,
 } from "@draftyak/protocol/host-channel";
 import { canonicalize } from "@draftyak/protocol/jcs";
 import {
@@ -30,8 +32,8 @@ import * as z from "zod";
 import { createPluginContext, type PluginContext, type PluginInstance } from "./context.ts";
 import { dataCopy, fields, freezeJson } from "./definitions.ts";
 import { PluginError, pluginErrorResult } from "./errors.ts";
-import type { HostChannel } from "./host.ts";
-import { type StdioHost, stdioHost } from "./stdio.ts";
+import { type HostChannel, HostError } from "./host.ts";
+import { type StdioHost, type StdioHostOptions, stdioHost } from "./stdio.ts";
 
 z.config({ jitless: true });
 export type PluginCallMetadata = Readonly<Record<string, unknown>>;
@@ -84,17 +86,27 @@ export function createPluginServer(
 		throw new TypeError("Serving options refused");
 	let instance: PluginInstance | undefined;
 	if (Object.hasOwn(optionSlots, "instance")) {
-		const copy = dataCopy(optionSlots.instance?.value, 65_536);
-		const slots = fields(copy);
-		if (
-			Object.keys(slots).sort().join() !== "config,id" ||
-			typeof slots.id?.value !== "string" ||
-			!/^[!-~]{1,256}$/.test(slots.id.value)
-		)
-			throw new TypeError("Instance refused");
-		fields(slots.config?.value, 4096);
-		instance = freezeJson(copy) as PluginInstance;
+		instance = captureInstance(optionSlots.instance?.value);
 	}
+	return configuredPluginServer(entry, host, instance);
+}
+function captureInstance(raw: unknown): PluginInstance {
+	const copy = dataCopy(raw, PLUGIN_BOOTSTRAP_MAX_BYTES);
+	const slots = fields(copy);
+	if (
+		Object.keys(slots).sort().join() !== "config,id" ||
+		typeof slots.id?.value !== "string" ||
+		!/^[!-~]{1,256}$/.test(slots.id.value)
+	)
+		throw new TypeError("Instance refused");
+	fields(slots.config?.value, 4096);
+	return freezeJson(copy) as PluginInstance;
+}
+function configuredPluginServer(
+	entry: PluginEntry,
+	host: HostChannel,
+	instance: PluginInstance | undefined,
+): McpServerFactory {
 	const extensions = jsonCopy(entry.extensions);
 	const keys = Object.keys(extensions);
 	if (keys.length !== 1 || !EXTENSIONS.includes(keys[0] ?? ""))
@@ -268,6 +280,47 @@ export function serve(
 	} catch (error) {
 		if (!host) channel.close();
 		throw error;
+	}
+}
+/** Construct once from parent bootstrap DATA, then serve using the same captured instance. */
+export async function serveBootstrapped(
+	createEntry: (instance: PluginInstance) => PluginEntry,
+	options: Omit<StdioHostOptions, "bootstrap"> = {},
+): Promise<StdioServerHandle> {
+	if (typeof createEntry !== "function" || types.isProxy(createEntry))
+		throw new TypeError("Entry factory refused");
+	const slots = fields(options);
+	if (Object.keys(slots).some((key) => !["input", "output", "onerror", "signal"].includes(key)))
+		throw new TypeError("Bootstrap options refused");
+	const input = slots.input?.value as StdioHostOptions["input"];
+	const output = slots.output?.value as StdioHostOptions["output"];
+	const onerror = slots.onerror?.value as StdioHostOptions["onerror"];
+	const signal = slots.signal?.value as StdioHostOptions["signal"];
+	const channel = stdioHost({ input, output, onerror, signal, bootstrap: true });
+	let ended = false;
+	let unsubscribe = () => {};
+	try {
+		unsubscribe = channel.subscribe(
+			() => {},
+			() => {
+				ended = true;
+			},
+		);
+		const raw = await channel.bootstrap;
+		if (ended) throw new HostError("DENIED");
+		const instance = captureInstance(raw);
+		const entry = createEntry(instance);
+		if (ended) throw new HostError("DENIED");
+		return serveStdio(configuredPluginServer(entry, channel, instance), {
+			legacy: "reject",
+			transport: answered(channel.transport, onerror),
+			onerror,
+		});
+	} catch (error) {
+		channel.close();
+		throw error;
+	} finally {
+		unsubscribe();
 	}
 }
 /** A refused reply is reported and answered once with a small error, so no request waits out its timeout. */

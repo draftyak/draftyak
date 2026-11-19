@@ -1,4 +1,5 @@
 import { argon2, randomBytes, timingSafeEqual } from "node:crypto";
+import path from "node:path";
 import { AuditEvent } from "@draftyak/protocol/entities/audit";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AuditChain } from "../../src/audit/chain.ts";
@@ -918,7 +919,12 @@ it("keeps a failure pending past a lock set through another connection, then rec
 	commitFault(true);
 	await expect(pins.verify(user, "999999", "approval:n1")).rejects.toThrow("PIN_REQUIRED");
 	commitFault(false);
-	const otherStore = new HubStore({ filename: f.filename, masterKey: f.key, nativeBinding });
+	const otherStore = new HubStore({
+		filename: f.filename,
+		masterKey: f.key,
+		nativeBinding,
+		migrations: { shadow: path.join(f.dir, "shadow") },
+	});
 	const key = f.key.derive("audit");
 	const otherAudit = new AuditChain(key);
 	key.fill(0);

@@ -108,6 +108,10 @@ const materialDigest = (row: Pick<PinRow, "salt" | "hash" | "version">): Buffer 
 		.digest();
 const MAX_PROOFS = 128;
 const PROOF_TTL = 30_000;
+const restoreInstallers = new WeakMap<
+	object,
+	(tx: SqlTransaction, prepared: PinInitialization, user: string) => void
+>();
 
 async function hashPin(pin: string, salt: Uint8Array): Promise<Buffer> {
 	const input = Buffer.from(pin, "utf8");
@@ -146,6 +150,9 @@ export class PinService {
 		this.#store = store;
 		this.#audit = audit;
 		this.#clock = clock;
+		restoreInstallers.set(this, (tx, prepared, user) =>
+			this.#installForRestore(tx, prepared, user),
+		);
 	}
 	async initialize(user: string, pin: string): Promise<void> {
 		const prepared = await this.prepareInitialization(user, pin);
@@ -214,6 +221,55 @@ export class PinService {
 		} catch (error) {
 			throw pinFailure(error);
 		} finally {
+			record.hash.fill(0);
+			record.salt.fill(0);
+		}
+	}
+	#installForRestore(tx: SqlTransaction, prepared: PinInitialization, user: string): void {
+		// Refuse foreign, read-only and expired scopes before consuming an original preparation.
+		assertStoreTransaction(this.#store, tx);
+		const record = this.#initial.get(prepared);
+		this.#initial.delete(prepared);
+		if (!record) throw new PinError("PIN_REQUIRED");
+		let previous: PinRow | undefined;
+		try {
+			if (this.#locked || record.user !== user || !this.#fresh(record))
+				throw new PinError("PIN_REQUIRED");
+			previous = readPin(tx, user);
+			if (!previous || previous.version >= Number.MAX_SAFE_INTEGER)
+				throw new PinError("PIN_CHANGED");
+			const version = previous.version + 1;
+			if (
+				tx.run(
+					"UPDATE main.approval_pins SET salt=?,hash=?,version=?,failures=0,locked_until=0 WHERE user_id=? AND version=? AND salt=? AND hash=? AND failures=? AND locked_until=?",
+					[
+						record.salt,
+						record.hash,
+						version,
+						user,
+						previous.version,
+						previous.salt,
+						previous.hash,
+						previous.failures,
+						previous.locked_until,
+					],
+				).changes !== 1
+			)
+				throw new PinError("PIN_CHANGED");
+			appendAudit.call(this.#audit, tx, {
+				id: newId(),
+				at: utcMs(this.#clock.wallMs()),
+				action: "pin.restored",
+				actor: { kind: "hub", id: null },
+				refs: { user },
+			});
+			// Existing consume/verify compare version and material in their original native
+			// reads. Leave ephemeral entries intact so an outer rollback cannot revoke them.
+		} catch (error) {
+			throw pinFailure(error);
+		} finally {
+			previous?.hash.fill(0);
+			previous?.salt.fill(0);
 			record.hash.fill(0);
 			record.salt.fill(0);
 		}
@@ -382,4 +438,18 @@ export class PinService {
 		}
 		this.#initial.clear();
 	}
+}
+
+/** Original same-store restore composition only; this does not authorize a restore. */
+export function installPinForRestore(
+	pins: unknown,
+	tx: SqlTransaction,
+	prepared: PinInitialization,
+	user: string,
+): void {
+	if (pins === null || typeof pins !== "object" || types.isProxy(pins))
+		throw new PinError("PIN_REQUIRED");
+	const install = restoreInstallers.get(pins);
+	if (!install) throw new PinError("PIN_REQUIRED");
+	install(tx, prepared, user);
 }

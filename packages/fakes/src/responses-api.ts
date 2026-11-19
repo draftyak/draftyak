@@ -8,6 +8,25 @@ import { rawTarget } from "./target.ts";
 export const RESPONSES_API_HOST = "api.openai.com";
 export const RESPONSES_API_PATH = "/v1/responses";
 
+function modelMetadataTarget(target: string): boolean {
+	if (target === "/v1/models") return true;
+	const prefix = "/v1/models/";
+	if (!target.startsWith(prefix)) return false;
+	const segment = target.slice(prefix.length);
+	if (!segment || /[/\\?#]/.test(segment)) return false;
+	try {
+		const decoded = decodeURIComponent(segment);
+		// Keep one URL segment without normalizing a different raw target.
+		return (
+			decoded !== "." &&
+			decoded !== ".." &&
+			new URL(`https://${RESPONSES_API_HOST}${target}`).pathname === target
+		);
+	} catch {
+		return false;
+	}
+}
+
 interface Delivery {
 	readonly status?: number;
 	readonly headers?: Readonly<Record<string, string>>;
@@ -285,7 +304,7 @@ async function acceptsDraft(request: Request): Promise<boolean> {
 
 /**
  * Finite scripted Responses JSON/SSE. This fixture implements no request verifier or authority.
- * Matching POSTs consume at app admission, before awaits; pre-app fault delays may reorder them.
+ * Matching requests consume at app admission, before awaits; pre-app fault delays may reorder them.
  * A pre-app fault consumes no step, an after-app fault does. Exhaustion returns a fixed 503.
  * Recorder retains its existing configured body prefix/hash and selected header-value policy.
  * Test-script admission: 1024 queued steps, 64 MiB queued response bytes, 4096 SSE events,
@@ -353,8 +372,11 @@ function createResponsesApi(options: ResponsesApiFakeOptions, strict: boolean): 
 		},
 	};
 	const handler = async (request: Request): Promise<Response> => {
-		if (rawTarget(request) !== RESPONSES_API_PATH) return new Response(null, { status: 404 });
-		if (request.method !== "POST") return new Response(null, { status: 405 });
+		const target = rawTarget(request);
+		const draftRequest = target === RESPONSES_API_PATH;
+		if (!draftRequest && !modelMetadataTarget(target)) return new Response(null, { status: 404 });
+		if (request.method !== (draftRequest ? "POST" : "GET"))
+			return new Response(null, { status: 405 });
 		const step = queue.shift();
 		if (step) queuedBytes -= step.bytes.byteLength;
 		if (!step)
@@ -368,7 +390,7 @@ function createResponsesApi(options: ResponsesApiFakeOptions, strict: boolean): 
 				},
 				{ status: 503 },
 			);
-		if (strict) {
+		if (strict && draftRequest) {
 			if (!(await acceptsDraft(request)))
 				return Response.json(
 					{

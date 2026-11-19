@@ -15,6 +15,22 @@ const config: UserConfig = defineConfig({
 		{ from: "src/credentials/migrations/*.sql", to: "dist/credentials/migrations" },
 		{ from: "src/outbox/migrations/*.sql", to: "dist/outbox/migrations" },
 		{ from: "src/plugins/registry/migrations/*.sql", to: "dist/plugins/registry/migrations" },
+		{ from: "src/accounts/migrations/*.sql", to: "dist/accounts/migrations" },
+		{ from: "src/identity/challenges-migrations/*.sql", to: "dist/identity/challenges-migrations" },
+		{ from: "src/outbox/verifier-migrations/*.sql", to: "dist/outbox/verifier-migrations" },
+		{ from: "src/outbox/propose-migrations/*.sql", to: "dist/outbox/propose-migrations" },
+		{ from: "src/identity/admin-migrations/*.sql", to: "dist/identity/admin-migrations" },
+		{
+			from: "src/identity/admin-challenge-migrations/*.sql",
+			to: "dist/identity/admin-challenge-migrations",
+		},
+		{ from: "src/sync/raw-migrations/*.sql", to: "dist/sync/raw-migrations" },
+		{ from: "src/recovery/backup-migrations/*.sql", to: "dist/recovery/backup-migrations" },
+		{ from: "src/identity/backup-migrations/*.sql", to: "dist/identity/backup-migrations" },
+		{
+			from: "src/identity/backup-challenge-migrations/*.sql",
+			to: "dist/identity/backup-challenge-migrations",
+		},
 	],
 });
 export default config;

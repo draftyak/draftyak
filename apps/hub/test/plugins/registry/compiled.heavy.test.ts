@@ -25,6 +25,9 @@ it("loads the compiled registry root export and delivered migration in a genuine
 		expect(
 			readFileSync(path.join(hub, "dist/plugins/registry/migrations/0001_registry.sql")),
 		).toEqual(readFileSync(path.join(hub, "src/plugins/registry/migrations/0001_registry.sql")));
+		expect(
+			readFileSync(path.join(hub, "dist/plugins/registry/migrations/0002_candidates.sql")),
+		).toEqual(readFileSync(path.join(hub, "src/plugins/registry/migrations/0002_candidates.sql")));
 		const child = spawnSync(
 			process.execPath,
 			[
@@ -62,7 +65,7 @@ it("loads the compiled registry root export and delivered migration in a genuine
 		expect(child.error === undefined).toBe(true);
 		expect(child.signal).toBe(null);
 		expect(child.status).toBe(0);
-		expect(receipt).toEqual({ ok: true, network: false, child: false, schemas: 2 });
+		expect(receipt).toEqual({ ok: true, network: false, child: false, schemas: 4 });
 	} finally {
 		cleanup();
 	}

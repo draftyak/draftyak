@@ -1,10 +1,13 @@
 import { statSync, writeFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExtensionError } from "../../src/extensions/errors.ts";
 import { type ExtensionLogEntry, MODULE_TIMEOUT_MS } from "../../src/extensions/registry.ts";
 import { systemClock, type TimerClock } from "../../src/kernel/clock.ts";
+import { admitDataFolder, type DataFolder } from "../../src/kernel/data-directory.ts";
 import { newId } from "../../src/kernel/ids.ts";
 import { HUB_NAMESPACES } from "../../src/kernel/namespaces.ts";
+import { assertHubSessionAdmission, HubSessionError } from "../../src/lifecycle/session.ts";
 import { HubStore } from "../../src/store/store.ts";
 import { resetTrace, trace } from "../extensions/helpers.ts";
 import {
@@ -22,9 +25,25 @@ import {
 	sessionFixture,
 } from "./session-helpers.ts";
 
+const admissions = vi.hoisted(() => ({
+	opened: [] as { folder: string; admission: DataFolder }[],
+}));
+vi.mock("../../src/kernel/data-directory.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../src/kernel/data-directory.ts")>();
+	return {
+		...actual,
+		admitDataFolder: (...args: Parameters<typeof actual.admitDataFolder>) => {
+			const admission = actual.admitDataFolder(...args);
+			admissions.opened.push({ folder: args[0], admission });
+			return admission;
+		},
+	};
+});
+
 let f: SessionFixture;
 beforeEach(() => {
 	resetTrace();
+	admissions.opened.length = 0;
 	f = sessionFixture();
 });
 afterEach(() => f.remove());
@@ -32,6 +51,156 @@ afterEach(() => f.remove());
 const user = newId(1);
 const TABLES =
 	"SELECT name FROM main.sqlite_schema WHERE type='table' AND name IN ('audit_meta','hub_meta') ORDER BY name";
+
+function admissionRefusal(operation: () => unknown): void {
+	let error: unknown;
+	try {
+		operation();
+	} catch (reason) {
+		error = reason;
+	}
+	expect(error).toBeInstanceOf(HubSessionError);
+	expect(error).toMatchObject({
+		name: "HubSessionError",
+		code: "SESSION_UNAVAILABLE",
+		message: "SESSION_UNAVAILABLE",
+	});
+	expect(Object.hasOwn(error as object, "cause")).toBe(false);
+	expect(String(error)).not.toContain(f.folder);
+}
+
+describe("original session admission", () => {
+	it("returns undefined for a fresh unbootstrapped session without plugin state or writes", async () => {
+		const session = await f.open();
+		const state = session.devices.currentState();
+		expect(state.bootstrapDone).toBe(false);
+		expect(state.ownerUserId).toBeNull();
+		const before = { files: listing(f.folder), schema: session.store.read((db) => db.all(TABLES)) };
+		expect(before.files).not.toContain("plugins");
+		for (let check = 0; check < 2; check++)
+			expect(assertHubSessionAdmission(session)).toBeUndefined();
+		expect(session.devices.currentState()).toEqual(state);
+		expect({
+			files: listing(f.folder),
+			schema: session.store.read((db) => db.all(TABLES)),
+		}).toEqual(before);
+		expect(trace()).toEqual([]);
+	});
+
+	it("rejects forged, inherited, copied and proxy sessions without reading caller fields", async () => {
+		const session = await f.open();
+		let reads = 0;
+		const trap = (): never => {
+			reads++;
+			throw new Error("DYTEST caller field evaluated");
+		};
+		const handlers = {
+			get: trap,
+			getPrototypeOf: trap,
+			getOwnPropertyDescriptor: trap,
+			ownKeys: trap,
+		};
+		const proxy = new Proxy(session, handlers);
+		const revoked = Proxy.revocable(session, handlers);
+		revoked.revoke();
+		const accessor = Object.defineProperty({}, "store", { get: trap });
+		const copy = { ...session };
+		for (const candidate of [
+			undefined,
+			null,
+			false,
+			1,
+			"session",
+			() => session,
+			[],
+			{},
+			copy,
+			Object.create(session),
+			Object.assign(Object.create(null), session),
+			accessor,
+			proxy,
+			revoked.proxy,
+		])
+			admissionRefusal(() => assertHubSessionAdmission(candidate));
+		admissionRefusal(() => Reflect.apply(assertHubSessionAdmission, session, []));
+		admissionRefusal(() => Reflect.apply(assertHubSessionAdmission, session, [copy]));
+		expect(Reflect.apply(assertHubSessionAdmission, proxy, [session])).toBeUndefined();
+		expect(reads).toBe(0);
+	});
+
+	it("never revives an earlier session when a new genuine session owns the folder", async () => {
+		const first = await f.open();
+		await first.close();
+		admissionRefusal(() => assertHubSessionAdmission(first));
+		const second = await f.open();
+		expect(assertHubSessionAdmission(second)).toBeUndefined();
+		admissionRefusal(() => assertHubSessionAdmission(first));
+	});
+
+	it("uses the captured genuine Store key check despite an instance method replacement", async () => {
+		const session = await f.open();
+		const before = Object.getOwnPropertyDescriptor(session.store, "assertMasterKey");
+		let spoofed = 0;
+		Object.defineProperty(session.store, "assertMasterKey", {
+			configurable: true,
+			value: () => {
+				spoofed++;
+			},
+		});
+		try {
+			expect(assertHubSessionAdmission(session)).toBeUndefined();
+			session.store.close();
+			admissionRefusal(() => assertHubSessionAdmission(session));
+			expect(spoofed).toBe(0);
+		} finally {
+			if (before) Object.defineProperty(session.store, "assertMasterKey", before);
+			else Reflect.deleteProperty(session.store, "assertMasterKey");
+		}
+	});
+
+	it("rejects the destroyed original key despite a public derivation replacement", async () => {
+		const key = f.key();
+		const session = await f.open({ masterKey: key });
+		const before = Object.getOwnPropertyDescriptor(key, "derive");
+		let spoofed = 0;
+		Object.defineProperty(key, "derive", {
+			configurable: true,
+			value: () => {
+				spoofed++;
+				return Buffer.alloc(32);
+			},
+		});
+		try {
+			expect(assertHubSessionAdmission(session)).toBeUndefined();
+			key.destroy();
+			admissionRefusal(() => assertHubSessionAdmission(session));
+			expect(spoofed).toBe(0);
+		} finally {
+			if (before) Object.defineProperty(key, "derive", before);
+			else Reflect.deleteProperty(key, "derive");
+		}
+	});
+
+	it("cannot replace its released original admission with a newly acquired real lease", async () => {
+		const session = await f.open();
+		const original = admissions.opened.findLast((entry) => entry.folder === f.folder)?.admission;
+		if (!original) throw new Error("Original session admission was not captured");
+		expect(assertHubSessionAdmission(session)).toBeUndefined();
+		original.release();
+		admissionRefusal(() => assertHubSessionAdmission(session));
+		const replacement = admitDataFolder(f.folder, { nativeBinding });
+		try {
+			expect(replacement).not.toBe(original);
+			expect(() => replacement.assertHeld()).not.toThrow();
+			admissionRefusal(() => assertHubSessionAdmission(session));
+			expect(() => replacement.assertHeld()).not.toThrow();
+			expect(replacement.path).toBe(f.folder);
+			expect(replacement.runPath).toBe(path.join(f.folder, "run"));
+		} finally {
+			replacement.release();
+		}
+	});
+});
 
 describe("open", () => {
 	it("creates the hub on a first run and reopens it with the same key", async () => {
@@ -45,9 +214,9 @@ describe("open", () => {
 		]);
 		first.store.read((db) => first.audit.verify(db));
 		expect(first.extensions.modules).toEqual([]);
-		first.close();
+		await first.close();
 		expectErased(key);
-		expect(listing(f.folder)).toEqual(["draftyak.db"]);
+		expect(listing(f.folder)).toEqual(["draftyak.db", "run"]);
 		const second = await f.open();
 		expect([second.hubId, second.hid, second.identity.certificate]).toEqual([
 			first.hubId,
@@ -58,7 +227,7 @@ describe("open", () => {
 
 	it("refuses another key without writing, deleting or creating an identity", async () => {
 		const first = await f.open();
-		first.close();
+		await first.close();
 		const before = { files: listing(f.folder), hash: digest(f.database) };
 		const wrong = f.otherKey();
 		expect((await refusal(f.open({ masterKey: wrong }))).code).toBe("UNLOCK_REFUSED");
@@ -76,7 +245,7 @@ describe("open", () => {
 			"Database was never initialized; remove this unused empty database before creating it again",
 		]);
 		expectErased(key);
-		expect(listing(f.folder)).toEqual(["draftyak.db"]);
+		expect(listing(f.folder)).toEqual(["draftyak.db", "run"]);
 		expect(statSync(f.database).size).toBe(0);
 	});
 
@@ -98,7 +267,7 @@ describe("open", () => {
 				"Audit storage is missing or incomplete. Restore a valid backup; remove and recreate the database only if it was never used.",
 			]);
 			expectErased(key);
-			expect(listing(f.folder)).toEqual(["draftyak.db"]);
+			expect(listing(f.folder)).toEqual(["draftyak.db", "run"]);
 		}
 		const check = new HubStore({ filename: f.database, nativeBinding, masterKey: f.key() });
 		try {
@@ -117,10 +286,10 @@ describe("close", () => {
 		await expect(session.pins.verify("not-a-user", PIN, "approval")).rejects.toThrow("PIN_INVALID");
 		expect(() => session.audit.verify(noRows)).toThrow("Audit head verification failed");
 		expectUsable(key);
-		session.close();
+		await session.close();
 		await expectLocked(session);
 		expectErased(key);
-		session.close();
+		await session.close();
 		expectErased(key);
 	});
 
@@ -134,7 +303,7 @@ describe("close", () => {
 		);
 		await first.pins.initialize(user, PIN);
 		const proof = await first.pins.verify(user, PIN, "approval");
-		first.close();
+		await first.close();
 		await expect(first.pins.verify(user, PIN, "approval")).rejects.toThrow("PIN_REQUIRED");
 		const second = await f.open({ clock });
 		expect(() =>
@@ -161,16 +330,16 @@ describe("close", () => {
 		expectErased(waiting);
 		first.store.read((db) => first.audit.verify(db));
 		first.identity.tlsPrivateKey().fill(0);
-		first.close();
+		await first.close();
 		const second = await f.open();
 		expect(second.hubId).toBe(first.hubId);
 	});
 
 	it("ignores a repeated close of an earlier session while a later one holds the folder", async () => {
 		const first = await f.open();
-		first.close();
+		await first.close();
 		const second = await f.open();
-		first.close();
+		await first.close();
 		const waiting = f.key();
 		expect((await refusal(f.open({ masterKey: waiting }))).code).toBe("SESSION_ACTIVE");
 		expectErased(waiting);
@@ -190,7 +359,7 @@ describe("extensions", () => {
 		const [sink] = session.extensions.providers("auditSink");
 		expect(sink?.id).toBe("sink");
 		expect(listing(f.folder)).toContain("ext-probe.db");
-		session.close();
+		await session.close();
 		expect(session.extensions.providers("auditSink")).toEqual([]);
 		expect(() => sink?.append({} as never)).toThrow(ExtensionError);
 		const reopened = await f.open();
