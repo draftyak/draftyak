@@ -500,6 +500,7 @@ export function createProviderHttpBroker(options: {
 				assertRequestActive();
 			};
 			if (closed || active.size >= HOST_MAX_ACTIVE_REQUESTS) throw refused();
+			active.add(controller);
 			signal.throwIfAborted();
 			assertNativeCurrent();
 			// Capture all request and pinned prompt bytes before the first DNS/vault await.
@@ -541,7 +542,6 @@ export function createProviderHttpBroker(options: {
 					}),
 				});
 			}
-			active.add(controller);
 			signal.addEventListener("abort", abort, { once: true });
 			timer = setTimeout(abort, HOST_REQUEST_TIMEOUT_MS);
 			const answers = await resolveEgressAnswers(
