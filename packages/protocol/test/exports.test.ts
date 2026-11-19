@@ -80,6 +80,7 @@ const publicModules = [
 	"normalized-change",
 	"oauth-relay",
 	"pairing",
+	"retry-after",
 	"scalars",
 	"schedule",
 	"scheduled-summary",
