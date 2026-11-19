@@ -12,7 +12,7 @@ import {
 	PluginError,
 	type PluginRequestContext,
 } from "@draftyak/sdk";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type CompatibleFormat, MAX_RESPONSE_BYTES } from "../src/index.ts";
 import {
 	COMPATIBLE_CALL_TIMEOUT_MS,
@@ -28,6 +28,16 @@ const prompt = {
 	system: "DYTEST trusted\r\nCaf\u00e9",
 	prompt: "DYTEST thread\n\u{1f98a}",
 };
+
+const directFetch = vi.fn(() => Promise.reject(new Error("Direct fetch refused")));
+beforeEach(() => {
+	directFetch.mockClear();
+	vi.stubGlobal("fetch", directFetch);
+});
+afterEach(() => {
+	vi.unstubAllGlobals();
+	expect(directFetch).not.toHaveBeenCalled();
+});
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;
@@ -265,6 +275,7 @@ describe("compatible provider SDK tools", () => {
 	});
 
 	it.each([
+		{ status: 400, code: "INVALID_INPUT" },
 		{ status: 401, code: "AUTH_REVOKED" },
 		{ status: 403, code: "PERMISSION_DENIED" },
 		{ status: 429, code: "RATE_LIMITED" },
@@ -290,8 +301,32 @@ describe("compatible provider SDK tools", () => {
 		}
 	});
 
+	it("preserves quota and retry hints without exposing provider error text", async () => {
+		const response = reply(
+			{ error: { code: "insufficient_quota", message: "DYTEST-private-quota-detail" } },
+			429,
+			{ "retry-after": "2" },
+		);
+		const h = mounted("json_schema", async () => response);
+		try {
+			await expect(h.invoke("ai_draft_generate", REQUEST)).rejects.toSatisfy(
+				(error: unknown) =>
+					error instanceof PluginError &&
+					error.message === "QUOTA_EXCEEDED" &&
+					error.result.code === "QUOTA_EXCEEDED" &&
+					error.result.retryAfterMs === 2000 &&
+					!JSON.stringify(error.result).includes("DYTEST-private"),
+			);
+			expect(h.calls).toHaveLength(1);
+			expect(response.body?.locked).toBe(false);
+		} finally {
+			h.close();
+		}
+	});
+
 	it.each([
 		{ failure: new HostError("DENIED"), code: "PERMISSION_DENIED" },
+		{ failure: new HostError("TIMEOUT"), code: "TRANSIENT" },
 		{ failure: new Error("DYTEST-private-transport-detail"), code: "TRANSIENT" },
 	])("sanitizes a rejected transport as $code without retrying", async ({ failure, code }) => {
 		failure.message = "DYTEST-private-transport-detail";
@@ -366,6 +401,65 @@ describe("compatible provider SDK tools", () => {
 			h.close();
 		}
 	});
+
+	it.each([0, 1])(
+		"bounds the aggregate completed response at MAX_RESPONSE_BYTES + %i",
+		async (extra) => {
+			const value = envelope("json_schema");
+			const empty = JSON.stringify({ ...value, padding: "" });
+			const body = Buffer.from(
+				JSON.stringify({
+					...value,
+					padding: "x".repeat(MAX_RESPONSE_BYTES + extra - Buffer.byteLength(empty)),
+				}),
+			);
+			expect(body.byteLength).toBe(MAX_RESPONSE_BYTES + extra);
+			let offset = 0;
+			let chunks = 0;
+			let cancelled = 0;
+			const response = new Response(
+				new ReadableStream<Uint8Array>(
+					{
+						pull(controller) {
+							if (offset === body.byteLength) {
+								controller.close();
+								return;
+							}
+							const chunk = body.subarray(offset, offset + 65_536);
+							offset += chunk.byteLength;
+							chunks++;
+							controller.enqueue(chunk);
+						},
+						cancel() {
+							cancelled++;
+						},
+					},
+					{ highWaterMark: 0 },
+				),
+				{ headers: { "content-type": "application/json" } },
+			);
+			const h = mounted("json_schema", async () => response);
+			try {
+				if (extra === 0) {
+					expect(await h.invoke("ai_draft_generate", REQUEST)).toMatchObject({
+						kind: "draft",
+						output: OUTPUT,
+					});
+				} else {
+					await expect(h.invoke("ai_draft_generate", REQUEST)).rejects.toMatchObject({
+						result: { code: "TRANSIENT" },
+					});
+				}
+				expect(offset).toBe(body.byteLength);
+				expect(chunks).toBe(extra === 0 ? 4 : 5);
+				expect(cancelled).toBe(extra);
+				expect(response.body?.locked).toBe(false);
+				expect(h.calls).toHaveLength(1);
+			} finally {
+				h.close();
+			}
+		},
+	);
 
 	it("propagates caller cancellation to a pending body read and releases the reader", async () => {
 		const reading = deferred<void>();
@@ -457,6 +551,72 @@ describe("compatible provider SDK tools", () => {
 			expect(h.calls).toHaveLength(1);
 			expect(h.calls[0]?.init.signal?.aborted).toBe(true);
 			expect(progress.mock.calls.some(([value]) => value === 1)).toBe(false);
+		} finally {
+			h.controller.abort();
+			pending.resolve(response);
+			try {
+				await observed;
+				await cancellation.promise;
+				await vi.waitFor(() => expect(response.body?.locked).toBe(false));
+			} finally {
+				h.close();
+				vi.useRealTimers();
+			}
+		}
+	});
+
+	it("aborts pending work when heartbeat progress fails and cancels the late response", async () => {
+		vi.useFakeTimers({
+			toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"],
+		});
+		const started = deferred<void>();
+		const pending = deferred<Response>();
+		const cancellation = deferred<void>();
+		const response = new Response(
+			new ReadableStream<Uint8Array>({
+				cancel() {
+					cancellation.resolve();
+				},
+			}),
+		);
+		let progressCalls = 0;
+		const progress = vi.fn(async (_value: number, _total?: number) => {
+			if (++progressCalls === 2) throw new Error("DYTEST-private-progress-detail");
+		});
+		const h = mounted("json_schema", async () => {
+			started.resolve();
+			return pending.promise;
+		});
+		const observed = h
+			.invoke("ai_draft_generate", REQUEST, { progress })
+			.catch((error: unknown) => error);
+		try {
+			await started.promise;
+			expect(progress.mock.calls).toEqual([[0, 1]]);
+			await vi.advanceTimersByTimeAsync(COMPATIBLE_PROGRESS_INTERVAL_MS);
+			expect(h.calls[0]?.init.signal?.aborted).toBe(true);
+			const error = await observed;
+			expect(error).toSatisfy(
+				(value: unknown) =>
+					value instanceof PluginError &&
+					value.message === "TRANSIENT" &&
+					value.result.code === "TRANSIENT" &&
+					!JSON.stringify(value.result).includes("DYTEST-private"),
+			);
+			expect(progress.mock.calls).toEqual([
+				[0, 1],
+				[0, 1],
+			]);
+			pending.resolve(response);
+			await cancellation.promise;
+			await vi.waitFor(() => expect(response.body?.locked).toBe(false));
+			await vi.advanceTimersByTimeAsync(COMPATIBLE_PROGRESS_INTERVAL_MS * 2);
+			expect(progress.mock.calls).toEqual([
+				[0, 1],
+				[0, 1],
+			]);
+			expect(vi.getTimerCount()).toBe(0);
+			expect(h.calls).toHaveLength(1);
 		} finally {
 			h.controller.abort();
 			pending.resolve(response);
