@@ -60,6 +60,17 @@ interface Retention {
 	readonly phase: "opener" | "reveal";
 	readonly deadline: number;
 }
+
+export const nativeDeviceStatusRoute: {
+	readonly route: "status";
+	readonly method: "GET";
+	readonly path: "/device/v1/status";
+} = Object.freeze({
+	route: "status",
+	method: "GET",
+	path: "/device/v1/status",
+} as const);
+
 const HEADER_BYTES = 8192;
 const HEADER_COUNT = 16;
 const REQUEST_BYTES = 1024;
@@ -135,9 +146,9 @@ function match(request: IncomingMessage): Route {
 	const target = request.url;
 	if (target === undefined || !target.startsWith("/") || target.startsWith("//"))
 		return refuse("FORBIDDEN");
-	if (target === "/device/v1/status") {
-		if (request.method !== "GET") return refuse("INVALID_REQUEST");
-		return "status";
+	if (target === nativeDeviceStatusRoute.path) {
+		if (request.method !== nativeDeviceStatusRoute.method) return refuse("INVALID_REQUEST");
+		return nativeDeviceStatusRoute.route;
 	}
 	if (target === "/device/v1/scheduling/outbox") {
 		if (request.method !== "GET") return refuse("INVALID_REQUEST");
