@@ -2,7 +2,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { type AddressInfo, Socket } from "node:net";
 import { setImmediate as turn } from "node:timers/promises";
-import { type HostNotification, HostStreamChunk } from "@draftyak/protocol/host-channel";
+import {
+	HOST_MAX_ACTIVE_REQUESTS,
+	type HostNotification,
+	HostStreamChunk,
+} from "@draftyak/protocol/host-channel";
 import { MAX_INLINE_BYTES } from "@draftyak/protocol/normalized-change";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -289,6 +293,113 @@ afterEach(async () => {
 });
 
 describe("compatible loopback provider broker", () => {
+	it("bounds reentrant native-fence admissions before original DNS work settles", async () => {
+		const value = broker();
+		const origin = "http://models.example:8080";
+		const ownedControllers: AbortController[] = [];
+		const requests: Promise<unknown>[] = [];
+		const observations: Promise<void>[] = [];
+		const states: { kind: "pending" | "fulfilled" | "refused" | "other" }[] = [];
+		const resolutions: {
+			promise: Promise<readonly PinnedAddress[]>;
+			resolve: (value: readonly PinnedAddress[]) => void;
+		}[] = [];
+		let fenceCalls = 0,
+			dials = 0,
+			reentered = false;
+		let held:
+			| {
+					dns: number;
+					pending: number;
+					refused: number;
+					fulfilled: number;
+					other: number;
+					requests: number;
+			  }
+			| undefined;
+		const launch = (fence?: () => undefined): void => {
+			const controller = signal();
+			ownedControllers.push(controller);
+			const original =
+				fence === undefined
+					? run(value, input(origin), controller)
+					: withFence(value, input(origin), fence, controller);
+			requests.push(original);
+			const state: (typeof states)[number] = { kind: "pending" };
+			states.push(state);
+			observations.push(
+				original.then(
+					() => {
+						state.kind = "fulfilled";
+					},
+					(error: unknown) => {
+						state.kind = error instanceof ProviderHttpError ? "refused" : "other";
+					},
+				),
+			);
+		};
+		const fence = (): undefined => {
+			fenceCalls++;
+			if (!reentered) {
+				reentered = true;
+				for (let index = 0; index < HOST_MAX_ACTIVE_REQUESTS; index++) launch();
+			}
+			return undefined;
+		};
+		await withNetworkTestHooks(
+			{
+				resolve: () => {
+					const original = deferred<readonly PinnedAddress[]>();
+					resolutions.push(original);
+					releases.push(() => original.resolve(loopback));
+					return own(original.promise);
+				},
+				dial: () => {
+					dials++;
+					throw new Error("Unexpected admission-test dial");
+				},
+			},
+			async () => {
+				try {
+					launch(fence);
+					await turn();
+					held = {
+						dns: resolutions.length,
+						pending: states.filter(({ kind }) => kind === "pending").length,
+						refused: states.filter(({ kind }) => kind === "refused").length,
+						fulfilled: states.filter(({ kind }) => kind === "fulfilled").length,
+						other: states.filter(({ kind }) => kind === "other").length,
+						requests: requests.length,
+					};
+				} finally {
+					try {
+						for (const controller of ownedControllers) controller.abort();
+						value.close();
+					} finally {
+						for (const original of resolutions) original.resolve(loopback);
+						await Promise.allSettled([
+							...requests,
+							...resolutions.map(({ promise }) => promise),
+							...observations,
+						]);
+					}
+				}
+			},
+		);
+		// Observe admitted DNS work while every original resolution is held; assert only
+		// after all original calls and resolutions have settled. No constructed-controller
+		// count or preference for admitting the outer call stands in for the actual cap.
+		expect(held?.dns).toBe(HOST_MAX_ACTIVE_REQUESTS);
+		expect(held?.pending).toBe(HOST_MAX_ACTIVE_REQUESTS);
+		expect(held?.refused).toBe(1);
+		expect(held?.fulfilled).toBe(0);
+		expect(held?.other).toBe(0);
+		expect(held?.requests).toBe(HOST_MAX_ACTIVE_REQUESTS + 1);
+		expect(fenceCalls).toBe(1);
+		expect(dials).toBe(0);
+		expect(states.map(({ kind }) => kind)).toEqual(states.map(() => "refused"));
+	});
+
 	it.each(["caller abort", "broker close"] as const)(
 		"honors %s performed by the initial native fence before DNS or transport",
 		async (action) => {
