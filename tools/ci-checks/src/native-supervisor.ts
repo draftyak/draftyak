@@ -79,6 +79,8 @@ function refuse(code: Failure): never {
 }
 
 export interface NativeSupervisorContext extends NativeStoreContext {
+	/** Externally admitted control restriction; matching it grants no execution authority. */
+	readonly controlSha: string;
 	readonly runnerArch: string;
 	readonly arch: string;
 	readonly node: string;
@@ -92,6 +94,7 @@ export function nativeSupervisorContext(
 ): NativeSupervisorContext {
 	return {
 		...nativeStoreContext(env, platform),
+		controlSha: env.NATIVE_SUPERVISOR_CONTROL_SHA ?? "",
 		runnerArch: env.RUNNER_ARCH ?? "",
 		arch,
 		node,
@@ -102,6 +105,14 @@ export function nativeSupervisorContext(
 export function checkNativeSupervisorContext(
 	context: NativeSupervisorContext,
 ): NativeSupervisorSource {
+	if (
+		typeof context.controlSha !== "string" ||
+		context.controlSha.length !== 40 ||
+		!sha.test(context.controlSha) ||
+		context.controlSha !== context.sha ||
+		context.controlSha !== context.workflowSha
+	)
+		refuse("context");
 	if (
 		context.event !== "workflow_dispatch" ||
 		context.repository !== repository ||

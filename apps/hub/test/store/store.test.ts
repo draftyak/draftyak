@@ -102,7 +102,12 @@ describe("encrypted production store", () => {
 			() => new HubStore({ filename: f.filename, nativeBinding, masterKey: f.key, create: true }),
 		).toThrow("already exists");
 		wrong.destroy();
-		const reopened = new HubStore({ filename: f.filename, nativeBinding, masterKey: f.key });
+		const reopened = new HubStore({
+			filename: f.filename,
+			nativeBinding,
+			masterKey: f.key,
+			migrations: f.migrations,
+		});
 		expect(reopened.read((db) => db.get<{ id: string }>("SELECT id FROM test_rows"))?.id).toBe(
 			canary,
 		);
@@ -235,7 +240,7 @@ describe("encrypted production store", () => {
 		expect(f.store.read((db) => db.all("SELECT * FROM test_rows"))).toEqual([]);
 	});
 	it("copies the kernel migration map at construction instead of following later folder changes", async () => {
-		const folders = { audit: path.join(migrations, "audit") };
+		const folders = { ...f.migrations, audit: path.join(migrations, "audit") };
 		const store = new HubStore({
 			filename: f.filename,
 			nativeBinding,

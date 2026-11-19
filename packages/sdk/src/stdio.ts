@@ -11,20 +11,37 @@ import {
 	type HostNotification,
 	type HostReply,
 	jsonCopy,
+	PLUGIN_BOOTSTRAP_MAX_BYTES,
+	PluginBootstrap,
 	parseHostParams,
 	parseHostResult,
 } from "@draftyak/protocol/host-channel";
 import { canonicalize, parseStrict } from "@draftyak/protocol/jcs";
 import { parseJSONRPCMessage, type Transport } from "@modelcontextprotocol/server";
+import { dataCopy } from "./definitions.ts";
 import { type HostChannel, HostError, type HostRequestOptions } from "./host.ts";
 
 export interface StdioHost extends HostChannel {
 	readonly transport: Transport;
+	readonly bootstrap?: Promise<unknown>;
 }
 export interface StdioHostOptions {
 	readonly input?: Readable;
 	readonly output?: Writable;
 	readonly onerror?: (error: Error) => void;
+	readonly bootstrap?: boolean;
+	readonly signal?: AbortSignal;
+}
+
+/** Encode bootstrap DATA without evaluating caller-owned object behavior. */
+export function encodePluginBootstrap(instance: unknown): string {
+	const copy = dataCopy(instance, PLUGIN_BOOTSTRAP_MAX_BYTES);
+	const message = PluginBootstrap.parse({
+		jsonrpc: "2.0",
+		method: "host/bootstrap",
+		params: { instance: copy },
+	});
+	return `${HOST_FRAME_TAG}${canonicalize(message)}\n`;
 }
 interface Pending {
 	readonly method: HostMethod;
@@ -75,9 +92,29 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 	let closed = false;
 	let started = false;
 	let writes = 0;
+	const bootstrapping = options.bootstrap === true;
+	let bootstrapReceived = !bootstrapping;
+	let resolveBootstrap: ((instance: unknown) => void) | undefined;
+	let rejectBootstrap: ((error: unknown) => void) | undefined;
+	let bootstrapTimer: ReturnType<typeof setTimeout> | undefined;
+	let bootstrapSignal: AbortSignal | undefined;
+	const bootstrap = bootstrapping
+		? new Promise<unknown>((resolve, reject) => {
+				resolveBootstrap = resolve;
+				rejectBootstrap = reject;
+			})
+		: undefined;
+	void bootstrap?.catch(() => {});
+	const abortBootstrap = (): void => close();
+	const finishBootstrapWait = (): void => {
+		clearTimeout(bootstrapTimer);
+		bootstrapSignal?.removeEventListener("abort", abortBootstrap);
+	};
 	const close = (): void => {
 		if (closed) return;
 		closed = true;
+		finishBootstrapWait();
+		rejectBootstrap?.(new HostError("DENIED"));
 		const closing = [...subscriptions];
 		subscriptions.clear();
 		input.off("data", data);
@@ -159,6 +196,13 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 		const tagged = raw[0] === 0x1e;
 		if (raw.length - (tagged ? 1 : 0) > HOST_MAX_FRAME_BYTES) throw new HostError("TOO_LARGE");
 		const value = parseStrict(tagged ? raw.subarray(1) : raw);
+		if (bootstrapping && !bootstrapReceived) {
+			if (!tagged) throw new HostError("BAD_REQUEST");
+			const message = PluginBootstrap.parse(value);
+			bootstrapReceived = true;
+			resolveBootstrap?.(message.params.instance);
+			return;
+		}
 		if (!tagged) {
 			transport.onmessage?.(parseJSONRPCMessage(value));
 			return;
@@ -223,6 +267,12 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 		const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
 		let start = 0;
 		try {
+			if (bootstrapping && bootstrapReceived && !started) {
+				if (bytes.length + incoming.length > HOST_MAX_FRAME_BYTES + 1)
+					throw new HostError("TOO_LARGE");
+				bytes = Buffer.concat([bytes, incoming]);
+				return;
+			}
 			for (let index = 0; index < incoming.length; index++)
 				if (incoming[index] === 10) {
 					const part = incoming.subarray(start, index);
@@ -232,6 +282,7 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 					if (closed) return;
 					bytes = Buffer.alloc(0);
 					start = index + 1;
+					if (bootstrapping && !started) break;
 				}
 			if (bytes.length + incoming.length - start > HOST_MAX_FRAME_BYTES + 1)
 				throw new HostError("TOO_LARGE");
@@ -246,10 +297,18 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 	};
 	const transport: Transport = {
 		async start() {
-			if (started || closed) throw new HostError("DENIED");
+			if (started || closed || !bootstrapReceived) throw new HostError("DENIED");
 			started = true;
+			finishBootstrapWait();
+			if (bootstrapping && bytes.length > 0) {
+				const tail = bytes;
+				bytes = Buffer.alloc(0);
+				data(tail);
+			}
+			if (closed) throw new HostError("DENIED");
 		},
 		async send(message) {
+			if (bootstrapping && !started) throw new HostError("DENIED");
 			await write(message, false);
 		},
 		async close() {
@@ -260,14 +319,27 @@ export function stdioHost(options: StdioHostOptions = {}): StdioHost {
 	input.on("end", end);
 	input.on("error", fail);
 	output.on("error", fail);
+	if (bootstrapping) {
+		bootstrapTimer = setTimeout(fail, HOST_REQUEST_TIMEOUT_MS);
+		try {
+			bootstrapSignal =
+				options.signal === undefined ? undefined : AbortSignal.any([options.signal]);
+			if (hasAborted(bootstrapSignal)) close();
+			else bootstrapSignal?.addEventListener("abort", abortBootstrap, { once: true });
+		} catch {
+			fail();
+		}
+	}
 	return {
 		transport,
+		...(bootstrap ? { bootstrap } : {}),
 		request<M extends HostMethod>(
 			method: M,
 			params: HostMethods[M]["params"],
 			settings: HostRequestOptions = {},
 		): Promise<HostMethods[M]["result"]> {
 			if (closed) return Promise.reject(new HostError("DENIED"));
+			if (bootstrapping && !started) return Promise.reject(new HostError("DENIED"));
 			let requestedSignal: AbortSignal | undefined;
 			let signal: AbortSignal | undefined;
 			try {

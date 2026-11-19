@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@draftyak/fakes": "workspace:*",
+    "@draftyak/json-member": "workspace:*",
     "@draftyak/protocol": "workspace:*",
     "@draftyak/sdk": "workspace:*",
     "@modelcontextprotocol/client": "2.3.1",

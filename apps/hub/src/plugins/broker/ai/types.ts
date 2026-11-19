@@ -35,7 +35,7 @@ export type AiRequestBindingWithoutNetwork = Omit<AiRequestBinding, "answers" | 
 export interface ResponsesMetadataBindingWithoutNetwork {
 	readonly operation: "ai_models_list" | "ai_probe";
 	readonly configuration: {
-		readonly profile: "responses-api-v1";
+		readonly profile: "responses-api-v1" | "responses-plan-v1";
 		readonly endpoint: "https://api.openai.com/v1";
 		readonly model?: string;
 	};

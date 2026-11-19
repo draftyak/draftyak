@@ -23,6 +23,13 @@ interface Head {
 	audit_head: string;
 	audit_tag: string;
 }
+interface Segment {
+	readonly stamp: ReadStamp;
+	readonly from: number;
+	readonly previous: string;
+	readonly seq: number;
+	readonly mac: string;
+}
 export interface AuditExportOptions {
 	readonly afterSeq?: number;
 	readonly limit?: number;
@@ -73,6 +80,12 @@ const sameHead = (left: Head, right: Head): boolean =>
 	left.audit_seq === right.audit_seq &&
 	left.audit_head === right.audit_head &&
 	left.audit_tag === right.audit_tag;
+// Own writes in the live scope only append; another connection's commit ends reuse.
+const sameScope = (left: ReadStamp, right: ReadStamp): boolean =>
+	left.owner === right.owner &&
+	left.revision === right.revision &&
+	left.dataVersion === right.dataVersion &&
+	left.schemaVersion === right.schemaVersion;
 
 function pageOptions(options: AuditExportOptions): { afterSeq: number; limit: number } {
 	if (
@@ -110,6 +123,7 @@ export class AuditChain {
 	#destroyed = false;
 	// One bounded resume position. It retains no reader, database or caller callback.
 	#resume: { stamp: ReadStamp; head: Head; afterSeq: number; previous: string } | undefined;
+	readonly #segments = new WeakMap<SqlReader, Segment>();
 	constructor(key: Uint8Array) {
 		if (key.byteLength !== 32) throw new Error("Invalid audit key");
 		this.#key = Buffer.alloc(32);
@@ -232,6 +246,21 @@ export class AuditChain {
 		const { mac: actual, ...body } = row;
 		if (!equalMac(actual, this.#mac(body))) throw chainFailure();
 	}
+	#first(db: SqlReader, seq: number): { previous: string; mac: string } {
+		const row = db.get<AuditRow>(ANCHOR_SQL, [seq]);
+		if (
+			!row ||
+			row.seq !== seq ||
+			typeof row.previous !== "string" ||
+			(seq === 1 ? row.previous !== "" : !matches(row.previous)) ||
+			!matches(row.mac)
+		)
+			throw chainFailure();
+		this.#event(row);
+		const { mac, ...body } = row;
+		if (!equalMac(mac, this.#mac(body))) throw chainFailure();
+		return { previous: row.previous, mac };
+	}
 	#verifyPages(db: SqlReader, accept?: (row: AuditRow, event: AuditEvent) => void): Head {
 		const head = this.#head(db);
 		this.#count(db, head);
@@ -246,6 +275,57 @@ export class AuditChain {
 			this.#verifyPages(db);
 			if (stamp && !sameReadStamp(stamp, readStamp(db))) throw chainFailure();
 		} catch (error) {
+			if (this.#destroyed) throw new Error("Audit is locked");
+			throw error instanceof AuditVerificationError ? error : chainFailure();
+		}
+	}
+	/**
+	 * Authenticates every row from fromSeq through the tag-checked head and the total count; rows
+	 * before fromSeq are left to verify. Calls on one live store reader reuse the rows it has
+	 * already authenticated in that scope, never another reader's or a scope after a commit.
+	 */
+	verifySegment(db: SqlReader, fromSeq: number): void {
+		try {
+			const stamp = readStamp(db),
+				head = this.#head(db);
+			if (!Number.isSafeInteger(fromSeq) || fromSeq < 1 || fromSeq > head.audit_seq)
+				throw chainFailure();
+			this.#count(db, head);
+			const known = stamp ? this.#segments.get(db) : undefined;
+			let from = fromSeq,
+				previous: string;
+			if (stamp && known && sameScope(known.stamp, stamp) && head.audit_seq >= known.seq) {
+				if (this.#rows(db, known.seq, head.audit_seq, known.mac).previous !== head.audit_head)
+					throw headFailure();
+				if (fromSeq < known.from) {
+					const first = this.#first(db, fromSeq);
+					if (this.#rows(db, fromSeq, known.from - 1, first.mac).previous !== known.previous)
+						throw chainFailure();
+					previous = first.previous;
+				} else {
+					from = known.from;
+					previous = known.previous;
+				}
+			} else {
+				const first = this.#first(db, fromSeq);
+				if (this.#rows(db, fromSeq, head.audit_seq, first.mac).previous !== head.audit_head)
+					throw headFailure();
+				previous = first.previous;
+			}
+			if (!sameHead(head, this.#head(db))) throw headFailure();
+			this.#count(db, head);
+			if (stamp) {
+				if (!sameReadStamp(stamp, readStamp(db))) throw chainFailure();
+				this.#segments.set(db, {
+					stamp,
+					from,
+					previous,
+					seq: head.audit_seq,
+					mac: head.audit_head,
+				});
+			}
+		} catch (error) {
+			this.#segments.delete(db);
 			if (this.#destroyed) throw new Error("Audit is locked");
 			throw error instanceof AuditVerificationError ? error : chainFailure();
 		}
