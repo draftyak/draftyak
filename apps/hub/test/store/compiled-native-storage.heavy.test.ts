@@ -48,6 +48,7 @@ const assets = [
 		"credentials/migrations/0002_sealed_credentials.sql",
 	],
 	["outbox/migrations/0001_send_attempts.sql", "outbox/migrations/0001_send_attempts.sql"],
+	["outbox/migrations/0002_gmail_receipts.sql", "outbox/migrations/0002_gmail_receipts.sql"],
 	["accounts/migrations/0001_accounts.sql", "accounts/migrations/0001_accounts.sql"],
 	[
 		"plugins/registry/migrations/0001_registry.sql",
@@ -224,7 +225,7 @@ function compiled(mode: "healthy" | "missing-asset" | "invalid-sql" | "refused-s
 			path.join(import.meta.dirname, "fixtures/compiled-native-storage.mjs"),
 			path.join(stage, "fixture.mjs"),
 		);
-		expect(assets).toHaveLength(21);
+		expect(assets).toHaveLength(22);
 		for (const [source, built] of assets) {
 			const file = path.join(hub, "dist", built);
 			const original = path.join(hub, "src", source);

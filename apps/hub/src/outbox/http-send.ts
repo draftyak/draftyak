@@ -8,7 +8,7 @@ import {
 	HOST_MAX_HEADER_BYTES,
 	HOST_REQUEST_TIMEOUT_MS,
 } from "@draftyak/protocol/host-channel";
-import { CredentialVault } from "../credentials/vault.ts";
+import { type CredentialUse, type CredentialValue, CredentialVault } from "../credentials/vault.ts";
 import { MAX_WAIT_MS, systemClock, type TimerClock } from "../kernel/clock.ts";
 import {
 	captureEgressPolicy,
@@ -17,6 +17,11 @@ import {
 	resolveEgressAnswers,
 	validateEgressAnswers,
 } from "../plugins/broker/network/index.ts";
+import {
+	MAX_GMAIL_RECEIPT_METADATA_BYTES,
+	type NativeGmailSendReceiptData,
+} from "./gmail-receipt.ts";
+import { decodeGmailSendCandidate, decodeGmailSendReceipt } from "./gmail-send-data.ts";
 import type { SendAttempt } from "./ticket-storage.ts";
 import {
 	type NativeDispatchRequest,
@@ -62,10 +67,15 @@ interface ActualResponse {
 	headers: HeaderList;
 	body: Buffer;
 }
+export interface NativeGmailSendCompletion {
+	readonly attempt: SendAttempt;
+	readonly receipt?: NativeGmailSendReceiptData;
+}
 interface PendingState {
 	readonly response: ActualResponse;
-	readonly finish: () => void;
+	readonly finish: () => SendAttempt | undefined;
 	readonly live: () => boolean;
+	readonly completeGmail?: () => Promise<NativeGmailSendCompletion>;
 }
 const observations = new WeakMap<
 	NativeSendObservation,
@@ -100,6 +110,29 @@ export function abandonNativeSendClassification(handle: PendingNativeSendClassif
 	if (!pending) throw refused();
 	pending.finish();
 }
+/**
+ * Complete only the original operation's response and account-bound native readback.
+ * The logical result does not replace transport.drain(), which joins owned resource cleanup.
+ */
+export function completeNativeGmailSendClassification(
+	handle: PendingNativeSendClassification,
+): Promise<NativeGmailSendCompletion> {
+	const pending = classifications.get(handle);
+	classifications.delete(handle);
+	if (!pending?.live() || !pending.completeGmail) {
+		pending?.finish();
+		return Promise.reject(refused());
+	}
+	try {
+		return pending.completeGmail().catch(() => {
+			pending.finish();
+			throw refused();
+		});
+	} catch {
+		pending.finish();
+		return Promise.reject(refused());
+	}
+}
 export interface NativeHttpSendTransport {
 	send(redemption: SendRedemption, signal: AbortSignal): Promise<NativeSendObservation>;
 	close(): void;
@@ -110,6 +143,8 @@ interface OwnedSendWork {
 	readonly done: Promise<void>;
 	cleanup: () => boolean;
 	track<T>(task: Promise<T>): Promise<T>;
+	start<T>(operation: () => Promise<T>): Promise<T>;
+	failCleanup(): void;
 	seal(): void;
 	retryCleanup(): boolean;
 }
@@ -119,7 +154,9 @@ const beginDispatch = SendTicketLedger.prototype.beginDispatch,
 	assertVault = SendTicketLedger.prototype.assertVault,
 	prepareWrite = SendTicketLedger.prototype.prepareDispatchWrite,
 	assertWriteCurrent = SendTicketLedger.prototype.assertDispatchWriteCurrent,
-	recordOutcome = SendTicketLedger.prototype.recordOutcome;
+	recordOutcome = SendTicketLedger.prototype.recordOutcome,
+	completeGmailSend = SendTicketLedger.prototype.completeGmailSend;
+const apply = Reflect.apply;
 const signalPrototype = Object.getPrototypeOf(new AbortController().signal),
 	aborted = Object.getOwnPropertyDescriptor(signalPrototype, "aborted")?.get;
 function captureSignal(input: AbortSignal): AbortSignal {
@@ -240,6 +277,19 @@ export function createNativeHttpSendTransport(options: {
 				void task.then(settled, settled);
 				return task;
 			},
+			start<T>(operation: () => Promise<T>): Promise<T> {
+				const result = Promise.withResolvers<T>();
+				work.track(result.promise);
+				try {
+					void operation().then(result.resolve, result.reject);
+				} catch (error) {
+					result.reject(error);
+				}
+				return result.promise;
+			},
+			failCleanup(): void {
+				finalizationFailed = true;
+			},
 			seal(): void {
 				sealed = true;
 				finish();
@@ -271,6 +321,7 @@ export function createNativeHttpSendTransport(options: {
 			attempted = false,
 			settled = false,
 			pending = false,
+			classifying = false,
 			response: ActualResponse | undefined,
 			observation: NativeSendObservation | undefined;
 		let external: Disposable | undefined;
@@ -313,16 +364,18 @@ export function createNativeHttpSendTransport(options: {
 			return clean;
 		};
 		work.cleanup = cleanup;
-		function finishPending(): void {
+		function finishPending(): SendAttempt | undefined {
 			if (!pending || settled) return;
 			pending = false;
+			let attempt: SendAttempt | undefined;
 			try {
-				finishOutcome("UNKNOWN");
+				attempt = finishOutcome("UNKNOWN");
 			} catch {
 				/* A failed durable record stays unavailable/SENDING for recovery. */
 			}
 			if (observation) observations.delete(observation);
 			cleanup();
+			return attempt;
 		}
 		active.add(context);
 		external = addAbortListener(signal, context.cancel);
@@ -431,10 +484,170 @@ export function createNativeHttpSendTransport(options: {
 			external[Symbol.dispose]();
 			external = undefined;
 			pending = true;
+			const classificationWall = clock.wallMs(),
+				classificationMono = clock.monotonicMs();
+			const classificationExpired = (): boolean => {
+				const wallNow = clock.wallMs(),
+					monoNow = clock.monotonicMs();
+				return (
+					!Number.isFinite(classificationWall) ||
+					!Number.isFinite(classificationMono) ||
+					!Number.isFinite(wallNow) ||
+					!Number.isFinite(monoNow) ||
+					wallNow < classificationWall ||
+					monoNow < classificationMono ||
+					wallNow >= classificationWall + classificationMs ||
+					monoNow >= classificationMono + classificationMs
+				);
+			};
+			const completeGmail = async (): Promise<NativeGmailSendCompletion> => {
+				if (!pending || settled || classifying || !dispatch || !response) throw refused();
+				classifying = true;
+				const unknown = (): NativeGmailSendCompletion => {
+					const attempt = finishPending();
+					if (!attempt) throw refused();
+					return Object.freeze({ attempt });
+				};
+				if (classificationExpired()) return unknown();
+				const candidate = decodeGmailSendCandidate(response.status, response.body);
+				if (!candidate) return unknown();
+				const readController = new AbortController();
+				const readStop = new AbortController();
+				let readAbort: Disposable | undefined,
+					invocationAbort: Disposable | undefined,
+					readWatch: Promise<void> | undefined;
+				try {
+					readAbort = addAbortListener(controller.signal, () => readController.abort());
+					invocationAbort = addAbortListener(signal, () => readController.abort());
+					if (apply(aborted as (this: AbortSignal) => boolean, signal, [])) readController.abort();
+					const readWall = clock.wallMs(),
+						readMono = clock.monotonicMs();
+					const readExpired = (): boolean => {
+						const wallNow = clock.wallMs(),
+							monoNow = clock.monotonicMs();
+						return (
+							readController.signal.aborted ||
+							classificationExpired() ||
+							!Number.isFinite(readWall) ||
+							!Number.isFinite(readMono) ||
+							!Number.isFinite(wallNow) ||
+							!Number.isFinite(monoNow) ||
+							wallNow < readWall ||
+							monoNow < readMono ||
+							wallNow >= readWall + HOST_REQUEST_TIMEOUT_MS ||
+							monoNow >= readMono + HOST_REQUEST_TIMEOUT_MS
+						);
+					};
+					readWatch = work.start(async () => {
+						try {
+							for (;;) {
+								if (readExpired()) {
+									readController.abort();
+									return;
+								}
+								const remaining = Math.min(
+									readWall + HOST_REQUEST_TIMEOUT_MS - clock.wallMs(),
+									readMono + HOST_REQUEST_TIMEOUT_MS - clock.monotonicMs(),
+								);
+								await clock.after(Math.min(MAX_WAIT_MS, Math.ceil(remaining)), readStop.signal);
+							}
+						} catch {
+							if (!readStop.signal.aborted) readController.abort();
+						}
+					});
+					let receipt: NativeGmailSendReceiptData | undefined;
+					try {
+						await work.start(() =>
+							apply(useCredential, vault, [
+								rendered.credential.reference,
+								rendered.credential.binding,
+								{ requestClass: "read", signal: readController.signal },
+								(value: CredentialValue, use: CredentialUse) =>
+									work.start(async () => {
+										if (
+											value.kind !== "gmail-oauth" ||
+											use.reference !== rendered.credential.reference ||
+											use.generation !== rendered.credential.generation ||
+											use.binding.ownerKind !== "account" ||
+											rendered.credential.binding.ownerKind !== "account" ||
+											use.binding.ownerId !== rendered.credential.binding.ownerId ||
+											use.binding.kind !== "gmail-oauth" ||
+											readExpired()
+										)
+											throw refused();
+										const key = value.accessToken;
+										if (!key || key.length > 8192 || !/^[!-~]+$/.test(key)) throw refused();
+										const leaseAbort = addAbortListener(use.signal, () => readController.abort());
+										let metadata: ActualResponse | undefined;
+										try {
+											metadata = await fetchPinnedGmailReceipt(
+												work,
+												candidate,
+												pin,
+												policy,
+												key,
+												readController.signal,
+												readExpired,
+												() => {
+													if (
+														use.signal.aborted ||
+														readExpired() ||
+														apply(describeCredential, vault, [use.reference, use.binding])
+															.generation !== use.generation
+													)
+														throw refused();
+												},
+											);
+											receipt = decodeGmailSendReceipt(candidate, metadata.body);
+										} finally {
+											metadata?.body.fill(0);
+											leaseAbort[Symbol.dispose]();
+										}
+									}),
+							]),
+						);
+					} catch {
+						// A complete authentic readback survives a later credential post-check failure.
+						if (!receipt) return unknown();
+					}
+					if (!pending || settled || !receipt) throw refused();
+					if (classificationExpired()) return unknown();
+					pending = false;
+					settled = true;
+					try {
+						return apply(completeGmailSend, ledger, [dispatch, receipt]);
+					} catch {
+						finalizationFailed = true;
+						throw refused();
+					}
+				} finally {
+					for (const dispose of [
+						() => readStop.abort(),
+						() => readController.abort(),
+						() => readAbort?.[Symbol.dispose](),
+						() => invocationAbort?.[Symbol.dispose](),
+					])
+						try {
+							dispose();
+						} catch {
+							work.failCleanup();
+						}
+					await readWatch;
+					if (observation) observations.delete(observation);
+					cleanup();
+				}
+			};
 			const state: PendingState = {
 				response,
 				finish: finishPending,
-				live: () => pending && !settled,
+				live: () => pending && !settled && !classifying,
+				...(rendered.credential.binding.kind === "gmail-oauth"
+					? {
+							completeGmail: () => {
+								return work.start(completeGmail);
+							},
+						}
+					: {}),
 			};
 			observation = Object.freeze(Object.create(null)) as NativeSendObservation;
 			observations.set(observation, { pending: state });
@@ -501,6 +714,191 @@ export function createNativeHttpSendTransport(options: {
 		},
 		close,
 		drain,
+	});
+}
+
+function fetchPinnedGmailReceipt(
+	work: OwnedSendWork,
+	providerId: string,
+	pin: Parameters<typeof createPinnedHttpsConnection>[2],
+	policy: EgressPolicy,
+	key: string,
+	signal: AbortSignal,
+	expired: () => boolean,
+	checkCurrent: () => void,
+): Promise<ActualResponse> {
+	const closed = Promise.withResolvers<void>();
+	work.track(closed.promise);
+	let connection: ReturnType<typeof createPinnedHttpsConnection>;
+	try {
+		connection = createPinnedHttpsConnection("gmail.googleapis.com", 443, pin, policy);
+	} catch {
+		closed.resolve();
+		return Promise.reject(refused());
+	}
+	return new Promise((resolve, reject) => {
+		let req: ClientRequest | undefined,
+			incoming: IncomingMessage | undefined,
+			settled = false,
+			length = 0,
+			chunkCount = 0,
+			wrote = false;
+		let requestClosed: Promise<void> | undefined,
+			responseClosed: Promise<void> | undefined,
+			socketClosed: Promise<void> | undefined;
+		const chunks: Buffer[] = [],
+			keyBytes = Buffer.from(key, "ascii");
+		let tail: Buffer = Buffer.alloc(0);
+		const finish = (result?: ActualResponse): void => {
+			if (settled) return;
+			settled = true;
+			let clean = true;
+			for (const dispose of [
+				() => listener[Symbol.dispose](),
+				() => incoming?.destroy(),
+				() => req?.destroy(),
+				() => connection.destroy(),
+			])
+				try {
+					dispose();
+				} catch {
+					clean = false;
+					work.failCleanup();
+				}
+			for (const chunk of chunks) chunk.fill(0);
+			tail.fill(0);
+			keyBytes.fill(0);
+			void (async () => {
+				await requestClosed;
+				await responseClosed;
+				await socketClosed;
+			})().then(closed.resolve, closed.reject);
+			if (result && clean) resolve(result);
+			else {
+				result?.body.fill(0);
+				reject(refused());
+			}
+		};
+		const fail = (): void => finish(),
+			listener = addAbortListener(signal, fail);
+		try {
+			signal.throwIfAborted();
+			req = request({
+				...connection.options,
+				method: "GET",
+				path: `/gmail/v1/users/me/messages/${encodeURIComponent(providerId)}?format=metadata`,
+				headers: { ...connection.options.headers },
+			});
+			const requestDone = Promise.withResolvers<void>();
+			requestClosed = requestDone.promise;
+			req.once("close", () => {
+				requestDone.resolve();
+				if (!settled) fail();
+			});
+			req.once("socket", (socket) => {
+				const socketDone = Promise.withResolvers<void>();
+				socketClosed = socketDone.promise;
+				socket.once("close", () => socketDone.resolve());
+				work.track(socketClosed);
+				if (socket.closed) socketDone.resolve();
+				if (settled) socket.destroy();
+			});
+			req.once("error", fail);
+			req.once("upgrade", (_response, socket) => {
+				socket.destroy();
+				fail();
+			});
+			connection.guard(
+				req,
+				() => expired() || settled,
+				() => {
+					try {
+						if (expired() || settled) throw refused();
+						const outgoing = req;
+						if (!outgoing) throw refused();
+						outgoing.setHeader("authorization", `Bearer ${key}`);
+						outgoing.setHeader("accept", "application/json");
+						outgoing.setHeader("accept-encoding", "identity");
+						checkCurrent();
+						if (expired()) throw refused();
+						wrote = true;
+						outgoing.end();
+					} catch {
+						fail();
+					}
+				},
+				fail,
+			);
+			req.once("response", (response) => {
+				incoming = response;
+				const responseDone = Promise.withResolvers<void>();
+				responseClosed = responseDone.promise;
+				response.once("close", () => responseDone.resolve());
+				work.track(responseClosed);
+				if (response.closed) responseDone.resolve();
+				if (settled) {
+					response.destroy();
+					return;
+				}
+				try {
+					if (expired() || !wrote) throw refused();
+					const status = response.statusCode;
+					if (
+						status === undefined ||
+						status < 200 ||
+						status >= 300 ||
+						(response.headers["content-encoding"] &&
+							response.headers["content-encoding"] !== "identity") ||
+						response.rawHeaders.length > 128 ||
+						Buffer.byteLength(response.rawHeaders.join("")) > HOST_MAX_HEADER_BYTES
+					)
+						throw refused();
+					for (const value of response.rawHeaders) if (value.includes(key)) throw refused();
+					response.once("aborted", fail);
+					response.once("error", fail);
+					response.on("data", (raw: Buffer) => {
+						if (settled) return;
+						try {
+							chunkCount++;
+							if (
+								expired() ||
+								!Buffer.isBuffer(raw) ||
+								chunkCount > 8192 ||
+								raw.length > MAX_GMAIL_RECEIPT_METADATA_BYTES - length
+							)
+								throw refused();
+							const joined = Buffer.concat([tail, raw]);
+							tail.fill(0);
+							try {
+								if (joined.includes(keyBytes)) throw refused();
+								tail = Buffer.from(
+									joined.subarray(Math.max(0, joined.length - keyBytes.length + 1)),
+								);
+							} finally {
+								joined.fill(0);
+							}
+							length += raw.length;
+							chunks.push(Buffer.from(raw));
+						} catch {
+							fail();
+						}
+					});
+					response.once("end", () => {
+						if (settled) return;
+						try {
+							if (expired() || !response.complete) throw refused();
+							finish({ status, headers: Object.freeze([]), body: Buffer.concat(chunks, length) });
+						} catch {
+							fail();
+						}
+					});
+				} catch {
+					fail();
+				}
+			});
+		} catch {
+			fail();
+		}
 	});
 }
 

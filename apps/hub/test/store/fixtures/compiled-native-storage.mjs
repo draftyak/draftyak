@@ -140,7 +140,7 @@ async function run() {
 				}
 				for (const name of [
 					"device_authority", "devices", "jobs", "jobs_meta", "events", "event_meta", "native_drafts",
-					"native_draft_revisions", "native_draft_locks", "credentials", "native_send_attempts", "accounts",
+					"native_draft_revisions", "native_draft_locks", "credentials", "native_send_attempts", "native_gmail_send_receipts", "accounts",
 					"plugin_versions", "plugin_generations", "plugin_registry_identities", "plugin_candidates", "native_backup_recovery",
 					...approvalTables,
 				]) {
@@ -168,10 +168,10 @@ async function run() {
 					}
 					const applied = sql.get(`SELECT count(*) AS n FROM _migrations_${namespace}`).n;
 					assert.equal(applied,
-						namespace === "credentials" || namespace === "revisions" || namespace === "pluginregistry" ? 2 : 1);
+						namespace === "credentials" || namespace === "revisions" || namespace === "pluginregistry" || namespace === "tickets" ? 2 : 1);
 					appliedMigrations += applied;
 				}
-				assert.equal(appliedMigrations, 21);
+				assert.equal(appliedMigrations, 22);
 				assert.equal(sql.get("SELECT count(*) AS n FROM audit_meta").n, 1);
 				assert.equal(sql.get("SELECT count(*) AS n FROM hub_meta").n, 1);
 				const core = sql.get("SELECT singleton,identity_wrapped,statement_wrapped,identity_cert FROM hub_meta");
@@ -181,6 +181,7 @@ async function run() {
 				assert.deepEqual(sql.get("SELECT singleton,epoch,bootstrap_done,owner_user_id FROM device_authority"),
 					{ singleton: 1, epoch: 0, bootstrap_done: 0, owner_user_id: null });
 				assert.equal(sql.get("SELECT count(*) AS n FROM devices").n, 0);
+				assert.equal(sql.get("SELECT count(*) AS n FROM native_gmail_send_receipts").n, 0);
 				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_versions").n, 0);
 				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_generations").n, 0);
 				assert.equal(sql.get("SELECT count(*) AS n FROM plugin_registry_identities").n, 0);

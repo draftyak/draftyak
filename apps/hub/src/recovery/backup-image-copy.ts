@@ -40,6 +40,7 @@ const tables: readonly Table[] = [
 		"native_send_attempts",
 		"id,outbox_id,ticket_id,payload,body,state,updated_at,audit_seq,mac",
 	),
+	table("native_gmail_send_receipts", "attempt_id,receipt", "attempt_id"),
 	table("accounts", "id,user_id,plugin_instance_id,generation,account_json"),
 	table("plugin_versions", "id,plugin_id,version,descriptor,created_at"),
 	table("plugin_generations", "id,plugin_id,version_id,owner_user_id,epoch,generation,state"),
