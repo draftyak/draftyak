@@ -1,4 +1,8 @@
-import { type AccountsSnapshot, createAccountsController } from "../inbox/accounts-controller.ts";
+import {
+	type AccountsController,
+	type AccountsSnapshot,
+	createAccountsController,
+} from "../inbox/accounts-controller.ts";
 import {
 	type ApplicationClient,
 	createQueryApplicationClient,
@@ -14,6 +18,7 @@ export type ApplicationSnapshot =
 	| { readonly status: "closed"; readonly view: SettingsAppView };
 
 export interface ApplicationController {
+	readonly accountDirectory: Pick<AccountsController, "getSnapshot" | "subscribe">;
 	getSnapshot(): ApplicationSnapshot;
 	subscribe(notify: () => void): () => void;
 	start(): Promise<void>;
@@ -39,6 +44,10 @@ export function createApplicationController(
 	const requests = createQueryApplicationClient(client);
 	const settings = createSettingsAppController(requests, initialView);
 	const accounts = createAccountsController(requests);
+	const accountDirectory = Object.freeze({
+		getSnapshot: accounts.getSnapshot,
+		subscribe: accounts.subscribe,
+	});
 	const startupAbort = new AbortController();
 	const subscriptions = new Set<() => void>();
 	const refreshes = new Set<Promise<void>>();
@@ -201,6 +210,7 @@ export function createApplicationController(
 	}
 
 	return Object.freeze({
+		accountDirectory,
 		getSnapshot: (): ApplicationSnapshot => snapshot,
 		subscribe(notify: () => void): () => void {
 			if (closed || typeof notify !== "function") return () => {};

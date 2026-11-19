@@ -8,7 +8,7 @@ import type {
 export type ReadyAccountsSnapshot = Extract<AccountsSnapshot, { status: "ready" }>;
 
 export interface AccountDirectoryPaneProps {
-	readonly controller: AccountsController;
+	readonly controller: Pick<AccountsController, "getSnapshot" | "subscribe">;
 	/** A bound selection intent. Its owner supplies the outcome presentation. */
 	readonly onSelectAccount?: (
 		record: AccountsRecord,
@@ -17,7 +17,7 @@ export interface AccountDirectoryPaneProps {
 }
 
 function action(
-	controller: AccountsController,
+	controller: AccountDirectoryPaneProps["controller"],
 	snapshot: AccountsSnapshot,
 	invoke: () => void,
 ): void {
@@ -30,7 +30,7 @@ function action(
 }
 
 function readyPage(
-	controller: AccountsController,
+	controller: AccountDirectoryPaneProps["controller"],
 	snapshot: ReadyAccountsSnapshot,
 	onSelectAccount: AccountDirectoryPaneProps["onSelectAccount"],
 ): ReactElement {

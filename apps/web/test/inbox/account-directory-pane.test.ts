@@ -136,7 +136,11 @@ afterEach(async () => {
 describe("AccountDirectoryPane with the real directory controller", () => {
 	it("loads explicitly, preserves duplicate rows and counts only the actual current page", async () => {
 		const input = fixture();
-		render(createElement(AccountDirectoryPane, { controller: input.controller }));
+		const view = Object.freeze({
+			getSnapshot: input.controller.getSnapshot,
+			subscribe: input.controller.subscribe,
+		});
+		render(createElement(AccountDirectoryPane, { controller: view }));
 		expect(input.calls).toHaveLength(0);
 		fireEvent.click(pane().getByRole("button", { name: "Load accounts" }));
 		expect(callAt(input, 0).afterId).toBeNull();
