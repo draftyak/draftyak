@@ -2,7 +2,6 @@ import { aiProviderV1 } from "@draftyak/protocol/ai-provider-v1";
 import type { HeaderList } from "@draftyak/protocol/hash";
 import { headersSha256 } from "@draftyak/protocol/hash";
 import { HOST_MAX_HEADER_BYTES } from "@draftyak/protocol/host-channel";
-import { parseStrict } from "@draftyak/protocol/jcs";
 import { AI_HTTP_PROFILES, type AiProfile } from "@draftyak/protocol/manifest/ai-http";
 import {
 	addressFacts,
@@ -21,6 +20,7 @@ import {
 	messagesMetadataLifecycle,
 	reserveMessagesMetadata,
 } from "./messages-metadata.ts";
+import { parseCapturedAiRequestBody } from "./request-json.ts";
 import {
 	captureResponsesMetadataBinding,
 	responsesMetadataEndpoint,
@@ -186,7 +186,22 @@ export function captureAiRequestInputs(
 				: captureResponsesMetadataInputs(candidate, binding);
 		const value = fields(candidate, ["method", "url", "headers", "body"]);
 		if (value.method !== "POST") refuse();
-		const source = fields(binding, ["draft", "settings", "endpoint"]);
+		const source = fields(
+			binding,
+			["draft", "settings", "endpoint", "authentication", "expectedDestination"],
+			["draft", "settings", "endpoint"],
+		);
+		const hasAuthentication = Object.hasOwn(source, "authentication");
+		const hasDestination = Object.hasOwn(source, "expectedDestination");
+		const authentication = hasAuthentication ? source.authentication : "provider-key";
+		if (authentication !== "provider-key" && authentication !== "none") refuse();
+		const expectedDestination = hasDestination ? source.expectedDestination : undefined;
+		if (
+			(hasAuthentication && !hasDestination) ||
+			(hasDestination &&
+				!["local", "local-network", "cloud"].includes(expectedDestination as string))
+		)
+			refuse();
 		const endpoint = text(source.endpoint, 2048);
 		if (text(value.url, 2048) !== endpoint) refuse();
 		const url = new URL(endpoint);
@@ -201,13 +216,21 @@ export function captureAiRequestInputs(
 			{ jitless: true },
 		);
 		if (!parsed.success) refuse();
+		const settings = captureSettings(source.settings);
+		if (
+			authentication === "none" &&
+			(settings.kind !== "compatible" || expectedDestination !== "local")
+		)
+			refuse();
 		const capturedBinding = Object.freeze({
 			draft: Object.freeze({
 				...parsed.data,
 				contextIds: Object.freeze([...parsed.data.contextIds]),
 			}),
-			settings: captureSettings(source.settings),
+			settings,
 			endpoint,
+			authentication,
+			expectedDestination: expectedDestination as AiRequestBinding["expectedDestination"],
 		});
 		const snapshot = Object.freeze({
 			method: "POST",
@@ -296,6 +319,19 @@ export function aiRequestEndpoint(handle: CapturedAiRequestInputs): string {
 			: source.reservation.url;
 }
 
+/** Captured native expectations are data, not a permission to disclose or connect. */
+export function aiRequestTransport(handle: CapturedAiRequestInputs): Readonly<{
+	authentication: "provider-key" | "none";
+	expectedDestination: AiRequestBinding["expectedDestination"];
+}> {
+	const source = captured(handle);
+	return Object.freeze({
+		authentication:
+			source.kind === "draft" ? (source.binding.authentication ?? "provider-key") : "provider-key",
+		expectedDestination: source.kind === "draft" ? source.binding.expectedDestination : "cloud",
+	});
+}
+
 function routing(
 	endpoint: string,
 	settings: AiProviderSettings,
@@ -359,7 +395,7 @@ export function verifyCapturedAiRequest(
 			},
 		);
 		if (source.kind === "draft") {
-			const body = parseStrict(candidate.body);
+			const body = parseCapturedAiRequestBody(candidate.body);
 			registration.verify({ body, headers: new Map(candidate.headers), binding: source.binding });
 		} else {
 			registration.verifyMetadata?.({
@@ -403,11 +439,19 @@ export function verifyAiRequest(
 	candidate: AiCandidateRequest,
 	binding: AiRequestBinding,
 ): VerifiedAiRequest {
-	const input = fields(binding, ["draft", "settings", "endpoint", "answers", "policy"]);
+	const input = fields(
+		binding,
+		["draft", "settings", "endpoint", "answers", "policy", "authentication", "expectedDestination"],
+		["draft", "settings", "endpoint", "answers", "policy"],
+	);
 	const capture = captureAiRequestInputs(candidate, {
 		draft: input.draft,
 		settings: input.settings,
 		endpoint: input.endpoint,
+		...(Object.hasOwn(input, "authentication") ? { authentication: input.authentication } : {}),
+		...(Object.hasOwn(input, "expectedDestination")
+			? { expectedDestination: input.expectedDestination }
+			: {}),
 	});
 	return verifyCapturedAiRequest(registry, id, capture, {
 		answers: input.answers as readonly PinnedAddress[],

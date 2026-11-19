@@ -17,6 +17,11 @@ export {
 	resolveEgressAnswers,
 	validateEgressAnswers,
 } from "./addresses.ts";
+export { classifyEndpoint, type EndpointClassification } from "./endpoint.ts";
+export {
+	createPinnedHttpConnection,
+	type PinnedHttpConnection,
+} from "./pinned-http.ts";
 export {
 	createPinnedHttpsConnection,
 	type PinnedHttpsConnection,

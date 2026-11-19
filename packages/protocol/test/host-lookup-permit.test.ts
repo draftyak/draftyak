@@ -79,7 +79,7 @@ describe("lookup membership host contract", () => {
 		const headerRow: [string, string] = ["accept", "text/plain"];
 		const input = { ...base, headers: [headerRow], lookupPermit: permit };
 		const parsed = parseHostParams("host/fetch", input);
-		input.lookupPermit = "_".repeat(42) + "8";
+		input.lookupPermit = `${"_".repeat(42)}8`;
 		headerRow[1] = "changed";
 		expect(parsed.lookupPermit).toBe(permit);
 		expect(parsed.headers).toEqual([["accept", "text/plain"]]);

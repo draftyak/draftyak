@@ -777,7 +777,7 @@ describe("workflow policy", () => {
 			}
 		).jobs;
 		expect(ci.windows?.if).toBe(
-			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && needs.changes.outputs.native-transport == 'true'))",
+			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && (needs.changes.outputs.native-transport == 'true' || (contains(fromJSON(needs.changes.outputs.areas), 'heavy:...{./apps/hub}') || contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/hub')))))",
 		);
 		expect(
 			ci.windows?.steps.find((step) => step.run === "pnpm verify --profile windows-core"),
@@ -2140,12 +2140,19 @@ describe("Windows verification workload partition", () => {
 			hub = ci["windows-hub-tests"],
 			core = ci.windows;
 		if (!tests || !hub || !core) throw new Error("all Windows workloads must exist");
+		const eventPrefix =
+			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && ";
+		const nativeTransport = "needs.changes.outputs.native-transport == 'true'";
+		const storeCrash =
+			"(contains(fromJSON(needs.changes.outputs.areas), 'heavy:...{./apps/hub}') || contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/hub'))";
+		const shardSelection = eventPrefix + nativeTransport + "))";
+		expect(core.if).toBe(eventPrefix + "(" + nativeTransport + " || " + storeCrash + ")))");
 		expect(tests.needs).toEqual(["changes", "windows"]);
-		expect(tests.if).toBe("needs.windows.result == 'success' && " + core.if);
+		expect(tests.if).toBe("needs.windows.result == 'success' && " + shardSelection);
 		expect(hub.needs).toEqual(["changes", "windows", "windows-tests"]);
 		expect(hub.if).toBe(
 			"always() && needs.windows.result == 'success' && (needs.windows-tests.result == 'success' || needs.windows-tests.result == 'failure') && " +
-				core.if,
+				shardSelection,
 		);
 		expect(ci.required?.needs).toEqual([
 			"changes",
