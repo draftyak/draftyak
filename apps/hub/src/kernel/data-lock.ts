@@ -6,13 +6,46 @@ import { StartupRefusal } from "../lifecycle/preflight.ts";
 const LOCK_FILE = "hub.lock";
 
 export interface DataLock {
-	/** Refuses with `DATA_DIR_LOCK_IO` unless `<run>/hub.lock` is still the locked file. */
+	/** Refuses after release begins, or unless `<run>/hub.lock` is still the locked file. */
 	assertHeld(): void;
 	release(): void;
 }
 
 // A collected connection closes itself and would drop the lock, so held ones stay reachable.
 const held = new Set<Database.Database>();
+interface OriginalLock {
+	readonly connection: Database.Database;
+	readonly close: Database.Database["close"];
+}
+// These admissions never returned a lease. A later admission retries their ORIGINAL cleanup first.
+const failedAdmissions = new Set<OriginalLock>();
+let pendingDrainInProgress = false;
+
+function closeOriginal(original: OriginalLock): void {
+	const { connection, close } = original;
+	if (connection.open) close.call(connection);
+	if (connection.open) throw new StartupRefusal("DATA_DIR_LOCK_IO");
+	held.delete(connection);
+}
+
+function retryFailedAdmissions(): void {
+	if (pendingDrainInProgress) throw new StartupRefusal("DATA_DIR_LOCK_IO");
+	pendingDrainInProgress = true;
+	let incomplete = false;
+	try {
+		for (const original of failedAdmissions) {
+			try {
+				closeOriginal(original);
+				failedAdmissions.delete(original);
+			} catch {
+				incomplete = true;
+			}
+		}
+	} finally {
+		pendingDrainInProgress = false;
+	}
+	if (incomplete) throw new StartupRefusal("DATA_DIR_LOCK_IO");
+}
 
 const isBindingPath = (value: unknown): value is string =>
 	typeof value === "string" && path.isAbsolute(value) && path.extname(value) === ".node";
@@ -43,9 +76,11 @@ const same = (one: BigIntStats, other: BigIntStats): boolean =>
  * the process ends. Another holder, in this process or another, is refused at once.
  */
 export function holdDataLock(runPath: string, nativeBinding: string): DataLock {
-	let db: Database.Database | undefined, file: string, locked: BigIntStats;
+	let original: OriginalLock | undefined, file: string, locked: BigIntStats;
 	try {
 		if (!isBindingPath(nativeBinding)) throw new Error("Native binding refused");
+		// Only failed, never-returned admissions are drained; active leases stay with their owners.
+		retryFailedAdmissions();
 		file = path.join(runPath, LOCK_FILE);
 		let before: BigIntStats | undefined;
 		try {
@@ -53,7 +88,9 @@ export function holdDataLock(runPath: string, nativeBinding: string): DataLock {
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 		}
-		db = new Database(file, { nativeBinding, timeout: 0 });
+		const db = new Database(file, { nativeBinding, timeout: 0 });
+		original = { connection: db, close: db.close };
+		held.add(db);
 		// No journal file: the lock never writes a page, and nothing is left beside it.
 		db.pragma("journal_mode = MEMORY");
 		db.exec("BEGIN EXCLUSIVE");
@@ -72,10 +109,13 @@ export function holdDataLock(runPath: string, nativeBinding: string): DataLock {
 		)
 			throw new Error("Lock file refused");
 	} catch (error) {
-		try {
-			db?.close();
-		} catch {
-			// The refusal stands; an unclosed connection is unreachable and closes when collected.
+		if (original) {
+			failedAdmissions.add(original);
+			try {
+				retryFailedAdmissions();
+			} catch {
+				// Retain every original actor until an explicit later admission finishes its cleanup.
+			}
 		}
 		throw new StartupRefusal(
 			(error as { code?: unknown } | null | undefined)?.code === "SQLITE_BUSY"
@@ -83,12 +123,17 @@ export function holdDataLock(runPath: string, nativeBinding: string): DataLock {
 				: "DATA_DIR_LOCK_IO",
 		);
 	}
-	const connection = db,
+	if (!original) throw new StartupRefusal("DATA_DIR_LOCK_IO");
+	const resource = original,
+		connection = resource.connection,
 		lockPath = file,
 		identity = locked;
-	held.add(connection);
+	let closing = false,
+		released = false,
+		releaseInProgress = false;
 	return Object.freeze({
 		assertHeld(): void {
+			if (closing) throw new StartupRefusal("DATA_DIR_LOCK_IO");
 			let current: BigIntStats | undefined;
 			try {
 				current = lockFile(lockPath);
@@ -99,8 +144,18 @@ export function holdDataLock(runPath: string, nativeBinding: string): DataLock {
 				throw new StartupRefusal("DATA_DIR_LOCK_IO");
 		},
 		release(): void {
-			held.delete(connection);
-			connection.close();
+			if (released) return;
+			closing = true;
+			if (releaseInProgress) throw new StartupRefusal("DATA_DIR_LOCK_IO");
+			releaseInProgress = true;
+			try {
+				closeOriginal(resource);
+				released = true;
+			} catch {
+				throw new StartupRefusal("DATA_DIR_LOCK_IO");
+			} finally {
+				releaseInProgress = false;
+			}
 		},
 	});
 }
