@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 import {
+	INVENTORY_DIRECTORY_READ_BUDGET,
 	INVENTORY_SENTINEL,
 	inventoryEnvironment,
 	type OwnedProcess,
@@ -33,6 +34,7 @@ export interface InventoryIo {
 }
 
 export interface InventoryHost {
+	readonly signal?: AbortSignal;
 	git(args: readonly string[]): Promise<InventoryGitResult>;
 	readDirectory: ReadDirectory;
 	statPath: StatPath;
@@ -44,6 +46,7 @@ export interface InventoryHost {
 }
 
 export interface ObservedInventoryHost extends InventoryHost {
+	readonly signal: AbortSignal;
 	snapshot(): InventoryProgressCounters;
 }
 
@@ -72,15 +75,16 @@ export function createInventoryHost(
 	ports: InventoryIo = io,
 	onStop?: () => void,
 ): ObservedInventoryHost {
-	let stopped = false;
+	const cancellation = new AbortController();
+	const { signal } = cancellation;
 	let activeFs = 0;
 	let directoryVisits = 0;
 	let entries = 0;
 	const fsWaiters = new Set<() => void>();
 	const children = new Map<OwnedProcess, Promise<void>>();
 	const stop = (): void => {
-		if (stopped) return;
-		stopped = true;
+		if (signal.aborted) return;
+		cancellation.abort();
 		try {
 			onStop?.();
 		} catch {
@@ -102,25 +106,26 @@ export function createInventoryHost(
 		}
 	};
 	const track = async <T>(work: () => Promise<T>): Promise<T> => {
-		if (stopped) throw failed();
+		if (signal.aborted) throw failed();
 		activeFs += 1;
 		try {
 			const result = await work();
-			if (stopped) throw failed();
+			if (signal.aborted) throw failed();
 			return result;
 		} finally {
 			releaseFs();
 		}
 	};
 	return {
+		signal,
 		readDirectory: async (directory) => {
-			if (stopped) throw failed();
+			if (signal.aborted) throw failed();
 			activeFs += 1;
 			try {
 				directoryVisits += 1;
 				const found = await ports.readDirectory(directory);
 				entries += found.length;
-				if (stopped) throw failed();
+				if (signal.aborted) throw failed();
 				return found;
 			} finally {
 				releaseFs();
@@ -128,7 +133,7 @@ export function createInventoryHost(
 		},
 		statPath: (target) => track(() => ports.statPath(target)),
 		snapshot: () => ({ pendingGit: children.size, pendingFs: activeFs, directoryVisits, entries }),
-		stopped: () => stopped,
+		stopped: () => signal.aborted,
 		stop,
 		drained: () => activeFs === 0 && children.size === 0,
 		drain: async () => {
@@ -138,7 +143,7 @@ export function createInventoryHost(
 		write: (bytes, ack) => ports.write(bytes, ack),
 		git: (args) =>
 			new Promise<InventoryGitResult>((resolve, reject) => {
-				if (stopped) {
+				if (signal.aborted) {
 					reject(failed());
 					return;
 				}
@@ -187,7 +192,7 @@ export function createInventoryHost(
 					children.delete(child);
 					closed.resolve();
 					const bytes = Buffer.concat(chunks);
-					if (refused || stopped || code === null || !isUtf8(bytes)) reject(failed());
+					if (refused || signal.aborted || code === null || !isUtf8(bytes)) reject(failed());
 					else resolve({ code, stdout: bytes.toString("utf8") });
 				});
 			}),
@@ -232,7 +237,9 @@ export async function inventoryWorktrees(
 		const workerCount = liveWorkerCount;
 		const readCapacity = (): number => {
 			if (liveWorkerCount < 1) throw failed();
-			return Math.floor(64 / liveWorkerCount);
+			// Keep each walk's existing validated maximum while sharing the larger
+			// process-wide filesystem capacity across the same sixteen root workers.
+			return Math.min(64, Math.floor(INVENTORY_DIRECTORY_READ_BUDGET / liveWorkerCount));
 		};
 		const worker = async (): Promise<void> => {
 			try {
@@ -248,6 +255,7 @@ export async function inventoryWorktrees(
 							host.readDirectory,
 							host.statPath,
 							readCapacity,
+							host.signal,
 						);
 						if (found.length !== 0) throw failed();
 					} catch {

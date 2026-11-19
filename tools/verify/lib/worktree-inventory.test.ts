@@ -117,7 +117,7 @@ class Process implements OwnedProcess {
 }
 
 describe("plain Node worktree inventory", () => {
-	it("covers every invented root and descendant with sixteen roots and four reads per root without following links", async () => {
+	it("shares bounded read capacity across sixteen roots and drains every descendant without following links", async () => {
 		const f = virtual(),
 			release = Promise.withResolvers<void>();
 		const admitted = new Set<string>(),
@@ -136,12 +136,12 @@ describe("plain Node worktree inventory", () => {
 				activeRoots++;
 				peakRoots = Math.max(peakRoots, activeRoots);
 				return [
-					...Array.from({ length: 5 }, (_, i) => entry(`child${i}`, true)),
+					...Array.from({ length: 12 }, (_, i) => entry(`child${i}`, true)),
 					entry("cycle", true, true),
 				];
 			}
 			const parent = path.dirname(target);
-			if (!f.roots.includes(parent) || !/^child[0-4]$/.test(path.basename(target)))
+			if (!f.roots.includes(parent) || !/^child(?:[0-9]|1[01])$/.test(path.basename(target)))
 				throw new Error("Unexpected synthetic directory");
 			activeReads++;
 			peakReads = Math.max(peakReads, activeReads);
@@ -167,8 +167,8 @@ describe("plain Node worktree inventory", () => {
 		try {
 			await turn();
 			expect(admitted.size).toBe(16);
-			expect(activeReads).toBe(64);
-			expect([...peakByRoot.values()]).toEqual(Array(16).fill(4));
+			expect(activeReads).toBe(128);
+			expect([...peakByRoot.values()]).toEqual(Array(16).fill(8));
 		} finally {
 			release.resolve();
 			await result.catch(() => {});
@@ -176,11 +176,66 @@ describe("plain Node worktree inventory", () => {
 		await expect(result).resolves.toBeUndefined();
 		expect(admitted.size).toBe(18);
 		expect(completed.size).toBe(18);
-		expect(seen.size).toBe(108);
-		expect(peakReads).toBe(64);
+		expect(seen.size).toBe(234);
+		expect(peakReads).toBe(128);
 		expect(peakRoots).toBe(16);
 		expect(activeReads).toBe(0);
 		expect(activeRoots).toBe(0);
+		expect(f.writes).toEqual([]);
+	});
+
+	it("stops the expanded frontier without admitting queued roots or settling before its reads drain", async () => {
+		const f = virtual();
+		const pending = new Map<string, ReturnType<typeof Promise.withResolvers<void>>>();
+		const seen = new Set<string>();
+		f.state.read = async (target) => {
+			seen.add(target);
+			if (f.roots.includes(target))
+				return Array.from({ length: 12 }, (_, i) => entry(`child${i}`, true));
+			const gate = Promise.withResolvers<void>();
+			pending.set(target, gate);
+			try {
+				await gate.promise;
+				return [];
+			} finally {
+				pending.delete(target);
+			}
+		};
+		const host: InventoryHost = {
+			...f.host,
+			readDirectory: async (target) => {
+				if (f.state.stopped) throw new Error("file-name inventory failed");
+				const found = await f.state.read(target);
+				if (f.state.stopped) throw new Error("file-name inventory failed");
+				return found;
+			},
+		};
+		let settled = false;
+		const completion = inventoryWorktrees(f.base, host).then(
+			() => ({ ok: true }),
+			() => ({ ok: false }),
+		);
+		void completion.then(() => {
+			settled = true;
+		});
+		try {
+			await turn();
+			expect(pending.size).toBe(128);
+			expect(seen.size).toBe(144);
+			host.stop();
+			pending.values().next().value?.resolve();
+			await turn();
+			expect(pending.size).toBe(127);
+			expect(seen.size).toBe(144);
+			expect(settled).toBe(false);
+		} finally {
+			host.stop();
+			for (const gate of pending.values()) gate.resolve();
+			await completion;
+		}
+		expect(await completion).toEqual({ ok: false });
+		expect(pending.size).toBe(0);
+		expect(seen.size).toBe(144);
 		expect(f.writes).toEqual([]);
 	});
 
@@ -438,6 +493,7 @@ describe("plain Node worktree inventory", () => {
 		child.failKill = true;
 		let reads = 0,
 			spawns = 0,
+			stopNotifications = 0,
 			drained = false;
 		const io: InventoryIo = {
 			readDirectory: () => {
@@ -451,12 +507,18 @@ describe("plain Node worktree inventory", () => {
 			},
 			write: (_bytes, ack) => ack(),
 		};
-		const host = createInventoryHost(path.resolve("dytest-owned"), io);
+		const host = createInventoryHost(path.resolve("dytest-owned"), io, () => {
+			stopNotifications++;
+		});
 		const reading = host.readDirectory("DYTEST"),
 			statting = host.statPath("DYTEST"),
 			git = host.git(["worktree", "list", "--porcelain", "-z"]);
 		void git.catch(() => {});
+		const signal = host.signal;
+		const wasAborted = signal.aborted;
 		expect(() => host.stop()).not.toThrow();
+		host.stop();
+		const isAborted = signal.aborted;
 		const drain = host.drain().then(() => {
 			drained = true;
 		});
@@ -476,5 +538,8 @@ describe("plain Node worktree inventory", () => {
 		await Promise.allSettled([git]);
 		await drain;
 		expect(host.drained()).toBe(true);
+		expect(wasAborted).toBe(false);
+		expect(isAborted).toBe(true);
+		expect(stopNotifications).toBe(1);
 	});
 });

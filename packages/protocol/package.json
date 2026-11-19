@@ -79,6 +79,7 @@
     "./plugin-stdio": {
       "node": "./src/plugin-stdio.ts"
     },
+    "./retry-after": "./src/retry-after.ts",
     "./scalars": "./src/scalars.ts",
     "./schedule": "./src/schedule.ts",
     "./scheduled-summary": "./src/scheduled-summary.ts",
@@ -390,6 +391,10 @@
           "types": "./dist/plugin-stdio.d.mts",
           "default": "./dist/plugin-stdio.mjs"
         }
+      },
+      "./retry-after": {
+        "types": "./dist/retry-after.d.mts",
+        "default": "./dist/retry-after.mjs"
       },
       "./scalars": {
         "types": "./dist/scalars.d.mts",

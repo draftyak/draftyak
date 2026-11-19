@@ -28,6 +28,12 @@ const POSTPONED: [(&str, &str); 3] = [
     ("agent-session.v1", AGENT),
     ("hub-key-rotate.v1", ROTATE),
 ];
+const EXPECTED_SIGNING_ADMIN_KINDS: [&str; 4] = [
+    "account.disconnect",
+    "account.mode-full",
+    "security.device-capabilities",
+    "data.backup",
+];
 const BACKSLASH: char = '\\';
 
 fn vectors(json: &str) -> Value {
@@ -73,12 +79,16 @@ fn signable(typ: &str) -> Vec<u8> {
         .find(|bytes| PreparedStatement::from_received(typ, bytes).is_ok())
         .expect("a signable vector case")
 }
-/// What the protocol's public readers say about received bytes, in the order they are checked.
+fn admin_kind_can_sign(kind: &str) -> bool {
+    EXPECTED_SIGNING_ADMIN_KINDS.contains(&kind) && ADMIN_REVIEW_KINDS.contains(&kind)
+}
+
+/// Expected transport admission and canonicality checks, in order.
 fn expected(typ: &str, bytes: &[u8]) -> Result<(), StatementError> {
     jcs::parse_strict(bytes).map_err(StatementError::Parse)?;
     match statements::parse_statement(typ, bytes) {
         None => Err(StatementError::Invalid),
-        Some(Statement::Admin(admin)) if !ADMIN_REVIEW_KINDS.contains(&admin.kind.as_str()) => {
+        Some(Statement::Admin(admin)) if !admin_kind_can_sign(&admin.kind) => {
             Err(StatementError::Unavailable)
         }
         Some(_) if !jcs::is_canonical(bytes) => Err(StatementError::NonCanonical),
@@ -101,18 +111,14 @@ fn escaped(name: &str) -> String {
 
 #[test]
 fn native_admin_signing_keeps_the_exact_reviewed_kind_set() {
-    let expected = [
-        "account.disconnect",
-        "account.mode-full",
-        "security.device-capabilities",
-        "data.backup",
-    ];
-    assert_eq!(RETAINED_ADMIN_KINDS, expected);
-    assert_eq!(ADMIN_REVIEW_KINDS, expected);
+    assert_eq!(RETAINED_ADMIN_KINDS, EXPECTED_SIGNING_ADMIN_KINDS);
+    for kind in EXPECTED_SIGNING_ADMIN_KINDS {
+        assert!(ADMIN_REVIEW_KINDS.contains(&kind), "{kind}");
+    }
     let document = vectors(ADMIN);
     for kind in ADMIN_KINDS {
         let bytes = received(by_id(&document, &format!("kind-{kind}")));
-        if expected.contains(kind) {
+        if admin_kind_can_sign(kind) {
             assert!(
                 PreparedStatement::from_received("admin.v1", &bytes).is_ok(),
                 "{kind}"
@@ -238,16 +244,16 @@ fn shared_vectors_prepare_exactly_their_canonical_available_statements() {
             "approval.send.v1" => assert_eq!(prepared_ids.len(), 15, "{prepared_ids:?}"),
             "pair-confirm.v1" => assert_eq!(prepared_ids.len(), 18, "{prepared_ids:?}"),
             _ => {
-                let reviewed: Vec<String> = ADMIN_REVIEW_KINDS
+                let signable: Vec<String> = EXPECTED_SIGNING_ADMIN_KINDS
                     .iter()
                     .map(|kind| format!("kind-{kind}"))
                     .collect();
                 assert!(
-                    reviewed
+                    signable
                         .iter()
                         .all(|id| prepared_ids.contains(&id.as_str()))
                 );
-                assert!(prepared_ids.len() >= ADMIN_REVIEW_KINDS.len());
+                assert!(prepared_ids.len() >= EXPECTED_SIGNING_ADMIN_KINDS.len());
             }
         }
     }
@@ -262,13 +268,13 @@ fn pinned_vector_cases_keep_their_reasons() {
             let actual = PreparedStatement::from_received(typ, &received(by_id(&document, id)));
             assert_eq!(actual.map(|_| ()), reason, "{typ} {id}");
         };
-        // An admin kind signs once its review subject is merged; refusing the rest comes first.
-        let reviewed = |id: &str| {
+        // Signing needs a review subject and transport support before canonicality is checked.
+        let can_sign = |id: &str| {
             by_id(&document, id)["statement"]["kind"]
                 .as_str()
-                .is_none_or(|kind| ADMIN_REVIEW_KINDS.contains(&kind))
+                .is_none_or(admin_kind_can_sign)
         };
-        let base = reviewed("valid");
+        let base = can_sign("valid");
         let gated =
             |reason: Result<(), StatementError>| if base { reason } else { Err(Unavailable) };
         check("duplicate-member", Err(Parse(JcsError::DuplicateKey)));
@@ -329,7 +335,7 @@ fn pinned_vector_cases_keep_their_reasons() {
                 let kinds = ADMIN_KINDS.iter().map(|kind| format!("kind-{kind}"));
                 for id in kinds.chain(["advertised-addresses".to_owned()]) {
                     let id = id.as_str();
-                    check(id, reviewed(id).then_some(()).ok_or(Unavailable));
+                    check(id, can_sign(id).then_some(()).ok_or(Unavailable));
                 }
                 assert!(ADMIN_KINDS.len() > ADMIN_REVIEW_KINDS.len());
             }
@@ -912,7 +918,9 @@ mod stored_key {
             match typ {
                 "approval.send.v1" => assert_eq!((signed, reproduced), (15, 11)),
                 "pair-confirm.v1" => assert_eq!((signed, reproduced), (18, 15)),
-                _ => assert!(reproduced >= ADMIN_REVIEW_KINDS.len() && signed >= reproduced),
+                _ => assert!(
+                    reproduced >= EXPECTED_SIGNING_ADMIN_KINDS.len() && signed >= reproduced
+                ),
             }
             let other = vector_identity(
                 &backend,
@@ -1049,7 +1057,7 @@ mod stored_key {
     }
 
     #[test]
-    fn postponed_and_unreviewed_kinds_refuse_with_their_vector_key_loaded() {
+    fn postponed_and_unavailable_kinds_refuse_with_their_vector_key_loaded() {
         let backend = TestStore::new();
         let send =
             PreparedStatement::from_received("approval.send.v1", &signable("approval.send.v1"))
@@ -1102,7 +1110,7 @@ mod stored_key {
         for kind in ADMIN_KINDS
             .iter()
             .copied()
-            .filter(|kind| !ADMIN_REVIEW_KINDS.contains(kind))
+            .filter(|kind| !admin_kind_can_sign(kind))
         {
             let bytes = received(by_id(&document, &format!("kind-{kind}")));
             assert_eq!(refused("admin.v1", &bytes), StatementError::Unavailable);
