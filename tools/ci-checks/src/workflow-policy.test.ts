@@ -820,7 +820,7 @@ describe("workflow policy", () => {
 			}
 		).jobs;
 		expect(ci.windows?.if).toBe(
-			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && needs.changes.outputs.native-transport == 'true'))",
+			"needs.changes.outputs.docs-only != 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name != 'pull_request' && (needs.changes.outputs.native-transport == 'true' || (contains(fromJSON(needs.changes.outputs.areas), 'heavy:...{./apps/hub}') || contains(fromJSON(needs.changes.outputs.areas), 'heavy:./apps/hub')))))",
 		);
 		expect(ci.windows?.steps.find((step) => step.run === "pnpm verify")).toEqual({
 			run: "pnpm verify",

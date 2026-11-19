@@ -3,6 +3,7 @@ import path from "node:path";
 import { createInventoryObservation } from "./inventory-observation.ts";
 
 export const INVENTORY_TIMEOUT_MS = 300_000;
+export const INVENTORY_DIRECTORY_READ_BUDGET = 128;
 export const INVENTORY_STOP_RESERVE_MS = 250;
 export const INVENTORY_SENTINEL = "WORKTREE_INVENTORY_COMPLETE\n";
 export const INVENTORY_STDOUT_MAX = 128;
@@ -81,8 +82,9 @@ export function inventoryEnvironment(source: NodeJS.ProcessEnv = process.env): N
 	}
 	return {
 		...env,
-		// The inventory already admits 16 roots with 4 reads each.
-		UV_THREADPOOL_SIZE: "64",
+		// Match the bounded shared directory admission instead of queueing its reads
+		// behind Node's caller-controlled default filesystem pool.
+		UV_THREADPOOL_SIZE: String(INVENTORY_DIRECTORY_READ_BUDGET),
 		GIT_CONFIG_NOSYSTEM: "1",
 		GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
 		GIT_OPTIONAL_LOCKS: "0",
@@ -532,6 +534,22 @@ export function startInventoryAfter(
 		},
 	);
 	return execution;
+}
+
+// Failure observation does not establish precheck settlement or physical closure.
+export function observeInventoryFailure(
+	execution: InventoryExecution,
+	onFailure: (diagnostic: string) => void,
+): void {
+	const timing = executions.get(execution);
+	if (timing === undefined) throw failed();
+	void execution.reported.then(undefined, () => {
+		try {
+			onFailure(`file-name inventory failed [${timing.diagnostic()}]`);
+		} catch {
+			// An observer cannot replace the original reporting or completion outcome.
+		}
+	});
 }
 
 // Reporting keeps its earlier deadline; caller completion additionally requires the

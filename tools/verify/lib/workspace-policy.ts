@@ -49,6 +49,10 @@ const vanished = (error: unknown): boolean =>
 
 const inventoryFailed = (): Error => new Error("file-name inventory failed");
 
+const assertInventoryActive = (signal?: AbortSignal): void => {
+	if (signal?.aborted) throw inventoryFailed();
+};
+
 // A failed lookup is not absence: filesystem names need not round-trip through strings.
 // Confirm the exact entry is absent from a fresh, unambiguous parent listing instead.
 async function missingDirectory(
@@ -56,15 +60,20 @@ async function missingDirectory(
 	readDirectory: ReadDirectory,
 	statPath: StatPath,
 	boundary?: string,
+	signal?: AbortSignal,
 ): Promise<boolean> {
+	assertInventoryActive(signal);
 	let kind: Kind;
 	try {
 		kind = await statPath(target);
+		assertInventoryActive(signal);
 	} catch (error) {
+		assertInventoryActive(signal);
 		if (!vanished(error)) return false;
-		return absentFromParent(target, readDirectory, statPath, boundary);
+		return absentFromParent(target, readDirectory, statPath, boundary, signal);
 	}
 	if (!kind.isDirectory() || kind.isSymbolicLink()) throw inventoryFailed();
+	assertInventoryActive(signal);
 	return false;
 }
 
@@ -73,16 +82,21 @@ async function absentFromParent(
 	readDirectory: ReadDirectory,
 	statPath: StatPath,
 	boundary?: string,
+	signal?: AbortSignal,
 ): Promise<boolean> {
+	assertInventoryActive(signal);
 	if (target === boundary || path.dirname(target) === target) return false;
 	const parent = path.dirname(target);
 	let entries: readonly Entry[];
 	try {
 		entries = await readDirectory(parent);
+		assertInventoryActive(signal);
 	} catch {
-		return missingDirectory(parent, readDirectory, statPath, boundary);
+		assertInventoryActive(signal);
+		return missingDirectory(parent, readDirectory, statPath, boundary, signal);
 	}
 	const names = entries.map((entry) => entry.name);
+	assertInventoryActive(signal);
 	if (
 		names.some(
 			(name) =>
@@ -107,7 +121,10 @@ export async function namedFiles(
 	insensitive: boolean = process.platform === "win32",
 	readDirectory: ReadDirectory = (dir) => readdir(dir, { withFileTypes: true }),
 	statPath: StatPath = (target) => lstat(target),
+	readCapacity: () => number = () => 4,
+	signal?: AbortSignal,
 ): Promise<string[]> {
+	assertInventoryActive(signal);
 	if (!basename || /[/\\\0*?[\]]/.test(basename)) throw new Error("invalid basename");
 	root = path.resolve(root);
 	const rootPrefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
@@ -135,42 +152,52 @@ export async function namedFiles(
 				? name
 				: `${directory}/${name}`;
 	const attempt = async (target: string): Promise<readonly Entry[] | undefined> => {
+		assertInventoryActive(signal);
 		try {
-			return await readDirectory(target);
+			const entries = await readDirectory(target);
+			assertInventoryActive(signal);
+			return entries;
 		} catch {
+			assertInventoryActive(signal);
 			return undefined;
 		}
 	};
 	// A replacement link or file refuses validation instead of being followed by a retry.
 	const gone = (target: string): Promise<boolean> =>
-		missingDirectory(target, readDirectory, statPath, root);
+		missingDirectory(target, readDirectory, statPath, root, signal);
 	// Other checkouts add and remove folders mid-walk. The root must list; below it, a vanished
 	// folder is skipped and any other failed folder is listed once more before validation is refused.
-	const list = async (dir: string | undefined, target: string): Promise<readonly Entry[]> => {
-		if (dir === "") return readDirectory(target);
-		let first: readonly Entry[] | undefined;
-		try {
-			first = await readDirectory(target);
-		} catch {
-			// Failed reads retain the fresh disappearance proof and bounded retry below.
-		}
-		if (first) return first;
-		if (await gone(target)) return [];
-		await sleep(RETRY_DELAY_MS);
+	const retryListing = async (target: string): Promise<readonly Entry[]> => {
+		assertInventoryActive(signal);
+		const missing = await gone(target);
+		assertInventoryActive(signal);
+		if (missing) return [];
+		if (signal === undefined) await sleep(RETRY_DELAY_MS);
+		else await sleep(RETRY_DELAY_MS, undefined, { signal });
+		assertInventoryActive(signal);
 		const second = await attempt(target);
+		assertInventoryActive(signal);
 		if (second) {
 			let kind: Kind;
 			try {
 				kind = await statPath(target);
+				assertInventoryActive(signal);
 			} catch (error) {
-				if (vanished(error) && (await absentFromParent(target, readDirectory, statPath, root)))
-					return [];
+				assertInventoryActive(signal);
+				if (vanished(error)) {
+					const absent = await absentFromParent(target, readDirectory, statPath, root, signal);
+					assertInventoryActive(signal);
+					if (absent) return [];
+				}
 				throw inventoryFailed();
 			}
 			if (!kind.isDirectory() || kind.isSymbolicLink()) throw inventoryFailed();
+			assertInventoryActive(signal);
 			return second;
 		}
-		if (await gone(target)) return [];
+		const absent = await gone(target);
+		assertInventoryActive(signal);
+		if (absent) return [];
 		throw new Error("file-name inventory failed");
 	};
 	type PendingDirectory = {
@@ -181,96 +208,140 @@ export async function namedFiles(
 	};
 	let first: PendingDirectory | undefined = { directory: "", target: root, plain: true };
 	const found: string[] = [];
-	await new Promise<void>((resolve, reject) => {
-		let active = 0;
-		let failed = false;
-		const visit = async (
-			directory: string | undefined,
-			absolute: string,
-			plainAncestry: boolean,
-		): Promise<void> => {
-			try {
-				const children = await list(directory, absolute);
-				if (failed) return;
-				let discoveredFirst: PendingDirectory | undefined;
-				let discoveredLast: PendingDirectory | undefined;
-				for (const entry of children) {
-					const name = entry.name;
-					if (typeof name !== "string" || !name.isWellFormed() || name.includes("\uFFFD"))
-						throw inventoryFailed();
-					const matches = equal(name);
-					const descend = entry.isDirectory() && !entry.isSymbolicLink();
-					// Ordinary files need no relative path; keep normalization for synthetic edge names.
-					if (matches || descend) {
-						// Ordinary components can extend an already-normalized native target. Keep the
-						// original whole-path normalization for every unusual component and descendant.
-						const plain =
-							plainAncestry &&
-							name !== "" &&
-							name !== "." &&
-							name !== ".." &&
-							!/[\\/:\0]/.test(name);
-						// Plain queued directories need only their native target. Materialize a relative
-						// path for a match or the first unusual component, never by resolving/casefolding.
-						const relative =
-							matches || !plain
-								? relativeName(
-										directory ?? absolute.slice(rootPrefix.length).replaceAll(path.sep, "/"),
-										name,
-									)
-								: undefined;
-						if (matches) {
-							if (relative === undefined) throw inventoryFailed();
-							found.push(relative);
+	let detachAbort: (() => void) | undefined;
+	try {
+		await new Promise<void>((resolve, reject) => {
+			let active = 0;
+			let failed = false;
+			const visit = async (
+				directory: string | undefined,
+				absolute: string,
+				plainAncestry: boolean,
+			): Promise<void> => {
+				try {
+					assertInventoryActive(signal);
+					let children: readonly Entry[];
+					try {
+						// Successful reads have one await, without a wrapper promise per directory.
+						children = await readDirectory(absolute);
+						assertInventoryActive(signal);
+					} catch {
+						assertInventoryActive(signal);
+						if (directory === "") throw inventoryFailed();
+						children = await retryListing(absolute);
+						assertInventoryActive(signal);
+					}
+					if (failed) return;
+					let discoveredFirst: PendingDirectory | undefined;
+					let discoveredLast: PendingDirectory | undefined;
+					for (const entry of children) {
+						assertInventoryActive(signal);
+						const name = entry.name;
+						if (typeof name !== "string" || !name.isWellFormed() || name.includes("\uFFFD"))
+							throw inventoryFailed();
+						const matches = equal(name);
+						const descend = entry.isDirectory() && !entry.isSymbolicLink();
+						assertInventoryActive(signal);
+						// Ordinary files need no relative path; keep normalization for synthetic edge names.
+						if (matches || descend) {
+							// Ordinary components can extend an already-normalized native target. Keep the
+							// original whole-path normalization for every unusual component and descendant.
+							const plain =
+								plainAncestry &&
+								name !== "" &&
+								name !== "." &&
+								name !== ".." &&
+								!/[\\/:\0]/.test(name);
+							// Plain queued directories need only their native target. Materialize a relative
+							// path for a match or the first unusual component, never by resolving/casefolding.
+							const relative =
+								matches || !plain
+									? relativeName(
+											directory ?? absolute.slice(rootPrefix.length).replaceAll(path.sep, "/"),
+											name,
+										)
+									: undefined;
+							if (matches) {
+								if (relative === undefined) throw inventoryFailed();
+								found.push(relative);
+							}
+							if (!descend) continue;
+							let target: string;
+							if (plain)
+								target = `${absolute}${absolute.endsWith(path.sep) ? "" : path.sep}${name}`;
+							else {
+								if (relative === undefined) throw inventoryFailed();
+								target = path.join(root, relative);
+							}
+							const pending: PendingDirectory = {
+								directory: plain ? undefined : relative,
+								target,
+								plain,
+							};
+							if (discoveredLast) discoveredLast.next = pending;
+							else discoveredFirst = pending;
+							discoveredLast = pending;
 						}
-						if (!descend) continue;
-						let target: string;
-						if (plain) target = `${absolute}${absolute.endsWith(path.sep) ? "" : path.sep}${name}`;
-						else {
-							if (relative === undefined) throw inventoryFailed();
-							target = path.join(root, relative);
-						}
-						const pending: PendingDirectory = {
-							directory: plain ? undefined : relative,
-							target,
-							plain,
-						};
-						if (discoveredLast) discoveredLast.next = pending;
-						else discoveredFirst = pending;
-						discoveredLast = pending;
+					}
+					// Keep each listing's order, but descend before older pending siblings instead
+					// of retaining every directory in a breadth-level frontier at once.
+					assertInventoryActive(signal);
+					if (discoveredLast) {
+						discoveredLast.next = first;
+						first = discoveredFirst;
+					}
+				} catch {
+					failed = true;
+					first = undefined;
+				} finally {
+					active -= 1;
+					advance();
+				}
+			};
+			const advance = (): void => {
+				let capacity = 0;
+				if (!failed) {
+					try {
+						assertInventoryActive(signal);
+						capacity = readCapacity();
+						assertInventoryActive(signal);
+						if (!Number.isInteger(capacity) || capacity < 1 || capacity > 64)
+							throw inventoryFailed();
+					} catch {
+						failed = true;
+						first = undefined;
 					}
 				}
-				// Keep each listing's order, but descend before older pending siblings instead
-				// of retaining every directory in a breadth-level frontier at once.
-				if (discoveredLast) {
-					discoveredLast.next = first;
-					first = discoveredFirst;
+				// Refill each free slot immediately; a slow sibling must not stall the whole frontier.
+				while (!failed && active < capacity && first) {
+					const current = first;
+					first = current.next;
+					active += 1;
+					// Passing only values prevents a slow read from retaining a dequeued node's tail.
+					void visit(current.directory, current.target, current.plain);
 				}
-			} catch {
-				failed = true;
-				first = undefined;
-			} finally {
-				active -= 1;
-				advance();
-			}
-		};
-		const advance = (): void => {
-			// Refill each free slot immediately; a slow sibling must not stall the whole frontier.
-			while (!failed && active < 4 && first) {
-				const current = first;
-				first = current.next;
-				active += 1;
-				// Passing only values prevents a slow read from retaining a dequeued node's tail.
-				void visit(current.directory, current.target, current.plain);
-			}
-			// Stop admitting work on failure, but drain every read already in flight before settling.
-			if (active === 0) {
-				if (failed) reject(inventoryFailed());
-				else resolve();
-			}
-		};
-		advance();
-	});
+				// Stop admitting work on failure, but drain every read already in flight before settling.
+				if (active === 0) {
+					if (failed) reject(inventoryFailed());
+					else resolve();
+				}
+			};
+			if (signal !== undefined) {
+				const abort = (): void => {
+					failed = true;
+					first = undefined;
+					advance();
+				};
+				signal.addEventListener("abort", abort, { once: true });
+				detachAbort = () => signal.removeEventListener("abort", abort);
+				if (signal.aborted) abort();
+				else advance();
+			} else advance();
+		});
+	} finally {
+		detachAbort?.();
+	}
+	assertInventoryActive(signal);
 	return found.toSorted();
 }
 
@@ -310,15 +381,32 @@ export async function namedWorktreeFiles(
 	insensitive: boolean = process.platform === "win32",
 	readDirectory: ReadDirectory = (dir) => readdir(dir, { withFileTypes: true }),
 	statPath: StatPath = (target) => lstat(target),
+	readCapacity: () => number = () => 4,
+	signal?: AbortSignal,
 ): Promise<string[]> {
 	try {
+		assertInventoryActive(signal);
 		try {
-			const found = await namedFiles(basename, root, insensitive, readDirectory, statPath);
+			const found = await namedFiles(
+				basename,
+				root,
+				insensitive,
+				readDirectory,
+				statPath,
+				readCapacity,
+				signal,
+			);
+			assertInventoryActive(signal);
 			const kind = await statPath(root);
+			assertInventoryActive(signal);
 			if (!kind.isDirectory() || kind.isSymbolicLink()) throw inventoryFailed();
+			assertInventoryActive(signal);
 			return found;
 		} catch {
-			if (!(await missingDirectory(root, readDirectory, statPath))) throw inventoryFailed();
+			assertInventoryActive(signal);
+			const missing = await missingDirectory(root, readDirectory, statPath, undefined, signal);
+			assertInventoryActive(signal);
+			if (!missing) throw inventoryFailed();
 		}
 		const key = (directory: string): string => {
 			if (!path.isAbsolute(directory) || !directory.isWellFormed() || directory.includes("\uFFFD"))
@@ -327,6 +415,7 @@ export async function namedWorktreeFiles(
 			return insensitive ? resolved.toLowerCase() : resolved;
 		};
 		const entries = await refreshWorktrees();
+		assertInventoryActive(signal);
 		if (entries.length === 0) throw inventoryFailed();
 		const keys = entries.map(({ directory, prunable }) => {
 			if (typeof prunable !== "boolean") throw inventoryFailed();
@@ -335,6 +424,7 @@ export async function namedWorktreeFiles(
 		if (new Set(keys).size !== keys.length) throw inventoryFailed();
 		const registered = entries[keys.indexOf(key(root))];
 		if (registered !== undefined && !registered.prunable) throw inventoryFailed();
+		assertInventoryActive(signal);
 		return [];
 	} catch {
 		throw inventoryFailed();
