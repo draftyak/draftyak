@@ -78,7 +78,11 @@ async function withRuntimeUnicode(
 }
 
 test("version policy refuses every release below the supported Node floor", () => {
-	for (const version of ["26.5.1", "v26.12.0", "27.0.0", "28.0.0"]) {
+	const policy = JSON.parse(
+		fs.readFileSync(new URL("../../fetch-node/versions.json", import.meta.url), "utf8"),
+	) as { minimum: string };
+	assert.equal(policy.minimum, "26.13.1");
+	for (const version of ["26.13.1", "v26.13.1", "27.0.0", "28.0.0"]) {
 		assert.equal(classifyNode(version), "full", version);
 	}
 	for (const version of [
@@ -90,11 +94,15 @@ test("version policy refuses every release below the supported Node floor", () =
 		"24.17.99",
 		"25.99.99",
 		"26.5.0",
+		"26.5.1",
+		"v26.12.0",
+		"26.12.99",
+		"26.13.0",
 		"22.20.0",
 		"26",
-		"26.5.1-beta",
-		"26.05.1",
-		"26.5.1\n",
+		"26.13.1-beta",
+		"26.013.1",
+		"26.13.1\n",
 		"SECRET",
 		"999999999999999999999.0.0",
 	]) {
