@@ -30,10 +30,12 @@ import {
 	verifyNativeReleaseV2,
 } from "../../src/plugins/installer/native-release-v2.ts";
 
-const io = vi.hoisted(() => ({
-	onOpen: undefined as ((handle: FileHandle, name: string) => Promise<void> | void) | undefined,
-	cleanup: [] as (() => Promise<void>)[],
-}));
+type FixtureIO = {
+	onOpen: ((handle: FileHandle, name: string) => Promise<void> | void) | undefined;
+	cleanup: (() => Promise<void>)[];
+};
+
+const ioByRoot = vi.hoisted(() => new Map<string, FixtureIO>());
 
 // Faults delay or wrap actual Node handles; no substitute file or application issuer is returned.
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -41,11 +43,14 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 	return {
 		...actual,
 		open: async (...args: Parameters<typeof actual.open>) => {
+			const name = String(args[0]);
+			const io = [...ioByRoot].find(([root]) => name.startsWith(`${root}${path.sep}`))?.[1];
 			const handle = await actual.open(...args);
+			if (!io) return handle;
 			const close = handle.close.bind(handle);
 			io.cleanup.push(close);
 			try {
-				await io.onOpen?.(handle, String(args[0]));
+				await io.onOpen?.(handle, name);
 				return handle;
 			} catch (error) {
 				await close();
@@ -99,6 +104,7 @@ function availability(files: NativeAppFiles): "available" | "unavailable" | "une
 }
 
 type Fixture = {
+	readonly io: FixtureIO;
 	readonly root: string;
 	readonly release: NativeAppRelease | NativeReleaseV2;
 	readonly archive: string;
@@ -122,7 +128,8 @@ async function fixture(
 	let bodyFailure: unknown;
 	let cleanupFailed = false;
 	let cleanupFailure: unknown;
-	io.cleanup = [];
+	const io: FixtureIO = { onOpen: undefined, cleanup: [] };
+	ioByRoot.set(root, io);
 	try {
 		const content = new Map<string, Buffer>([
 			["bin/draftyak.exe", Buffer.from("DYTEST executable content, not APP authority")],
@@ -214,6 +221,7 @@ async function fixture(
 		const archiveBytes = content.get(archive);
 		if (!archiveBytes) throw new Error("DYTEST missing archive fixture");
 		await run({
+			io,
 			root,
 			release,
 			archive,
@@ -276,6 +284,8 @@ async function fixture(
 		} catch (error) {
 			cleanupFailed = true;
 			cleanupFailure = error;
+		} finally {
+			if (ioByRoot.get(root) === io) ioByRoot.delete(root);
 		}
 	}
 	if (bodyFailed) throw bodyFailure;
@@ -283,9 +293,62 @@ async function fixture(
 }
 
 describe("native application file DATA resources", () => {
+	it("keeps another fixture's real retained handle and hook through earlier fixture cleanup", async () => {
+		const aEntered = deferred();
+		const finishA = deferred();
+		const bEntered = deferred();
+		const finishB = deferred();
+		let b: Promise<void> | undefined;
+		const a = fixture(async () => {
+			aEntered.release();
+			await finishA.promise;
+		}, true);
+		try {
+			await Promise.race([
+				aEntered.promise,
+				a.then(() => {
+					throw new Error("DYTEST first fixture ended before entering its body");
+				}),
+			]);
+			b = fixture(async ({ io, root, owner, release }) => {
+				const files = owner();
+				let retained: FileHandle | undefined;
+				const onOpen = (handle: FileHandle) => {
+					retained ??= handle;
+				};
+				io.onOpen = onOpen;
+				await files.readRelease();
+				bEntered.release();
+				await finishB.promise;
+				expect(retained !== undefined && !(await closed(retained))).toBe(true);
+				expect(io.onOpen).toBe(onOpen);
+				await files.verify(release);
+				for (const record of release.files) {
+					const bytes = await readFile(path.join(root, ...record.path.split("/")));
+					expect(bytes.length).toBe(record.bytes);
+					expect(createHash("sha256").update(bytes).digest("hex")).toBe(record.sha256);
+				}
+			}, true);
+			await Promise.race([
+				bEntered.promise,
+				b.then(() => {
+					throw new Error("DYTEST second fixture ended before retaining its handle");
+				}),
+			]);
+			finishA.release();
+			await a;
+			finishB.release();
+			await b;
+		} finally {
+			finishA.release();
+			finishB.release();
+			await Promise.allSettled([a, ...(b ? [b] : [])]);
+		}
+	});
+
 	it("retains v2 candidates in the same signed map without changing selected archive reads", async () => {
 		await fixture(
-			async ({ owner, release, archive, archiveBytes, candidateArchive, candidateBytes }) => {
+			async ({ io, owner, release, archive, archiveBytes, candidateArchive, candidateBytes }) => {
 				if (!candidateArchive || !candidateBytes)
 					throw new Error("DYTEST missing candidate fixture");
 				const files = owner();
@@ -329,7 +392,7 @@ describe("native application file DATA resources", () => {
 
 	it("fences and joins an actual v2 candidate read before closing its retained handle", async () => {
 		await fixture(
-			async ({ root, owner, release, candidateArchive }) => {
+			async ({ io, root, owner, release, candidateArchive }) => {
 				if (!candidateArchive) throw new Error("DYTEST missing candidate fixture");
 				const entered = deferred();
 				const finish = deferred();
@@ -393,7 +456,7 @@ describe("native application file DATA resources", () => {
 	});
 
 	it("retains the real copied executable and exact signed inventory without exposing owned buffers", async () => {
-		await fixture(async ({ owner, release, archive, archiveBytes }) => {
+		await fixture(async ({ io, owner, release, archive, archiveBytes }) => {
 			let opens = 0;
 			io.onOpen = () => {
 				opens++;
@@ -499,7 +562,7 @@ describe("native application file DATA resources", () => {
 	});
 
 	it("rechecks an earlier held file after a later genuine read was pending", async () => {
-		await fixture(async ({ root, owner, release }) => {
+		await fixture(async ({ io, root, owner, release }) => {
 			const entered = deferred();
 			const finish = deferred();
 			let observed: { handle: FileHandle; descriptor: PropertyDescriptor | undefined } | undefined;
@@ -576,7 +639,7 @@ describe("native application file DATA resources", () => {
 	});
 
 	it("owns and closes both metadata files when a fixed-length signature is refused", async () => {
-		await fixture(async ({ root, owner }) => {
+		await fixture(async ({ io, root, owner }) => {
 			await writeFile(path.join(root, "release.signature"), Buffer.alloc(63));
 			const handles: FileHandle[] = [];
 			io.onOpen = (handle) => {
@@ -591,7 +654,7 @@ describe("native application file DATA resources", () => {
 	});
 
 	it("joins an actual open that completes after close has fenced the resource", async () => {
-		await fixture(async ({ owner }) => {
+		await fixture(async ({ io, owner }) => {
 			const entered = deferred();
 			const finish = deferred();
 			let held: FileHandle | undefined;
@@ -630,7 +693,7 @@ describe("native application file DATA resources", () => {
 	});
 
 	it("starts every genuine close before a held first failure, retains it and retries without reopening", async () => {
-		await fixture(async ({ owner, release }) => {
+		await fixture(async ({ io, owner, release }) => {
 			const records: {
 				handle: FileHandle;
 				descriptor: PropertyDescriptor | undefined;
