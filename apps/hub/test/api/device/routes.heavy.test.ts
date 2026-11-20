@@ -1,9 +1,14 @@
 import { randomBytes } from "node:crypto";
+import { once } from "node:events";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { DeviceStatus as DeviceStatusValue } from "@draftyak/protocol/device-api";
+import { type DeviceStatus as DeviceStatusValue, EventFrame } from "@draftyak/protocol/device-api";
 import { afterEach, expect, it, vi } from "vitest";
-import type { NativeDeviceContext } from "../../../src/api/device/context.ts";
+import WebSocket from "ws";
+import type {
+	NativeDeviceApiContext,
+	NativeDeviceContext,
+} from "../../../src/api/device/context.ts";
 import type { MasterKey } from "../../../src/kernel/master-key.ts";
 import type { SqlTransaction } from "../../../src/store/store.ts";
 import type { NativeFixture } from "../../authz/native-fixture.ts";
@@ -127,7 +132,7 @@ async function start(
 	},
 	bootstrapSecret?: Uint8Array,
 	runtimeMode?: "sidecar" | "service",
-): Promise<{ readonly context: NativeDeviceContext; readonly key: MasterKey }> {
+): Promise<{ readonly context: NativeDeviceApiContext; readonly key: MasterKey }> {
 	const key = runtime?.key ?? fixture.key();
 	try {
 		const open = runtime?.open ?? openNativeDeviceApi;
@@ -609,6 +614,44 @@ it("consumes a repeated startup secret without reopening bootstrap or changing o
 		proofBytes?.claim.fill(0);
 		proofBytes?.reveal.fill(0);
 	}
+});
+
+it("reports the status and Events bindings on the original API listener", async () => {
+	const fixture = folder();
+	const prepared = await prepareRouteDevices(fixture);
+	const { context } = await start(fixture, false);
+	const endpoint = context.endpoint;
+	const registration = context.mountedRegistration();
+	expect(registration).toEqual({
+		status: { route: "status", method: "GET", path: "/device/v1/status" },
+		eventsUpgrade: true,
+	});
+	const reply = await send(
+		context,
+		prepared.confirmed,
+		request(endpoint.port, registration.status.method, registration.status.path),
+	);
+	expect(status(reply)).toMatchObject({ deviceId: prepared.confirmedId, confirmed: true });
+
+	const peer = await connect(context, prepared.confirmed);
+	const protocol = "draftyak.events.v1";
+	const eventsUrl = `wss://${endpoint.address}:${endpoint.port}/device/v1/events`;
+	const events = new WebSocket(eventsUrl, protocol, { createConnection: () => peer.socket });
+	try {
+		await bounded(once(events, "open"));
+		expect(events.protocol).toBe(protocol);
+		const message = once(events, "message");
+		events.send(JSON.stringify({ after: null }));
+		const [data, binary] = await bounded(message);
+		if (binary !== false || !Buffer.isBuffer(data))
+			throw new Error("Expected an Events text frame");
+		expect(EventFrame.parse(JSON.parse(data.toString("utf8"))).type).toBe("ready");
+	} finally {
+		events.terminate();
+		await bounded(destroySocket(peer.socket));
+	}
+	await bounded(context.close());
+	expect(() => context.mountedRegistration()).toThrow("CONTEXT_UNAVAILABLE");
 });
 
 it.each([false, true])(
