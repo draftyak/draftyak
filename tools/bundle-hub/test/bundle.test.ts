@@ -115,7 +115,7 @@ function fixture(windows = false): Fixture {
 	const binary = windows ? "node.exe" : "bin/node";
 	const nodeRoot = path.join(root, "node-input");
 	mkdirSync(nodeRoot);
-	const folder = `node-v26.12.0-${platform}-x64`;
+	const folder = `node-v26.13.1-${platform}-x64`;
 	const nodeFiles = [
 		{ name: `${folder}/${binary}`, data: "synthetic Node fixture, not executable" },
 		{ name: `${folder}/LICENSE`, data: "synthetic Node license" },
@@ -609,7 +609,7 @@ describe("bundle-hub candidate staging", () => {
 		);
 		expect(
 			JSON.parse(readFileSync(path.join(repo, "tools/fetch-node/versions.json"), "utf8")).bundled,
-		).toBe("26.12.0");
+		).toBe("26.13.1");
 	});
 
 	it("CLI help works and a missing product spec fails without creating output", () => {
