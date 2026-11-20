@@ -1187,17 +1187,22 @@ function winning(
 	spend: (count: number) => void,
 ): Map<string, Declaration> {
 	const groups = new Map<string, Declaration[]>();
-	for (const declaration of values) {
+	const add = (key: string, declaration: Declaration): void => {
 		spend(1);
-		const key =
-			declaration.property === "background"
-				? "background-color"
-				: declaration.property === "font"
-					? "font-size"
-					: declaration.property;
 		const group = groups.get(key) ?? [];
 		group.push(declaration);
 		groups.set(key, group);
+	};
+	for (const declaration of values) {
+		if (declaration.property === "font") {
+			add("font-size", declaration);
+			add("line-height", declaration);
+		} else {
+			add(
+				declaration.property === "background" ? "background-color" : declaration.property,
+				declaration,
+			);
+		}
 	}
 	const result = new Map<string, Declaration>();
 	for (const [key, group] of groups) {
@@ -2233,7 +2238,10 @@ function appearance(
 	let opaqueCurrent = inherited.colors.opaqueCurrent;
 	let fill = inherited.colors.fill;
 	let background = inherited.colors.background;
-	for (const { property, value: original } of chosen.values()) {
+	for (const [key, { property, value: original }] of chosen) {
+		// A shorthand can supersede a line-height longhand. Its own line height
+		// is not evidence that the font size or the text is hidden.
+		if (key === "line-height" && property === "font") continue;
 		const raw = resolved(original, variables, spend);
 		if (raw === undefined) continue;
 		const value = comparisonValue(raw);
