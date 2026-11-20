@@ -256,7 +256,7 @@ it("keeps the rotated identity when a process dies right after the rotation comm
 
 it("lets exactly one of two processes rotate the same identity", async () => {
 	await withChildren(async (f, start, genesis) => {
-		const children = await Promise.all([start(), start()]);
+		const children = [await start(), await start()] as const;
 		expect(children[0].process.pid).not.toBe(children[1].process.pid);
 		const replies = await Promise.all(
 			children.map((child) => child.request("commit", { epoch: 2 })),

@@ -1,0 +1,17 @@
+From: Owner Example <owner@example.com>
+To: Alice Example <alice@example.org>
+Cc: carol@example.net
+In-Reply-To: <thread-2@example.org>
+References: <thread-1@example.org> <thread-2@example.org>
+Subject: Re: Lunch on Thursday
+Message-ID: <golden-1.4f2a9c1e@example.com>
+Date: Sat, 17 Oct 2026 12:00:00 +0000
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hi Alice,
+
+Thursday at noon works for me.
+
+Owner

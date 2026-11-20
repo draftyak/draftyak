@@ -259,7 +259,7 @@ describe("full-content and model-body revision entry points", () => {
 			const original = structuredClone(one);
 			const two = append(f, input, one, author("ai"), "New\r\nCafe\u0301");
 			expect(two.revision.content).toEqual({ ...one.revision.content, body: "New\nCaf\u00e9" });
-			expect(two.revision.flags).toEqual(one.revision.flags);
+			expect(two.revision.flags).toEqual([]);
 			expect(two.revision.contentSha256).toBe(jcsSha256(two.revision.content));
 			expect(one).toEqual(original);
 			expect(Object.isFrozen(two.revision.content)).toBe(true);
@@ -317,7 +317,7 @@ describe("full-content and model-body revision entry points", () => {
 		const one = f.create(input);
 		const two = append(f, input, one, author("ai"));
 		refusedWithoutChange(f, () => append(f, input, one, author("ai")));
-		f.store.write((tx) => f.revisions.setLockInTransaction(tx, f.bind(input), 2, null, newId()));
+		f.store.write((tx) => f.freeze.freezeInTransaction(tx, f.bind(input), 2, f.snapshot(two)));
 		refusedWithoutChange(f, () => append(f, input, two, author("ai")));
 		expect(f.revisions.current(f.bind(input)).draft.rev).toBe(2);
 	});

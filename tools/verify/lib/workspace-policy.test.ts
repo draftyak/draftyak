@@ -325,6 +325,92 @@ describe("basename inventory", () => {
 		expect(await inventory(dir, true)).toEqual([".GATE-SENTINEL"]);
 	});
 
+	it("does not lowercase impossible ASCII names while still listing every synthetic descendant", async () => {
+		const root = path.resolve("synthetic-ascii-frontier");
+		const folders = Array.from({ length: 64 }, (_, i) => `DYTEST-DIRECTORY-${i}`);
+		const files = [
+			"NOT-A-SENTINEL",
+			...Array.from({ length: 255 }, (_, i) => `DYTEST-ORDINARY-FILE-${i}`),
+		];
+		const mismatches = new Set([...folders, ...files]);
+		const original = String.prototype.toLowerCase;
+		const descriptor = Object.getOwnPropertyDescriptor(String.prototype, "toLowerCase");
+		if (!descriptor) throw failure();
+		let loweredMismatches = 0;
+		let reads = 0;
+		let active = 0;
+		let peak = 0;
+		let found: string[] = [];
+		Object.defineProperty(String.prototype, "toLowerCase", {
+			...descriptor,
+			value: function (this: string): string {
+				if (mismatches.has(this)) loweredMismatches++;
+				return original.call(this);
+			},
+		});
+		try {
+			found = await namedFiles(".gate-sentinel", root, true, async (target) => {
+				reads++;
+				active++;
+				peak = Math.max(peak, active);
+				try {
+					await Promise.resolve();
+					if (target === root)
+						return [
+							...folders.map((name) => entry(name, true)),
+							...files.map((name) => entry(name)),
+						];
+					if (!folders.some((name) => path.join(root, name) === target)) throw failure();
+					return [entry(".GATE-SENTINEL")];
+				} finally {
+					active--;
+				}
+			});
+		} finally {
+			Object.defineProperty(String.prototype, "toLowerCase", descriptor);
+		}
+		expect(loweredMismatches).toBe(0);
+		expect(reads).toBe(65);
+		expect(peak).toBe(4);
+		expect(active).toBe(0);
+		expect(found).toEqual(folders.map((name) => `${name}/.GATE-SENTINEL`).toSorted());
+	});
+
+	it.each([
+		["\u0130", ["i\u0307", "\u0130"]],
+		["i\u0307", ["i\u0307", "\u0130"]],
+		[".\u0130", [".i\u0307", ".\u0130"]],
+		[".i\u0307", [".i\u0307", ".\u0130"]],
+	] as const)(
+		"preserves expanding Unicode lowercase matches for %s",
+		async (basename, expected) => {
+			const found = await namedFiles(
+				basename,
+				path.resolve("synthetic-unicode-casing"),
+				true,
+				async () => [
+					entry("\u0130"),
+					entry("i\u0307"),
+					entry(".\u0130"),
+					entry(".i\u0307"),
+					entry("i"),
+					entry("ordinary"),
+				],
+			);
+			expect(found).toEqual(expected);
+		},
+	);
+
+	it("keeps non-ASCII names on the complete lowercase path for an ASCII target", async () => {
+		const found = await namedFiles(
+			"key",
+			path.resolve("synthetic-unicode-ascii-target"),
+			true,
+			async () => [entry("\u212Aey"), entry("KEY"), entry("key-longer"), entry("ordinary")],
+		);
+		expect(found).toEqual(["KEY", "\u212Aey"]);
+	});
+
 	it("does not confuse nonmatching basenames or paths containing newlines", async () => {
 		const root = path.resolve("synthetic");
 		expect(
@@ -405,6 +491,39 @@ describe("basename inventory", () => {
 				}
 			}
 		}
+	});
+
+	it.each([
+		"ordinary",
+		"",
+		".",
+		"..",
+		"a/..",
+		"a/",
+		"/",
+		"a\\b",
+		"C:relative",
+		"snow\u2603",
+		"a\nb",
+	])("preserves deep relative matches and native callback paths through %j", async (unusual) => {
+		const root = path.resolve("synthetic-deferred-relative");
+		const components = ["plain0", "plain1", "plain2", unusual, "after"];
+		const expectedRelative = [""];
+		for (const component of components)
+			expectedRelative.push(path.posix.join(expectedRelative.at(-1) ?? "", component));
+		const reads: string[] = [];
+		const found = await namedFiles(".gate-sentinel", root, false, async (target) => {
+			const index = reads.length;
+			reads.push(target);
+			return [
+				entry(".gate-sentinel"),
+				...(index < components.length ? [entry(components[index] ?? "", true)] : []),
+			];
+		});
+		expect(reads).toEqual(expectedRelative.map((relative) => path.join(root, relative)));
+		expect(found).toEqual(
+			expectedRelative.map((relative) => path.posix.join(relative, ".gate-sentinel")).toSorted(),
+		);
 	});
 
 	it.each(["trailing", "forward"] as const)(
@@ -636,15 +755,62 @@ describe("basename inventory", () => {
 		},
 	);
 
-	it.each(["trailing.", "lone-\ud800", "invalid-\uFFFD"])(
+	it("refuses decoded directory-name aliases before following the readable sibling", async () => {
+		const root = path.resolve("synthetic-successful-name-alias");
+		const alias = "alias-\uFFFD";
+		const reads: string[] = [];
+		let stats = 0;
+		const list: ReadDirectory = async (target) => {
+			reads.push(target);
+			// A malformed raw name and a literal U+FFFD name can decode identically.
+			// A string lookup would read the valid alias twice and miss the other tree.
+			if (target === root) return [entry(alias, true), entry(alias, true)];
+			if (target === path.join(root, alias)) return [];
+			throw new Error("DYTEST unexpected directory read");
+		};
+		const stat: StatPath = async () => {
+			stats++;
+			return kind(true);
+		};
+		await expect(namedFiles(".gate-sentinel", root, false, list, stat)).rejects.toThrow(
+			"file-name inventory failed",
+		);
+		expect(reads).toEqual([root]);
+		expect(stats).toBe(0);
+	});
+
+	it("refuses a lone-surrogate entry before the ordinary ASCII-name fast path", async () => {
+		const root = path.resolve("synthetic-successful-name-surrogate");
+		const reads: string[] = [];
+		let stats = 0;
+		const list: ReadDirectory = async (target) => {
+			reads.push(target);
+			return [entry("ordinary-\ud800")];
+		};
+		const stat: StatPath = async () => {
+			stats++;
+			return kind(true);
+		};
+		await expect(namedFiles(".gate-sentinel", root, true, list, stat)).rejects.toThrow(
+			"file-name inventory failed",
+		);
+		expect(reads).toEqual([root]);
+		expect(stats).toBe(0);
+	});
+
+	it.each([
+		["trailing.", 3],
+		["lone-\ud800", 1],
+		["invalid-\uFFFD", 1],
+	] as const)(
 		"does not mistake a still-listed non-round-tripping name %j for a removed folder",
-		async (name) => {
+		async (name, parentReads) => {
 			const fs = synthetic(
 				{ "": [[entry(name, true)]], [name]: [failure("ENOENT")] },
 				{ [name]: [failure("ENOENT")] },
 			);
 			await expect(fs.run()).rejects.toThrow("file-name inventory failed");
-			expect(fs.listed.filter((dir) => dir === "")).toHaveLength(3);
+			expect(fs.listed.filter((dir) => dir === "")).toHaveLength(parentReads);
 		},
 	);
 
@@ -707,6 +873,63 @@ describe("basename inventory", () => {
 		).toEqual([]);
 	});
 
+	it("bounds the unexplored frontier while preserving every match in a branching tree", async () => {
+		const root = path.resolve("synthetic-depth-first-frontier");
+		const expectedDirectories: string[] = [];
+		const add = (directory: string, depth: number): void => {
+			expectedDirectories.push(directory);
+			if (depth < 5)
+				for (let child = 0; child < 4; child += 1)
+					add(path.posix.join(directory, `branch${child}`), depth + 1);
+		};
+		add("", 0);
+		const permitted = new Set(expectedDirectories);
+		const seen = new Set<string>();
+		let produced = 1;
+		let reads = 0;
+		let peakUnstarted = 0;
+		let active = 0;
+		let peakActive = 0;
+		const found = await namedFiles(
+			".gate-sentinel",
+			root,
+			false,
+			async (target) => {
+				const directory = path.relative(root, target).split(path.sep).join("/");
+				if (!permitted.has(directory) || seen.has(directory))
+					throw new Error("unexpected synthetic directory");
+				seen.add(directory);
+				peakUnstarted = Math.max(peakUnstarted, produced - reads);
+				reads += 1;
+				active += 1;
+				peakActive = Math.max(peakActive, active);
+				await Promise.resolve();
+				try {
+					const depth = directory === "" ? 0 : directory.split("/").length;
+					const children =
+						depth < 5 ? Array.from({ length: 4 }, (_, child) => entry(`branch${child}`, true)) : [];
+					produced += children.length;
+					return [...sentinel, ...children];
+				} finally {
+					active -= 1;
+				}
+			},
+			async () => kind(true),
+		);
+		const expected = expectedDirectories
+			.map((directory) => path.posix.join(directory, ".gate-sentinel"))
+			.toSorted();
+		expect(expectedDirectories.length).toBe(1365);
+		expect(reads).toBe(1365);
+		expect(produced).toBe(1365);
+		expect(seen.size).toBe(1365);
+		expect(found.length).toBe(1365);
+		expect(found.every((name, index) => name === expected[index])).toBe(true);
+		expect(peakUnstarted).toBeLessThanOrEqual(128);
+		expect(peakActive).toBe(4);
+		expect(active).toBe(0);
+	});
+
 	it("lists every level with bounded directory concurrency", async () => {
 		const root = path.resolve("synthetic");
 		let active = 0;
@@ -762,9 +985,9 @@ describe("basename inventory", () => {
 				"slow1",
 				"slow2",
 				"fast",
+				"fast/deep",
 				"queued0",
 				"queued1",
-				"fast/deep",
 			]);
 			expect(peak).toBe(4);
 			expect(active).toBe(3);
