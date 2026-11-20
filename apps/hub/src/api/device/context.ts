@@ -35,6 +35,7 @@ import {
 	attachNativeDeviceHttp,
 	type NativeDeviceRequest,
 	type NativeDeviceRouteResult,
+	nativeDeviceStatusRoute,
 } from "./routes.ts";
 
 /** Captured native startup DATA; requests cannot select the upstream mode. */
@@ -63,6 +64,16 @@ export interface NativeDeviceContext {
 	requirePeerDevice(peer: NativeDevicePeer, capability: DeviceCapability): DeviceGrant;
 	requirePeerKind(peer: NativeDevicePeer, kind: string): DeviceGrant;
 	close(): Promise<void>;
+}
+
+export interface NativeDeviceMountedRegistration {
+	readonly status: typeof nativeDeviceStatusRoute;
+	readonly eventsUpgrade: boolean;
+}
+
+export interface NativeDeviceApiContext extends NativeDeviceContext {
+	/** Reports the live listener's selected bindings. Peer access uses requirePeerRoute. */
+	mountedRegistration(): NativeDeviceMountedRegistration;
 }
 
 export type NativeDeviceContextErrorCode =
@@ -103,7 +114,7 @@ interface Owner {
 interface NativeApiStartup {
 	readonly masterKey: MasterKey | undefined;
 	readonly secret: Uint8Array | undefined;
-	readonly runtimeMode: HubMode | undefined;
+	readonly config: NativeDeviceApiConfig;
 }
 
 const failedOpens = new WeakMap<object, Owner>();
@@ -357,14 +368,24 @@ function dispatch(
 	return pending;
 }
 
+type NativeDeviceOnPeer = (
+	peer: NativeDevicePeer,
+	socket: TLSSocket,
+	context: NativeDeviceContext,
+) => void;
+
+function openContext(
+	options: HubSessionOptions,
+	onPeer: NativeDeviceOnPeer,
+): Promise<NativeDeviceContext>;
+function openContext(
+	options: HubSessionOptions,
+	onPeer: undefined,
+	startup: NativeApiStartup,
+): Promise<NativeDeviceApiContext>;
 async function openContext(
 	options: HubSessionOptions,
-	onPeer: (
-		peer: NativeDevicePeer,
-		socket: TLSSocket,
-		context: NativeDeviceContext,
-		owner: Owner,
-	) => void,
+	onPeer: NativeDeviceOnPeer | undefined,
 	startup?: NativeApiStartup,
 ): Promise<NativeDeviceContext> {
 	const owner: Owner = {
@@ -383,8 +404,8 @@ async function openContext(
 			try {
 				if (!startup.masterKey) throw new NativeDeviceContextError("CONTEXT_OPTIONS");
 				owner.events = createNativeEventWebSocket(session);
-				if (startup.runtimeMode !== undefined)
-					owner.runtime = createNativeRuntimeState(session, startup.runtimeMode);
+				if (startup.config.runtimeMode !== undefined)
+					owner.runtime = createNativeRuntimeState(session, startup.config.runtimeMode);
 				owner.outbox = createNativeOutboxReadContext(session, startup.masterKey, owner.runtime);
 				if (startup.secret && !session.devices.currentState().bootstrapDone) {
 					owner.sidecar = new DevicePairingAuthority(
@@ -398,7 +419,12 @@ async function openContext(
 				if (startup.secret) fillSecret.call(startup.secret, 0);
 			}
 		}
-		const context: NativeDeviceContext = Object.freeze({
+		const api = startup && {
+			config: startup.config,
+			events: owner.events ?? unavailable(),
+			registration: Object.freeze({ status: nativeDeviceStatusRoute, eventsUpgrade: true }),
+		};
+		const context = Object.freeze({
 			get endpoint(): NativeDeviceEndpoint {
 				admitted(owner);
 				return owner.endpoint ?? unavailable();
@@ -430,11 +456,29 @@ async function openContext(
 				return result;
 			},
 			close: () => closeOwner(owner),
+			...(api && {
+				mountedRegistration(): NativeDeviceMountedRegistration {
+					admitted(owner);
+					return api.registration;
+				},
+			}),
 		});
 		owner.listener = new NativeDeviceTls(session.devices, session.identity, (peer, socket) => {
 			try {
 				admitted(owner);
-				const returned = onPeer(peer, socket, context, owner);
+				if (api) {
+					attachNativeDeviceHttp(
+						socket,
+						(request) => dispatch(owner, peer, api.config, request),
+						(request, upgradeSocket, head) => {
+							admitted(owner);
+							if (upgradeSocket !== socket || request.socket !== socket) return unavailable();
+							api.events.upgrade(peer, request, upgradeSocket, head);
+						},
+					);
+					return;
+				}
+				const returned = onPeer?.(peer, socket, context);
 				void Promise.resolve(returned).catch(() => socket.destroy());
 			} catch {
 				socket.destroy();
@@ -461,11 +505,11 @@ async function openContext(
 /** Opens a new original session; no caller-provided session or listener is adopted. */
 export function openNativeDeviceContext(
 	options: HubSessionOptions,
-	onPeer: (peer: NativeDevicePeer, socket: TLSSocket, context: NativeDeviceContext) => void,
+	onPeer: NativeDeviceOnPeer,
 ): Promise<NativeDeviceContext> {
 	if (typeof onPeer !== "function" || types.isProxy(onPeer))
 		return Promise.reject(new NativeDeviceContextError("CONTEXT_OPTIONS"));
-	return openContext(options, (peer, socket, context) => onPeer(peer, socket, context));
+	return openContext(options, onPeer);
 }
 
 /** Mounts the bounded native HTTP routes on the original listener's real TLS connections. */
@@ -473,31 +517,16 @@ export async function openNativeDeviceApi(
 	options: HubSessionOptions,
 	config: NativeDeviceApiConfig,
 	bootstrapSecret?: Uint8Array,
-): Promise<NativeDeviceContext> {
+): Promise<NativeDeviceApiContext> {
 	const secret = takeBootstrapSecret(bootstrapSecret);
 	try {
 		const captured = startupConfig(config);
 		const startup = {
 			masterKey: startupMasterKey(options),
 			secret,
-			runtimeMode: captured.runtimeMode,
+			config: captured,
 		};
-		return await openContext(
-			options,
-			(peer, socket, _context, owner) => {
-				attachNativeDeviceHttp(
-					socket,
-					(request) => dispatch(owner, peer, captured, request),
-					(request, upgradeSocket, head) => {
-						admitted(owner);
-						if (upgradeSocket !== socket || request.socket !== socket) return unavailable();
-						const events = owner.events ?? unavailable();
-						events.upgrade(peer, request, upgradeSocket, head);
-					},
-				);
-			},
-			startup,
-		);
+		return await openContext(options, undefined, startup);
 	} finally {
 		if (secret) fillSecret.call(secret, 0);
 	}

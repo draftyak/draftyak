@@ -13,10 +13,12 @@ export {
 export {
 	closeFailedNativeDeviceContext,
 	type NativeDeviceApiConfig,
+	type NativeDeviceApiContext,
 	type NativeDeviceContext,
 	NativeDeviceContextError,
 	type NativeDeviceContextErrorCode,
 	type NativeDeviceEndpoint,
+	type NativeDeviceMountedRegistration,
 	openNativeDeviceApi,
 	openNativeDeviceContext,
 } from "./api/device/context.ts";
