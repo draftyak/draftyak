@@ -51,6 +51,12 @@ pub fn canonicalize<T: Serialize + ?Sized>(value: &T) -> Result<String, JcsError
     serde_json_canonicalizer::to_string(&value).map_err(|_| JcsError::UnsupportedValue)
 }
 
+/// A bounded JSON copy for typed decoders receiving a caller's value rather than JSON bytes.
+/// In particular, never clone an unchecked `Value`: its recursive clone precedes typed checks.
+pub(crate) fn bounded_value(value: &Value) -> Result<Value, JcsError> {
+    strict::value(value)
+}
+
 /// RFC 8259 JSON as UTF-8, with duplicate member names, lone surrogates, numbers beyond the double
 /// range and nesting deeper than [`JCS_MAX_DEPTH`] refused. Numbers become doubles, as RFC 8785
 /// reads them; an integral one is kept as an integer, so typed fields can take it.

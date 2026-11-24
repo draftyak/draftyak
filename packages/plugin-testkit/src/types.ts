@@ -1,7 +1,9 @@
+import { isProxy } from "node:util/types";
 import type { Fake } from "@draftyak/fakes";
 import type { HeaderList } from "@draftyak/protocol/hash";
-import type { HostMethod } from "@draftyak/protocol/host-channel";
+import { HOST_MAX_ACTIVE_REQUESTS, type HostMethod } from "@draftyak/protocol/host-channel";
 import type { PluginManifestV1 } from "@draftyak/protocol/manifest";
+import type { ResponsesHttpBindingInput } from "@draftyak/protocol/manifest/responses-http";
 import type { SendTicket, TicketMismatch } from "@draftyak/protocol/send-ticket";
 import type { HostChannel, PluginEntry } from "@draftyak/sdk";
 
@@ -22,6 +24,8 @@ export interface MockHubOptions {
 		| { readonly id: string; readonly config?: Readonly<Record<string, unknown>> };
 	readonly upstreams: readonly Fake[];
 	readonly secrets?: Readonly<Record<string, string>>;
+	/** Trusted constructor inputs for the Responses fixture comparison; never call metadata. */
+	readonly responsesHttp?: readonly ResponsesHttpBindingInput[];
 }
 export interface RenderedRequest {
 	readonly outboxId: string;
@@ -67,8 +71,68 @@ export interface MockHub {
 		name: string,
 		args: Record<string, unknown>,
 		meta?: Record<string, unknown>,
+		options?: MockCallOptions,
 	): Promise<Record<string, unknown>>;
 	close(): Promise<void>;
+}
+export interface MockProgressNotification {
+	readonly jsonrpc: "2.0";
+	readonly method: "notifications/progress";
+	readonly params: {
+		readonly progressToken: string | number;
+		readonly progress: number;
+		readonly total?: number;
+	};
+}
+export interface MockCallOptions {
+	/** Observes validated process-wire receipt, independently of private client handling. */
+	readonly onProgress?: (notification: MockProgressNotification) => void;
+}
+
+export function copyMockCallOptions(
+	options: MockCallOptions | undefined,
+): MockCallOptions | undefined {
+	if (options === undefined) return undefined;
+	if (options === null || typeof options !== "object" || isProxy(options))
+		throw new MockHubError("PROCESS_PROGRESS_INVALID");
+	const prototype = Object.getPrototypeOf(options);
+	if (prototype !== Object.prototype && prototype !== null)
+		throw new MockHubError("PROCESS_PROGRESS_INVALID");
+	const keys = Reflect.ownKeys(options);
+	if (keys.some((key) => key !== "onProgress")) throw new MockHubError("PROCESS_PROGRESS_INVALID");
+	const slot = Object.getOwnPropertyDescriptor(options, "onProgress");
+	if (slot && !Object.hasOwn(slot, "value")) throw new MockHubError("PROCESS_PROGRESS_INVALID");
+	const callback: unknown = slot?.value;
+	if (callback !== undefined && typeof callback !== "function")
+		throw new MockHubError("PROCESS_PROGRESS_INVALID");
+	return callback === undefined
+		? undefined
+		: Object.freeze({ onProgress: callback as NonNullable<MockCallOptions["onProgress"]> });
+}
+
+/** Copies trusted binding inputs from own data properties without invoking caller hooks. */
+export function copyResponsesHttpInputs(value: unknown): readonly ResponsesHttpBindingInput[] {
+	const invalid: () => never = () => {
+		throw new MockHubError("INVALID_RESPONSES_BINDINGS");
+	};
+	if (isProxy(value) || !Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype)
+		invalid();
+	const length: unknown = Object.getOwnPropertyDescriptor(value, "length")?.value;
+	if (
+		typeof length !== "number" ||
+		!Number.isSafeInteger(length) ||
+		length < 0 ||
+		length > HOST_MAX_ACTIVE_REQUESTS ||
+		Reflect.ownKeys(value).length !== length + 1
+	)
+		invalid();
+	const inputs: ResponsesHttpBindingInput[] = [];
+	for (let index = 0; index < length; index++) {
+		const slot = Object.getOwnPropertyDescriptor(value, String(index));
+		if (!slot?.enumerable || !Object.hasOwn(slot, "value")) invalid();
+		inputs.push(slot.value);
+	}
+	return Object.freeze(inputs);
 }
 export class MockHubError extends Error {
 	readonly code: string;

@@ -181,6 +181,9 @@ export const adminKinds = [
 	"security.pin-change",
 	"security.key-rotate",
 	"data.export",
+	"data.backup",
+	"ai.credential-connect",
+	"ai.credential-disconnect",
 ] as const;
 export const capabilities: Readonly<Record<string, string>> = Object.fromEntries([
 	...[

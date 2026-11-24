@@ -1,11 +1,22 @@
 # cargo-deny 0.20.2 policy for the crates/ workspace; `pnpm verify` and CI run `cargo-deny --locked check`.
 
+# The checks cover every target and every feature of the workspace members.
+[graph]
+all-features = true
+
 # Every RustSec advisory fails the check, for any crate in the graph, as does a yanked version.
+# The only exceptions are the three unmaintained zbus-family crates of the Unix native store.
+# draftyak-transport/tests/key_store_pins.rs binds them to their recorded routes, a weekly review
+# and an end no later than 2026-11-19T13:15:04Z.
 [advisories]
 unmaintained = "all"
 unsound = "all"
 yanked = "deny"
-ignore = []
+ignore = [
+    { id = "RUSTSEC-2026-0370", reason = "zvariant 5.15.1 is unmaintained (merged into zbus 6) and has no fix; reached only through the Unix native store's zbus 5.19.0 routes" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names 4.3.5 is unmaintained (merged into zbus 6) and has no fix; reached only through the Unix native store's zbus 5.19.0 routes" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 5.15.1 is unmaintained (merged into zbus 6) and has no fix; reached only through the Unix native store's zbus 5.19.0 routes" },
+]
 
 # Exactly the licences the locked crates resolve to, dev-dependencies included. A new crate's
 # licence is one more line here, listed in its PR for the owner.
@@ -31,6 +42,7 @@ multiple-versions-include-dev = true
 skip = [
     { name = "getrandom", version = "=0.2.17", reason = "ring 0.17.14 requires getrandom 0.2; rand 0.10.3 requires getrandom 0.4.3" },
     { name = "windows-sys", version = "=0.52.0", reason = "ring 0.17.14 requires windows-sys 0.52; tokio, mio and socket2 require 0.61.2" },
+    { name = "syn", version = "=2.0.119", reason = "enumflags2_derive 0.7.12 and tracing-attributes 0.1.31 in the Unix native store require syn 2; serde_derive, thiserror-impl and the zbus macros require syn 3.0.9" },
 ]
 deny = [
     { name = "reqwest" },

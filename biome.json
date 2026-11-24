@@ -16,7 +16,6 @@
       "!spikes/*/vectors",
       "!**/*.lock.json",
       "!spec/**/*.schema.json",
-      "!spikes/sched-clock/grit-check",
       "apps/hub/src/outbox/**"
     ]
   },

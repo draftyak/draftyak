@@ -1,7 +1,13 @@
 import { spawn } from "node:child_process";
 import { scheduler, setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
-import { checkWait, MAX_WAIT_MS, systemClock } from "../../src/kernel/clock.ts";
+import {
+	checkWait,
+	MAX_WAIT_MS,
+	systemClock,
+	timeoutSignal,
+	withDeadline,
+} from "../../src/kernel/clock.ts";
 
 interface ArmedDelay {
 	readonly promise: Promise<void>;
@@ -254,5 +260,36 @@ describe("native timer overflow and bounded clock waits", () => {
 			if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
 			await closed;
 		}
+	});
+});
+
+describe("bounded deadline helpers on the native clock", () => {
+	it("times out real work at its deadline and returns work that finishes first", async () => {
+		const started = performance.now();
+		const late = await withDeadline(
+			systemClock,
+			50,
+			(signal) =>
+				new Promise<never>((_resolve, reject) =>
+					signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+				),
+		);
+		expect(late).toEqual({ ok: false, reason: "timeout" });
+		expect(performance.now() - started).toBeGreaterThanOrEqual(40);
+		await expect(
+			withDeadline(systemClock, MAX_WAIT_MS, () => sleep(10).then(() => "done")),
+		).resolves.toEqual({ ok: true, value: "done" });
+	});
+
+	it("aborts a real timeout signal once, and never after cancel", async () => {
+		const timeout = timeoutSignal(systemClock, 30);
+		await new Promise((resolve) =>
+			timeout.signal.addEventListener("abort", resolve, { once: true }),
+		);
+		expect(timeout.signal.reason).toMatchObject({ name: "TimeoutError" });
+		const cancelled = timeoutSignal(systemClock, 30);
+		cancelled.cancel();
+		await sleep(80);
+		expect(cancelled.signal.aborted).toBe(false);
 	});
 });

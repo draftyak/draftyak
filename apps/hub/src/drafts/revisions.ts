@@ -37,6 +37,7 @@ export interface NativeRevision {
 	readonly lockId: string | null;
 }
 export interface DraftCreation extends DraftBinding {
+	/** Attribution only. The native caller computes the envelope and authorizes its creation. */
 	readonly author: DraftAuthor;
 	readonly content: DraftContent;
 	readonly flags: readonly Flag[];
@@ -48,6 +49,7 @@ export interface ModelBodyAppend extends DraftBinding {
 	readonly expectedRev: number;
 	readonly author: DraftAuthor;
 	readonly body: string;
+	/** Complete flags recomputed by the native caller for the resulting revision. */
 	readonly flags: readonly Flag[];
 }
 interface Header {
@@ -173,6 +175,15 @@ function asBinding(input: Record<string, unknown>): DraftBinding {
 	return captureDraftBinding(
 		Object.fromEntries(bindingKeys.map((key) => [key, input[key]])) as unknown as DraftBinding,
 	);
+}
+
+/** Keep the snapshot's finite attribution list without exhausting the owner's first edit. */
+function admitAuthor(authors: readonly DraftAuthor[], author: DraftAuthor): void {
+	const keys = new Set(authors.map((item) => canonicalize(item)));
+	if (keys.has(canonicalize(author))) return;
+	const ownerRecorded = authors.some((item) => item.kind === "owner");
+	const maximum = author.kind === "owner" || ownerRecorded ? 100 : 99;
+	if (keys.size >= maximum) throw revisionUnavailable();
 }
 
 /** Internal encrypted data storage. Author attribution and supplied flag facts confer no rights. */
@@ -514,6 +525,9 @@ export class NativeDraftRevisions {
 		}
 	}
 	appendInTransaction(tx: SqlTransaction, input: DraftAppend): NativeRevision {
+		return this.#appendInTransaction(tx, input, false);
+	}
+	#appendInTransaction(tx: SqlTransaction, input: DraftAppend, modelBody: boolean): NativeRevision {
 		try {
 			this.#assertTransaction(tx);
 			const data = draftRecord(input, [
@@ -532,16 +546,14 @@ export class NativeDraftRevisions {
 				current.draft.rev >= 10000
 			)
 				throw revisionUnavailable();
-			const at = this.#now(),
+			const observedAt = this.#now(),
+				at = Math.max(observedAt, current.draft.updatedAt),
 				content = normalizeDraftContent(data.content),
 				author = DraftAuthor.parse(data.author);
-			if (
-				at < current.draft.updatedAt ||
-				content.channel !== bound.channel ||
-				new Set([...current.authors.map((item) => canonicalize(item)), canonicalize(author)]).size >
-					100
-			)
-				throw revisionUnavailable();
+			// Only the body-only entry point can attribute a later revision to a model run.
+			if ((author.kind === "ai") !== modelBody) throw revisionUnavailable();
+			admitAuthor(current.authors, author);
+			if (content.channel !== bound.channel) throw revisionUnavailable();
 			const revision = DraftRevision.parse({
 					draftId: bound.draftId,
 					rev: current.draft.rev + 1,
@@ -552,6 +564,8 @@ export class NativeDraftRevisions {
 					createdAt: at,
 				}),
 				draft = Draft.parse({ ...current.draft, rev: revision.rev, updatedAt: at });
+			if (observedAt < at)
+				this.#auditInTransaction(tx, "draft.clock_skew", { clockSkewDraft: bound.draftId });
 			this.#saveRevision(tx, bound, revision);
 			this.#saveHeader(
 				tx,
@@ -572,21 +586,17 @@ export class NativeDraftRevisions {
 				current = this.#facts(tx, bound),
 				author = DraftAuthor.parse(data.author);
 			if (author.kind !== "ai") throw revisionUnavailable();
-			const merged = [
-				...new Map(
-					[...current.revision.flags, ...flags(data.flags)].map((flag) => [
-						canonicalize(flag),
-						flag,
-					]),
-				).values(),
-			];
-			return NativeDraftRevisions.prototype.appendInTransaction.call(this, tx, {
-				...bound,
-				expectedRev: data.expectedRev as number,
-				author,
-				content: { ...current.revision.content, body: normalizeDraftBody(data.body as string) },
-				flags: merged,
-			});
+			return this.#appendInTransaction(
+				tx,
+				{
+					...bound,
+					expectedRev: data.expectedRev as number,
+					author,
+					content: { ...current.revision.content, body: normalizeDraftBody(data.body as string) },
+					flags: flags(data.flags),
+				},
+				true,
+			);
 		} catch {
 			throw revisionUnavailable();
 		}
@@ -598,6 +608,7 @@ export class NativeDraftRevisions {
 		expectedRev: number,
 		expectedLock: string | null,
 		lockId: string | null,
+		timestampFloor = 0,
 	): NativeRevision {
 		try {
 			this.#assertTransaction(tx);
@@ -606,11 +617,14 @@ export class NativeDraftRevisions {
 				current.draft.rev !== expectedRev ||
 				current.lockId !== expectedLock ||
 				current.draft.state !== "open" ||
-				!(lockId === null || Ulid.safeParse(lockId).success)
+				!(lockId === null || Ulid.safeParse(lockId).success) ||
+				!UtcMs.safeParse(timestampFloor).success
 			)
 				throw revisionUnavailable();
-			const at = this.#now();
-			if (at < current.draft.updatedAt) throw revisionUnavailable();
+			const observedAt = this.#now(),
+				at = Math.max(observedAt, current.draft.updatedAt, timestampFloor);
+			if (observedAt < at)
+				this.#auditInTransaction(tx, "draft.clock_skew", { clockSkewDraft: bound.draftId });
 			this.#saveHeader(
 				tx,
 				{ draft: { ...current.draft, updatedAt: at }, channel: current.channel, lockId },

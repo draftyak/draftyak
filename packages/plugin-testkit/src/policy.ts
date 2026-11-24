@@ -1,10 +1,22 @@
+import type { HeaderList } from "@draftyak/protocol/hash";
+import { HOST_MAX_STREAM_BYTES, HOST_REQUEST_TIMEOUT_MS } from "@draftyak/protocol/host-channel";
 import type { PluginManifestV1 } from "@draftyak/protocol/manifest";
 import type { EgressRule } from "@draftyak/protocol/manifest/egress";
 import { PathSegment } from "@draftyak/protocol/manifest/egress";
+import {
+	checkResponsesHttpRequest,
+	type ResponsesHttpBinding,
+} from "@draftyak/protocol/manifest/responses-http";
 import { SendUrl } from "@draftyak/protocol/send-ticket";
 import { checkUrlSecret, parseSecretRef, type ToolEgressRule } from "@draftyak/protocol/tool-v1";
 
 export type MatchedRule = { readonly rule: EgressRule | ToolEgressRule; readonly url: string };
+
+export interface ResponsesMatchContext {
+	readonly bindings: readonly ResponsesHttpBinding[];
+	readonly headers: HeaderList;
+	readonly body: Uint8Array;
+}
 
 function matches(rule: EgressRule, url: URL): boolean {
 	const expected = rule.pathTemplate === "/" ? [] : rule.pathTemplate.slice(1).split("/");
@@ -94,7 +106,28 @@ export function matchRequest(
 	requested: string,
 	method: string,
 	secrets: ReadonlyMap<string, string>,
+	responses?: ResponsesMatchContext,
 ): MatchedRule | undefined {
+	if (manifest.kind === "ai-provider") {
+		if (manifest.egress.profile !== "responses-api-v1" || !responses) return;
+		const request = { method, url: requested, headers: responses.headers, body: responses.body };
+		if (!responses.bindings.some((binding) => checkResponsesHttpRequest(request, binding).ok))
+			return;
+		// The issued binding checks the original request before any host header filtering.
+		// Its exact model URL may contain RFC 3986 path characters outside channel segments.
+		const url = new URL(requested);
+		return {
+			url: requested,
+			rule: {
+				class: "read",
+				method: method as "GET" | "POST",
+				host: url.hostname,
+				pathTemplate: url.pathname,
+				maxBytes: HOST_MAX_STREAM_BYTES,
+				timeoutMs: HOST_REQUEST_TIMEOUT_MS,
+			},
+		};
+	}
 	if (requested.startsWith("secret://")) {
 		if (manifest.kind !== "tool") return;
 		const name = parseSecretRef(requested);

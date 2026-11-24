@@ -7,7 +7,7 @@ use std::{
 
 use draftyak_protocol::{jcs, sign};
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::codec::{CodecError, display_name, unhex};
 
@@ -130,6 +130,15 @@ impl Payload {
             .expect("validated pid")
             .try_into()
             .expect("16 bytes")
+    }
+
+    /// Owned secret bytes for native pairing derivation; erased when dropped.
+    pub(crate) fn pairing_secret(&self) -> Zeroizing<[u8; 16]> {
+        let decoded =
+            Zeroizing::new(sign::base64url_decode(&self.0.sec).expect("validated pairing secret"));
+        let mut secret = Zeroizing::new([0; 16]);
+        secret.copy_from_slice(decoded.as_slice());
+        secret
     }
 }
 

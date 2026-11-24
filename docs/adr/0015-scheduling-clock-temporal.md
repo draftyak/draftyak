@@ -80,8 +80,8 @@ Plan changes:
 - **Command:** `pnpm --filter @draftyak/spike-sched-clock test`
 - **Guards:** every Node delay API fires at once past 2^31−1 ms; `clock.after` accepts 15 s and throws above it before arming anything; bounded ticks reach items 2^31−2, 2^31−1, 2^31 ms and 30 days ahead exactly when due, and wait a full tick when nothing is due or a time is unusable.
 - **Destination:** M2a `apps/hub/src/kernel/` (the `clock.ts` tests).
-- **Path:** `spikes/sched-clock/test/grit.test.ts`, `spikes/sched-clock/grit-check`
-- **Command:** `pnpm --filter @draftyak/spike-sched-clock test`; by hand, `pnpm exec biome lint fixtures/outbox` from `spikes/sched-clock/grit-check`
+- **Path:** `apps/hub/test/outbox/timer-rule.test.ts`, `apps/hub/test/outbox/suppression-scan.test.ts`
+- **Command:** `pnpm --filter @draftyak/hub exec vitest run --reporter=default test/outbox/timer-rule.test.ts test/outbox/suppression-scan.test.ts`; `pnpm lint`
 - **Guards:** the rule flags each banned form in outbox code and nothing outside it or in the sanctioned clock shape, is scoped through `overrides`, and is silenced by every form of `biome-ignore` comment, a token outbox code must therefore refuse.
 - **Destination:** M2a `apps/hub/src/outbox/` (the rule, scoped by an `overrides` entry in the root `biome.json`, and the suppression check).
 - **Path:** `spikes/sched-clock/test/temporal.heavy.test.ts`

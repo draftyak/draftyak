@@ -1,5 +1,5 @@
 //! Frozen email/chat sends. Deserialize through this validated type before hashing or rendering.
-use crate::{hash::jcs_sha256, jcs::parse_strict};
+use crate::{hash::jcs_sha256, jcs::parse_strict, statements::decode};
 use serde::{Deserialize, Deserializer, Serialize};
 use unicode_normalization::is_nfc;
 
@@ -25,7 +25,7 @@ impl SnapshotError {
 pub struct SendSnapshotV1(Wire);
 impl<'de> Deserialize<'de> for SendSnapshotV1 {
     fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        let wire = Wire::deserialize(decoder)?;
+        let wire: Wire = crate::statements::decode_from(decoder, "SNAPSHOT_INVALID")?;
         if !wire.valid() {
             return Err(serde::de::Error::custom("SNAPSHOT_INVALID"));
         }
@@ -248,8 +248,7 @@ impl SendSnapshotV1 {
     }
 }
 pub fn parse_snapshot(bytes: &[u8]) -> Result<SendSnapshotV1, SnapshotError> {
-    serde_json::from_value(parse_strict(bytes).map_err(|_| SnapshotError::Invalid)?)
-        .map_err(|_| SnapshotError::Invalid)
+    decode(&parse_strict(bytes).map_err(|_| SnapshotError::Invalid)?).ok_or(SnapshotError::Invalid)
 }
 /// Structural current-send admission, without enriching or rewriting legacy signed snapshots.
 pub fn check_current_send_snapshot(snapshot: &SendSnapshotV1) -> bool {
@@ -307,7 +306,7 @@ fn sha(text: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
-fn provider(text: &str) -> bool {
+pub(crate) fn provider(text: &str) -> bool {
     !text.is_empty() && text.len() <= 256 && text.bytes().all(|byte| (b'!'..=b'~').contains(&byte))
 }
 fn visible_local(ch: char) -> bool {
@@ -341,7 +340,7 @@ fn domain(text: &str, dotted: bool, max_label: bool) -> bool {
                     .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
         })
 }
-fn address(text: &str) -> bool {
+pub(crate) fn address(text: &str) -> bool {
     let Some((local, host)) = text.rsplit_once('@') else {
         return false;
     };
@@ -495,6 +494,24 @@ fn send_url(text: &str) -> bool {
     };
     valid(path, false) && query.is_none_or(|q| valid(q, true))
 }
+/// The frozen schedule's checks, shared by the snapshot and the scheduled summary.
+pub(crate) fn valid_schedule(schedule: &Schedule) -> bool {
+    match schedule {
+        Schedule::Now {} => true,
+        Schedule::At {
+            not_before,
+            zone: z,
+            local_wall_time,
+            lateness_sec,
+            ..
+        } => {
+            *not_before <= MAX_SAFE
+                && zone(z)
+                && wall_time(local_wall_time)
+                && [900, 3600, 14400, 86400].contains(lateness_sec)
+        }
+    }
+}
 impl Wire {
     fn valid(&self) -> bool {
         let common = self.v == 1
@@ -525,21 +542,7 @@ impl Wire {
                     && sha(&r.headers_sha256)
                     && sha(&r.body_sha256)
             })
-            && match &self.schedule {
-                Schedule::Now {} => true,
-                Schedule::At {
-                    not_before,
-                    zone: z,
-                    local_wall_time,
-                    lateness_sec,
-                    ..
-                } => {
-                    *not_before <= MAX_SAFE
-                        && zone(z)
-                        && wall_time(local_wall_time)
-                        && [900, 3600, 14400, 86400].contains(lateness_sec)
-                }
-            };
+            && valid_schedule(&self.schedule);
         common
             && match self.kind {
                 Kind::Email => {

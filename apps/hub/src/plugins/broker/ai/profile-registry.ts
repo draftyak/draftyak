@@ -103,7 +103,9 @@ export function createAiProfileRegistry(
 				refuse();
 			table.set(id, Object.freeze(entry) as unknown as AiProfileRegistration);
 		}
-		if (AI_HTTP_PROFILES.some((id) => !table.has(id))) refuse();
+		// Every bundled profile is required. A listed profile that no bundled plugin ships may stay
+		// unregistered, and verification refuses each request under it.
+		if (builtinRegistrations.some(({ profile: id }) => !table.has(id))) refuse();
 		const handle = Object.freeze(Object.create(null)) as AiProfileRegistry;
 		registries.set(handle, table);
 		return handle;

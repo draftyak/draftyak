@@ -233,7 +233,7 @@ The closed `AdminKind` catalogue is grouped so later contracts add explicit kind
 | Tools | `tool.instance-create`, `tool.secret-set`, `tool.enable`, `tool.posture-no-train` |
 | Access | `access.token-mint`, `access.grant-widen`, `access.cimd-host-add`, `access.exposure-enable`, `access.bind-address-add`, `access.advertised-addresses-set` |
 | Security | `security.device-capabilities`, `security.pin-change`, `security.key-rotate` |
-| Data | `data.export` |
+| Data | `data.export`, `data.backup` |
 
 `tool.secret-set` binds an API-key or URL-secret entry/replacement; the secret itself
 is not an arbitrary statement field. `tool.enable` binds the account and tool instance
@@ -241,6 +241,7 @@ through the pending record. A parsed kind does not imply its endpoint is impleme
 access.advertised-addresses-set binds the hub's advertisedAddresses change.
 access.exposure-enable covers changes to publicBaseUrl and trusted proxies as part
 of the reviewed exposure configuration; it does not bypass their native policy.
+`data.backup` is Back up now's encrypted hub backup, separate from `data.export`.
 ADMIN_GROUPS has an empty SMS group so later contracts add each kind once.
 
 Desktop operations use `admin_open` to create an immutable pending operation, then

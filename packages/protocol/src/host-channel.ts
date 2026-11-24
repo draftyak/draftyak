@@ -243,11 +243,19 @@ export const HostNotification: z.ZodType<HostNotification> = z.union([
 		params: z.strictObject({ socketId: Id, data: WsData }),
 	}),
 ]);
-export const HostMessage: z.ZodType<HostRequest | HostReply | HostNotification> = z.union([
-	RequestSchema,
-	ReplySchema,
-	HostNotification,
-]);
+/** Child-to-parent cancellation of one original host request; never an RPC or authority grant. */
+export interface HostCancel {
+	readonly jsonrpc: "2.0";
+	readonly method: "host/cancel";
+	readonly params: { readonly requestId: string };
+}
+export const HostCancel: z.ZodType<HostCancel> = z.strictObject({
+	jsonrpc: z.literal("2.0"),
+	method: z.literal("host/cancel"),
+	params: z.strictObject({ requestId: Id }),
+});
+export const HostMessage: z.ZodType<HostRequest | HostReply | HostNotification | HostCancel> =
+	z.union([RequestSchema, ReplySchema, HostNotification, HostCancel]);
 
 export function jsonCopy<T>(value: T): T {
 	const text = canonicalize(value);

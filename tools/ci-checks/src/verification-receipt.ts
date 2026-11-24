@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { appendSummary, git, runCli, setOutputs, UsageError } from "./lib.ts";
+import { nativeTransportSelection } from "./native-transport.ts";
 
-export const jobNames = ["changes", "cheap", "full", "windows"] as const;
+export const jobNames = ["changes", "cheap", "full", "windows", "macos"] as const;
 type JobName = (typeof jobNames)[number];
 type JobResult = "success" | "failure" | "cancelled" | "skipped";
 type Event = "pull_request" | "push" | "workflow_dispatch";
@@ -14,6 +15,7 @@ export interface Source {
 	readonly lockfileSha256: string;
 	readonly nodeVersion: string;
 	readonly platform: string;
+	readonly architecture: string;
 }
 
 export interface ReceiptInput {
@@ -36,6 +38,8 @@ export interface Selection {
 	readonly spikes: readonly string[];
 	readonly heavy: readonly string[];
 	readonly templateSmoke: boolean;
+	readonly nativeTransport: boolean;
+	readonly ordinaryHeavy: readonly string[];
 }
 
 export interface Receipt {
@@ -51,7 +55,7 @@ export interface Receipt {
 		readonly baseSha: string | null;
 		readonly testedSha: string;
 	};
-	readonly coverage: "docs" | "draft" | "linux" | "linux-and-windows";
+	readonly coverage: "docs" | "draft" | "linux" | "linux-and-windows" | "native-three-platforms";
 	readonly selection: Selection | null;
 	readonly jobResults: Readonly<
 		Record<
@@ -60,6 +64,8 @@ export interface Receipt {
 				readonly result: JobResult;
 				readonly required: boolean;
 				readonly source: Source | null;
+				readonly nativeRequired: boolean;
+				readonly nativeTransport: "passed" | null;
 			}
 		>
 	>;
@@ -102,7 +108,8 @@ function parseSource(value: unknown): Source | null {
 		treeSha: sha(source.treeSha),
 		lockfileSha256: text(source.lockfileSha256, /^[a-f0-9]{64}$/, "lockfile hash"),
 		nodeVersion: text(source.nodeVersion, /^\d+\.\d+\.\d+$/, "Node version"),
-		platform: text(source.platform, /^(linux|win32)$/, "runner platform"),
+		platform: text(source.platform, /^(linux|win32|darwin)$/, "runner platform"),
+		architecture: text(source.architecture, /^(x64|arm64)$/, "runner architecture"),
 	};
 }
 
@@ -163,11 +170,21 @@ function parseSelection(outputs: Record<string, unknown>): Selection {
 		300,
 		240,
 	);
+	const rust = selectionList(outputs.rust, "rust", pathPattern);
+	const heavy = selectionList(outputs.heavy, "heavy", heavyPattern);
+	const ordinaryHeavy = selectionList(outputs["ordinary-heavy"], "ordinary-heavy", heavyPattern);
+	const native = nativeTransportSelection(heavy.join("\n"), rust.join("\n"));
+	const nativeTransport =
+		text(outputs["native-transport"], /^(true|false)$/, "native-transport output") === "true";
+	if (native.selected !== nativeTransport || native.ordinaryHeavy !== ordinaryHeavy.join("\n"))
+		throw new UsageError("native transport and ordinary-heavy selections disagree");
 	return {
 		areas,
-		rust: selectionList(outputs.rust, "rust", pathPattern),
+		rust,
 		spikes: selectionList(outputs.spikes, "spikes", pathPattern),
-		heavy: selectionList(outputs.heavy, "heavy", heavyPattern),
+		heavy,
+		ordinaryHeavy,
+		nativeTransport,
 		templateSmoke:
 			text(outputs["template-smoke"], /^(true|false)$/, "template-smoke output") === "true",
 	};
@@ -202,9 +219,17 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 	}
 	const selection = changes.result === "success" ? parseSelection(changesOutputs) : null;
 	const full = !docsOnly && (event !== "pull_request" || !input.draft);
+	const native = full && selection?.nativeTransport === true;
 	const windows =
-		!docsOnly && (input.ref === "refs/heads/main" || (event === "pull_request" && !input.draft));
-	const required: Record<JobName, boolean> = { changes: true, cheap: true, full, windows };
+		native ||
+		(!docsOnly && (input.ref === "refs/heads/main" || (event === "pull_request" && !input.draft)));
+	const required: Record<JobName, boolean> = {
+		changes: true,
+		cheap: true,
+		full,
+		windows,
+		macos: native,
+	};
 	const problems: string[] = [];
 	const entries = jobNames.map((name) => {
 		const job = object(needs[name]);
@@ -215,6 +240,17 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 		) as JobResult;
 		const outputs = object(job.outputs ?? {});
 		const source = parseSource(outputs.source);
+		const nativeJob = name === "full" || name === "windows" || name === "macos";
+		const nativeRequired = native && nativeJob;
+		const completion = nativeJob ? outputs["native-transport"] : undefined;
+		const nativeTransport =
+			completion === undefined || completion === ""
+				? null
+				: (text(completion, /^passed$/, "native transport completion") as "passed");
+		if (nativeRequired && nativeTransport !== "passed")
+			problems.push(`${name}: missing native transport completion`);
+		if (!nativeRequired && nativeTransport !== null)
+			problems.push(`${name}: unexpected native transport completion`);
 		if (
 			(required[name] && result !== "success") ||
 			result === "failure" ||
@@ -227,10 +263,16 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 			if (source.checkoutSha !== testedSha)
 				problems.push(`${name}: checkout differs from tested SHA`);
 			if (source.nodeVersion !== nodeVersion) problems.push(`${name}: Node differs from the pin`);
-			const platform = name === "windows" ? "win32" : "linux";
+			const platform = name === "macos" ? "darwin" : name === "windows" ? "win32" : "linux";
 			if (source.platform !== platform) problems.push(`${name}: unexpected runner platform`);
+			const architecture = name === "macos" ? "arm64" : "x64";
+			if (source.architecture !== architecture)
+				problems.push(`${name}: unexpected runner architecture`);
 		}
-		return [name, { result, required: required[name], source }] as const;
+		return [
+			name,
+			{ result, required: required[name], source, nativeRequired, nativeTransport },
+		] as const;
 	});
 	const jobResults = Object.fromEntries(entries) as Receipt["jobResults"];
 	const reference = jobResults.changes.source;
@@ -250,7 +292,15 @@ export function buildReceipt(input: ReceiptInput): Receipt {
 			event,
 		},
 		source: { headSha, baseSha, testedSha },
-		coverage: docsOnly ? "docs" : !full ? "draft" : windows ? "linux-and-windows" : "linux",
+		coverage: native
+			? "native-three-platforms"
+			: docsOnly
+				? "docs"
+				: !full
+					? "draft"
+					: windows
+						? "linux-and-windows"
+						: "linux",
 		selection,
 		jobResults,
 		passed: problems.length === 0,
@@ -277,6 +327,13 @@ export function renderSummary(receipt: Receipt): string {
 				`| ${name} | ${receipt.jobResults[name].result} | ${receipt.jobResults[name].required ? "yes" : "no"} |`,
 		),
 		"",
+		"| Native transport | Required | Completion | Actual runner |",
+		"| --- | --- | --- | --- |",
+		...["full", "windows", "macos"].map((name) => {
+			const job = receipt.jobResults[name as JobName];
+			return `| ${name} | ${job.nativeRequired ? "yes" : "no"} | ${job.nativeTransport ?? "not executed"} | ${job.source === null ? "not run" : `${job.source.platform}/${job.source.architecture}`} |`;
+		}),
+		"",
 		...(selection === null
 			? ["Selection unavailable: changes job did not succeed."]
 			: [
@@ -286,6 +343,8 @@ export function renderSummary(receipt: Receipt): string {
 					`| Rust workspaces | ${selected(selection.rust)} |`,
 					`| Spike suites | ${selected(selection.spikes)} |`,
 					`| Heavy filters | ${selected(selection.heavy)} |`,
+					`| Ordinary heavy filters | ${selected(selection.ordinaryHeavy)} |`,
+					`| Native transport selected | ${selection.nativeTransport ? "yes" : "no"} |`,
 					`| Template-smoke output | ${selection.templateSmoke ? "yes" : "no"} |`,
 				]),
 		"",
@@ -306,6 +365,7 @@ function sourceAt(root: string): Source {
 			.digest("hex"),
 		nodeVersion: process.versions.node,
 		platform: process.platform,
+		architecture: process.arch,
 	};
 }
 

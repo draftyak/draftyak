@@ -83,16 +83,28 @@ fn signed_outbox_is_bound_to_jointly_substituted_pending_and_request_ids() {
 fn signed_acknowledgements_equal_the_valid_requested_selection() {
     let original = send_fixture();
     assert!(matches(&original));
-    let mut changed = original.clone();
-    assert_ne!(changed["request"]["flagsAcked"], json!([]));
-    changed["request"]["flagsAcked"] = json!([]);
-    assert_eq!(
-        changed["challenge"]["statement"],
-        original["challenge"]["statement"]
-    );
-    assert!(api::check_schema("ChallengeRequest", &changed["request"]));
-    assert!(api::check_schema("Challenge", &changed["challenge"]));
-    assert!(!matches(&changed));
+    let extra = "REPLY_TO_REDIRECT";
+    let mut superset: Vec<&str> = original["request"]["flagsAcked"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|code| code.as_str().unwrap())
+        .collect();
+    assert!(!superset.is_empty() && !superset.contains(&extra));
+    // A strict superset still covers every required acknowledgement; only equality refuses it.
+    superset.push(extra);
+    superset.sort_unstable();
+    for selection in [json!([]), json!(superset)] {
+        let mut changed = original.clone();
+        changed["request"]["flagsAcked"] = selection;
+        assert_eq!(
+            changed["challenge"]["statement"],
+            original["challenge"]["statement"]
+        );
+        assert!(api::check_schema("ChallengeRequest", &changed["request"]));
+        assert!(api::check_schema("Challenge", &changed["challenge"]));
+        assert!(!matches(&changed));
+    }
 }
 
 #[test]
